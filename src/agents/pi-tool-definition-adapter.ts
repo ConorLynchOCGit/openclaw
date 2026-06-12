@@ -179,15 +179,33 @@ function normalizeToolExecutionResult(params: {
   if (result && typeof result === "object") {
     const record = result as Record<string, unknown>;
     if (Array.isArray(record.content)) {
+      if (record.isError !== true && isErrorStatusDetails(record.details)) {
+        return {
+          ...(result as AgentToolResult<unknown>),
+          isError: true,
+        } as AgentToolResult<unknown>;
+      }
       return result as AgentToolResult<unknown>;
     }
     logDebug(`tools: ${toolName} returned non-standard result (missing content[]); coercing`);
     const details = "details" in record ? record.details : record;
     const safeDetails = details ?? { status: "ok", tool: toolName };
-    return payloadTextResult(safeDetails);
+    const normalized = payloadTextResult(safeDetails);
+    return isErrorStatusDetails(safeDetails)
+      ? ({ ...normalized, isError: true } as AgentToolResult<unknown>)
+      : normalized;
   }
   const safeDetails = result ?? { status: "ok", tool: toolName };
   return payloadTextResult(safeDetails);
+}
+
+function isErrorStatusDetails(details: unknown): boolean {
+  return (
+    Boolean(details) &&
+    typeof details === "object" &&
+    !Array.isArray(details) &&
+    (details as { status?: unknown }).status === "error"
+  );
 }
 
 function buildToolExecutionErrorResult(params: {
@@ -195,12 +213,15 @@ function buildToolExecutionErrorResult(params: {
   message: string;
   rawParams?: unknown;
 }): AgentToolResult<unknown> {
-  return jsonResult({
-    status: "error",
-    tool: params.toolName,
-    error: params.message,
-    input: buildSafeToolParamSummary(params.rawParams),
-  });
+  return {
+    ...jsonResult({
+      status: "error",
+      tool: params.toolName,
+      error: params.message,
+      input: buildSafeToolParamSummary(params.rawParams),
+    }),
+    isError: true,
+  } as AgentToolResult<unknown>;
 }
 
 function splitToolExecuteArgs(args: ToolExecuteArgsAny): {

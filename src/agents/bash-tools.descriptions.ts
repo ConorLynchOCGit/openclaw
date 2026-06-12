@@ -13,11 +13,27 @@ function deriveExecShortName(fullPath: string): string {
   return base.replace(/\.exe$/i, "") || base;
 }
 
+function normalizedAgentId(value: string | undefined): string {
+  return value?.trim().toLowerCase() ?? "";
+}
+
 export function describeExecTool(params?: { agentId?: string; hasCronTool?: boolean }): string {
+  if (normalizedAgentId(params?.agentId) === "execution-validation-scout") {
+    return [
+      "Run focused validation commands only.",
+      "Prefer repo-native commands: `pnpm test:file <test-file>`, `pnpm test:file <test-file> -- -t <name>`, or a named repo proof script from the prompt.",
+      "Do not improvise raw TypeScript flag combinations or project-wide compiles unless a repo-native command failed and proves no focused command can answer the validation question.",
+      "Do not use exec for file search, reading, editing, or writing; use read, grep, and glob for source navigation.",
+      "Use workdir instead of `cd` chains. Keep output bounded; full oversized output is saved for normal read/grep follow-up.",
+      "Independent validation commands may be run in parallel when they do not mutate shared state.",
+    ].join(" ");
+  }
   const base = [
     "Execute shell commands with background continuation for work that starts now.",
     "Use yieldMs/background to continue later via process tool.",
     "For long-running work started now, rely on automatic completion wake when it is enabled and the command emits output or fails; otherwise use process to confirm completion. Use process whenever you need logs, status, input, or intervention.",
+    "Do not use exec for file search, reading, editing, or writing when native read, grep, glob, edit, or write tools can do the work.",
+    "Use workdir instead of `cd` chains when possible. Do not shrink output with head/tail just to hide useful diagnostics; oversized output is saved for follow-up.",
     params?.hasCronTool
       ? "Do not use exec sleep or delay loops for reminders or deferred follow-ups; use cron instead."
       : undefined,

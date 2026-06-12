@@ -3,6 +3,10 @@ import type { Api, AssistantMessage, Model } from "@mariozechner/pi-ai";
 import type { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
 import type { ThinkLevel } from "../../../auto-reply/thinking.js";
 import type { SessionSystemPromptReport } from "../../../config/sessions/types.js";
+import type {
+  ContextPressureController,
+  ContextPressureOutcome,
+} from "../../../context-engine/pressure/index.js";
 import type { ContextEngine, ContextEnginePromptCacheInfo } from "../../../context-engine/types.js";
 import type { PluginHookBeforeAgentStartResult } from "../../../plugins/hook-before-agent-start.types.js";
 import type { MessagingToolSend } from "../../pi-embedded-messaging.types.js";
@@ -12,7 +16,8 @@ import type { NormalizedUsage } from "../../usage.js";
 import type { EmbeddedRunReplayMetadata, EmbeddedRunReplayState } from "../replay-state.js";
 import type { EmbeddedRunLivenessState } from "../types.js";
 import type { RunEmbeddedPiAgentParams } from "./params.js";
-import type { PreemptiveCompactionRoute } from "./preemptive-compaction.types.js";
+
+export type EmbeddedRunProgressTimeoutKind = "no_progress_timeout" | "repeated_low_value_progress";
 
 type EmbeddedRunAttemptBase = Omit<
   RunEmbeddedPiAgentParams,
@@ -23,6 +28,8 @@ export type EmbeddedRunAttemptParams = EmbeddedRunAttemptBase & {
   initialReplayState?: EmbeddedRunReplayState;
   /** Pluggable context engine for ingest/assemble/compact lifecycle. */
   contextEngine?: ContextEngine;
+  /** Native context pressure controller for pre-submit and recovery policy. */
+  contextPressure?: ContextPressureController;
   /** Resolved model context window in tokens for assemble/compact budgeting. */
   contextTokenBudget?: number;
   /** Resolved API key for this run when runtime auth did not replace it. */
@@ -50,6 +57,8 @@ export type EmbeddedRunAttemptResult = {
   idleTimedOut: boolean;
   /** True if the timeout occurred while compaction was in progress or pending. */
   timedOutDuringCompaction: boolean;
+  /** Native progress-lease timeout classification when the attempt was stopped by liveness. */
+  progressTimeoutKind?: EmbeddedRunProgressTimeoutKind;
   promptError: unknown;
   /**
    * Identifies which phase produced the promptError.
@@ -60,20 +69,12 @@ export type EmbeddedRunAttemptResult = {
    *   outer run loop can recover via compaction/truncation before any model call is made.
    * - null: no promptError.
    */
-  promptErrorSource: "prompt" | "compaction" | "precheck" | null;
-  preflightRecovery?:
-    | {
-        route: Exclude<PreemptiveCompactionRoute, "fits">;
-        handled: true;
-        truncatedCount?: number;
-        reason?: string;
-      }
-    | {
-        route: Exclude<PreemptiveCompactionRoute, "fits"> | "provider_context_admission_blocked";
-        handled?: false;
-        reason?: string;
-        reasonCodes?: string[];
-      };
+  promptErrorOrigin: "prompt" | "compaction" | "precheck" | null;
+  contextPressureOutcome?: ContextPressureOutcome;
+  providerContextAdmissionBlock?: {
+    reason?: string;
+    reasonCodes?: string[];
+  };
   sessionIdUsed: string;
   bootstrapPromptWarningSignaturesSeen?: string[];
   bootstrapPromptWarningSignature?: string;

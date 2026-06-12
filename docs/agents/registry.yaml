@@ -104,6 +104,7 @@ agents:
       - xurl
     basePackComplete: true
   - id: execution-coding
+    promptProfile: execution_worker
     displayName: Execution Coding
     classification: execution_platform_agent
     durablePath: docs/agents/execution-coding
@@ -117,26 +118,26 @@ agents:
       - AGENTS.md
       - BOOTSTRAP.md
       - TOOLS.md
-    primarySkills:
-      - execution-node-workflow
+    primarySkills: []
     allowedChildAgents:
       - execution-context-scout
       - execution-validation-scout
     toolBudget:
-      readDefaultLineLimit: 80
-      readMaxBytes: 12288
+      readDefaultLineLimit: 2000
+      readMaxBytes: 51200
     requiredTools:
       - node_finish
-      - openclaw_resource_read
       - edit
+      - lsp
       - read
+      - grep
+      - glob
       - update_plan
       - read_todo
       - task
     forbiddenTools:
+      - apply_patch
       - list
-      - glob
-      - grep
       - exec
       - process
       - resolve_openclaw_resource
@@ -146,6 +147,7 @@ agents:
       - agents_list
     basePackComplete: true
   - id: execution-context-scout
+    promptProfile: execution_context_scout
     displayName: Execution Context Scout
     classification: execution_platform_agent
     durablePath: docs/agents/execution-context-scout
@@ -159,8 +161,7 @@ agents:
       - AGENTS.md
       - BOOTSTRAP.md
       - TOOLS.md
-    primarySkills:
-      - execution-context-scout
+    primarySkills: []
     toolBudget:
       readDefaultLineLimit: 160
       readMaxBytes: 16384
@@ -172,6 +173,7 @@ agents:
       - list
       - glob
       - grep
+      - openclaw_resource_read
     forbiddenTools:
       - write
       - edit
@@ -184,11 +186,11 @@ agents:
       - sessions_yield
       - subagents
       - agents_list
-      - openclaw_resource_read
       - resolve_openclaw_resource
       - node_finish
     basePackComplete: true
   - id: execution-validation-scout
+    promptProfile: execution_validation_scout
     displayName: Execution Validation Scout
     classification: execution_platform_agent
     durablePath: docs/agents/execution-validation-scout
@@ -202,8 +204,7 @@ agents:
       - AGENTS.md
       - BOOTSTRAP.md
       - TOOLS.md
-    primarySkills:
-      - execution-validation-scout
+    primarySkills: []
     toolBudget:
       readDefaultLineLimit: 220
       readMaxBytes: 24576
@@ -216,6 +217,7 @@ agents:
       - glob
       - grep
       - exec
+      - openclaw_resource_read
     forbiddenTools:
       - write
       - edit
@@ -228,7 +230,6 @@ agents:
       - sessions_yield
       - subagents
       - agents_list
-      - openclaw_resource_read
       - resolve_openclaw_resource
       - node_finish
     basePackComplete: true

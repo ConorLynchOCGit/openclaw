@@ -40,6 +40,12 @@ function mapChildSessionFailureKind(
   if (kind === "provider_response_timeout") {
     return "child_provider_response_timeout";
   }
+  if (kind === "no_progress_timeout") {
+    return "child_no_progress_timeout";
+  }
+  if (kind === "repeated_low_value_progress") {
+    return "child_repeated_low_value_progress";
+  }
   if (kind === "session_lock_failed") {
     return "child_session_lock_failed";
   }
@@ -113,15 +119,16 @@ export function createNativeRunChildTask(params: {
       childSession.resultText,
       taskParams.parentVisibleResultMaxChars,
     );
-    const providerTimedOutAfterVisibleProgress =
-      childSession.failureKind === "provider_response_timeout" &&
+    const childTimedOutAfterVisibleProgress =
+      (childSession.failureKind === "provider_response_timeout" ||
+        childSession.failureKind === "repeated_low_value_progress") &&
       Boolean(boundedResult.resultText?.trim()) &&
       boundedResult.resultDeliveryStatus !== "rejected";
     const progressResult =
-      providerTimedOutAfterVisibleProgress && boundedResult.resultText?.trim()
+      childTimedOutAfterVisibleProgress && boundedResult.resultText?.trim()
         ? buildParentVisibleChildResult(
             [
-              "Partial child result delivered after provider response timeout. The child produced bounded parent-visible output before the provider went idle; use it only if it is enough for the next safe parent decision, otherwise ask a narrower follow-up.",
+              "Partial child result delivered after child progress timeout. The child produced bounded parent-visible output before the run stopped; use it only if it is enough for the next safe parent decision, otherwise ask a narrower follow-up.",
               "",
               boundedResult.resultText.trim(),
             ].join("\n"),
@@ -158,7 +165,7 @@ export function createNativeRunChildTask(params: {
         : !progressResult.resultText?.trim()
           ? "child_run_error"
           : undefined;
-    const runFailureKind = providerTimedOutAfterVisibleProgress
+    const runFailureKind = childTimedOutAfterVisibleProgress
       ? undefined
       : mapChildSessionFailureKind(childSession.failureKind);
     const childStartFailureKind = runFailureKind ?? bootstrapFailureKind ?? resultFailureKind;
@@ -168,13 +175,18 @@ export function createNativeRunChildTask(params: {
       foreground: true,
       childSessionKey: childSession.childSessionKey,
       runId: childSession.runId,
+      ...(childSession.provider ? { childProvider: childSession.provider } : {}),
+      ...(childSession.model ? { childModel: childSession.model } : {}),
       waitStatus: status === "completed" ? "ok" : "error",
       startedAt: childSession.startedAt,
       endedAt: childSession.endedAt,
-      ...(childSession.error && !providerTimedOutAfterVisibleProgress
+      ...(childSession.error && !childTimedOutAfterVisibleProgress
         ? { error: childSession.error }
         : {}),
       ...progressResult,
+      ...(childTimedOutAfterVisibleProgress
+        ? { childProgressOutcome: "child_partial_context_returned" as const }
+        : {}),
       ...(managedOutput
         ? {
             managedOutputRef: managedOutput.ref,

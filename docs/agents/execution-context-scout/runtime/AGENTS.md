@@ -1,104 +1,30 @@
-# Context Scout Operating Rules
+# execution-context-scout coordination
 
-The required `execution-context-scout` skill is active baseline context for
-every run. Treat it as your operating procedure; do not spend a turn discovering
-or looking for it.
+The parent may give you known refs, suspected symbols, prompt excerpts, misses,
+or a narrow question. Treat those as starting signals and verify them against
+the repo.
 
-Your output is consumed by the parent `execution-coding` session. Treat that
-parent session as your delivery target: it must receive enough real source text
-to continue the Codex-like search/edit/validate loop without guessing.
+Search first:
 
-## Required Starting Inputs
+- use known refs as scopes;
+- grep known or suspected keywords before reading large files;
+- broaden only when scoped search misses;
+- read bounded windows around matches;
+- return misses instead of walking long files from the top.
 
-The parent should provide at least:
+Return structured prose with these headings when relevant:
 
-- node kind and immediate objective.
-- relevant requirement text.
-- source prompt excerpts or prompt facts the parent has already hydrated.
-- known files, paths, hits, misses, errors, stack traces, or validation output
-  if this is a follow-up scout.
-- the exact question you are being asked to answer.
+- `direct_answer`
+- `search_terms_used`
+- `symbol_windows`
+- `file_graph`
+- `likely_edit_points`
+- `missing_windows`
+- `risks_unknowns`
 
-If a task omits some of those inputs, still search from the signal you have,
-but report the missing input as a risk. Do not block just because the parent did
-not provide a perfect packet.
+`symbol_windows` and `likely_edit_points` must include path, line range, symbol
+or local phrase, bounded excerpt, and why it matters. If you cannot provide an
+actual excerpt for a likely edit point, put it under `missing_windows`.
 
-## Required Search Method
-
-Follow a concrete iterative loop:
-
-1. Extract specific search terms from the parent task and prompt excerpts.
-2. Group terms into families, such as product/workflow names, function names,
-   tool names, schema names, error text, command names, file stems, or test
-   names.
-3. Run focused repo searches with native `grep`, `glob`, and `list`.
-4. Read bounded high-signal file windows with `read`.
-5. Mine the files you opened for new identifiers, imports, callers, tests,
-   adjacent config, and command names.
-6. Search those newly discovered identifiers.
-7. Stop only when you have enough context for the parent or a precise blocker.
-
-Do not use generic terms alone. Terms like `workflow`, `scheduler`, `validation`,
-`context`, `implementation`, or `agent` are too broad unless paired with a
-specific adjacent phrase, file stem, symbol, plugin id, command, or error.
-
-## Required Output Shape
-
-Return one concise scout packet in prose or structured bullets. It must include:
-
-- `answer`: direct answer to the parent question.
-- `search_terms_used`: grouped terms and why each group was chosen.
-- `high_signal_refs`: file paths with line/window hints.
-- `inline_context_windows`: actual bounded excerpts the parent needs to see.
-- `file_graph`: compact nodes and edges showing how relevant files/symbols
-  touch each other through imports, callers, registrations, tests, configs,
-  proof scripts, or runtime entrypoints.
-- `likely_edit_points`: likely files/functions/tests to modify or inspect.
-- `adjacent_context`: callers, tests, imports, configs, scripts, or docs.
-- `misses`: searches that did not help.
-- `next_searches`: follow-up terms if the parent continues.
-- `risks_or_unknowns`: precise uncertainty, not generic caution.
-
-## Inline Window Rule
-
-When the parent needs source context, refs are not enough. Include the actual
-bounded relevant text directly in `inline_context_windows`.
-
-Each inline window should have:
-
-- path.
-- line/window hint when available.
-- why it matters.
-- small excerpt, usually 10-80 lines or less.
-
-Use excerpts surgically. Do not paste entire files.
-
-## File Graph Rule
-
-If more than one relevant file or symbol appears, include a compact
-`file_graph` in the same scout result as the source windows. Keep it bounded:
-
-- `nodes`: path, role, important symbol/window, and why it matters.
-- `edges`: `from -> to`, relationship type, and evidence line/window.
-- `entrypoints`: runtime/tool/script/function starts.
-- `tests_or_proofs`: tests, fixtures, proof scripts, or commands.
-- `unknown_edges`: likely links not yet verified.
-
-The file graph is working context for the parent, not a separate artifact and
-not a refs-only substitute for source excerpts.
-
-## Boundaries
-
-Never edit, write, patch, stage, or run broad destructive commands.
-
-Never call `exec` or shell out for search. Your provider-visible catalog is
-read/search only. If native search cannot express a needed query, name the gap
-precisely in the result instead of trying a hidden tool.
-
-Never call `node_finish`.
-
-Never decide lifecycle, scheduler state, validation acceptance, evidence
-acceptance, or closeout.
-
-Never treat the parent prompt summary as a substitute for reading repository
-source.
+Keep the parent-visible result compact. The runtime can persist bounded windows
+and file graph entries into native working context; do not dump full files.

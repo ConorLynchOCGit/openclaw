@@ -13,6 +13,8 @@ export type NativeTaskChildStartFailureKind =
   | "child_session_lock_failed"
   | "child_provider_model_failure"
   | "child_provider_response_timeout"
+  | "child_no_progress_timeout"
+  | "child_repeated_low_value_progress"
   | "child_result_unshaped"
   | "child_run_timeout"
   | "child_run_error"
@@ -20,6 +22,8 @@ export type NativeTaskChildStartFailureKind =
   | "child_session_start_failed";
 
 export type NativeTaskResultDeliveryStatus = "full" | "projected" | "rejected";
+
+export type NativeTaskChildProgressOutcome = "child_partial_context_returned";
 
 export type NativeTaskChildBootstrapAdmission = {
   providerReportObserved: boolean;
@@ -45,6 +49,8 @@ export type NativeTaskForegroundResult = {
   foreground: true;
   childSessionKey: string;
   runId: string;
+  childProvider?: string;
+  childModel?: string;
   waitStatus: NativeTaskWaitStatus;
   startedAt?: number;
   endedAt?: number;
@@ -55,6 +61,7 @@ export type NativeTaskForegroundResult = {
   resultMaxParentVisibleChars?: number;
   resultDeliveredToParentContext: boolean;
   resultDeliveryStatus?: NativeTaskResultDeliveryStatus;
+  childProgressOutcome?: NativeTaskChildProgressOutcome;
   resultTruncated?: boolean;
   managedOutputRef?: string | null;
   managedOutputBytes?: number;

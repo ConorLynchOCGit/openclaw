@@ -51,7 +51,10 @@ const { executeSchedulerStageNativeTool, executeSchedulerStageNativeToolBatch } 
   path.join(root, "extensions/execution-platform/src/workflows/scheduler-stage-runner.ts"),
   import.meta.url,
 );
-const { loadConfig } = await tsImport(path.join(root, "src/config/config.ts"), import.meta.url);
+const { loadConfig, setRuntimeConfigSnapshot } = await tsImport(
+  path.join(root, "src/config/config.ts"),
+  import.meta.url,
+);
 const { resolveConfigPath } = await tsImport(
   path.join(root, "src/config/paths.ts"),
   import.meta.url,
@@ -80,8 +83,20 @@ const PRODUCT_SPEC_CODING_EXECUTOR_PROOF_ROUTE = Object.freeze({
   ],
   requestedCapabilities: ["code_edit", "test", "docs_update", "review", "closeout"],
 });
+const REPLAY_TERMINAL_STATUSES = new Set([
+  "aborted",
+  "canceled",
+  "cancelled",
+  "completed",
+  "failed",
+  "needs_review",
+  "succeeded",
+]);
 let replayRuntimeShutdown = null;
 let currentProofRunId = null;
+let latestReplayState = null;
+let replayTerminalArtifactWritten = false;
+let replayShutdownStarted = false;
 
 function sha256(value) {
   return crypto
@@ -122,6 +137,7 @@ async function loadSourceBackedReplayConfig() {
     if (!isRecord(parsed) || Object.hasOwn(parsed, "$include")) {
       return loadConfig();
     }
+    setRuntimeConfigSnapshot(parsed, parsed);
     return parsed;
   } catch {
     return loadConfig();
@@ -139,6 +155,12 @@ function jsonRecord(value) {
 }
 
 async function writeJson(name, value) {
+  if (
+    name === "product-spec-boundary-replay-result.json" ||
+    name === "product-spec-boundary-replay-error.json"
+  ) {
+    replayTerminalArtifactWritten = true;
+  }
   await fs.mkdir(ARTIFACT_DIR, { recursive: true });
   const target = path.join(ARTIFACT_DIR, name);
   const bodyValue =
@@ -226,12 +248,14 @@ async function emitReplayState({
     boundary: boundary ?? null,
     phase: phase ?? null,
     status: status ?? null,
+    processPid: process.pid,
     details,
     rawPromptStored: false,
     rawResponseStored: false,
     rawProviderLogStored: false,
     rawToolLogStored: false,
   };
+  latestReplayState = payload;
   await writeJson("product-spec-boundary-replay-live-state.json", payload);
   await writeJson(`latest-run-state-${runtimeJobId ?? "unknown"}.json`, {
     artifactKind: "execution_platform_latest_run_state",
@@ -242,6 +266,7 @@ async function emitReplayState({
     currentPhase: phase ?? null,
     currentReplayBoundary: boundary ?? null,
     status: status ?? null,
+    processPid: process.pid,
     activeNodeIds: Array.isArray(details.activeNodeIds)
       ? details.activeNodeIds.filter((value) => typeof value === "string").slice(0, 40)
       : typeof details.nodeId === "string"
@@ -265,11 +290,7 @@ async function emitReplayState({
     wallTimeByPhase: details.wallTimeByPhase ?? {},
     tokenUsageByPhaseAndModel: details.tokenUsageByPhaseAndModel ?? {},
     tokenUsageEstimateOnly: details.tokenUsageEstimateOnly === true,
-    latestTerminalEvent: ["completed", "needs_review", "failed", "canceled"].includes(
-      String(status ?? ""),
-    )
-      ? safeEvent
-      : null,
+    latestTerminalEvent: isTerminalReplayStatus(status) ? safeEvent : null,
     proofGateStatus: details.proofGateStatus ?? null,
     rawPromptStored: false,
     rawResponseStored: false,
@@ -294,6 +315,334 @@ async function emitReplayState({
     `${JSON.stringify({ event: "product_spec_boundary_replay_live_state", ...payload })}\n`,
   );
   return payload;
+}
+
+function isTerminalReplayStatus(status) {
+  return REPLAY_TERMINAL_STATUSES.has(String(status ?? ""));
+}
+
+async function readJsonIfExists(filePath) {
+  try {
+    return JSON.parse(await fs.readFile(filePath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+async function writeJsonFile(filePath, value) {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+function readPositiveInteger(value) {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null;
+}
+
+function readReplayProcessPid(state) {
+  if (!isRecord(state)) {
+    return null;
+  }
+  const directPid = readPositiveInteger(state.processPid);
+  if (directPid) {
+    return directPid;
+  }
+  const details = jsonRecord(state.details);
+  return readPositiveInteger(details.processPid);
+}
+
+function processPidIsAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
+
+function activeNodeIdsFromState(liveState, latestState) {
+  const latestActiveNodeIds = Array.isArray(latestState?.activeNodeIds)
+    ? latestState.activeNodeIds
+    : [];
+  const liveDetails = jsonRecord(liveState?.details);
+  const detailsActiveNodeIds = Array.isArray(liveDetails.activeNodeIds)
+    ? liveDetails.activeNodeIds
+    : typeof liveDetails.nodeId === "string"
+      ? [liveDetails.nodeId]
+      : [];
+  return [...latestActiveNodeIds, ...detailsActiveNodeIds]
+    .filter((value) => typeof value === "string" && value.trim())
+    .map((value) => value.trim())
+    .slice(0, 40);
+}
+
+async function terminalizeStaleReplayLiveState({
+  runtimeJobId,
+  allowLegacyNoPid = false,
+  reason = "startup_preflight",
+} = {}) {
+  const sharedLiveStatePath = path.join(
+    ARTIFACT_DIR,
+    "product-spec-boundary-replay-live-state.json",
+  );
+  const latestRunStatePath = path.join(
+    ARTIFACT_DIR,
+    `latest-run-state-${runtimeJobId ?? "unknown"}.json`,
+  );
+  const liveState = await readJsonIfExists(sharedLiveStatePath);
+  const latestRunState = await readJsonIfExists(latestRunStatePath);
+  const candidateState =
+    isRecord(liveState) && liveState.runtimeJobId === runtimeJobId
+      ? liveState
+      : isRecord(latestRunState) && latestRunState.runtimeJobId === runtimeJobId
+        ? latestRunState
+        : null;
+  if (!candidateState || String(candidateState.status ?? "") !== "running") {
+    return { status: "no_stale_running_state" };
+  }
+  const previousProcessPid = readReplayProcessPid(candidateState);
+  if (
+    previousProcessPid &&
+    previousProcessPid !== process.pid &&
+    processPidIsAlive(previousProcessPid)
+  ) {
+    return {
+      status: "running_process_alive",
+      previousProcessPid,
+    };
+  }
+  if (!previousProcessPid && !allowLegacyNoPid) {
+    return {
+      status: "legacy_running_state_without_process_pid",
+      reasonCodes: ["boundary_replay_running_state_missing_process_pid"],
+    };
+  }
+
+  const generatedAt = new Date().toISOString();
+  const previousProofRunId =
+    typeof liveState?.proofRunId === "string" && liveState.proofRunId.trim()
+      ? liveState.proofRunId.trim()
+      : null;
+  const previousProofRunManifestRef =
+    typeof liveState?.proofRunManifestRef === "string" && liveState.proofRunManifestRef.trim()
+      ? liveState.proofRunManifestRef.trim()
+      : previousProofRunId
+        ? `.artifacts/execution-platform/proof-runs/${previousProofRunId}/manifest.json`
+        : null;
+  const graphId =
+    typeof liveState?.graphId === "string"
+      ? liveState.graphId
+      : typeof latestRunState?.graphId === "string"
+        ? latestRunState.graphId
+        : null;
+  const boundary =
+    typeof liveState?.boundary === "string"
+      ? liveState.boundary
+      : typeof latestRunState?.currentReplayBoundary === "string"
+        ? latestRunState.currentReplayBoundary
+        : null;
+  const phase =
+    typeof liveState?.phase === "string"
+      ? liveState.phase
+      : typeof latestRunState?.currentPhase === "string"
+        ? latestRunState.currentPhase
+        : null;
+  const reasonCodes = [
+    previousProcessPid
+      ? "boundary_replay_stale_running_process_missing"
+      : "boundary_replay_legacy_running_state_without_process_pid_terminalized",
+    `boundary_replay_stale_state_clear_reason:${reason}`,
+  ];
+  const terminalEvent = "boundary_replay_stale_running_state_terminalized";
+  const previousStateSummary = {
+    event:
+      typeof liveState?.event === "string"
+        ? liveState.event
+        : typeof latestRunState?.activeToolEventKind === "string"
+          ? latestRunState.activeToolEventKind
+          : null,
+    status: candidateState.status ?? null,
+    generatedAt: typeof candidateState.generatedAt === "string" ? candidateState.generatedAt : null,
+    processPid: previousProcessPid,
+  };
+  const terminalLiveState = {
+    ...(previousProofRunId ? { proofRunId: previousProofRunId } : {}),
+    ...(previousProofRunManifestRef ? { proofRunManifestRef: previousProofRunManifestRef } : {}),
+    artifactKind: "product_spec_boundary_replay_live_state",
+    generatedAt,
+    event: terminalEvent,
+    runtimeJobId,
+    graphId,
+    boundary,
+    phase,
+    status: "aborted",
+    processPid: process.pid,
+    details: {
+      ...jsonRecord(liveState?.details),
+      previousReplayState: previousStateSummary,
+      terminalizedByProcessPid: process.pid,
+      reasonCodes,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+    },
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+  };
+  const terminalLatestRunState = {
+    ...jsonRecord(latestRunState),
+    artifactKind: "execution_platform_latest_run_state",
+    schemaVersion: "execution-platform.latest-run-state.v1",
+    generatedAt,
+    runtimeJobId,
+    graphId,
+    currentPhase: phase,
+    currentReplayBoundary: boundary,
+    status: "aborted",
+    processPid: process.pid,
+    activeNodeIds: activeNodeIdsFromState(liveState, latestRunState),
+    activeToolEventKind: terminalEvent,
+    latestTerminalEvent: terminalEvent,
+    blockers: [
+      "stale running boundary replay terminalized before next proof",
+      ...(Array.isArray(latestRunState?.blockers)
+        ? latestRunState.blockers.filter((value) => typeof value === "string")
+        : []),
+    ].slice(0, 40),
+    reasonCodes,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+    rawCommandLogStored: false,
+    rawDbRowsStored: false,
+    secretsStored: false,
+  };
+  const terminalError = {
+    ...(previousProofRunId ? { proofRunId: previousProofRunId } : {}),
+    ...(previousProofRunManifestRef ? { proofRunManifestRef: previousProofRunManifestRef } : {}),
+    artifactKind: "product_spec_boundary_replay_error",
+    proofSourceKind: PRODUCT_SPEC_RUNTIME_BOUNDARY_REPLAY_PROOF_SOURCE,
+    generatedAt,
+    status: "aborted",
+    errorName: "StaleReplayRunningStateTerminalized",
+    errorMessageHash: sha256("stale boundary replay running state terminalized"),
+    errorSummary:
+      "A previous boundary replay live-state was still running, but no live replay process was available for that state. It was terminalized before the next proof.",
+    previousReplayState: previousStateSummary,
+    reasonCodes,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+  };
+
+  await writeJsonFile(sharedLiveStatePath, terminalLiveState);
+  await writeJsonFile(latestRunStatePath, terminalLatestRunState);
+  await writeJsonFile(
+    path.join(ARTIFACT_DIR, "product-spec-boundary-replay-error.json"),
+    terminalError,
+  );
+  if (previousProofRunId) {
+    const proofRunDir = path.join(PROOF_RUNS_DIR, previousProofRunId);
+    await writeJsonFile(
+      path.join(proofRunDir, "product-spec-boundary-replay-live-state.json"),
+      terminalLiveState,
+    );
+    await writeJsonFile(
+      path.join(proofRunDir, "product-spec-boundary-replay-error.json"),
+      terminalError,
+    );
+  }
+  return {
+    status: "terminalized",
+    runtimeJobId,
+    proofRunId: previousProofRunId,
+    previousProcessPid,
+    reasonCodes,
+  };
+}
+
+async function finalizeReplayProcessIfRunning() {
+  if (replayTerminalArtifactWritten) {
+    return;
+  }
+  if (!latestReplayState || isTerminalReplayStatus(latestReplayState.status)) {
+    return;
+  }
+  const reasonCodes = ["boundary_replay_process_exited_without_terminal_state"];
+  const summary = {
+    artifactKind: "product_spec_boundary_replay_error",
+    proofSourceKind: PRODUCT_SPEC_RUNTIME_BOUNDARY_REPLAY_PROOF_SOURCE,
+    generatedAt: new Date().toISOString(),
+    errorName: "ReplayProcessExitedWithoutTerminalState",
+    errorMessageHash: sha256("replay process exited before writing terminal result"),
+    errorSummary:
+      "Replay process exited before writing product-spec-boundary-replay-result.json or product-spec-boundary-replay-error.json.",
+    previousReplayState: {
+      event: latestReplayState.event ?? null,
+      runtimeJobId: latestReplayState.runtimeJobId ?? null,
+      graphId: latestReplayState.graphId ?? null,
+      boundary: latestReplayState.boundary ?? null,
+      phase: latestReplayState.phase ?? null,
+      status: latestReplayState.status ?? null,
+    },
+    reasonCodes,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+  };
+  await emitReplayState({
+    runtime: null,
+    runtimeJobId: latestReplayState.runtimeJobId,
+    event: "boundary_replay_process_exited_without_terminal_state",
+    graphId: latestReplayState.graphId,
+    boundary: latestReplayState.boundary,
+    phase: latestReplayState.phase,
+    status: "failed",
+    details: {
+      previousEvent: latestReplayState.event ?? null,
+      previousStatus: latestReplayState.status ?? null,
+      reasonCodes,
+    },
+  });
+  await writeJson("product-spec-boundary-replay-error.json", summary);
+  process.exitCode = process.exitCode || 1;
+}
+
+async function shutdownReplayProcess() {
+  if (replayShutdownStarted) {
+    return;
+  }
+  replayShutdownStarted = true;
+  await finalizeReplayProcessIfRunning();
+  if (replayRuntimeShutdown) {
+    await replayRuntimeShutdown();
+  }
+}
+
+function installReplaySignalTerminalizers() {
+  for (const signal of ["SIGINT", "SIGTERM"]) {
+    process.once(signal, () => {
+      void shutdownReplayProcess()
+        .catch((error) => {
+          process.stderr.write(
+            `${JSON.stringify({
+              event: "product_spec_boundary_replay_shutdown_error",
+              signal,
+              errorName: error?.name ?? "unknown_error",
+              errorMessageHash: sha256(error?.message ?? String(error)),
+            })}\n`,
+          );
+        })
+        .finally(() => {
+          process.exit(1);
+        });
+    });
+  }
 }
 
 async function recordCanonicalBoundaryReplayCheckpoint({
@@ -1493,8 +1842,28 @@ async function main() {
   if (!runtimeJobId) {
     throw new Error("runtime_job_id_required");
   }
+  const clearStaleLiveStateOnly = boolFlag("--clear-stale-live-state-only", false);
+  const terminalizeLegacyStaleLiveState = boolFlag("--terminalize-legacy-stale-live-state", false);
+  const staleLiveStateTerminalization = await terminalizeStaleReplayLiveState({
+    runtimeJobId,
+    allowLegacyNoPid: clearStaleLiveStateOnly || terminalizeLegacyStaleLiveState,
+    reason: clearStaleLiveStateOnly ? "manual_clear" : "startup_preflight",
+  });
+  if (clearStaleLiveStateOnly) {
+    process.stdout.write(
+      `${JSON.stringify({
+        event: "product_spec_boundary_replay_stale_live_state_clear",
+        ...staleLiveStateTerminalization,
+      })}\n`,
+    );
+    return;
+  }
   const graphIdFlag = flag("--graph-id");
-  const boundary = flag("--boundary", "before-worker-execution");
+  const workerPromptFile = flag("--worker-prompt-file");
+  const boundary = flag(
+    "--boundary",
+    workerPromptFile ? "after-graph-selection" : "before-worker-execution",
+  );
   if (!isSupportedBoundary(boundary)) {
     throw new Error(`unsupported_boundary:${boundary}`);
   }
@@ -1519,7 +1888,6 @@ async function main() {
     false,
   );
   const targetNodeIds = new Set(flags("--target-node-id"));
-  const workerPromptFile = flag("--worker-prompt-file");
   const workerPromptFileTextTurn = await loadWorkerPromptFileTextTurnClient(workerPromptFile);
 
   const runtime = await getExecutionPlatformRuntime(await loadSourceBackedReplayConfig());
@@ -1764,7 +2132,9 @@ async function main() {
   const requirementMapAccepted = Boolean(requirementMap);
   const missionLedger = null;
   const isAfterGraphSelection = boundary === "after-graph-selection";
-  if (isAfterGraphSelection && !graphIdFlag) {
+  const isSingleNodeWorkerPromptFileReplay =
+    Boolean(workerPromptFileTextTurn) && executeWorkers && targetNodeIds.size === 1;
+  if (isAfterGraphSelection && !graphIdFlag && !isSingleNodeWorkerPromptFileReplay) {
     throw new Error(`graph_id_required_for_boundary:${boundary}`);
   }
   if (isAfterGraphSelection && !executeWorkers) {
@@ -2219,16 +2589,65 @@ async function main() {
       },
     });
     const workerStartedAt = Date.now();
-    const workerResult = await nodeRunner({
-      graphId: replayGraphId,
-      iteration: 1,
-      snapshot: replayStartSnapshot,
-      node: targetNode,
-      nodeExecutionSnapshot,
-      missionLedgerSummary: null,
-      rawPromptStored: false,
-      rawResponseStored: false,
-    });
+    let workerResult;
+    try {
+      workerResult = await nodeRunner({
+        graphId: replayGraphId,
+        iteration: 1,
+        snapshot: replayStartSnapshot,
+        node: targetNode,
+        nodeExecutionSnapshot,
+        missionLedgerSummary: null,
+        rawPromptStored: false,
+        rawResponseStored: false,
+      });
+    } catch (error) {
+      const errorSummary = String(error?.message ?? error).slice(0, 500);
+      const reasonCodes = [
+        "boundary_replay_single_node_native_worker_execution_error",
+        "boundary_replay_provider_error_terminalized",
+      ];
+      await emitReplayState({
+        runtime,
+        runtimeJobId,
+        event: "single_node_worker_replay_failed_terminalized",
+        graphId: replayGraphId,
+        boundary,
+        phase: "worker_execution",
+        status: "needs_review",
+        details: {
+          nodeId: targetNode.nodeId,
+          nodeKind: targetNode.nodeKind,
+          assignedRole: targetNode.assignedRole ?? null,
+          nodeRunId: nodeExecutionSnapshot.nodeRunId,
+          nodeAgentSessionKey: nodeExecutionSnapshot.sessionKey,
+          errorName: error?.name ?? "unknown_error",
+          errorMessageHash: sha256(error?.message ?? String(error)),
+          errorSummary,
+          reasonCodes,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          rawToolLogStored: false,
+        },
+      });
+      workerResult = {
+        status: "needs_review",
+        outputArtifactRefs: [],
+        reasonCodes,
+        metadata: {
+          nodeExecutionSnapshotRef: nodeExecutionSnapshot.snapshotRef,
+          nodeAgentSessionTraceRef: null,
+          workerExecutionErrorName: error?.name ?? "unknown_error",
+          workerExecutionErrorMessageHash: sha256(error?.message ?? String(error)),
+          workerExecutionErrorSummary: errorSummary,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          rawToolLogStored: false,
+        },
+      };
+    }
     const elapsedMs = Date.now() - workerStartedAt;
     const workerStatus =
       workerResult.status === "succeeded"
@@ -2829,6 +3248,8 @@ async function main() {
   }
 }
 
+installReplaySignalTerminalizers();
+
 main()
   .catch(async (error) => {
     const stackSummary =
@@ -2854,7 +3275,5 @@ main()
     process.exitCode = 1;
   })
   .finally(async () => {
-    if (replayRuntimeShutdown) {
-      await replayRuntimeShutdown();
-    }
+    await shutdownReplayProcess();
   });

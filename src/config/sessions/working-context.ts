@@ -1,11 +1,17 @@
 import crypto from "node:crypto";
-import { loadSessionStore, resolveSessionStoreEntry, updateSessionStoreEntry } from "./store.js";
+import {
+  loadSessionStore,
+  normalizeStoreSessionKey,
+  resolveSessionStoreEntry,
+  updateSessionStoreEntry,
+} from "./store.js";
 import type {
   SessionWorkingContextEntry,
   SessionWorkingContextEntryKind,
   SessionWorkingContextEntrySource,
   SessionWorkingContextState,
   SessionWorkingContextUpdateEvent,
+  SessionEntry,
 } from "./types.js";
 
 export type SessionWorkingContextInputEntry = {
@@ -61,6 +67,10 @@ type FileGraphSectionSummary = {
   uncertainAnnotationCount: number;
 };
 
+type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
+
+const SESSION_WORKING_CONTEXT_REF_PREFIX = "openclaw-session-working-context://";
+
 export function buildSessionWorkingContextRef(sessionKey: string): string {
   return `openclaw-session-working-context://${encodeURIComponent(sessionKey.trim())}`;
 }
@@ -72,6 +82,402 @@ export function buildSessionWorkingContextEntryRef(params: {
   return `${buildSessionWorkingContextRef(params.sessionKey)}/${encodeURIComponent(
     params.entryId.trim(),
   )}`;
+}
+
+export function parseSessionWorkingContextResourceRef(
+  ref: string,
+): { sessionKey: string; entryId?: string } | null {
+  const trimmed = ref.trim();
+  if (!trimmed.startsWith(SESSION_WORKING_CONTEXT_REF_PREFIX)) {
+    return null;
+  }
+  const rest = trimmed.slice(SESSION_WORKING_CONTEXT_REF_PREFIX.length);
+  const slashIndex = rest.indexOf("/");
+  const rawSessionKey = slashIndex >= 0 ? rest.slice(0, slashIndex) : rest;
+  const rawEntryId = slashIndex >= 0 ? rest.slice(slashIndex + 1) : "";
+  try {
+    const sessionKey = decodeURIComponent(rawSessionKey).trim();
+    const entryId = rawEntryId ? decodeURIComponent(rawEntryId).trim() : undefined;
+    if (!sessionKey || (rawEntryId && !entryId)) {
+      return { sessionKey: "", ...(entryId ? { entryId } : {}) };
+    }
+    return { sessionKey, ...(entryId ? { entryId } : {}) };
+  } catch {
+    return { sessionKey: "" };
+  }
+}
+
+function boundedUtf8TextWindow(input: { text: string; offsetBytes?: number; maxBytes?: number }): {
+  text: string;
+  offsetBytes: number;
+  returnedBytes: number;
+  totalBytes: number;
+  nextOffsetBytes: number | null;
+  truncated: boolean;
+} {
+  const maxBytes = Math.max(500, Math.min(50_000, Math.floor(input.maxBytes ?? 16_000)));
+  const buffer = Buffer.from(input.text, "utf8");
+  const offsetBytes = Math.max(
+    0,
+    Math.min(
+      buffer.length,
+      Number.isFinite(input.offsetBytes) ? Math.floor(input.offsetBytes ?? 0) : 0,
+    ),
+  );
+  const end = Math.min(buffer.length, offsetBytes + maxBytes);
+  const returned = buffer.subarray(offsetBytes, end);
+  return {
+    text: returned.toString("utf8"),
+    offsetBytes,
+    returnedBytes: returned.length,
+    totalBytes: buffer.length,
+    nextOffsetBytes: end < buffer.length ? end : null,
+    truncated: end < buffer.length,
+  };
+}
+
+function compactWorkingContextEntry(entry: SessionWorkingContextEntry): JsonValue {
+  const { text: _text, ...compact } = entry;
+  return compact as unknown as JsonValue;
+}
+
+function workingContextEntryPromptText(entry: SessionWorkingContextEntry): string {
+  return [
+    `### ${entry.kind} ${entry.entryId}`,
+    `source=${entry.source}`,
+    entry.taskRef ? `taskRef=${entry.taskRef}` : undefined,
+    entry.toolResultRef ? `toolResultRef=${entry.toolResultRef}` : undefined,
+    entry.childResultRef ? `childResultRef=${entry.childResultRef}` : undefined,
+    entry.requestedAgentId ? `requestedAgentId=${entry.requestedAgentId}` : undefined,
+    entry.childSessionKey ? `childSessionKey=${entry.childSessionKey}` : undefined,
+    entry.status ? `status=${entry.status}` : undefined,
+    entry.validationStatus ? `validationStatus=${entry.validationStatus}` : undefined,
+    entry.changedFilePaths?.length
+      ? `changedFilePaths=${entry.changedFilePaths.join(", ")}`
+      : undefined,
+    typeof entry.lineRangeComplete === "boolean"
+      ? `lineRangeComplete=${entry.lineRangeComplete}`
+      : undefined,
+    entry.truncatedSource ? "truncatedSource=true" : undefined,
+    `hasInlineContextWindows=${entry.hasInlineContextWindows}`,
+    `hasFileGraph=${entry.hasFileGraph}`,
+    typeof entry.fileGraphVerifiedEdgeCount === "number"
+      ? `fileGraphVerifiedEdges=${entry.fileGraphVerifiedEdgeCount}`
+      : undefined,
+    typeof entry.fileGraphUncertainAnnotationCount === "number"
+      ? `fileGraphUncertainAnnotations=${entry.fileGraphUncertainAnnotationCount}`
+      : undefined,
+    `textHash=${entry.textHash}`,
+    "",
+    promoteFileGraphForPrompt(entry.text),
+  ]
+    .filter((line): line is string => typeof line === "string")
+    .join("\n");
+}
+
+function authorizedWorkingContextSessionKeys(input: {
+  store: Record<string, SessionEntry>;
+  currentSessionKey?: string | null;
+}): Set<string> {
+  const current = input.currentSessionKey?.trim();
+  const authorized = new Set<string>();
+  if (!current) {
+    return authorized;
+  }
+  const currentResolved = resolveSessionStoreEntry({
+    store: input.store,
+    sessionKey: current,
+  });
+  const currentKey = currentResolved.normalizedKey;
+  authorized.add(currentKey);
+  const currentEntry = currentResolved.existing;
+  for (const parent of [currentEntry?.spawnedBy, currentEntry?.parentSessionKey]) {
+    if (typeof parent === "string" && parent.trim()) {
+      authorized.add(normalizeStoreSessionKey(parent));
+    }
+  }
+  for (const [candidateKey, candidateEntry] of Object.entries(input.store)) {
+    if (!candidateEntry) {
+      continue;
+    }
+    const spawnedBy = candidateEntry.spawnedBy?.trim();
+    const parentSessionKey = candidateEntry.parentSessionKey?.trim();
+    if (
+      (spawnedBy && normalizeStoreSessionKey(spawnedBy) === currentKey) ||
+      (parentSessionKey && normalizeStoreSessionKey(parentSessionKey) === currentKey)
+    ) {
+      authorized.add(normalizeStoreSessionKey(candidateKey));
+    }
+  }
+  return authorized;
+}
+
+export function hydrateSessionWorkingContextResourceRef(input: {
+  ref: string;
+  storePath?: string | null;
+  storePaths?: readonly (string | null | undefined)[];
+  currentSessionKey?: string | null;
+  offsetBytes?: number;
+  maxBytes?: number;
+}): JsonValue | null {
+  const parsed = parseSessionWorkingContextResourceRef(input.ref);
+  if (!parsed) {
+    return null;
+  }
+  if (!parsed.sessionKey) {
+    return {
+      ref: input.ref,
+      status: "not_found",
+      failureKind: "resource_ref_invalid",
+      resourceKind: "openclaw.session_working_context",
+      body: null,
+      byteCount: 0,
+      truncated: false,
+      reasonCodes: ["resource_ref_invalid", "openclaw_resource_read_working_context_ref_invalid"],
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+    };
+  }
+  const storePaths = [
+    ...new Set(
+      [input.storePath, ...(input.storePaths ?? [])]
+        .map((entry) => entry?.trim())
+        .filter((entry): entry is string => Boolean(entry)),
+    ),
+  ];
+  if (storePaths.length === 0 || !input.currentSessionKey?.trim()) {
+    return {
+      ref: input.ref,
+      status: "unauthorized",
+      failureKind: "resource_ref_invalid",
+      resourceKind: "openclaw.session_working_context",
+      body: null,
+      byteCount: 0,
+      truncated: false,
+      reasonCodes: [
+        "resource_ref_invalid",
+        "openclaw_resource_read_working_context_authority_missing",
+      ],
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+    };
+  }
+  const loadedStores = storePaths
+    .map((storePath) => {
+      try {
+        return { storePath, store: loadSessionStore(storePath, { skipCache: true }) };
+      } catch {
+        return null;
+      }
+    })
+    .filter((entry): entry is { storePath: string; store: ReturnType<typeof loadSessionStore> } =>
+      Boolean(entry),
+    );
+  if (loadedStores.length === 0) {
+    return {
+      ref: input.ref,
+      status: "not_found",
+      failureKind: "resource_ref_invalid",
+      resourceKind: "openclaw.session_working_context",
+      body: null,
+      byteCount: 0,
+      truncated: false,
+      reasonCodes: ["resource_ref_invalid", "openclaw_resource_read_working_context_store_missing"],
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+    };
+  }
+  const authorized = new Set<string>();
+  for (const loaded of loadedStores) {
+    for (const sessionKey of authorizedWorkingContextSessionKeys({
+      store: loaded.store,
+      currentSessionKey: input.currentSessionKey,
+    })) {
+      authorized.add(sessionKey);
+    }
+  }
+  let targetResolved: ReturnType<typeof resolveSessionStoreEntry> | null = null;
+  for (const loaded of loadedStores) {
+    const resolved = resolveSessionStoreEntry({
+      store: loaded.store,
+      sessionKey: parsed.sessionKey,
+    });
+    if (resolved.existing) {
+      targetResolved = resolved;
+      break;
+    }
+    targetResolved ??= resolved;
+  }
+  if (!targetResolved) {
+    return {
+      ref: input.ref,
+      status: "not_found",
+      failureKind: "resource_ref_invalid",
+      resourceKind: "openclaw.session_working_context",
+      body: null,
+      byteCount: 0,
+      truncated: false,
+      reasonCodes: ["resource_ref_invalid", "openclaw_resource_read_working_context_not_found"],
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+    };
+  }
+  if (!authorized.has(targetResolved.normalizedKey)) {
+    return {
+      ref: input.ref,
+      status: "unauthorized",
+      failureKind: "resource_ref_invalid",
+      resourceKind: "openclaw.session_working_context",
+      body: null,
+      byteCount: 0,
+      truncated: false,
+      reasonCodes: [
+        "resource_ref_invalid",
+        "openclaw_resource_read_working_context_ref_outside_session_authority",
+      ],
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+    };
+  }
+  const workingContext = isSessionWorkingContextState(targetResolved.existing?.workingContext)
+    ? targetResolved.existing.workingContext
+    : null;
+  if (!workingContext) {
+    return {
+      ref: input.ref,
+      status: "not_found",
+      failureKind: "resource_ref_invalid",
+      resourceKind: "openclaw.session_working_context",
+      body: null,
+      byteCount: 0,
+      truncated: false,
+      reasonCodes: ["resource_ref_invalid", "openclaw_resource_read_working_context_not_found"],
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+    };
+  }
+  if (parsed.entryId) {
+    const entry = workingContext.activeEntries.find(
+      (candidate) => candidate.entryId === parsed.entryId,
+    );
+    if (!entry) {
+      return {
+        ref: input.ref,
+        status: "not_found",
+        failureKind: "resource_ref_invalid",
+        resourceKind: "openclaw.session_working_context_entry",
+        body: null,
+        byteCount: 0,
+        truncated: false,
+        reasonCodes: [
+          "resource_ref_invalid",
+          "openclaw_resource_read_working_context_entry_not_found",
+        ],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+      };
+    }
+    const window = boundedUtf8TextWindow({
+      text: workingContextEntryPromptText(entry),
+      offsetBytes: input.offsetBytes,
+      maxBytes: input.maxBytes,
+    });
+    return {
+      ref: input.ref,
+      status: "hydrated",
+      resourceKind: "openclaw.session_working_context_entry",
+      body: {
+        artifactKind: "openclaw_session_working_context_entry",
+        sessionKey: workingContext.sessionKey,
+        workingContextRef: buildSessionWorkingContextRef(workingContext.sessionKey),
+        workingContextEntryRef: buildSessionWorkingContextEntryRef({
+          sessionKey: workingContext.sessionKey,
+          entryId: entry.entryId,
+        }),
+        entry: compactWorkingContextEntry(entry),
+        text: window.text,
+        offsetBytes: window.offsetBytes,
+        returnedBytes: window.returnedBytes,
+        totalBytes: window.totalBytes,
+        nextOffsetBytes: window.nextOffsetBytes,
+        truncated: window.truncated,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+      },
+      byteCount: window.returnedBytes,
+      totalBytes: window.totalBytes,
+      truncated: window.truncated,
+      reasonCodes: ["openclaw_resource_read_hydrated_session_working_context_entry"],
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+    };
+  }
+  const promptText =
+    buildSessionWorkingContextPromptAddition(workingContext, {
+      maxChars:
+        SESSION_WORKING_CONTEXT_ENTRY_LIMIT * SESSION_WORKING_CONTEXT_TEXT_LIMIT +
+        SESSION_WORKING_CONTEXT_PROMPT_LIMIT,
+    }) ?? "";
+  const window = boundedUtf8TextWindow({
+    text: promptText,
+    offsetBytes: input.offsetBytes,
+    maxBytes: input.maxBytes,
+  });
+  return {
+    ref: input.ref,
+    status: "hydrated",
+    resourceKind: "openclaw.session_working_context",
+    body: {
+      artifactKind: "openclaw_session_working_context",
+      sessionKey: workingContext.sessionKey,
+      workingContextRef: buildSessionWorkingContextRef(workingContext.sessionKey),
+      updatedAt: workingContext.updatedAt,
+      activeEntryCount: workingContext.activeEntries.length,
+      activeEntryRefs: workingContext.activeEntries.map((entry) =>
+        buildSessionWorkingContextEntryRef({
+          sessionKey: workingContext.sessionKey,
+          entryId: entry.entryId,
+        }),
+      ),
+      entries: workingContext.activeEntries.map(compactWorkingContextEntry),
+      text: window.text,
+      offsetBytes: window.offsetBytes,
+      returnedBytes: window.returnedBytes,
+      totalBytes: window.totalBytes,
+      nextOffsetBytes: window.nextOffsetBytes,
+      truncated: window.truncated,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+    },
+    byteCount: window.returnedBytes,
+    totalBytes: window.totalBytes,
+    truncated: window.truncated,
+    reasonCodes: ["openclaw_resource_read_hydrated_session_working_context"],
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+  };
 }
 
 function normalizeWorkingContextText(value: string): string {
@@ -178,9 +584,9 @@ export function projectStructuredWorkingContextText(params: {
   }
   const maxChars = Math.max(1, Math.trunc(params.maxChars));
   const header = [
-    "Projected oversized child result:",
+    "Partial task result, truncated to parent-visible budget.",
     `originalBytes=${Buffer.byteLength(text, "utf8")}`,
-    "OpenClaw projected structured scout material into bounded parent-visible context. Use the projected windows/file_graph for the next decision; delegate a narrower scout if exact source is still missing.",
+    "Exact source windows below are usable for editing. File graph and refs below are usable as current task evidence.",
     "",
   ].join("\n");
   const bodyBudget = Math.max(1, maxChars - header.length - 160);
@@ -196,7 +602,7 @@ export function projectStructuredWorkingContextText(params: {
   if (projected.length <= maxChars) {
     return projected;
   }
-  const suffix = "\n[projected child result truncated to bounded parent context]";
+  const suffix = "\n[partial child result truncated to bounded parent context]";
   if (maxChars <= suffix.length) {
     return projected.slice(0, maxChars).trimEnd();
   }

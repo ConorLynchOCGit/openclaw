@@ -9,6 +9,7 @@ import {
   extractFileGraphSection,
   hasFileGraph,
   hasInlineContextWindows,
+  hydrateSessionWorkingContextResourceRef,
   projectStructuredWorkingContextText,
   readSessionWorkingContext,
   stripSessionWorkingContextPromptAddition,
@@ -83,7 +84,8 @@ describe("session working context", () => {
     });
 
     expect(projected).toBeTruthy();
-    expect(projected).toContain("Projected oversized child result");
+    expect(projected).toContain("Partial task result, truncated to parent-visible budget.");
+    expect(projected).toContain("Exact source windows below are usable for editing.");
     expect(projected).toContain("inline_context_windows");
     expect(projected).toContain("export const marker = true");
     expect(projected).toContain("file_graph");
@@ -159,6 +161,91 @@ describe("session working context", () => {
     expect(
       readSessionWorkingContext({ storePath, sessionKey })?.activeEntries[0]?.hasFileGraph,
     ).toBe(true);
+  });
+
+  it("hydrates authorized working context and entry refs for parent-child sessions", async () => {
+    const parentSessionKey = "agent:execution-coding:node:nrun_parent_context";
+    const childSessionKey = "agent:execution-context-scout:subagent:child-context";
+    const parentStorePath = await createStore({
+      [parentSessionKey]: { sessionId: "sess-parent", updatedAt: 1 },
+    });
+    const childStorePath = await createStore({
+      [childSessionKey]: {
+        sessionId: "sess-child",
+        updatedAt: 1,
+        spawnedBy: parentSessionKey,
+      },
+    });
+    const persisted = await updateSessionWorkingContext({
+      storePath: parentStorePath,
+      sessionKey: parentSessionKey,
+      now: 1234,
+      entry: {
+        kind: "context_window",
+        requestedAgentId: "execution-context-scout",
+        text: [
+          "Bounded source windows:",
+          "```ts",
+          "export const durableLedger = true;",
+          "```",
+          "",
+          "file_graph:",
+          "- src/context.ts -> src/editor.ts via evidence (evidence: src/context.ts:1-3)",
+        ].join("\n"),
+      },
+    });
+    expect(persisted.persisted).toBe(true);
+    if (!persisted.persisted) {
+      throw new Error("expected persisted working context");
+    }
+
+    const hydrated = hydrateSessionWorkingContextResourceRef({
+      ref: persisted.workingContextRef,
+      storePath: childStorePath,
+      storePaths: [parentStorePath],
+      currentSessionKey: childSessionKey,
+      maxBytes: 4_000,
+    }) as Record<string, unknown>;
+    expect(hydrated).toMatchObject({
+      status: "hydrated",
+      resourceKind: "openclaw.session_working_context",
+      reasonCodes: ["openclaw_resource_read_hydrated_session_working_context"],
+    });
+    const body = hydrated.body as Record<string, unknown>;
+    expect(body.text).toEqual(expect.stringContaining("OpenClaw Native Working Context"));
+    expect(body.text).toEqual(expect.stringContaining("file_graph"));
+    expect(body.activeEntryRefs).toEqual([persisted.workingContextEntryRef]);
+
+    const entryHydrated = hydrateSessionWorkingContextResourceRef({
+      ref: persisted.workingContextEntryRef,
+      storePath: childStorePath,
+      storePaths: [parentStorePath],
+      currentSessionKey: childSessionKey,
+      maxBytes: 4_000,
+    }) as Record<string, unknown>;
+    expect(entryHydrated).toMatchObject({
+      status: "hydrated",
+      resourceKind: "openclaw.session_working_context_entry",
+      reasonCodes: ["openclaw_resource_read_hydrated_session_working_context_entry"],
+    });
+    expect((entryHydrated.body as Record<string, unknown>).text).toEqual(
+      expect.stringContaining("durableLedger"),
+    );
+
+    const unauthorized = hydrateSessionWorkingContextResourceRef({
+      ref: persisted.workingContextRef,
+      storePath: childStorePath,
+      storePaths: [parentStorePath],
+      currentSessionKey: "agent:execution-coding:node:other",
+      maxBytes: 4_000,
+    }) as Record<string, unknown>;
+    expect(unauthorized).toMatchObject({
+      status: "unauthorized",
+      reasonCodes: [
+        "resource_ref_invalid",
+        "openclaw_resource_read_working_context_ref_outside_session_authority",
+      ],
+    });
   });
 
   it("stores file_graph claims without explicit evidence as uncertain annotations", async () => {

@@ -80,6 +80,13 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     profiles: ["coding"],
   },
   {
+    id: "lsp",
+    label: "lsp",
+    description: "Navigate code symbols and diagnostics",
+    sectionId: "fs",
+    profiles: ["coding"],
+  },
+  {
     id: "write",
     label: "write",
     description: "Create or overwrite files",
@@ -306,9 +313,10 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
   {
     id: "openclaw_resource_read",
     label: "openclaw_resource_read",
-    description: "Hydrate bounded Execution Platform resources for a native node session",
+    description:
+      "Hydrate exact OpenClaw resource refs, including managed-output refs from truncated tool output and compaction",
     sectionId: "nodes",
-    profiles: [],
+    profiles: ["coding"],
     includeInOpenClawGroup: true,
   },
   {

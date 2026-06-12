@@ -26,7 +26,7 @@ import type {
   ProviderSystemPromptContribution,
   ProviderSystemPromptSectionId,
 } from "./system-prompt-contribution.js";
-import type { PromptMode } from "./system-prompt.types.js";
+import type { PromptMode, PromptProfile } from "./system-prompt.types.js";
 
 /**
  * Controls which hardcoded sections are included in the system prompt.
@@ -478,6 +478,8 @@ export function buildAgentSystemPrompt(params: {
   ttsHint?: string;
   /** Controls which hardcoded sections to include. Defaults to "full". */
   promptMode?: PromptMode;
+  /** Controls role-specific prompt section composition. Defaults to "general_assistant". */
+  promptProfile?: PromptProfile;
   /** Whether ACP-specific routing guidance should be included. Defaults to true. */
   acpEnabled?: boolean;
   runtimeInfo?: {
@@ -658,6 +660,8 @@ export function buildAgentSystemPrompt(params: {
   const inlineButtonsEnabled = runtimeCapabilitiesLower.has("inlinebuttons");
   const messageChannelOptions = listDeliverableMessageChannels().join("|");
   const promptMode = params.promptMode ?? "full";
+  const promptProfile = params.promptProfile ?? "general_assistant";
+  const isExecutionWorkerProfile = promptProfile === "execution_worker";
   const isMinimal = promptMode === "minimal" || promptMode === "none";
   const sandboxContainerWorkspace = params.sandboxInfo?.containerWorkspaceDir?.trim();
   const sanitizedWorkspaceDir = sanitizeForPromptLiteral(params.workspaceDir);
@@ -704,10 +708,197 @@ export function buildAgentSystemPrompt(params: {
     readToolName,
   });
   const workspaceNotes = (params.workspaceNotes ?? []).map((note) => note.trim()).filter(Boolean);
+  const contextFiles = params.contextFiles ?? [];
+  const validContextFiles = contextFiles.filter(
+    (file) => typeof file.path === "string" && file.path.trim().length > 0,
+  );
+  const orderedContextFiles = sortContextFilesForPrompt(validContextFiles);
+  const stableContextFiles = orderedContextFiles.filter((file) => !isDynamicContextFile(file.path));
+  const dynamicContextFiles = orderedContextFiles.filter((file) => isDynamicContextFile(file.path));
 
   // For "none" mode, return just the basic identity line
   if (promptMode === "none") {
     return "You are a personal assistant running inside OpenClaw.";
+  }
+
+  if (isExecutionWorkerProfile) {
+    const executionWorkerLines = [
+      ...buildOverridablePromptSection({
+        override: providerSectionOverrides.identity,
+        fallback: [
+          "## Identity",
+          "",
+          "You are an implementation worker running inside OpenClaw. Your job is to make accepted source edits for this node, then finish through node_finish.",
+          "",
+        ],
+      }),
+      ...buildOverridablePromptSection({
+        override: providerStablePrefix,
+        fallback: [],
+      }),
+      "## Tooling",
+      "Tool availability (filtered by policy):",
+      "Tool names are case-sensitive. Call tools exactly as listed.",
+      toolLines.length > 0 ? toolLines.join("\n") : "- read\n- grep\n- find\n- edit",
+      "Tool descriptions define exact schemas and behavior. Keep the tool inventory factual; do not infer hidden tools.",
+      "",
+      ...buildOverridablePromptSection({
+        override: providerSectionOverrides.tool_call_style,
+        fallback: [
+          "## Tool Call Style",
+          "",
+          "Call tools directly when the next action is clear. Keep narration short.",
+          "Use direct read/grep/glob/lsp for exact local navigation. Use task only for open-ended exploration or validation.",
+          "After the target file, target symbol, patch shape, and validation signal are nameable, the next action should be edit. Do not take another context-acquisition turn unless one specific missing symbol, line window, or validation error blocks the edit.",
+          "",
+        ],
+      }),
+      ...buildOverridablePromptSection({
+        override: providerSectionOverrides.execution_contract,
+        fallback: [
+          "## Execution Contract",
+          "",
+          "Your only goal is accepted source edits for this node, then node_finish.",
+          "Start with a provisional patch hypothesis: target files, target symbols, patch shape, and validation signal.",
+          "Use source tools only to ground that hypothesis enough to edit.",
+          "For large TypeScript files, derive LSP queries from task names, file names, exported types, functions, interfaces, tests, and likely PascalCase/camelCase symbols.",
+          "Use lsp documentSymbol, workspaceSymbol, or file-scoped grep before walking read windows.",
+          "Path-only read of a large file floods context and jeopardizes completion. Use it at most once. After that, use LSP/query, file-scoped grep, or read with explicit offset and limit.",
+          "When target files, target symbols, patch shape, and validation signal are known, make the largest currently-grounded coherent vertical edit batch.",
+          "If only part is grounded, edit that part now and let validation drive repair.",
+          "Local uncertainty is not a blocker. Validation and edit failures are how you discover the next missing fact.",
+          "Once production code is visible, edit production first. Add or adjust tests after the first production edit unless the task is explicitly test-only.",
+          "Code is not changed until the edit tool runs. Use edit as the primary implementation action.",
+          "",
+        ],
+      }),
+      "## Safety",
+      "Stay inside allowed paths and authority overlays.",
+      "Do not mutate Work Queue lifecycle unless explicitly authorized and evidence-backed.",
+      "Do not store or expose secrets, raw prompts, raw provider logs, raw tool logs, raw command logs, or unbounded logs.",
+      "Respect tool policy. Finish only through node_finish.",
+      "",
+      ...skillsSection,
+      "## Workspace",
+      `Your working directory is: ${displayWorkspaceDir}`,
+      workspaceGuidance,
+      ...workspaceNotes,
+      "",
+      params.sandboxInfo?.enabled ? "## Sandbox" : "",
+      params.sandboxInfo?.enabled
+        ? [
+            "Tools execute in the sandbox/runtime described here.",
+            params.sandboxInfo.containerWorkspaceDir
+              ? `Sandbox container workdir: ${sanitizeForPromptLiteral(params.sandboxInfo.containerWorkspaceDir)}`
+              : "",
+            params.sandboxInfo.workspaceDir
+              ? `Sandbox host mount source: ${sanitizeForPromptLiteral(params.sandboxInfo.workspaceDir)}`
+              : "",
+            elevated?.allowed
+              ? `Current elevated level: ${elevated.defaultLevel}.`
+              : elevated
+                ? "Current elevated level: off (elevated exec unavailable)."
+                : "",
+          ]
+            .filter(Boolean)
+            .join("\n")
+        : "",
+      params.sandboxInfo?.enabled ? "" : "",
+      "## Workspace Files (injected)",
+      "These user-editable files are loaded by OpenClaw and included below in Project Context.",
+      "",
+      ...buildProjectContextSection({
+        files: stableContextFiles,
+        heading: "# Project Context",
+        dynamic: false,
+      }),
+      SYSTEM_PROMPT_CACHE_BOUNDARY,
+      ...buildProjectContextSection({
+        files: dynamicContextFiles,
+        heading: stableContextFiles.length > 0 ? "# Dynamic Project Context" : "# Project Context",
+        dynamic: true,
+      }),
+      extraSystemPrompt ? "## Node Work Order" : "",
+      extraSystemPrompt ? extraSystemPrompt : "",
+      extraSystemPrompt ? "" : "",
+      providerDynamicSuffix ? providerDynamicSuffix : "",
+      providerDynamicSuffix ? "" : "",
+      "## Runtime",
+      buildRuntimeLine(runtimeInfo, runtimeChannel, runtimeCapabilities, params.defaultThinkLevel),
+      `Reasoning: ${reasoningLevel} (hidden unless on/stream).`,
+    ];
+    return executionWorkerLines.filter(Boolean).join("\n");
+  }
+
+  if (
+    promptProfile === "execution_context_scout" ||
+    promptProfile === "execution_validation_scout" ||
+    promptProfile === "compaction"
+  ) {
+    const profileLabel =
+      promptProfile === "execution_context_scout"
+        ? "execution context scout"
+        : promptProfile === "execution_validation_scout"
+          ? "execution validation scout"
+          : "compaction worker";
+    const profileArticle = promptProfile === "compaction" ? "a" : "an";
+    const scopedLines = [
+      "## Identity",
+      `You are ${profileArticle} ${profileLabel} running inside OpenClaw. Follow the node work order and injected runtime docs; keep output bounded and evidence-focused.`,
+      "",
+      "## Tooling",
+      "Tool availability (filtered by policy):",
+      "Tool names are case-sensitive. Call tools exactly as listed.",
+      toolLines.length > 0 ? toolLines.join("\n") : "- read\n- grep\n- find",
+      "Tool descriptions define exact schemas and behavior.",
+      "",
+      "## Tool Call Style",
+      "Call tools directly when the next action is clear. Keep narration short.",
+      promptProfile === "execution_validation_scout"
+        ? "Use repo-native validation commands first; do not invent broad command archaeology when a focused command is available."
+        : "",
+      promptProfile === "execution_context_scout"
+        ? "Return concise source windows, coordinates, and findings. Do not mutate files."
+        : "",
+      promptProfile === "compaction"
+        ? "Preserve task objective, changed files, failing diagnostics, exact repair targets, and durable refs. Do not store raw prompts or unbounded logs."
+        : "",
+      "",
+      "## Safety",
+      "Stay inside allowed paths and authority overlays.",
+      "Do not store or expose secrets, raw prompts, raw provider logs, raw tool logs, raw command logs, or unbounded logs.",
+      "Respect tool policy.",
+      "",
+      ...skillsSection,
+      "## Workspace",
+      `Your working directory is: ${displayWorkspaceDir}`,
+      workspaceGuidance,
+      ...workspaceNotes,
+      "",
+      "## Workspace Files (injected)",
+      "These user-editable files are loaded by OpenClaw and included below in Project Context.",
+      "",
+      ...buildProjectContextSection({
+        files: stableContextFiles,
+        heading: "# Project Context",
+        dynamic: false,
+      }),
+      SYSTEM_PROMPT_CACHE_BOUNDARY,
+      ...buildProjectContextSection({
+        files: dynamicContextFiles,
+        heading: stableContextFiles.length > 0 ? "# Dynamic Project Context" : "# Project Context",
+        dynamic: true,
+      }),
+      extraSystemPrompt ? "## Node Work Order" : "",
+      extraSystemPrompt ? extraSystemPrompt : "",
+      extraSystemPrompt ? "" : "",
+      providerDynamicSuffix ? providerDynamicSuffix : "",
+      providerDynamicSuffix ? "" : "",
+      "## Runtime",
+      buildRuntimeLine(runtimeInfo, runtimeChannel, runtimeCapabilities, params.defaultThinkLevel),
+      `Reasoning: ${reasoningLevel} (hidden unless on/stream).`,
+    ];
+    return scopedLines.filter(Boolean).join("\n");
   }
 
   const lines = [
@@ -942,13 +1133,6 @@ export function buildAgentSystemPrompt(params: {
     lines.push("## Reasoning Format", reasoningHint, "");
   }
 
-  const contextFiles = params.contextFiles ?? [];
-  const validContextFiles = contextFiles.filter(
-    (file) => typeof file.path === "string" && file.path.trim().length > 0,
-  );
-  const orderedContextFiles = sortContextFilesForPrompt(validContextFiles);
-  const stableContextFiles = orderedContextFiles.filter((file) => !isDynamicContextFile(file.path));
-  const dynamicContextFiles = orderedContextFiles.filter((file) => isDynamicContextFile(file.path));
   lines.push(
     ...buildProjectContextSection({
       files: stableContextFiles,

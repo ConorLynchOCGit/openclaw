@@ -1,5 +1,7 @@
+import type { StreamFn } from "@mariozechner/pi-agent-core";
 import { describe, expect, it } from "vitest";
-import { resolveExtraParams } from "./pi-embedded-runner/extra-params.js";
+import type { ProviderRuntimeModel } from "../plugins/provider-runtime-model.types.js";
+import { applyExtraParamsToAgent, resolveExtraParams } from "./pi-embedded-runner/extra-params.js";
 
 describe("resolveExtraParams", () => {
   it("returns undefined with no model config", () => {
@@ -24,6 +26,32 @@ describe("resolveExtraParams", () => {
       text_verbosity: "low",
       openaiWsWarmup: true,
     });
+  });
+
+  it("adds explicit OpenRouter Kimi implementation-worker runtime defaults", () => {
+    const result = resolveExtraParams({
+      cfg: undefined,
+      provider: "openrouter",
+      modelId: "moonshotai/kimi-k2.6",
+      agentId: "execution-coding",
+    });
+
+    expect(result).toEqual({
+      parallel_tool_calls: true,
+      reasoning: { effort: "none", exclude: true },
+      thinking: { type: "disabled" },
+    });
+  });
+
+  it("does not add Kimi implementation-worker defaults to non-worker agents", () => {
+    const result = resolveExtraParams({
+      cfg: undefined,
+      provider: "openrouter",
+      modelId: "moonshotai/kimi-k2.6",
+      agentId: "execution-context-scout",
+    });
+
+    expect(result).toBeUndefined();
   });
 
   it("returns params for exact provider/model key", () => {
@@ -213,5 +241,51 @@ describe("resolveExtraParams", () => {
     });
 
     expect(result).toBeUndefined();
+  });
+
+  it("injects Kimi reasoning disable and parallel tool calls into OpenRouter payloads", async () => {
+    let capturedPayload: Record<string, unknown> | null = null;
+    const model = {
+      provider: "openrouter",
+      id: "moonshotai/kimi-k2.6",
+      api: "anthropic",
+    } as ProviderRuntimeModel;
+    const agent: { streamFn: StreamFn } = {
+      streamFn: ((_model, _context, options) => {
+        options?.onPayload?.({}, _model);
+        return {
+          async result() {
+            return {};
+          },
+          [Symbol.asyncIterator]() {
+            return (async function* () {})();
+          },
+        } as unknown as ReturnType<StreamFn>;
+      }) as StreamFn,
+    };
+    applyExtraParamsToAgent(
+      agent,
+      undefined,
+      "openrouter",
+      "moonshotai/kimi-k2.6",
+      undefined,
+      undefined,
+      "execution-coding",
+      undefined,
+      model,
+    );
+
+    const stream = agent.streamFn(model, {} as never, {
+      onPayload: (payload) => {
+        capturedPayload = payload as Record<string, unknown>;
+      },
+    }) as unknown as { result(): Promise<unknown> };
+    await stream.result();
+
+    expect(capturedPayload).toMatchObject({
+      parallel_tool_calls: true,
+      reasoning: { effort: "none", exclude: true },
+      thinking: { type: "disabled" },
+    });
   });
 });

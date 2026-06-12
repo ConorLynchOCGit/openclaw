@@ -31,7 +31,7 @@ describe("openclaw-tools update_plan gating", () => {
         config,
       }),
     ).toBe(true);
-    expect(createUpdatePlanTool().displaySummary).toBe("Track a short structured work plan.");
+    expect(createUpdatePlanTool().displaySummary).toBe("Track lightweight todo state.");
   });
 
   it("auto-enables update_plan for unconfigured GPT-5 openai runs", () => {

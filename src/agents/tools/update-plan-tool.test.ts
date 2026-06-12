@@ -30,40 +30,115 @@ describe("update_plan tool", () => {
     return storePath;
   }
 
-  it("returns a compact success payload", async () => {
+  it("describes todo as lightweight status, not workflow authority", () => {
+    const tool = createUpdatePlanTool();
+    const parameterSchema = JSON.stringify(tool.parameters);
+
+    expect(tool.description).toContain("lightweight todo board");
+    expect(tool.description).toContain("distinct conceptual steps");
+    expect(tool.description).toContain("Todo is status only");
+    expect(tool.description).not.toContain("execution-node sessions");
+    expect(tool.description).not.toContain("Source lookup");
+    expect(tool.description).not.toContain("read files");
+    expect(tool.displaySummary).toContain("lightweight todo state");
+    expect(parameterSchema).toContain("Brief task description");
+    expect(parameterSchema).not.toContain("Source lookup");
+    expect(parameterSchema).not.toContain("avoid read files");
+  });
+
+  it("returns a boring JSON todo payload", async () => {
     const tool = createUpdatePlanTool();
     const result = await tool.execute("call-1", {
       explanation: "Started work",
       plan: [
-        { step: "Inspect harness", status: "completed" },
+        { step: "Patch harness", status: "completed" },
         { step: "Add tool", status: "in_progress" },
         { step: "Run tests", status: "pending" },
       ],
     });
 
-    expect(result.content).toEqual([]);
+    expect(result.content).toEqual([
+      {
+        type: "text",
+        text: JSON.stringify(
+          [
+            { content: "Patch harness", status: "completed", priority: "normal" },
+            { content: "Add tool", status: "in_progress", priority: "normal" },
+            { content: "Run tests", status: "pending", priority: "normal" },
+          ],
+          null,
+          2,
+        ),
+      },
+    ]);
     expect(result.details).toEqual({
       status: "updated",
       explanation: "Started work",
       plan: [
-        { step: "Inspect harness", status: "completed" },
+        { step: "Patch harness", status: "completed" },
         { step: "Add tool", status: "in_progress" },
         { step: "Run tests", status: "pending" },
       ],
     });
   });
 
-  it("rejects multiple in-progress steps", async () => {
+  it("records submitted statuses without phase validation", async () => {
     const tool = createUpdatePlanTool();
 
-    await expect(
-      tool.execute("call-1", {
-        plan: [
-          { step: "One", status: "in_progress" },
-          { step: "Two", status: "in_progress" },
-        ],
-      }),
-    ).rejects.toThrow("plan can contain at most one in_progress step");
+    const result = await tool.execute("call-1", {
+      plan: [
+        { step: "One", status: "in_progress" },
+        { step: "Two", status: "in_progress" },
+        { step: "Three", status: "completed" },
+      ],
+    });
+
+    expect(result.details).toEqual({
+      status: "updated",
+      plan: [
+        { step: "One", status: "in_progress" },
+        { step: "Two", status: "in_progress" },
+        { step: "Three", status: "completed" },
+      ],
+    });
+  });
+
+  it("does not add a source-activity correction to model-visible todo output", async () => {
+    const tool = createUpdatePlanTool();
+    const result = await tool.execute("call-lookup-todo", {
+      plan: [
+        {
+          step: "Read existing work-queue read model and event substrate files",
+          status: "in_progress",
+        },
+        { step: "Implement event-delta projection", status: "pending" },
+      ],
+    });
+
+    const text = result.content?.[0]?.type === "text" ? result.content[0].text : "";
+    expect(text).toContain("Read existing work-queue read model and event substrate files");
+    expect(text).not.toContain("inProgress:");
+    expect(text).not.toContain("<system-reminder>");
+    expect(text).not.toContain("Todo should track the edit deliverable");
+    expect(text).not.toContain("medium-confidence edit");
+  });
+
+  it("keeps acquisition-shaped todo text as plain status instead of instruction", async () => {
+    const tool = createUpdatePlanTool();
+    const result = await tool.execute("call-failed-proof-todo", {
+      plan: [
+        {
+          step: "Explore existing Work Queue read model, event store, and repository surfaces",
+          status: "in_progress",
+        },
+        { step: "Patch delta projection", status: "pending" },
+      ],
+    });
+
+    const text = result.content?.[0]?.type === "text" ? result.content[0].text : "";
+    expect(text).toContain("Explore existing Work Queue read model");
+    expect(text).not.toContain("<system-reminder>");
+    expect(text).not.toContain("Todo should track the edit deliverable");
   });
 
   it("ignores extra per-step fields instead of rejecting the plan", async () => {
@@ -75,7 +150,19 @@ describe("update_plan tool", () => {
       ],
     });
 
-    expect(result.content).toEqual([]);
+    expect(result.content).toEqual([
+      {
+        type: "text",
+        text: JSON.stringify(
+          [
+            { content: "Inspect harness", status: "completed", priority: "normal" },
+            { content: "Run tests", status: "pending", priority: "normal" },
+          ],
+          null,
+          2,
+        ),
+      },
+    ]);
     expect(result.details).toEqual({
       status: "updated",
       plan: [

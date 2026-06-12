@@ -1,4 +1,4 @@
-import type { AgentTool } from "@mariozechner/pi-agent-core";
+import type { AgentTool, AgentToolResult } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import { describe, expect, it } from "vitest";
 import type { ClientToolDefinition } from "./pi-embedded-runner/run/params.js";
@@ -13,6 +13,7 @@ import {
 
 type ToolExecute = ReturnType<typeof toToolDefinitions>[number]["execute"];
 const extensionContext = {} as Parameters<ToolExecute>[4];
+type RuntimeErrorMarkedToolResult = AgentToolResult<unknown> & { isError?: boolean };
 
 async function executeThrowingTool(name: string, callId: string) {
   const tool = {
@@ -46,6 +47,7 @@ describe("pi tool definition adapter", () => {
   it("wraps tool errors into a tool result", async () => {
     const result = await executeThrowingTool("boom", "call1");
 
+    expect((result as RuntimeErrorMarkedToolResult).isError).toBe(true);
     expect(result.details).toMatchObject({
       status: "error",
       tool: "boom",
@@ -104,6 +106,26 @@ describe("pi tool definition adapter", () => {
     });
     expect(result.content[0]).toMatchObject({ type: "text" });
     expect((result.content[0] as { text?: string }).text).toContain('"count"');
+  });
+
+  it("marks non-standard status:error tool results as errors", async () => {
+    const tool = {
+      name: "edit",
+      label: "Edit",
+      description: "returns status error",
+      parameters: Type.Object({}),
+      execute: (async () => ({
+        status: "error",
+        error: "exact replacement failed",
+      })) as unknown as AgentTool["execute"],
+    } satisfies AgentTool;
+
+    const result = await executeTool(tool, "call-status-error");
+    expect((result as RuntimeErrorMarkedToolResult).isError).toBe(true);
+    expect(result.details).toMatchObject({
+      status: "error",
+      error: "exact replacement failed",
+    });
   });
 });
 

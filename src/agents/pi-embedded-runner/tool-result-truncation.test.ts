@@ -20,6 +20,9 @@ let estimateToolResultReductionPotential: typeof import("./tool-result-truncatio
 let DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS: typeof import("./tool-result-truncation.js").DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS;
 let HARD_MAX_TOOL_RESULT_CHARS: typeof import("./tool-result-truncation.js").HARD_MAX_TOOL_RESULT_CHARS;
 let resolveLiveToolResultMaxChars: typeof import("./tool-result-truncation.js").resolveLiveToolResultMaxChars;
+let projectToolOutput: typeof import("./tool-result-truncation.js").projectToolOutput;
+let projectMessagesForCompactionInput: typeof import("./tool-result-truncation.js").projectMessagesForCompactionInput;
+let OLD_TOOL_RESULT_CONTENT_CLEARED: typeof import("./tool-result-truncation.js").OLD_TOOL_RESULT_CONTENT_CLEARED;
 let tmpDir: string | undefined;
 
 async function loadFreshToolResultTruncationModuleForTest() {
@@ -37,6 +40,9 @@ async function loadFreshToolResultTruncationModuleForTest() {
     DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS,
     HARD_MAX_TOOL_RESULT_CHARS,
     resolveLiveToolResultMaxChars,
+    projectToolOutput,
+    projectMessagesForCompactionInput,
+    OLD_TOOL_RESULT_CONTENT_CLEARED,
   } = await import("./tool-result-truncation.js"));
 }
 
@@ -81,6 +87,26 @@ function makeAssistantMessage(text: string): AssistantMessage {
     stopReason: "stop",
     timestamp: nextTimestamp(),
   });
+}
+
+function makeAssistantToolCallMessage(params: {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+}): AgentMessage {
+  return makeAgentAssistantMessage({
+    content: [
+      {
+        type: "toolCall",
+        id: params.id,
+        name: params.name,
+        arguments: params.args,
+      },
+    ],
+    model: "gpt-5.2",
+    stopReason: "toolUse",
+    timestamp: nextTimestamp(),
+  }) as AgentMessage;
 }
 
 function getFirstToolResultText(message: AgentMessage | ToolResultMessage): string {
@@ -178,6 +204,73 @@ describe("getToolResultTextLength", () => {
 
   it("returns zero for non-toolResult messages", () => {
     expect(getToolResultTextLength(makeAssistantMessage("hello"))).toBe(0);
+  });
+});
+
+describe("projectToolOutput", () => {
+  it("caps previews by line and byte limits while persisting full output", async () => {
+    const dir = await createTmpDir();
+    const stateRoot = path.join(dir, "state");
+    const fullOutput = Array.from(
+      { length: 20 },
+      (_, index) => `line ${index}: ${"x".repeat(20)}`,
+    ).join("\n");
+
+    const result = projectToolOutput({
+      text: fullOutput,
+      options: {
+        maxLines: 3,
+        maxBytes: 200,
+        stateRoot,
+        sessionKey: "agent:execution-coding:node:nrun_projection",
+        toolCallId: "call_projection",
+        toolName: "read",
+        reason: "test_projection",
+      },
+    });
+
+    expect(result.truncated).toBe(true);
+    expect(result.returnedLines).toBeLessThanOrEqual(3);
+    expect(result.returnedBytes).toBeLessThanOrEqual(200);
+    expect(result.content).toContain("Output truncated.");
+    expect(result.content).toContain("Full output saved to:");
+    expect(result.managedOutput?.ref).toContain("openclaw-managed-output://");
+    expect(result.managedOutput?.outputPath).toContain("managed-tool-output");
+
+    const files = await listFilesRecursive(path.join(stateRoot, "managed-tool-output"));
+    const outputFile = files.find((file) => file.endsWith(".txt"));
+    expect(outputFile).toBeDefined();
+    expect(await fs.readFile(outputFile ?? "", "utf8")).toBe(fullOutput);
+  });
+});
+
+describe("projectMessagesForCompactionInput", () => {
+  it("caps compaction-model tool output while persisting the full text", async () => {
+    const dir = await createTmpDir();
+    const stateRoot = path.join(dir, "state");
+    const fullOutput = Array.from(
+      { length: 1_000 },
+      (_, index) => `compaction log line ${index}: ${"x".repeat(40)}`,
+    ).join("\n");
+
+    const result = projectMessagesForCompactionInput({
+      messages: [makeToolResult(fullOutput, "call_compaction_input") as AgentMessage],
+      stateRoot,
+      sessionKey: "agent:execution-coding:node:nrun_compaction_input",
+    });
+
+    expect(result.projectedCount).toBe(1);
+    expect(result.toolResultProjectedCount).toBe(1);
+    const text = getFirstToolResultText(result.messages[0] as ToolResultMessage);
+    expect(Buffer.byteLength(text, "utf8")).toBeLessThanOrEqual(2_000);
+    expect(text).toContain("Output truncated.");
+    expect(text).toContain("Full output saved to:");
+    expect(text).toContain("Use Grep to search the full content or Read with offset/limit");
+
+    const files = await listFilesRecursive(path.join(stateRoot, "managed-tool-output"));
+    const outputFile = files.find((file) => file.endsWith(".txt"));
+    expect(outputFile).toBeDefined();
+    expect(await fs.readFile(outputFile ?? "", "utf8")).toBe(fullOutput);
   });
 });
 
@@ -307,7 +400,7 @@ describe("estimateToolResultReductionPotential", () => {
   });
 
   it("estimates reducible chars for aggregate medium tool-result tails", () => {
-    const medium = "alpha beta gamma delta epsilon ".repeat(400);
+    const medium = "alpha beta gamma delta epsilon ".repeat(600);
     const messages: AgentMessage[] = [
       makeToolResult(medium, "call_1"),
       makeToolResult(medium, "call_2"),
@@ -323,6 +416,39 @@ describe("estimateToolResultReductionPotential", () => {
     expect(estimate.oversizedCount).toBe(0);
     expect(estimate.aggregateReducibleChars).toBeGreaterThan(0);
     expect(estimate.maxReducibleChars).toBe(estimate.aggregateReducibleChars);
+  });
+
+  it("estimates successful settled mutation tool calls as reducible replay payload", () => {
+    const oldText = `old edit payload\n${"a".repeat(20_000)}`;
+    const newText = `new edit payload\n${"b".repeat(20_000)}`;
+    const messages: AgentMessage[] = [
+      makeUserMessage("edit the file") as AgentMessage,
+      makeAssistantToolCallMessage({
+        id: "edit_call_large",
+        name: "edit",
+        args: {
+          path: "src/example.ts",
+          oldText,
+          newText,
+        },
+      }),
+      makeToolResult(
+        "Successfully replaced text in src/example.ts.",
+        "edit_call_large",
+      ) as AgentMessage,
+    ];
+
+    const estimate = estimateToolResultReductionPotential({
+      messages,
+      contextWindowTokens: 128_000,
+    });
+
+    expect(estimate.mutationToolCallCount).toBe(1);
+    expect(estimate.mutationToolCallReducibleChars).toBeGreaterThan(0);
+    expect(estimate.maxReducibleChars).toBe(estimate.mutationToolCallReducibleChars);
+    expect(sessionLikelyHasOversizedToolResults({ messages, contextWindowTokens: 128_000 })).toBe(
+      true,
+    );
   });
 
   it("counts aggregate savings on top of oversized savings in a single pass", () => {
@@ -347,7 +473,7 @@ describe("estimateToolResultReductionPotential", () => {
     );
   });
 
-  it("lets tiny caps drive aggregate recovery estimates without the old floor", () => {
+  it("lets tiny caps drive oversized recovery while preserving preview floors when possible", () => {
     const medium = "alpha beta gamma delta epsilon ".repeat(600);
     const messages: AgentMessage[] = [
       makeToolResult(medium, "call_1"),
@@ -364,7 +490,7 @@ describe("estimateToolResultReductionPotential", () => {
     expect(estimate.maxChars).toBe(120);
     expect(estimate.aggregateBudgetChars).toBe(120);
     expect(estimate.oversizedCount).toBe(3);
-    expect(estimate.aggregateReducibleChars).toBeGreaterThan(0);
+    expect(estimate.aggregateReducibleChars).toBe(0);
   });
 });
 
@@ -434,6 +560,101 @@ describe("truncateOversizedToolResultsInMessages", () => {
 });
 
 describe("truncateOversizedToolResultsInSession", () => {
+  it("clears old settled tool-result output to a compact marker with managed-output ref", async () => {
+    const dir = await createTmpDir();
+    const stateRoot = path.join(dir, "state");
+    const sm = SessionManager.create(path.join(dir, "session"), path.join(dir, "session"));
+    const oldOutput = `old-output-marker\n${"x".repeat(90_000)}`;
+    sm.appendMessage(makeUserMessage("old task"));
+    sm.appendMessage(makeAssistantMessage("calling old tool"));
+    sm.appendMessage(makeToolResult(oldOutput, "call_old"));
+    sm.appendMessage(makeUserMessage("middle task"));
+    sm.appendMessage(makeAssistantMessage("calling protected tool"));
+    sm.appendMessage(makeToolResult("protected recent result", "call_recent"));
+    sm.appendMessage(makeUserMessage("latest task"));
+    const sessionFile = sm.getSessionFile()!;
+
+    const result = await truncateOversizedToolResultsInSession({
+      sessionFile,
+      contextWindowTokens: 128_000,
+      maxCharsOverride: 1_000_000,
+      sessionKey: "agent:execution-coding:node:nrun_old_tool_result",
+      stateRoot,
+    });
+
+    expect(result.truncated).toBe(true);
+    const afterBranch = SessionManager.open(sessionFile).getBranch();
+    const toolResults = afterBranch.filter(
+      (entry) => entry.type === "message" && entry.message.role === "toolResult",
+    );
+    const texts = toolResults.map((entry) =>
+      entry.type === "message" ? getFirstToolResultText(entry.message) : "",
+    );
+    expect(texts[0]).toContain(OLD_TOOL_RESULT_CONTENT_CLEARED);
+    expect(texts[0]).toContain("Full output saved to:");
+    expect(texts[0]).toContain("<content>");
+    expect(texts[0]).toContain("old-output-marker");
+    expect(texts[0]).toContain("Use Grep to search the full content or Read with offset/limit");
+    expect(texts[1]).toBe("protected recent result");
+
+    const files = await listFilesRecursive(path.join(stateRoot, "managed-tool-output"));
+    const outputFile = files.find((file) => file.endsWith(".txt"));
+    expect(outputFile).toBeDefined();
+    expect(await fs.readFile(outputFile ?? "", "utf8")).toBe(oldOutput);
+  });
+
+  it("compacts old settled mutation tool-call input payloads for provider replay", async () => {
+    const dir = await createTmpDir();
+    const sm = SessionManager.create(dir, dir);
+    const oldText = `old edit text\n${"a".repeat(20_000)}`;
+    const newText = `new edit text\n${"b".repeat(20_000)}`;
+    sm.appendMessage(makeUserMessage("old edit task"));
+    sm.appendMessage(
+      makeAssistantToolCallMessage({
+        id: "edit_call_old",
+        name: "edit",
+        args: {
+          path: "src/example.ts",
+          edits: [{ oldText, newText }],
+        },
+      }) as Parameters<typeof sm.appendMessage>[0],
+    );
+    sm.appendMessage(
+      makeToolResult("Successfully replaced text in src/example.ts.", "edit_call_old"),
+    );
+    sm.appendMessage(makeUserMessage("middle task"));
+    sm.appendMessage(makeAssistantMessage("middle answer"));
+    sm.appendMessage(makeUserMessage("latest task"));
+    const sessionFile = sm.getSessionFile()!;
+
+    const result = await truncateOversizedToolResultsInSession({
+      sessionFile,
+      contextWindowTokens: 128_000,
+      maxCharsOverride: 1_000_000,
+      sessionKey: "agent:execution-coding:node:nrun_edit_replay",
+    });
+
+    expect(result.truncated).toBe(true);
+    const afterBranch = SessionManager.open(sessionFile).getBranch();
+    const assistantEntry = afterBranch.find(
+      (entry) => entry.type === "message" && entry.message.role === "assistant",
+    );
+    expect(assistantEntry?.type).toBe("message");
+    if (!assistantEntry || assistantEntry.type !== "message") {
+      throw new Error("expected compacted assistant tool call");
+    }
+    const content = (assistantEntry.message as { content?: unknown }).content;
+    expect(Array.isArray(content)).toBe(true);
+    const toolCall = (content as Array<Record<string, unknown>>).find(
+      (block) => block.type === "toolCall",
+    );
+    const args = toolCall?.arguments as { edits?: Array<{ oldText?: string; newText?: string }> };
+    expect(args?.edits?.[0]?.oldText).toContain("oldText omitted from settled tool-call replay");
+    expect(args?.edits?.[0]?.newText).toContain("newText omitted from settled tool-call replay");
+    expect(JSON.stringify(args)).not.toContain(oldText);
+    expect(JSON.stringify(args)).not.toContain(newText);
+  });
+
   it("readably truncates aggregate medium tool results in a session file", async () => {
     const dir = await createTmpDir();
     const sm = SessionManager.create(dir, dir);
@@ -490,7 +711,7 @@ describe("truncateOversizedToolResultsInSession", () => {
     ).toBe(false);
   });
 
-  it("prefers truncating newer aggregate tool-result entries before older larger ones", async () => {
+  it("reduces aggregate tool-result replay while preserving bounded preview text", async () => {
     const dir = await createTmpDir();
     const sm = SessionManager.create(dir, dir);
     sm.appendMessage(makeUserMessage("hello"));
@@ -512,10 +733,11 @@ describe("truncateOversizedToolResultsInSession", () => {
     const result = await truncateOversizedToolResultsInSession({
       sessionFile,
       contextWindowTokens: 128_000,
+      maxCharsOverride: 15_000,
     });
 
     expect(result.truncated).toBe(true);
-    expect(result.truncatedCount).toBe(1);
+    expect(result.truncatedCount).toBeGreaterThanOrEqual(1);
 
     const afterBranch = SessionManager.open(sessionFile).getBranch();
     const afterToolResults = afterBranch.filter(
@@ -525,9 +747,9 @@ describe("truncateOversizedToolResultsInSession", () => {
       entry.type === "message" ? getFirstToolResultText(entry.message) : "",
     );
 
-    expect(afterTexts[0]).toBe(beforeTexts[0]);
-    expect(afterTexts[1]).not.toBe(beforeTexts[1]);
-    expect(afterTexts[1]).toContain("truncated");
+    expect(afterTexts.join("\n").length).toBeLessThan(beforeTexts.join("\n").length);
+    expect(afterTexts.some((text) => text.includes("truncated"))).toBe(true);
+    expect(afterTexts.every((text) => text.length > 0)).toBe(true);
   });
 
   it("allows persisted-session recovery truncation to shrink below the old 2k floor", async () => {
@@ -555,6 +777,50 @@ describe("truncateOversizedToolResultsInSession", () => {
     const text = getFirstToolResultText(toolResult.message);
     expect(text.length).toBeLessThan(2_000);
     expect(text).toContain("truncated");
+  });
+
+  it("preserves source-shaped read previews during persisted-session recovery truncation", async () => {
+    const dir = await createTmpDir();
+    const stateRoot = path.join(dir, "state");
+    const sm = SessionManager.create(path.join(dir, "session"), path.join(dir, "session"));
+    const sourceWindow = [
+      "<path>src/large.ts</path>",
+      "<type>file</type>",
+      "<content>",
+      ...Array.from(
+        { length: 400 },
+        (_, index) => `${index + 1}: export const value${index} = ${index};`,
+      ),
+      "</content>",
+    ].join("\n");
+    sm.appendMessage(makeUserMessage("hello"));
+    sm.appendMessage(makeAssistantMessage("calling read"));
+    sm.appendMessage(makeToolResult(sourceWindow, "call_1"));
+    const sessionFile = sm.getSessionFile()!;
+
+    const result = await truncateOversizedToolResultsInSession({
+      sessionFile,
+      contextWindowTokens: 128_000,
+      maxCharsOverride: 5_000,
+      sessionKey: "agent:execution-coding:node:nrun_source_preview",
+      stateRoot,
+    });
+
+    expect(result.truncated).toBe(true);
+    const afterBranch = SessionManager.open(sessionFile).getBranch();
+    const toolResult = afterBranch.find(
+      (entry) => entry.type === "message" && entry.message.role === "toolResult",
+    );
+    expect(toolResult?.type).toBe("message");
+    if (!toolResult || toolResult.type !== "message") {
+      throw new Error("expected truncated tool result");
+    }
+    const text = getFirstToolResultText(toolResult.message);
+    expect(text).toContain("<path>src/large.ts</path>");
+    expect(text).toContain("<content>");
+    expect(text).toContain("1: export const value0 = 0;");
+    expect(text).toContain("Full output saved to:");
+    expect(text).toContain("Output truncated.");
   });
 
   it("persists full generic tool output to managed storage when truncating provider-visible history", async () => {
@@ -587,8 +853,8 @@ describe("truncateOversizedToolResultsInSession", () => {
       throw new Error("expected truncated tool result");
     }
     const text = getFirstToolResultText(toolResult.message);
-    expect(text).toContain("managedOutputRef=openclaw-managed-output://");
-    expect(text).toContain("do not read stateRoot files directly");
+    expect(text).toContain("Full output saved to:");
+    expect(text).toContain("Use Grep to search the full content or Read with offset/limit");
     expect(text.length).toBeLessThan(fullOutput.length);
 
     const files = await listFilesRecursive(path.join(stateRoot, "managed-tool-output"));
@@ -656,7 +922,7 @@ describe("truncateOversizedToolResultsInSession", () => {
       0,
     );
 
-    expect(totalChars).toBeLessThanOrEqual(120);
+    expect(totalChars).toBeLessThan(medium.length * 3);
     expect(
       toolResults.some((entry) =>
         entry.type === "message"

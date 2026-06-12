@@ -50,6 +50,11 @@ export type ContextEngineInfo = {
   version?: string;
   /** True when the engine manages its own compaction lifecycle. */
   ownsCompaction?: boolean;
+  /** Native ownership policy for context summarization and pressure decisions. */
+  contextPolicy?: {
+    summarization?: "engine" | "openclaw";
+    pressure?: "openclaw" | "engine";
+  };
   /**
    * Controls how turn-triggered maintenance should be executed.
    *

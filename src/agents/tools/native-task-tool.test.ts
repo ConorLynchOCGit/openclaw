@@ -71,7 +71,7 @@ const FORBIDDEN_CHILD_TOOLS = [
 function childAdmissionContract(agentId: string) {
   return {
     requiredCanonicalDocNames: REQUIRED_CHILD_DOCS,
-    requiredSkillNames: [agentId],
+    requiredSkillNames: [],
     requiredToolNames: childToolNames(agentId),
     forbiddenToolNames: FORBIDDEN_CHILD_TOOLS,
   };
@@ -210,19 +210,23 @@ describe("native task tool", () => {
     expect(resolveParentVisibleChildResultMaxChars(300)).toBe(1);
   });
 
-  it("tells the parent to request inline source windows and file graph from context scout", () => {
+  it("describes task as child-agent delegation, not exact local lookup", () => {
     const tool = createNativeTaskTool({
       allowedAgentIds: ["execution-context-scout", "execution-validation-scout"],
       runChildTask: vi.fn(),
     });
 
-    expect(tool.description).toContain("bounded inline source windows");
-    expect(tool.description).toContain("file_graph");
-    expect(tool.description).toContain("edit_start_recommendation");
-    expect(tool.description).toContain("high_signal_refs");
-    expect(tool.description).toContain("likely_edit_points");
-    expect(tool.description).toContain("exact follow-up asks");
-    expect(tool.description).toContain("minimum edit-start package");
+    expect(tool.description).toContain("Allowed child agents");
+    expect(tool.description).toContain(
+      "open-ended source, caller, test, or architecture discovery",
+    );
+    expect(tool.description).toContain("validation command selection");
+    expect(tool.description).toContain("Do not use task for a specific file path");
+    expect(tool.description).toContain("use read, grep, or glob for that");
+    expect(tool.description).not.toContain("symbol_windows");
+    expect(tool.description).not.toContain("missing_windows");
+    expect(tool.description).not.toContain("edit_start_recommendation");
+    expect(tool.description).not.toContain("minimum exact source windows");
   });
 
   it("requires an explicit allowed child agent id before running a child task", async () => {
@@ -303,14 +307,8 @@ describe("native task tool", () => {
         expectsCompletionMessage: true,
         requiredProviderContextAdmission: expect.objectContaining({
           workspaceFileNames: sourceBackedChildCanonicalDocPaths("execution-context-scout"),
-          skillNames: ["execution-context-scout"],
-          skillSources: [
-            expect.objectContaining({
-              name: "execution-context-scout",
-              path: path.join(process.cwd(), "skills", "execution-context-scout", "SKILL.md"),
-              sourceHash: expect.any(String),
-            }),
-          ],
+          skillNames: [],
+          skillSources: [],
           rejectTruncatedWorkspaceFiles: true,
         }),
       }),
@@ -329,12 +327,8 @@ describe("native task tool", () => {
         parentVisibleResultMaxChars: 12_000,
         requiredBootstrapAdmissionSources: expect.objectContaining({
           requiredCanonicalDocPaths: sourceBackedChildCanonicalDocPaths("execution-context-scout"),
-          requiredSkillSources: [
-            expect.objectContaining({
-              name: "execution-context-scout",
-              sourceHash: expect.any(String),
-            }),
-          ],
+          requiredSkillNames: [],
+          requiredSkillSources: [],
         }),
         readChildSystemPromptReport: undefined,
       }),
@@ -352,12 +346,10 @@ describe("native task tool", () => {
     });
     expect(readContentText(result)).toContain("Bounded excerpt");
     expect(readContentText(result)).toContain("native-task-tool.ts");
-    expect(readContentText(result)).toContain(
-      "Parent decision required: update todo, then choose one: enough for minimal edit / need exact follow-up / need map pass / blocked.",
-    );
-    expect(readContentText(result)).toContain(
-      "If enough, make the smallest useful edit from the returned bounded source windows.",
-    );
+    expect(readContentText(result)).toContain("<system-reminder>");
+    expect(readContentText(result)).toContain("If you can name the target files and patch shape");
+    expect(readContentText(result)).not.toContain("Use read/grep/glob only for one named missing");
+    expect(readContentText(result)).not.toContain("NEXT PARENT TOOL CALL");
     expect(readContentText(result)).not.toContain('"resultText"');
     expect(details).not.toHaveProperty("resultText");
   });
@@ -443,7 +435,7 @@ describe("native task tool", () => {
     const text = readContentText(result);
     expect(text).toContain("did not produce parent-visible edit context");
     expect(text).toContain("Do not probe gateway-status");
-    expect(text).toContain("Do not use openclaw_resource_read for file:// paths");
+    expect(text).not.toContain("openclaw_resource_read");
     expect(readDetails(result)).toMatchObject({
       status: "error",
       requestedAgentId: "execution-context-scout",
@@ -485,6 +477,46 @@ describe("native task tool", () => {
       requestedAgentId: "execution-validation-scout",
       childStartFailureKind: "child_provider_response_timeout",
       resultDeliveredToParentContext: false,
+      nativeChildSessionRuntime: true,
+    });
+  });
+
+  it("surfaces partial child context returned after a progress timeout", async () => {
+    const runChildTask = vi.fn(
+      async (): Promise<NativeTaskForegroundResult> => ({
+        status: "completed",
+        foreground: true,
+        childSessionKey: "agent:execution-context-scout:subagent:child-partial",
+        runId: "run-child-partial",
+        waitStatus: "ok",
+        resultText:
+          "Partial child result delivered after child progress timeout.\n\nsymbol_windows:\n- path: src/example.ts lines 10-30",
+        resultDeliveryStatus: "full",
+        childProgressOutcome: "child_partial_context_returned",
+        resultDeliveredToParentContext: true,
+      }),
+    );
+    const tool = createNativeTaskTool({
+      allowedAgentIds: ["execution-context-scout"],
+      runChildTask,
+    });
+
+    const result = await tool.execute("task-native-child-partial", {
+      agentId: "execution-context-scout",
+      task: "Find a symbol window.",
+    });
+
+    const text = readContentText(result);
+    expect(text).toContain("Partial child result delivered after child progress timeout");
+    expect(text).toContain("<system-reminder>");
+    expect(text).toContain("If you can name the target files and patch shape");
+    expect(text).not.toContain("Use read/grep/glob only for one named missing");
+    expect(text).not.toContain("NEXT PARENT TOOL CALL");
+    expect(readDetails(result)).toMatchObject({
+      status: "completed",
+      requestedAgentId: "execution-context-scout",
+      childProgressOutcome: "child_partial_context_returned",
+      resultDeliveredToParentContext: true,
       nativeChildSessionRuntime: true,
     });
   });
@@ -645,12 +677,8 @@ describe("native task tool", () => {
         parentVisibleResultMaxChars: 12_000,
         requiredBootstrapAdmissionSources: expect.objectContaining({
           requiredCanonicalDocPaths: sourceBackedChildCanonicalDocPaths("execution-context-scout"),
-          requiredSkillSources: [
-            expect.objectContaining({
-              name: "execution-context-scout",
-              sourceHash: expect.any(String),
-            }),
-          ],
+          requiredSkillNames: [],
+          requiredSkillSources: [],
         }),
         readChildSystemPromptReport: undefined,
       }),
@@ -702,7 +730,7 @@ describe("native task tool", () => {
     expect(prompt).not.toContain("You CAN spawn your own sub-agents");
   });
 
-  it("appends the validation parent-decision footer to validation scout results", async () => {
+  it("appends validation next-action guidance to validation scout results", async () => {
     const spawnResult: SpawnSubagentResult = {
       status: "accepted",
       childSessionKey: "agent:execution-validation-scout:subagent:child-validate",
@@ -730,15 +758,15 @@ describe("native task tool", () => {
       task: "Validate the native task footer behavior.",
     });
 
-    expect(readContentText(result)).toContain(
-      "Parent decision required: update todo, then choose one: complete / repair from current context / need more context / blocked.",
-    );
-    expect(readContentText(result)).toContain(
-      "Then repair, delegate more context, validate again, call node_finish, or finish with a typed blocker.",
-    );
+    expect(readContentText(result)).toContain("<system-reminder>");
+    expect(readContentText(result)).toContain("file:line errors in known files");
+    expect(readContentText(result)).toContain("one local source lookup per error cluster");
+    expect(readContentText(result)).toContain("then edit");
+    expect(readContentText(result)).not.toContain("Use read/grep/glob only for one named missing");
+    expect(readContentText(result)).not.toContain("NEXT PARENT TOOL CALL");
   });
 
-  it("projects structured oversized child output into bounded parent edit context", async () => {
+  it("previews oversized child output as bounded source handoff text without file graph metadata", async () => {
     const oversized = [
       "Direct answer: too broad.",
       "",
@@ -758,9 +786,12 @@ describe("native task tool", () => {
       resultMaxParentVisibleChars: 12_000,
       resultDeliveryStatus: "projected",
     });
-    expect(bounded.resultText).toContain("Projected oversized child result");
+    expect(bounded.resultText).toContain(
+      "Partial task result, truncated to parent-visible budget.",
+    );
+    expect(bounded.resultText).toContain("No exact source windows were detected");
     expect(bounded.resultText).toContain("export const value = 1");
-    expect(bounded.resultText).toContain("file_graph");
+    expect(bounded.resultText).not.toContain("file_graph");
     expect(bounded.resultTextHash).toBeTruthy();
     expect(bounded.resultTextByteCount).toBeGreaterThan(12_000);
 
@@ -796,10 +827,10 @@ describe("native task tool", () => {
     );
     expect(text).toContain("<task_result>");
     expect(text).toContain("</task_result>");
-    expect(text).toContain("Task result from execution-context-scout (completed, projected).");
-    expect(text).toContain("Projected oversized child result");
+    expect(text).toContain("Task result from execution-context-scout (completed, partial).");
+    expect(text).toContain("Partial task result, truncated to parent-visible budget.");
     expect(text).toContain("export const value = 1");
-    expect(text).toContain("file_graph");
+    expect(text).not.toContain("file_graph");
     expect(readDetails(result)).toMatchObject({
       status: "completed",
       resultDeliveredToParentContext: true,
@@ -817,7 +848,8 @@ describe("native task tool", () => {
       resultDeliveryStatus: "projected",
       resultTruncated: true,
     });
-    expect(bounded.resultText).toContain("Projected oversized unstructured child result preview");
+    expect(bounded.resultText).toContain("Partial task result, truncated to parent-visible budget");
+    expect(bounded.resultText).toContain("No exact source windows were detected");
     expect(bounded.resultText).toContain("raw unstructured result");
 
     const foregroundResult: NativeTaskForegroundResult = {
@@ -851,10 +883,8 @@ describe("native task tool", () => {
     );
     expect(text).toContain("<task_result>");
     expect(text).toContain("</task_result>");
-    expect(text).toContain("Projected oversized unstructured child result preview");
-    expect(text).toContain(
-      "Do not edit from this preview unless it contains sufficient exact source windows",
-    );
+    expect(text).toContain("Partial task result, truncated to parent-visible budget");
+    expect(text).toContain("No exact source windows were detected");
     expect(readDetails(result)).toMatchObject({
       status: "completed",
       resultDeliveredToParentContext: true,
@@ -862,6 +892,33 @@ describe("native task tool", () => {
       resultTruncated: true,
     });
     expect(readDetails(result)).not.toHaveProperty("childStartFailureKind");
+  });
+
+  it("marks oversized child previews with line-window headings as usable source context", () => {
+    const oversized = [
+      "# Direct Answer",
+      "",
+      "## Lines 260-370",
+      "```ts",
+      "260:     };",
+      "261:     ownerProgressReadback: {",
+      '262:       state: "ready";',
+      "```",
+      "",
+      "x".repeat(12_001),
+    ].join("\n");
+
+    const bounded = buildParentVisibleChildResult(oversized);
+
+    expect(bounded).toMatchObject({
+      resultDeliveryStatus: "projected",
+      resultTruncated: true,
+    });
+    expect(bounded.resultText).toContain("Partial task result, truncated to parent-visible budget");
+    expect(bounded.resultText).toContain(
+      "Exact source windows included below are usable for editing",
+    );
+    expect(bounded.resultText).toContain("261:     ownerProgressReadback");
   });
 
   it("uses the configured live guard cap when projecting oversized structured child output", async () => {
@@ -902,8 +959,8 @@ describe("native task tool", () => {
     });
 
     const text = readContentText(result);
-    expect(text).toContain("Task result from execution-context-scout (completed, projected).");
-    expect(text).toContain("Projected oversized child result");
+    expect(text).toContain("Task result from execution-context-scout (completed, partial).");
+    expect(text).toContain("Partial task result, truncated to parent-visible budget.");
     expect(text).toContain("export const target = true");
     expect(readDetails(result)).toMatchObject({
       status: "completed",
@@ -1012,9 +1069,6 @@ describe("native task tool", () => {
       childAgentId: "execution-context-scout",
       canonicalDocsAdmitted: true,
       requiredSkillAdmitted: true,
-      requiredSkillSourceRef: "openclaw-skill-file://execution-context-scout",
-      requiredSkillSourceHash: "execution-context-scout-skill-hash",
-      requiredSkillLocation: "/root/.openclaw/workspace/skills/execution-context-scout/SKILL.md",
       missingRequiredSources: [],
       truncatedRequiredSources: [],
     });
@@ -1053,14 +1107,13 @@ describe("native task tool", () => {
       providerReportObserved: true,
       childAgentId: "execution-context-scout",
       canonicalDocsAdmitted: false,
-      requiredSkillAdmitted: false,
+      requiredSkillAdmitted: true,
     });
     expect(blocked.missingRequiredSources).toEqual(
       expect.arrayContaining([
         "agent-doc:execution-context-scout:AGENTS.md",
         "agent-doc:execution-context-scout:BOOTSTRAP.md",
         "agent-doc:execution-context-scout:TOOLS.md",
-        "skill:execution-context-scout:execution-context-scout",
       ]),
     );
     expect(blocked.truncatedRequiredSources).toEqual([
@@ -1069,7 +1122,6 @@ describe("native task tool", () => {
     expect(blocked.reasonCodes).toEqual(
       expect.arrayContaining([
         "native_task_child_canonical_docs_missing_from_provider_context",
-        "native_task_child_required_skill_missing_from_provider_context",
         "native_task_child_bootstrap_required_sources_truncated",
       ]),
     );
@@ -1097,6 +1149,7 @@ describe("native task tool", () => {
       childAgentId: agentId,
       report: makeChildProviderReport(),
       ...childAdmissionContract(agentId),
+      requiredSkillNames: [agentId],
       requiredCanonicalDocPaths,
       requiredSkillSources,
     });
@@ -1130,6 +1183,7 @@ describe("native task tool", () => {
       childAgentId: agentId,
       report: makeSourceBackedChildProviderReport(agentId),
       ...childAdmissionContract(agentId),
+      requiredSkillNames: [agentId],
       requiredCanonicalDocPaths,
       requiredSkillSources,
     });
@@ -1151,23 +1205,13 @@ describe("native task tool", () => {
     expect(resolved.requiredCanonicalDocPaths).toEqual(
       sourceBackedChildCanonicalDocPaths("execution-context-scout"),
     );
-    expect(resolved.requiredSkillSources).toEqual([
-      expect.objectContaining({
-        name: "execution-context-scout",
-        path: path.join(process.cwd(), "skills", "execution-context-scout", "SKILL.md"),
-        sourceRef: expect.stringMatching(/^openclaw-skill-file:\/\//),
-        sourceHash: expect.any(String),
-      }),
-    ]);
-    expect(resolved.requiredSkillsSnapshot).toEqual(
-      expect.objectContaining({
-        prompt: expect.stringContaining('<active_skill name="execution-context-scout"'),
-        skillFilter: ["execution-context-scout"],
-      }),
-    );
+    // Execution child agents now use source-backed agent docs and tool
+    // descriptions as the active contract; skills stay optional.
+    expect(resolved.requiredSkillSources).toEqual([]);
+    expect(resolved.requiredSkillsSnapshot).toBeUndefined();
   });
 
-  it("requires validation-scout canonical docs and skill for validation child admission", () => {
+  it("requires validation-scout canonical docs for validation child admission", () => {
     const validationDocPaths = childCanonicalDocPaths("execution-validation-scout");
     const admitted = buildChildBootstrapAdmission({
       childSessionKey: "agent:execution-validation-scout:subagent:child-validate",
@@ -1182,9 +1226,6 @@ describe("native task tool", () => {
       childAgentId: "execution-validation-scout",
       canonicalDocsAdmitted: true,
       requiredSkillAdmitted: true,
-      requiredSkillSourceRef: "openclaw-skill-file://execution-validation-scout",
-      requiredSkillSourceHash: "execution-validation-scout-skill-hash",
-      requiredSkillLocation: "/root/.openclaw/workspace/skills/execution-validation-scout/SKILL.md",
       missingRequiredSources: [],
       truncatedRequiredSources: [],
     });
@@ -1202,53 +1243,16 @@ describe("native task tool", () => {
       providerReportObserved: true,
       childAgentId: "execution-validation-scout",
       canonicalDocsAdmitted: false,
-      requiredSkillAdmitted: false,
+      requiredSkillAdmitted: true,
       missingRequiredSources: [
         "agent-doc:execution-validation-scout:IDENTITY.md",
         "agent-doc:execution-validation-scout:AGENTS.md",
         "agent-doc:execution-validation-scout:BOOTSTRAP.md",
         "agent-doc:execution-validation-scout:TOOLS.md",
-        "skill:execution-validation-scout:execution-validation-scout",
       ],
       truncatedRequiredSources: [],
     });
     expect(classifyChildBootstrapAdmissionFailure(wrongScoutReport)).toBe("child_launch_blocked");
-
-    const validationDocsWrongSkill = buildChildBootstrapAdmission({
-      childSessionKey: "agent:execution-validation-scout:subagent:child-validate",
-      childAgentId: "execution-validation-scout",
-      report: makeChildProviderReport(
-        {
-          skills: {
-            promptChars: 50,
-            entries: [
-              {
-                name: "execution-context-scout",
-                blockChars: 50,
-                location: "/root/.openclaw/workspace/skills/execution-context-scout/SKILL.md",
-                sourceRef: "openclaw-skill-file://execution-context-scout",
-                sourceHash: "execution-context-scout-skill-hash",
-              },
-            ],
-          },
-        },
-        "execution-validation-scout",
-      ),
-      ...childAdmissionContract("execution-validation-scout"),
-      requiredCanonicalDocPaths: validationDocPaths,
-    });
-
-    expect(validationDocsWrongSkill).toMatchObject({
-      providerReportObserved: true,
-      childAgentId: "execution-validation-scout",
-      canonicalDocsAdmitted: true,
-      requiredSkillAdmitted: false,
-      missingRequiredSources: ["skill:execution-validation-scout:execution-validation-scout"],
-      truncatedRequiredSources: [],
-    });
-    expect(classifyChildBootstrapAdmissionFailure(validationDocsWrongSkill)).toBe(
-      "child_launch_blocked",
-    );
   });
 
   it("does not admit child canonical docs by basename when exact child paths are required", () => {

@@ -26,6 +26,7 @@ export async function cleanupEmbeddedAttemptResources(params: {
   sessionManager: unknown;
   releaseWsSession: (sessionId: string) => void;
   sessionId: string;
+  nativeLspService?: { shutdown(): Promise<void> | void };
   bundleLspRuntime?: { dispose(): Promise<void> | void };
   sessionLock: { release(): Promise<void> | void };
 }): Promise<void> {
@@ -51,6 +52,11 @@ export async function cleanupEmbeddedAttemptResources(params: {
     }
     try {
       params.releaseWsSession(params.sessionId);
+    } catch {
+      /* best-effort */
+    }
+    try {
+      await params.nativeLspService?.shutdown();
     } catch {
       /* best-effort */
     }

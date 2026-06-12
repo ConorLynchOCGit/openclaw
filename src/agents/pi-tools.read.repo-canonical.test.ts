@@ -3,6 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { createReadTool } from "@mariozechner/pi-coding-agent";
 import { afterEach, describe, expect, it } from "vitest";
+import { persistManagedToolOutputSync } from "../config/sessions/managed-output.js";
+import type { OpenClawLspService } from "./openclaw-lsp-service.js";
 import { createOpenClawReadTool } from "./pi-tools.read.js";
 import type { AnyAgentTool } from "./pi-tools.types.js";
 
@@ -149,5 +151,116 @@ describe("openclaw read tool repo-canonical resolution", () => {
       },
       suggestedOffset: 3,
     });
+  });
+
+  it("keeps repeated path-only large-file reads source-shaped like OpenCode", async () => {
+    const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "openclaw-read-large-repeat-"));
+    tempDirs.push(workspaceRoot);
+    const filePath = path.join(workspaceRoot, "large.ts");
+    const lines = Array.from(
+      { length: 2205 },
+      (_, index) => `export const line${index + 1} = ${index + 1};`,
+    );
+    await writeFile(filePath, lines.join("\n"), "utf8");
+
+    const tool = createOpenClawReadTool(createReadTool(workspaceRoot) as unknown as AnyAgentTool, {
+      workspaceRoot,
+    });
+    const first = await tool.execute("read-large-first", { path: "large.ts" });
+    const firstText = readText(first as { content?: Array<{ type?: string; text?: string }> });
+    expect(firstText).toContain("1: export const line1 = 1;");
+    expect(firstText).toContain("1780: export const line1780 = 1780;");
+    expect(firstText).toContain("Use offset=1781 to continue");
+    expect(firstText).toContain(
+      'Exact next read: read({"path":"large.ts","offset":1781,"limit":2000})',
+    );
+
+    const rebuiltTool = createOpenClawReadTool(
+      createReadTool(workspaceRoot) as unknown as AnyAgentTool,
+      {
+        workspaceRoot,
+      },
+    );
+    const repeated = await rebuiltTool.execute("read-large-repeat", { path: "large.ts" });
+    const repeatedText = readText(
+      repeated as { content?: Array<{ type?: string; text?: string }> },
+    );
+    expect((repeated as { isError?: boolean }).isError).not.toBe(true);
+    expect(repeatedText).toContain("1: export const line1 = 1;");
+    expect(repeatedText).toContain("1780: export const line1780 = 1780;");
+    expect(repeatedText).toContain("Use offset=1781 to continue");
+    expect(repeatedText).toContain(
+      'Exact next read: read({"path":"large.ts","offset":1781,"limit":2000})',
+    );
+    expect(repeatedText).not.toContain("Path-only read already returned lines");
+
+    const explicitWindow = await tool.execute("read-large-explicit", {
+      path: "large.ts",
+      offset: 1781,
+      limit: 10,
+    });
+    const explicitText = readText(
+      explicitWindow as { content?: Array<{ type?: string; text?: string }> },
+    );
+    expect(explicitText).toContain("1781: export const line1781 = 1781;");
+    expect(explicitText).toContain("1790: export const line1790 = 1790;");
+  });
+
+  it("reads managed-output saved paths through the normal read tool", async () => {
+    const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "openclaw-read-managed-workspace-"));
+    const stateRoot = await mkdtemp(path.join(os.tmpdir(), "openclaw-read-managed-state-"));
+    tempDirs.push(workspaceRoot, stateRoot);
+    const persisted = persistManagedToolOutputSync({
+      stateRoot,
+      sessionKey: "agent:execution-coding:session:test",
+      toolCallId: "call-managed",
+      toolName: "exec",
+      text: ["alpha", "target line", "omega"].join("\n"),
+      outputKind: "tool_result",
+      now: Date.UTC(2026, 5, 8),
+    });
+    expect(persisted?.outputPath).toBeTruthy();
+
+    const tool = createOpenClawReadTool(createReadTool(workspaceRoot) as unknown as AnyAgentTool, {
+      workspaceRoot,
+      stateRoot,
+    });
+    const result = await tool.execute("read-managed-output-path", {
+      path: persisted?.outputPath,
+      offset: 2,
+      limit: 1,
+    });
+    const text = readText(result as { content?: Array<{ type?: string; text?: string }> });
+    expect((result as { isError?: boolean }).isError).not.toBe(true);
+    expect(text).toContain(`<path>${persisted?.outputPath}</path>`);
+    expect(text).toContain("2: target line");
+    expect(text).toContain("Showing lines 2-2 of 3");
+    expect(text).toContain("Use offset=3 to continue");
+    expect(text).toContain(
+      `Exact next read: read({"path":"${persisted?.outputPath}","offset":3,"limit":2000})`,
+    );
+  });
+
+  it("warms LSP state after successful source reads without changing read output", async () => {
+    const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "openclaw-read-lsp-warm-"));
+    tempDirs.push(workspaceRoot);
+    await writeFile(path.join(workspaceRoot, "demo.ts"), "export const demo = 1;\n", "utf8");
+    const touched: string[] = [];
+    const lspService = {
+      touchFile: async (filePath: string) => {
+        touched.push(filePath);
+      },
+    } as unknown as OpenClawLspService;
+    const tool = createOpenClawReadTool(createReadTool(workspaceRoot) as unknown as AnyAgentTool, {
+      workspaceRoot,
+      lspService,
+    });
+
+    const result = await tool.execute("read-demo", { path: "demo.ts" });
+    const text = readText(result as { content?: Array<{ type?: string; text?: string }> });
+
+    expect(text).toContain("1: export const demo = 1;");
+    expect(text).not.toContain("LSP");
+    expect(touched).toContain(path.join(workspaceRoot, "demo.ts"));
   });
 });

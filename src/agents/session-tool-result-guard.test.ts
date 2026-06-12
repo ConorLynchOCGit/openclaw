@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
 import { describe, expect, it } from "vitest";
@@ -74,6 +77,16 @@ function getToolResultText(messages: AgentMessage[]): string {
     text: string;
   };
   return textBlock.text;
+}
+
+function listFilesRecursive(dir: string): string[] {
+  if (!fs.existsSync(dir)) {
+    return [];
+  }
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const fullPath = path.join(dir, entry.name);
+    return entry.isDirectory() ? listFilesRecursive(fullPath) : [fullPath];
+  });
 }
 
 describe("installSessionToolResultGuard", () => {
@@ -158,15 +171,15 @@ describe("installSessionToolResultGuard", () => {
     expectPersistedRoles(sm, ["assistant", "toolResult"]);
   });
 
-  it("applies pi-style count-based truncation wording when persisting oversized tool results", () => {
+  it("applies OpenCode-style truncation wording when persisting oversized tool results", () => {
     const sm = SessionManager.inMemory();
     installSessionToolResultGuard(sm);
 
     appendToolResultText(sm, "x".repeat(80_000));
 
     const text = getToolResultText(getPersistedMessages(sm));
-    expect(text).toContain("more characters truncated");
-    expect(text).toMatch(/\[\.\.\. \d+ more characters truncated\]$/);
+    expect(text).toContain("Output truncated.");
+    expect(text).toMatch(/\.\.\.\d+ bytes truncated\.\.\./);
   });
 
   it("honors tiny configured tool-result caps truthfully", () => {
@@ -202,6 +215,34 @@ describe("installSessionToolResultGuard", () => {
       toolName?: string;
     }>;
     expect(messages[1]?.toolName).toBe("read");
+  });
+
+  it("persists details.status=error tool results as isError=true", () => {
+    const sm = SessionManager.inMemory();
+    installSessionToolResultGuard(sm);
+
+    appendAssistantToolCall(sm, { id: "call_edit", name: "edit" });
+    sm.appendMessage(
+      asAppendMessage({
+        role: "toolResult",
+        toolCallId: "call_edit",
+        toolName: "edit",
+        content: [{ type: "text", text: "exact replacement failed" }],
+        details: { status: "error", reason: "exact_text_not_found" },
+        isError: false,
+      }),
+    );
+
+    const messages = expectPersistedRoles(sm, ["assistant", "toolResult"]) as Array<{
+      role: string;
+      isError?: boolean;
+      details?: Record<string, unknown>;
+    }>;
+    expect(messages[1]?.isError).toBe(true);
+    expect(messages[1]?.details).toMatchObject({
+      status: "error",
+      reason: "exact_text_not_found",
+    });
   });
 
   it("preserves ordering with multiple tool calls and partial results", () => {
@@ -386,6 +427,34 @@ describe("installSessionToolResultGuard", () => {
     const text = getToolResultText(getPersistedMessages(sm));
     expect(text.length).toBeLessThan(500_000);
     expect(text).toContain("truncated");
+  });
+
+  it("persists full oversized tool output to managed storage when capping transcript output", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "session-tool-result-guard-"));
+    try {
+      const stateRoot = path.join(tmpDir, "state");
+      const sm = SessionManager.inMemory();
+      installSessionToolResultGuard(sm, {
+        maxToolResultChars: 5_000,
+        stateRoot,
+        sessionKey: "agent:execution-context-scout:subagent:test",
+      });
+
+      const fullOutput = `full-output-marker\n${"x".repeat(80_000)}`;
+      appendToolResultText(sm, fullOutput);
+
+      const text = getToolResultText(getPersistedMessages(sm));
+      expect(text.length).toBeLessThan(fullOutput.length);
+      expect(text).toContain("Full output saved to:");
+      expect(text).toContain("Use Grep to search the full content or Read with offset/limit");
+
+      const files = listFilesRecursive(path.join(stateRoot, "managed-tool-output"));
+      const outputFile = files.find((file) => file.endsWith(".txt"));
+      expect(outputFile).toBeDefined();
+      expect(fs.readFileSync(outputFile ?? "", "utf8")).toBe(fullOutput);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 
   it("does not truncate tool results under the limit", () => {

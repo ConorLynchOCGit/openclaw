@@ -6,10 +6,9 @@ import type {
 } from "../plugins/types.js";
 import { emitSessionTranscriptUpdate } from "../sessions/transcript-events.js";
 import { normalizeOptionalString } from "../shared/string-coerce.js";
-import { formatContextLimitTruncationNotice } from "./pi-embedded-runner/tool-result-context-guard.js";
 import {
   DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS,
-  truncateToolResultMessage,
+  truncateToolResultMessageWithManagedOutput,
 } from "./pi-embedded-runner/tool-result-truncation.js";
 import {
   getRawSessionAppendMessage,
@@ -24,12 +23,20 @@ import { extractToolCallsFromAssistant, extractToolResultId } from "./tool-call-
  * Returns the original message if under the limit, or a new message with
  * truncated text blocks otherwise.
  */
-function capToolResultSize(msg: AgentMessage, maxChars: number): AgentMessage {
+function capToolResultSize(
+  msg: AgentMessage,
+  maxChars: number,
+  opts?: { stateRoot?: string | null; sessionKey?: string; reason: string },
+): AgentMessage {
   if ((msg as { role?: string }).role !== "toolResult") {
     return msg;
   }
-  return truncateToolResultMessage(msg, maxChars, {
-    suffix: (truncatedChars) => formatContextLimitTruncationNotice(truncatedChars),
+  return truncateToolResultMessageWithManagedOutput({
+    message: msg,
+    maxChars,
+    stateRoot: opts?.stateRoot,
+    sessionKey: opts?.sessionKey,
+    reason: opts?.reason ?? "session_tool_result_guard_cap",
     minKeepChars: 2_000,
   });
 }
@@ -64,6 +71,28 @@ function normalizePersistedToolResultName(
     return { ...toolResult, toolName: "unknown" };
   }
   return toolResult;
+}
+
+function isErrorStatusDetails(details: unknown): boolean {
+  return (
+    Boolean(details) &&
+    typeof details === "object" &&
+    !Array.isArray(details) &&
+    (details as { status?: unknown }).status === "error"
+  );
+}
+
+function normalizePersistedToolResultErrorStatus(message: AgentMessage): AgentMessage {
+  if ((message as { role?: unknown }).role !== "toolResult") {
+    return message;
+  }
+  const details = (message as { details?: unknown }).details;
+  if (!isErrorStatusDetails(details)) {
+    return message;
+  }
+  return (message as { isError?: unknown }).isError === true
+    ? message
+    : ({ ...message, isError: true } as AgentMessage);
 }
 
 export { getRawSessionAppendMessage };
@@ -104,6 +133,7 @@ export function installSessionToolResultGuard(
       event: PluginHookBeforeMessageWriteEvent,
     ) => PluginHookBeforeMessageWriteResult | undefined;
     maxToolResultChars?: number;
+    stateRoot?: string | null;
   },
 ): {
   flushPendingToolResults: () => void;
@@ -163,7 +193,13 @@ export function installSessionToolResultGuard(
           }),
         );
         if (flushed) {
-          originalAppend(capToolResultSize(flushed, maxToolResultChars) as never);
+          originalAppend(
+            capToolResultSize(flushed, maxToolResultChars, {
+              stateRoot: opts?.stateRoot,
+              sessionKey: opts?.sessionKey,
+              reason: "session_tool_result_guard_synthetic_cap",
+            }) as never,
+          );
         }
       }
     }
@@ -197,10 +233,16 @@ export function installSessionToolResultGuard(
       if (id) {
         pendingState.delete(id);
       }
-      const normalizedToolResult = normalizePersistedToolResultName(nextMessage, toolName);
+      const normalizedToolResult = normalizePersistedToolResultErrorStatus(
+        normalizePersistedToolResultName(nextMessage, toolName),
+      );
       // Apply hard size cap before persistence to prevent oversized tool results
       // from consuming the entire context window on subsequent LLM calls.
-      const capped = capToolResultSize(persistMessage(normalizedToolResult), maxToolResultChars);
+      const capped = capToolResultSize(persistMessage(normalizedToolResult), maxToolResultChars, {
+        stateRoot: opts?.stateRoot,
+        sessionKey: opts?.sessionKey,
+        reason: "session_tool_result_guard_pre_persist_cap",
+      });
       const persisted = applyBeforeWriteHook(
         persistToolResult(capped, {
           toolCallId: id ?? undefined,
@@ -211,7 +253,13 @@ export function installSessionToolResultGuard(
       if (!persisted) {
         return undefined;
       }
-      return originalAppend(capToolResultSize(persisted, maxToolResultChars) as never);
+      return originalAppend(
+        capToolResultSize(persisted, maxToolResultChars, {
+          stateRoot: opts?.stateRoot,
+          sessionKey: opts?.sessionKey,
+          reason: "session_tool_result_guard_post_hook_cap",
+        }) as never,
+      );
     }
 
     // Skip tool call extraction for aborted/errored assistant messages.

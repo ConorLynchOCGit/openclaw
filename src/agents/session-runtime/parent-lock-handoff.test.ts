@@ -171,4 +171,42 @@ describe("native child task parent lock handoff", () => {
     expect(order).toEqual(["release-parent", "run-child", "reacquire-parent"]);
     expect(binding.getCurrentLock()).toBe(reacquiredLock);
   });
+
+  it("suspends the parent session lock during provider waits and reacquires it once", async () => {
+    const order: string[] = [];
+    const reacquiredLock = {
+      trace: trace("stale_lock_reclaimed_acquired"),
+      release: vi.fn(async () => undefined),
+    };
+    const handoff = createNativeChildTaskParentLockHandoff({
+      sessionFile: "/tmp/parent.jsonl",
+      initialLock: {
+        trace: trace("acquired"),
+        release: vi.fn(async () => {
+          order.push("release-parent");
+        }),
+      },
+      maxHoldMs: 300_000,
+      onSessionLockAcquired: vi.fn(async () => {
+        order.push("record-reacquire");
+      }),
+      acquireLock: vi.fn(async () => {
+        order.push("reacquire-parent");
+        return reacquiredLock;
+      }),
+    });
+
+    const resume = await handoff.suspendParentLockForProviderWait();
+    order.push("provider-wait");
+    await resume();
+    await resume();
+
+    expect(order).toEqual([
+      "release-parent",
+      "provider-wait",
+      "reacquire-parent",
+      "record-reacquire",
+    ]);
+    expect(handoff.getCurrentLock()).toBe(reacquiredLock);
+  });
 });

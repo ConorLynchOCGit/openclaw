@@ -45,9 +45,9 @@ describe("isNonRecoverableAuthError", () => {
     );
   });
 
-  it("blocks reconnect for PAIRING_REQUIRED", () => {
+  it("allows reconnect for PAIRING_REQUIRED because approval is out-of-band", () => {
     expect(isNonRecoverableAuthError(makeError(ConnectErrorDetailCodes.PAIRING_REQUIRED))).toBe(
-      true,
+      false,
     );
   });
 

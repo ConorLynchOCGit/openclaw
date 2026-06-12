@@ -64,7 +64,7 @@ function createAttemptResult(sessionIdUsed: string): EmbeddedRunAttemptResult {
     idleTimedOut: false,
     timedOutDuringCompaction: false,
     promptError: null,
-    promptErrorSource: null,
+    promptErrorOrigin: null,
     sessionIdUsed,
     messagesSnapshot: [],
     assistantTexts: [`${sessionIdUsed} ok`],

@@ -1,5 +1,6 @@
 import { formatThinkingLevels } from "../auto-reply/thinking.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { resolveAgentConfig } from "./agent-scope.js";
 import { resolveSubagentSpawnModelSelection } from "./model-selection.js";
 import { resolveSubagentThinkingOverride } from "./subagent-spawn-thinking.js";
 
@@ -42,6 +43,8 @@ export function resolveSubagentModelAndThinkingPlan(params: {
   modelOverride?: string;
   thinkingOverrideRaw?: string;
 }) {
+  const targetAgentConfig =
+    params.targetAgentConfig ?? resolveAgentConfig(params.cfg, params.targetAgentId) ?? undefined;
   const resolvedModel = resolveSubagentSpawnModelSelection({
     cfg: params.cfg,
     agentId: params.targetAgentId,
@@ -50,7 +53,7 @@ export function resolveSubagentModelAndThinkingPlan(params: {
 
   const thinkingPlan = resolveSubagentThinkingOverride({
     cfg: params.cfg,
-    targetAgentConfig: params.targetAgentConfig,
+    targetAgentConfig,
     thinkingOverrideRaw: params.thinkingOverrideRaw,
   });
   if (thinkingPlan.status === "error") {

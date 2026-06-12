@@ -1,4 +1,5 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import { resolveToolResultContextGuardBudget } from "../../context-engine/pressure/budget.js";
 import type { ContextEngine } from "../../context-engine/types.js";
 import {
   CHARS_PER_TOKEN_ESTIMATE,
@@ -11,9 +12,6 @@ import {
   invalidateMessageCharsCacheEntry,
   isToolResultMessage,
 } from "./tool-result-char-estimator.js";
-
-const SINGLE_TOOL_RESULT_CONTEXT_SHARE = 0.5;
-const PREEMPTIVE_OVERFLOW_RATIO = 0.9;
 
 export const CONTEXT_LIMIT_TRUNCATION_NOTICE = "more characters truncated";
 export const PREEMPTIVE_CONTEXT_OVERFLOW_MESSAGE =
@@ -289,18 +287,13 @@ export function installContextEngineLoopHook(params: {
 export function installToolResultContextGuard(params: {
   agent: GuardableAgent;
   contextWindowTokens: number;
+  throwOnPreemptiveOverflow?: boolean;
 }): () => void {
-  const contextWindowTokens = Math.max(1, Math.floor(params.contextWindowTokens));
-  const maxContextChars = Math.max(
-    1_024,
-    Math.floor(contextWindowTokens * CHARS_PER_TOKEN_ESTIMATE * PREEMPTIVE_OVERFLOW_RATIO),
-  );
-  const maxSingleToolResultChars = Math.max(
-    1_024,
-    Math.floor(
-      contextWindowTokens * TOOL_RESULT_CHARS_PER_TOKEN_ESTIMATE * SINGLE_TOOL_RESULT_CONTEXT_SHARE,
-    ),
-  );
+  const { maxContextChars, maxSingleToolResultChars } = resolveToolResultContextGuardBudget({
+    contextWindowTokens: params.contextWindowTokens,
+    charsPerToken: CHARS_PER_TOKEN_ESTIMATE,
+    toolResultCharsPerToken: TOOL_RESULT_CHARS_PER_TOKEN_ESTIMATE,
+  });
 
   // Agent.transformContext is private in pi-coding-agent, so access it via a
   // narrow runtime view to keep callsites type-safe while preserving behavior.
@@ -326,6 +319,7 @@ export function installToolResultContextGuard(params: {
       });
     }
     if (
+      params.throwOnPreemptiveOverflow === true &&
       exceedsPreemptiveOverflowThreshold({
         messages: contextMessages,
         maxContextChars,

@@ -1547,8 +1547,10 @@
     "sqlite-vec": "0.1.9",
     "tar": "7.5.13",
     "tslog": "^4.10.2",
+    "typescript-language-server": "^5.3.0",
     "undici": "8.0.2",
     "uuid": "^13.0.0",
+    "vscode-jsonrpc": "^9.0.0",
     "ws": "^8.20.0",
     "yaml": "^2.8.3",
     "zod": "^4.3.6"

@@ -79,6 +79,21 @@ function makeSystemPromptReport(params: {
   };
 }
 
+async function appendMockThinkingLevelChange(params: RunEmbeddedPiAgentParams) {
+  if (!params.thinkLevel) {
+    return;
+  }
+  await fs.mkdir(path.dirname(params.sessionFile), { recursive: true });
+  await fs.appendFile(
+    params.sessionFile,
+    `${JSON.stringify({
+      type: "thinking_level_change",
+      thinkingLevel: params.thinkLevel,
+    })}\n`,
+    "utf8",
+  );
+}
+
 describe("native child session runtime", () => {
   afterEach(async () => {
     vi.unstubAllEnvs();
@@ -106,6 +121,7 @@ describe("native child session runtime", () => {
           {
             id: childAgentId,
             agentDir: childAgentDir,
+            thinkingDefault: "low",
             model: {
               primary: "openrouter/qwen/qwen3-coder-plus",
             },
@@ -135,41 +151,44 @@ describe("native child session runtime", () => {
       authStorage,
       modelRegistry,
     } satisfies RunEmbeddedPiAgentParams;
-    const runAgent = vi.fn(async (params: RunEmbeddedPiAgentParams) => ({
-      payloads: [
-        {
-          text: [
-            "Direct answer: edit from the returned child source window.",
-            "",
-            "Bounded source windows:",
-            "```ts",
-            "export const childSessionRuntime = true;",
-            "```",
-          ].join("\n"),
-        },
-      ],
-      meta: {
-        durationMs: 1,
-        systemPromptReport: makeSystemPromptReport({
-          requiredDocPaths: [
-            ...(params.requiredProviderContextAdmission?.workspaceFileNames ?? []),
-          ],
-          skillName: childAgentId,
-          skillPath:
-            params.requiredProviderContextAdmission?.skillSources?.[0]?.path ??
-            path.join(root, "skills", childAgentId, "SKILL.md"),
-          skillRef:
-            params.requiredProviderContextAdmission?.skillSources?.[0]?.sourceRef ??
-            `openclaw-skill-file://${encodeURIComponent(
+    const runAgent = vi.fn(async (params: RunEmbeddedPiAgentParams) => {
+      await appendMockThinkingLevelChange(params);
+      return {
+        payloads: [
+          {
+            text: [
+              "Direct answer: edit from the returned child source window.",
+              "",
+              "Bounded source windows:",
+              "```ts",
+              "export const childSessionRuntime = true;",
+              "```",
+            ].join("\n"),
+          },
+        ],
+        meta: {
+          durationMs: 1,
+          systemPromptReport: makeSystemPromptReport({
+            requiredDocPaths: [
+              ...(params.requiredProviderContextAdmission?.workspaceFileNames ?? []),
+            ],
+            skillName: childAgentId,
+            skillPath:
+              params.requiredProviderContextAdmission?.skillSources?.[0]?.path ??
               path.join(root, "skills", childAgentId, "SKILL.md"),
-            )}`,
-          skillHash:
-            params.requiredProviderContextAdmission?.skillSources?.[0]?.sourceHash ??
-            "execution-context-scout-skill-hash",
-          toolNames: requiredToolNames,
-        }),
-      },
-    }));
+            skillRef:
+              params.requiredProviderContextAdmission?.skillSources?.[0]?.sourceRef ??
+              `openclaw-skill-file://${encodeURIComponent(
+                path.join(root, "skills", childAgentId, "SKILL.md"),
+              )}`,
+            skillHash:
+              params.requiredProviderContextAdmission?.skillSources?.[0]?.sourceHash ??
+              "execution-context-scout-skill-hash",
+            toolNames: requiredToolNames,
+          }),
+        },
+      };
+    });
     const runChildTask = createNativeRunChildTask({
       parentContext: parentParams,
       resolvedWorkspace: root,
@@ -199,6 +218,7 @@ describe("native child session runtime", () => {
         config,
         provider: "openrouter",
         model: "qwen/qwen3-coder-plus",
+        thinkLevel: "low",
         toolResultFormat: "markdown",
         disableMessageTool: true,
         requireExplicitMessageTarget: true,
@@ -210,12 +230,9 @@ describe("native child session runtime", () => {
         enqueue: expect.any(Function),
         authStorage,
         modelRegistry,
-        skillsSnapshot: expect.objectContaining({
-          prompt: expect.stringContaining('<active_skill name="execution-context-scout"'),
-          skillFilter: [childAgentId],
-        }),
+        skillsSnapshot: undefined,
         requiredProviderContextAdmission: expect.objectContaining({
-          skillNames: [childAgentId],
+          skillNames: [],
           rejectTruncatedWorkspaceFiles: true,
         }),
       }),
@@ -243,20 +260,25 @@ describe("native child session runtime", () => {
         childToolCatalogAdmitted: true,
         missingRequiredSources: [],
         truncatedRequiredSources: [],
-        requiredSkillSourceRef: expect.any(String),
-        requiredSkillSourceHash: expect.any(String),
+        requiredSkillSourceRef: null,
+        requiredSkillSourceHash: null,
       }),
     });
     expect(result.childSessionKey).toBe(childRunParams?.sessionKey);
     expect(result.runId).toBe(childRunParams?.runId);
     const storeAfterFirstRun = JSON.parse(await fs.readFile(storePath, "utf8")) as Record<
       string,
-      { sessionId?: string; spawnedBy?: string }
+      { sessionId?: string; spawnedBy?: string; model?: string; thinkingLevel?: string }
     >;
     expect(storeAfterFirstRun[result.childSessionKey]).toMatchObject({
       sessionId: childRunParams?.sessionId,
       spawnedBy: parentSessionKey,
+      model: "openrouter/qwen/qwen3-coder-plus",
+      thinkingLevel: "low",
     });
+    const transcriptText = await fs.readFile(childRunParams?.sessionFile ?? "", "utf8");
+    expect(transcriptText).toContain('"type":"thinking_level_change"');
+    expect(transcriptText).toContain('"thinkingLevel":"low"');
 
     const secondResult = await runChildTask({
       parentSessionKey,
@@ -280,7 +302,7 @@ describe("native child session runtime", () => {
     );
   });
 
-  it("classifies child provider response timeouts before bootstrap-report failures", async () => {
+  it("fails execution context scout launch before runtime when required thinking is not resolved", async () => {
     const root = await makeTempRoot();
     const storePath = path.join(root, "sessions.json");
     const childAgentId = "execution-context-scout";
@@ -298,13 +320,66 @@ describe("native child session runtime", () => {
         ],
       },
     } as OpenClawConfig;
-    const runAgent = vi.fn(async () => ({
-      payloads: [],
-      meta: {
-        durationMs: 120_000,
-        error: { message: "Provider timeout waiting for model output" },
+    const runAgent = vi.fn();
+    const runChildTask = createNativeRunChildTask({
+      parentContext: {
+        sessionKey: parentSessionKey,
+        nodeRunId: "node-run-parent",
+        config,
+        runId: "parent-run",
       },
-    }));
+      resolvedWorkspace: root,
+      runAgent,
+    });
+
+    const result = await runChildTask({
+      parentSessionKey,
+      parentToolCallId: "tool-call-missing-thinking",
+      childAgentId,
+      task: "Map the source context.",
+      parentVisibleResultMaxChars: 12_000,
+    });
+
+    expect(runAgent).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: "error",
+      waitStatus: "error",
+      childStartFailureKind: "child_provider_model_failure",
+      resultDeliveredToParentContext: false,
+      error:
+        "execution-context-scout requires native child thinkingDefault in agent config; resolved <missing or off>.",
+    });
+  });
+
+  it("classifies child provider response timeouts before bootstrap-report failures", async () => {
+    const root = await makeTempRoot();
+    const storePath = path.join(root, "sessions.json");
+    const childAgentId = "execution-context-scout";
+    const parentSessionKey = "agent:execution-coding:node:nrun_parent";
+    const config = {
+      session: { store: storePath },
+      agents: {
+        list: [
+          { id: "execution-coding", agentDir: path.join(root, "agents", "execution-coding") },
+          {
+            id: childAgentId,
+            agentDir: path.join(root, "agents", childAgentId),
+            thinkingDefault: "low",
+            model: { primary: "openrouter/qwen/qwen3-coder-plus" },
+          },
+        ],
+      },
+    } as OpenClawConfig;
+    const runAgent = vi.fn(async (params: RunEmbeddedPiAgentParams) => {
+      await appendMockThinkingLevelChange(params);
+      return {
+        payloads: [],
+        meta: {
+          durationMs: 120_000,
+          error: { message: "Provider timeout waiting for model output" },
+        },
+      };
+    });
     const runChildTask = createNativeRunChildTask({
       parentContext: {
         sessionKey: parentSessionKey,
@@ -347,46 +422,50 @@ describe("native child session runtime", () => {
           {
             id: childAgentId,
             agentDir: path.join(root, "agents", childAgentId),
+            thinkingDefault: "medium",
             model: { primary: "openrouter/qwen/qwen3-coder-plus" },
           },
         ],
       },
     } as OpenClawConfig;
-    const runAgent = vi.fn(async (params: RunEmbeddedPiAgentParams) => ({
-      payloads: [
-        {
-          text: [
-            "Validation question/scope: focused policy proof.",
-            "Commands run: pnpm test:file extensions/execution-platform/src/workflows/node-agent-session.test.ts -- -t native",
-            "Exit status: still running when provider response timed out.",
-            "Bounded output excerpts: test reached assertion setup.",
-            "Residual risk: ask narrower validation if this is insufficient.",
-          ].join("\n"),
-        },
-      ],
-      meta: {
-        durationMs: 120_000,
-        error: { message: "Provider timeout waiting for model output" },
-        systemPromptReport: makeSystemPromptReport({
-          requiredDocPaths: [
-            ...(params.requiredProviderContextAdmission?.workspaceFileNames ?? []),
-          ],
-          skillName: childAgentId,
-          skillPath:
-            params.requiredProviderContextAdmission?.skillSources?.[0]?.path ??
-            path.join(root, "skills", childAgentId, "SKILL.md"),
-          skillRef:
-            params.requiredProviderContextAdmission?.skillSources?.[0]?.sourceRef ??
-            `openclaw-skill-file://${encodeURIComponent(
+    const runAgent = vi.fn(async (params: RunEmbeddedPiAgentParams) => {
+      await appendMockThinkingLevelChange(params);
+      return {
+        payloads: [
+          {
+            text: [
+              "Validation question/scope: focused policy proof.",
+              "Commands run: pnpm test:file extensions/execution-platform/src/workflows/node-agent-session.test.ts -- -t native",
+              "Exit status: still running when provider response timed out.",
+              "Bounded output excerpts: test reached assertion setup.",
+              "Residual risk: ask narrower validation if this is insufficient.",
+            ].join("\n"),
+          },
+        ],
+        meta: {
+          durationMs: 120_000,
+          error: { message: "Provider timeout waiting for model output" },
+          systemPromptReport: makeSystemPromptReport({
+            requiredDocPaths: [
+              ...(params.requiredProviderContextAdmission?.workspaceFileNames ?? []),
+            ],
+            skillName: childAgentId,
+            skillPath:
+              params.requiredProviderContextAdmission?.skillSources?.[0]?.path ??
               path.join(root, "skills", childAgentId, "SKILL.md"),
-            )}`,
-          skillHash:
-            params.requiredProviderContextAdmission?.skillSources?.[0]?.sourceHash ??
-            "execution-validation-scout-skill-hash",
-          toolNames: requiredToolNames,
-        }),
-      },
-    }));
+            skillRef:
+              params.requiredProviderContextAdmission?.skillSources?.[0]?.sourceRef ??
+              `openclaw-skill-file://${encodeURIComponent(
+                path.join(root, "skills", childAgentId, "SKILL.md"),
+              )}`,
+            skillHash:
+              params.requiredProviderContextAdmission?.skillSources?.[0]?.sourceHash ??
+              "execution-validation-scout-skill-hash",
+            toolNames: requiredToolNames,
+          }),
+        },
+      };
+    });
     const runChildTask = createNativeRunChildTask({
       parentContext: {
         sessionKey: parentSessionKey,
@@ -411,11 +490,27 @@ describe("native child session runtime", () => {
       waitStatus: "ok",
       resultDeliveredToParentContext: true,
       resultDeliveryStatus: "full",
+      childProgressOutcome: "child_partial_context_returned",
     });
     expect(result).not.toHaveProperty("childStartFailureKind");
     expect(result).not.toHaveProperty("error");
+    expect(runAgent.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        provider: "openrouter",
+        model: "qwen/qwen3-coder-plus",
+        thinkLevel: "medium",
+      }),
+    );
+    const storeAfterRun = JSON.parse(await fs.readFile(storePath, "utf8")) as Record<
+      string,
+      { model?: string; thinkingLevel?: string }
+    >;
+    expect(storeAfterRun[result.childSessionKey]).toMatchObject({
+      model: "openrouter/qwen/qwen3-coder-plus",
+      thinkingLevel: "medium",
+    });
     expect(result.resultText).toContain(
-      "Partial child result delivered after provider response timeout",
+      "Partial child result delivered after child progress timeout",
     );
     expect(result.resultText).toContain("Validation question/scope");
     expect(result.childBootstrapAdmission).toMatchObject({
@@ -423,6 +518,118 @@ describe("native child session runtime", () => {
       canonicalDocsAdmitted: true,
       requiredSkillAdmitted: true,
       childToolCatalogAdmitted: true,
+    });
+  });
+
+  it("classifies child no-progress timeouts before parent-visible output", async () => {
+    const root = await makeTempRoot();
+    const storePath = path.join(root, "sessions.json");
+    const childAgentId = "execution-context-scout";
+    const parentSessionKey = "agent:execution-coding:node:nrun_parent";
+    const config = {
+      session: { store: storePath },
+      agents: {
+        list: [
+          { id: "execution-coding", agentDir: path.join(root, "agents", "execution-coding") },
+          {
+            id: childAgentId,
+            agentDir: path.join(root, "agents", childAgentId),
+            thinkingDefault: "low",
+            model: { primary: "openrouter/qwen/qwen3-coder-plus" },
+          },
+        ],
+      },
+    } as OpenClawConfig;
+    const runAgent = vi.fn(async (params: RunEmbeddedPiAgentParams) => {
+      await appendMockThinkingLevelChange(params);
+      return {
+        payloads: [],
+        meta: {
+          durationMs: 120_000,
+          progressTimeoutKind: "no_progress_timeout" as const,
+        },
+      };
+    });
+    const runChildTask = createNativeRunChildTask({
+      parentContext: {
+        sessionKey: parentSessionKey,
+        nodeRunId: "node-run-parent",
+        config,
+        runId: "parent-run",
+      },
+      resolvedWorkspace: root,
+      runAgent,
+    });
+
+    const result = await runChildTask({
+      parentSessionKey,
+      parentToolCallId: "tool-call-no-progress",
+      childAgentId,
+      task: "Map the source context.",
+      parentVisibleResultMaxChars: 12_000,
+    });
+
+    expect(result).toMatchObject({
+      status: "error",
+      waitStatus: "error",
+      childStartFailureKind: "child_no_progress_timeout",
+      resultDeliveredToParentContext: false,
+    });
+  });
+
+  it("classifies repeated low-value child progress before parent-visible output", async () => {
+    const root = await makeTempRoot();
+    const storePath = path.join(root, "sessions.json");
+    const childAgentId = "execution-context-scout";
+    const parentSessionKey = "agent:execution-coding:node:nrun_parent";
+    const config = {
+      session: { store: storePath },
+      agents: {
+        list: [
+          { id: "execution-coding", agentDir: path.join(root, "agents", "execution-coding") },
+          {
+            id: childAgentId,
+            agentDir: path.join(root, "agents", childAgentId),
+            thinkingDefault: "low",
+            model: { primary: "openrouter/qwen/qwen3-coder-plus" },
+          },
+        ],
+      },
+    } as OpenClawConfig;
+    const runAgent = vi.fn(async (params: RunEmbeddedPiAgentParams) => {
+      await appendMockThinkingLevelChange(params);
+      return {
+        payloads: [],
+        meta: {
+          durationMs: 120_000,
+          progressTimeoutKind: "repeated_low_value_progress" as const,
+        },
+      };
+    });
+    const runChildTask = createNativeRunChildTask({
+      parentContext: {
+        sessionKey: parentSessionKey,
+        nodeRunId: "node-run-parent",
+        config,
+        runId: "parent-run",
+      },
+      resolvedWorkspace: root,
+      runAgent,
+    });
+
+    const result = await runChildTask({
+      parentSessionKey,
+      parentToolCallId: "tool-call-low-value-progress",
+      childAgentId,
+      task: "Map the source context.",
+      parentVisibleResultMaxChars: 12_000,
+    });
+
+    expect(result).toMatchObject({
+      status: "error",
+      waitStatus: "error",
+      childStartFailureKind: "child_repeated_low_value_progress",
+      resultDeliveredToParentContext: false,
     });
   });
 
@@ -441,6 +648,7 @@ describe("native child session runtime", () => {
           {
             id: childAgentId,
             agentDir: path.join(root, "agents", childAgentId),
+            thinkingDefault: "low",
             model: { primary: "openrouter/qwen/qwen3-coder-plus" },
           },
         ],
@@ -456,29 +664,32 @@ describe("native child session runtime", () => {
       "```",
       "x".repeat(20_000),
     ].join("\n");
-    const runAgent = vi.fn(async (params: RunEmbeddedPiAgentParams) => ({
-      payloads: [{ text: fullChildOutput }],
-      meta: {
-        systemPromptReport: makeSystemPromptReport({
-          requiredDocPaths: [
-            ...(params.requiredProviderContextAdmission?.workspaceFileNames ?? []),
-          ],
-          skillName: childAgentId,
-          skillPath:
-            params.requiredProviderContextAdmission?.skillSources?.[0]?.path ??
-            path.join(root, "skills", childAgentId, "SKILL.md"),
-          skillRef:
-            params.requiredProviderContextAdmission?.skillSources?.[0]?.sourceRef ??
-            `openclaw-skill-file://${encodeURIComponent(
+    const runAgent = vi.fn(async (params: RunEmbeddedPiAgentParams) => {
+      await appendMockThinkingLevelChange(params);
+      return {
+        payloads: [{ text: fullChildOutput }],
+        meta: {
+          systemPromptReport: makeSystemPromptReport({
+            requiredDocPaths: [
+              ...(params.requiredProviderContextAdmission?.workspaceFileNames ?? []),
+            ],
+            skillName: childAgentId,
+            skillPath:
+              params.requiredProviderContextAdmission?.skillSources?.[0]?.path ??
               path.join(root, "skills", childAgentId, "SKILL.md"),
-            )}`,
-          skillHash:
-            params.requiredProviderContextAdmission?.skillSources?.[0]?.sourceHash ??
-            "execution-context-scout-skill-hash",
-          toolNames: ["read", "list", "glob", "grep"],
-        }),
-      },
-    }));
+            skillRef:
+              params.requiredProviderContextAdmission?.skillSources?.[0]?.sourceRef ??
+              `openclaw-skill-file://${encodeURIComponent(
+                path.join(root, "skills", childAgentId, "SKILL.md"),
+              )}`,
+            skillHash:
+              params.requiredProviderContextAdmission?.skillSources?.[0]?.sourceHash ??
+              "execution-context-scout-skill-hash",
+            toolNames: ["read", "list", "glob", "grep"],
+          }),
+        },
+      };
+    });
     const runChildTask = createNativeRunChildTask({
       parentContext: {
         sessionKey: parentSessionKey,

@@ -18,5 +18,6 @@ describe("tool-catalog", () => {
     expect(policy!.allow).toContain("update_plan");
     expect(policy!.allow).toContain("read_todo");
     expect(policy!.allow).toContain("task");
+    expect(policy!.allow).toContain("openclaw_resource_read");
   });
 });

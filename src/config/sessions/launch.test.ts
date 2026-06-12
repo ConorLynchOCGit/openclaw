@@ -77,6 +77,15 @@ describe("session launch", () => {
         ],
         toolCatalogRef: "openclaw-effective-tool-inventory://agent",
         effectiveToolNames: ["task", "node_finish", "update_plan"],
+        toolCatalogSummary: [
+          {
+            name: "update_plan",
+            descriptionHash: "description-hash",
+            descriptionBytes: 123,
+            parametersHash: "parameters-hash",
+            parametersBytes: 456,
+          },
+        ],
         allowedChildAgentIds: ["execution-context-scout"],
         reasonCodes: ["session_launch_accepted"],
       },
@@ -111,6 +120,15 @@ describe("session launch", () => {
         },
       ],
       effectiveToolNames: ["task", "node_finish", "update_plan"],
+      toolCatalogSummary: [
+        {
+          name: "update_plan",
+          descriptionHash: "description-hash",
+          descriptionBytes: 123,
+          parametersHash: "parameters-hash",
+          parametersBytes: 456,
+        },
+      ],
       allowedChildAgentIds: ["execution-context-scout"],
     });
 

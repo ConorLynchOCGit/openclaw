@@ -146,6 +146,7 @@ export type SessionWorkingContextEntryKind =
   | "discovery_hint"
   | "file_graph"
   | "managed_output_ref"
+  | "search_result"
   | "context_scout_result"
   | "validation_scout_result"
   | "change_set"
@@ -209,6 +210,14 @@ export type SessionLaunchRequiredSource = {
   hash?: string | null;
 };
 
+export type SessionLaunchToolCatalogEntry = {
+  name: string;
+  descriptionHash: string;
+  descriptionBytes: number;
+  parametersHash: string;
+  parametersBytes: number;
+};
+
 export type SessionLaunchResolvedLocationRoot = {
   path: string;
   authorityClass: "source" | "workspace" | "state";
@@ -247,6 +256,7 @@ export type SessionLaunchEvent = {
   requiredSources: SessionLaunchRequiredSource[];
   toolCatalogRef?: string | null;
   effectiveToolNames: string[];
+  toolCatalogSummary?: SessionLaunchToolCatalogEntry[];
   allowedChildAgentIds: string[];
   blockers: string[];
   reasonCodes: string[];

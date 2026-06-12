@@ -1,4 +1,12 @@
+import {
+  buildEditToolVisibleSchema,
+  buildInvalidEditParameterMessage,
+  editRequiredParamGroups,
+  normalizeEditToolParams,
+} from "./patch-transaction-service.js";
 import type { AnyAgentTool } from "./pi-tools.types.js";
+
+export { normalizeEditToolParams } from "./patch-transaction-service.js";
 
 export type RequiredParamGroup = {
   keys: readonly string[];
@@ -46,30 +54,12 @@ function formatReceivedParamHint(
   return received.length > 0 ? ` (received: ${received.join(", ")})` : "";
 }
 
-type EditReplacement = {
-  oldText: string;
-  newText: string;
-};
-
-function isValidEditReplacement(value: unknown): value is EditReplacement {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const record = value as Record<string, unknown>;
-  return (
-    typeof record.oldText === "string" &&
-    record.oldText.trim().length > 0 &&
-    typeof record.newText === "string"
-  );
+function normalizeParamsForTool(toolName: string, params: unknown): unknown {
+  return toolName === "edit" ? normalizeEditToolParams(params) : params;
 }
 
-function hasValidEditReplacements(record: Record<string, unknown>): boolean {
-  const edits = record.edits;
-  return (
-    Array.isArray(edits) &&
-    edits.length > 0 &&
-    edits.every((entry) => isValidEditReplacement(entry))
-  );
+function normalizeEditParameterSchema(parameters: unknown): unknown {
+  return buildEditToolVisibleSchema(parameters);
 }
 
 export const REQUIRED_PARAM_GROUPS = {
@@ -78,10 +68,7 @@ export const REQUIRED_PARAM_GROUPS = {
     { keys: ["path"], label: "path" },
     { keys: ["content"], label: "content" },
   ],
-  edit: [
-    { keys: ["path"], label: "path" },
-    { keys: ["edits"], label: "edits", validator: hasValidEditReplacements },
-  ],
+  edit: [...editRequiredParamGroups()],
 } as const;
 
 export function getToolParamsRecord(params: unknown): Record<string, unknown> | undefined {
@@ -122,9 +109,21 @@ export function assertRequiredParams(
   }
 
   if (missingLabels.length > 0) {
+    const receivedHint = formatReceivedParamHint(record, groups);
+    if (toolName === "edit" && missingLabels.includes("oldString/newString or operations[]")) {
+      const otherMissingLabels = missingLabels.filter(
+        (label) => label !== "oldString/newString or operations[]",
+      );
+      const missingText =
+        otherMissingLabels.length > 0
+          ? ` Missing required ${otherMissingLabels.length === 1 ? "parameter" : "parameters"}: ${otherMissingLabels.join(", ")}.`
+          : "";
+      throw parameterValidationError(
+        `${buildInvalidEditParameterMessage(record)}${missingText}${receivedHint}`,
+      );
+    }
     const joined = missingLabels.join(", ");
     const noun = missingLabels.length === 1 ? "parameter" : "parameters";
-    const receivedHint = formatReceivedParamHint(record, groups);
     throw parameterValidationError(`Missing required ${noun}: ${joined}${receivedHint}`);
   }
 }
@@ -135,12 +134,15 @@ export function wrapToolParamValidation(
 ): AnyAgentTool {
   return {
     ...tool,
+    parameters:
+      tool.name === "edit" ? normalizeEditParameterSchema(tool.parameters) : tool.parameters,
     execute: async (toolCallId, params, signal, onUpdate) => {
-      const record = getToolParamsRecord(params);
+      const effectiveParams = normalizeParamsForTool(tool.name, params);
+      const record = getToolParamsRecord(effectiveParams);
       if (requiredParamGroups?.length) {
         assertRequiredParams(record, requiredParamGroups, tool.name);
       }
-      return tool.execute(toolCallId, params, signal, onUpdate);
+      return tool.execute(toolCallId, effectiveParams, signal, onUpdate);
     },
   };
 }

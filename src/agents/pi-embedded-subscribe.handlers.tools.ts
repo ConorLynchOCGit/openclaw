@@ -203,6 +203,73 @@ function readStringArrayField(record: Record<string, unknown> | undefined, key: 
   );
 }
 
+function readDiagnosticSummaries(
+  record: Record<string, unknown> | undefined,
+  key: string,
+  fallbackPath?: string,
+): string[] {
+  const value = record?.[key];
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .flatMap((entry) => {
+      const diagnostic = readRecord(entry);
+      if (!diagnostic) {
+        return [];
+      }
+      const message = compactDiagnosticText(diagnostic.message);
+      if (!message) {
+        return [];
+      }
+      const path = readStringField(diagnostic, "path") ?? fallbackPath;
+      const severity = readStringField(diagnostic, "severity");
+      const line = readNumberField(diagnostic, "line");
+      const column =
+        readNumberField(diagnostic, "column") ?? readNumberField(diagnostic, "character");
+      const location =
+        path && line !== undefined
+          ? `${path}:${line}${column !== undefined ? `:${column}` : ""}`
+          : line !== undefined
+            ? `line ${line}${column !== undefined ? `:${column}` : ""}`
+            : undefined;
+      return [
+        [severity, location, message]
+          .filter((part): part is string => typeof part === "string" && part.length > 0)
+          .join(" "),
+      ];
+    })
+    .slice(0, 12);
+}
+
+function compactDiagnosticText(value: unknown, maxLength = 240): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.replace(/\s+/gu, " ").trim();
+  if (!normalized) {
+    return undefined;
+  }
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}…` : normalized;
+}
+
+function readTodoActiveItemContent(
+  todoDetails: Record<string, unknown> | undefined,
+): string | undefined {
+  const items = todoDetails?.items;
+  if (!Array.isArray(items)) {
+    return undefined;
+  }
+  for (const item of items) {
+    const record = readRecord(item);
+    if (readStringField(record, "status") !== "in_progress") {
+      continue;
+    }
+    return compactDiagnosticText(record?.content);
+  }
+  return undefined;
+}
+
 function compactChildBootstrapAdmission(value: unknown): Record<string, unknown> | undefined {
   const record = readRecord(value);
   if (!record) {
@@ -257,10 +324,13 @@ function buildNativeTaskResultEvent(params: {
     requestedAgentId,
     childSessionKey,
     childRunId,
+    childProvider: readStringField(details, "childProvider"),
+    childModel: readStringField(details, "childModel"),
     status: readStringField(details, "status"),
     foreground: readBooleanField(details, "foreground") === true,
     resultDeliveredToParentContext: resultDelivered,
     resultDeliveryStatus: readStringField(details, "resultDeliveryStatus"),
+    childProgressOutcome: readStringField(details, "childProgressOutcome"),
     resultTruncated: readBooleanField(details, "resultTruncated") === true,
     childIdentityVerified: readBooleanField(details, "childIdentityVerified") === true,
     childStartFailureKind: readStringField(details, "childStartFailureKind"),
@@ -279,6 +349,95 @@ function buildToolResultRef(params: { runId: string; toolCallId: string }): stri
   return `openclaw-tool-result://${encodeURIComponent(params.runId)}/${encodeURIComponent(
     params.toolCallId,
   )}`;
+}
+
+function isScoutAgent(agentId: string | undefined): boolean {
+  return agentId === "execution-context-scout" || agentId === "execution-validation-scout";
+}
+
+function isScoutDiagnosticTool(toolName: string): boolean {
+  return (
+    toolName === "read" ||
+    toolName === "grep" ||
+    toolName === "glob" ||
+    toolName === "list" ||
+    toolName === "exec" ||
+    toolName === "process"
+  );
+}
+
+function isScoutSearchContextTool(toolName: string): boolean {
+  return toolName === "read" || toolName === "grep" || toolName === "glob" || toolName === "list";
+}
+
+function isParentEditorNavigationTool(input: {
+  agentId: string | undefined;
+  toolName: string;
+}): boolean {
+  return (
+    input.agentId === "execution-coding" &&
+    (input.toolName === "read" || input.toolName === "grep" || input.toolName === "glob")
+  );
+}
+
+function compactToolArgs(toolName: string, args: unknown): Record<string, unknown> {
+  const record = readRecord(args);
+  if (!record) {
+    return {};
+  }
+  const replayCompacted = readBooleanField(record, "replayCompacted");
+  const replayCompactionFields =
+    replayCompacted === true
+      ? {
+          replayCompacted: true,
+        }
+      : {};
+  if (toolName === "read") {
+    return {
+      readPath: readStringField(record, "path") ?? readStringField(record, "file_path"),
+      readOffset: readNumberField(record, "offset"),
+      readLimit: readNumberField(record, "limit"),
+      ...replayCompactionFields,
+    };
+  }
+  if (toolName === "grep") {
+    return {
+      grepQuery: readStringField(record, "query"),
+      grepPath: readStringField(record, "path"),
+      grepGlob: readStringField(record, "glob"),
+      grepRegex: readBooleanField(record, "regex"),
+      grepMaxMatches: readNumberField(record, "maxMatches"),
+      ...replayCompactionFields,
+    };
+  }
+  if (toolName === "glob") {
+    return {
+      globPattern: readStringField(record, "pattern"),
+      globPath: readStringField(record, "path"),
+      globMaxResults: readNumberField(record, "maxResults"),
+      ...replayCompactionFields,
+    };
+  }
+  if (toolName === "list") {
+    return {
+      listPath: readStringField(record, "path"),
+      listOffset: readNumberField(record, "offset"),
+      listMaxResults: readNumberField(record, "maxResults"),
+      ...replayCompactionFields,
+    };
+  }
+  if (isExecToolName(toolName)) {
+    return {
+      command: readStringField(record, "cmd") ?? readStringField(record, "command"),
+      ...replayCompactionFields,
+    };
+  }
+  return replayCompactionFields;
+}
+
+function hasScoutOutputSection(text: string | undefined, names: readonly string[]): boolean {
+  const normalized = text?.toLowerCase() ?? "";
+  return names.some((name) => normalized.includes(name));
 }
 
 function readNestedRecord(
@@ -335,6 +494,8 @@ function readDiffMetadata(details: Record<string, unknown> | undefined) {
 
 function buildNodeAgentToolResultEvent(params: {
   runId: string;
+  agentId?: string;
+  sessionKey?: string;
   toolCallId: string;
   toolName: string;
   isToolError: boolean;
@@ -350,36 +511,53 @@ function buildNodeAgentToolResultEvent(params: {
   const patchSummary =
     params.toolName === "apply_patch" ? readApplyPatchSummary(params.result) : null;
   const diffMetadata = readDiffMetadata(details);
-  const changedFilePaths = uniqueStrings([
-    ...readChangedFilePathsFromArgs(params.args),
-    ...readStringArrayField(details, "changedFilePaths"),
-    ...changedFilePathsFromPatchSummary(patchSummary),
-  ]);
-  const addedFilePaths = uniqueStrings([
-    ...readStringArrayField(details, "addedFilePaths"),
-    ...(patchSummary?.added ?? []),
-  ]);
-  const modifiedFilePaths = uniqueStrings([
-    ...readStringArrayField(details, "modifiedFilePaths"),
-    ...(patchSummary?.modified ?? []),
-  ]);
-  const deletedFilePaths = uniqueStrings([
-    ...readStringArrayField(details, "deletedFilePaths"),
-    ...(patchSummary?.deleted ?? []),
-  ]);
   const isMutationTool =
     params.completedMutatingAction ||
     params.toolName === "edit" ||
     params.toolName === "write" ||
     params.toolName === "apply_patch";
+  const changedFilePaths = isMutationTool
+    ? uniqueStrings([
+        ...readChangedFilePathsFromArgs(params.args),
+        ...readStringArrayField(details, "changedFilePaths"),
+        ...changedFilePathsFromPatchSummary(patchSummary),
+      ])
+    : [];
+  const diagnosticSummaries = isMutationTool
+    ? [
+        ...readDiagnosticSummaries(details, "syntaxDiagnostics", changedFilePaths[0]),
+        ...readDiagnosticSummaries(details, "lspDiagnostics", changedFilePaths[0]),
+      ].slice(0, 12)
+    : [];
+  const addedFilePaths = isMutationTool
+    ? uniqueStrings([
+        ...readStringArrayField(details, "addedFilePaths"),
+        ...(patchSummary?.added ?? []),
+      ])
+    : [];
+  const modifiedFilePaths = isMutationTool
+    ? uniqueStrings([
+        ...readStringArrayField(details, "modifiedFilePaths"),
+        ...(patchSummary?.modified ?? []),
+      ])
+    : [];
+  const deletedFilePaths = isMutationTool
+    ? uniqueStrings([
+        ...readStringArrayField(details, "deletedFilePaths"),
+        ...(patchSummary?.deleted ?? []),
+      ])
+    : [];
   const managedOutputRef = readStringField(details, "managedOutputRef");
+  const managedOutputPath = readStringField(details, "managedOutputPath");
   const isRelevantNodeTool =
     params.toolName === "update_plan" ||
     params.toolName === "read_todo" ||
     params.toolName === "node_finish" ||
     params.toolName === "openclaw_resource_read" ||
     managedOutputRef !== undefined ||
-    isMutationTool;
+    isMutationTool ||
+    isParentEditorNavigationTool({ agentId: params.agentId, toolName: params.toolName }) ||
+    (isScoutAgent(params.agentId) && isScoutDiagnosticTool(params.toolName));
   if (!isRelevantNodeTool) {
     return null;
   }
@@ -387,12 +565,17 @@ function buildNodeAgentToolResultEvent(params: {
   return {
     eventType: "node_agent_tool_result",
     toolResultRef,
+    runId: params.runId,
+    agentId: params.agentId,
+    sessionKey: params.sessionKey,
     toolName: params.toolName,
     toolCallId: params.toolCallId,
+    completedAtMs: Date.now(),
     status: params.isToolError ? "error" : "completed",
     isError: params.isToolError,
     mutatingAction: isMutationTool,
     changedFilePaths,
+    ...(diagnosticSummaries.length > 0 ? { diagnosticSummaries } : {}),
     ...(addedFilePaths.length > 0 || modifiedFilePaths.length > 0 || deletedFilePaths.length > 0
       ? {
           addedFilePaths,
@@ -409,10 +592,22 @@ function buildNodeAgentToolResultEvent(params: {
       : {}),
     todoRef: readStringField(todoDetails, "todoRef"),
     managedOutputRef,
+    managedOutputPath,
     managedOutputBytes: readNumberField(details, "managedOutputBytes"),
     managedOutputHash: readStringField(details, "managedOutputHash"),
     truncated: readBooleanField(details, "truncated"),
     totalOutputChars: readNumberField(details, "totalOutputChars"),
+    readNextOffset:
+      params.toolName === "read"
+        ? (readNumberField(details, "nextOffset") ?? readNumberField(details, "suggestedOffset"))
+        : undefined,
+    todoItemCount: readNumberField(todoDetails, "itemCount"),
+    todoCompletedCount: readNumberField(todoDetails, "completedCount"),
+    todoInProgressCount: readNumberField(todoDetails, "inProgressCount"),
+    todoActiveItem: readTodoActiveItemContent(todoDetails),
+    sourceNavigationReminderShown: readBooleanField(details, "sourceNavigationReminderShown"),
+    sourceNavigationCountSinceEdit: readNumberField(details, "sourceNavigationCountSinceEdit"),
+    ...compactToolArgs(params.toolName, params.args),
     finishAccepted:
       params.toolName === "node_finish"
         ? readBooleanField(details, "accepted") === true
@@ -452,18 +647,14 @@ function buildChangeSetWorkingContextText(event: Record<string, unknown>): strin
   const deletedFilePaths = readStringArrayField(event, "deletedFilePaths");
   const isFileMutationTool =
     toolName === "edit" || toolName === "write" || toolName === "apply_patch";
-  const hasChangedFiles =
-    changedFilePaths.length > 0 ||
-    addedFilePaths.length > 0 ||
-    modifiedFilePaths.length > 0 ||
-    deletedFilePaths.length > 0;
-  if (!isFileMutationTool && !hasChangedFiles) {
+  if (!isFileMutationTool) {
     return undefined;
   }
   const toolResultRef = readStringField(event, "toolResultRef");
   const status = readStringField(event, "status") ?? "unknown";
   const firstChangedLine = readNumberField(event, "firstChangedLine");
   const diffByteCount = readNumberField(event, "diffByteCount");
+  const diagnosticSummaries = readStringArrayField(event, "diagnosticSummaries");
   return [
     "Change set:",
     `tool=${toolName}`,
@@ -478,6 +669,8 @@ function buildChangeSetWorkingContextText(event: Record<string, unknown>): strin
     firstChangedLine !== undefined ? `firstChangedLine=${firstChangedLine}` : undefined,
     readBooleanField(event, "diffAvailable") === true ? "diffAvailable=true" : undefined,
     diffByteCount !== undefined ? `diffByteCount=${diffByteCount}` : undefined,
+    diagnosticSummaries.length > 0 ? "diagnostics:" : undefined,
+    ...diagnosticSummaries.map((diagnostic) => `- ${diagnostic}`),
     readBooleanField(event, "isError") === true
       ? "stale_edit_or_regrounding_required=true"
       : undefined,
@@ -495,21 +688,101 @@ function buildManagedOutputWorkingContextText(event: Record<string, unknown>): s
   const toolResultRef = readStringField(event, "toolResultRef");
   const status = readStringField(event, "status") ?? "unknown";
   const managedOutputBytes = readNumberField(event, "managedOutputBytes");
+  const managedOutputPath = readStringField(event, "managedOutputPath");
   const totalOutputChars = readNumberField(event, "totalOutputChars");
   return [
     "Managed tool output:",
     `tool=${toolName}`,
     toolResultRef ? `toolResultRef=${toolResultRef}` : undefined,
     `status=${status}`,
-    `managedOutputRef=${managedOutputRef}`,
+    managedOutputPath ? `Full output saved to: ${managedOutputPath}` : undefined,
     managedOutputBytes !== undefined ? `managedOutputBytes=${managedOutputBytes}` : undefined,
     readStringField(event, "managedOutputHash")
       ? `managedOutputHash=${readStringField(event, "managedOutputHash")}`
       : undefined,
     totalOutputChars !== undefined ? `totalOutputChars=${totalOutputChars}` : undefined,
     readBooleanField(event, "truncated") === true ? "truncated=true" : undefined,
-    "Do not read stateRoot files directly. Inspect this managed output only through the appropriate OpenClaw tool/scout path.",
+    managedOutputPath
+      ? "Use Grep to search the full content or Read with offset/limit to view specific sections."
+      : "Full output was persisted, but no saved output path was recorded in this event.",
   ]
+    .filter((line): line is string => typeof line === "string" && line.length > 0)
+    .join("\n");
+}
+
+function buildSearchResultWorkingContextText(event: Record<string, unknown>): string | undefined {
+  const toolName = readStringField(event, "toolName") ?? "unknown";
+  if (!isScoutSearchContextTool(toolName)) {
+    return undefined;
+  }
+  const toolResultRef = readStringField(event, "toolResultRef");
+  const status = readStringField(event, "status") ?? "unknown";
+  const lines = [
+    "Native search/read context:",
+    `tool=${toolName}`,
+    toolResultRef ? `toolResultRef=${toolResultRef}` : undefined,
+    `status=${status}`,
+    readStringField(event, "readPath")
+      ? `readPath=${readStringField(event, "readPath")}`
+      : undefined,
+    readNumberField(event, "readOffset") !== undefined
+      ? `readOffset=${readNumberField(event, "readOffset")}`
+      : undefined,
+    readNumberField(event, "readLimit") !== undefined
+      ? `readLimit=${readNumberField(event, "readLimit")}`
+      : undefined,
+    readStringField(event, "grepQuery")
+      ? `grepQuery=${readStringField(event, "grepQuery")}`
+      : undefined,
+    readStringField(event, "grepPath")
+      ? `grepPath=${readStringField(event, "grepPath")}`
+      : undefined,
+    readStringField(event, "grepGlob")
+      ? `grepGlob=${readStringField(event, "grepGlob")}`
+      : undefined,
+    readBooleanField(event, "grepRegex") !== undefined
+      ? `grepRegex=${readBooleanField(event, "grepRegex")}`
+      : undefined,
+    readNumberField(event, "grepMaxMatches") !== undefined
+      ? `grepMaxMatches=${readNumberField(event, "grepMaxMatches")}`
+      : undefined,
+    readStringField(event, "globPattern")
+      ? `globPattern=${readStringField(event, "globPattern")}`
+      : undefined,
+    readStringField(event, "globPath")
+      ? `globPath=${readStringField(event, "globPath")}`
+      : undefined,
+    readNumberField(event, "globMaxResults") !== undefined
+      ? `globMaxResults=${readNumberField(event, "globMaxResults")}`
+      : undefined,
+    readNumberField(event, "batchReadCount") !== undefined
+      ? `batchReadCount=${readNumberField(event, "batchReadCount")}`
+      : undefined,
+    readNumberField(event, "batchGrepCount") !== undefined
+      ? `batchGrepCount=${readNumberField(event, "batchGrepCount")}`
+      : undefined,
+    readNumberField(event, "batchGlobCount") !== undefined
+      ? `batchGlobCount=${readNumberField(event, "batchGlobCount")}`
+      : undefined,
+    readNumberField(event, "batchItemCount") !== undefined
+      ? `batchItemCount=${readNumberField(event, "batchItemCount")}`
+      : undefined,
+    readStringField(event, "listPath")
+      ? `listPath=${readStringField(event, "listPath")}`
+      : undefined,
+    readNumberField(event, "listOffset") !== undefined
+      ? `listOffset=${readNumberField(event, "listOffset")}`
+      : undefined,
+    readNumberField(event, "listMaxResults") !== undefined
+      ? `listMaxResults=${readNumberField(event, "listMaxResults")}`
+      : undefined,
+    readBooleanField(event, "truncated") === true ? "truncated=true" : undefined,
+    readNumberField(event, "totalOutputChars") !== undefined
+      ? `totalOutputChars=${readNumberField(event, "totalOutputChars")}`
+      : undefined,
+    "This entry is search/read orientation only; it is not a file mutation or change_set.",
+  ];
+  return lines
     .filter((line): line is string => typeof line === "string" && line.length > 0)
     .join("\n");
 }
@@ -519,6 +792,9 @@ async function admitNativeToolWorkingContext(params: {
   event: Record<string, unknown>;
   toolCallId: string;
 }): Promise<Record<string, unknown>> {
+  if (params.ctx.params.agentId === "execution-coding") {
+    return params.event;
+  }
   const sessionKey = params.ctx.params.sessionKey?.trim();
   if (!sessionKey) {
     return params.event;
@@ -562,6 +838,46 @@ async function admitNativeToolWorkingContext(params: {
         changeSetWorkingContextEntryId: updateResult.entry.entryId,
         changeSetTextHash: updateResult.entry.textHash,
         changeSetTextByteCount: updateResult.entry.textByteCount,
+      };
+    }
+    const shouldPersistSearchResult =
+      isScoutAgent(params.ctx.params.agentId) ||
+      isParentEditorNavigationTool({
+        agentId: params.ctx.params.agentId,
+        toolName: readStringField(event, "toolName") ?? "",
+      });
+    const searchResultText = shouldPersistSearchResult
+      ? buildSearchResultWorkingContextText(event)
+      : undefined;
+    if (searchResultText) {
+      const updateResult = await updateSessionWorkingContext({
+        storePath,
+        sessionKey,
+        entry: {
+          kind: "search_result",
+          source: "native_tool",
+          text: searchResultText,
+          sourceToolCallId: params.toolCallId,
+          toolResultRef: readStringField(event, "toolResultRef"),
+          status: readStringField(event, "status"),
+        },
+      });
+      if (!updateResult.persisted) {
+        return {
+          ...event,
+          searchWorkingContextPersisted: false,
+          searchWorkingContextPersistFailureReason: updateResult.reason,
+          searchWorkingContextRef: updateResult.workingContextRef,
+        };
+      }
+      event = {
+        ...event,
+        searchWorkingContextPersisted: true,
+        searchWorkingContextRef: updateResult.workingContextRef,
+        searchWorkingContextEntryRef: updateResult.workingContextEntryRef,
+        searchWorkingContextEntryId: updateResult.entry.entryId,
+        searchWorkingContextTextHash: updateResult.entry.textHash,
+        searchWorkingContextTextByteCount: updateResult.entry.textByteCount,
       };
     }
     const managedOutputText = buildManagedOutputWorkingContextText(event);
@@ -613,6 +929,9 @@ async function admitNativeTaskWorkingContext(params: {
   result: unknown;
   toolCallId: string;
 }): Promise<Record<string, unknown>> {
+  if (params.ctx.params.agentId === "execution-coding") {
+    return params.event;
+  }
   const requestedAgentId = readStringField(params.event, "requestedAgentId");
   const kind = workingContextKindForNativeTaskAgent(requestedAgentId);
   if (!kind || readBooleanField(params.event, "resultDeliveredToParentContext") !== true) {
@@ -661,6 +980,14 @@ async function admitNativeTaskWorkingContext(params: {
       workingContextKind: updateResult.entry.kind,
       workingContextHasInlineContextWindows: updateResult.entry.hasInlineContextWindows,
       workingContextHasFileGraph: updateResult.entry.hasFileGraph,
+      workingContextHasSymbolWindows: hasScoutOutputSection(text, [
+        "symbol_windows",
+        "symbol windows",
+      ]),
+      workingContextHasMissingWindows: hasScoutOutputSection(text, [
+        "missing_windows",
+        "missing windows",
+      ]),
       workingContextFileGraphTextHash: updateResult.entry.fileGraphTextHash,
       workingContextFileGraphTextByteCount: updateResult.entry.fileGraphTextByteCount,
       workingContextFileGraphVerifiedEdgeCount: updateResult.entry.fileGraphVerifiedEdgeCount,
@@ -668,6 +995,17 @@ async function admitNativeTaskWorkingContext(params: {
         updateResult.entry.fileGraphUncertainAnnotationCount,
       workingContextTextHash: updateResult.entry.textHash,
       workingContextTextByteCount: updateResult.entry.textByteCount,
+      ...(kind === "validation_state"
+        ? {
+            validationEvidenceRef: updateResult.workingContextEntryRef,
+            validationEvidenceAgentId: requestedAgentId,
+            validationEvidenceChildSessionKey: readStringField(params.event, "childSessionKey"),
+            validationEvidenceChildResultRef: readStringField(params.event, "childResultRef"),
+            validationEvidenceTaskRef: readStringField(params.event, "taskRef"),
+            validationEvidenceStatus: readStringField(params.event, "status"),
+            validationEvidenceReasonCodes: ["validation_scout_result_persisted_as_native_evidence"],
+          }
+        : {}),
     };
   } catch (err) {
     return {
@@ -1093,6 +1431,13 @@ export function handleToolExecutionStart(
     const toolCallId = evt.toolCallId;
     const args = evt.args;
     const runId = ctx.params.runId;
+    const argsRecord = readRecord(args);
+    const requestedAgentId =
+      toolName === "task"
+        ? (readStringField(argsRecord, "agentId") ??
+          readStringField(argsRecord, "subagent_type") ??
+          readStringField(argsRecord, "subagentType"))
+        : undefined;
 
     // Track start time and args for after_tool_call hook.
     const startedAt = Date.now();
@@ -1147,7 +1492,12 @@ export function handleToolExecutionStart(
     // Best-effort typing signal; do not block tool summaries on slow emitters.
     void ctx.params.onAgentEvent?.({
       stream: "tool",
-      data: { phase: "start", name: toolName, toolCallId },
+      data: {
+        phase: "start",
+        name: toolName,
+        toolCallId,
+        ...(requestedAgentId ? { requestedAgentId } : {}),
+      },
     });
 
     if (isExecToolName(toolName)) {
@@ -1344,6 +1694,8 @@ export async function handleToolExecutionEnd(
   }
   const nodeAgentToolResultEvent = buildNodeAgentToolResultEvent({
     runId,
+    agentId: ctx.params.agentId,
+    sessionKey: ctx.params.sessionKey,
     toolCallId,
     toolName,
     isToolError,

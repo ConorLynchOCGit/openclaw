@@ -18,24 +18,27 @@ describe("agent pack registry", () => {
     expect(executionCoding).toMatchObject({
       id: "execution-coding",
       classification: "execution_platform_agent",
+      promptProfile: "execution_worker",
       runtimeSourcePath: "docs/agents/execution-coding/runtime",
       requiredDocs: ["IDENTITY.md", "AGENTS.md", "BOOTSTRAP.md", "TOOLS.md"],
-      primarySkills: ["execution-node-workflow"],
+      primarySkills: [],
       allowedChildAgents: ["execution-context-scout", "execution-validation-scout"],
       toolBudget: {
-        readDefaultLineLimit: 80,
-        readMaxBytes: 12_288,
+        readDefaultLineLimit: 2_000,
+        readMaxBytes: 51_200,
       },
       requiredTools: [
         "node_finish",
-        "openclaw_resource_read",
         "edit",
+        "lsp",
         "read",
+        "grep",
+        "glob",
         "update_plan",
         "read_todo",
         "task",
       ],
-      forbiddenTools: expect.arrayContaining(["list", "grep", "exec", "sessions_spawn"]),
+      forbiddenTools: expect.arrayContaining(["apply_patch", "list", "exec", "sessions_spawn"]),
     });
     expect(
       resolveAgentPackRuntimeSourceRoot({
@@ -57,8 +60,9 @@ describe("agent pack registry", () => {
     });
 
     expect(contextScout).toMatchObject({
+      promptProfile: "execution_context_scout",
       requiredDocs: ["IDENTITY.md", "AGENTS.md", "BOOTSTRAP.md", "TOOLS.md"],
-      primarySkills: ["execution-context-scout"],
+      primarySkills: [],
       toolBudget: {
         readDefaultLineLimit: 160,
         readMaxBytes: 16_384,
@@ -66,12 +70,13 @@ describe("agent pack registry", () => {
         discoveryDefaultMaxMatches: 60,
         discoveryDefaultMaxFiles: 1_000,
       },
-      requiredTools: ["read", "list", "glob", "grep"],
+      requiredTools: ["read", "list", "glob", "grep", "openclaw_resource_read"],
       forbiddenTools: expect.arrayContaining(["edit", "task", "node_finish"]),
     });
     expect(validationScout).toMatchObject({
+      promptProfile: "execution_validation_scout",
       requiredDocs: ["IDENTITY.md", "AGENTS.md", "BOOTSTRAP.md", "TOOLS.md"],
-      primarySkills: ["execution-validation-scout"],
+      primarySkills: [],
       toolBudget: {
         readDefaultLineLimit: 220,
         readMaxBytes: 24_576,
@@ -79,9 +84,11 @@ describe("agent pack registry", () => {
         discoveryDefaultMaxMatches: 80,
         discoveryDefaultMaxFiles: 1_500,
       },
-      requiredTools: ["read", "list", "glob", "grep", "exec"],
-      forbiddenTools: expect.arrayContaining(["write", "openclaw_resource_read", "node_finish"]),
+      requiredTools: ["read", "list", "glob", "grep", "exec", "openclaw_resource_read"],
+      forbiddenTools: expect.arrayContaining(["write", "node_finish"]),
     });
+    expect(contextScout?.requiredTools).not.toContain("source_context_batch");
+    expect(validationScout?.requiredTools).not.toContain("source_context_batch");
   });
 
   it("resolves execution tool budgets through the sync native registry path", () => {

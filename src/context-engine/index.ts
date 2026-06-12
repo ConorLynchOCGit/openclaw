@@ -24,3 +24,6 @@ export { registerLegacyContextEngine } from "./legacy.registration.js";
 export { delegateCompactionToRuntime } from "./delegate.js";
 
 export { ensureContextEnginesInitialized } from "./init.js";
+export { resolveContextRuntime } from "./runtime.js";
+export type { ContextRuntime } from "./runtime.js";
+export * from "./pressure/index.js";

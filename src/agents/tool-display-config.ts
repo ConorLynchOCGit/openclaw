@@ -279,6 +279,11 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
       title: "Grep",
       detailKeys: ["query", "path", "glob", "regex", "caseSensitive", "contextLines", "maxMatches"],
     },
+    lsp: {
+      emoji: "🧭",
+      title: "LSP",
+      detailKeys: ["operation", "filePath", "query", "line", "character"],
+    },
     gateway: {
       emoji: "🔌",
       title: "Gateway",

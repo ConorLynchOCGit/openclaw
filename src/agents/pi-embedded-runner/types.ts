@@ -95,6 +95,8 @@ export type ContextManagementTrace = {
 
 export type EmbeddedRunLivenessState = "working" | "paused" | "blocked" | "abandoned";
 
+export type EmbeddedRunProgressTimeoutKind = "no_progress_timeout" | "repeated_low_value_progress";
+
 export type EmbeddedPiRunMeta = {
   durationMs: number;
   agentMeta?: EmbeddedPiAgentMeta;
@@ -105,6 +107,8 @@ export type EmbeddedPiRunMeta = {
   finalAssistantRawText?: string;
   replayInvalid?: boolean;
   livenessState?: EmbeddedRunLivenessState;
+  /** Native progress-lease timeout classification when liveness stopped the attempt. */
+  progressTimeoutKind?: EmbeddedRunProgressTimeoutKind;
   error?: {
     kind:
       | "context_overflow"

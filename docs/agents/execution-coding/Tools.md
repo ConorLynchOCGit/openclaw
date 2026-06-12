@@ -2,22 +2,29 @@
 
 ## Preferred Tools
 
+- `edit`
+- `lsp`
+- `read`
+- `grep`
+- `glob`
 - `update_plan`
 - `read_todo`
 - `task`
-- `read` only for exact bounded source windows from known paths
-- one native mutation surface
-- `openclaw_resource_read`
 - `node_finish`
 
 ## Constraints
 
-The parent implementation agent should not rely on broad acquisition or
-execution tools. Source discovery and validation execution are delegated to
-scouts.
+`edit` is the implementation tool. Use exact replacement or `operations[]` for
+line/range insertions and replacements.
 
-`read` is not a discovery tool for this agent. Use it only when the path is
-already known from the node prompt, a scout result, or native working context,
-and only with explicit `offset` and `limit` for a small source window. Do not
-use `read` for directory listing, fuzzy path search, full files, runtime state,
-or managed-output inspection.
+`lsp`, `read`, `grep`, and `glob` are normal editor-navigation tools for exact
+local lookup. Use `lsp` for large-file symbol navigation, file-scoped `grep` for
+known-file text lookup, and `read` with explicit `offset`/`limit` for exact
+source windows.
+
+`task` is for open-ended mapping or validation, not for specific file/symbol
+lookups.
+
+`update_plan` tracks deliverables. It is not a workflow authority surface.
+
+Tool descriptions define exact schemas and behavior.

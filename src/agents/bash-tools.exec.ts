@@ -74,6 +74,7 @@ function buildExecOutputPreview(text: string): {
   truncated: boolean;
   totalOutputChars: number;
   managedOutputRef: string | null;
+  managedOutputPath?: string;
   managedOutputBytes?: number;
   managedOutputHash?: string;
 };
@@ -92,6 +93,7 @@ function buildExecOutputPreview(
   truncated: boolean;
   totalOutputChars: number;
   managedOutputRef: string | null;
+  managedOutputPath?: string;
   managedOutputBytes?: number;
   managedOutputHash?: string;
 };
@@ -110,6 +112,7 @@ function buildExecOutputPreview(
   truncated: boolean;
   totalOutputChars: number;
   managedOutputRef: string | null;
+  managedOutputPath?: string;
   managedOutputBytes?: number;
   managedOutputHash?: string;
 } {
@@ -135,7 +138,7 @@ function buildExecOutputPreview(
     });
   const tailText = text.slice(text.length - EXEC_FOREGROUND_OUTPUT_PREVIEW_CHARS);
   const managedOutputLine = managed
-    ? `Full output saved to managedOutputRef=${managed.ref} (${managed.byteCount} bytes, sha256=${managed.textHash}). Inspect through an appropriate scout/tool path; do not paste the raw managed-output file into context.`
+    ? `Full output saved to: ${managed.outputPath}\nUse Grep to search the full content or Read with offset/limit to view specific sections.`
     : "Full output exceeded the model preview budget, but no stateRoot was available for managed-output persistence.";
   return {
     text: [
@@ -146,6 +149,7 @@ function buildExecOutputPreview(
     truncated: true,
     totalOutputChars,
     managedOutputRef: managed?.ref ?? null,
+    ...(managed ? { managedOutputPath: managed.outputPath } : {}),
     ...(managed
       ? { managedOutputBytes: managed.byteCount, managedOutputHash: managed.textHash }
       : {}),
@@ -192,6 +196,7 @@ export function buildExecForegroundResult(params: {
       failureKind: params.outcome.failureKind,
       exitSignal: params.outcome.exitSignal,
       managedOutputRef: reason.managedOutputRef ?? aggregated.managedOutputRef,
+      managedOutputPath: reason.managedOutputPath ?? aggregated.managedOutputPath,
       ...((reason.managedOutputBytes ?? aggregated.managedOutputBytes)
         ? { managedOutputBytes: reason.managedOutputBytes ?? aggregated.managedOutputBytes }
         : {}),
@@ -212,6 +217,7 @@ export function buildExecForegroundResult(params: {
     timedOut: params.outcome.timedOut,
     exitSignal: params.outcome.exitSignal,
     managedOutputRef: aggregated.managedOutputRef,
+    managedOutputPath: aggregated.managedOutputPath,
     ...(aggregated.managedOutputBytes ? { managedOutputBytes: aggregated.managedOutputBytes } : {}),
     ...(aggregated.managedOutputHash ? { managedOutputHash: aggregated.managedOutputHash } : {}),
   });
@@ -1441,6 +1447,33 @@ function rejectExecApprovalShellCommand(command: string): void {
   }
 }
 
+function isExecutionValidationScout(agentId: string | undefined): boolean {
+  return normalizeOptionalLowercaseString(agentId) === "execution-validation-scout";
+}
+
+function isAdHocTypeScriptCompileCommand(command: string): boolean {
+  const normalized = command.trim();
+  if (/\bpnpm\s+test:file\b/i.test(normalized)) {
+    return false;
+  }
+  return /(?:^|[\s;&|()])(?:(?:pnpm|npm|yarn|bun)\s+(?:exec\s+|run\s+)?|npx\s+)?(?:tsc|typescript)(?:\s|$)/i.test(
+    normalized,
+  );
+}
+
+function assertValidationScoutExecCommand(command: string, agentId: string | undefined): void {
+  if (!isExecutionValidationScout(agentId) || !isAdHocTypeScriptCompileCommand(command)) {
+    return;
+  }
+  throw new Error(
+    [
+      "Validation scout exec rejected raw TypeScript compile discovery.",
+      "Use repo-native focused validation instead: `pnpm test:file <test-file>` or `pnpm test:file <test-file> -- -t <name>`.",
+      "If no focused repo-native command can answer the validation question, report that exact missing command instead of inventing tsc flags.",
+    ].join(" "),
+  );
+}
+
 export function createExecTool(
   defaults?: ExecToolDefaults,
 ): AgentToolWithMeta<typeof execSchema, ExecToolDetails> {
@@ -1525,6 +1558,7 @@ export function createExecTool(
       if (!params.command) {
         throw new Error("Provide a command to start.");
       }
+      assertValidationScoutExecCommand(params.command, agentId);
 
       const maxOutput = DEFAULT_MAX_OUTPUT;
       const pendingMaxOutput = DEFAULT_PENDING_MAX_OUTPUT;

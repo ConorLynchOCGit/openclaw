@@ -332,7 +332,7 @@ describe("model tool turn transport", () => {
           return {
             status: "completed",
             responseText:
-              "## Worker Prompt\nUse update_plan, then search/edit/validate loop, then node_finish.",
+              "## Worker Prompt\nPatch the assigned source, validate the touched behavior, then node_finish.",
             responseHash: "role-text-hash",
             errorReasonCode: null,
             httpStatus: 200,

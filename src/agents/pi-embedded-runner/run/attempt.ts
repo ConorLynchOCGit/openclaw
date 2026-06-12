@@ -1,20 +1,26 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { AgentMessage, StreamFn } from "@mariozechner/pi-agent-core";
 import {
   createAgentSession,
   DefaultResourceLoader,
   SessionManager,
 } from "@mariozechner/pi-coding-agent";
 import { filterHeartbeatPairs } from "../../../auto-reply/heartbeat-filter.js";
+import type { ThinkLevel } from "../../../auto-reply/thinking.js";
 import { resolveChannelCapabilities } from "../../../config/channel-capabilities.js";
 import { resolveStateDir } from "../../../config/paths.js";
 import { updateSessionLaunch } from "../../../config/sessions/launch.js";
 import { buildSessionLaunchLocation } from "../../../config/sessions/location.js";
 import { resolveStorePath } from "../../../config/sessions/paths.js";
 import type { SessionSystemPromptReport } from "../../../config/sessions/types.js";
-import { stripSessionWorkingContextPromptAddition } from "../../../config/sessions/working-context.js";
+import {
+  createContextPressureController,
+  shouldPreferActualUsageCompaction,
+  type ContextBreakdownSnapshot,
+  PREEMPTIVE_OVERFLOW_ERROR_TEXT,
+} from "../../../context-engine/pressure/index.js";
 import { formatErrorMessage } from "../../../infra/errors.js";
 import { resolveHeartbeatSummaryForAgent } from "../../../infra/heartbeat-summary.js";
 import { getMachineDisplayName } from "../../../infra/machine-name.js";
@@ -44,6 +50,10 @@ import { buildTtsSystemPromptHint } from "../../../tts/tts.js";
 import { resolveUserPath } from "../../../utils.js";
 import { normalizeMessageChannel } from "../../../utils/message-channel.js";
 import { isReasoningTagProvider } from "../../../utils/provider-utils.js";
+import {
+  findAgentPackRegistryEntry,
+  loadAgentPackRegistryEntriesSync,
+} from "../../agent-pack-registry.js";
 import { resolveOpenClawAgentDir } from "../../agent-paths.js";
 import { resolveSessionAgentIds } from "../../agent-scope.js";
 import { createAnthropicPayloadLogger } from "../../anthropic-payload-log.js";
@@ -82,6 +92,7 @@ import { recordModelMemoryProductionHookProbe } from "../../model-memory.hook-pr
 import { resolveDefaultModelForAgent } from "../../model-selection.js";
 import { supportsModelTools } from "../../model-tool-support.js";
 import { releaseWsSession } from "../../openai-ws-stream.js";
+import { createOpenClawLspService } from "../../openclaw-lsp-service.js";
 import { resolveOwnerDisplaySetting } from "../../owner-display.js";
 import { createBundleLspToolRuntime } from "../../pi-bundle-lsp-runtime.js";
 import {
@@ -128,12 +139,17 @@ import {
   applySkillEnvOverridesFromSnapshot,
   resolveSkillsPromptForRun,
 } from "../../skills.js";
+import {
+  buildProviderSystemPromptContributionReceipt,
+  type ProviderSystemPromptContributionReceipt,
+} from "../../system-prompt-contribution.js";
 import { resolveSystemPromptOverride } from "../../system-prompt-override.js";
 import { buildSystemPromptParams } from "../../system-prompt-params.js";
 import {
   buildSystemPromptReport,
   evaluateRequiredProviderContextAdmission,
 } from "../../system-prompt-report.js";
+import type { PromptProfile } from "../../system-prompt.types.js";
 import { resolveAgentTimeoutMs } from "../../timeout.js";
 import { UNKNOWN_TOOL_THRESHOLD } from "../../tool-loop-detection.js";
 import {
@@ -171,6 +187,7 @@ import { buildEmbeddedSandboxInfo } from "../sandbox-info.js";
 import { prewarmSessionFile, trackSessionManagerAccess } from "../session-manager-cache.js";
 import { prepareSessionManagerForRun } from "../session-manager-init.js";
 import { resolveEmbeddedRunSkillEntries } from "../skills-runtime.js";
+import { streamWithPayloadPatch } from "../stream-payload-utils.js";
 import {
   describeEmbeddedAgentStreamStrategy,
   resetEmbeddedAgentBaseStreamFnCacheForTest,
@@ -185,11 +202,13 @@ import {
 } from "../system-prompt.js";
 import { dropThinkingBlocks } from "../thinking.js";
 import { collectAllowedToolNames } from "../tool-name-allowlist.js";
+import { estimateProviderVisibleContextBreakdown } from "../tool-result-char-estimator.js";
 import {
   installContextEngineLoopHook,
   installToolResultContextGuard,
 } from "../tool-result-context-guard.js";
 import {
+  estimateToolResultReductionPotential,
   resolveLiveToolResultMaxChars,
   truncateOversizedToolResultsInSessionManager,
 } from "../tool-result-truncation.js";
@@ -202,7 +221,6 @@ import { mapThinkingLevel } from "../utils.js";
 import { flushPendingToolResultsAfterIdle } from "../wait-for-idle-before-flush.js";
 import {
   assembleAttemptContextEngine,
-  buildAttemptWorkingContextPromptAddition,
   buildContextEnginePromptCacheInfo,
   findCurrentAttemptAssistantMessage,
   finalizeAttemptContextEngineTurn,
@@ -261,11 +279,12 @@ import { pruneProcessedHistoryImages } from "./history-image-prune.js";
 import { detectAndLoadPromptImages } from "./images.js";
 import { buildAttemptReplayMetadata } from "./incomplete-turn.js";
 import { resolveLlmIdleTimeoutMs, streamWithIdleTimeout } from "./llm-idle-timeout.js";
-import {
-  PREEMPTIVE_OVERFLOW_ERROR_TEXT,
-  shouldPreemptivelyCompactBeforePrompt,
-} from "./preemptive-compaction.js";
-import type { EmbeddedRunAttemptParams, EmbeddedRunAttemptResult } from "./types.js";
+import { createProgressLeaseTimeout } from "./progress-lease-timeout.js";
+import type {
+  EmbeddedRunAttemptParams,
+  EmbeddedRunAttemptResult,
+  EmbeddedRunProgressTimeoutKind,
+} from "./types.js";
 
 function recordFromUnknown(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -289,11 +308,29 @@ function booleanFromRecord(
   return typeof value === "boolean" ? value : undefined;
 }
 
+function numberFromRecord(
+  record: Record<string, unknown> | undefined,
+  key: string,
+): number | undefined {
+  const value = record?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function stringArrayFromRecord(record: Record<string, unknown> | undefined, key: string): string[] {
+  const value = record?.[key];
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    .filter((entry) => entry.length > 0);
+}
+
 export const NATIVE_TASK_RESULT_AWAITING_PARENT_CONTEXT_REASON =
   "native_task_result_awaiting_parent_context";
 
 const NATIVE_TASK_RESULT_AWAITING_PARENT_CONTEXT_ERROR_TEXT =
-  "Context overflow: native task child result is waiting for parent synthesis and cannot be compacted without losing edit-ready source context. Delegate a narrower scout task or reduce active context before retrying.";
+  "Context overflow: native task child result is waiting for parent synthesis and cannot be compacted without losing delivered task context. Reduce active context before retrying.";
 
 export function isDeliveredNativeTaskToolResult(message: AgentMessage): boolean {
   if ((message as { role?: unknown }).role !== "toolResult") {
@@ -360,6 +397,929 @@ export function filterEffectiveToolsForNodeAgentNativeTaskMode<
       mutationToolName: input.mode?.mutationToolName,
     });
   });
+}
+
+const PROVIDER_TURN_OPTICS_EVENT_TYPE = "node_agent_provider_turn_optics";
+const PROVIDER_TURN_OPTICS_CUSTOM_TYPE = "openclaw:provider-turn-optics";
+const PROVIDER_RESPONSE_NORMALIZATION_EVENT_TYPE =
+  "node_agent_provider_response_normalization_receipt";
+const PROVIDER_RESPONSE_NORMALIZATION_CUSTOM_TYPE =
+  "openclaw:provider-response-normalization-receipt";
+const PROVIDER_TURN_OPTICS_MUTATING_TOOL_NAMES = new Set(["edit", "write", "apply_patch"]);
+const PROVIDER_REQUEST_DIAGNOSTICS_EVENT_TYPE = "node_agent_provider_request_diagnostics";
+const PROVIDER_REQUEST_DIAGNOSTICS_CUSTOM_TYPE = "openclaw:provider-request-diagnostics";
+const PROVIDER_WAIT_LOCK_HANDOFF_EVENT_TYPE = "node_agent_provider_wait_lock_handoff";
+const PROVIDER_WAIT_LOCK_HANDOFF_CUSTOM_TYPE = "openclaw:provider-wait-lock-handoff";
+const PREEMPTIVE_CHECKPOINT_EVENT_TYPE = "node_agent_preemptive_compaction_checkpoint";
+const PREEMPTIVE_CHECKPOINT_CUSTOM_TYPE = "openclaw:node-agent-preemptive-checkpoint";
+const PROVIDER_TURN_OPTICS_ACQUISITION_TOOL_NAMES = new Set([
+  "read",
+  "grep",
+  "glob",
+  "list",
+  "openclaw_resource_read",
+]);
+
+type NodeAgentPreemptiveCheckpointReason =
+  | "after_first_successful_edit_batch"
+  | "before_validation_scout"
+  | "after_validation_result"
+  | "before_node_finish";
+
+type NodeAgentPreemptiveCheckpointTracker = Record<NodeAgentPreemptiveCheckpointReason, boolean>;
+
+type DeferredProviderCustomEntry = {
+  customType: string;
+  event: Record<string, unknown>;
+};
+
+function createNodeAgentPreemptiveCheckpointTracker(): NodeAgentPreemptiveCheckpointTracker {
+  return {
+    after_first_successful_edit_batch: false,
+    before_validation_scout: false,
+    after_validation_result: false,
+    before_node_finish: false,
+  };
+}
+
+function stableToolCatalogValue(value: unknown): string {
+  if (value === undefined) {
+    return "";
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return Object.prototype.toString.call(value);
+  }
+}
+
+function buildSessionLaunchToolCatalogSummary(
+  tools: readonly {
+    name?: string | null;
+    description?: string | null;
+    parameters?: unknown;
+  }[],
+) {
+  return tools
+    .map((tool, catalogIndex) => {
+      const name = tool.name?.trim();
+      if (!name) {
+        return null;
+      }
+      const description = tool.description ?? "";
+      const parameters = stableToolCatalogValue(tool.parameters);
+      return {
+        name,
+        catalogIndex,
+        descriptionHash: stableAttemptTextHash(description),
+        descriptionBytes: Buffer.byteLength(description, "utf8"),
+        parametersHash: stableAttemptTextHash(parameters),
+        parametersBytes: Buffer.byteLength(parameters, "utf8"),
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+    .toSorted((a, b) => a.name.localeCompare(b.name));
+}
+
+function toolResultIdsFromMessages(messages: readonly AgentMessage[]): Set<string> {
+  const ids = new Set<string>();
+  for (const message of messages) {
+    if ((message as { role?: unknown }).role !== "toolResult") {
+      continue;
+    }
+    const id = (message as { toolCallId?: unknown; toolUseId?: unknown }).toolCallId;
+    const legacyId = (message as { toolCallId?: unknown; toolUseId?: unknown }).toolUseId;
+    if (typeof id === "string" && id.trim()) {
+      ids.add(id.trim());
+    }
+    if (typeof legacyId === "string" && legacyId.trim()) {
+      ids.add(legacyId.trim());
+    }
+  }
+  return ids;
+}
+
+function extractAssistantToolCallBlocks(
+  message: AgentMessage,
+): Array<{ id: string; name: string }> {
+  const content = (message as { content?: unknown }).content;
+  if (!Array.isArray(content)) {
+    return [];
+  }
+  const calls: Array<{ id: string; name: string }> = [];
+  for (const block of content) {
+    const record = recordFromUnknown(block);
+    const blockType = stringFromRecord(record, "type");
+    if (blockType !== "toolCall" && blockType !== "toolUse" && blockType !== "tool_call") {
+      continue;
+    }
+    const id = stringFromRecord(record, "id");
+    const name = stringFromRecord(record, "name");
+    if (id && name) {
+      calls.push({ id, name });
+    }
+  }
+  return calls;
+}
+
+function sanitizeProviderDiagnosticValue(value: unknown): unknown {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    const allowedKeys = [
+      "effort",
+      "exclude",
+      "summary",
+      "type",
+      "enabled",
+      "budget_tokens",
+      "budgetTokens",
+    ];
+    const compact: Record<string, unknown> = {};
+    for (const key of allowedKeys) {
+      if (Object.hasOwn(record, key)) {
+        compact[key] = sanitizeProviderDiagnosticValue(record[key]);
+      }
+    }
+    return compact;
+  }
+  return value === undefined ? undefined : typeof value;
+}
+
+function readProviderRequestDiagnosticField(
+  payload: Record<string, unknown>,
+  ...keys: string[]
+): unknown {
+  for (const key of keys) {
+    if (Object.hasOwn(payload, key)) {
+      return sanitizeProviderDiagnosticValue(payload[key]);
+    }
+  }
+  return null;
+}
+
+function providerToolNameFromUnknown(value: unknown): string | null {
+  const record = recordFromUnknown(value);
+  const directName = stringFromRecord(record, "name");
+  if (directName) {
+    return directName;
+  }
+  const functionRecord = recordFromUnknown(record?.function);
+  return stringFromRecord(functionRecord, "name") ?? null;
+}
+
+function providerToolDescriptionFromUnknown(value: unknown): string {
+  const record = recordFromUnknown(value);
+  const directDescription = stringFromRecord(record, "description");
+  if (directDescription !== undefined) {
+    return directDescription;
+  }
+  const functionRecord = recordFromUnknown(record?.function);
+  return stringFromRecord(functionRecord, "description") ?? "";
+}
+
+function providerToolParametersFromUnknown(value: unknown): unknown {
+  const record = recordFromUnknown(value);
+  if (Object.hasOwn(record ?? {}, "parameters")) {
+    return record?.parameters;
+  }
+  if (Object.hasOwn(record ?? {}, "input_schema")) {
+    return record?.input_schema;
+  }
+  const functionRecord = recordFromUnknown(record?.function);
+  if (Object.hasOwn(functionRecord ?? {}, "parameters")) {
+    return functionRecord?.parameters;
+  }
+  return undefined;
+}
+
+function buildProviderToolCatalogReceipt(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const rawTools = Array.isArray(payload.tools) ? payload.tools : [];
+  const tools = rawTools.flatMap((tool, providerIndex) => {
+    const name = providerToolNameFromUnknown(tool)?.trim();
+    if (!name) {
+      return [];
+    }
+    const description = providerToolDescriptionFromUnknown(tool);
+    const parameters = stableToolCatalogValue(providerToolParametersFromUnknown(tool));
+    return [
+      {
+        name,
+        providerIndex,
+        descriptionHash: stableAttemptTextHash(description),
+        descriptionBytes: Buffer.byteLength(description, "utf8"),
+        parametersHash: stableAttemptTextHash(parameters),
+        parametersBytes: Buffer.byteLength(parameters, "utf8"),
+      },
+    ];
+  });
+  const orderedToolNames = tools.map((tool) => tool.name);
+  const mutatingTools = orderedToolNames.filter((name) =>
+    PROVIDER_TURN_OPTICS_MUTATING_TOOL_NAMES.has(normalizeOptionalLowercaseString(name) ?? ""),
+  );
+  const lspIndex = orderedToolNames.findIndex(
+    (name) => normalizeOptionalLowercaseString(name) === "lsp",
+  );
+  return {
+    orderedToolNames,
+    toolCount: tools.length,
+    tools,
+    mutatingTools,
+    lspVisible: lspIndex >= 0,
+    lspIndex: lspIndex >= 0 ? lspIndex : null,
+  };
+}
+
+export function buildProviderRequestDiagnostics(params: {
+  payload: Record<string, unknown>;
+  provider?: string;
+  model?: string;
+  api?: string;
+  attempt: number;
+  agentId: string;
+  nodeRunId?: string | null;
+  sessionKey: string;
+  runId: string;
+  systemPromptReceipt?: ProviderSystemPromptContributionReceipt;
+}): Record<string, unknown> {
+  return {
+    eventType: PROVIDER_REQUEST_DIAGNOSTICS_EVENT_TYPE,
+    provider: params.provider ?? null,
+    model: params.model ?? null,
+    api: params.api ?? null,
+    reasoning: readProviderRequestDiagnosticField(params.payload, "reasoning"),
+    reasoning_effort: readProviderRequestDiagnosticField(
+      params.payload,
+      "reasoning_effort",
+      "reasoningEffort",
+    ),
+    include_reasoning: readProviderRequestDiagnosticField(
+      params.payload,
+      "include_reasoning",
+      "includeReasoning",
+    ),
+    parallel_tool_calls: readProviderRequestDiagnosticField(
+      params.payload,
+      "parallel_tool_calls",
+      "parallelToolCalls",
+    ),
+    tool_choice: readProviderRequestDiagnosticField(params.payload, "tool_choice", "toolChoice"),
+    max_tokens: readProviderRequestDiagnosticField(params.payload, "max_tokens", "maxTokens"),
+    temperature: readProviderRequestDiagnosticField(params.payload, "temperature"),
+    top_p: readProviderRequestDiagnosticField(params.payload, "top_p", "topP"),
+    stream: readProviderRequestDiagnosticField(params.payload, "stream"),
+    providerToolCatalogReceipt: buildProviderToolCatalogReceipt(params.payload),
+    ...(params.systemPromptReceipt ? { systemPromptReceipt: params.systemPromptReceipt } : {}),
+    attempt: params.attempt,
+    agentId: params.agentId,
+    nodeRunId: params.nodeRunId ?? null,
+    sessionKey: params.sessionKey,
+    runId: params.runId,
+    recordedAtMs: Date.now(),
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+  };
+}
+
+function wrapStreamFnWithProviderRequestDiagnostics(params: {
+  streamFn: StreamFn;
+  sessionManager: ReturnType<typeof guardSessionManager>;
+  deferredCustomEntries?: DeferredProviderCustomEntry[];
+  nodeAgentSessionTraceEvents: Record<string, unknown>[];
+  provider?: string;
+  modelId?: string;
+  api?: string;
+  agentId: string;
+  nodeRunId?: string | null;
+  sessionKey: string;
+  runId: string;
+  getSystemPromptReceipt?: (request: {
+    provider?: string;
+    model?: string;
+    api?: string;
+  }) => ProviderSystemPromptContributionReceipt | undefined;
+}): StreamFn {
+  let attempt = 0;
+  return (model, context, options) => {
+    return streamWithPayloadPatch(params.streamFn, model, context, options, (payload) => {
+      attempt += 1;
+      const event = buildProviderRequestDiagnostics({
+        payload,
+        provider:
+          typeof (model as { provider?: unknown })?.provider === "string"
+            ? (model as { provider: string }).provider
+            : params.provider,
+        model:
+          typeof (model as { id?: unknown })?.id === "string"
+            ? (model as { id: string }).id
+            : params.modelId,
+        api:
+          typeof (model as { api?: unknown })?.api === "string"
+            ? (model as { api: string }).api
+            : params.api,
+        attempt,
+        agentId: params.agentId,
+        nodeRunId: params.nodeRunId,
+        sessionKey: params.sessionKey,
+        runId: params.runId,
+        systemPromptReceipt: params.getSystemPromptReceipt?.({
+          provider:
+            typeof (model as { provider?: unknown })?.provider === "string"
+              ? (model as { provider: string }).provider
+              : params.provider,
+          model:
+            typeof (model as { id?: unknown })?.id === "string"
+              ? (model as { id: string }).id
+              : params.modelId,
+          api:
+            typeof (model as { api?: unknown })?.api === "string"
+              ? (model as { api: string }).api
+              : params.api,
+        }),
+      });
+      if (params.deferredCustomEntries) {
+        params.deferredCustomEntries.push({
+          customType: PROVIDER_REQUEST_DIAGNOSTICS_CUSTOM_TYPE,
+          event,
+        });
+      } else {
+        try {
+          params.sessionManager.appendCustomEntry(PROVIDER_REQUEST_DIAGNOSTICS_CUSTOM_TYPE, event);
+        } catch (error) {
+          log.warn(`provider request diagnostics append failed: ${String(error)}`);
+        }
+      }
+      params.nodeAgentSessionTraceEvents.push(event);
+    });
+  };
+}
+
+function isPromiseLike(value: unknown): value is Promise<unknown> {
+  return Boolean(value && typeof value === "object" && "then" in value);
+}
+
+function appendProviderWaitLockHandoffEvent(params: {
+  sessionManager: ReturnType<typeof guardSessionManager>;
+  nodeAgentSessionTraceEvents: Record<string, unknown>[];
+  sessionKey: string;
+  runId: string;
+  agentId: string;
+  phase: "suspended" | "resumed";
+  method?: string;
+  persist?: boolean;
+}) {
+  const event = {
+    eventType: PROVIDER_WAIT_LOCK_HANDOFF_EVENT_TYPE,
+    sessionKey: params.sessionKey,
+    runId: params.runId,
+    agentId: params.agentId,
+    phase: params.phase,
+    method: params.method ?? null,
+    recordedAtMs: Date.now(),
+  };
+  if (params.persist !== false) {
+    try {
+      params.sessionManager.appendCustomEntry(PROVIDER_WAIT_LOCK_HANDOFF_CUSTOM_TYPE, event);
+    } catch (error) {
+      log.warn(`provider wait lock handoff append failed: ${String(error)}`);
+    }
+  }
+  params.nodeAgentSessionTraceEvents.push(event);
+}
+
+function flushDeferredProviderCustomEntries(params: {
+  sessionManager: ReturnType<typeof guardSessionManager>;
+  entries?: DeferredProviderCustomEntry[];
+}) {
+  if (!params.entries || params.entries.length === 0) {
+    return;
+  }
+  const entries = params.entries.splice(0, params.entries.length);
+  for (const entry of entries) {
+    try {
+      params.sessionManager.appendCustomEntry(entry.customType, entry.event);
+    } catch (error) {
+      log.warn(`deferred provider custom entry append failed: ${String(error)}`);
+    }
+  }
+}
+
+function wrapStreamResultWithProviderWaitLockResume<T>(
+  stream: T,
+  resumeOnce: (method: string) => Promise<void>,
+): T {
+  if (!stream || typeof stream !== "object") {
+    return stream;
+  }
+  const record = stream as Record<PropertyKey, unknown>;
+  const originalResult = record.result;
+  if (typeof originalResult === "function") {
+    record.result = async function resultWithProviderWaitLockResume(...args: unknown[]) {
+      try {
+        return await originalResult.apply(stream, args);
+      } finally {
+        await resumeOnce("result");
+      }
+    };
+  }
+  const originalAsyncIterator = record[Symbol.asyncIterator];
+  if (typeof originalAsyncIterator === "function") {
+    record[Symbol.asyncIterator] = function providerWaitLockResumeIterator() {
+      const iterator = originalAsyncIterator.call(stream) as AsyncIterator<unknown>;
+      let iteratorDone = false;
+      const settle = async (method: string) => {
+        if (!iteratorDone) {
+          iteratorDone = true;
+          await resumeOnce(method);
+        }
+      };
+      return {
+        async next() {
+          try {
+            const result = await iterator.next();
+            if (result.done) {
+              await settle("iterator_done");
+            }
+            return result;
+          } catch (error) {
+            await settle("iterator_error");
+            throw error;
+          }
+        },
+        async return(value?: unknown) {
+          try {
+            return (
+              (await iterator.return?.(value)) ??
+              ({ done: true, value: undefined } as IteratorReturnResult<unknown>)
+            );
+          } finally {
+            await settle("iterator_return");
+          }
+        },
+        async throw(error?: unknown) {
+          try {
+            if (iterator.throw) {
+              return await iterator.throw(error);
+            }
+            throw error;
+          } finally {
+            await settle("iterator_throw");
+          }
+        },
+      };
+    };
+  }
+  return stream;
+}
+
+function wrapStreamFnWithProviderWaitLockHandoff(params: {
+  streamFn: StreamFn;
+  sessionManager: ReturnType<typeof guardSessionManager>;
+  deferredCustomEntries?: DeferredProviderCustomEntry[];
+  nodeAgentSessionTraceEvents: Record<string, unknown>[];
+  suspendParentLockForProviderWait: () => Promise<() => Promise<void>>;
+  sessionKey: string;
+  runId: string;
+  agentId: string;
+}): StreamFn {
+  return (model, context, options) =>
+    (async () => {
+      const resume = await params.suspendParentLockForProviderWait();
+      let resumed = false;
+      appendProviderWaitLockHandoffEvent({
+        sessionManager: params.sessionManager,
+        nodeAgentSessionTraceEvents: params.nodeAgentSessionTraceEvents,
+        sessionKey: params.sessionKey,
+        runId: params.runId,
+        agentId: params.agentId,
+        phase: "suspended",
+        persist: false,
+      });
+      const resumeOnce = async (method: string) => {
+        if (resumed) {
+          return;
+        }
+        resumed = true;
+        await resume();
+        flushDeferredProviderCustomEntries({
+          sessionManager: params.sessionManager,
+          entries: params.deferredCustomEntries,
+        });
+        appendProviderWaitLockHandoffEvent({
+          sessionManager: params.sessionManager,
+          nodeAgentSessionTraceEvents: params.nodeAgentSessionTraceEvents,
+          sessionKey: params.sessionKey,
+          runId: params.runId,
+          agentId: params.agentId,
+          phase: "resumed",
+          method,
+        });
+      };
+      try {
+        const maybeStream = params.streamFn(model, context, options);
+        const stream = isPromiseLike(maybeStream) ? await maybeStream : maybeStream;
+        return wrapStreamResultWithProviderWaitLockResume(stream, resumeOnce);
+      } catch (error) {
+        await resumeOnce("stream_error");
+        throw error;
+      }
+    })() as ReturnType<StreamFn>;
+}
+
+function nodeAgentPreemptiveCheckpointReasonForEvent(params: {
+  stream: string;
+  data: Record<string, unknown>;
+  tracker: NodeAgentPreemptiveCheckpointTracker;
+}): NodeAgentPreemptiveCheckpointReason | null {
+  const { stream, data, tracker } = params;
+  if (
+    stream === "node-agent" &&
+    data.eventType === "node_agent_tool_result" &&
+    booleanFromRecord(data, "mutatingAction") === true &&
+    stringFromRecord(data, "status") === "completed" &&
+    !tracker.after_first_successful_edit_batch
+  ) {
+    return "after_first_successful_edit_batch";
+  }
+  if (
+    stream === "tool" &&
+    stringFromRecord(data, "phase") === "start" &&
+    stringFromRecord(data, "name") === "task" &&
+    stringFromRecord(data, "requestedAgentId") === "execution-validation-scout" &&
+    !tracker.before_validation_scout
+  ) {
+    return "before_validation_scout";
+  }
+  if (
+    stream === "node-agent" &&
+    data.eventType === "node_agent_native_task_result" &&
+    stringFromRecord(data, "requestedAgentId") === "execution-validation-scout" &&
+    !tracker.after_validation_result
+  ) {
+    return "after_validation_result";
+  }
+  if (
+    stream === "tool" &&
+    stringFromRecord(data, "phase") === "start" &&
+    stringFromRecord(data, "name") === "node_finish" &&
+    !tracker.before_node_finish
+  ) {
+    return "before_node_finish";
+  }
+  return null;
+}
+
+function appendNodeAgentPreemptiveCheckpoint(params: {
+  stream: string;
+  data: Record<string, unknown>;
+  reason: NodeAgentPreemptiveCheckpointReason;
+  tracker: NodeAgentPreemptiveCheckpointTracker;
+  sessionManager: ReturnType<typeof guardSessionManager>;
+  nodeAgentSessionTraceEvents: Record<string, unknown>[];
+  sessionKey: string;
+  sessionId: string;
+  sessionFile: string;
+  runId: string;
+  agentId: string;
+  contextTokenBudget: number;
+  config: EmbeddedRunAttemptParams["config"];
+}) {
+  if (params.tracker[params.reason]) {
+    return;
+  }
+  params.tracker[params.reason] = true;
+  const toolResultMaxChars = resolveLiveToolResultMaxChars({
+    contextWindowTokens: params.contextTokenBudget,
+    cfg: params.config,
+    agentId: params.agentId,
+  });
+  const truncationResult = truncateOversizedToolResultsInSessionManager({
+    sessionManager: params.sessionManager,
+    contextWindowTokens: params.contextTokenBudget,
+    maxCharsOverride: toolResultMaxChars,
+    sessionFile: params.sessionFile,
+    sessionId: params.sessionId,
+    sessionKey: params.sessionKey,
+    stateRoot: resolveStateDir(process.env),
+  });
+  const event = {
+    eventType: PREEMPTIVE_CHECKPOINT_EVENT_TYPE,
+    reason: params.reason,
+    sessionKey: params.sessionKey,
+    runId: params.runId,
+    agentId: params.agentId,
+    boundaryStream: params.stream,
+    toolName: stringFromRecord(params.data, "toolName") ?? stringFromRecord(params.data, "name"),
+    requestedAgentId: stringFromRecord(params.data, "requestedAgentId") ?? null,
+    toolCallId: stringFromRecord(params.data, "toolCallId") ?? null,
+    toolResultRef: stringFromRecord(params.data, "toolResultRef") ?? null,
+    taskRef: stringFromRecord(params.data, "taskRef") ?? null,
+    validationEvidenceRef: stringFromRecord(params.data, "validationEvidenceRef") ?? null,
+    workingContextEntryRef: stringFromRecord(params.data, "workingContextEntryRef") ?? null,
+    changeSetWorkingContextEntryRef:
+      stringFromRecord(params.data, "changeSetWorkingContextEntryRef") ?? null,
+    managedOutputRef: stringFromRecord(params.data, "managedOutputRef") ?? null,
+    checkpointPreserves: [
+      "node_objective",
+      "changed_files",
+      "validation_refs",
+      "working_context_refs",
+      "managed_output_refs",
+      "latest_todo_state",
+      "source_windows",
+    ],
+    truncationAttempted: true,
+    truncated: truncationResult.truncated,
+    truncatedCount: truncationResult.truncatedCount ?? 0,
+    truncationReason: truncationResult.reason ?? null,
+    recordedAtMs: Date.now(),
+  };
+  try {
+    params.sessionManager.appendCustomEntry(PREEMPTIVE_CHECKPOINT_CUSTOM_TYPE, event);
+  } catch (error) {
+    log.warn(`node-agent preemptive checkpoint append failed: ${String(error)}`);
+  }
+  params.nodeAgentSessionTraceEvents.push(event);
+}
+
+function toContextPressureBreakdown(
+  breakdown: ReturnType<typeof estimateProviderVisibleContextBreakdown>,
+): ContextBreakdownSnapshot {
+  return {
+    sourceOrLocatorChars: breakdown.likelySourceOrLocatorChars,
+    nonSourceVisibleChars: breakdown.nonSourceVisibleChars,
+    strippedDetailsChars: breakdown.strippedToolDetailsChars,
+  };
+}
+
+function buildProviderTurnOptics(params: {
+  messages: readonly AgentMessage[];
+  tools: readonly { name?: string | null; description?: string | null; parameters?: unknown }[];
+  agentId: string;
+  sessionKey: string;
+  runId: string;
+  provider?: string;
+  model?: string;
+  thinkingLevel?: string;
+}): Record<string, unknown> {
+  const providerVisibleTools = params.tools
+    .map((tool) => tool.name?.trim())
+    .filter((name): name is string => typeof name === "string" && name.length > 0);
+  const mutatingTools = providerVisibleTools.filter((toolName) =>
+    PROVIDER_TURN_OPTICS_MUTATING_TOOL_NAMES.has(toolName),
+  );
+  const toolResultIds = toolResultIdsFromMessages(params.messages);
+  const turns = params.messages.flatMap((message, index) => {
+    if ((message as { role?: unknown }).role !== "assistant") {
+      return [];
+    }
+    const toolCalls = extractAssistantToolCallBlocks(message);
+    const matchingToolResultIds = toolCalls
+      .map((call) => call.id)
+      .filter((id) => toolResultIds.has(id));
+    const missingToolResultIds = toolCalls
+      .map((call) => call.id)
+      .filter((id) => !toolResultIds.has(id));
+    return [
+      {
+        messageIndex: index,
+        stopReason:
+          typeof (message as { stopReason?: unknown }).stopReason === "string"
+            ? (message as { stopReason: string }).stopReason
+            : null,
+        hasNewToolCalls: toolCalls.length > 0,
+        toolCalls,
+        matchingToolResultIds,
+        missingToolResultIds,
+      },
+    ];
+  });
+  const toolCallCounts = turns.map((turn) =>
+    Array.isArray(turn.toolCalls) ? turn.toolCalls.length : 0,
+  );
+  const assistantTextTurns = params.messages.flatMap((message, index) => {
+    if ((message as { role?: unknown }).role !== "assistant") {
+      return [];
+    }
+    const text = extractAssistantTextBlocks(message).join("\n");
+    if (!text.trim()) {
+      return [];
+    }
+    const looksLikePatchHypothesis =
+      /\bpatch hypothesis\b/iu.test(text) ||
+      (/\btarget files?\b/iu.test(text) &&
+        /\bpatch shape\b/iu.test(text) &&
+        /\bvalidation signal\b/iu.test(text));
+    return [
+      {
+        messageIndex: index,
+        textByteCount: Buffer.byteLength(text, "utf8"),
+        looksLikePatchHypothesis,
+      },
+    ];
+  });
+  const firstToolCallMessageIndex =
+    turns.find((turn) => turn.hasNewToolCalls)?.messageIndex ?? null;
+  const firstPatchHypothesisTextTurn = assistantTextTurns.find(
+    (turn) => turn.looksLikePatchHypothesis,
+  );
+  const firstPatchHypothesisBeforeToolCall =
+    firstPatchHypothesisTextTurn &&
+    (firstToolCallMessageIndex === null ||
+      firstPatchHypothesisTextTurn.messageIndex < firstToolCallMessageIndex);
+  const totalToolCalls = toolCallCounts.reduce((sum, count) => sum + count, 0);
+  const toolCallTurnCount = toolCallCounts.filter((count) => count > 0).length;
+  const parallelToolCallTurns = toolCallCounts.filter((count) => count > 1).length;
+  const serialAcquisitionTurns = turns.filter((turn) => {
+    const toolCalls = Array.isArray(turn.toolCalls) ? turn.toolCalls : [];
+    const toolName = (toolCalls[0] as { name?: unknown } | undefined)?.name;
+    return (
+      toolCalls.length === 1 &&
+      PROVIDER_TURN_OPTICS_ACQUISITION_TOOL_NAMES.has(
+        typeof toolName === "string" ? (normalizeOptionalLowercaseString(toolName) ?? "") : "",
+      )
+    );
+  }).length;
+  return {
+    eventType: PROVIDER_TURN_OPTICS_EVENT_TYPE,
+    sessionKey: params.sessionKey,
+    runId: params.runId,
+    agentId: params.agentId,
+    provider: params.provider ?? null,
+    model: params.model ?? null,
+    thinkingLevel: params.thinkingLevel ?? null,
+    providerVisibleTools,
+    providerVisibleToolsSorted: [...providerVisibleTools].toSorted((a, b) => a.localeCompare(b)),
+    mutatingTools,
+    applyPatchVisible: providerVisibleTools.includes("apply_patch"),
+    toolCatalogSummary: buildSessionLaunchToolCatalogSummary(params.tools),
+    turns,
+    patchHypothesisObserved: Boolean(firstPatchHypothesisTextTurn),
+    firstPatchHypothesisBeforeToolCallObserved: Boolean(firstPatchHypothesisBeforeToolCall),
+    firstPatchHypothesisMessageIndex: firstPatchHypothesisTextTurn?.messageIndex ?? null,
+    firstPatchHypothesisTextByteCount: firstPatchHypothesisTextTurn?.textByteCount ?? null,
+    toolResultIds: Array.from(toolResultIds).toSorted((a, b) => a.localeCompare(b)),
+    toolCallIdLinkageOk: turns.every((turn) => {
+      const missing = (turn as { missingToolResultIds?: unknown }).missingToolResultIds;
+      return Array.isArray(missing) && missing.length === 0;
+    }),
+    parallelToolCallTurns,
+    averageToolCallsPerTurn: toolCallTurnCount > 0 ? totalToolCalls / toolCallTurnCount : 0,
+    serialAcquisitionTurns,
+  };
+}
+
+function extractAssistantTextBlocks(message: AgentMessage): string[] {
+  const content = (message as { content?: unknown }).content;
+  if (typeof content === "string") {
+    return content.trim() ? [content] : [];
+  }
+  if (!Array.isArray(content)) {
+    return [];
+  }
+  const texts: string[] = [];
+  for (const block of content) {
+    const record = recordFromUnknown(block);
+    if (!record) {
+      continue;
+    }
+    const type = stringFromRecord(record, "type");
+    if (type !== "text" && type !== "output_text") {
+      continue;
+    }
+    const text = stringFromRecord(record, "text");
+    if (text) {
+      texts.push(text);
+    }
+  }
+  return texts;
+}
+
+function looksLikeJsonToolCallText(text: string): boolean {
+  if (!/[{[]/u.test(text)) {
+    return false;
+  }
+  return /["'](?:tool_calls?|tool_use|function_call|name|arguments|input)["']\s*:/iu.test(text);
+}
+
+function providerResponseDiagnosticsFromAssistant(
+  message: AgentMessage,
+): Record<string, unknown> | undefined {
+  return recordFromUnknown(
+    (message as { providerResponseDiagnostics?: unknown }).providerResponseDiagnostics,
+  );
+}
+
+function buildProviderResponseNormalizationReceipt(params: {
+  messages: readonly AgentMessage[];
+  agentId: string;
+  sessionKey: string;
+  runId: string;
+  provider?: string;
+  model?: string;
+  thinkingLevel?: string;
+}): Record<string, unknown> {
+  const toolResultIds = toolResultIdsFromMessages(params.messages);
+  const assistantTurns = params.messages.flatMap((message, index) => {
+    if ((message as { role?: unknown }).role !== "assistant") {
+      return [];
+    }
+    const toolCalls = extractAssistantToolCallBlocks(message);
+    const textBlocks = extractAssistantTextBlocks(message);
+    const jsonLookingTextBlocks = textBlocks.filter(looksLikeJsonToolCallText);
+    const providerDiagnostics = providerResponseDiagnosticsFromAssistant(message);
+    const stopReason =
+      typeof (message as { stopReason?: unknown }).stopReason === "string"
+        ? (message as { stopReason: string }).stopReason
+        : null;
+    const matchingToolResultIds = toolCalls
+      .map((call) => call.id)
+      .filter((id) => toolResultIds.has(id));
+    const missingToolResultIds = toolCalls
+      .map((call) => call.id)
+      .filter((id) => !toolResultIds.has(id));
+    return [
+      {
+        messageIndex: index,
+        normalizedStopReason: stopReason,
+        normalizedToolCallCount: toolCalls.length,
+        toolCallIds: toolCalls.map((call) => call.id),
+        toolNames: toolCalls.map((call) => call.name),
+        textBlockCount: textBlocks.length,
+        textByteCount: Buffer.byteLength(textBlocks.join("\n"), "utf8"),
+        hasTextAndToolCalls: textBlocks.length > 0 && toolCalls.length > 0,
+        jsonLookingToolCallTextCount: jsonLookingTextBlocks.length,
+        jsonLookingToolCallTextHashes: jsonLookingTextBlocks.map(stableAttemptTextHash),
+        rawFinishReason: stringFromRecord(providerDiagnostics, "rawFinishReason") ?? null,
+        rawToolCallChunkCount:
+          numberFromRecord(providerDiagnostics, "rawToolCallChunkCount") ?? null,
+        rawReasoningFieldPresent:
+          booleanFromRecord(providerDiagnostics, "rawReasoningFieldPresent") ?? false,
+        matchingToolResultIds,
+        missingToolResultIds,
+      },
+    ];
+  });
+  const normalizedToolCallCount = assistantTurns.reduce(
+    (sum, turn) => sum + turn.normalizedToolCallCount,
+    0,
+  );
+  const stopReasonToolUseWithoutToolCalls = assistantTurns.filter(
+    (turn) => turn.normalizedStopReason === "toolUse" && turn.normalizedToolCallCount === 0,
+  ).length;
+  const stopReasonStopWithToolCalls = assistantTurns.filter(
+    (turn) => turn.normalizedStopReason === "stop" && turn.normalizedToolCallCount > 0,
+  ).length;
+  const missingToolResultIds = assistantTurns.flatMap((turn) => turn.missingToolResultIds);
+  const rawTurns = assistantTurns.filter(
+    (turn) => turn.rawFinishReason !== null || turn.rawToolCallChunkCount !== null,
+  );
+  const rawToolCallChunkCount = rawTurns.reduce(
+    (sum, turn) => sum + (turn.rawToolCallChunkCount ?? 0),
+    0,
+  );
+  return {
+    eventType: PROVIDER_RESPONSE_NORMALIZATION_EVENT_TYPE,
+    sessionKey: params.sessionKey,
+    runId: params.runId,
+    agentId: params.agentId,
+    provider: params.provider ?? null,
+    model: params.model ?? null,
+    thinkingLevel: params.thinkingLevel ?? null,
+    rawTransportCaptured: rawTurns.length > 0,
+    rawFinishReason: rawTurns[rawTurns.length - 1]?.rawFinishReason ?? null,
+    rawToolCallChunkCount: rawTurns.length > 0 ? rawToolCallChunkCount : null,
+    rawReasoningFieldCaptured: assistantTurns.some((turn) => turn.rawReasoningFieldPresent),
+    rawResponseStored: false,
+    normalizedAssistantTurnCount: assistantTurns.length,
+    normalizedToolCallCount,
+    normalizedToolCallIds: assistantTurns.flatMap((turn) => turn.toolCallIds),
+    normalizedToolNames: assistantTurns.flatMap((turn) => turn.toolNames),
+    normalizedStopReasons: assistantTurns.map((turn) => turn.normalizedStopReason),
+    stopReasonToolUseWithoutToolCalls,
+    stopReasonStopWithToolCalls,
+    finalTextAndToolCallsCoexisted: assistantTurns.some((turn) => turn.hasTextAndToolCalls),
+    jsonLookingToolCallTextCount: assistantTurns.reduce(
+      (sum, turn) => sum + turn.jsonLookingToolCallTextCount,
+      0,
+    ),
+    toolResultIds: Array.from(toolResultIds).toSorted((a, b) => a.localeCompare(b)),
+    missingToolResultIds,
+    toolCallIdLinkageOk: missingToolResultIds.length === 0,
+    turns: assistantTurns,
+    recordedAtMs: Date.now(),
+  };
 }
 
 function nativeTaskTraceEvents(
@@ -449,6 +1409,24 @@ function findFirstParentNextActionEventAfter(
   });
 }
 
+function findFirstParentEditEventAfter(
+  events: readonly Record<string, unknown>[],
+  anchor: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  const anchorIndex = anchor ? events.indexOf(anchor) : -1;
+  if (anchorIndex < 0) {
+    return undefined;
+  }
+  return events.slice(anchorIndex + 1).find((event) => {
+    return (
+      event.eventType === "node_agent_tool_result" &&
+      !isReplayCompactedToolEvent(event) &&
+      isParentToolEvent(event) &&
+      isEditToolEvent(event)
+    );
+  });
+}
+
 function isPostChildParentActionEvent(event: Record<string, unknown>): boolean {
   const toolName = stringFromRecord(event, "toolName");
   return (
@@ -481,8 +1459,303 @@ function parentActionToolNameFromEvent(event: Record<string, unknown> | undefine
   return stringFromRecord(event, "toolName") ?? null;
 }
 
-function stableAttemptTextHash(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
+function isScoutAgentId(agentId: string | undefined): boolean {
+  return agentId === "execution-context-scout" || agentId === "execution-validation-scout";
+}
+
+function nodeAgentToolEventsForAgent(
+  events: readonly Record<string, unknown>[],
+  agentId: string,
+): Record<string, unknown>[] {
+  return events.filter(
+    (event) =>
+      event.eventType === "node_agent_tool_result" &&
+      stringFromRecord(event, "agentId") === agentId,
+  );
+}
+
+function compactToolEvent(event: Record<string, unknown>): Record<string, unknown> {
+  const toolName = stringFromRecord(event, "toolName") ?? "unknown";
+  return {
+    toolName,
+    toolResultRef: stringFromRecord(event, "toolResultRef") ?? null,
+    status: stringFromRecord(event, "status") ?? null,
+    ...(stringFromRecord(event, "readPath")
+      ? { readPath: stringFromRecord(event, "readPath") }
+      : {}),
+    ...(numberFromRecord(event, "readOffset") !== undefined
+      ? { readOffset: numberFromRecord(event, "readOffset") }
+      : {}),
+    ...(numberFromRecord(event, "readLimit") !== undefined
+      ? { readLimit: numberFromRecord(event, "readLimit") }
+      : {}),
+    ...(stringFromRecord(event, "grepQuery")
+      ? { grepQuery: stringFromRecord(event, "grepQuery") }
+      : {}),
+    ...(stringFromRecord(event, "grepPath")
+      ? { grepPath: stringFromRecord(event, "grepPath") }
+      : {}),
+    ...(stringFromRecord(event, "grepGlob")
+      ? { grepGlob: stringFromRecord(event, "grepGlob") }
+      : {}),
+    ...(stringFromRecord(event, "globPattern")
+      ? { globPattern: stringFromRecord(event, "globPattern") }
+      : {}),
+    ...(stringFromRecord(event, "listPath")
+      ? { listPath: stringFromRecord(event, "listPath") }
+      : {}),
+  };
+}
+
+function buildToolCallCountsByType(
+  events: readonly Record<string, unknown>[],
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const event of events) {
+    const toolName = stringFromRecord(event, "toolName") ?? "unknown";
+    counts[toolName] = (counts[toolName] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function buildScoutToolDiagnostics(events: readonly Record<string, unknown>[]) {
+  const toolNames = events.map((event) => stringFromRecord(event, "toolName") ?? "unknown");
+  const readEvents = events.filter((event) => stringFromRecord(event, "toolName") === "read");
+  const rawTopOfFileReadCount = readEvents.filter((event) => {
+    const offset = numberFromRecord(event, "readOffset");
+    return offset === undefined || offset <= 1;
+  }).length;
+  return {
+    toolCallCount: events.length,
+    toolCallCountsByType: buildToolCallCountsByType(events),
+    firstToolCalls: events.slice(0, 10).map(compactToolEvent),
+    readCallCount: readEvents.length,
+    grepCallCount: events.filter((event) => stringFromRecord(event, "toolName") === "grep").length,
+    startedWithRead: toolNames[0] === "read",
+    rawTopOfFileReadCount,
+  };
+}
+
+function buildParentToolSequence(events: readonly Record<string, unknown>[]) {
+  return events
+    .filter((event) => {
+      if (event.eventType !== "node_agent_tool_result") {
+        return false;
+      }
+      return !isScoutAgentId(stringFromRecord(event, "agentId"));
+    })
+    .slice(0, 40)
+    .map(compactToolEvent);
+}
+
+function buildNativeTaskSummaries(events: readonly Record<string, unknown>[]) {
+  return events.map((event) => ({
+    taskRef: stringFromRecord(event, "taskRef") ?? null,
+    requestedAgentId: stringFromRecord(event, "requestedAgentId") ?? null,
+    childSessionKey: stringFromRecord(event, "childSessionKey") ?? null,
+    childRunId: stringFromRecord(event, "childRunId") ?? null,
+    childProvider: stringFromRecord(event, "childProvider") ?? null,
+    childModel: stringFromRecord(event, "childModel") ?? null,
+    status: stringFromRecord(event, "status") ?? null,
+    resultDeliveryStatus: stringFromRecord(event, "resultDeliveryStatus") ?? null,
+    childProgressOutcome: stringFromRecord(event, "childProgressOutcome") ?? null,
+    resultDeliveredToParentContext:
+      booleanFromRecord(event, "resultDeliveredToParentContext") ?? false,
+  }));
+}
+
+const PARENT_SOURCE_NAVIGATION_TOOL_NAMES = new Set(["read", "grep", "glob"]);
+const SOURCE_ACTIVITY_TODO_VERBS =
+  /\b(read|inspect|search|understand|map|gather|explore|investigate|review)\b/iu;
+const SOURCE_ACTIVITY_TODO_NOUNS =
+  /\b(source|context|file|files|caller|callers|code|integration|substrate|architecture|read\s+model|event\s+store|repository|surface)\b/iu;
+
+function isParentToolEvent(event: Record<string, unknown>): boolean {
+  return !isScoutAgentId(stringFromRecord(event, "agentId"));
+}
+
+function isSourceNavigationToolEvent(event: Record<string, unknown>): boolean {
+  const toolName = stringFromRecord(event, "toolName");
+  return Boolean(toolName && PARENT_SOURCE_NAVIGATION_TOOL_NAMES.has(toolName));
+}
+
+function isEditToolEvent(event: Record<string, unknown>): boolean {
+  const toolName = stringFromRecord(event, "toolName");
+  return (
+    toolName === "edit" ||
+    toolName === "write" ||
+    toolName === "apply_patch" ||
+    stringFromRecord(event, "changeSetWorkingContextEntryRef") != null
+  );
+}
+
+function isReplayCompactedToolEvent(event: Record<string, unknown>): boolean {
+  return (
+    event.eventType === "node_agent_tool_result" &&
+    booleanFromRecord(event, "replayCompacted") === true
+  );
+}
+
+function isSourceActivityTodo(content: string | null): boolean {
+  if (!content) {
+    return false;
+  }
+  return SOURCE_ACTIVITY_TODO_VERBS.test(content) && SOURCE_ACTIVITY_TODO_NOUNS.test(content);
+}
+
+function buildPathOnlyReadAfterContinuationHintDiagnostics(
+  events: readonly Record<string, unknown>[],
+): Record<string, unknown> {
+  const continuationByPath = new Map<string, Record<string, unknown>>();
+  const pathOnlyRepeats: Record<string, unknown>[] = [];
+  for (const event of events) {
+    if (stringFromRecord(event, "toolName") !== "read" || !isParentToolEvent(event)) {
+      continue;
+    }
+    const readPath = stringFromRecord(event, "readPath");
+    if (!readPath) {
+      continue;
+    }
+    const readOffset = numberFromRecord(event, "readOffset");
+    const priorContinuation = continuationByPath.get(readPath);
+    if (priorContinuation && readOffset === undefined) {
+      pathOnlyRepeats.push({
+        toolResultRef: stringFromRecord(event, "toolResultRef") ?? null,
+        readPath,
+        expectedOffset: numberFromRecord(priorContinuation, "readNextOffset") ?? null,
+        priorToolResultRef: stringFromRecord(priorContinuation, "toolResultRef") ?? null,
+      });
+    }
+    const readNextOffset = numberFromRecord(event, "readNextOffset");
+    if (readNextOffset !== undefined) {
+      continuationByPath.set(readPath, event);
+    }
+  }
+  return {
+    pathOnlyReadAfterContinuationHintObserved: pathOnlyRepeats.length > 0,
+    pathOnlyReadAfterContinuationHintCount: pathOnlyRepeats.length,
+    pathOnlyReadAfterContinuationHintRefs: pathOnlyRepeats.slice(0, 8),
+  };
+}
+
+function buildEditTransitionDiagnostics(params: {
+  toolEvents: readonly Record<string, unknown>[];
+  firstPlanUpdateEvent?: Record<string, unknown>;
+  firstEditEvent?: Record<string, unknown>;
+  firstLspEvent?: Record<string, unknown>;
+  validationEvent?: Record<string, unknown>;
+  repairEditAfterValidationEvent?: Record<string, unknown>;
+  replayCompactedToolCallCount?: number;
+  providerRequestDiagnostics?: readonly Record<string, unknown>[];
+}): Record<string, unknown> {
+  const parentToolEvents = params.toolEvents.filter(isParentToolEvent);
+  const firstEditIndex = params.firstEditEvent
+    ? parentToolEvents.indexOf(params.firstEditEvent)
+    : -1;
+  const beforeFirstEditEvents =
+    firstEditIndex >= 0 ? parentToolEvents.slice(0, firstEditIndex) : parentToolEvents;
+  const beforeFirstEditSourceEvents = beforeFirstEditEvents.filter(isSourceNavigationToolEvent);
+  const sourceNavigationReminderEvent = params.toolEvents.find(
+    (event) => booleanFromRecord(event, "sourceNavigationReminderShown") === true,
+  );
+  const firstTodoActiveItem =
+    stringFromRecord(params.firstPlanUpdateEvent, "todoActiveItem") ?? null;
+  const firstProviderRequest = params.providerRequestDiagnostics?.[0];
+  const modelActivationAtMs = numberFromRecord(firstProviderRequest, "recordedAtMs") ?? null;
+  const firstEditCompletedAtMs = numberFromRecord(params.firstEditEvent, "completedAtMs") ?? null;
+  const firstLspCompletedAtMs = numberFromRecord(params.firstLspEvent, "completedAtMs") ?? null;
+  const validationDelegationCompletedAtMs =
+    numberFromRecord(params.validationEvent, "completedAtMs") ?? null;
+  const repairEditAfterValidationCompletedAtMs =
+    numberFromRecord(params.repairEditAfterValidationEvent, "completedAtMs") ?? null;
+  const firstEditAfterModelActivationMs =
+    modelActivationAtMs !== null &&
+    firstEditCompletedAtMs !== null &&
+    firstEditCompletedAtMs >= modelActivationAtMs
+      ? firstEditCompletedAtMs - modelActivationAtMs
+      : null;
+  const firstLspAfterModelActivationMs =
+    modelActivationAtMs !== null &&
+    firstLspCompletedAtMs !== null &&
+    firstLspCompletedAtMs >= modelActivationAtMs
+      ? firstLspCompletedAtMs - modelActivationAtMs
+      : null;
+  const validationDelegationAfterModelActivationMs =
+    modelActivationAtMs !== null &&
+    validationDelegationCompletedAtMs !== null &&
+    validationDelegationCompletedAtMs >= modelActivationAtMs
+      ? validationDelegationCompletedAtMs - modelActivationAtMs
+      : null;
+  const repairEditAfterValidationMs =
+    validationDelegationCompletedAtMs !== null &&
+    repairEditAfterValidationCompletedAtMs !== null &&
+    repairEditAfterValidationCompletedAtMs >= validationDelegationCompletedAtMs
+      ? repairEditAfterValidationCompletedAtMs - validationDelegationCompletedAtMs
+      : null;
+  const liveToolCallCountsByType = buildToolCallCountsByType(params.toolEvents);
+  const firstTodoShape = params.firstPlanUpdateEvent
+    ? {
+        ref:
+          stringFromRecord(params.firstPlanUpdateEvent, "todoRef") ??
+          stringFromRecord(params.firstPlanUpdateEvent, "toolResultRef") ??
+          null,
+        activeItem: firstTodoActiveItem,
+        itemCount: numberFromRecord(params.firstPlanUpdateEvent, "todoItemCount") ?? null,
+        completedCount: numberFromRecord(params.firstPlanUpdateEvent, "todoCompletedCount") ?? null,
+        inProgressCount:
+          numberFromRecord(params.firstPlanUpdateEvent, "todoInProgressCount") ?? null,
+        activeItemLooksLikeSourceLookup: isSourceActivityTodo(firstTodoActiveItem),
+      }
+    : null;
+  return {
+    firstEditObserved: firstEditIndex >= 0,
+    modelActivationAtMs,
+    firstLspObserved: Boolean(params.firstLspEvent),
+    firstLspRef: stringFromRecord(params.firstLspEvent, "toolResultRef") ?? null,
+    firstLspCompletedAtMs,
+    firstLspAfterModelActivationMs,
+    firstEditCompletedAtMs,
+    firstEditAfterModelActivationMs,
+    liveToolCallCount: params.toolEvents.length,
+    liveToolCallCountsByType,
+    liveReadCallCount: liveToolCallCountsByType.read ?? 0,
+    liveGrepCallCount: liveToolCallCountsByType.grep ?? 0,
+    liveEditCallCount:
+      (liveToolCallCountsByType.edit ?? 0) +
+      (liveToolCallCountsByType.write ?? 0) +
+      (liveToolCallCountsByType.apply_patch ?? 0),
+    replayCompactedToolCallCount: params.replayCompactedToolCallCount ?? 0,
+    toolCountBeforeFirstEdit: beforeFirstEditEvents.length,
+    sourceToolCountBeforeFirstEdit: beforeFirstEditSourceEvents.length,
+    validationDelegationRef: stringFromRecord(params.validationEvent, "taskRef") ?? null,
+    validationDelegationCompletedAtMs,
+    validationDelegationAfterModelActivationMs,
+    repairEditAfterValidationObserved: Boolean(params.repairEditAfterValidationEvent),
+    repairEditAfterValidationRef:
+      stringFromRecord(params.repairEditAfterValidationEvent, "toolResultRef") ?? null,
+    repairEditAfterValidationCompletedAtMs,
+    repairEditAfterValidationMs,
+    firstTodoShape,
+    firstTodoLooksLikeSourceLookup: isSourceActivityTodo(firstTodoActiveItem),
+    activeTodoStillSourceLookupAfterRepeatedSourceCalls:
+      isSourceActivityTodo(firstTodoActiveItem) && beforeFirstEditSourceEvents.length >= 6,
+    sourceNavigationReminderObserved: Boolean(sourceNavigationReminderEvent),
+    sourceNavigationReminderRef:
+      stringFromRecord(sourceNavigationReminderEvent, "toolResultRef") ?? null,
+    sourceNavigationReminderSourceToolCount:
+      numberFromRecord(sourceNavigationReminderEvent, "sourceNavigationCountSinceEdit") ?? null,
+    ...buildPathOnlyReadAfterContinuationHintDiagnostics(parentToolEvents),
+  };
+}
+
+function stableAttemptTextHash(value: unknown): string {
+  const text =
+    typeof value === "string"
+      ? value
+      : value === null || value === undefined
+        ? ""
+        : stableToolCatalogValue(value);
+  return createHash("sha256").update(text).digest("hex");
 }
 
 function requiredSourceIdForWorkspaceFile(params: {
@@ -552,11 +1825,32 @@ export function buildNodeAgentSessionTraceFromEvents(
   const toolEvents = nodeAgentToolResultEvents(events);
   const contextPreservationEvents = nativeTaskContextPreservationEvents(events);
   const launchEvent = events.find((event) => event.eventType === "session_launch");
+  const providerTurnOptics = events.find(
+    (event) => event.eventType === PROVIDER_TURN_OPTICS_EVENT_TYPE,
+  );
+  const providerResponseNormalizationReceipt = events.find(
+    (event) => event.eventType === PROVIDER_RESPONSE_NORMALIZATION_EVENT_TYPE,
+  );
+  const providerWaitLockHandoffEvents = events.filter(
+    (event) => event.eventType === PROVIDER_WAIT_LOCK_HANDOFF_EVENT_TYPE,
+  );
+  const preemptiveCheckpointEvents = events.filter(
+    (event) => event.eventType === PREEMPTIVE_CHECKPOINT_EVENT_TYPE,
+  );
+  const providerRequestDiagnostics = events.filter(
+    (event) => event.eventType === PROVIDER_REQUEST_DIAGNOSTICS_EVENT_TYPE,
+  );
+  const latestProviderRequestDiagnostics =
+    providerRequestDiagnostics[providerRequestDiagnostics.length - 1];
   if (
     taskEvents.length === 0 &&
     toolEvents.length === 0 &&
     contextPreservationEvents.length === 0 &&
-    !launchEvent
+    !launchEvent &&
+    providerWaitLockHandoffEvents.length === 0 &&
+    preemptiveCheckpointEvents.length === 0 &&
+    providerRequestDiagnostics.length === 0 &&
+    !providerResponseNormalizationReceipt
   ) {
     return undefined;
   }
@@ -567,6 +1861,21 @@ export function buildNodeAgentSessionTraceFromEvents(
     (event) => stringFromRecord(event, "requestedAgentId") === "execution-validation-scout",
   );
   const firstEvent = contextEvent ?? taskEvents[0];
+  const contextScoutToolEvents = nodeAgentToolEventsForAgent(events, "execution-context-scout");
+  const validationScoutToolEvents = nodeAgentToolEventsForAgent(
+    events,
+    "execution-validation-scout",
+  );
+  const contextScoutToolDiagnostics = buildScoutToolDiagnostics(contextScoutToolEvents);
+  const validationScoutToolDiagnostics = buildScoutToolDiagnostics(validationScoutToolEvents);
+  const contextScoutHasSymbolWindows =
+    booleanFromRecord(contextEvent, "workingContextHasSymbolWindows") === true;
+  const contextScoutHasMissingWindows =
+    booleanFromRecord(contextEvent, "workingContextHasMissingWindows") === true;
+  const validationScoutHasSymbolWindows =
+    booleanFromRecord(validationEvent, "workingContextHasSymbolWindows") === true;
+  const validationScoutHasMissingWindows =
+    booleanFromRecord(validationEvent, "workingContextHasMissingWindows") === true;
   const childBootstrapAdmissions = taskEvents
     .map<ChildBootstrapAdmissionTrace | null>((event) => {
       const admission = recordFromUnknown(event.childBootstrapAdmission);
@@ -618,15 +1927,6 @@ export function buildNodeAgentSessionTraceFromEvents(
     events,
     (event) => stringFromRecord(event, "toolName") === "update_plan",
   );
-  const firstEditEvent = findFirstToolResultEvent(events, (event) => {
-    const toolName = stringFromRecord(event, "toolName");
-    return (
-      toolName === "edit" ||
-      toolName === "write" ||
-      toolName === "apply_patch" ||
-      stringFromRecord(event, "changeSetWorkingContextEntryRef") != null
-    );
-  });
   const terminalNodeFinishEvent = findFirstToolResultEvent(
     events,
     (event) => stringFromRecord(event, "toolName") === "node_finish",
@@ -656,6 +1956,34 @@ export function buildNodeAgentSessionTraceFromEvents(
     events,
     validationTodoDecisionEvent,
   );
+  const replayCompactedToolEvents = toolEvents.filter(isReplayCompactedToolEvent);
+  const liveToolEvents = toolEvents.filter((event) => !isReplayCompactedToolEvent(event));
+  const firstLiveEditEvent = findFirstToolResultEvent(liveToolEvents, isEditToolEvent);
+  const firstLspEvent = findFirstToolResultEvent(
+    liveToolEvents,
+    (event) => stringFromRecord(event, "toolName") === "lsp",
+  );
+  const repairEditAfterValidationEvent = findFirstParentEditEventAfter(events, validationEvent);
+  const editTransitionDiagnostics = buildEditTransitionDiagnostics({
+    toolEvents: liveToolEvents,
+    firstPlanUpdateEvent,
+    firstEditEvent: firstLiveEditEvent,
+    firstLspEvent,
+    validationEvent,
+    repairEditAfterValidationEvent,
+    replayCompactedToolCallCount: replayCompactedToolEvents.length,
+    providerRequestDiagnostics,
+  });
+  Object.assign(editTransitionDiagnostics, {
+    patchHypothesisObserved:
+      booleanFromRecord(providerTurnOptics, "patchHypothesisObserved") ?? false,
+    firstPatchHypothesisBeforeToolCallObserved:
+      booleanFromRecord(providerTurnOptics, "firstPatchHypothesisBeforeToolCallObserved") ?? false,
+    firstPatchHypothesisMessageIndex:
+      numberFromRecord(providerTurnOptics, "firstPatchHypothesisMessageIndex") ?? null,
+    firstPatchHypothesisTextByteCount:
+      numberFromRecord(providerTurnOptics, "firstPatchHypothesisTextByteCount") ?? null,
+  });
   return {
     sessionLaunchEventRef: stringFromRecord(launchEvent, "sessionLaunchEventRef") ?? null,
     sessionLaunchRef: stringFromRecord(launchEvent, "sessionLaunchRef") ?? null,
@@ -669,8 +1997,65 @@ export function buildNodeAgentSessionTraceFromEvents(
     sessionLaunchToolCatalogRef: stringFromRecord(launchEvent, "toolCatalogRef") ?? null,
     sessionLaunchPromptHashMatched: booleanFromRecord(launchEvent, "promptHashMatched"),
     sessionLaunchPersisted: booleanFromRecord(launchEvent, "persisted") ?? false,
+    providerTurnOptics: providerTurnOptics ?? null,
+    providerResponseNormalizationReceipt: providerResponseNormalizationReceipt ?? null,
+    providerRequestDiagnostics: latestProviderRequestDiagnostics ?? null,
+    providerRequestDiagnosticCount: providerRequestDiagnostics.length,
+    providerResponseNormalizationReceiptPresent: Boolean(providerResponseNormalizationReceipt),
+    providerResponseRawTransportCaptured:
+      booleanFromRecord(providerResponseNormalizationReceipt, "rawTransportCaptured") ?? false,
+    providerResponseRawResponseStored:
+      booleanFromRecord(providerResponseNormalizationReceipt, "rawResponseStored") ?? false,
+    providerResponseToolCallIdLinkageOk:
+      booleanFromRecord(providerResponseNormalizationReceipt, "toolCallIdLinkageOk") ?? null,
+    providerResponseStopReasonToolUseWithoutToolCalls:
+      numberFromRecord(providerResponseNormalizationReceipt, "stopReasonToolUseWithoutToolCalls") ??
+      0,
+    providerResponseStopReasonStopWithToolCalls:
+      numberFromRecord(providerResponseNormalizationReceipt, "stopReasonStopWithToolCalls") ?? 0,
+    providerRequestParallelToolCalls: latestProviderRequestDiagnostics?.parallel_tool_calls ?? null,
+    providerRequestReasoning: latestProviderRequestDiagnostics?.reasoning ?? null,
+    providerRequestReasoningEffort: latestProviderRequestDiagnostics?.reasoning_effort ?? null,
+    providerRequestIncludeReasoning: latestProviderRequestDiagnostics?.include_reasoning ?? null,
+    providerWaitLockHandoffCount: providerWaitLockHandoffEvents.length,
+    providerWaitLockSuspendedCount: providerWaitLockHandoffEvents.filter(
+      (event) => stringFromRecord(event, "phase") === "suspended",
+    ).length,
+    providerWaitLockResumedCount: providerWaitLockHandoffEvents.filter(
+      (event) => stringFromRecord(event, "phase") === "resumed",
+    ).length,
+    preemptiveCheckpointCount: preemptiveCheckpointEvents.length,
+    preemptiveCheckpointReasons: preemptiveCheckpointEvents.flatMap((event) => {
+      const reason = stringFromRecord(event, "reason");
+      return reason ? [reason] : [];
+    }),
+    preemptiveCheckpointTruncatedCount: preemptiveCheckpointEvents.filter(
+      (event) => booleanFromRecord(event, "truncated") === true,
+    ).length,
+    providerTurnMutatingTools: Array.isArray(providerTurnOptics?.mutatingTools)
+      ? providerTurnOptics.mutatingTools
+      : [],
+    providerTurnApplyPatchVisible:
+      booleanFromRecord(providerTurnOptics, "applyPatchVisible") ?? false,
+    providerTurnToolCallIdLinkageOk:
+      booleanFromRecord(providerTurnOptics, "toolCallIdLinkageOk") ?? null,
+    parallelToolCallTurns:
+      typeof providerTurnOptics?.parallelToolCallTurns === "number"
+        ? providerTurnOptics.parallelToolCallTurns
+        : 0,
+    averageToolCallsPerTurn:
+      typeof providerTurnOptics?.averageToolCallsPerTurn === "number"
+        ? providerTurnOptics.averageToolCallsPerTurn
+        : 0,
+    serialAcquisitionTurns:
+      typeof providerTurnOptics?.serialAcquisitionTurns === "number"
+        ? providerTurnOptics.serialAcquisitionTurns
+        : 0,
     nativeTaskResultCount: taskEvents.length,
     nodeAgentToolResultCount: toolEvents.length,
+    parentToolSequence: buildParentToolSequence(toolEvents),
+    editTransitionDiagnostics,
+    nativeTaskSummaries: buildNativeTaskSummaries(taskEvents),
     nativeTaskRef: stringFromRecord(firstEvent, "taskRef") ?? null,
     taskRef: stringFromRecord(firstEvent, "taskRef") ?? null,
     firstPlanUpdateRef:
@@ -679,6 +2064,8 @@ export function buildNodeAgentSessionTraceFromEvents(
       null,
     scoutSpawnRef: stringFromRecord(contextEvent, "taskRef") ?? null,
     contextScoutSessionKey: stringFromRecord(contextEvent, "childSessionKey") ?? null,
+    contextScoutProvider: stringFromRecord(contextEvent, "childProvider") ?? null,
+    contextScoutModel: stringFromRecord(contextEvent, "childModel") ?? null,
     childSessionKeyRef: stringFromRecord(contextEvent, "childSessionKey") ?? null,
     childResultRef:
       stringFromRecord(contextEvent, "childResultRef") ??
@@ -709,6 +2096,30 @@ export function buildNodeAgentSessionTraceFromEvents(
     workingContextHasFileGraph:
       booleanFromRecord(contextEvent, "workingContextHasFileGraph") === true ||
       booleanFromRecord(validationEvent, "workingContextHasFileGraph") === true,
+    workingContextHasSymbolWindows: contextScoutHasSymbolWindows || validationScoutHasSymbolWindows,
+    workingContextHasMissingWindows:
+      contextScoutHasMissingWindows || validationScoutHasMissingWindows,
+    contextScoutHasSymbolWindows,
+    contextScoutHasMissingWindows,
+    contextScoutToolCallCount: contextScoutToolDiagnostics.toolCallCount,
+    contextScoutToolCallCountsByType: contextScoutToolDiagnostics.toolCallCountsByType,
+    contextScoutFirstToolCalls: contextScoutToolDiagnostics.firstToolCalls,
+    contextScoutReadCallCount: contextScoutToolDiagnostics.readCallCount,
+    contextScoutGrepCallCount: contextScoutToolDiagnostics.grepCallCount,
+    contextScoutStartedWithRead: contextScoutToolDiagnostics.startedWithRead,
+    contextScoutRawTopOfFileReadCount: contextScoutToolDiagnostics.rawTopOfFileReadCount,
+    contextScoutHandoffQualityDiagnostics: {
+      hasSymbolWindows: contextScoutHasSymbolWindows,
+      hasInlineContextWindows:
+        booleanFromRecord(contextEvent, "workingContextHasInlineContextWindows") === true,
+      hasFileGraph: booleanFromRecord(contextEvent, "workingContextHasFileGraph") === true,
+      hasMissingWindows: contextScoutHasMissingWindows,
+      readCallCount: contextScoutToolDiagnostics.readCallCount,
+      grepCallCount: contextScoutToolDiagnostics.grepCallCount,
+      startedWithRead: contextScoutToolDiagnostics.startedWithRead,
+      rawTopOfFileReadCount: contextScoutToolDiagnostics.rawTopOfFileReadCount,
+      oversizedProjected: stringFromRecord(contextEvent, "resultDeliveryStatus") === "projected",
+    },
     contextDecisionFooterObserved:
       booleanFromRecord(contextEvent, "parentDecisionFooterIncluded") === true,
     contextDecisionFooterKind: stringFromRecord(contextEvent, "parentDecisionFooterKind") ?? null,
@@ -735,8 +2146,37 @@ export function buildNodeAgentSessionTraceFromEvents(
     validationNextActionRef: parentActionRefFromEvent(validationNextActionEvent),
     validationNextActionObserved: Boolean(validationNextActionEvent),
     validationNextActionToolName: parentActionToolNameFromEvent(validationNextActionEvent),
-    firstEditRef: stringFromRecord(firstEditEvent, "toolResultRef") ?? null,
+    firstLspRef: stringFromRecord(firstLspEvent, "toolResultRef") ?? null,
+    firstEditRef: stringFromRecord(firstLiveEditEvent, "toolResultRef") ?? null,
+    firstEditChangedFilePaths: stringArrayFromRecord(firstLiveEditEvent, "changedFilePaths"),
+    firstEditFirstChangedLine: numberFromRecord(firstLiveEditEvent, "firstChangedLine") ?? null,
+    firstEditDiffAvailable: booleanFromRecord(firstLiveEditEvent, "diffAvailable") === true,
+    firstEditDiffByteCount: numberFromRecord(firstLiveEditEvent, "diffByteCount") ?? null,
+    firstEditDiagnosticSummaries: stringArrayFromRecord(firstLiveEditEvent, "diagnosticSummaries"),
     validationActionRef: stringFromRecord(validationEvent, "taskRef") ?? null,
+    validationScoutProvider: stringFromRecord(validationEvent, "childProvider") ?? null,
+    validationScoutModel: stringFromRecord(validationEvent, "childModel") ?? null,
+    validationScoutHasSymbolWindows,
+    validationScoutHasMissingWindows,
+    validationScoutToolCallCount: validationScoutToolDiagnostics.toolCallCount,
+    validationScoutToolCallCountsByType: validationScoutToolDiagnostics.toolCallCountsByType,
+    validationScoutFirstToolCalls: validationScoutToolDiagnostics.firstToolCalls,
+    validationScoutReadCallCount: validationScoutToolDiagnostics.readCallCount,
+    validationScoutGrepCallCount: validationScoutToolDiagnostics.grepCallCount,
+    validationScoutStartedWithRead: validationScoutToolDiagnostics.startedWithRead,
+    validationScoutRawTopOfFileReadCount: validationScoutToolDiagnostics.rawTopOfFileReadCount,
+    validationScoutHandoffQualityDiagnostics: {
+      hasSymbolWindows: validationScoutHasSymbolWindows,
+      hasInlineContextWindows:
+        booleanFromRecord(validationEvent, "workingContextHasInlineContextWindows") === true,
+      hasFileGraph: booleanFromRecord(validationEvent, "workingContextHasFileGraph") === true,
+      hasMissingWindows: validationScoutHasMissingWindows,
+      readCallCount: validationScoutToolDiagnostics.readCallCount,
+      grepCallCount: validationScoutToolDiagnostics.grepCallCount,
+      startedWithRead: validationScoutToolDiagnostics.startedWithRead,
+      rawTopOfFileReadCount: validationScoutToolDiagnostics.rawTopOfFileReadCount,
+      oversizedProjected: stringFromRecord(validationEvent, "resultDeliveryStatus") === "projected",
+    },
     terminalNodeFinishRef: stringFromRecord(terminalNodeFinishEvent, "toolResultRef") ?? null,
     childResultObserved,
     contextScoutSpawnObserved: Boolean(stringFromRecord(contextEvent, "childSessionKey")),
@@ -760,16 +2200,6 @@ export function buildNodeAgentSessionTraceFromEvents(
     nativeTaskContextPreservationRoute:
       stringFromRecord(latestContextPreservationEvent, "route") ?? null,
   };
-}
-
-export function prependSystemPromptAdditionReplacingNativeWorkingContext(params: {
-  systemPrompt: string;
-  systemPromptAddition?: string;
-}): string {
-  return prependSystemPromptAddition({
-    systemPrompt: stripSessionWorkingContextPromptAddition(params.systemPrompt),
-    systemPromptAddition: params.systemPromptAddition,
-  });
 }
 
 export {
@@ -898,6 +2328,82 @@ function summarizeSessionContext(messages: AgentMessage[]): {
     totalImageBlocks,
     maxMessageTextChars,
   };
+}
+
+function isExecutionScoutAgentId(agentId: string | undefined): boolean {
+  return agentId === "execution-context-scout" || agentId === "execution-validation-scout";
+}
+
+function executionScoutRequiredThinkingLevel(params: {
+  agentId: string | undefined;
+  thinkLevel: ThinkLevel;
+}): ReturnType<typeof mapThinkingLevel> | undefined {
+  if (!isExecutionScoutAgentId(params.agentId)) {
+    return undefined;
+  }
+  const thinkingLevel = mapThinkingLevel(params.thinkLevel);
+  return thinkingLevel === "off" ? undefined : thinkingLevel;
+}
+
+function modelForExecutionScoutRequiredThinking(
+  model: EmbeddedRunAttemptParams["model"],
+  requiredThinkingLevel: ReturnType<typeof mapThinkingLevel> | undefined,
+): EmbeddedRunAttemptParams["model"] {
+  if (!requiredThinkingLevel || model.reasoning) {
+    return model;
+  }
+  return { ...model, reasoning: true };
+}
+
+function assertExecutionScoutProviderThinking(params: {
+  session: Awaited<ReturnType<typeof createAgentSession>>["session"];
+  agentId: string | undefined;
+  requiredThinkingLevel: ReturnType<typeof mapThinkingLevel> | undefined;
+}): void {
+  if (!params.requiredThinkingLevel || !isExecutionScoutAgentId(params.agentId)) {
+    return;
+  }
+  if (params.session.thinkingLevel !== params.requiredThinkingLevel) {
+    params.session.setThinkingLevel(params.requiredThinkingLevel);
+  }
+  if (params.session.thinkingLevel !== params.requiredThinkingLevel) {
+    throw new Error(
+      [
+        "native_child_thinking_level_mismatch",
+        `agent=${params.agentId ?? "<unknown>"}`,
+        `expected=${params.requiredThinkingLevel}`,
+        `actual=${params.session.thinkingLevel ?? "<missing>"}`,
+      ].join(" "),
+    );
+  }
+}
+
+function fallbackPromptProfileForAgentId(agentId: string | undefined): PromptProfile {
+  if (agentId === "execution-coding") {
+    return "execution_worker";
+  }
+  if (agentId === "execution-context-scout") {
+    return "execution_context_scout";
+  }
+  if (agentId === "execution-validation-scout") {
+    return "execution_validation_scout";
+  }
+  return "general_assistant";
+}
+
+function resolvePromptProfileForAgent(agentId: string | undefined): PromptProfile {
+  if (!agentId) {
+    return "general_assistant";
+  }
+  try {
+    const entry = findAgentPackRegistryEntry({
+      entries: loadAgentPackRegistryEntriesSync(),
+      agentId,
+    });
+    return entry?.promptProfile ?? fallbackPromptProfileForAgentId(agentId);
+  } catch {
+    return fallbackPromptProfileForAgentId(agentId);
+  }
 }
 
 export async function runEmbeddedAttempt(
@@ -1049,6 +2555,8 @@ export async function runEmbeddedAttempt(
     let queueYieldInterruptForSession: (() => void) | null = null;
     let yieldAbortSettled: Promise<void> | null = null;
     const nodeAgentSessionTraceEvents: Record<string, unknown>[] = [];
+    const deferredProviderCustomEntries: DeferredProviderCustomEntry[] = [];
+    const nodeAgentPreemptiveCheckpointTracker = createNodeAgentPreemptiveCheckpointTracker();
     const nodeAgentNativeTaskMode =
       params.nodeAgentNativeTaskMode?.enabled === true && parentSessionLockHandoff.runChildTask
         ? {
@@ -1058,6 +2566,10 @@ export async function runEmbeddedAttempt(
         : params.nodeAgentNativeTaskMode;
     // Check if the model supports native image input
     const modelHasVision = params.model.input?.includes("image") ?? false;
+    const nativeLspService = createOpenClawLspService({
+      workspaceRoot: effectiveWorkspace,
+      externalEnabled: true,
+    });
     const toolsRaw = params.disableTools
       ? []
       : (() => {
@@ -1115,6 +2627,7 @@ export async function runEmbeddedAttempt(
             extraTools: params.extraTools,
             nodeAuthorityOverlay: params.nodeAuthorityOverlay,
             nodeAgentParentCrawlGuard: params.nodeAgentParentCrawlGuard,
+            lspService: nativeLspService,
             nodeAgentNativeTaskMode,
             onYield: (message) => {
               yieldDetected = true;
@@ -1298,6 +2811,7 @@ export async function runEmbeddedAttempt(
     });
     const isDefaultAgent = sessionAgentId === defaultAgentId;
     const promptMode = resolvePromptModeForSession(params.sessionKey);
+    const promptProfile = resolvePromptProfileForAgent(sessionAgentId);
 
     // When toolsAllow is set, use minimal prompt, but keep skills visible.
     // Restricted tool menus still need skill instructions for correct agent behavior.
@@ -1335,6 +2849,7 @@ export async function runEmbeddedAttempt(
         provider: params.provider,
         modelId: params.modelId,
         promptMode: effectivePromptMode,
+        promptProfile,
         runtimeChannel,
         runtimeCapabilities,
         agentId: sessionAgentId,
@@ -1362,6 +2877,7 @@ export async function runEmbeddedAttempt(
         workspaceNotes,
         reactionGuidance,
         promptMode: effectivePromptMode,
+        promptProfile,
         acpEnabled: params.config?.acp?.enabled !== false,
         runtimeInfo,
         messageToolHints,
@@ -1387,6 +2903,7 @@ export async function runEmbeddedAttempt(
         provider: params.provider,
         modelId: params.modelId,
         promptMode: effectivePromptMode,
+        promptProfile,
         runtimeChannel,
         runtimeCapabilities,
         agentId: sessionAgentId,
@@ -1398,7 +2915,7 @@ export async function runEmbeddedAttempt(
         source: "run",
         generatedAt: Date.now(),
         sessionId: params.sessionId,
-        sessionKey: params.sessionKey,
+        sessionKey: params.sessionKey ?? params.sessionId,
         provider: params.provider,
         model: params.modelId,
         workspaceDir: effectiveWorkspace,
@@ -1458,6 +2975,7 @@ export async function runEmbeddedAttempt(
         inputProvenance: params.inputProvenance,
         allowSyntheticToolResults: transcriptPolicy.allowSyntheticToolResults,
         allowedToolNames,
+        stateRoot: resolveStateDir(process.env),
       });
       trackSessionManagerAccess(params.sessionFile);
 
@@ -1590,39 +3108,39 @@ export async function runEmbeddedAttempt(
         : [];
 
       const allCustomTools = [...customTools, ...clientToolDefs];
+      const nativeRequiredThinkingLevel = executionScoutRequiredThinkingLevel({
+        agentId: sessionAgentId,
+        thinkLevel: params.thinkLevel,
+      });
+      const providerThinkingLevel = mapThinkingLevel(params.thinkLevel);
+      const sessionRuntimeModel = modelForExecutionScoutRequiredThinking(
+        params.model,
+        nativeRequiredThinkingLevel,
+      );
 
       ({ session } = await createAgentSession({
         cwd: resolvedWorkspace,
         agentDir,
         authStorage: params.authStorage,
         modelRegistry: params.modelRegistry,
-        model: params.model,
-        thinkingLevel: mapThinkingLevel(params.thinkLevel),
+        model: sessionRuntimeModel,
+        thinkingLevel: providerThinkingLevel,
         tools: builtInTools,
         customTools: allCustomTools,
         sessionManager,
         settingsManager,
         resourceLoader,
       }));
-      applySystemPromptOverrideToSession(session, systemPromptText);
       if (!session) {
         throw new Error("Embedded agent session missing");
       }
+      assertExecutionScoutProviderThinking({
+        session,
+        agentId: sessionAgentId,
+        requiredThinkingLevel: nativeRequiredThinkingLevel,
+      });
+      applySystemPromptOverrideToSession(session, systemPromptText);
       const activeSession = session;
-      const refreshNativeWorkingContextSystemPrompt = () => {
-        const workingContextAddition = buildAttemptWorkingContextPromptAddition({
-          sessionKey: params.sessionKey,
-          sessionStorePath,
-        });
-        const nextSystemPrompt = prependSystemPromptAdditionReplacingNativeWorkingContext({
-          systemPrompt: systemPromptText,
-          systemPromptAddition: workingContextAddition,
-        });
-        if (nextSystemPrompt !== systemPromptText) {
-          systemPromptText = nextSystemPrompt;
-          applySystemPromptOverrideToSession(activeSession, systemPromptText);
-        }
-      };
       let prePromptMessageCount = activeSession.messages.length;
       abortSessionForYield = () => {
         yieldAbortSettled = Promise.resolve(activeSession.abort());
@@ -1633,12 +3151,7 @@ export async function runEmbeddedAttempt(
       if (params.contextEngine?.info?.ownsCompaction !== true) {
         removeToolResultContextGuard = installToolResultContextGuard({
           agent: activeSession.agent,
-          contextWindowTokens: Math.max(
-            1,
-            Math.floor(
-              params.model.contextWindow ?? params.model.maxTokens ?? DEFAULT_CONTEXT_TOKENS,
-            ),
-          ),
+          contextWindowTokens: params.contextTokenBudget ?? DEFAULT_CONTEXT_TOKENS,
         });
       } else {
         removeToolResultContextGuard = installContextEngineLoopHook({
@@ -1650,7 +3163,7 @@ export async function runEmbeddedAttempt(
           tokenBudget: params.contextTokenBudget,
           modelId: params.modelId,
           getPrePromptMessageCount: () => prePromptMessageCount,
-          refreshSystemPrompt: refreshNativeWorkingContextSystemPrompt,
+          refreshSystemPrompt: () => {},
         });
       }
       const cacheTrace = createCacheTrace({
@@ -1927,6 +3440,40 @@ export async function runEmbeddedAttempt(
         activeSession.agent.streamFn,
       );
 
+      activeSession.agent.streamFn = wrapStreamFnWithProviderRequestDiagnostics({
+        streamFn: activeSession.agent.streamFn,
+        sessionManager,
+        deferredCustomEntries: deferredProviderCustomEntries,
+        nodeAgentSessionTraceEvents,
+        provider: params.provider,
+        modelId: params.modelId,
+        api: params.model.api,
+        agentId: sessionAgentId,
+        nodeRunId: params.nodeRunId ?? params.runId,
+        sessionKey: params.sessionKey ?? params.sessionId,
+        runId: params.runId,
+        getSystemPromptReceipt: (request) =>
+          buildProviderSystemPromptContributionReceipt({
+            systemPrompt: systemPromptText,
+            provider: request.provider,
+            modelId: request.model,
+            agentId: sessionAgentId,
+            promptMode: effectivePromptMode,
+            promptProfile,
+          }),
+      });
+
+      activeSession.agent.streamFn = wrapStreamFnWithProviderWaitLockHandoff({
+        streamFn: activeSession.agent.streamFn,
+        sessionManager,
+        deferredCustomEntries: deferredProviderCustomEntries,
+        nodeAgentSessionTraceEvents,
+        suspendParentLockForProviderWait: parentSessionLockHandoff.suspendParentLockForProviderWait,
+        sessionKey: params.sessionKey ?? params.sessionId,
+        runId: params.runId,
+        agentId: sessionAgentId,
+      });
+
       let idleTimeoutTrigger: ((error: Error) => void) | undefined;
 
       // Wrap stream with idle timeout detection
@@ -2022,7 +3569,7 @@ export async function runEmbeddedAttempt(
               activeSession.agent.state.messages = assembled.messages;
             }
             if (assembled.systemPromptAddition) {
-              systemPromptText = prependSystemPromptAdditionReplacingNativeWorkingContext({
+              systemPromptText = prependSystemPromptAddition({
                 systemPrompt: systemPromptText,
                 systemPromptAddition: assembled.systemPromptAddition,
               });
@@ -2053,6 +3600,7 @@ export async function runEmbeddedAttempt(
       let timedOut = false;
       let idleTimedOut = false;
       let timedOutDuringCompaction = false;
+      let progressTimeoutKind: EmbeddedRunProgressTimeoutKind | undefined;
       const getAbortReason = (signal: AbortSignal): unknown =>
         "reason" in signal ? (signal as { reason?: unknown }).reason : undefined;
       const makeTimeoutAbortReason = (): Error => {
@@ -2128,6 +3676,47 @@ export async function runEmbeddedAttempt(
         });
       };
 
+      let recordRunProgress: (label?: string, signature?: string) => void = () => undefined;
+      const progressDigest = (value: unknown): string | undefined => {
+        if (typeof value !== "string" || !value) {
+          return undefined;
+        }
+        return createHash("sha256").update(value).digest("hex").slice(0, 16);
+      };
+      const progressSignatureFromRecord = (
+        label: string,
+        record: Record<string, unknown> | undefined,
+      ): string => {
+        const parts = [
+          label,
+          typeof record?.eventType === "string" ? record.eventType : undefined,
+          typeof record?.type === "string" ? record.type : undefined,
+          typeof record?.toolName === "string" ? record.toolName : undefined,
+          typeof record?.toolCallId === "string" ? record.toolCallId : undefined,
+          typeof record?.messageId === "string" ? record.messageId : undefined,
+          typeof record?.childSessionKey === "string" ? record.childSessionKey : undefined,
+          typeof record?.runId === "string" ? record.runId : undefined,
+          typeof record?.status === "string" ? record.status : undefined,
+          typeof record?.phase === "string" ? record.phase : undefined,
+          progressDigest(record?.delta),
+          progressDigest(record?.text),
+        ].filter((part): part is string => typeof part === "string" && part.length > 0);
+        return parts.join(":");
+      };
+      const progressSignatureFromPayload = (
+        label: string,
+        payload: { text?: string; mediaUrls?: string[] } | undefined,
+      ): string =>
+        [
+          label,
+          progressDigest(payload?.text),
+          Array.isArray(payload?.mediaUrls) && payload.mediaUrls.length > 0
+            ? `media:${payload.mediaUrls.length}`
+            : undefined,
+        ]
+          .filter((part): part is string => typeof part === "string" && part.length > 0)
+          .join(":");
+
       const subscription = subscribeEmbeddedPiSession(
         buildEmbeddedSubscriptionParams({
           session: activeSession,
@@ -2139,22 +3728,67 @@ export async function runEmbeddedAttempt(
           toolResultFormat: params.toolResultFormat,
           shouldEmitToolResult: params.shouldEmitToolResult,
           shouldEmitToolOutput: params.shouldEmitToolOutput,
-          onToolResult: params.onToolResult,
+          onToolResult: params.onToolResult
+            ? async (payload) => {
+                recordRunProgress(
+                  "tool_result",
+                  progressSignatureFromPayload("tool_result", payload),
+                );
+                await params.onToolResult?.(payload);
+              }
+            : undefined,
           onReasoningStream: params.onReasoningStream,
           onReasoningEnd: params.onReasoningEnd,
           onBlockReply: params.onBlockReply,
           onBlockReplyFlush: params.onBlockReplyFlush,
           blockReplyBreak: params.blockReplyBreak,
           blockReplyChunking: params.blockReplyChunking,
-          onPartialReply: params.onPartialReply,
-          onAssistantMessageStart: params.onAssistantMessageStart,
+          onPartialReply: params.onPartialReply
+            ? async (payload) => {
+                recordRunProgress(
+                  "assistant_partial",
+                  progressSignatureFromPayload("assistant_partial", payload),
+                );
+                await params.onPartialReply?.(payload);
+              }
+            : undefined,
+          onAssistantMessageStart: async () => {
+            recordRunProgress("assistant_message_start", "assistant_message_start");
+            await params.onAssistantMessageStart?.();
+          },
           onAgentEvent: async (evt) => {
+            recordRunProgress(
+              `agent_event:${evt.stream}`,
+              progressSignatureFromRecord(`agent_event:${evt.stream}`, evt.data),
+            );
             if (
               evt.stream === "node-agent" &&
               (evt.data.eventType === "node_agent_native_task_result" ||
                 evt.data.eventType === "node_agent_tool_result")
             ) {
               nodeAgentSessionTraceEvents.push(evt.data);
+            }
+            const checkpointReason = nodeAgentPreemptiveCheckpointReasonForEvent({
+              stream: evt.stream,
+              data: evt.data,
+              tracker: nodeAgentPreemptiveCheckpointTracker,
+            });
+            if (checkpointReason) {
+              appendNodeAgentPreemptiveCheckpoint({
+                stream: evt.stream,
+                data: evt.data,
+                reason: checkpointReason,
+                tracker: nodeAgentPreemptiveCheckpointTracker,
+                sessionManager: sessionManager!,
+                nodeAgentSessionTraceEvents,
+                sessionKey: params.sessionKey ?? params.sessionId,
+                sessionId: params.sessionId,
+                sessionFile: params.sessionFile,
+                runId: params.runId,
+                agentId: sessionAgentId,
+                contextTokenBudget: params.contextTokenBudget ?? DEFAULT_CONTEXT_TOKENS,
+                config: params.config,
+              });
             }
             params.onAgentEvent?.(evt);
           },
@@ -2217,62 +3851,68 @@ export async function runEmbeddedAttempt(
       let abortWarnTimer: NodeJS.Timeout | undefined;
       const isProbeSession = params.sessionId?.startsWith("probe-") ?? false;
       const compactionTimeoutMs = resolveCompactionTimeoutMs(params.config);
-      let abortTimer: NodeJS.Timeout | undefined;
       let compactionGraceUsed = false;
-      const scheduleAbortTimer = (delayMs: number, reason: "initial" | "compaction-grace") => {
-        abortTimer = setTimeout(
-          () => {
-            const timeoutAction = resolveRunTimeoutDuringCompaction({
-              isCompactionPendingOrRetrying: subscription.isCompacting(),
-              isCompactionInFlight: activeSession.isCompacting,
-              graceAlreadyUsed: compactionGraceUsed,
-            });
-            if (timeoutAction === "extend") {
-              compactionGraceUsed = true;
-              if (!isProbeSession) {
-                log.warn(
-                  `embedded run timeout reached during compaction; extending deadline: ` +
-                    `runId=${params.runId} sessionId=${params.sessionId} extraMs=${compactionTimeoutMs}`,
-                );
-              }
-              scheduleAbortTimer(compactionTimeoutMs, "compaction-grace");
-              return;
-            }
-
+      const progressLease = createProgressLeaseTimeout({
+        leaseMs: params.timeoutMs,
+        onExpire: (event) => {
+          const timeoutAction = resolveRunTimeoutDuringCompaction({
+            isCompactionPendingOrRetrying: subscription.isCompacting(),
+            isCompactionInFlight: activeSession.isCompacting,
+            graceAlreadyUsed: compactionGraceUsed,
+          });
+          if (timeoutAction === "extend") {
+            compactionGraceUsed = true;
             if (!isProbeSession) {
               log.warn(
-                reason === "compaction-grace"
-                  ? `embedded run timeout after compaction grace: runId=${params.runId} sessionId=${params.sessionId} timeoutMs=${params.timeoutMs} compactionGraceMs=${compactionTimeoutMs}`
-                  : `embedded run timeout: runId=${params.runId} sessionId=${params.sessionId} timeoutMs=${params.timeoutMs}`,
+                `embedded run timeout reached during compaction; extending deadline: ` +
+                  `runId=${params.runId} sessionId=${params.sessionId} extraMs=${compactionTimeoutMs}`,
               );
             }
-            if (
-              shouldFlagCompactionTimeout({
-                isTimeout: true,
-                isCompactionPendingOrRetrying: subscription.isCompacting(),
-                isCompactionInFlight: activeSession.isCompacting,
-              })
-            ) {
-              timedOutDuringCompaction = true;
-            }
-            abortRun(true);
-            if (!abortWarnTimer) {
-              abortWarnTimer = setTimeout(() => {
-                if (!activeSession.isStreaming) {
-                  return;
-                }
-                if (!isProbeSession) {
-                  log.warn(
-                    `embedded run abort still streaming: runId=${params.runId} sessionId=${params.sessionId}`,
-                  );
-                }
-              }, 10_000);
-            }
-          },
-          Math.max(1, delayMs),
-        );
+            progressLease.schedule(compactionTimeoutMs, "compaction-grace");
+            return;
+          }
+
+          if (!isProbeSession) {
+            log.warn(
+              event.reason === "compaction-grace"
+                ? `embedded run timeout after compaction grace: runId=${params.runId} sessionId=${params.sessionId} timeoutMs=${params.timeoutMs} compactionGraceMs=${compactionTimeoutMs}`
+                : `embedded run no-progress timeout: runId=${params.runId} sessionId=${params.sessionId} leaseMs=${params.timeoutMs} progressCount=${event.progressCount} lastProgress=${event.progressLabel ?? "none"} idleMs=${event.idleMs ?? "unknown"}`,
+            );
+          }
+          if (
+            shouldFlagCompactionTimeout({
+              isTimeout: true,
+              isCompactionPendingOrRetrying: subscription.isCompacting(),
+              isCompactionInFlight: activeSession.isCompacting,
+            })
+          ) {
+            timedOutDuringCompaction = true;
+          }
+          progressTimeoutKind =
+            event.progressCount === 0 && event.reason === "initial"
+              ? "no_progress_timeout"
+              : event.ignoredRepeatedProgressCount > 0
+                ? "repeated_low_value_progress"
+                : progressTimeoutKind;
+          abortRun(true);
+          if (!abortWarnTimer) {
+            abortWarnTimer = setTimeout(() => {
+              if (!activeSession.isStreaming) {
+                return;
+              }
+              if (!isProbeSession) {
+                log.warn(
+                  `embedded run abort still streaming: runId=${params.runId} sessionId=${params.sessionId}`,
+                );
+              }
+            }, 10_000);
+          }
+        },
+      });
+      recordRunProgress = (label?: string, signature?: string) => {
+        progressLease.recordProgress(label, signature);
       };
-      scheduleAbortTimer(params.timeoutMs, "initial");
+      progressLease.start("initial", params.timeoutMs);
 
       let messagesSnapshot: AgentMessage[] = [];
       let sessionIdUsed = activeSession.sessionId;
@@ -2305,8 +3945,9 @@ export async function runEmbeddedAttempt(
       const hookAgentId = sessionAgentId;
 
       let promptError: unknown = null;
-      let preflightRecovery: EmbeddedRunAttemptResult["preflightRecovery"];
-      let promptErrorSource: "prompt" | "compaction" | "precheck" | null = null;
+      let contextPressureOutcome: EmbeddedRunAttemptResult["contextPressureOutcome"];
+      let providerContextAdmissionBlock: EmbeddedRunAttemptResult["providerContextAdmissionBlock"];
+      let promptErrorOrigin: "prompt" | "compaction" | "precheck" | null = null;
       let skipPromptSubmission = false;
       try {
         const promptStartedAt = Date.now();
@@ -2371,7 +4012,6 @@ export async function runEmbeddedAttempt(
             );
           }
         }
-        refreshNativeWorkingContextSystemPrompt();
         systemPromptReport = buildAttemptSystemPromptReport(systemPromptText);
         if (params.requiredProviderContextAdmission && !skipPromptSubmission) {
           const admission = evaluateRequiredProviderContextAdmission({
@@ -2379,9 +4019,7 @@ export async function runEmbeddedAttempt(
             required: params.requiredProviderContextAdmission,
           });
           if (!admission.admitted) {
-            preflightRecovery = {
-              route: "provider_context_admission_blocked",
-              handled: false,
+            providerContextAdmissionBlock = {
               reason: admission.message ?? undefined,
               reasonCodes: admission.reasonCodes,
             };
@@ -2397,7 +4035,7 @@ export async function runEmbeddedAttempt(
             promptError = new Error(
               admission.message ?? "Provider context admission failed before model invocation.",
             );
-            promptErrorSource = "precheck";
+            promptErrorOrigin = "precheck";
             skipPromptSubmission = true;
             log.warn(
               `[provider-context-admission] blocked model invocation for ` +
@@ -2594,100 +4232,118 @@ export async function runEmbeddedAttempt(
 
           const reserveTokens = settingsManager.getCompactionReserveTokens();
           const contextTokenBudget = params.contextTokenBudget ?? DEFAULT_CONTEXT_TOKENS;
-          const preemptiveCompaction =
-            params.contextEngine?.info?.ownsCompaction === true
-              ? {
-                  route: "fits" as const,
-                  shouldCompact: false,
-                  estimatedPromptTokens: 0,
-                  promptBudgetBeforeReserve: 0,
-                  overflowTokens: 0,
-                  toolResultReducibleChars: 0,
-                  effectiveReserveTokens: reserveTokens,
-                }
-              : shouldPreemptivelyCompactBeforePrompt({
-                  messages: activeSession.messages,
-                  systemPrompt: systemPromptText,
-                  prompt: effectivePrompt,
-                  contextTokenBudget,
-                  reserveTokens,
-                  toolResultMaxChars: resolveLiveToolResultMaxChars({
-                    contextWindowTokens: contextTokenBudget,
-                    cfg: params.config,
-                    agentId: sessionAgentId,
-                  }),
-                });
+          const preferActualUsageCompaction = shouldPreferActualUsageCompaction({
+            provider: params.provider,
+            modelId: params.modelId,
+            model: params.model as { compat?: unknown; baseUrl?: unknown; provider?: unknown },
+          });
+          const contextPressure = params.contextPressure ?? createContextPressureController();
+          const toolResultMaxChars = resolveLiveToolResultMaxChars({
+            contextWindowTokens: contextTokenBudget,
+            cfg: params.config,
+            agentId: sessionAgentId,
+          });
+          const toolResultPotential = estimateToolResultReductionPotential({
+            messages: activeSession.messages,
+            contextWindowTokens: contextTokenBudget,
+            maxCharsOverride: toolResultMaxChars,
+          });
+          const providerVisibleContextBreakdown = estimateProviderVisibleContextBreakdown(
+            activeSession.messages,
+          );
+          if (!sessionManager) {
+            throw new Error("Session manager was not initialized before provider submit.");
+          }
+          const initializedSessionManager = sessionManager;
+          const beforeSubmitPressure = await contextPressure.beforeSubmit({
+            messages: activeSession.messages,
+            systemPrompt: systemPromptText,
+            prompt: effectivePrompt,
+            contextWindowTokens: contextTokenBudget,
+            reserveTokens,
+            preferActualUsageCompaction,
+            contextEngineOwnsCompaction: params.contextEngine?.info?.ownsCompaction === true,
+            pruneReducibleChars: toolResultPotential.maxReducibleChars,
+            protectedContextReason: hasDeliveredNativeTaskResultAwaitingParentTurn(
+              activeSession.messages,
+            )
+              ? NATIVE_TASK_RESULT_AWAITING_PARENT_CONTEXT_REASON
+              : undefined,
+            contextBreakdown: toContextPressureBreakdown(providerVisibleContextBreakdown),
+            truncateToolResults: () =>
+              truncateOversizedToolResultsInSessionManager({
+                sessionManager: initializedSessionManager,
+                contextWindowTokens: contextTokenBudget,
+                maxCharsOverride: toolResultMaxChars,
+                sessionFile: params.sessionFile,
+                sessionId: params.sessionId,
+                sessionKey: params.sessionKey,
+                stateRoot: resolveStateDir(process.env),
+              }),
+            emit: (event) => {
+              nodeAgentSessionTraceEvents.push({
+                ...event,
+                sessionKey: params.sessionKey ?? params.sessionId,
+                runId: params.runId,
+                agentId: sessionAgentId,
+                provider: params.provider,
+                model: params.modelId,
+              });
+            },
+          });
+          const pressureDecision = beforeSubmitPressure.decision;
           if (
-            preemptiveCompaction.route !== "fits" &&
-            hasDeliveredNativeTaskResultAwaitingParentTurn(activeSession.messages)
+            beforeSubmitPressure.action === "block" &&
+            beforeSubmitPressure.reason === NATIVE_TASK_RESULT_AWAITING_PARENT_CONTEXT_REASON
           ) {
-            preflightRecovery = {
-              route: preemptiveCompaction.route,
-              handled: false,
-              reason: NATIVE_TASK_RESULT_AWAITING_PARENT_CONTEXT_REASON,
-            };
+            contextPressureOutcome = beforeSubmitPressure;
             nodeAgentSessionTraceEvents.push({
               eventType: "node_agent_native_task_result_context_preservation_blocked",
               reason: NATIVE_TASK_RESULT_AWAITING_PARENT_CONTEXT_REASON,
-              route: preemptiveCompaction.route,
+              action: pressureDecision.action,
+              trigger: pressureDecision.trigger,
               sessionKey: params.sessionKey ?? params.sessionId,
-              estimatedPromptTokens: preemptiveCompaction.estimatedPromptTokens,
-              promptBudgetBeforeReserve: preemptiveCompaction.promptBudgetBeforeReserve,
-              overflowTokens: preemptiveCompaction.overflowTokens,
-              toolResultReducibleChars: preemptiveCompaction.toolResultReducibleChars,
-              effectiveReserveTokens: preemptiveCompaction.effectiveReserveTokens,
+              estimatedPromptTokens: pressureDecision.estimate?.promptTokens ?? 0,
+              usableContextTokens: pressureDecision.budget.usableTokens,
+              overflowTokens: pressureDecision.pressure?.overBudgetTokens ?? 0,
+              pruneReducibleChars: pressureDecision.prune?.reducibleChars ?? 0,
+              reserveTokens: pressureDecision.budget.reserveTokens,
+              ...providerVisibleContextBreakdown,
             });
             promptError = new Error(NATIVE_TASK_RESULT_AWAITING_PARENT_CONTEXT_ERROR_TEXT);
-            promptErrorSource = "precheck";
+            promptErrorOrigin = "precheck";
             log.warn(
               `[context-overflow-precheck] blocked recovery that would compact or truncate a ` +
                 `delivered native task result before parent synthesis ` +
                 `sessionKey=${params.sessionKey ?? params.sessionId} ` +
                 `provider=${params.provider}/${params.modelId} ` +
-                `route=${preemptiveCompaction.route} ` +
-                `estimatedPromptTokens=${preemptiveCompaction.estimatedPromptTokens} ` +
-                `promptBudgetBeforeReserve=${preemptiveCompaction.promptBudgetBeforeReserve} ` +
-                `overflowTokens=${preemptiveCompaction.overflowTokens} ` +
-                `toolResultReducibleChars=${preemptiveCompaction.toolResultReducibleChars} ` +
+                `action=${pressureDecision.action} trigger=${pressureDecision.trigger} ` +
+                `estimatedPromptTokens=${pressureDecision.estimate?.promptTokens ?? 0} ` +
+                `usableContextTokens=${pressureDecision.budget.usableTokens} ` +
+                `overflowTokens=${pressureDecision.pressure?.overBudgetTokens ?? 0} ` +
+                `pruneReducibleChars=${pressureDecision.prune?.reducibleChars ?? 0} ` +
                 `reserveTokens=${reserveTokens} ` +
-                `effectiveReserveTokens=${preemptiveCompaction.effectiveReserveTokens} ` +
+                `sourceOrLocatorChars=${providerVisibleContextBreakdown.likelySourceOrLocatorChars} ` +
+                `nonSourceVisibleChars=${providerVisibleContextBreakdown.nonSourceVisibleChars} ` +
+                `strippedToolDetailsChars=${providerVisibleContextBreakdown.strippedToolDetailsChars} ` +
                 `sessionFile=${params.sessionFile}`,
             );
             skipPromptSubmission = true;
           }
-          if (
-            !skipPromptSubmission &&
-            preemptiveCompaction.route === "truncate_tool_results_only"
-          ) {
-            const toolResultMaxChars = resolveLiveToolResultMaxChars({
-              contextWindowTokens: contextTokenBudget,
-              cfg: params.config,
-              agentId: sessionAgentId,
-            });
-            const truncationResult = truncateOversizedToolResultsInSessionManager({
-              sessionManager,
-              contextWindowTokens: contextTokenBudget,
-              maxCharsOverride: toolResultMaxChars,
-              sessionFile: params.sessionFile,
-              sessionId: params.sessionId,
-              sessionKey: params.sessionKey,
-              stateRoot: resolveStateDir(process.env),
-            });
-            if (truncationResult.truncated) {
-              preflightRecovery = {
-                route: "truncate_tool_results_only",
-                handled: true,
-                truncatedCount: truncationResult.truncatedCount,
-              };
+          if (!skipPromptSubmission && beforeSubmitPressure.action === "prune_retry") {
+            if ("prune" in beforeSubmitPressure && beforeSubmitPressure.prune.truncated) {
+              contextPressureOutcome = beforeSubmitPressure;
               log.info(
                 `[context-overflow-precheck] early tool-result truncation succeeded for ` +
-                  `${params.provider}/${params.modelId} route=${preemptiveCompaction.route} ` +
-                  `truncatedCount=${truncationResult.truncatedCount} ` +
-                  `estimatedPromptTokens=${preemptiveCompaction.estimatedPromptTokens} ` +
-                  `promptBudgetBeforeReserve=${preemptiveCompaction.promptBudgetBeforeReserve} ` +
-                  `overflowTokens=${preemptiveCompaction.overflowTokens} ` +
-                  `toolResultReducibleChars=${preemptiveCompaction.toolResultReducibleChars} ` +
-                  `effectiveReserveTokens=${preemptiveCompaction.effectiveReserveTokens} ` +
+                  `${params.provider}/${params.modelId} action=${pressureDecision.action} ` +
+                  `truncatedCount=${beforeSubmitPressure.prune.truncatedCount ?? 0} ` +
+                  `estimatedPromptTokens=${pressureDecision.estimate?.promptTokens ?? 0} ` +
+                  `usableContextTokens=${pressureDecision.budget.usableTokens} ` +
+                  `overflowTokens=${pressureDecision.pressure?.overBudgetTokens ?? 0} ` +
+                  `pruneReducibleChars=${pressureDecision.prune?.reducibleChars ?? 0} ` +
+                  `sourceOrLocatorChars=${providerVisibleContextBreakdown.likelySourceOrLocatorChars} ` +
+                  `nonSourceVisibleChars=${providerVisibleContextBreakdown.nonSourceVisibleChars} ` +
+                  `strippedToolDetailsChars=${providerVisibleContextBreakdown.strippedToolDetailsChars} ` +
                   `sessionFile=${params.sessionFile}`,
               );
               skipPromptSubmission = true;
@@ -2696,51 +4352,49 @@ export async function runEmbeddedAttempt(
               log.warn(
                 `[context-overflow-precheck] early tool-result truncation did not help for ` +
                   `${params.provider}/${params.modelId}; falling back to compaction ` +
-                  `reason=${truncationResult.reason ?? "unknown"} sessionFile=${params.sessionFile}`,
+                  `reason=${pressureDecision.prune?.reason ?? "unknown"} sessionFile=${params.sessionFile}`,
               );
-              preflightRecovery = { route: "compact_only" };
+              contextPressureOutcome = beforeSubmitPressure;
               promptError = new Error(PREEMPTIVE_OVERFLOW_ERROR_TEXT);
-              promptErrorSource = "precheck";
+              promptErrorOrigin = "precheck";
               skipPromptSubmission = true;
             }
           }
-          if (!skipPromptSubmission && preemptiveCompaction.shouldCompact) {
-            preflightRecovery =
-              preemptiveCompaction.route === "compact_then_truncate"
-                ? { route: "compact_then_truncate" }
-                : { route: "compact_only" };
+          if (!skipPromptSubmission && beforeSubmitPressure.action === "summary_retry") {
+            contextPressureOutcome = beforeSubmitPressure;
             promptError = new Error(PREEMPTIVE_OVERFLOW_ERROR_TEXT);
-            promptErrorSource = "precheck";
+            promptErrorOrigin = "precheck";
             log.warn(
               `[context-overflow-precheck] sessionKey=${params.sessionKey ?? params.sessionId} ` +
                 `provider=${params.provider}/${params.modelId} ` +
-                `route=${preemptiveCompaction.route} ` +
-                `estimatedPromptTokens=${preemptiveCompaction.estimatedPromptTokens} ` +
-                `promptBudgetBeforeReserve=${preemptiveCompaction.promptBudgetBeforeReserve} ` +
-                `overflowTokens=${preemptiveCompaction.overflowTokens} ` +
-                `toolResultReducibleChars=${preemptiveCompaction.toolResultReducibleChars} ` +
+                `action=${pressureDecision.action} trigger=${pressureDecision.trigger} ` +
+                `estimatedPromptTokens=${pressureDecision.estimate?.promptTokens ?? 0} ` +
+                `usableContextTokens=${pressureDecision.budget.usableTokens} ` +
+                `overflowTokens=${pressureDecision.pressure?.overBudgetTokens ?? 0} ` +
+                `pruneReducibleChars=${pressureDecision.prune?.reducibleChars ?? 0} ` +
                 `reserveTokens=${reserveTokens} ` +
-                `effectiveReserveTokens=${preemptiveCompaction.effectiveReserveTokens} ` +
+                `sourceOrLocatorChars=${providerVisibleContextBreakdown.likelySourceOrLocatorChars} ` +
+                `nonSourceVisibleChars=${providerVisibleContextBreakdown.nonSourceVisibleChars} ` +
+                `strippedToolDetailsChars=${providerVisibleContextBreakdown.strippedToolDetailsChars} ` +
                 `sessionFile=${params.sessionFile}`,
             );
             skipPromptSubmission = true;
           }
 
-          const preflightReasonCodes =
-            preflightRecovery && "reasonCodes" in preflightRecovery
-              ? (preflightRecovery.reasonCodes ?? [])
-              : [];
+          const preflightReasonCodes = providerContextAdmissionBlock?.reasonCodes ?? [];
           const launchBlockers = skipPromptSubmission
             ? preflightReasonCodes.length
               ? preflightReasonCodes
-              : promptErrorSource
-                ? [`${promptErrorSource}_blocked_before_model_invocation`]
+              : promptErrorOrigin
+                ? [`${promptErrorOrigin}_blocked_before_model_invocation`]
                 : ["model_invocation_blocked_before_provider_submission"]
             : [];
           const launchAdmissionStatus = launchBlockers.length > 0 ? "blocked" : "accepted";
           const sessionLaunchToolCatalogRef = `openclaw-effective-tool-inventory://${encodeURIComponent(
             params.sessionKey ?? params.sessionId,
           )}`;
+          const sessionLaunchToolCatalogSummary =
+            buildSessionLaunchToolCatalogSummary(effectiveTools);
           const sessionLaunchLocation = buildSessionLaunchLocation({
             sourceRoot: resolveBootstrapRepoRoot({
               importMetaUrl: import.meta.url,
@@ -2779,6 +4433,7 @@ export async function runEmbeddedAttempt(
               }),
               toolCatalogRef: sessionLaunchToolCatalogRef,
               effectiveToolNames,
+              toolCatalogSummary: sessionLaunchToolCatalogSummary,
               allowedChildAgentIds: params.nodeAgentNativeTaskMode?.allowedAgentIds ?? [],
               blockers: launchBlockers,
               reasonCodes: [
@@ -2802,6 +4457,7 @@ export async function runEmbeddedAttempt(
             thinkingLevel: params.thinkLevel ?? null,
             promptHashMatched: skipPromptSubmission ? null : true,
             toolCatalogRef: sessionLaunchToolCatalogRef,
+            toolCatalogSummary: sessionLaunchToolCatalogSummary,
             persisted: sessionLaunch.persisted,
             sessionLaunchRef: sessionLaunch.launchRef,
             ...(sessionLaunch.persisted
@@ -2850,7 +4506,7 @@ export async function runEmbeddedAttempt(
             }
           } else {
             promptError = err;
-            promptErrorSource = "prompt";
+            promptErrorOrigin = "prompt";
           }
         } finally {
           log.debug(
@@ -2901,7 +4557,7 @@ export async function runEmbeddedAttempt(
           if (isRunnerAbortError(err)) {
             if (!promptError) {
               promptError = err;
-              promptErrorSource = "compaction";
+              promptErrorOrigin = "compaction";
             }
             if (!isProbeSession) {
               log.debug(
@@ -2999,7 +4655,7 @@ export async function runEmbeddedAttempt(
           }),
         });
 
-        if (promptError && promptErrorSource === "prompt" && !compactionOccurredThisAttempt) {
+        if (promptError && promptErrorOrigin === "prompt" && !compactionOccurredThisAttempt) {
           try {
             sessionManager.appendCustomEntry("openclaw:prompt-error", {
               timestamp: Date.now(),
@@ -3070,6 +4726,39 @@ export async function runEmbeddedAttempt(
             });
           } catch (entryErr) {
             log.warn(`failed to persist bootstrap completion entry: ${String(entryErr)}`);
+          }
+        }
+
+        if (messagesSnapshot.length > 0) {
+          try {
+            const providerTurnOptics = buildProviderTurnOptics({
+              messages: messagesSnapshot,
+              tools: effectiveTools,
+              agentId: sessionAgentId,
+              sessionKey: params.sessionKey ?? params.sessionId,
+              runId: params.runId,
+              provider: params.provider,
+              model: params.modelId,
+              thinkingLevel: params.thinkLevel,
+            });
+            sessionManager.appendCustomEntry(PROVIDER_TURN_OPTICS_CUSTOM_TYPE, providerTurnOptics);
+            nodeAgentSessionTraceEvents.push(providerTurnOptics);
+            const providerResponseNormalizationReceipt = buildProviderResponseNormalizationReceipt({
+              messages: messagesSnapshot,
+              agentId: sessionAgentId,
+              sessionKey: params.sessionKey ?? params.sessionId,
+              runId: params.runId,
+              provider: params.provider,
+              model: params.modelId,
+              thinkingLevel: params.thinkLevel,
+            });
+            sessionManager.appendCustomEntry(
+              PROVIDER_RESPONSE_NORMALIZATION_CUSTOM_TYPE,
+              providerResponseNormalizationReceipt,
+            );
+            nodeAgentSessionTraceEvents.push(providerResponseNormalizationReceipt);
+          } catch (entryErr) {
+            log.warn(`failed to persist provider turn optics: ${String(entryErr)}`);
           }
         }
 
@@ -3150,7 +4839,7 @@ export async function runEmbeddedAttempt(
             });
         }
       } finally {
-        clearTimeout(abortTimer);
+        progressLease.cancel();
         if (abortWarnTimer) {
           clearTimeout(abortWarnTimer);
         }
@@ -3269,9 +4958,11 @@ export async function runEmbeddedAttempt(
         timedOut,
         idleTimedOut,
         timedOutDuringCompaction,
+        progressTimeoutKind,
         promptError,
-        promptErrorSource,
-        preflightRecovery,
+        promptErrorOrigin,
+        contextPressureOutcome,
+        providerContextAdmissionBlock,
         sessionIdUsed,
         bootstrapPromptWarningSignaturesSeen: bootstrapPromptWarning.warningSignaturesSeen,
         bootstrapPromptWarningSignature: bootstrapPromptWarning.signature,
@@ -3317,6 +5008,7 @@ export async function runEmbeddedAttempt(
         sessionManager,
         releaseWsSession,
         sessionId: params.sessionId,
+        nativeLspService,
         bundleLspRuntime,
         sessionLock: parentSessionLockHandoff.getCurrentLock(),
       });

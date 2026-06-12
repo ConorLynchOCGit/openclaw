@@ -353,6 +353,88 @@ describe("anthropic transport stream", () => {
     expect(result.content).toEqual(
       expect.arrayContaining([expect.objectContaining({ type: "toolCall", name: "read" })]),
     );
+    expect(
+      (
+        result as typeof result & {
+          providerResponseDiagnostics?: {
+            rawFinishReason?: string | null;
+            rawToolCallChunkCount?: number;
+            rawReasoningFieldPresent?: boolean;
+          };
+        }
+      ).providerResponseDiagnostics,
+    ).toEqual({
+      rawFinishReason: "tool_use",
+      rawToolCallChunkCount: 1,
+      rawReasoningFieldPresent: false,
+    });
+  });
+
+  it("treats Anthropic tool_use stop reason without tool blocks as stop", async () => {
+    anthropicMessagesStreamMock.mockReturnValueOnce(
+      (async function* () {
+        yield {
+          type: "message_start",
+          message: { id: "msg_no_tool", usage: { input_tokens: 3, output_tokens: 0 } },
+        };
+        yield {
+          type: "message_delta",
+          delta: { stop_reason: "tool_use" },
+          usage: { input_tokens: 3, output_tokens: 0 },
+        };
+      })(),
+    );
+    const model = attachModelProviderRequestTransport(
+      {
+        id: "claude-sonnet-4-6",
+        name: "Claude Sonnet 4.6",
+        api: "anthropic-messages",
+        provider: "anthropic",
+        baseUrl: "https://api.anthropic.com",
+        reasoning: true,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 200000,
+        maxTokens: 8192,
+      } satisfies Model<"anthropic-messages">,
+      {
+        tls: {
+          ca: "ca-pem",
+        },
+      },
+    );
+    const streamFn = createAnthropicMessagesTransportStreamFn();
+
+    const stream = await Promise.resolve(
+      streamFn(
+        model,
+        {
+          messages: [{ role: "user", content: "finish" }],
+        } as Parameters<typeof streamFn>[1],
+        {
+          apiKey: "sk-ant-api",
+        } as Parameters<typeof streamFn>[2],
+      ),
+    );
+    const result = await stream.result();
+
+    expect(result.stopReason).toBe("stop");
+    expect(result.content).toEqual([]);
+    expect(
+      (
+        result as typeof result & {
+          providerResponseDiagnostics?: {
+            rawFinishReason?: string | null;
+            rawToolCallChunkCount?: number;
+            rawReasoningFieldPresent?: boolean;
+          };
+        }
+      ).providerResponseDiagnostics,
+    ).toEqual({
+      rawFinishReason: "tool_use",
+      rawToolCallChunkCount: 0,
+      rawReasoningFieldPresent: false,
+    });
   });
 
   it("coerces replayed malformed tool-call args to an object for Anthropic payloads", async () => {

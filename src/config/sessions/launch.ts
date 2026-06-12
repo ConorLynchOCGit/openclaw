@@ -6,6 +6,7 @@ import type {
   SessionLaunchRequiredSource,
   SessionLaunchResolvedLocation,
   SessionLaunchState,
+  SessionLaunchToolCatalogEntry,
 } from "./types.js";
 import { mergeSessionEntry } from "./types.js";
 
@@ -32,6 +33,7 @@ export type SessionLaunchInput = {
   requiredSources?: readonly SessionLaunchRequiredSource[];
   toolCatalogRef?: string | null;
   effectiveToolNames?: readonly string[];
+  toolCatalogSummary?: readonly SessionLaunchToolCatalogEntry[];
   allowedChildAgentIds?: readonly string[];
   blockers?: readonly string[];
   reasonCodes?: readonly string[];
@@ -90,6 +92,32 @@ function normalizeRequiredSources(
   return (sources ?? [])
     .map(normalizeRequiredSource)
     .filter((source) => source.id.length > 0)
+    .slice(0, 100);
+}
+
+function normalizeToolCatalogEntry(
+  entry: SessionLaunchToolCatalogEntry,
+): SessionLaunchToolCatalogEntry {
+  return {
+    name: entry.name.trim(),
+    descriptionHash: entry.descriptionHash.trim(),
+    descriptionBytes: Math.max(0, Math.floor(entry.descriptionBytes)),
+    parametersHash: entry.parametersHash.trim(),
+    parametersBytes: Math.max(0, Math.floor(entry.parametersBytes)),
+  };
+}
+
+function normalizeToolCatalogSummary(
+  entries: readonly SessionLaunchToolCatalogEntry[] | undefined,
+): SessionLaunchToolCatalogEntry[] {
+  return (entries ?? [])
+    .map(normalizeToolCatalogEntry)
+    .filter(
+      (entry) =>
+        entry.name.length > 0 &&
+        entry.descriptionHash.length > 0 &&
+        entry.parametersHash.length > 0,
+    )
     .slice(0, 100);
 }
 
@@ -169,6 +197,7 @@ function buildLaunchEvent(params: SessionLaunchInput & { emittedAt: number }): S
   const runId = params.runId.trim();
   const requiredSources = normalizeRequiredSources(params.requiredSources);
   const effectiveToolNames = boundedStrings(params.effectiveToolNames);
+  const toolCatalogSummary = normalizeToolCatalogSummary(params.toolCatalogSummary);
   const allowedChildAgentIds = boundedStrings(params.allowedChildAgentIds);
   const blockers = boundedStrings(params.blockers);
   const reasonCodes = boundedStrings(params.reasonCodes, 200);
@@ -192,6 +221,7 @@ function buildLaunchEvent(params: SessionLaunchInput & { emittedAt: number }): S
         workspaceIdentity: params.workspaceIdentity ?? null,
         requiredSources,
         effectiveToolNames,
+        toolCatalogSummary,
         allowedChildAgentIds,
         blockers,
         reasonCodes,
@@ -239,6 +269,7 @@ function buildLaunchEvent(params: SessionLaunchInput & { emittedAt: number }): S
     requiredSources,
     toolCatalogRef: params.toolCatalogRef?.trim() || null,
     effectiveToolNames,
+    ...(toolCatalogSummary.length > 0 ? { toolCatalogSummary } : {}),
     allowedChildAgentIds,
     blockers,
     reasonCodes,

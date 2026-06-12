@@ -69,6 +69,7 @@ let prepareProviderRuntimeAuth: typeof import("./provider-runtime.js").preparePr
 let resetProviderRuntimeHookCacheForTest: typeof import("./provider-runtime.js").resetProviderRuntimeHookCacheForTest;
 let refreshProviderOAuthCredentialWithPlugin: typeof import("./provider-runtime.js").refreshProviderOAuthCredentialWithPlugin;
 let resolveProviderRuntimePlugin: typeof import("./provider-runtime.js").resolveProviderRuntimePlugin;
+let resolveProviderSystemPromptContribution: typeof import("./provider-runtime.js").resolveProviderSystemPromptContribution;
 let providerRuntimeTesting: typeof import("./provider-runtime.js").__testing;
 let runProviderDynamicModel: typeof import("./provider-runtime.js").runProviderDynamicModel;
 let validateProviderReplayTurnsWithPlugin: typeof import("./provider-runtime.js").validateProviderReplayTurnsWithPlugin;
@@ -284,6 +285,7 @@ describe("provider-runtime", () => {
       resetProviderRuntimeHookCacheForTest,
       refreshProviderOAuthCredentialWithPlugin,
       resolveProviderRuntimePlugin,
+      resolveProviderSystemPromptContribution,
       __testing: providerRuntimeTesting,
       runProviderDynamicModel,
       validateProviderReplayTurnsWithPlugin,
@@ -331,6 +333,57 @@ describe("provider-runtime", () => {
       provider: "claude-cli",
       expectedPluginId: "anthropic",
     });
+  });
+
+  it("returns the built-in Kimi execution-worker section contribution without a provider plugin", () => {
+    const contribution = resolveProviderSystemPromptContribution({
+      provider: "openrouter",
+      context: createDemoRuntimeContext({
+        modelId: "moonshotai/kimi-k2.6",
+        agentId: "execution-coding",
+        promptMode: "full",
+        promptProfile: "execution_worker",
+      }),
+    });
+
+    expect(contribution?.stablePrefix).toBeUndefined();
+    expect(contribution?.sectionOverrides?.identity).toContain("You are an implementation worker");
+    expect(contribution?.sectionOverrides?.execution_contract).toContain(
+      "Use edit as the primary implementation action",
+    );
+  });
+
+  it("merges provider-plugin prompt contribution with the built-in Kimi worker section contribution", () => {
+    resolvePluginProvidersMock.mockReturnValue([
+      {
+        id: "openrouter",
+        label: "OpenRouter",
+        auth: [],
+        resolveSystemPromptContribution: () => ({
+          stablePrefix: "## Plugin Kimi Guidance\n\nPlugin guidance.",
+          dynamicSuffix: "## Dynamic Kimi Guidance\n\nDynamic guidance.",
+        }),
+      },
+    ]);
+
+    const contribution = resolveProviderSystemPromptContribution({
+      provider: "openrouter",
+      context: createDemoRuntimeContext({
+        modelId: "moonshotai/kimi-k2.6",
+        agentId: "execution-coding",
+        promptMode: "full",
+        promptProfile: "execution_worker",
+      }),
+    });
+
+    expect(contribution).toMatchObject({
+      stablePrefix: "## Plugin Kimi Guidance\n\nPlugin guidance.",
+      dynamicSuffix: "## Dynamic Kimi Guidance\n\nDynamic guidance.",
+    });
+    expect(contribution?.sectionOverrides?.identity).toContain("You are an implementation worker");
+    expect(contribution?.sectionOverrides?.execution_contract).toContain(
+      "Use edit as the primary implementation action",
+    );
   });
 
   it("normalizes plugin scopes in provider hook cache keys", () => {

@@ -46,6 +46,7 @@ export function createNativeChildTaskParentLockHandoff(params: {
   acquireLock?: typeof acquireSessionWriteLock;
 }): {
   getCurrentLock: () => SessionWriteLockHandle;
+  suspendParentLockForProviderWait: () => Promise<() => Promise<void>>;
   wrapRunChildTask: (runChildTask: NativeTaskRunChildTask) => NativeTaskRunChildTask;
 } {
   const acquireLock = params.acquireLock ?? acquireSessionWriteLock;
@@ -123,8 +124,41 @@ export function createNativeChildTaskParentLockHandoff(params: {
     return reacquireFailure;
   }
 
+  function providerWaitTaskParams(): NativeTaskRunChildTaskParams {
+    return {
+      parentSessionKey: "provider-wait",
+      parentToolCallId: "provider-wait",
+      childAgentId: "provider-wait",
+      task: "provider wait",
+      parentVisibleResultMaxChars: 0,
+    };
+  }
+
+  function throwLockFailure(result: NativeTaskForegroundResult, action: string): never {
+    throw new Error(`${action}: ${result.error ?? result.childStartFailureKind ?? "unknown"}`);
+  }
+
   return {
     getCurrentLock: () => currentLock,
+    suspendParentLockForProviderWait: async () => {
+      await waitForOtherChildRunsToDrain();
+      const taskParams = providerWaitTaskParams();
+      const releaseFailure = await releaseParentLock(taskParams);
+      if (releaseFailure) {
+        throwLockFailure(releaseFailure, "provider wait parent session lock release failed");
+      }
+      let resumed = false;
+      return async () => {
+        if (resumed) {
+          return;
+        }
+        resumed = true;
+        const reacquireResult = await reacquireParentLock(taskParams);
+        if (reacquireResult) {
+          throwLockFailure(reacquireResult, "provider wait parent session lock reacquire failed");
+        }
+      };
+    },
     wrapRunChildTask: (runChildTask) => async (taskParams) => {
       activeChildRuns += 1;
       const releaseFailure = await releaseParentLock(taskParams);
@@ -149,6 +183,7 @@ export function bindRunChildTaskToParentSessionLockHandoff(params: {
   acquireLock?: typeof acquireSessionWriteLock;
 }): {
   getCurrentLock: () => SessionWriteLockHandle;
+  suspendParentLockForProviderWait: () => Promise<() => Promise<void>>;
   runChildTask?: NativeTaskRunChildTask;
 } {
   const handoff = createNativeChildTaskParentLockHandoff({
@@ -160,6 +195,7 @@ export function bindRunChildTaskToParentSessionLockHandoff(params: {
   });
   return {
     getCurrentLock: handoff.getCurrentLock,
+    suspendParentLockForProviderWait: handoff.suspendParentLockForProviderWait,
     ...(params.runChildTask ? { runChildTask: handoff.wrapRunChildTask(params.runChildTask) } : {}),
   };
 }

@@ -92,7 +92,7 @@ describe("timeout-triggered compaction", () => {
             }),
             lastCacheTouchAt: 1_700_000_000_000,
           }),
-          trigger: "timeout_recovery",
+          trigger: "timeout_high_usage",
           attempt: 1,
           maxAttempts: 2,
         }),

@@ -2,6 +2,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { persistManagedToolOutputSync } from "../../../../src/config/sessions/managed-output.js";
+import {
+  buildSessionWorkingContextRef,
+  updateSessionWorkingContext,
+} from "../../../../src/config/sessions/working-context.js";
 import { parseAgentSessionKey } from "../../../../src/sessions/session-key-utils.ts";
 import type { JsonValue, RuntimeJobArtifact } from "../runtime-job-types.ts";
 import {
@@ -137,6 +142,37 @@ function repositoryForBodies(input: {
       rawToolLogStored: false as const,
     }),
   };
+}
+
+function sessionStoreConfig(
+  storePath: string,
+): NonNullable<Parameters<typeof runNodeAgentSession>[0]["agentParams"]["config"]> {
+  return { session: { store: storePath } } as NonNullable<
+    Parameters<typeof runNodeAgentSession>[0]["agentParams"]["config"]
+  >;
+}
+
+async function seedSessionStoreEntry(params: {
+  storePath: string;
+  sessionKey: string;
+  sessionFile?: string;
+}): Promise<void> {
+  await fs.mkdir(path.dirname(params.storePath), { recursive: true });
+  await fs.writeFile(
+    params.storePath,
+    JSON.stringify(
+      {
+        [params.sessionKey]: {
+          sessionId: params.sessionKey,
+          sessionFile: params.sessionFile ?? `${params.sessionKey}.jsonl`,
+          updatedAt: now.getTime(),
+        },
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
 }
 
 describe("native node agent session contracts", () => {
@@ -405,6 +441,67 @@ describe("native node agent session contracts", () => {
       blockerKind: "human_input_required",
       attemptedRefs: ["artifact://attempt"],
     });
+
+    let rejectedCapture = null as null | ReturnType<typeof normalizeNodeFinish>;
+    const evidenceAwareTool = createNodeFinishTool({
+      nodeRunId: "nrun_1",
+      resolveNativeEvidence: () => ({
+        evidenceRefs: [],
+        changeSetRefs: [],
+        changedFileRefs: [],
+        changedFiles: [],
+        validationEvidenceRefs: [],
+        workingContextRefs: [],
+        reasonCodes: ["fixture_empty_native_evidence"],
+      }),
+      onFinish: (finish) => {
+        rejectedCapture = finish;
+      },
+    });
+    const rejected = await evidenceAwareTool.execute("call-completed-missing-evidence", {
+      status: "completed",
+      summary: "Done.",
+    });
+    expect(rejected.details).toMatchObject({
+      accepted: false,
+      reason: "missing_required_evidence_refs",
+      required: ["changed_files", "validation_evidence"],
+      missing: ["changed_files", "validation_evidence"],
+    });
+    expect(rejectedCapture).toBeNull();
+  });
+
+  it("returns valid node_finish status values when the model guesses an alias", async () => {
+    let captured = null as null | ReturnType<typeof normalizeNodeFinish>;
+    const tool = createNodeFinishTool({
+      nodeRunId: "nrun_status_enum",
+      onFinish: (finish) => {
+        captured = finish;
+      },
+    });
+    expect(tool.description).toContain(
+      "status must be one of: completed, blocked, needs_escalation",
+    );
+    expect(JSON.stringify(tool.parameters)).toContain(
+      "Valid values: completed, blocked, needs_escalation",
+    );
+
+    const rejected = await tool.execute("call-invalid-status", {
+      status: "success",
+      summary: "Done.",
+    });
+
+    expect(rejected.details).toMatchObject({
+      accepted: false,
+      reason: "invalid_status_enum",
+      invalidStatus: "success",
+      validStatuses: ["completed", "blocked", "needs_escalation"],
+    });
+    expect(JSON.stringify(rejected.details)).toContain(
+      "status must be one of: completed, blocked, needs_escalation",
+    );
+    expect(JSON.stringify(rejected.details)).toContain('"status":"completed"');
+    expect(captured).toBeNull();
   });
 
   it("persists fallback node_finish blockers without narrowing repo discovery to snapshot refs", async () => {
@@ -441,7 +538,7 @@ describe("native node agent session contracts", () => {
       "## Node Worker Prompt",
       "Assigned requirement: implement native node execution.",
       "",
-      "Use update_plan before broad work.",
+      "Patch the named native node execution surface, validate it, and finish with node_finish.",
       "",
     ].join("\n");
     const legacyAgentParams = {
@@ -484,7 +581,7 @@ describe("native node agent session contracts", () => {
     expect(forwardedNativeRuntimeToolNames).toContain(NODE_FINISH_TOOL_NAME);
     expect(forwardedPrompt).toBe(workerPromptText);
     expect(forwardedPrompt).toContain("Assigned requirement: implement native node execution.");
-    expect(forwardedPrompt).toContain("Use update_plan before broad work.");
+    expect(forwardedPrompt).toContain("Patch the named native node execution surface");
     expect(forwardedPrompt).not.toContain("First hydrate");
     expect(result.finish).toMatchObject({
       status: "blocked",
@@ -495,6 +592,8 @@ describe("native node agent session contracts", () => {
   });
 
   it("forwards highest Kimi reasoning controls into the native worker attempt", async () => {
+    const fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "node-agent-kimi-reasoning-"));
+    const sessionStorePath = path.join(fixtureDir, "sessions.json");
     const executable = node({
       requirementRefs: ["requirement://req-1"],
       sourcePromptRefs: ["source-prompt://prompt-1#span-2"],
@@ -529,6 +628,38 @@ describe("native node agent session contracts", () => {
         forwardedModel = params.model;
         forwardedThinkLevel = params.thinkLevel;
         forwardedReasoningLevel = params.reasoningLevel;
+        await seedSessionStoreEntry({
+          storePath: sessionStorePath,
+          sessionKey: record.sessionKey,
+          sessionFile: "/tmp/node-agent-session-kimi-reasoning-test.jsonl",
+        });
+        await updateSessionWorkingContext({
+          storePath: sessionStorePath,
+          sessionKey: record.sessionKey,
+          entry: {
+            kind: "change_set",
+            source: "native_tool",
+            text: "Change set:\ntool=edit\npath=src/kimi-reasoning.ts\nstatus=completed",
+            sourceToolCallId: "kimi-reasoning-edit",
+            status: "completed",
+            changedFilePaths: ["src/kimi-reasoning.ts"],
+            modifiedFilePaths: ["src/kimi-reasoning.ts"],
+          },
+        });
+        await updateSessionWorkingContext({
+          storePath: sessionStorePath,
+          sessionKey: record.sessionKey,
+          entry: {
+            kind: "validation_state",
+            source: "native_task",
+            text: "Validation state:\ncommand=provider-attempt-diagnostics\nstatus=passed",
+            sourceToolCallId: "kimi-reasoning-validation",
+            childResultRef: "validation://kimi-reasoning-settings",
+            requestedAgentId: "execution-validation-scout",
+            status: "completed",
+            validationStatus: "passed",
+          },
+        });
         const finish = params.nativeRuntimeTools?.find(
           (tool) => tool.name === NODE_FINISH_TOOL_NAME,
         );
@@ -552,7 +683,8 @@ describe("native node agent session contracts", () => {
       agentParams: {
         sessionId: record.nodeRunId,
         sessionFile: "/tmp/node-agent-session-kimi-reasoning-test.jsonl",
-        workspaceDir: "/tmp",
+        workspaceDir: fixtureDir,
+        config: sessionStoreConfig(sessionStorePath),
         provider: "openrouter",
         model: "moonshotai/kimi-k2.6",
         thinkLevel: "xhigh",
@@ -572,6 +704,7 @@ describe("native node agent session contracts", () => {
   it("proves a native-node edit fixture can edit, validate, and finish through node_finish", async () => {
     const fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "native-node-edit-proof-"));
     const fixturePath = path.join(fixtureDir, "product-spec-gate.ts");
+    const sessionStorePath = path.join(fixtureDir, "sessions.json");
     await fs.writeFile(fixturePath, "export const productSpecPlanningGate = false;\n", "utf8");
     try {
       const executable = node({
@@ -634,15 +767,59 @@ describe("native node agent session contracts", () => {
           const repairedValidationSource = await fs.readFile(fixturePath, "utf8");
           expect(repairedValidationSource).toContain("= true");
 
+          await seedSessionStoreEntry({
+            storePath: sessionStorePath,
+            sessionKey: record.sessionKey,
+            sessionFile: "/tmp/node-agent-session-edit-proof-test.jsonl",
+          });
+          await updateSessionWorkingContext({
+            storePath: sessionStorePath,
+            sessionKey: record.sessionKey,
+            entry: {
+              kind: "change_set",
+              source: "native_tool",
+              text: [
+                "Change set:",
+                "tool=edit",
+                `path=${fixturePath}`,
+                "status=completed",
+                "summary=productSpecPlanningGate false -> true",
+              ].join("\n"),
+              sourceToolCallId: "edit-proof-call",
+              toolResultRef: `repo-file://${fixturePath}#edit`,
+              status: "completed",
+              changedFilePaths: [fixturePath],
+              modifiedFilePaths: [fixturePath],
+            },
+          });
+          await updateSessionWorkingContext({
+            storePath: sessionStorePath,
+            sessionKey: record.sessionKey,
+            entry: {
+              kind: "validation_state",
+              source: "native_task",
+              text: [
+                "Validation state:",
+                "agentId=execution-validation-scout",
+                `command=fixture read ${fixturePath}`,
+                "exitCode=0",
+                "status=passed",
+              ].join("\n"),
+              sourceToolCallId: "validation-proof-call",
+              taskRef: "task://native-node-edit-fixture/validation",
+              childResultRef: "validation://native-node-edit-fixture",
+              requestedAgentId: "execution-validation-scout",
+              childSessionKey:
+                "agent:execution-validation-scout:node:nrun_edit_fixture_validation_scout",
+              status: "completed",
+              validationStatus: "passed",
+            },
+          });
+
           await finishTool!.execute("node-finish-edit-proof", {
             status: "completed",
             summary:
               "Edited the isolated product-spec gate fixture, repaired the first failed validation, and validated the expected value.",
-            evidenceRefs: [
-              `repo-file://${fixturePath}`,
-              "validation://native-node-edit-fixture:first-failed",
-              "validation://native-node-edit-fixture",
-            ],
             attemptedRefs: [`repo-file://${fixturePath}`],
           });
 
@@ -694,12 +871,13 @@ describe("native node agent session contracts", () => {
           "",
           "Set `productSpecPlanningGate` to true in the isolated fixture.",
           `Known target: ${fixturePath}`,
-          "Use update_plan, native task for scout/validation delegation as needed, edit, validate, then call node_finish.",
+          "Edit the known target, validate the touched behavior, and call node_finish.",
         ].join("\n"),
         agentParams: {
           sessionId: record.nodeRunId,
           sessionFile: "/tmp/node-agent-session-edit-proof-test.jsonl",
           workspaceDir: fixtureDir,
+          config: sessionStoreConfig(sessionStorePath),
           timeoutMs: 1,
           runId: record.nodeRunId,
         },
@@ -708,16 +886,15 @@ describe("native node agent session contracts", () => {
       expect(result.status).toBe("completed");
       expect(result.finish).toMatchObject({
         status: "completed",
-        evidenceRefs: [
+        evidenceRefs: expect.arrayContaining([
           `repo-file://${fixturePath}`,
-          "validation://native-node-edit-fixture:first-failed",
           "validation://native-node-edit-fixture",
-        ],
+        ]),
       });
       expect(await fs.readFile(fixturePath, "utf8")).toContain("productSpecPlanningGate = true");
-      expect(persistedFinishRefs).toEqual(["artifact://finish/completed/3"]);
+      expect(persistedFinishRefs).toEqual(["artifact://finish/completed/5"]);
       expect((await store.getNodeRunById(record.nodeRunId))?.finishArtifactRef).toBe(
-        "artifact://finish/completed/3",
+        "artifact://finish/completed/5",
       );
       const workerPrompt: NodeAgentWorkerPrompt = {
         artifactKind: NODE_AGENT_WORKER_PROMPT_ARTIFACT_TYPE,
@@ -819,7 +996,7 @@ describe("native node agent session contracts", () => {
         validationNextActionRef: "openclaw-tool-result://nrun_edit_fixture/finish-after-validation",
         validationScoutResultRef: "openclaw-session://validation-scout/result/repair-context",
         repairLoopEvidenceRef: "openclaw-session://execution-coding/repair/productSpecPlanningGate",
-        terminalNodeFinishRef: "artifact://finish/completed/3",
+        terminalNodeFinishRef: "artifact://finish/completed/5",
       });
       expect(trace.todoState).toMatchObject({
         sessionKey: result.nodeRun.sessionKey,
@@ -928,6 +1105,8 @@ describe("native node agent session contracts", () => {
   });
 
   it("records over-budget progress as diagnostics instead of killing completed node work", async () => {
+    const fixtureDir = await fs.mkdtemp(path.join(os.tmpdir(), "node-agent-soft-budget-"));
+    const sessionStorePath = path.join(fixtureDir, "sessions.json");
     const executable = node({
       requirementRefs: ["requirement://req-1"],
       sourcePromptRefs: ["source-prompt://prompt-1#span-2"],
@@ -963,6 +1142,38 @@ describe("native node agent session contracts", () => {
         const finish = params.nativeRuntimeTools?.find(
           (tool) => tool.name === NODE_FINISH_TOOL_NAME,
         );
+        await seedSessionStoreEntry({
+          storePath: sessionStorePath,
+          sessionKey: record.sessionKey,
+          sessionFile: "/tmp/node-agent-session-soft-budget-test.jsonl",
+        });
+        await updateSessionWorkingContext({
+          storePath: sessionStorePath,
+          sessionKey: record.sessionKey,
+          entry: {
+            kind: "change_set",
+            source: "native_tool",
+            text: "Change set:\ntool=edit\npath=src/soft-budget.ts\nstatus=completed",
+            sourceToolCallId: "soft-budget-edit",
+            status: "completed",
+            changedFilePaths: ["src/soft-budget.ts"],
+            modifiedFilePaths: ["src/soft-budget.ts"],
+          },
+        });
+        await updateSessionWorkingContext({
+          storePath: sessionStorePath,
+          sessionKey: record.sessionKey,
+          entry: {
+            kind: "validation_state",
+            source: "native_task",
+            text: "Validation state:\ncommand=soft-budget-validation\nstatus=passed",
+            sourceToolCallId: "soft-budget-validation",
+            childResultRef: "validation://soft-budget/progress",
+            requestedAgentId: "execution-validation-scout",
+            status: "completed",
+            validationStatus: "passed",
+          },
+        });
         await finish?.execute("call-finish", {
           status: "completed",
           summary: "Completed despite crossing the soft diagnostic budget.",
@@ -991,7 +1202,8 @@ describe("native node agent session contracts", () => {
       agentParams: {
         sessionId: record.nodeRunId,
         sessionFile: "/tmp/node-agent-session-soft-budget-test.jsonl",
-        workspaceDir: "/tmp",
+        workspaceDir: fixtureDir,
+        config: sessionStoreConfig(sessionStorePath),
         timeoutMs: 1,
         runId: record.nodeRunId,
       },
@@ -999,7 +1211,7 @@ describe("native node agent session contracts", () => {
 
     expect(result.status).toBe("completed");
     expect(result.finish).toMatchObject({ status: "completed" });
-    expect(finishRefs).toEqual(["artifact://finish/completed/1"]);
+    expect(finishRefs).toEqual(["artifact://finish/completed/5"]);
     expect(result.reasonCodes).toEqual(
       expect.arrayContaining([
         "node_agent_step_budget_tool_calls_over_budget",
@@ -1201,7 +1413,7 @@ describe("native node agent session contracts", () => {
       requirementRefs: built.requirementRefs,
       sourcePromptRefs: built.sourcePromptRefs,
       modelRunRef: "model-run://node-prompt-author/1",
-      promptText: "Use update_plan, search/edit/validate, then node_finish.",
+      promptText: "Patch the assigned source, validate the touched behavior, then node_finish.",
       promptHash: "abc123",
       promptByteCount: 58,
       promptQualityDiagnostics: [],
@@ -1314,6 +1526,25 @@ describe("native node agent session contracts", () => {
             validationTodoDecisionRef: "openclaw-tool-result://nrun_trace/plan-after-validation",
             validationNextActionRef: "openclaw-tool-result://nrun_trace/finish-after-validation",
             repairLoopEvidenceRef: "runtime-job://job-native-node/session-event/repair-loop-1",
+            editTransitionDiagnostics: {
+              firstEditObserved: true,
+              firstEditCompletedAtMs: now.getTime() + 42_000,
+              toolCountBeforeFirstEdit: 8,
+              sourceToolCountBeforeFirstEdit: 6,
+              firstTodoShape: {
+                ref: "openclaw-tool-result://nrun_trace/plan-after-context",
+                activeItem: "Read existing work-queue read model and event substrate files",
+                itemCount: 4,
+                completedCount: 0,
+                inProgressCount: 1,
+                activeItemLooksLikeSourceLookup: true,
+              },
+              firstTodoLooksLikeSourceLookup: true,
+              activeTodoStillSourceLookupAfterRepeatedSourceCalls: true,
+              sourceNavigationReminderObserved: true,
+              sourceNavigationReminderRef: "openclaw-tool-result://nrun_trace/read-6",
+              sourceNavigationReminderSourceToolCount: 6,
+            },
           },
         },
       } as unknown as Parameters<typeof buildNodeAgentSessionTrace>[0]["runResult"],
@@ -1404,6 +1635,27 @@ describe("native node agent session contracts", () => {
       nativeCompactionCount: 1,
       compactionObserved: true,
     });
+    expect(trace.editTransition).toMatchObject({
+      bootstrapToFirstEditWallClockMs: 42_000,
+      toolCountBeforeFirstEdit: 8,
+      sourceToolCountBeforeFirstEdit: 6,
+      firstTodoLooksLikeSourceLookup: true,
+      activeTodoStillSourceLookupAfterRepeatedSourceCalls: true,
+      sourceNavigationReminderObserved: true,
+      sourceNavigationReminderRef: "openclaw-tool-result://nrun_trace/read-6",
+      sourceNavigationReminderSourceToolCount: 6,
+      lifecycleEndedViaNodeFinish: true,
+      firstTodoShape: {
+        ref: "openclaw-tool-result://nrun_trace/plan-after-context",
+        activeItem: "Read existing work-queue read model and event substrate files",
+        itemCount: 4,
+        completedCount: 0,
+        inProgressCount: 1,
+        activeItemLooksLikeSourceLookup: true,
+      },
+    });
+    expect(trace.observations.sourceNavigationReminderObserved).toBe(true);
+    expect(trace.observations.activeTodoStillSourceLookupAfterRepeatedSourceCalls).toBe(true);
     expect(trace.providerAttempt).toEqual({
       modelProvider: "openrouter",
       modelId: "moonshotai/kimi-k2.6",
@@ -1415,6 +1667,8 @@ describe("native node agent session contracts", () => {
         "node_agent_session_trace_attempt_thinking_xhigh_observed",
         "node_agent_session_trace_attempt_reasoning_stream_observed",
         "node_agent_session_trace_managed_output_observed",
+        "node_agent_session_trace_source_navigation_reminder_observed",
+        "node_agent_session_trace_source_lookup_todo_after_repeated_source_calls",
       ]),
     );
     expect(trace.missingOptics).toEqual([]);
@@ -2251,13 +2505,19 @@ describe("native node agent session contracts", () => {
               content: expect.stringContaining("### Output Contract"),
             }),
           ]);
+          expect(request.systemPrompt).toContain(
+            "start the prompt with edit objectives rather than discovery",
+          );
+          expect(request.systemPrompt).toContain("require a first-turn patch hypothesis");
+          expect(request.systemPrompt).toContain("lsp documentSymbol or file-scoped grep");
+          expect(request.systemPrompt).toContain("Exact next read: read({...})");
           expect(textTurnUserPayloadText).toContain("### Full Original Prompt Source");
           expect(textTurnUserPayloadText).toContain("### Output Contract");
           expect(textTurnUserPayloadText).toContain(
             "The final worker prompt should be self-contained enough to start from directly",
           );
           expect(textTurnUserPayloadText).toContain(
-            "Do not make exact-ref hydration the default first move",
+            "Mention openclaw_resource_read only as an exception path for exact refs",
           );
           expect(textTurnUserPayloadText).not.toContain("If the inline source is insufficient");
           expect(textTurnUserPayloadText).not.toContain('"sourceMaterialText"');
@@ -2273,6 +2533,8 @@ describe("native node agent session contracts", () => {
               `Node: ${built.nodeId}`,
               `Node run: ${built.nodeRunId}`,
               "",
+              "If you have enough context to make even a small, medium-confidence edit, make that edit now; do not take another context-acquisition turn.",
+              "",
               "## Mission",
               "Wire native OpenClaw node sessions into execution scheduling for this assigned node, using the Product/Spec prompt only as source context.",
               "",
@@ -2283,10 +2545,10 @@ describe("native node agent session contracts", () => {
               "The larger proof concerns Product/Spec Planning, but this node owns only the native node-session wiring requirement.",
               "",
               "## What To Change",
-              "Use the active execution-node-workflow skill. Start from this prompt, use exact refs only for a specific missing runtime/source fact, delegate weak repo mapping to context scout, then edit the minimum useful runtime or test surface needed to wire the session correctly.",
+              "Patch the minimum useful runtime or test surface needed to wire the session correctly. Use exact local lookup only for one named missing source fact, and delegate mapping only if source ownership is genuinely unknown.",
               "",
               "## Suggested Starting Points",
-              'First move: call update_plan. Decide whether this prompt already gives enough edit-ready context; if a specific supplied ref blocks the next decision use openclaw_resource_read, and if repo mapping is weak call native task with agentId:"execution-context-scout" for bounded inline source windows around node session and node_finish wiring.',
+              'Start from the named node-session and node_finish wiring surfaces. If repo mapping is weak, call native task with agentId:"execution-context-scout" for bounded inline source windows.',
               "",
               "## In Scope",
               "- Native node session wiring.",
@@ -2297,7 +2559,7 @@ describe("native node agent session contracts", () => {
               "- Raw artifact dumps or scheduler ownership changes.",
               "",
               "## Done When",
-              "Done when the execution node starts a native agent session, uses a context-task/edit/validation-task/repair loop, and can terminalize with node_finish.",
+              "Done when the execution node starts a native agent session and can terminalize with node_finish.",
               "",
               "## Required Evidence",
               "Final evidence must include changed files, validation performed through execution-validation-scout when non-trivial, and any remaining blocker.",
@@ -2328,10 +2590,11 @@ describe("native node agent session contracts", () => {
     expect(textTurnUserPayloadText).toContain("Wire native OpenClaw node sessions");
     expect(textTurnUserPayloadText).toContain("Operator prompt: implement Product/Spec Planning");
     expect(result.promptText).toContain("# Node Assignment: Native OpenClaw Node Session Wiring");
-    expect(result.promptText).toContain("update_plan");
+    expect(result.promptText).toContain("edit now");
     expect(result.promptText).toContain('agentId:"execution-context-scout"');
     expect(result.promptText).toContain("execution-validation-scout");
-    expect(result.promptText).toContain("specific missing runtime/source fact");
+    expect(result.promptText).toContain("one named missing source fact");
+    expect(result.promptText).not.toContain("First move: call update_plan");
     expect(result.promptText).not.toContain("Search for node session");
     expect(result.promptText).not.toContain("search/edit/validate loop");
     expect(result.promptText).not.toContain("Then use openclaw_resource_read");
@@ -2448,7 +2711,7 @@ describe("native node agent session contracts", () => {
             "- req-1: make the execution node start a native OpenClaw agent session and return node_finish evidence. Source: source-prompt://abc123/body/0-120.",
             "",
             "## Suggested Starting Points",
-            `First move: call update_plan, then inspect ${missingPath} as the native source policy starting point. If repo mapping is weak call native task with agentId:"execution-context-scout".`,
+            `Start from ${missingPath} as the native source policy starting point. If repo mapping is weak call native task with agentId:"execution-context-scout".`,
             "",
             "## Done When",
             "Done when native session launch and node_finish evidence are wired.",
@@ -3033,6 +3296,174 @@ describe("native node agent session contracts", () => {
       }),
     ]);
     expect(JSON.stringify(parsed)).toContain("delegate execution-context-scout");
+  });
+
+  it("hydrates managed-output refs through node-scoped openclaw_resource_read", async () => {
+    const previousStateDir = process.env.OPENCLAW_STATE_DIR;
+    const stateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "node-resource-managed-output-"));
+    process.env.OPENCLAW_STATE_DIR = stateRoot;
+    try {
+      const executable = node({
+        requirementRefs: ["requirement://req-1"],
+        sourcePromptRefs: ["source-prompt://abc123/body/0-120"],
+      });
+      const built = buildNodeExecutionSnapshotFromGraphNode({
+        snapshot: snapshot([executable]),
+        graphId: "graph-native-node",
+        node: executable,
+        attemptId: "attempt-1",
+      });
+      const text = "validation output\n".repeat(1_000);
+      const persisted = persistManagedToolOutputSync({
+        stateRoot,
+        sessionKey: built.sessionKey,
+        toolCallId: "call-managed-node",
+        toolName: "exec",
+        text,
+        outputKind: "validation_log",
+        reason: "test",
+        now: Date.UTC(2026, 5, 8),
+      });
+      const tool = createExecutionPlatformResourceReadTool({
+        runtimeJobId: "job-native-node",
+        nodeExecutionSnapshot: built,
+        repository: {
+          attachRuntimeArtifactByContract: async () => {
+            throw new Error("not used");
+          },
+          listArtifacts: async () => {
+            throw new Error("not used");
+          },
+          hydrateRuntimeArtifactByContract: async () => {
+            throw new Error("not used");
+          },
+        },
+      });
+
+      const result = await tool.execute("resource-read-managed-output", {
+        ref: persisted?.ref,
+        maxBytes: 1_200,
+      });
+      const parsed = JSON.parse(
+        result.content.find((entry) => entry.type === "text")?.text ?? "{}",
+      );
+
+      expect(parsed.status).toBe("hydrated");
+      expect(parsed.resources).toEqual([
+        expect.objectContaining({
+          status: "hydrated",
+          resourceKind: "openclaw.managed_tool_output",
+          byteCount: expect.any(Number),
+          totalBytes: Buffer.byteLength(text, "utf8"),
+          truncated: true,
+          reasonCodes: ["openclaw_resource_read_hydrated_managed_tool_output"],
+        }),
+      ]);
+      expect(parsed.resources[0].body).toEqual(
+        expect.objectContaining({
+          outputKind: "validation_log",
+          outputPath: expect.stringContaining("managed-tool-output"),
+          offsetLines: 1,
+          returnedLines: expect.any(Number),
+          nextOffsetLines: expect.any(Number),
+          totalBytes: Buffer.byteLength(text, "utf8"),
+          totalLines: 1001,
+          truncated: true,
+        }),
+      );
+      expect(parsed.resources[0].body.text).toContain("validation output");
+    } finally {
+      if (previousStateDir === undefined) {
+        delete process.env.OPENCLAW_STATE_DIR;
+      } else {
+        process.env.OPENCLAW_STATE_DIR = previousStateDir;
+      }
+      await fs.rm(stateRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("hydrates session working-context refs through node-scoped openclaw_resource_read", async () => {
+    const storeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "node-resource-working-context-"));
+    try {
+      const executable = node({
+        requirementRefs: ["requirement://req-1"],
+        sourcePromptRefs: ["source-prompt://abc123/body/0-120"],
+      });
+      const built = buildNodeExecutionSnapshotFromGraphNode({
+        snapshot: snapshot([executable]),
+        graphId: "graph-native-node",
+        node: executable,
+        attemptId: "attempt-1",
+      });
+      const sessionStorePath = path.join(storeRoot, "sessions.json");
+      await fs.writeFile(
+        sessionStorePath,
+        JSON.stringify({
+          [built.sessionKey]: {
+            sessionId: "sess-node",
+            updatedAt: 1,
+          },
+        }),
+        "utf8",
+      );
+      const persisted = await updateSessionWorkingContext({
+        storePath: sessionStorePath,
+        sessionKey: built.sessionKey,
+        now: 1234,
+        entry: {
+          kind: "context_window",
+          requestedAgentId: "execution-context-scout",
+          text: [
+            "Bounded source windows:",
+            "```ts",
+            "export const nodeWorkingContext = true;",
+            "```",
+            "",
+            "file_graph:",
+            "- extensions/execution-platform/src/workflows/a.ts -> extensions/execution-platform/src/workflows/b.ts via evidence (evidence: extensions/execution-platform/src/workflows/a.ts:1-3)",
+          ].join("\n"),
+        },
+      });
+      expect(persisted.persisted).toBe(true);
+
+      const tool = createExecutionPlatformResourceReadTool({
+        runtimeJobId: "job-native-node",
+        nodeExecutionSnapshot: built,
+        sessionStorePath,
+        repository: {
+          attachRuntimeArtifactByContract: async () => {
+            throw new Error("not used");
+          },
+          listArtifacts: async () => {
+            throw new Error("not used");
+          },
+          hydrateRuntimeArtifactByContract: async () => {
+            throw new Error("not used");
+          },
+        },
+      });
+
+      const result = await tool.execute("resource-read-working-context", {
+        ref: buildSessionWorkingContextRef(built.sessionKey),
+        maxBytes: 4_000,
+      });
+      const parsed = JSON.parse(
+        result.content.find((entry) => entry.type === "text")?.text ?? "{}",
+      );
+
+      expect(parsed.status).toBe("hydrated");
+      expect(parsed.resources).toEqual([
+        expect.objectContaining({
+          status: "hydrated",
+          resourceKind: "openclaw.session_working_context",
+          reasonCodes: ["openclaw_resource_read_hydrated_session_working_context"],
+        }),
+      ]);
+      expect(parsed.resources[0].body.text).toContain("nodeWorkingContext");
+      expect(parsed.resources[0].body.text).toContain("file_graph");
+    } finally {
+      await fs.rm(storeRoot, { recursive: true, force: true });
+    }
   });
 
   it("does not hydrate runtime artifacts outside the current node snapshot authority", async () => {

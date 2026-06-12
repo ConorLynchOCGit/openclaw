@@ -1726,6 +1726,21 @@ describe("openai transport stream", () => {
     expect(output.content.some((block) => (block as { type?: string }).type === "toolCall")).toBe(
       false,
     );
+    expect(
+      (
+        output as {
+          providerResponseDiagnostics?: {
+            rawFinishReason?: string | null;
+            rawToolCallChunkCount?: number;
+            rawReasoningFieldPresent?: boolean;
+          };
+        }
+      ).providerResponseDiagnostics,
+    ).toEqual({
+      rawFinishReason: "tool_calls",
+      rawToolCallChunkCount: 0,
+      rawReasoningFieldPresent: false,
+    });
   });
 
   it("handles reasoning_details from OpenRouter/Qwen3 in completions stream", async () => {
@@ -1909,6 +1924,21 @@ describe("openai transport stream", () => {
       { type: "thinking", thinking: "Need a tool.", thinkingSignature: "reasoning_details" },
       { type: "toolCall", id: "call_1", name: "lookup", arguments: { query: "qwen3" } },
     ]);
+    expect(
+      (
+        output as {
+          providerResponseDiagnostics?: {
+            rawFinishReason?: string | null;
+            rawToolCallChunkCount?: number;
+            rawReasoningFieldPresent?: boolean;
+          };
+        }
+      ).providerResponseDiagnostics,
+    ).toEqual({
+      rawFinishReason: "tool_calls",
+      rawToolCallChunkCount: 1,
+      rawReasoningFieldPresent: true,
+    });
   });
 
   it("keeps streamed tool call arguments intact when reasoning_details repeats", async () => {

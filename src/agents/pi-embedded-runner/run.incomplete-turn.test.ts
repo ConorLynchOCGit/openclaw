@@ -867,7 +867,7 @@ describe("runEmbeddedPiAgent incomplete-turn safety", () => {
 
   it("marks compaction-timeout retries as paused and replay-invalid", () => {
     const attempt = makeAttemptResult({
-      promptErrorSource: "compaction",
+      promptErrorOrigin: "compaction",
       timedOutDuringCompaction: true,
     });
 

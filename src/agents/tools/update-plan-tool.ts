@@ -27,7 +27,9 @@ const UpdatePlanToolSchema = Type.Object({
   plan: Type.Array(
     Type.Object(
       {
-        step: Type.String({ description: "Short plan step." }),
+        step: Type.String({
+          description: "Brief task description.",
+        }),
         status: stringEnum(PLAN_STEP_STATUSES, {
           description: 'One of "pending", "in_progress", or "completed".',
         }),
@@ -41,7 +43,7 @@ const UpdatePlanToolSchema = Type.Object({
     ),
     {
       minItems: 1,
-      description: "Ordered list of plan steps. At most one step may be in_progress.",
+      description: "Ordered todo items for the current run.",
     },
   ),
 });
@@ -94,10 +96,6 @@ function readPlanSteps(params: Record<string, unknown>): UpdatePlanStep[] {
     };
   });
 
-  const inProgressCount = steps.filter((entry) => entry.status === "in_progress").length;
-  if (inProgressCount > 1) {
-    throw new ToolInputError("plan can contain at most one in_progress step");
-  }
   return steps;
 }
 
@@ -185,6 +183,26 @@ function buildTodoReadDetails(params: {
   };
 }
 
+function formatPlanUpdateText(params: {
+  explanation?: string;
+  plan: readonly UpdatePlanStep[];
+  todoResult: SessionTodoUpdateResult | null;
+}): string {
+  const items =
+    params.todoResult?.persisted === true
+      ? params.todoResult.todo.items.map((item) => ({
+          content: item.content,
+          status: item.status,
+          priority: item.priority,
+        }))
+      : params.plan.map((item) => ({
+          content: item.step,
+          status: item.status,
+          priority: item.priority ?? "normal",
+        }));
+  return JSON.stringify(items, null, 2);
+}
+
 export function createUpdatePlanTool(options: UpdatePlanToolOptions = {}): AnyAgentTool {
   return {
     label: "Update Plan",
@@ -245,7 +263,12 @@ export function createUpdatePlanTool(options: UpdatePlanToolOptions = {}): AnyAg
         });
       }
       return {
-        content: [],
+        content: [
+          {
+            type: "text" as const,
+            text: formatPlanUpdateText({ explanation, plan, todoResult }),
+          },
+        ],
         details: {
           status: "updated" as const,
           ...(explanation ? { explanation } : {}),

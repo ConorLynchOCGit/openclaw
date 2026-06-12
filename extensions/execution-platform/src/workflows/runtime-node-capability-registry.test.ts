@@ -64,7 +64,7 @@ describe("runtime node capability registry", () => {
     expect(kimi?.modelQualificationProfileIds).toContain("openrouter.qwen.qwen3-coder-next");
     expect(kimi?.modelPolicyRefs).toEqual(
       expect.arrayContaining([
-        "policy://openclaw-native-node/execution-coding/kimi-k2.6-high-reasoning",
+        "policy://openclaw-native-node/execution-coding/kimi-k2.6-implementation-reasoning",
         "policy://openclaw-native-node/execution-context-scout/qwen-fast-search",
         "policy://openclaw-native-node/execution-validation-scout/qwen-fast-validation",
       ]),

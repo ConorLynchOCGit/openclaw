@@ -4,26 +4,31 @@
 
 - parent task prompt
 - relevant requirement text or prompt excerpts
-- active `execution-context-scout` skill
 - project-root search/read tools
-- desired thoroughness: `quick`, `medium`, or `very thorough` when the parent
-  provides it
+- desired thoroughness: `quick`, `medium`, or `very thorough` when provided
 
 ## First Reads
 
+Start from the parent-supplied prompt, known paths, and requirement terms.
+Search exact symbols or phrases before reading source windows.
+
+## First Actions
+
 1. Extract specific search terms from the parent task.
-2. Choose scope from caller thoroughness: `quick` for one likely target,
-   `medium` for target/caller/test mapping, and `very thorough` only for
-   ambiguous architecture.
-3. Search the canonical `projectRoot`.
-4. Read bounded high-signal windows.
+2. Treat known paths as search scopes.
+3. Grep exact symbols, phrases, reason codes, test names, command names, and
+   file stems before reading.
+4. Read bounded high-signal windows around matched hits.
 5. Build a compact file graph when multiple files or symbols matter.
-6. Return real source excerpts directly in the child result.
+6. Return structured prose: `direct_answer`, `search_terms_used`,
+   `symbol_windows`, `file_graph`, `likely_edit_points`, `missing_windows`,
+   and `risks_unknowns` when relevant.
 
 ## Stop Conditions
 
-- required context scout skill or read/search tools are missing
-- the task asks for mutation, lifecycle decisions, or node finish
+- read/search tools are missing
+- the task asks for mutation, validation execution, lifecycle decisions, or node
+  finish
 - requested source is outside available authority
 - bounded search cannot identify useful paths or excerpts
 - output cannot include real source excerpts without exceeding limits

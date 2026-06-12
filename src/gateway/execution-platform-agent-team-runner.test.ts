@@ -25,8 +25,11 @@ import {
 const REQUIRED_NODE_TOOL_ALLOW = [
   "node_finish",
   "openclaw_resource_read",
+  "source_context_batch",
   "edit",
   "read",
+  "grep",
+  "glob",
   "update_plan",
   "read_todo",
   "task",
@@ -46,15 +49,12 @@ const SCOUT_FORBIDDEN_TOOLS = [
   "sessions_yield",
   "subagents",
   "agents_list",
-  "openclaw_resource_read",
   "resolve_openclaw_resource",
   "node_finish",
 ];
 
 const FORBIDDEN_PARENT_TOOLS = [
   "list",
-  "glob",
-  "grep",
   "exec",
   "process",
   "resolve_openclaw_resource",
@@ -70,7 +70,7 @@ function executionAgentRegistryEntries(): AgentPackRegistryEntry[] {
       id: "execution-coding",
       classification: "execution_platform_agent",
       requiredDocs: REQUIRED_AGENT_DOCS,
-      primarySkills: ["execution-node-workflow"],
+      primarySkills: [],
       allowedChildAgents: ["execution-context-scout", "execution-validation-scout"],
       requiredTools: REQUIRED_NODE_TOOL_ALLOW,
       forbiddenTools: FORBIDDEN_PARENT_TOOLS,
@@ -79,16 +79,31 @@ function executionAgentRegistryEntries(): AgentPackRegistryEntry[] {
       id: "execution-context-scout",
       classification: "execution_platform_agent",
       requiredDocs: REQUIRED_AGENT_DOCS,
-      primarySkills: ["execution-context-scout"],
-      requiredTools: ["read", "list", "glob", "grep"],
+      primarySkills: [],
+      requiredTools: [
+        "read",
+        "list",
+        "glob",
+        "grep",
+        "source_context_batch",
+        "openclaw_resource_read",
+      ],
       forbiddenTools: SCOUT_FORBIDDEN_TOOLS,
     },
     {
       id: "execution-validation-scout",
       classification: "execution_platform_agent",
       requiredDocs: REQUIRED_AGENT_DOCS,
-      primarySkills: ["execution-validation-scout"],
-      requiredTools: ["read", "list", "glob", "grep", "exec"],
+      primarySkills: [],
+      requiredTools: [
+        "read",
+        "list",
+        "glob",
+        "grep",
+        "source_context_batch",
+        "exec",
+        "openclaw_resource_read",
+      ],
       forbiddenTools: SCOUT_FORBIDDEN_TOOLS,
     },
   ];
@@ -241,7 +256,7 @@ async function createExecutionConfig(
         model: { primary: "openrouter/moonshotai/kimi-k2.6" },
         thinkingDefault: "xhigh",
         reasoningDefault: "stream",
-        skills: input.parentSkills ?? ["execution-node-workflow"],
+        skills: input.parentSkills ?? [],
         tools: input.parentTools ?? {
           allow: REQUIRED_NODE_TOOL_ALLOW,
         },
@@ -258,9 +273,16 @@ async function createExecutionConfig(
         agentDir: path.join(workspace, "agents", "execution-context-scout", "agent"),
         workspace,
         ...(input.projectRootOutsideWorkspace ? { projectRoot: skillRoot } : {}),
-        skills: input.contextScoutSkills ?? ["execution-context-scout"],
+        skills: input.contextScoutSkills ?? [],
         tools: {
-          allow: input.contextScoutTools ?? ["read", "list", "glob", "grep"],
+          allow: input.contextScoutTools ?? [
+            "read",
+            "list",
+            "glob",
+            "grep",
+            "source_context_batch",
+            "openclaw_resource_read",
+          ],
         },
       },
       {
@@ -268,9 +290,17 @@ async function createExecutionConfig(
         agentDir: path.join(workspace, "agents", "execution-validation-scout", "agent"),
         workspace,
         ...(input.projectRootOutsideWorkspace ? { projectRoot: skillRoot } : {}),
-        skills: input.validationScoutSkills ?? ["execution-validation-scout"],
+        skills: input.validationScoutSkills ?? [],
         tools: {
-          allow: input.validationScoutTools ?? ["read", "list", "glob", "grep", "exec"],
+          allow: input.validationScoutTools ?? [
+            "read",
+            "list",
+            "glob",
+            "grep",
+            "source_context_batch",
+            "exec",
+            "openclaw_resource_read",
+          ],
         },
       },
     ],
@@ -431,7 +461,7 @@ function providerWorkspaceFileEntriesForSourceAgent(
 }
 
 function makeWorkerPrompt(
-  promptText = "Use update_plan, validate the change, and finish with node_finish.",
+  promptText = "Patch the change, track progress, validate, and finish with node_finish.",
 ) {
   const promptHash = stableTestHash(promptText);
   return {
@@ -461,34 +491,25 @@ describe("execution platform node agent start", () => {
     );
   });
 
-  it("blocks missing parent execution skill in the node-start receipt", async () => {
+  it("accepts parent execution start without active workflow skills", async () => {
     const result = prepare(await createExecutionConfig({ parentSkills: ["other-skill"] }));
 
     expect(result).toMatchObject({
-      status: "blocked",
-      blockerKind: "node_agent_skill_missing",
+      status: "accepted",
       receipt: {
-        status: "blocked",
-        blockerKind: "node_agent_skill_missing",
+        status: "accepted",
       },
     });
-    expect(result.receipt.missingSkills).toContainEqual({
-      agentId: "execution-coding",
-      skillName: "execution-node-workflow",
-    });
+    expect(result.receipt.missingSkills).toEqual([]);
   });
 
-  it("blocks missing scout skill in the node-start receipt", async () => {
+  it("accepts scout config without active workflow skills", async () => {
     const result = prepare(await createExecutionConfig({ contextScoutSkills: [] }));
 
     expect(result).toMatchObject({
-      status: "blocked",
-      blockerKind: "node_agent_skill_missing",
+      status: "accepted",
     });
-    expect(result.receipt.missingSkills).toContainEqual({
-      agentId: "execution-context-scout",
-      skillName: "execution-context-scout",
-    });
+    expect(result.receipt.missingSkills).toEqual([]);
   });
 
   it("blocks missing scout discovery tools with native policy explanation", async () => {
@@ -520,21 +541,23 @@ describe("execution platform node agent start", () => {
           "list",
           "glob",
           "grep",
+          "source_context_batch",
+          "openclaw_resource_read",
           "edit",
           "task",
           "update_plan",
-          "openclaw_resource_read",
         ],
         validationScoutTools: [
           "read",
           "list",
           "glob",
           "grep",
+          "source_context_batch",
           "exec",
+          "openclaw_resource_read",
           "write",
           "sessions_spawn",
           "read_todo",
-          "openclaw_resource_read",
         ],
       }),
     );
@@ -570,12 +593,6 @@ describe("execution platform node agent start", () => {
           blockedBy: expect.arrayContaining(["execution_node_scout_mode_separation"]),
         }),
         expect.objectContaining({
-          agentId: "execution-context-scout",
-          toolName: "openclaw_resource_read",
-          allowed: false,
-          blockedBy: expect.arrayContaining(["execution_node_scout_mode_separation"]),
-        }),
-        expect.objectContaining({
           agentId: "execution-validation-scout",
           toolName: "sessions_spawn",
           allowed: false,
@@ -584,12 +601,6 @@ describe("execution platform node agent start", () => {
         expect.objectContaining({
           agentId: "execution-validation-scout",
           toolName: "read_todo",
-          allowed: false,
-          blockedBy: expect.arrayContaining(["execution_node_scout_mode_separation"]),
-        }),
-        expect.objectContaining({
-          agentId: "execution-validation-scout",
-          toolName: "openclaw_resource_read",
           allowed: false,
           blockedBy: expect.arrayContaining(["execution_node_scout_mode_separation"]),
         }),
@@ -626,7 +637,7 @@ describe("execution platform node agent start", () => {
   });
 
   it("builds active required node skill context through the native skills snapshot surface", async () => {
-    const config = await createExecutionConfig();
+    const config = await createExecutionConfig({ parentSkills: ["execution-node-workflow"] });
     const snapshot = buildNodeExecutionRequiredSkillsSnapshot({
       config,
       agentId: "execution-coding",
@@ -660,7 +671,7 @@ describe("execution platform node agent start", () => {
         id: "execution-coding",
         classification: "execution_platform_agent",
         requiredDocs: ["IDENTITY.md", "AGENTS.md", "BOOTSTRAP.md", "TOOLS.md"],
-        primarySkills: ["execution-node-workflow"],
+        primarySkills: [],
         allowedChildAgents: ["execution-context-scout", "execution-validation-scout"],
         requiredTools: REQUIRED_NODE_TOOL_ALLOW,
         forbiddenTools: ["list", "glob", "grep", "exec"],
@@ -669,7 +680,7 @@ describe("execution platform node agent start", () => {
 
     await expect(
       resolveNodeAgentRequiredSkillNames({ agentId: "execution-coding", entries }),
-    ).resolves.toEqual(["execution-node-workflow"]);
+    ).resolves.toEqual([]);
     await expect(
       resolveNodeAgentAllowedChildAgentIds({ agentId: "execution-coding", entries }),
     ).resolves.toEqual(["execution-context-scout", "execution-validation-scout"]);
@@ -798,7 +809,7 @@ describe("execution platform node agent start", () => {
     const projection = buildNodeAgentBootstrapAdmissionFromSystemPromptReport({
       report: wrongAgentReport,
       parentAgentId: "execution-coding",
-      requiredSkillNames: ["execution-node-workflow"],
+      requiredSkillNames: [],
       requiredCanonicalDocNames: REQUIRED_AGENT_DOCS,
       requiredCanonicalDocPaths: canonicalDocPaths("/root/.openclaw/agents/execution-coding/agent"),
     });
@@ -842,7 +853,7 @@ describe("execution platform node agent start", () => {
     const rejected = buildNodeAgentBootstrapAdmissionFromSystemPromptReport({
       report: runtimeReport,
       parentAgentId: "execution-coding",
-      requiredSkillNames: ["execution-node-workflow"],
+      requiredSkillNames: [],
       requiredCanonicalDocNames: REQUIRED_AGENT_DOCS,
       requiredCanonicalDocPaths: sourcePaths,
     });
@@ -863,7 +874,7 @@ describe("execution platform node agent start", () => {
     const accepted = buildNodeAgentBootstrapAdmissionFromSystemPromptReport({
       report: sourceReport,
       parentAgentId: "execution-coding",
-      requiredSkillNames: ["execution-node-workflow"],
+      requiredSkillNames: [],
       requiredCanonicalDocNames: REQUIRED_AGENT_DOCS,
       requiredCanonicalDocPaths: sourcePaths,
     });
@@ -953,19 +964,18 @@ describe("execution platform node agent start", () => {
     const projection = buildNodeAgentBootstrapAdmissionFromSystemPromptReport({
       report,
       parentAgentId: "execution-coding",
-      requiredSkillNames: ["execution-node-workflow"],
+      requiredSkillNames: [],
       requiredCanonicalDocNames: REQUIRED_AGENT_DOCS,
     });
 
     expect(projection.summary.parentCanonicalDocsAdmitted).toBe(false);
-    expect(projection.summary.parentRequiredSkillsAdmitted).toBe(false);
+    expect(projection.summary.parentRequiredSkillsAdmitted).toBe(true);
     expect(projection.summary.missingRequiredSources).toEqual(
       expect.arrayContaining([
         "agent-doc:execution-coding:IDENTITY.md",
         "agent-doc:execution-coding:AGENTS.md",
         "agent-doc:execution-coding:BOOTSTRAP.md",
         "agent-doc:execution-coding:TOOLS.md",
-        "skill:execution-coding:execution-node-workflow",
       ]),
     );
     expect(projection.summary.truncatedRequiredSources).toEqual([
@@ -974,7 +984,7 @@ describe("execution platform node agent start", () => {
     expect(projection.reasonCodes).toEqual(
       expect.arrayContaining([
         "node_agent_parent_canonical_docs_missing_from_provider_context",
-        "node_agent_parent_required_skills_missing_from_provider_context",
+        "node_agent_parent_required_skills_admitted_to_provider_context",
         "node_agent_bootstrap_required_sources_truncated",
       ]),
     );
@@ -983,7 +993,7 @@ describe("execution platform node agent start", () => {
   it("accepts worker prompt session proof when provider bootstrap admission is complete", async () => {
     const start = prepare(await createExecutionConfig());
     expect(start.status).toBe("accepted");
-    const promptText = "Use update_plan, validate the change, and finish with node_finish.\n";
+    const promptText = "Patch the change, track progress, validate, and finish with node_finish.\n";
     const workerPrompt = makeWorkerPrompt(promptText);
 
     const receipt = withWorkerPromptSessionProof({
@@ -996,14 +1006,17 @@ describe("execution platform node agent start", () => {
       effectiveToolNames: [
         "node_finish",
         "openclaw_resource_read",
+        "source_context_batch",
         "edit",
         "read",
+        "grep",
+        "glob",
         "update_plan",
         "read_todo",
         "task",
       ],
       requiredCanonicalDocNames: REQUIRED_AGENT_DOCS,
-      requiredSkillNames: ["execution-node-workflow"],
+      requiredSkillNames: [],
       requiredToolNames: REQUIRED_NODE_TOOL_ALLOW,
       forbiddenToolNames: FORBIDDEN_PARENT_TOOLS,
       enforceProviderBootstrapAdmission: true,
@@ -1050,7 +1063,7 @@ describe("execution platform node agent start", () => {
       }),
       effectiveToolNames: REQUIRED_NODE_TOOL_ALLOW,
       requiredCanonicalDocNames: REQUIRED_AGENT_DOCS,
-      requiredSkillNames: ["execution-node-workflow"],
+      requiredSkillNames: [],
       requiredToolNames: REQUIRED_NODE_TOOL_ALLOW,
       forbiddenToolNames: FORBIDDEN_PARENT_TOOLS,
       enforceProviderBootstrapAdmission: true,
@@ -1079,7 +1092,7 @@ describe("execution platform node agent start", () => {
       }),
       effectiveToolNames: REQUIRED_NODE_TOOL_ALLOW,
       requiredCanonicalDocNames: REQUIRED_AGENT_DOCS,
-      requiredSkillNames: ["execution-node-workflow"],
+      requiredSkillNames: [],
       requiredToolNames: REQUIRED_NODE_TOOL_ALLOW,
       forbiddenToolNames: FORBIDDEN_PARENT_TOOLS,
       enforceProviderBootstrapAdmission: true,
@@ -1123,12 +1136,14 @@ describe("execution platform node agent start", () => {
         "openclaw_resource_read",
         "edit",
         "read",
+        "grep",
+        "glob",
         "update_plan",
         "read_todo",
         "task",
       ],
       requiredCanonicalDocNames: REQUIRED_AGENT_DOCS,
-      requiredSkillNames: ["execution-node-workflow"],
+      requiredSkillNames: [],
       requiredToolNames: REQUIRED_NODE_TOOL_ALLOW,
       forbiddenToolNames: FORBIDDEN_PARENT_TOOLS,
       enforceProviderBootstrapAdmission: true,
@@ -1171,12 +1186,14 @@ describe("execution platform node agent start", () => {
         "openclaw_resource_read",
         "edit",
         "read",
+        "grep",
+        "glob",
         "update_plan",
         "read_todo",
         "task",
       ],
       requiredCanonicalDocNames: REQUIRED_AGENT_DOCS,
-      requiredSkillNames: ["execution-node-workflow"],
+      requiredSkillNames: [],
       requiredToolNames: REQUIRED_NODE_TOOL_ALLOW,
       forbiddenToolNames: FORBIDDEN_PARENT_TOOLS,
       requiredCanonicalDocPaths: canonicalDocPaths(parentAgentDir as string),
@@ -1219,7 +1236,7 @@ describe("execution platform node agent start", () => {
       systemPromptReport: null,
       effectiveToolNames: null,
       requiredCanonicalDocNames: REQUIRED_AGENT_DOCS,
-      requiredSkillNames: ["execution-node-workflow"],
+      requiredSkillNames: [],
       requiredToolNames: REQUIRED_NODE_TOOL_ALLOW,
       forbiddenToolNames: FORBIDDEN_PARENT_TOOLS,
       enforceProviderBootstrapAdmission: false,
@@ -1252,12 +1269,14 @@ describe("execution platform node agent start", () => {
         "openclaw_resource_read",
         "edit",
         "read",
+        "grep",
+        "glob",
         "update_plan",
         "read_todo",
         "task",
       ],
       requiredCanonicalDocNames: REQUIRED_AGENT_DOCS,
-      requiredSkillNames: ["execution-node-workflow"],
+      requiredSkillNames: [],
       requiredToolNames: REQUIRED_NODE_TOOL_ALLOW,
       forbiddenToolNames: FORBIDDEN_PARENT_TOOLS,
       enforceProviderBootstrapAdmission: true,
@@ -1269,7 +1288,6 @@ describe("execution platform node agent start", () => {
       expect.arrayContaining([
         "node_agent_provider_bootstrap_report_missing",
         "node_agent_provider_canonical_docs_missing",
-        "node_agent_provider_required_skills_missing",
       ]),
     );
     expect(receipt.reasonCodes).toEqual(
@@ -1312,12 +1330,14 @@ describe("execution platform node agent start", () => {
         "openclaw_resource_read",
         "edit",
         "read",
+        "grep",
+        "glob",
         "update_plan",
         "read_todo",
         "task",
       ],
       requiredCanonicalDocNames: REQUIRED_AGENT_DOCS,
-      requiredSkillNames: ["execution-node-workflow"],
+      requiredSkillNames: [],
       requiredToolNames: REQUIRED_NODE_TOOL_ALLOW,
       forbiddenToolNames: FORBIDDEN_PARENT_TOOLS,
       enforceProviderBootstrapAdmission: true,
@@ -1328,7 +1348,6 @@ describe("execution platform node agent start", () => {
     expect(receipt.blockers).toEqual(
       expect.arrayContaining([
         "node_agent_provider_canonical_docs_missing",
-        "node_agent_provider_required_skills_missing",
         "node_agent_provider_bootstrap_sources_truncated",
       ]),
     );
@@ -1337,7 +1356,6 @@ describe("execution platform node agent start", () => {
         "agent-doc:execution-coding:AGENTS.md",
         "agent-doc:execution-coding:BOOTSTRAP.md",
         "agent-doc:execution-coding:TOOLS.md",
-        "skill:execution-coding:execution-node-workflow",
       ]),
     );
     expect(receipt.bootstrapAdmission.truncatedRequiredSources).toEqual([
@@ -1348,7 +1366,7 @@ describe("execution platform node agent start", () => {
         "node_agent_session_launch_enforces_provider_bootstrap_admission",
         "node_agent_provider_bootstrap_admission_blocked",
         "node_agent_parent_canonical_docs_missing_from_provider_context",
-        "node_agent_parent_required_skills_missing_from_provider_context",
+        "node_agent_parent_required_skills_admitted_to_provider_context",
         "node_agent_bootstrap_required_sources_truncated",
       ]),
     );
@@ -1432,7 +1450,7 @@ describe("execution platform node agent start", () => {
         ]),
         manifestRef: "repo://docs/system/registries/source-runtime-unification.yaml",
       },
-      activeSkillNames: ["execution-node-workflow"],
+      activeSkillNames: [],
       effectiveToolNames: expect.arrayContaining([
         "node_finish",
         "openclaw_resource_read",
@@ -1479,11 +1497,11 @@ describe("execution platform node agent start", () => {
       ]),
     );
     expect(result.receipt.effectiveToolNames).toEqual(expect.arrayContaining(["read"]));
+    expect(result.receipt.effectiveToolNames).toEqual(expect.arrayContaining(["grep"]));
+    expect(result.receipt.effectiveToolNames).toEqual(expect.arrayContaining(["glob"]));
     expect(result.receipt.effectiveToolNames).not.toEqual(expect.arrayContaining(["write"]));
     expect(result.receipt.effectiveToolNames).not.toEqual(expect.arrayContaining(["exec"]));
     expect(result.receipt.effectiveToolNames).not.toEqual(expect.arrayContaining(["list"]));
-    expect(result.receipt.effectiveToolNames).not.toEqual(expect.arrayContaining(["glob"]));
-    expect(result.receipt.effectiveToolNames).not.toEqual(expect.arrayContaining(["grep"]));
     expect(result.receipt.effectiveToolNames).not.toEqual(
       expect.arrayContaining(["sessions_spawn"]),
     );
@@ -1559,7 +1577,46 @@ describe("execution platform node agent start", () => {
     );
   });
 
-  it("blocks executable node start when execution-coding is not resolved to Kimi at highest reasoning", async () => {
+  it("accepts executable node start when execution-coding explicitly configures no reasoning", async () => {
+    const config = await createExecutionConfig();
+    const parent = config.agents?.list?.find(
+      (entry): entry is NonNullable<NonNullable<typeof config.agents>["list"]>[number] =>
+        typeof entry === "object" && entry !== null && entry.id === "execution-coding",
+    );
+    if (!parent || typeof parent !== "object") {
+      throw new Error("fixture parent agent missing");
+    }
+    parent.thinkingDefault = "off";
+    parent.reasoningDefault = "off";
+    parent.params = {
+      parallel_tool_calls: true,
+      reasoning: { effort: "none", exclude: true },
+      thinking: { type: "disabled" },
+    };
+
+    const result = prepare(config);
+
+    expect(result).toMatchObject({
+      status: "accepted",
+      receipt: {
+        status: "accepted",
+        modelProvider: "openrouter",
+        modelId: "moonshotai/kimi-k2.6",
+        reasoningLevel: "off",
+        thinkingLevel: "off",
+        blockerKind: null,
+      },
+    });
+    expect(result.reasonCodes).not.toEqual(
+      expect.arrayContaining([
+        "node_agent_thinking_level_below_required_medium",
+        "node_agent_reasoning_level_below_required",
+        "node_agent_model_reasoning_profile_insufficient",
+      ]),
+    );
+  });
+
+  it("blocks executable node start when execution-coding is not backed by a Kimi model", async () => {
     const config = await createExecutionConfig();
     const parent = config.agents?.list?.find(
       (entry): entry is NonNullable<NonNullable<typeof config.agents>["list"]>[number] =>
@@ -1569,7 +1626,7 @@ describe("execution platform node agent start", () => {
       throw new Error("fixture parent agent missing");
     }
     parent.model = { primary: "openrouter/deepseek/deepseek-v4-pro" };
-    parent.thinkingDefault = "medium";
+    parent.thinkingDefault = "low";
     parent.reasoningDefault = "off";
 
     const result = prepare(config);
@@ -1582,14 +1639,17 @@ describe("execution platform node agent start", () => {
         modelProvider: "openrouter",
         modelId: "deepseek/deepseek-v4-pro",
         reasoningLevel: "off",
-        thinkingLevel: "medium",
+        thinkingLevel: "low",
       },
     });
     expect(result.reasonCodes).toEqual(
+      expect.arrayContaining(["node_agent_model_profile_not_kimi"]),
+    );
+    expect(result.reasonCodes).not.toEqual(
       expect.arrayContaining([
-        "node_agent_model_profile_not_kimi",
-        "node_agent_thinking_level_below_required_xhigh",
+        "node_agent_thinking_level_below_required_medium",
         "node_agent_reasoning_level_below_required",
+        "node_agent_model_reasoning_profile_insufficient",
       ]),
     );
   });

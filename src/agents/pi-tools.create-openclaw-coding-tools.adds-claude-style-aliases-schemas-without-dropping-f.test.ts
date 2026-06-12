@@ -138,9 +138,10 @@ describe("createOpenClawCodingTools", () => {
     }
   });
 
-  it("rejects legacy alias parameters", async () => {
+  it("rejects non-edit legacy alias parameters while accepting OpenCode-style edit aliases", async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-legacy-alias-"));
     try {
+      await fs.writeFile(path.join(tmpDir, "legacy.txt"), "hello old value", "utf8");
       const tools = createOpenClawCodingTools({ workspaceDir: tmpDir });
       const { readTool, writeTool, editTool } = expectReadWriteEditTools(tools);
 
@@ -151,13 +152,54 @@ describe("createOpenClawCodingTools", () => {
         }),
       ).rejects.toThrow(/Missing required parameter: path/);
 
+      const editSchema = editTool?.parameters as {
+        properties?: Record<string, unknown>;
+      };
+      expect(editSchema.properties).toHaveProperty("filePath");
+      expect(editSchema.properties).toHaveProperty("oldString");
+      expect(editSchema.properties).toHaveProperty("newString");
+      expect(editSchema.properties).toHaveProperty("replaceAll");
+      expect(editSchema.properties).toHaveProperty("operations");
+      expect(editSchema.properties).not.toHaveProperty("path");
+      expect(editSchema.properties).not.toHaveProperty("oldText");
+      expect(editSchema.properties).not.toHaveProperty("newText");
+      expect(editSchema.properties).not.toHaveProperty("startLine");
+      expect(editSchema.properties).not.toHaveProperty("endLine");
+      expect(editSchema.properties).not.toHaveProperty("insertBeforeLine");
+      expect(editSchema.properties).not.toHaveProperty("insertAfterLine");
+
+      const editResult = await editTool?.execute("tool-opencode-style-edit", {
+        filePath: "legacy.txt",
+        oldString: "old",
+        newString: "new",
+      });
+      expect(editResult?.details).toMatchObject({
+        firstChangedLine: 1,
+      });
+      await expect(fs.readFile(path.join(tmpDir, "legacy.txt"), "utf8")).resolves.toContain(
+        "hello new value",
+      );
+
+      await editTool?.execute("tool-operation-edit", {
+        operations: [
+          {
+            type: "insert_after",
+            filePath: "legacy.txt",
+            line: 1,
+            text: "inserted line\n",
+          },
+        ],
+      });
+      await expect(fs.readFile(path.join(tmpDir, "legacy.txt"), "utf8")).resolves.toContain(
+        "hello new valueinserted line",
+      );
+
       await expect(
-        editTool?.execute("tool-legacy-edit", {
+        editTool?.execute("tool-missing-replacement", {
           filePath: "legacy.txt",
-          old_text: "old",
-          newString: "new",
+          oldString: "hello",
         }),
-      ).rejects.toThrow(/Missing required parameters: path, edits/);
+      ).rejects.toThrow(/Cannot apply edit: replacement text is missing/);
 
       await expect(
         readTool?.execute("tool-legacy-read", {
@@ -190,6 +232,69 @@ describe("createOpenClawCodingTools", () => {
     }
   });
 
+  it("applies canonical operations batches atomically", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-edit-operations-"));
+    try {
+      const filePath = "ops.txt";
+      await fs.writeFile(path.join(tmpDir, filePath), "one\ntwo\nthree\nfour\n", "utf8");
+      const tools = createOpenClawCodingTools({ workspaceDir: tmpDir });
+      const { editTool } = expectReadWriteEditTools(tools);
+
+      await editTool?.execute("tool-operations-batch", {
+        operations: [
+          {
+            type: "replace_lines",
+            filePath,
+            startLine: 2,
+            endLine: 2,
+            text: "TWO\n",
+          },
+          {
+            type: "insert_before",
+            filePath,
+            line: 4,
+            text: "before-four\n",
+          },
+          {
+            type: "insert_after",
+            filePath,
+            line: 1,
+            text: "after-one\n",
+          },
+        ],
+      });
+
+      await expect(fs.readFile(path.join(tmpDir, filePath), "utf8")).resolves.toBe(
+        "one\nafter-one\nTWO\nthree\nbefore-four\nfour\n",
+      );
+
+      await expect(
+        editTool?.execute("tool-overlapping-operations", {
+          operations: [
+            {
+              type: "replace_lines",
+              filePath,
+              startLine: 2,
+              endLine: 4,
+              text: "replacement\n",
+            },
+            {
+              type: "insert_after",
+              filePath,
+              line: 3,
+              text: "overlap\n",
+            },
+          ],
+        }),
+      ).rejects.toThrow(/Overlapping line\/range edits rejected/);
+      await expect(fs.readFile(path.join(tmpDir, filePath), "utf8")).resolves.toBe(
+        "one\nafter-one\nTWO\nthree\nbefore-four\nfour\n",
+      );
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects structured edit payloads", async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-structured-edit-"));
     try {
@@ -210,7 +315,9 @@ describe("createOpenClawCodingTools", () => {
             },
           ],
         }),
-      ).rejects.toThrow(/Missing required parameter: edits/);
+      ).rejects.toThrow(
+        /Missing required edit shape|Invalid edit operations|replacement text is missing/,
+      );
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true });
     }

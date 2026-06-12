@@ -472,6 +472,36 @@ describe("tool descriptions", () => {
       "Use write/send-keys/submit/paste/kill for input or intervention.",
     );
   });
+
+  it("uses a focused repo-native exec description for validation scouts", () => {
+    const validationExec = createTestExecTool({
+      agentId: "execution-validation-scout",
+      hasCronTool: true,
+    });
+
+    expect(validationExec.description).toContain("Run focused validation commands only");
+    expect(validationExec.description).toContain("pnpm test:file <test-file>");
+    expect(validationExec.description).toContain(
+      "Do not improvise raw TypeScript flag combinations",
+    );
+    expect(validationExec.description).toContain("Do not use exec for file search");
+    expect(validationExec.description).not.toContain("Use yieldMs/background");
+    expect(validationExec.description).not.toContain("Use process whenever");
+    expect(validationExec.description).not.toContain("use cron instead");
+  });
+
+  it("rejects raw TypeScript compile discovery for validation scouts", async () => {
+    const validationExec = createTestExecTool({
+      agentId: "execution-validation-scout",
+      hasCronTool: true,
+    });
+
+    await expect(
+      validationExec.execute(nextCallId(), {
+        command: "pnpm exec tsc --noEmit --allowImportingTsExtensions",
+      }),
+    ).rejects.toThrow(/Validation scout exec rejected raw TypeScript compile discovery/);
+  });
 });
 
 beforeEach(() => {

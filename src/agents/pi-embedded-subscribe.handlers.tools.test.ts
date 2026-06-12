@@ -138,10 +138,35 @@ describe("handleToolExecutionStart read path checks", () => {
     expect(ctx.state.itemActiveIds.has("tool:tool-await-flush")).toBe(true);
     expect(ctx.state.itemActiveIds.has("command:tool-await-flush")).toBe(true);
   });
+
+  it("emits requestedAgentId only for task start checkpoint routing", async () => {
+    const { ctx, onAgentEvent } = createTestContext();
+
+    await handleToolExecutionStart(ctx, {
+      type: "tool_execution_start",
+      toolName: "task",
+      toolCallId: "tool-task-validation",
+      args: {
+        agentId: "execution-validation-scout",
+        prompt: "raw child prompt must not be forwarded in the start event",
+      },
+    });
+
+    expect(onAgentEvent).toHaveBeenCalledWith({
+      stream: "tool",
+      data: {
+        phase: "start",
+        name: "task",
+        toolCallId: "tool-task-validation",
+        requestedAgentId: "execution-validation-scout",
+      },
+    });
+    expect(JSON.stringify(onAgentEvent.mock.calls)).not.toContain("raw child prompt");
+  });
 });
 
 describe("handleToolExecutionEnd native task working context", () => {
-  it("persists delivered context scout results as native session working context", async () => {
+  it("does not persist delivered context scout results as execution-coding working context", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-task-working-context-"));
     try {
       const sessionKey = "agent:execution-coding:node:nrun_file_graph";
@@ -170,14 +195,20 @@ describe("handleToolExecutionEnd native task working context", () => {
             {
               type: "text",
               text: [
-                "Task result from execution-context-scout (completed, projected).",
+                "Task result from execution-context-scout (completed, partial).",
                 "",
                 "Direct answer: edit src/agents/tools/native-task-tool.ts.",
+                "",
+                "symbol_windows:",
+                "- createNativeTaskTool: src/agents/tools/native-task-tool.ts:1-20",
                 "",
                 "Bounded source windows:",
                 "```ts",
                 "export function createNativeTaskTool() {}",
                 "```",
+                "",
+                "missing_windows:",
+                "- none",
                 "",
                 "file_graph:",
                 "- src/agents/tools/native-task-tool.ts -> src/agents/openclaw-tools.ts via registration (evidence: src/agents/tools/native-task-tool.ts:1-4)",
@@ -190,9 +221,12 @@ describe("handleToolExecutionEnd native task working context", () => {
             requestedAgentId: "execution-context-scout",
             childSessionKey: "agent:execution-context-scout:subagent:child-1",
             runId: "run-child-1",
+            childProvider: "openrouter",
+            childModel: "qwen/qwen3-coder",
             foreground: true,
             resultDeliveredToParentContext: true,
             resultDeliveryStatus: "projected",
+            childProgressOutcome: "child_partial_context_returned",
             resultTruncated: true,
             childIdentityVerified: true,
             childBootstrapAdmission: {
@@ -214,35 +248,17 @@ describe("handleToolExecutionEnd native task working context", () => {
       });
 
       const store = loadSessionStore(storePath, { skipCache: true });
-      expect(store[sessionKey]?.workingContext?.activeEntries[0]).toMatchObject({
-        kind: "context_window",
-        source: "native_task",
-        sourceToolCallId: "task-context-scout",
-        requestedAgentId: "execution-context-scout",
-        childSessionKey: "agent:execution-context-scout:subagent:child-1",
-        childRunId: "run-child-1",
-        hasInlineContextWindows: true,
-        hasFileGraph: true,
-        fileGraphVerifiedEdgeCount: 1,
-        fileGraphUncertainAnnotationCount: 0,
-      });
+      expect(store[sessionKey]?.workingContext?.activeEntries ?? []).toHaveLength(0);
       expect(onAgentEvent).toHaveBeenCalledWith({
         stream: "node-agent",
         data: expect.objectContaining({
           eventType: "node_agent_native_task_result",
           resultDeliveryStatus: "projected",
+          childProgressOutcome: "child_partial_context_returned",
+          childProvider: "openrouter",
+          childModel: "qwen/qwen3-coder",
           parentDecisionFooterIncluded: true,
           parentDecisionFooterKind: "minimal_edit_readiness",
-          workingContextPersisted: true,
-          workingContextKind: "context_window",
-          workingContextHasInlineContextWindows: true,
-          workingContextHasFileGraph: true,
-          workingContextFileGraphTextHash: expect.any(String),
-          workingContextFileGraphTextByteCount: expect.any(Number),
-          workingContextFileGraphVerifiedEdgeCount: 1,
-          workingContextFileGraphUncertainAnnotationCount: 0,
-          workingContextRef: expect.stringContaining("openclaw-session-working-context://"),
-          workingContextEntryRef: expect.stringContaining("openclaw-session-working-context://"),
           childBootstrapAdmission: expect.objectContaining({
             childToolCatalogAdmitted: true,
             providerToolNames: ["read", "list", "glob", "grep"],
@@ -252,12 +268,16 @@ describe("handleToolExecutionEnd native task working context", () => {
           }),
         }),
       });
+      const emitted = JSON.stringify(onAgentEvent.mock.calls);
+      expect(emitted).not.toContain("openclaw-session-working-context://");
+      expect(emitted).not.toContain("workingContextPersisted");
+      expect(emitted).not.toContain("workingContextEntryRef");
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
   });
 
-  it("persists validation scout results as validation state in the unified working context", async () => {
+  it("does not persist validation scout results as execution-coding working context", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-validation-state-"));
     try {
       const sessionKey = "agent:execution-coding:node:nrun_validation_state";
@@ -308,23 +328,19 @@ describe("handleToolExecutionEnd native task working context", () => {
       });
 
       const store = loadSessionStore(storePath, { skipCache: true });
-      expect(store[sessionKey]?.workingContext?.activeEntries[0]).toMatchObject({
-        kind: "validation_state",
-        source: "native_task",
-        requestedAgentId: "execution-validation-scout",
-        validationStatus: "completed",
-      });
+      expect(store[sessionKey]?.workingContext?.activeEntries ?? []).toHaveLength(0);
       expect(onAgentEvent).toHaveBeenCalledWith({
         stream: "node-agent",
         data: expect.objectContaining({
           eventType: "node_agent_native_task_result",
           parentDecisionFooterIncluded: true,
           parentDecisionFooterKind: "validation_sufficiency",
-          workingContextPersisted: true,
-          workingContextKind: "validation_state",
-          workingContextEntryRef: expect.stringContaining("openclaw-session-working-context://"),
         }),
       });
+      const emitted = JSON.stringify(onAgentEvent.mock.calls);
+      expect(emitted).not.toContain("openclaw-session-working-context://");
+      expect(emitted).not.toContain("workingContextPersisted");
+      expect(emitted).not.toContain("workingContextEntryRef");
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
@@ -409,7 +425,54 @@ describe("handleToolExecutionEnd node-agent tool result trace", () => {
     expect(JSON.stringify(nodeAgentEvents)).not.toContain("raw finish output");
   });
 
-  it("persists successful mutations as compact change_set working context", async () => {
+  it("emits node-agent tool events without source-acquisition suppression details", async () => {
+    const { ctx, onAgentEvent } = createTestContext();
+    ctx.params.agentId = "execution-coding";
+    ctx.params.sessionKey = "agent:execution-coding:node:nrun_duplicate";
+
+    await handleToolExecutionEnd(ctx, {
+      type: "tool_execution_end",
+      toolName: "read",
+      toolCallId: "read-duplicate",
+      isError: false,
+      result: {
+        content: [
+          {
+            type: "text",
+            text: [
+              "<path>src/agents/pi-tools.ts</path>",
+              "<type>file</type>",
+              "<content>",
+              "1: export const replayed = true;",
+              "</content>",
+              "sourceWindowStatus: already_delivered_replayed",
+            ].join("\n"),
+          },
+        ],
+        details: {
+          status: "ok",
+          path: "src/agents/pi-tools.ts",
+          totalLines: 5496,
+        },
+      },
+    });
+
+    expect(onAgentEvent).toHaveBeenCalledWith({
+      stream: "node-agent",
+      data: expect.objectContaining({
+        eventType: "node_agent_tool_result",
+        toolResultRef: "openclaw-tool-result://run-test/read-duplicate",
+        agentId: "execution-coding",
+        sessionKey: "agent:execution-coding:node:nrun_duplicate",
+        toolName: "read",
+      }),
+    });
+    const serializedEvents = JSON.stringify(onAgentEvent.mock.calls);
+    expect(serializedEvents).not.toContain("duplicateAcquisitionSuppressed");
+    expect(serializedEvents).not.toContain("sourceWindowStatus");
+  });
+
+  it("emits successful mutation evidence without execution-coding change_set working context", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-change-set-"));
     try {
       const sessionKey = "agent:execution-coding:node:nrun_change_set";
@@ -450,25 +513,30 @@ describe("handleToolExecutionEnd node-agent tool result trace", () => {
             modifiedFilePaths: ["src/agents/tools/native-task-tool.ts"],
             diff: "--- src/agents/tools/native-task-tool.ts\n+++ src/agents/tools/native-task-tool.ts\n@@\n-before\n+after",
             firstChangedLine: 42,
+            syntaxDiagnostics: [
+              {
+                severity: "ERROR",
+                path: "src/agents/tools/native-task-tool.ts",
+                line: 47,
+                column: 11,
+                message: "missing native task footer wiring",
+              },
+            ],
+            lspDiagnostics: [
+              {
+                severity: "WARNING",
+                path: "src/agents/tools/native-task-tool.ts",
+                line: 52,
+                character: 5,
+                message: "unused helper remains",
+              },
+            ],
           },
         },
       });
 
       const store = loadSessionStore(storePath, { skipCache: true });
-      expect(store[sessionKey]?.workingContext?.activeEntries[0]).toMatchObject({
-        kind: "change_set",
-        source: "native_tool",
-        sourceToolCallId: "edit-change-set",
-        toolResultRef: "openclaw-tool-result://run-test/edit-change-set",
-        status: "completed",
-        changedFilePaths: ["src/agents/tools/native-task-tool.ts"],
-      });
-      expect(store[sessionKey]?.workingContext?.activeEntries[0]?.text).toContain(
-        "firstChangedLine=42",
-      );
-      expect(store[sessionKey]?.workingContext?.activeEntries[0]?.text).toContain(
-        "diffAvailable=true",
-      );
+      expect(store[sessionKey]?.workingContext?.activeEntries ?? []).toHaveLength(0);
       expect(onAgentEvent).toHaveBeenCalledWith({
         stream: "node-agent",
         data: expect.objectContaining({
@@ -479,14 +547,163 @@ describe("handleToolExecutionEnd node-agent tool result trace", () => {
           modifiedFilePaths: ["src/agents/tools/native-task-tool.ts"],
           diffAvailable: true,
           firstChangedLine: 42,
-          changeSetWorkingContextPersisted: true,
-          changeSetWorkingContextEntryRef: expect.stringContaining(
+          diagnosticSummaries: [
+            "ERROR src/agents/tools/native-task-tool.ts:47:11 missing native task footer wiring",
+            "WARNING src/agents/tools/native-task-tool.ts:52:5 unused helper remains",
+          ],
+        }),
+      });
+      const emitted = JSON.stringify(onAgentEvent.mock.calls);
+      expect(emitted).not.toContain("openclaw-session-working-context://");
+      expect(emitted).not.toContain("changeSetWorkingContextPersisted");
+      expect(emitted).not.toContain("changeSetWorkingContextEntryRef");
+      const storedWorkingContextText = JSON.stringify(store[sessionKey]?.workingContext ?? null);
+      expect(storedWorkingContextText).not.toContain("before");
+      expect(storedWorkingContextText).not.toContain("after");
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("persists scout grep/read tools as search context and not change_set", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-scout-search-context-"));
+    try {
+      const sessionKey = "agent:execution-context-scout:subagent:nrun_search_context";
+      const storePath = path.join(dir, "sessions.json");
+      await fs.writeFile(
+        storePath,
+        JSON.stringify({
+          [sessionKey]: { sessionId: "sess-scout", updatedAt: 1 },
+        }),
+        "utf8",
+      );
+      const { ctx, onAgentEvent } = createTestContext();
+      ctx.params.sessionKey = sessionKey;
+      ctx.params.agentId = "execution-context-scout";
+      ctx.params.config = {
+        session: { store: storePath },
+      } as never;
+
+      await handleToolExecutionStart(ctx, {
+        type: "tool_execution_start",
+        toolName: "grep",
+        toolCallId: "grep-symbol",
+        args: {
+          query: "buildWorkQueueExecutionReadModel",
+          path: "extensions/execution-platform/src/work-queue/execution-read-model.ts",
+          maxMatches: 5,
+        },
+      });
+      await handleToolExecutionEnd(ctx, {
+        type: "tool_execution_end",
+        toolName: "grep",
+        toolCallId: "grep-symbol",
+        isError: false,
+        result: {
+          details: {
+            status: "completed",
+            changedFilePaths: [
+              "extensions/execution-platform/src/work-queue/execution-read-model.ts",
+            ],
+          },
+        },
+      });
+
+      const store = loadSessionStore(storePath, { skipCache: true });
+      expect(store[sessionKey]?.workingContext?.activeEntries[0]).toMatchObject({
+        kind: "search_result",
+        source: "native_tool",
+        sourceToolCallId: "grep-symbol",
+        toolResultRef: "openclaw-tool-result://run-test/grep-symbol",
+        status: "completed",
+      });
+      expect(store[sessionKey]?.workingContext?.activeEntries[0]?.text).toContain(
+        "grepQuery=buildWorkQueueExecutionReadModel",
+      );
+      expect(store[sessionKey]?.workingContext?.activeEntries[0]?.text).toContain(
+        "not a file mutation or change_set",
+      );
+      expect(store[sessionKey]?.workingContext?.activeEntries).toHaveLength(1);
+      expect(onAgentEvent).toHaveBeenCalledWith({
+        stream: "node-agent",
+        data: expect.objectContaining({
+          eventType: "node_agent_tool_result",
+          toolName: "grep",
+          changedFilePaths: [],
+          searchWorkingContextPersisted: true,
+          searchWorkingContextEntryRef: expect.stringContaining(
             "openclaw-session-working-context://",
           ),
         }),
       });
-      expect(JSON.stringify(store[sessionKey]?.workingContext)).not.toContain("before");
-      expect(JSON.stringify(store[sessionKey]?.workingContext)).not.toContain("after");
+      expect(JSON.stringify(store[sessionKey]?.workingContext)).not.toContain(
+        '"kind":"change_set"',
+      );
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("emits execution-coding parent editor navigation without search working context", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-parent-search-context-"));
+    try {
+      const sessionKey = "agent:execution-coding:node:nrun_parent_search_context";
+      const storePath = path.join(dir, "sessions.json");
+      await fs.writeFile(
+        storePath,
+        JSON.stringify({
+          [sessionKey]: { sessionId: "sess-parent", updatedAt: 1 },
+        }),
+        "utf8",
+      );
+      const { ctx, onAgentEvent } = createTestContext();
+      ctx.params.sessionKey = sessionKey;
+      ctx.params.agentId = "execution-coding";
+      ctx.params.config = {
+        session: { store: storePath },
+      } as never;
+
+      await handleToolExecutionStart(ctx, {
+        type: "tool_execution_start",
+        toolName: "grep",
+        toolCallId: "parent-grep-symbol",
+        args: {
+          query: "buildWorkQueueExecutionReadModel",
+          path: "extensions/execution-platform/src/work-queue",
+          maxMatches: 5,
+        },
+      });
+      await handleToolExecutionEnd(ctx, {
+        type: "tool_execution_end",
+        toolName: "grep",
+        toolCallId: "parent-grep-symbol",
+        isError: false,
+        result: {
+          details: {
+            status: "completed",
+            changedFilePaths: [
+              "extensions/execution-platform/src/work-queue/execution-read-model.ts",
+            ],
+          },
+        },
+      });
+
+      const store = loadSessionStore(storePath, { skipCache: true });
+      expect(store[sessionKey]?.workingContext?.activeEntries ?? []).toHaveLength(0);
+      expect(onAgentEvent).toHaveBeenCalledWith({
+        stream: "node-agent",
+        data: expect.objectContaining({
+          eventType: "node_agent_tool_result",
+          toolName: "grep",
+          changedFilePaths: [],
+        }),
+      });
+      const emitted = JSON.stringify(onAgentEvent.mock.calls);
+      expect(emitted).not.toContain("openclaw-session-working-context://");
+      expect(emitted).not.toContain("searchWorkingContextPersisted");
+      expect(emitted).not.toContain("searchWorkingContextEntryRef");
+      const storedWorkingContextText = JSON.stringify(store[sessionKey]?.workingContext ?? null);
+      expect(storedWorkingContextText).not.toContain('"kind":"change_set"');
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
@@ -528,7 +745,7 @@ describe("handleToolExecutionEnd node-agent tool result trace", () => {
               type: "text",
               text: [
                 "[Exec output truncated for model context: showing last 12000 of 250000 characters.]",
-                "Full output saved to managedOutputRef=openclaw-managed-output://agent%3Aexecution-validation-scout%3Asubagent%3Anrun_managed_output/mout_test.",
+                "Full output saved to: /repo/.openclaw/runtime/managed-tool-output/2026-06-10/mout_test.txt",
                 "tail preview only",
               ].join("\n"),
             },
@@ -540,6 +757,8 @@ describe("handleToolExecutionEnd node-agent tool result trace", () => {
             totalOutputChars: 250000,
             managedOutputRef:
               "openclaw-managed-output://agent%3Aexecution-validation-scout%3Asubagent%3Anrun_managed_output/mout_test",
+            managedOutputPath:
+              "/repo/.openclaw/runtime/managed-tool-output/2026-06-10/mout_test.txt",
             managedOutputBytes: 250000,
             managedOutputHash: "a".repeat(64),
           },
@@ -555,8 +774,12 @@ describe("handleToolExecutionEnd node-agent tool result trace", () => {
         status: "completed",
       });
       const entryText = store[sessionKey]?.workingContext?.activeEntries[0]?.text ?? "";
-      expect(entryText).toContain("managedOutputRef=openclaw-managed-output://");
+      expect(entryText).toContain(
+        "Full output saved to: /repo/.openclaw/runtime/managed-tool-output/2026-06-10/mout_test.txt",
+      );
+      expect(entryText).toContain("Use Grep to search the full content or Read with offset/limit");
       expect(entryText).toContain("managedOutputBytes=250000");
+      expect(entryText).not.toContain("managedOutputRef=");
       expect(entryText).not.toContain("tail preview only");
       expect(onAgentEvent).toHaveBeenCalledWith({
         stream: "node-agent",
@@ -565,6 +788,7 @@ describe("handleToolExecutionEnd node-agent tool result trace", () => {
           toolName: "exec",
           managedOutputRef:
             "openclaw-managed-output://agent%3Aexecution-validation-scout%3Asubagent%3Anrun_managed_output/mout_test",
+          managedOutputPath: "/repo/.openclaw/runtime/managed-tool-output/2026-06-10/mout_test.txt",
           managedOutputWorkingContextPersisted: true,
           managedOutputWorkingContextEntryRef: expect.stringContaining(
             "openclaw-session-working-context://",

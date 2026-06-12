@@ -9,6 +9,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { ThinkLevel } from "../../auto-reply/thinking.js";
 import { resolveChannelCapabilities } from "../../config/channel-capabilities.js";
+import { resolveStateDir } from "../../config/paths.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import {
   captureCompactionCheckpointSnapshot,
@@ -132,6 +133,7 @@ import {
   createSystemPromptOverride,
 } from "./system-prompt.js";
 import { collectAllowedToolNames } from "./tool-name-allowlist.js";
+import { projectMessagesForCompactionInput } from "./tool-result-truncation.js";
 import {
   logProviderToolSchemaDiagnostics,
   normalizeProviderToolSchemas,
@@ -753,6 +755,7 @@ export async function compactEmbeddedPiSessionDirect(
       isSubagentSessionKey(params.sessionKey) || isCronSessionKey(params.sessionKey)
         ? "minimal"
         : "full";
+    const promptProfile = "compaction" as const;
     const docsPath = await resolveOpenClawDocsPath({
       workspaceDir: effectiveWorkspace,
       argv1: process.argv[1],
@@ -772,6 +775,7 @@ export async function compactEmbeddedPiSessionDirect(
         provider,
         modelId,
         promptMode,
+        promptProfile,
         runtimeChannel,
         runtimeCapabilities,
         agentId: sessionAgentId,
@@ -801,6 +805,7 @@ export async function compactEmbeddedPiSessionDirect(
           docsPath: docsPath ?? undefined,
           ttsHint,
           promptMode,
+          promptProfile,
           acpEnabled: params.config?.acp?.enabled !== false,
           runtimeInfo,
           reactionGuidance,
@@ -827,6 +832,7 @@ export async function compactEmbeddedPiSessionDirect(
             provider,
             modelId,
             promptMode,
+            promptProfile,
             runtimeChannel,
             runtimeCapabilities,
             agentId: sessionAgentId,
@@ -865,6 +871,7 @@ export async function compactEmbeddedPiSessionDirect(
         contextWindowTokens: ctxInfo.tokens,
         allowSyntheticToolResults: transcriptPolicy.allowSyntheticToolResults,
         allowedToolNames,
+        stateRoot: resolveStateDir(process.env),
       });
       checkpointSnapshot = captureCompactionCheckpointSnapshot({
         sessionManager,
@@ -995,9 +1002,23 @@ export async function compactEmbeddedPiSessionDirect(
             sessionId: params.sessionId,
             policy: transcriptPolicy,
           });
+          const compactionProjection = projectMessagesForCompactionInput({
+            messages: validated,
+            stateRoot: resolveStateDir(process.env),
+            sessionKey: params.sessionKey ?? params.sessionId,
+          });
+          if (compactionProjection.projectedCount > 0) {
+            log.info(
+              `[compaction] projected ${compactionProjection.projectedCount} replay payload(s) ` +
+                `before compaction input ` +
+                `(toolResults=${compactionProjection.toolResultProjectedCount} ` +
+                `mutationToolCalls=${compactionProjection.mutationToolCallProjectedCount}) ` +
+                `sessionKey=${params.sessionKey ?? params.sessionId}`,
+            );
+          }
           // Apply validated transcript to the live session even when no history limit is configured,
           // so compaction and hook metrics are based on the same message set.
-          session.agent.state.messages = validated;
+          session.agent.state.messages = compactionProjection.messages;
           // "Original" compaction metrics should describe the validated transcript that enters
           // limiting/compaction, not the raw on-disk session snapshot.
           const originalMessages = session.messages.slice();

@@ -1,9 +1,15 @@
 import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
+import path from "node:path";
 import type { ThinkLevel } from "../../auto-reply/thinking.js";
 import { resolveStateDir } from "../../config/paths.js";
-import { ensureContextEnginesInitialized } from "../../context-engine/init.js";
-import { resolveContextEngine } from "../../context-engine/registry.js";
+import {
+  executionNodeContinuationStrategy,
+  pruneToolOutputsForContextPressure,
+  usageSnapshotFromNormalizedUsage,
+  type ContextBreakdownSnapshot,
+} from "../../context-engine/pressure/index.js";
+import { resolveContextRuntime } from "../../context-engine/runtime.js";
 import { emitAgentPlanEvent } from "../../infra/agent-events.js";
 import { sleepWithAbort } from "../../infra/backoff.js";
 import { formatErrorMessage } from "../../infra/errors.js";
@@ -117,6 +123,7 @@ import { buildEmbeddedRunPayloads } from "./run/payloads.js";
 import { handleRetryLimitExhaustion } from "./run/retry-limit.js";
 import { resolveEffectiveRuntimeModel, resolveHookModelSelection } from "./run/setup.js";
 import { mergeAttemptToolMediaPayloads } from "./run/tool-media-payloads.js";
+import { estimateProviderVisibleContextBreakdown } from "./tool-result-char-estimator.js";
 import {
   resolveLiveToolResultMaxChars,
   sessionLikelyHasOversizedToolResults,
@@ -133,7 +140,94 @@ import { createUsageAccumulator, mergeUsageIntoAccumulator } from "./usage-accum
 
 type ApiKeyInfo = ResolvedProviderAuth;
 
+const NODE_WORKER_COMPACTION_CONTINUATION_INSTRUCTION =
+  "Continue the current implementation. If target files, patch shape, and validation signal are known, edit or validate next. Do not restart source discovery unless a named source window, failed edit, or validation error requires it.";
+
 const MAX_SAME_MODEL_IDLE_TIMEOUT_RETRIES = 1;
+const COMPACTION_REPAIR_WINDOW_CONTEXT_LINES = 40;
+
+function resolveAutoCompactionCustomInstructions(params: {
+  existing?: string | null;
+  sessionAgentId?: string | null;
+  sessionKey?: string | null;
+}): string | undefined {
+  const existing = params.existing?.trim();
+  const agentId = params.sessionAgentId?.trim();
+  const sessionKey = params.sessionKey?.trim();
+  const shouldAppend =
+    agentId === "execution-coding" &&
+    typeof sessionKey === "string" &&
+    sessionKey.includes(":node:");
+  if (!shouldAppend) {
+    return existing || undefined;
+  }
+  if (existing?.includes(NODE_WORKER_COMPACTION_CONTINUATION_INSTRUCTION)) {
+    return existing;
+  }
+  return [existing, NODE_WORKER_COMPACTION_CONTINUATION_INSTRUCTION]
+    .filter((line): line is string => typeof line === "string" && line.length > 0)
+    .join("\n\n");
+}
+
+function toContextPressureBreakdown(
+  breakdown: ReturnType<typeof estimateProviderVisibleContextBreakdown>,
+): ContextBreakdownSnapshot {
+  return {
+    sourceOrLocatorChars: breakdown.likelySourceOrLocatorChars,
+    nonSourceVisibleChars: breakdown.nonSourceVisibleChars,
+    strippedDetailsChars: breakdown.strippedToolDetailsChars,
+  };
+}
+
+function isPathInside(parent: string, candidate: string): boolean {
+  const relative = path.relative(parent, candidate);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+async function readCompactionRepairWindow(params: {
+  workspaceDir: string;
+  filePath: string;
+  line: number | null;
+}): Promise<string | undefined> {
+  const workspaceDir = path.resolve(params.workspaceDir);
+  const rawFilePath = params.filePath.trim();
+  if (!rawFilePath) {
+    return undefined;
+  }
+  const absolutePath = path.resolve(
+    path.isAbsolute(rawFilePath) ? rawFilePath : path.join(workspaceDir, rawFilePath),
+  );
+  if (!isPathInside(workspaceDir, absolutePath)) {
+    return undefined;
+  }
+  let content: string;
+  try {
+    content = await fs.readFile(absolutePath, "utf8");
+  } catch {
+    return undefined;
+  }
+  const lines = content.split(/\r?\n/u);
+  if (lines.length === 0) {
+    return undefined;
+  }
+  const targetLine =
+    params.line && params.line >= 1
+      ? Math.min(Math.floor(params.line), lines.length)
+      : Math.min(1, lines.length);
+  const startLine = Math.max(1, targetLine - COMPACTION_REPAIR_WINDOW_CONTEXT_LINES);
+  const endLine = Math.min(lines.length, targetLine + COMPACTION_REPAIR_WINDOW_CONTEXT_LINES);
+  const displayPath = path.relative(workspaceDir, absolutePath).replace(/\\/gu, "/");
+  const numbered = lines
+    .slice(startLine - 1, endLine)
+    .map((line, index) => `${startLine + index}: ${line}`);
+  return [
+    `<path>${displayPath}</path>`,
+    "<type>file</type>",
+    "<content>",
+    ...numbered,
+    "</content>",
+  ].join("\n");
+}
 
 function logEmbeddedRunStartTiming(
   label: string,
@@ -522,6 +616,11 @@ async function runEmbeddedPiAgentWithExternalCliAuthSyncSuppressed(
         config: params.config,
         agentId: params.agentId,
       });
+      const autoCompactionCustomInstructions = resolveAutoCompactionCustomInstructions({
+        existing: params.customInstructions,
+        sessionAgentId,
+        sessionKey: params.sessionKey,
+      });
       const configuredExecutionContract =
         resolveAgentExecutionContract(params.config, sessionAgentId) ?? "default";
       const strictAgenticActive = isStrictAgenticExecutionContractActive({
@@ -641,12 +740,25 @@ async function runEmbeddedPiAgentWithExternalCliAuthSyncSuppressed(
           throw err;
         }
       };
-      // Resolve the context engine once and reuse across retries to avoid
+      // Resolve the context runtime once and reuse across retries to avoid
       // repeated initialization/connection overhead per attempt.
-      ensureContextEnginesInitialized();
-      logEmbeddedRunStartTiming("context_engines_initialized", started);
-      const contextEngine = await resolveContextEngine(params.config);
-      logEmbeddedRunStartTiming("context_engine_resolved", started, {
+      const contextRuntime = await resolveContextRuntime(params.config);
+      const contextEngine = contextRuntime.engine;
+      const contextPressure = contextRuntime.pressure;
+      const emitRunContextPressureEvent = (event: Record<string, unknown>) => {
+        if (!log.isEnabled("debug")) {
+          return;
+        }
+        log.debug(
+          `[context-pressure-event] ${JSON.stringify({
+            ...event,
+            sessionKey: params.sessionKey ?? params.sessionId,
+            runId: params.runId,
+            agentId: sessionAgentId,
+          })}`,
+        );
+      };
+      logEmbeddedRunStartTiming("context_runtime_resolved", started, {
         ownsCompaction: contextEngine.info.ownsCompaction === true,
       });
       try {
@@ -800,6 +912,7 @@ async function runEmbeddedPiAgentWithExternalCliAuthSyncSuppressed(
             runtimePluginIds: params.runtimePluginIds,
             modelsJsonPolicy: params.modelsJsonPolicy,
             contextEngine,
+            contextPressure,
             contextTokenBudget: ctxInfo.tokens,
             skillsSnapshot: params.skillsSnapshot,
             prompt,
@@ -893,8 +1006,9 @@ async function runEmbeddedPiAgentWithExternalCliAuthSyncSuppressed(
             aborted,
             externalAbort,
             promptError,
-            promptErrorSource,
-            preflightRecovery,
+            promptErrorOrigin,
+            contextPressureOutcome,
+            providerContextAdmissionBlock,
             timedOut,
             idleTimedOut,
             timedOutDuringCompaction,
@@ -957,17 +1071,17 @@ async function runEmbeddedPiAgentWithExternalCliAuthSyncSuppressed(
             !attempt.lastToolError &&
             attempt.toolMetas.length === 0 &&
             attempt.assistantTexts.length === 0;
-          if (preflightRecovery?.handled) {
+          if (contextPressureOutcome?.action === "prune_retry") {
             log.info(
-              `[context-overflow-precheck] early recovery route=${preflightRecovery.route} ` +
+              `[context-overflow-precheck] early pressure action=${contextPressureOutcome.action} ` +
                 `completed for ${provider}/${modelId}; retrying prompt`,
             );
             continue;
           }
-          if (preflightRecovery?.route === "provider_context_admission_blocked") {
+          if (providerContextAdmissionBlock) {
             const errorText = promptError
               ? formatErrorMessage(promptError)
-              : preflightRecovery.reason;
+              : providerContextAdmissionBlock.reason;
             const providerAdmissionErrorText =
               errorText ?? "Provider context admission failed before model invocation.";
             attempt.setTerminalLifecycleMeta?.({
@@ -1002,7 +1116,7 @@ async function runEmbeddedPiAgentWithExternalCliAuthSyncSuppressed(
                 error: {
                   kind: "provider_context_admission",
                   message: providerAdmissionErrorText,
-                  reasonCodes: preflightRecovery.reasonCodes,
+                  reasonCodes: providerContextAdmissionBlock.reasonCodes,
                 },
               },
             };
@@ -1052,78 +1166,108 @@ async function runEmbeddedPiAgentWithExternalCliAuthSyncSuppressed(
                 `[timeout-compaction] LLM timed out with high prompt token usage (${Math.round(tokenUsedRatio * 100)}%); ` +
                   `attempting compaction before retry (attempt ${timeoutCompactionAttempts}/${MAX_TIMEOUT_COMPACTION_ATTEMPTS}) diagId=${timeoutDiagId}`,
               );
-              let timeoutCompactResult: Awaited<ReturnType<typeof contextEngine.compact>>;
-              await runOwnsCompactionBeforeHook("timeout recovery");
-              try {
-                const timeoutCompactionRuntimeContext = {
-                  ...buildEmbeddedCompactionRuntimeContext({
-                    sessionKey: params.sessionKey,
-                    messageChannel: params.messageChannel,
-                    messageProvider: params.messageProvider,
-                    agentAccountId: params.agentAccountId,
-                    currentChannelId: params.currentChannelId,
-                    currentThreadTs: params.currentThreadTs,
-                    currentMessageId: params.currentMessageId,
-                    authProfileId: lastProfileId,
+              const timeoutCompactionRuntimeContext = {
+                ...buildEmbeddedCompactionRuntimeContext({
+                  sessionKey: params.sessionKey,
+                  messageChannel: params.messageChannel,
+                  messageProvider: params.messageProvider,
+                  agentAccountId: params.agentAccountId,
+                  currentChannelId: params.currentChannelId,
+                  currentThreadTs: params.currentThreadTs,
+                  currentMessageId: params.currentMessageId,
+                  authProfileId: lastProfileId,
+                  workspaceDir: resolvedWorkspace,
+                  agentDir,
+                  config: params.config,
+                  skillsSnapshot: params.skillsSnapshot,
+                  senderIsOwner: params.senderIsOwner,
+                  senderId: params.senderId,
+                  provider,
+                  modelId,
+                  thinkLevel,
+                  reasoningLevel: params.reasoningLevel,
+                  bashElevated: params.bashElevated,
+                  extraSystemPrompt: params.extraSystemPrompt,
+                  ownerNumbers: params.ownerNumbers,
+                }),
+                ...(attempt.promptCache ? { promptCache: attempt.promptCache } : {}),
+                runId: params.runId,
+                trigger: "timeout_recovery",
+                diagId: timeoutDiagId,
+                attempt: timeoutCompactionAttempts,
+                maxAttempts: MAX_TIMEOUT_COMPACTION_ATTEMPTS,
+              };
+              const timeoutRecovery = await contextPressure.recover({
+                trigger: "timeout_high_usage",
+                sessionId: params.sessionId,
+                sessionKey: params.sessionKey,
+                sessionFile: params.sessionFile,
+                provider,
+                modelId,
+                contextEngine,
+                contextWindowTokens: ctxInfo.tokens,
+                usage:
+                  lastTurnPromptTokens !== undefined
+                    ? {
+                        source: "provider",
+                        promptTokens: lastTurnPromptTokens,
+                        totalTokens: lastTurnTotal,
+                      }
+                    : undefined,
+                runtimeContext: timeoutCompactionRuntimeContext,
+                continuationStrategy: executionNodeContinuationStrategy,
+                existingInstructions: autoCompactionCustomInstructions,
+                nodeTrace: attempt.nodeAgentSessionTrace,
+                readSourceWindow: ({ path, line }) =>
+                  readCompactionRepairWindow({
                     workspaceDir: resolvedWorkspace,
-                    agentDir,
-                    config: params.config,
-                    skillsSnapshot: params.skillsSnapshot,
-                    senderIsOwner: params.senderIsOwner,
-                    senderId: params.senderId,
+                    filePath: path,
+                    line: line ?? null,
+                  }),
+                prune: () =>
+                  pruneToolOutputsForContextPressure({
+                    reason: "timeout_high_usage",
                     provider,
                     modelId,
-                    thinkLevel,
-                    reasoningLevel: params.reasoningLevel,
-                    bashElevated: params.bashElevated,
-                    extraSystemPrompt: params.extraSystemPrompt,
-                    ownerNumbers: params.ownerNumbers,
-                  }),
-                  ...(attempt.promptCache ? { promptCache: attempt.promptCache } : {}),
-                  runId: params.runId,
-                  trigger: "timeout_recovery",
-                  diagId: timeoutDiagId,
-                  attempt: timeoutCompactionAttempts,
-                  maxAttempts: MAX_TIMEOUT_COMPACTION_ATTEMPTS,
-                };
-                timeoutCompactResult = await contextEngine.compact({
-                  sessionId: params.sessionId,
-                  sessionKey: params.sessionKey,
-                  sessionFile: params.sessionFile,
-                  tokenBudget: ctxInfo.tokens,
-                  force: true,
-                  compactionTarget: "budget",
-                  runtimeContext: timeoutCompactionRuntimeContext,
-                });
-              } catch (compactErr) {
-                log.warn(
-                  `[timeout-compaction] contextEngine.compact() threw during timeout recovery for ${provider}/${modelId}: ${String(compactErr)}`,
-                );
-                timeoutCompactResult = {
-                  ok: false,
-                  compacted: false,
-                  reason: String(compactErr),
-                };
-              }
-              await runOwnsCompactionAfterHook("timeout recovery", timeoutCompactResult);
-              if (timeoutCompactResult.compacted) {
-                autoCompactionCount += 1;
-                if (contextEngine.info.ownsCompaction === true) {
-                  await runPostCompactionSideEffects({
-                    config: params.config,
-                    sessionKey: params.sessionKey,
                     sessionFile: params.sessionFile,
-                  });
-                }
+                    sessionId: params.sessionId,
+                    sessionKey: params.sessionKey,
+                    contextWindowTokens: ctxInfo.tokens,
+                    config: params.config,
+                    agentId: sessionAgentId,
+                    log,
+                  }),
+                beforeSummary: () => runOwnsCompactionBeforeHook("timeout recovery"),
+                afterSummary: (result) => runOwnsCompactionAfterHook("timeout recovery", result),
+                emit: emitRunContextPressureEvent,
+                onSummaryCompacted: async () => {
+                  autoCompactionCount += 1;
+                  if (contextEngine.info.ownsCompaction === true) {
+                    await runPostCompactionSideEffects({
+                      config: params.config,
+                      sessionKey: params.sessionKey,
+                      sessionFile: params.sessionFile,
+                    });
+                  }
+                },
+              });
+              if (timeoutRecovery.action === "prune_retry") {
+                log.info(
+                  `[timeout-compaction] deterministic prune succeeded before LLM compaction; ` +
+                    `retrying prompt diagId=${timeoutRecovery.decision.diagId} ` +
+                    `truncatedCount=${timeoutRecovery.prune.truncatedCount ?? 0}`,
+                );
+                continue;
+              }
+              if (timeoutRecovery.action === "summary_retry") {
                 log.info(
                   `[timeout-compaction] compaction succeeded for ${provider}/${modelId}; retrying prompt`,
                 );
                 continue;
-              } else {
-                log.warn(
-                  `[timeout-compaction] compaction did not reduce context for ${provider}/${modelId}; falling through to normal handling`,
-                );
               }
+              log.warn(
+                `[timeout-compaction] compaction did not reduce context for ${provider}/${modelId}; falling through to normal handling`,
+              );
             }
           }
 
@@ -1194,56 +1338,111 @@ async function runEmbeddedPiAgentWithExternalCliAuthSyncSuppressed(
               log.warn(
                 `context overflow detected (attempt ${overflowCompactionAttempts}/${MAX_OVERFLOW_COMPACTION_ATTEMPTS}); attempting auto-compaction for ${provider}/${modelId}`,
               );
-              let compactResult: Awaited<ReturnType<typeof contextEngine.compact>>;
-              await runOwnsCompactionBeforeHook("overflow recovery");
-              try {
-                const overflowCompactionRuntimeContext = {
-                  ...buildEmbeddedCompactionRuntimeContext({
-                    sessionKey: params.sessionKey,
-                    messageChannel: params.messageChannel,
-                    messageProvider: params.messageProvider,
-                    agentAccountId: params.agentAccountId,
-                    currentChannelId: params.currentChannelId,
-                    currentThreadTs: params.currentThreadTs,
-                    currentMessageId: params.currentMessageId,
-                    authProfileId: lastProfileId,
+              const overflowCompactionRuntimeContext = {
+                ...buildEmbeddedCompactionRuntimeContext({
+                  sessionKey: params.sessionKey,
+                  messageChannel: params.messageChannel,
+                  messageProvider: params.messageProvider,
+                  agentAccountId: params.agentAccountId,
+                  currentChannelId: params.currentChannelId,
+                  currentThreadTs: params.currentThreadTs,
+                  currentMessageId: params.currentMessageId,
+                  authProfileId: lastProfileId,
+                  workspaceDir: resolvedWorkspace,
+                  agentDir,
+                  config: params.config,
+                  skillsSnapshot: params.skillsSnapshot,
+                  senderIsOwner: params.senderIsOwner,
+                  senderId: params.senderId,
+                  provider,
+                  modelId,
+                  thinkLevel,
+                  reasoningLevel: params.reasoningLevel,
+                  bashElevated: params.bashElevated,
+                  extraSystemPrompt: params.extraSystemPrompt,
+                  ownerNumbers: params.ownerNumbers,
+                }),
+                ...(attempt.promptCache ? { promptCache: attempt.promptCache } : {}),
+                runId: params.runId,
+                trigger: "overflow",
+                ...(observedOverflowTokens !== undefined
+                  ? { currentTokenCount: observedOverflowTokens }
+                  : {}),
+                diagId: overflowDiagId,
+                attempt: overflowCompactionAttempts,
+                maxAttempts: MAX_OVERFLOW_COMPACTION_ATTEMPTS,
+              };
+              const overflowRecovery = await contextPressure.recover({
+                trigger: "provider_overflow",
+                sessionId: params.sessionId,
+                sessionKey: params.sessionKey,
+                sessionFile: params.sessionFile,
+                provider,
+                modelId,
+                contextEngine,
+                contextWindowTokens: ctxInfo.tokens,
+                usage:
+                  observedOverflowTokens !== undefined
+                    ? { source: "estimate", promptTokens: observedOverflowTokens }
+                    : undefined,
+                currentTokenCount: observedOverflowTokens,
+                runtimeContext: overflowCompactionRuntimeContext,
+                continuationStrategy: executionNodeContinuationStrategy,
+                existingInstructions: autoCompactionCustomInstructions,
+                nodeTrace: attempt.nodeAgentSessionTrace,
+                readSourceWindow: ({ path, line }) =>
+                  readCompactionRepairWindow({
                     workspaceDir: resolvedWorkspace,
-                    agentDir,
-                    config: params.config,
-                    skillsSnapshot: params.skillsSnapshot,
-                    senderIsOwner: params.senderIsOwner,
-                    senderId: params.senderId,
+                    filePath: path,
+                    line: line ?? null,
+                  }),
+                prune: () =>
+                  pruneToolOutputsForContextPressure({
+                    reason: "provider_overflow",
                     provider,
                     modelId,
-                    thinkLevel,
-                    reasoningLevel: params.reasoningLevel,
-                    bashElevated: params.bashElevated,
-                    extraSystemPrompt: params.extraSystemPrompt,
-                    ownerNumbers: params.ownerNumbers,
+                    sessionFile: params.sessionFile,
+                    sessionId: params.sessionId,
+                    sessionKey: params.sessionKey,
+                    contextWindowTokens: ctxInfo.tokens,
+                    config: params.config,
+                    agentId: sessionAgentId,
+                    log,
                   }),
-                  ...(attempt.promptCache ? { promptCache: attempt.promptCache } : {}),
-                  runId: params.runId,
-                  trigger: "overflow",
-                  ...(observedOverflowTokens !== undefined
-                    ? { currentTokenCount: observedOverflowTokens }
-                    : {}),
-                  diagId: overflowDiagId,
-                  attempt: overflowCompactionAttempts,
-                  maxAttempts: MAX_OVERFLOW_COMPACTION_ATTEMPTS,
-                };
-                compactResult = await contextEngine.compact({
-                  sessionId: params.sessionId,
-                  sessionKey: params.sessionKey,
-                  sessionFile: params.sessionFile,
-                  tokenBudget: ctxInfo.tokens,
-                  ...(observedOverflowTokens !== undefined
-                    ? { currentTokenCount: observedOverflowTokens }
-                    : {}),
-                  force: true,
-                  compactionTarget: "budget",
-                  runtimeContext: overflowCompactionRuntimeContext,
-                });
-                if (compactResult.ok && compactResult.compacted) {
+                beforeSummary: () => runOwnsCompactionBeforeHook("overflow recovery"),
+                afterSummary: (result) => runOwnsCompactionAfterHook("overflow recovery", result),
+                emit: emitRunContextPressureEvent,
+                onSummaryCompacted: async () => {
+                  if (
+                    contextPressureOutcome?.decision.trigger === "preflight_emergency_estimate" &&
+                    contextPressureOutcome.action === "summary_retry" &&
+                    (contextPressureOutcome.decision.prune?.reducibleChars ?? 0) > 0
+                  ) {
+                    const truncResult = await truncateOversizedToolResultsInSession({
+                      sessionFile: params.sessionFile,
+                      contextWindowTokens: ctxInfo.tokens,
+                      maxCharsOverride: resolveLiveToolResultMaxChars({
+                        contextWindowTokens: ctxInfo.tokens,
+                        cfg: params.config,
+                        agentId: sessionAgentId,
+                      }),
+                      sessionId: params.sessionId,
+                      sessionKey: params.sessionKey,
+                      stateRoot: resolveStateDir(process.env),
+                    });
+                    if (truncResult.truncated) {
+                      log.info(
+                        `[context-overflow-precheck] post-compaction tool-result truncation succeeded for ` +
+                          `${provider}/${modelId}; truncated ${truncResult.truncatedCount} tool result(s)`,
+                      );
+                    } else {
+                      log.warn(
+                        `[context-overflow-precheck] post-compaction tool-result truncation did not help for ` +
+                          `${provider}/${modelId}: ${truncResult.reason ?? "unknown"}`,
+                      );
+                    }
+                  }
+                  autoCompactionCount += 1;
                   await runContextEngineMaintenance({
                     contextEngine,
                     sessionId: params.sessionId,
@@ -1252,50 +1451,26 @@ async function runEmbeddedPiAgentWithExternalCliAuthSyncSuppressed(
                     reason: "compaction",
                     runtimeContext: overflowCompactionRuntimeContext,
                   });
-                }
-              } catch (compactErr) {
-                log.warn(
-                  `contextEngine.compact() threw during overflow recovery for ${provider}/${modelId}: ${String(compactErr)}`,
+                },
+              });
+              if (overflowRecovery.action === "prune_retry") {
+                log.info(
+                  `[context-overflow-recovery] deterministic prune succeeded before LLM compaction; ` +
+                    `retrying prompt diagId=${overflowRecovery.decision.diagId} ` +
+                    `truncatedCount=${overflowRecovery.prune.truncatedCount ?? 0}`,
                 );
-                compactResult = {
-                  ok: false,
-                  compacted: false,
-                  reason: String(compactErr),
-                };
+                continue;
               }
-              await runOwnsCompactionAfterHook("overflow recovery", compactResult);
-              if (compactResult.compacted) {
-                if (preflightRecovery?.route === "compact_then_truncate") {
-                  const truncResult = await truncateOversizedToolResultsInSession({
-                    sessionFile: params.sessionFile,
-                    contextWindowTokens: ctxInfo.tokens,
-                    maxCharsOverride: resolveLiveToolResultMaxChars({
-                      contextWindowTokens: ctxInfo.tokens,
-                      cfg: params.config,
-                      agentId: sessionAgentId,
-                    }),
-                    sessionId: params.sessionId,
-                    sessionKey: params.sessionKey,
-                    stateRoot: resolveStateDir(process.env),
-                  });
-                  if (truncResult.truncated) {
-                    log.info(
-                      `[context-overflow-precheck] post-compaction tool-result truncation succeeded for ` +
-                        `${provider}/${modelId}; truncated ${truncResult.truncatedCount} tool result(s)`,
-                    );
-                  } else {
-                    log.warn(
-                      `[context-overflow-precheck] post-compaction tool-result truncation did not help for ` +
-                        `${provider}/${modelId}: ${truncResult.reason ?? "unknown"}`,
-                    );
-                  }
-                }
-                autoCompactionCount += 1;
+              if (overflowRecovery.action === "summary_retry") {
                 log.info(`auto-compaction succeeded for ${provider}/${modelId}; retrying prompt`);
                 continue;
               }
               log.warn(
-                `auto-compaction failed for ${provider}/${modelId}: ${compactResult.reason ?? "nothing to compact"}`,
+                `auto-compaction failed for ${provider}/${modelId}: ${
+                  overflowRecovery.action === "block"
+                    ? overflowRecovery.reason
+                    : "nothing to compact"
+                }`,
               );
             }
             if (!toolResultTruncationAttempted) {
@@ -1386,11 +1561,11 @@ async function runEmbeddedPiAgentWithExternalCliAuthSyncSuppressed(
             };
           }
 
-          if (promptError && !aborted && promptErrorSource !== "compaction") {
+          if (promptError && !aborted && promptErrorOrigin !== "compaction") {
             // Normalize wrapped errors (e.g. abort-wrapped RESOURCE_EXHAUSTED) into
             // FailoverError so rate-limit classification works even for nested shapes.
             //
-            // promptErrorSource === "compaction" means the model call already completed and the
+            // promptErrorOrigin === "compaction" means the model call already completed and the
             // abort happened only while waiting for compaction/retry cleanup. Retrying from here
             // would replay that completed tool turn as a fresh prompt attempt.
             const normalizedPromptFailover = coerceToFailoverError(promptError, {
@@ -1773,6 +1948,106 @@ async function runEmbeddedPiAgentWithExternalCliAuthSyncSuppressed(
             });
             throw assistantFailoverOutcome.error;
           }
+          const actualUsage = usageSnapshotFromNormalizedUsage(lastRunPromptUsage);
+          if (actualUsage && !promptError && !aborted && !timedOut) {
+            const actualUsageContextBreakdown = estimateProviderVisibleContextBreakdown(
+              attempt.messagesSnapshot,
+            );
+            const actualUsageRuntimeContext = {
+              ...buildEmbeddedCompactionRuntimeContext({
+                sessionKey: params.sessionKey,
+                messageChannel: params.messageChannel,
+                messageProvider: params.messageProvider,
+                agentAccountId: params.agentAccountId,
+                currentChannelId: params.currentChannelId,
+                currentThreadTs: params.currentThreadTs,
+                currentMessageId: params.currentMessageId,
+                authProfileId: lastProfileId,
+                workspaceDir: resolvedWorkspace,
+                agentDir,
+                config: params.config,
+                skillsSnapshot: params.skillsSnapshot,
+                senderIsOwner: params.senderIsOwner,
+                senderId: params.senderId,
+                provider,
+                modelId,
+                thinkLevel,
+                reasoningLevel: params.reasoningLevel,
+                bashElevated: params.bashElevated,
+                extraSystemPrompt: params.extraSystemPrompt,
+                ownerNumbers: params.ownerNumbers,
+              }),
+              ...(attempt.promptCache ? { promptCache: attempt.promptCache } : {}),
+              runId: params.runId,
+              trigger: "actual_usage",
+              currentTokenCount: actualUsage.promptTokens,
+            };
+            const actualUsageOutcome = await contextPressure.afterTurn({
+              sessionId: params.sessionId,
+              sessionKey: params.sessionKey,
+              sessionFile: params.sessionFile,
+              provider,
+              modelId,
+              contextEngine,
+              contextWindowTokens: ctxInfo.tokens,
+              usage: actualUsage,
+              messages: attempt.messagesSnapshot,
+              contextBreakdown: toContextPressureBreakdown(actualUsageContextBreakdown),
+              runtimeContext: actualUsageRuntimeContext,
+              continuationStrategy: executionNodeContinuationStrategy,
+              existingInstructions: autoCompactionCustomInstructions,
+              nodeTrace: attempt.nodeAgentSessionTrace,
+              readSourceWindow: ({ path, line }) =>
+                readCompactionRepairWindow({
+                  workspaceDir: resolvedWorkspace,
+                  filePath: path,
+                  line: line ?? null,
+                }),
+              prune: () =>
+                pruneToolOutputsForContextPressure({
+                  reason: "actual_usage",
+                  provider,
+                  modelId,
+                  sessionFile: params.sessionFile,
+                  sessionId: params.sessionId,
+                  sessionKey: params.sessionKey,
+                  contextWindowTokens: ctxInfo.tokens,
+                  config: params.config,
+                  agentId: sessionAgentId,
+                  log,
+                }),
+              beforeSummary: () => runOwnsCompactionBeforeHook("actual usage"),
+              afterSummary: (result) => runOwnsCompactionAfterHook("actual usage", result),
+              emit: emitRunContextPressureEvent,
+              onSummaryCompacted: async (result) => {
+                autoCompactionCount += 1;
+                await runContextEngineMaintenance({
+                  contextEngine,
+                  sessionId: params.sessionId,
+                  sessionKey: params.sessionKey,
+                  sessionFile: params.sessionFile,
+                  reason: "compaction",
+                  runtimeContext: actualUsageRuntimeContext,
+                });
+                log.info(
+                  `[context-pressure] actual_usage summary completed ` +
+                    `tokensAfter=${result.result?.tokensAfter ?? "unknown"}`,
+                );
+              },
+            });
+            if (actualUsageOutcome.action === "prune_retry") {
+              log.info(
+                `[context-pressure] deterministic prune handled actual_usage pressure ` +
+                  `diagId=${actualUsageOutcome.decision.diagId} ` +
+                  `truncatedCount=${actualUsageOutcome.prune.truncatedCount ?? 0}`,
+              );
+            } else if (actualUsageOutcome.action === "block") {
+              log.warn(
+                `[context-pressure] actual_usage compaction skipped or failed ` +
+                  `diagId=${actualUsageOutcome.decision.diagId} reason=${actualUsageOutcome.reason}`,
+              );
+            }
+          }
           const usageMeta = buildUsageAgentMetaFields({
             usageAccumulator,
             lastAssistantUsage: sessionLastAssistant?.usage as UsageLike | undefined,
@@ -1854,6 +2129,7 @@ async function runEmbeddedPiAgentWithExternalCliAuthSyncSuppressed(
                 finalPromptText: attempt.finalPromptText,
                 finalAssistantVisibleText,
                 finalAssistantRawText,
+                progressTimeoutKind: attempt.progressTimeoutKind,
                 replayInvalid,
                 livenessState,
               },
@@ -2190,6 +2466,7 @@ async function runEmbeddedPiAgentWithExternalCliAuthSyncSuppressed(
               finalPromptText: attempt.finalPromptText,
               finalAssistantVisibleText,
               finalAssistantRawText,
+              progressTimeoutKind: attempt.progressTimeoutKind,
               replayInvalid,
               livenessState,
               // Handle client tool calls (OpenResponses hosted tools)

@@ -69,6 +69,27 @@ title: "Execution Platform Specs"
 60. [Architecture Red-Team And Research Gate](/projects/execution-platform/specs/architecture-red-team-and-research-gate)
 61. [OpenClaw Native Tool Runtime OpenCode Parity](/projects/execution-platform/specs/openclaw-native-tool-runtime-opencode-parity)
 62. [OpenClaw Scout Editor Handoff OpenCode Pattern](/projects/execution-platform/specs/openclaw-scout-editor-handoff-opencode-pattern)
+63. [Progress Lease And Search-First Worker Proof](/projects/execution-platform/specs/progress-lease-and-search-first-worker-proof)
+64. [Scout Handoff Skill Wording And Proof Optics Correction](/projects/execution-platform/specs/scout-handoff-skill-wording-and-proof-optics-correction)
+65. [OpenClaw Parent Editor Navigation OpenCode Parity](/projects/execution-platform/specs/openclaw-parent-editor-navigation-opencode-parity)
+66. [OpenClaw Kimi Editor Readiness OpenCode Parity](/projects/execution-platform/specs/openclaw-kimi-editor-readiness-opencode-parity)
+67. [OpenClaw Native Tool Output Compaction OpenCode Parity](/projects/execution-platform/specs/openclaw-native-tool-output-compaction-opencode-parity)
+68. [OpenClaw Update Plan OpenCode Parity](/projects/execution-platform/specs/openclaw-update-plan-opencode-parity)
+69. [OpenClaw Worker Loop Breakers Mutation And Tool Optics](/projects/execution-platform/specs/openclaw-worker-loop-breakers-mutation-and-tool-optics)
+70. [OpenClaw Kimi Worker Latency Evidence And Concurrency Hardening](/projects/execution-platform/specs/openclaw-kimi-worker-latency-evidence-and-concurrency-hardening)
+71. [OpenClaw Kimi Edit-Start Source Coverage](/projects/execution-platform/specs/openclaw-kimi-edit-start-source-coverage) **Superseded by OpenCode-style source-shaped read/grep/glob output; coverage trimming and batch source lookup were removed.**
+72. [OpenClaw LSP Code Intelligence OpenCode Parity](/projects/execution-platform/specs/openclaw-lsp-code-intelligence-opencode-parity)
+73. [OpenClaw External LSP Manager OpenCode Parity](/projects/execution-platform/specs/openclaw-external-lsp-manager-opencode-parity)
+74. [OpenClaw Kimi-Visible Tool OpenCode Parity Audit](/projects/execution-platform/specs/openclaw-kimi-visible-tool-opencode-parity-audit)
+75. [OpenClaw Kimi Proof Erratic Performance Gap Priority Proposal](/projects/execution-platform/specs/openclaw-kimi-proof-erratic-performance-gap-priority-proposal)
+76. [OpenClaw Kimi LSP Edit Affordance And Preflight Latency](/projects/execution-platform/specs/openclaw-kimi-lsp-edit-affordance-and-preflight-latency)
+77. [OpenClaw Kimi Coherent Vertical Edit Batch](/projects/execution-platform/specs/openclaw-kimi-coherent-vertical-edit-batch)
+78. [OpenClaw Kimi Proof Running Failure Tally](/projects/execution-platform/specs/openclaw-kimi-proof-running-failure-tally)
+79. [OpenClaw Kimi Line Range Edit And Validation Repair](/projects/execution-platform/specs/openclaw-kimi-line-range-edit-validation-repair)
+80. [OpenClaw Kimi Source-Shaped Execution OpenCode Parity](/projects/execution-platform/specs/openclaw-kimi-source-shaped-execution-opencode-parity)
+81. [OpenClaw Kimi Real-Usage Compaction OpenCode Parity](/projects/execution-platform/specs/openclaw-kimi-real-usage-compaction-opencode-parity)
+82. [OpenClaw Native Context Runtime Pressure Refactor](/projects/execution-platform/specs/openclaw-native-context-runtime-pressure-refactor)
+83. [OpenClaw Native Mutation Runtime And Prompt Profiles](/projects/execution-platform/specs/openclaw-native-mutation-runtime-and-prompt-profiles)
 
 ## Routing, Readiness, And Execution Truth
 
@@ -534,3 +555,9 @@ It anchors the pre-Product/Spec queue around code intelligence, context scout
 over code intelligence, context synthesis handoff, worker-internal streaming,
 compound non-Codex coding tools, and fallback/compatibility retirement before
 the Product/Spec Planning production proof.
+The current proof stabilization priority stack is
+[OpenClaw Kimi Proof Erratic Performance Gap Priority Proposal](/projects/execution-platform/specs/openclaw-kimi-proof-erratic-performance-gap-priority-proposal).
+It ranks the remaining OpenCode parity gaps by impact on Kimi proof variance:
+grep/glob internals, managed-output and compaction readback, provider-visible
+catalog receipts, mutation-tool affordance, validation exec behavior, raw Kimi
+normalization receipts, and lightweight todo semantics.

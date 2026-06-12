@@ -105,6 +105,11 @@ type MutableAssistantOutput = {
   timestamp: number;
   responseId?: string;
   errorMessage?: string;
+  providerResponseDiagnostics?: {
+    rawFinishReason?: string | null;
+    rawToolCallChunkCount?: number;
+    rawReasoningFieldPresent?: boolean;
+  };
 };
 
 export { sanitizeTransportPayloadText } from "./transport-stream-shared.js";
@@ -539,6 +544,11 @@ async function processResponsesStream(
             options.serviceTier,
         );
       }
+      output.providerResponseDiagnostics = {
+        rawFinishReason: typeof response?.status === "string" ? response.status : null,
+        rawToolCallChunkCount: output.content.filter((block) => block.type === "toolCall").length,
+        rawReasoningFieldPresent: output.content.some((block) => block.type === "thinking"),
+      };
       output.stopReason = mapResponsesStopReason(response?.status as string | undefined);
       if (
         output.content.some((block) => block.type === "toolCall") &&
@@ -1058,6 +1068,9 @@ async function processOpenAICompletionsStream(
       }
     | null = null;
   let pendingThinkingDelta: { signature: string; text: string } | null = null;
+  let rawFinishReason: string | null = null;
+  let rawToolCallChunkCount = 0;
+  let rawReasoningFieldPresent = false;
   const blockIndex = () => output.content.length - 1;
   const finishCurrentBlock = () => {
     if (!currentBlock) {
@@ -1113,6 +1126,7 @@ async function processOpenAICompletionsStream(
       output.usage = parseTransportChunkUsage(choiceUsage, model);
     }
     if (choice.finish_reason) {
+      rawFinishReason = choice.finish_reason;
       const finishReasonResult = mapStopReason(choice.finish_reason);
       output.stopReason = finishReasonResult.stopReason;
       if (finishReasonResult.errorMessage) {
@@ -1141,6 +1155,7 @@ async function processOpenAICompletionsStream(
     }
     const reasoningDelta = getCompletionsReasoningDelta(choice.delta as Record<string, unknown>);
     if (reasoningDelta) {
+      rawReasoningFieldPresent = true;
       if (currentBlock?.type === "toolCall") {
         if (!pendingThinkingDelta) {
           pendingThinkingDelta = { ...reasoningDelta };
@@ -1152,6 +1167,7 @@ async function processOpenAICompletionsStream(
       }
     }
     if (choice.delta.tool_calls && choice.delta.tool_calls.length > 0) {
+      rawToolCallChunkCount += choice.delta.tool_calls.length;
       for (const toolCall of choice.delta.tool_calls) {
         if (
           !currentBlock ||
@@ -1197,6 +1213,11 @@ async function processOpenAICompletionsStream(
   if (output.stopReason === "toolUse" && !hasToolCalls) {
     output.stopReason = "stop";
   }
+  output.providerResponseDiagnostics = {
+    rawFinishReason,
+    rawToolCallChunkCount,
+    rawReasoningFieldPresent,
+  };
 }
 
 function getCompletionsReasoningDelta(delta: Record<string, unknown>): {

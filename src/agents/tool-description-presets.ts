@@ -10,7 +10,7 @@ export const SESSIONS_SEND_TOOL_DISPLAY_SUMMARY =
 export const SESSIONS_SPAWN_TOOL_DISPLAY_SUMMARY = "Spawn sub-agent or ACP sessions.";
 export const SESSION_STATUS_TOOL_DISPLAY_SUMMARY =
   "Show session status, usage, model state, and current or recent task state.";
-export const UPDATE_PLAN_TOOL_DISPLAY_SUMMARY = "Track a short structured work plan.";
+export const UPDATE_PLAN_TOOL_DISPLAY_SUMMARY = "Track lightweight todo state.";
 export const READ_TODO_TOOL_DISPLAY_SUMMARY = "Read the current structured work plan.";
 
 export function describeSessionsListTool(): string {
@@ -58,9 +58,10 @@ export function describeSessionStatusTool(): string {
 
 export function describeUpdatePlanTool(): string {
   return [
-    "Update the current structured work plan for this run.",
-    "Use this for non-trivial multi-step work so the plan stays current while execution continues.",
-    "Keep steps short, mark at most one step as `in_progress`, and skip this tool for simple one-step tasks.",
+    "Update the current lightweight todo board for this run.",
+    "Use this for non-trivial work with distinct conceptual steps; skip it when tracking adds no value.",
+    "Keep items short and update statuses as work changes.",
+    "Todo is status only, not a workflow gate.",
   ].join(" ");
 }
 

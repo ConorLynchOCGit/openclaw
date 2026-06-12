@@ -83,6 +83,11 @@ type MutableAssistantOutput = {
   timestamp: number;
   responseId?: string;
   errorMessage?: string;
+  providerResponseDiagnostics?: {
+    rawFinishReason?: string | null;
+    rawToolCallChunkCount?: number;
+    rawReasoningFieldPresent?: boolean;
+  };
 };
 
 type GoogleSseChunk = {
@@ -624,6 +629,9 @@ export function createGoogleGenerativeAiTransportStreamFn(): StreamFn {
         }
         stream.push({ type: "start", partial: output as never });
         let currentBlockIndex = -1;
+        let rawFinishReason: string | null = null;
+        let rawToolCallChunkCount = 0;
+        let rawReasoningFieldPresent = false;
         for await (const chunk of parseGoogleSseChunks(response, options?.signal)) {
           output.responseId ||= chunk.responseId;
           updateUsage(output, model, chunk);
@@ -632,6 +640,9 @@ export function createGoogleGenerativeAiTransportStreamFn(): StreamFn {
             for (const part of candidate.content.parts) {
               if (typeof part.text === "string") {
                 const isThinking = part.thought === true;
+                if (isThinking) {
+                  rawReasoningFieldPresent = true;
+                }
                 const currentBlock = output.content[currentBlockIndex];
                 if (
                   currentBlockIndex < 0 ||
@@ -688,6 +699,7 @@ export function createGoogleGenerativeAiTransportStreamFn(): StreamFn {
                 }
               }
               if (part.functionCall) {
+                rawToolCallChunkCount += 1;
                 if (currentBlockIndex >= 0) {
                   pushTextBlockEnd(stream, output, currentBlockIndex);
                   currentBlockIndex = -1;
@@ -729,6 +741,7 @@ export function createGoogleGenerativeAiTransportStreamFn(): StreamFn {
             }
           }
           if (typeof candidate?.finishReason === "string") {
+            rawFinishReason = candidate.finishReason;
             output.stopReason = mapStopReasonString(candidate.finishReason);
             if (output.content.some((block) => block.type === "toolCall")) {
               output.stopReason = "toolUse";
@@ -738,6 +751,11 @@ export function createGoogleGenerativeAiTransportStreamFn(): StreamFn {
         if (currentBlockIndex >= 0) {
           pushTextBlockEnd(stream, output, currentBlockIndex);
         }
+        output.providerResponseDiagnostics = {
+          rawFinishReason,
+          rawToolCallChunkCount,
+          rawReasoningFieldPresent,
+        };
         finalizeTransportStream({ stream, output, signal: options?.signal });
       } catch (error) {
         failTransportStream({ stream, output, signal: options?.signal, error });

@@ -165,6 +165,8 @@ export type RunEmbeddedPiAgentParams = {
   lane?: string;
   enqueue?: CommandQueueEnqueueFn;
   extraSystemPrompt?: string;
+  /** Optional caller-provided compaction summary instructions. */
+  customInstructions?: string;
   internalEvents?: AgentInternalEvent[];
   inputProvenance?: InputProvenance;
   streamParams?: AgentStreamParams;

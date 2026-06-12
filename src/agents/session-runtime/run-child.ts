@@ -1,10 +1,16 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import type { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
 import type { ThinkLevel } from "../../auto-reply/thinking.js";
+import { normalizeThinkLevel } from "../../auto-reply/thinking.shared.js";
 import { resolveStorePath } from "../../config/sessions/paths.js";
 import { loadSessionStore, updateSessionStore } from "../../config/sessions/store.js";
 import { resolveSessionTranscriptFile } from "../../config/sessions/transcript.js";
-import { mergeSessionEntry, type SessionSystemPromptReport } from "../../config/sessions/types.js";
+import {
+  mergeSessionEntry,
+  type SessionEntry,
+  type SessionSystemPromptReport,
+} from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import type { CommandQueueEnqueueFn } from "../../process/command-queue.types.js";
@@ -72,6 +78,7 @@ export type NativeChildSessionAgentRunResult = {
   meta: {
     systemPromptReport?: SessionSystemPromptReport;
     finalAssistantVisibleText?: string;
+    progressTimeoutKind?: "no_progress_timeout" | "repeated_low_value_progress";
     error?: { message: string };
   };
 };
@@ -118,6 +125,8 @@ export type NativeRunChildSessionParams = {
 export type NativeChildSessionFailureKind =
   | "provider_model_failure"
   | "provider_response_timeout"
+  | "no_progress_timeout"
+  | "repeated_low_value_progress"
   | "session_lock_failed"
   | "run_error";
 
@@ -131,6 +140,8 @@ export type NativeChildSessionResult = {
   error?: string;
   failureKind?: NativeChildSessionFailureKind;
   resultText?: string;
+  provider?: string;
+  model?: string;
   providerContextReport?: SessionSystemPromptReport;
 };
 
@@ -195,6 +206,49 @@ function isProviderResponseTimeoutMessage(message: string | undefined): boolean 
   );
 }
 
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : undefined;
+}
+
+function requiredExecutionChildThinkingLevel(
+  childAgentId: string,
+  childAgentConfig: unknown,
+): ThinkLevel | undefined {
+  if (childAgentId !== "execution-context-scout" && childAgentId !== "execution-validation-scout") {
+    return undefined;
+  }
+  const thinkingDefaultRaw = asRecord(childAgentConfig)?.thinkingDefault;
+  if (typeof thinkingDefaultRaw !== "string" || !thinkingDefaultRaw.trim()) {
+    return undefined;
+  }
+  const normalized = normalizeThinkLevel(thinkingDefaultRaw);
+  return normalized && normalized !== "off" ? normalized : undefined;
+}
+
+async function readLatestTranscriptThinkingLevel(sessionFile: string): Promise<string | undefined> {
+  const text = await readFile(sessionFile, "utf8").catch(() => "");
+  let latest: string | undefined;
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+    try {
+      const entry = JSON.parse(trimmed) as Record<string, unknown>;
+      if (entry.type !== "thinking_level_change") {
+        continue;
+      }
+      const thinkingLevel = entry.thinkingLevel;
+      if (typeof thinkingLevel === "string" && thinkingLevel.trim()) {
+        latest = thinkingLevel.trim();
+      }
+    } catch {
+      continue;
+    }
+  }
+  return latest;
+}
+
 export function createNativeRunChildSession(params: {
   parentContext: NativeChildSessionParentContext;
   resolvedWorkspace: string;
@@ -214,15 +268,85 @@ export function createNativeRunChildSession(params: {
     const storePath = resolveStorePath(params.parentContext.config?.session?.store, {
       agentId: childAgentId,
     });
+    const childConfig = params.parentContext.config;
+    const childAgentConfig = childConfig ? resolveAgentConfig(childConfig, childAgentId) : null;
+    const childAgentDir = childConfig
+      ? resolveAgentDir(childConfig, childAgentId)
+      : params.parentContext.agentDir;
+    const childPlan = childConfig
+      ? resolveSubagentModelAndThinkingPlan({
+          cfg: childConfig,
+          targetAgentId: childAgentId,
+          targetAgentConfig: childAgentConfig,
+        })
+      : null;
+    if (childPlan?.status === "error") {
+      return {
+        status: "error",
+        childSessionKey,
+        childSessionId,
+        runId: childRunId,
+        startedAt,
+        endedAt: Date.now(),
+        error: childPlan.error,
+        failureKind: "provider_model_failure",
+      };
+    }
+    const childPlanOk = childPlan?.status === "ok" ? childPlan : null;
+    const requiredThinkingLevel = requiredExecutionChildThinkingLevel(
+      childAgentId,
+      childAgentConfig,
+    );
+    if (
+      (childAgentId === "execution-context-scout" ||
+        childAgentId === "execution-validation-scout") &&
+      !requiredThinkingLevel
+    ) {
+      return {
+        status: "error",
+        childSessionKey,
+        childSessionId,
+        runId: childRunId,
+        startedAt,
+        endedAt: Date.now(),
+        error: `${childAgentId} requires native child thinkingDefault in agent config; resolved <missing or off>.`,
+        failureKind: "provider_model_failure",
+      };
+    }
+    if (requiredThinkingLevel && childPlanOk?.thinkingOverride !== requiredThinkingLevel) {
+      return {
+        status: "error",
+        childSessionKey,
+        childSessionId,
+        runId: childRunId,
+        startedAt,
+        endedAt: Date.now(),
+        error: `${childAgentId} requires native child thinkingLevel ${requiredThinkingLevel}; resolved ${childPlanOk?.thinkingOverride ?? "<missing>"}.`,
+        failureKind: "provider_model_failure",
+      };
+    }
+    const { provider, model } = splitModelRef(childPlanOk?.resolvedModel);
     try {
       await updateSessionStore(
         storePath,
         (store) => {
-          store[childSessionKey] = mergeSessionEntry(store[childSessionKey], {
+          const initialSessionPatch = childPlanOk?.initialSessionPatch as
+            | (Omit<Partial<SessionEntry>, "thinkingLevel"> & {
+                thinkingLevel?: string | null;
+              })
+            | undefined;
+          const childSessionPatch: Partial<SessionEntry> = {
             sessionId: childSessionId,
             updatedAt: Date.now(),
             ...(parentSessionKey ? { spawnedBy: parentSessionKey } : {}),
-          });
+          };
+          if (initialSessionPatch) {
+            Object.assign(childSessionPatch, initialSessionPatch);
+            if (initialSessionPatch.thinkingLevel === null) {
+              delete childSessionPatch.thinkingLevel;
+            }
+          }
+          store[childSessionKey] = mergeSessionEntry(store[childSessionKey], childSessionPatch);
         },
         {
           lockTimeoutMs: childSessionStartLockTimeoutMs,
@@ -239,31 +363,6 @@ export function createNativeRunChildSession(params: {
         storePath,
         agentId: childAgentId,
       });
-      const childConfig = params.parentContext.config;
-      const childAgentConfig = childConfig ? resolveAgentConfig(childConfig, childAgentId) : null;
-      const childAgentDir = childConfig
-        ? resolveAgentDir(childConfig, childAgentId)
-        : params.parentContext.agentDir;
-      const childPlan = childConfig
-        ? resolveSubagentModelAndThinkingPlan({
-            cfg: childConfig,
-            targetAgentId: childAgentId,
-            targetAgentConfig: childAgentConfig,
-          })
-        : null;
-      if (childPlan?.status === "error") {
-        return {
-          status: "error",
-          childSessionKey,
-          childSessionId,
-          runId: childRunId,
-          startedAt,
-          endedAt: Date.now(),
-          error: childPlan.error,
-          failureKind: "provider_model_failure",
-        };
-      }
-      const { provider, model } = splitModelRef(childPlan?.resolvedModel);
       const childRun = await params.runAgent({
         sessionId: childSessionId,
         sessionKey: childSessionKey,
@@ -294,7 +393,7 @@ export function createNativeRunChildSession(params: {
         }),
         ...(provider ? { provider } : {}),
         ...(model ? { model } : {}),
-        ...(childPlan?.thinkingOverride ? { thinkLevel: childPlan.thinkingOverride } : {}),
+        ...(childPlanOk?.thinkingOverride ? { thinkLevel: childPlanOk.thinkingOverride } : {}),
         toolResultFormat: params.parentContext.toolResultFormat,
         disableMessageTool: true,
         requireExplicitMessageTarget: true,
@@ -310,12 +409,34 @@ export function createNativeRunChildSession(params: {
         onAgentEvent: params.parentContext.onAgentEvent,
         suppressToolErrorWarnings: params.parentContext.suppressToolErrorWarnings,
       });
+      if (requiredThinkingLevel) {
+        const transcriptThinkingLevel = await readLatestTranscriptThinkingLevel(sessionFile);
+        if (transcriptThinkingLevel !== requiredThinkingLevel) {
+          return {
+            status: "error",
+            childSessionKey,
+            childSessionId,
+            runId: childRunId,
+            startedAt,
+            endedAt: Date.now(),
+            error: `${childAgentId} provider transcript thinkingLevel mismatch: expected ${requiredThinkingLevel}; got ${transcriptThinkingLevel ?? "<missing>"}.`,
+            failureKind: "provider_model_failure",
+            ...(provider ? { provider } : {}),
+            ...(model ? { model } : {}),
+          };
+        }
+      }
       const resultText = visibleTextFromEmbeddedChildResult(childRun);
-      const runFailure = childRun.meta.error?.message
-        ? isProviderResponseTimeoutMessage(childRun.meta.error.message)
-          ? "provider_response_timeout"
-          : "run_error"
-        : undefined;
+      const runFailure =
+        childRun.meta.progressTimeoutKind === "no_progress_timeout"
+          ? "no_progress_timeout"
+          : childRun.meta.progressTimeoutKind === "repeated_low_value_progress"
+            ? "repeated_low_value_progress"
+            : childRun.meta.error?.message
+              ? isProviderResponseTimeoutMessage(childRun.meta.error.message)
+                ? "provider_response_timeout"
+                : "run_error"
+              : undefined;
       return {
         status: runFailure ? "error" : "completed",
         childSessionKey,
@@ -326,6 +447,8 @@ export function createNativeRunChildSession(params: {
         ...(childRun.meta.error?.message ? { error: childRun.meta.error.message } : {}),
         ...(runFailure ? { failureKind: runFailure } : {}),
         ...(resultText ? { resultText } : {}),
+        ...(provider ? { provider } : {}),
+        ...(model ? { model } : {}),
         ...(childRun.meta.systemPromptReport
           ? { providerContextReport: childRun.meta.systemPromptReport }
           : {}),

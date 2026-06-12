@@ -190,7 +190,7 @@ const makeAttempt = (overrides: Partial<EmbeddedRunAttemptResult>): EmbeddedRunA
     idleTimedOut: false,
     timedOutDuringCompaction: false,
     promptError: null,
-    promptErrorSource: null,
+    promptErrorOrigin: null,
     sessionIdUsed: "session:test",
     systemPromptReport: undefined,
     messagesSnapshot: [],
@@ -995,7 +995,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
       runEmbeddedAttemptMock.mockResolvedValueOnce(
         makeAttempt({
           promptError: new Error("rate limit exceeded"),
-          promptErrorSource: "compaction",
+          promptErrorOrigin: "compaction",
           assistantTexts: ["partial"],
           lastAssistant: buildAssistant({
             stopReason: "stop",

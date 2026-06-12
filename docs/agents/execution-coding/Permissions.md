@@ -3,13 +3,15 @@
 ## Allowed
 
 `execution-coding` may mutate implementation source through the native
-project-root tool surface granted to it. It may inspect runtime resources only
-through explicit refs or typed runtime authority.
+project-root tool surface granted to it.
 
-It may read exact bounded source windows only when the path is already known
-from the prompt, scout output, or native working context. Broad acquisition,
-directory listing, search, full-file reads, runtime-state browsing, and command
-execution remain outside parent authority.
+It may use bounded `read`, `grep`, `glob`, and `lsp` only when the path,
+directory, symbol, phrase, filename stem, or pattern is already known from the
+prompt, scout output, validation output, changed-file list, or previous bounded
+source tool result. `grep` is regex-native by default with literal fallback
+available through `regex:false`; `read` is line- and byte-bounded. Broad
+crawling, fuzzy discovery, full-file reads, runtime-state browsing, shell
+search, and command execution remain outside parent authority.
 
 ## Escalate
 

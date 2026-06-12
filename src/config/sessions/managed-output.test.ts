@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createManagedToolOutputStreamSync,
   persistManagedToolOutputSync,
+  readManagedToolOutputRefSync,
 } from "./managed-output.js";
 
 describe("managed tool output", () => {
@@ -60,6 +61,42 @@ describe("managed tool output", () => {
         text: "output",
       }),
     ).toBeNull();
+  });
+
+  it("reads bounded byte windows back from a native managed-output ref", () => {
+    const text = "0123456789".repeat(1_000);
+    const persisted = persistManagedToolOutputSync({
+      stateRoot: tmpDir,
+      sessionKey: "agent:execution-coding:session:test",
+      toolCallId: "call-readback",
+      toolName: "read",
+      text,
+      outputKind: "tool_result",
+      now: Date.UTC(2026, 5, 8),
+    });
+
+    const first = readManagedToolOutputRefSync({
+      stateRoot: tmpDir,
+      ref: persisted?.ref ?? "",
+      maxBytes: 1_000,
+    });
+    expect(first).toMatchObject({
+      offsetBytes: 0,
+      returnedBytes: 1_000,
+      totalBytes: Buffer.byteLength(text, "utf8"),
+      nextOffsetBytes: 1_000,
+      truncated: true,
+    });
+    expect(first?.text).toBe(text.slice(0, 1_000));
+
+    const second = readManagedToolOutputRefSync({
+      stateRoot: tmpDir,
+      ref: persisted?.ref ?? "",
+      offsetBytes: first?.nextOffsetBytes ?? 0,
+      maxBytes: 1_000,
+    });
+    expect(second?.offsetBytes).toBe(1_000);
+    expect(second?.text).toBe(text.slice(1_000, 2_000));
   });
 
   it("supports streaming output and final metadata without loading full text into memory", () => {

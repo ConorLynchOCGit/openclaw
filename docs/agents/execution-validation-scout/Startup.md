@@ -5,7 +5,6 @@
 - parent validation question
 - target or changed files when available
 - relevant requirements or validation policy
-- active `execution-validation-scout` skill
 - read/search/exec tools
 
 ## First Reads
@@ -18,9 +17,20 @@
 6. If the parent request is broad, reduce it to the smallest proof surface and
    name the exact follow-up proof that remains.
 
+## Repo-Native Command Menu
+
+- Prefer `pnpm test:file <test-file>` for focused validation.
+- Use `pnpm test:file <test-file> -- -t <name>` when one test name or describe
+  block is known.
+- Use named repo proof scripts only when the parent names the proof or the
+  changed files clearly belong to that proof lane.
+- Do not improvise raw `tsc` flag combinations. Do not run project-wide
+  TypeScript compiles unless a repo-native command failed and the failure proves
+  no focused command can answer the question.
+
 ## Stop Conditions
 
-- required validation scout skill or read/search/exec tools are missing
+- required read/search/exec tools are missing
 - the task asks for edits, staging, lifecycle acceptance, or node finish
 - command scope is unsafe, too broad, or not supported by repo evidence
 - validation question is too vague to select a meaningful command

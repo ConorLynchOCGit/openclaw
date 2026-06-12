@@ -102,6 +102,7 @@ export function resolveExtraParams(params: {
   }
 
   applyDefaultOpenAIGptRuntimeParams(params, merged);
+  applyDefaultKimiImplementationWorkerRuntimeParams(params, merged);
 
   return Object.keys(merged).length > 0 ? merged : undefined;
 }
@@ -195,6 +196,41 @@ function shouldApplyDefaultOpenAIGptRuntimeParams(params: {
     return false;
   }
   return /^gpt-5(?:[.-]|$)/i.test(params.modelId);
+}
+
+function shouldApplyDefaultKimiImplementationWorkerRuntimeParams(params: {
+  provider: string;
+  modelId: string;
+  agentId?: string;
+}): boolean {
+  if (params.agentId !== "execution-coding") {
+    return false;
+  }
+  if (params.provider !== "openrouter") {
+    return false;
+  }
+  return /(?:^|\/)moonshotai\/kimi-k2\.6$/iu.test(`openrouter/${params.modelId}`);
+}
+
+function applyDefaultKimiImplementationWorkerRuntimeParams(
+  params: { provider: string; modelId: string; agentId?: string },
+  merged: Record<string, unknown>,
+): void {
+  if (!shouldApplyDefaultKimiImplementationWorkerRuntimeParams(params)) {
+    return;
+  }
+  if (
+    !Object.hasOwn(merged, "parallel_tool_calls") &&
+    !Object.hasOwn(merged, "parallelToolCalls")
+  ) {
+    merged.parallel_tool_calls = true;
+  }
+  if (!Object.hasOwn(merged, "reasoning")) {
+    merged.reasoning = { effort: "none", exclude: true };
+  }
+  if (!Object.hasOwn(merged, "thinking")) {
+    merged.thinking = { type: "disabled" };
+  }
 }
 
 function applyDefaultOpenAIGptRuntimeParams(
@@ -331,18 +367,44 @@ function createParallelToolCallsWrapper(
 ): StreamFn {
   const underlying = baseStreamFn ?? streamSimple;
   return (model, context, options) => {
+    const api = typeof model.api === "string" ? model.api : "";
+    const provider = typeof model.provider === "string" ? model.provider : "";
     if (
-      model.api !== "openai-completions" &&
-      model.api !== "openai-responses" &&
-      model.api !== "azure-openai-responses"
+      api !== "openai-completions" &&
+      api !== "openai-responses" &&
+      api !== "azure-openai-responses" &&
+      provider !== "openrouter"
     ) {
       return underlying(model, context, options);
     }
+
     log.debug(
       `applying parallel_tool_calls=${enabled} for ${model.provider ?? "unknown"}/${model.id ?? "unknown"} api=${model.api}`,
     );
     return streamWithPayloadPatch(underlying, model, context, options, (payloadObj) => {
       payloadObj.parallel_tool_calls = enabled;
+    });
+  };
+}
+
+function createSelectedPayloadParamWrapper(
+  baseStreamFn: StreamFn | undefined,
+  extraParams: Record<string, unknown>,
+): StreamFn {
+  const selected = Object.fromEntries(
+    ["reasoning", "thinking", "reasoning_effort", "include_reasoning", "tool_choice"].flatMap(
+      (key) => (Object.hasOwn(extraParams, key) ? [[key, extraParams[key]]] : []),
+    ),
+  );
+  if (Object.keys(selected).length === 0) {
+    return baseStreamFn ?? streamSimple;
+  }
+  const underlying = baseStreamFn ?? streamSimple;
+  return (model, context, options) => {
+    return streamWithPayloadPatch(underlying, model, context, options, (payloadObj) => {
+      for (const [key, value] of Object.entries(selected)) {
+        payloadObj[key] = value;
+      }
     });
   };
 }
@@ -412,6 +474,10 @@ function applyPostPluginStreamWrappers(
   // visible reply path because it does not emit native Anthropic thinking
   // blocks. Disable thinking unless an earlier wrapper already set it.
   ctx.agent.streamFn = createMinimaxThinkingDisabledWrapper(ctx.agent.streamFn);
+  ctx.agent.streamFn = createSelectedPayloadParamWrapper(
+    ctx.agent.streamFn,
+    ctx.effectiveExtraParams,
+  );
 
   const rawParallelToolCalls = resolveAliasedParamValue(
     [ctx.resolvedExtraParams, ctx.override],

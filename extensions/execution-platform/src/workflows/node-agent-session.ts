@@ -10,7 +10,18 @@ import {
   type SessionLockAcquisitionTrace,
 } from "../../../../src/agents/session-write-lock.js";
 import { jsonResult } from "../../../../src/agents/tools/common.js";
-import type { SessionTodoState } from "../../../../src/config/sessions/types.js";
+import { hydrateManagedOutputResourceRef } from "../../../../src/agents/tools/openclaw-resource-read-tool.js";
+import { resolveStateDir } from "../../../../src/config/paths.js";
+import { resolveStorePath } from "../../../../src/config/sessions/paths.js";
+import type {
+  SessionTodoState,
+  SessionWorkingContextEntry,
+} from "../../../../src/config/sessions/types.js";
+import {
+  buildSessionWorkingContextEntryRef,
+  hydrateSessionWorkingContextResourceRef,
+  readSessionWorkingContext,
+} from "../../../../src/config/sessions/working-context.js";
 import type { RuntimeArtifactContractHydrationResult } from "../runtime-artifact-contracts.ts";
 import type { JsonValue, RuntimeJobArtifact } from "../runtime-job-types.ts";
 import {
@@ -232,6 +243,7 @@ export function deriveNodeAgentStepBudgetFromSnapshot(
 }
 
 export type NodeFinishStatus = "completed" | "blocked" | "needs_escalation";
+const NODE_FINISH_VALID_STATUSES = ["completed", "blocked", "needs_escalation"] as const;
 
 export type NodeFinish = {
   artifactKind: "execution_platform.node_finish";
@@ -246,6 +258,10 @@ export type NodeFinish = {
   storagePolicy: NodeExecutionStoragePolicy;
 };
 
+function isNodeFinishStatus(value: string): value is NodeFinishStatus {
+  return (NODE_FINISH_VALID_STATUSES as readonly string[]).includes(value);
+}
+
 export type NodeFinishLifecycleOutcome = {
   status: "completed" | "blocked" | "needs_escalation";
   nodeStatus: "succeeded" | "needs_review";
@@ -253,6 +269,139 @@ export type NodeFinishLifecycleOutcome = {
   blockerKind: string | null;
   reasonCodes: string[];
 };
+
+type NodeFinishNativeEvidence = {
+  evidenceRefs: string[];
+  changeSetRefs: string[];
+  changedFileRefs: string[];
+  changedFiles: string[];
+  validationEvidenceRefs: string[];
+  workingContextRefs: string[];
+  reasonCodes: string[];
+};
+
+const REQUIRED_COMPLETED_NODE_FINISH_EVIDENCE = ["changed_files", "validation_evidence"] as const;
+
+function repoFileRef(filePath: string): string {
+  return `repo-file://${filePath.trim()}`;
+}
+
+function changedFilesFromWorkingContextEntry(entry: SessionWorkingContextEntry): string[] {
+  return uniqueStrings([
+    ...(entry.changedFilePaths ?? []),
+    ...(entry.addedFilePaths ?? []),
+    ...(entry.modifiedFilePaths ?? []),
+    ...(entry.deletedFilePaths ?? []),
+  ]);
+}
+
+function collectNodeFinishNativeEvidence(params: {
+  config?: RunEmbeddedPiAgentParams["config"];
+  sessionKey: string;
+  agentId?: string;
+}): NodeFinishNativeEvidence {
+  const storePath = resolveStorePath(params.config?.session?.store, { agentId: params.agentId });
+  const workingContext = readSessionWorkingContext({ storePath, sessionKey: params.sessionKey });
+  if (!workingContext) {
+    return {
+      evidenceRefs: [],
+      changeSetRefs: [],
+      changedFileRefs: [],
+      changedFiles: [],
+      validationEvidenceRefs: [],
+      workingContextRefs: [],
+      reasonCodes: ["node_finish_native_evidence_working_context_missing"],
+    };
+  }
+  const changeSetRefs: string[] = [];
+  const changedFiles: string[] = [];
+  const validationEvidenceRefs: string[] = [];
+  const workingContextRefs: string[] = [];
+  for (const entry of workingContext.activeEntries) {
+    const entryRef = buildSessionWorkingContextEntryRef({
+      sessionKey: workingContext.sessionKey,
+      entryId: entry.entryId,
+    });
+    if (entry.kind === "change_set") {
+      changeSetRefs.push(entryRef);
+      changedFiles.push(...changedFilesFromWorkingContextEntry(entry));
+    }
+    if (entry.kind === "validation_state" || entry.kind === "validation_scout_result") {
+      validationEvidenceRefs.push(entryRef);
+      if (entry.childResultRef) {
+        validationEvidenceRefs.push(entry.childResultRef);
+      }
+      if (entry.taskRef) {
+        validationEvidenceRefs.push(entry.taskRef);
+      }
+    }
+    if (
+      entry.kind === "change_set" ||
+      entry.kind === "validation_state" ||
+      entry.kind === "validation_scout_result"
+    ) {
+      workingContextRefs.push(entryRef);
+    }
+  }
+  const changedFileRefs = uniqueStrings(changedFiles.map(repoFileRef));
+  const evidenceRefs = uniqueStrings([
+    ...changedFileRefs,
+    ...changeSetRefs,
+    ...validationEvidenceRefs,
+    ...workingContextRefs,
+  ]);
+  return {
+    evidenceRefs,
+    changeSetRefs: uniqueStrings(changeSetRefs),
+    changedFileRefs,
+    changedFiles: uniqueStrings(changedFiles),
+    validationEvidenceRefs: uniqueStrings(validationEvidenceRefs),
+    workingContextRefs: uniqueStrings(workingContextRefs),
+    reasonCodes: uniqueStrings([
+      "node_finish_native_evidence_from_working_context",
+      changeSetRefs.length > 0 ? "node_finish_native_change_set_evidence_observed" : null,
+      changedFileRefs.length > 0 ? "node_finish_native_changed_file_evidence_observed" : null,
+      validationEvidenceRefs.length > 0 ? "node_finish_native_validation_evidence_observed" : null,
+    ]),
+  };
+}
+
+function refLooksLikeChangedFileEvidence(ref: string): boolean {
+  const lower = ref.toLowerCase();
+  return (
+    lower.startsWith("repo-file://") ||
+    lower.includes("change_set") ||
+    lower.includes("change-set") ||
+    lower.includes("changed-file") ||
+    lower.includes("changed_file")
+  );
+}
+
+function refLooksLikeValidationEvidence(ref: string): boolean {
+  return ref.toLowerCase().includes("validation");
+}
+
+function missingCompletedNodeFinishEvidence(params: {
+  finish: NodeFinish;
+  nativeEvidence: NodeFinishNativeEvidence;
+}): Array<(typeof REQUIRED_COMPLETED_NODE_FINISH_EVIDENCE)[number]> {
+  if (params.finish.status !== "completed") {
+    return [];
+  }
+  const hasChangedFiles =
+    params.nativeEvidence.changedFileRefs.length > 0 ||
+    params.nativeEvidence.changeSetRefs.length > 0 ||
+    params.finish.evidenceRefs.some(refLooksLikeChangedFileEvidence);
+  const hasValidation =
+    params.nativeEvidence.validationEvidenceRefs.length > 0 ||
+    params.finish.evidenceRefs.some(refLooksLikeValidationEvidence);
+  return REQUIRED_COMPLETED_NODE_FINISH_EVIDENCE.filter((required) => {
+    if (required === "changed_files") {
+      return !hasChangedFiles;
+    }
+    return !hasValidation;
+  });
+}
 
 type NodeWorkerPromptAuthoringMaterial = {
   nodeRunId: string;
@@ -370,6 +519,33 @@ export type NodeAgentSessionTrace = {
     nativeCompactionCount: number;
     compactionObserved: boolean;
   };
+  editTransition: {
+    bootstrapToFirstEditWallClockMs: number | null;
+    modelActivationAtMs: number | null;
+    firstEditAfterModelActivationWallClockMs: number | null;
+    toolCountBeforeFirstEdit: number;
+    sourceToolCountBeforeFirstEdit: number;
+    patchHypothesisObserved: boolean;
+    firstPatchHypothesisBeforeToolCallObserved: boolean;
+    firstPatchHypothesisMessageIndex: number | null;
+    pathOnlyReadAfterContinuationHintObserved: boolean;
+    pathOnlyReadAfterContinuationHintCount: number;
+    pathOnlyReadAfterContinuationHintRefs: JsonValue[];
+    firstTodoShape: {
+      ref: string | null;
+      activeItem: string | null;
+      itemCount: number | null;
+      completedCount: number | null;
+      inProgressCount: number | null;
+      activeItemLooksLikeSourceLookup: boolean;
+    } | null;
+    firstTodoLooksLikeSourceLookup: boolean;
+    activeTodoStillSourceLookupAfterRepeatedSourceCalls: boolean;
+    sourceNavigationReminderObserved: boolean;
+    sourceNavigationReminderRef: string | null;
+    sourceNavigationReminderSourceToolCount: number | null;
+    lifecycleEndedViaNodeFinish: boolean;
+  };
   providerAttempt: {
     modelProvider: string | null;
     modelId: string | null;
@@ -428,6 +604,7 @@ export type NodeAgentSessionTrace = {
     managedOutputWorkingContextEntryRef: string | null;
     changeSetRef: string | null;
     validationStateRef: string | null;
+    validationEvidenceRef: string | null;
     contextTodoDecisionRef: string | null;
     contextNextActionRef: string | null;
     validationTodoDecisionRef: string | null;
@@ -500,6 +677,9 @@ export type NodeAgentSessionTrace = {
     managedOutputObserved: boolean;
     changeSetObserved: boolean;
     validationStateObserved: boolean;
+    validationEvidenceObserved: boolean;
+    sourceNavigationReminderObserved: boolean;
+    activeTodoStillSourceLookupAfterRepeatedSourceCalls: boolean;
   };
   missingOptics: string[];
   reasonCodes: string[];
@@ -1310,10 +1490,7 @@ function parseNodeExecutionRunRecord(value: JsonValue | null): NodeExecutionRunR
 export function normalizeNodeFinish(input: { nodeRunId: string; raw: unknown }): NodeFinish {
   const record = asRecord(input.raw);
   const statusRaw = typeof record.status === "string" ? record.status.trim() : "";
-  const status: NodeFinishStatus =
-    statusRaw === "completed" || statusRaw === "blocked" || statusRaw === "needs_escalation"
-      ? statusRaw
-      : "blocked";
+  const status: NodeFinishStatus = isNodeFinishStatus(statusRaw) ? statusRaw : "blocked";
   const summary =
     typeof record.summary === "string" && record.summary.trim()
       ? record.summary.trim().slice(0, 2_000)
@@ -1379,11 +1556,13 @@ export function mapNodeFinishToLifecycleOutcome(input: {
 }
 
 const NodeFinishToolSchema = Type.Object({
-  status: Type.Union([
-    Type.Literal("completed"),
-    Type.Literal("blocked"),
-    Type.Literal("needs_escalation"),
-  ]),
+  status: Type.Union(
+    [Type.Literal("completed"), Type.Literal("blocked"), Type.Literal("needs_escalation")],
+    {
+      description:
+        "Required terminal status. Valid values: completed, blocked, needs_escalation. Do not use ok, success, done, needs_review, or $success.",
+    },
+  ),
   summary: Type.String({
     minLength: 1,
     maxLength: 2000,
@@ -1399,9 +1578,41 @@ const NodeFinishToolSchema = Type.Object({
   reason: Type.Optional(Type.String({ minLength: 1, maxLength: 1000 })),
 });
 
+function invalidNodeFinishStatusResult(statusRaw: unknown): JsonValue {
+  const invalidStatus =
+    typeof statusRaw === "string" && statusRaw.trim() ? statusRaw.trim().slice(0, 120) : null;
+  const validStatuses = [...NODE_FINISH_VALID_STATUSES];
+  return {
+    accepted: false,
+    reason: "invalid_status_enum",
+    invalidStatus,
+    validStatuses,
+    message: `Invalid node_finish status${invalidStatus ? ` "${invalidStatus}"` : ""}. status must be one of: ${validStatuses.join(", ")}.`,
+    examples: [
+      {
+        status: "completed",
+        summary: "Applied the scoped edit and validated the touched behavior.",
+        evidenceRefs: ["openclaw-working-context://validation/example"],
+      },
+      {
+        status: "blocked",
+        blockerKind: "missing_source_window",
+        summary: "Blocked by one specific missing source window.",
+      },
+      {
+        status: "needs_escalation",
+        summary: "The node requires higher-capability review before editing can continue.",
+        attemptedRefs: ["openclaw-tool-result://example/attempt"],
+      },
+    ],
+    reasonCodes: ["node_finish_tool_call_rejected_invalid_status_enum"],
+  };
+}
+
 const ExecutionPlatformResourceReadToolSchema = Type.Object({
   ref: Type.Optional(Type.String({ minLength: 1, maxLength: 800 })),
   refs: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 800 }), { maxItems: 12 })),
+  offsetBytes: Type.Optional(Type.Number({ minimum: 0 })),
   maxBytes: Type.Optional(Type.Number({ minimum: 500, maximum: 50_000 })),
 });
 
@@ -1933,10 +2144,32 @@ async function hydrateExecutionPlatformResourceRef(input: {
   nodeExecutionSnapshot: NodeExecutionSnapshot;
   repository: NodeExecutionRunArtifactRepository;
   remainingBytes: number;
+  offsetBytes?: number;
+  stateRoot?: string | null;
+  sessionStorePath?: string | null;
 }): Promise<JsonValue> {
   const ref = input.ref.trim();
   if (looksLikeLocalSourcePathRef(ref)) {
     return localSourcePathResourceReadRejection(ref);
+  }
+  const managedOutput = hydrateManagedOutputResourceRef({
+    ref,
+    stateRoot: input.stateRoot,
+    offsetBytes: input.offsetBytes,
+    maxBytes: input.remainingBytes,
+  });
+  if (managedOutput) {
+    return managedOutput;
+  }
+  const workingContext = hydrateSessionWorkingContextResourceRef({
+    ref,
+    storePath: input.sessionStorePath,
+    currentSessionKey: input.nodeExecutionSnapshot.sessionKey,
+    offsetBytes: input.offsetBytes,
+    maxBytes: input.remainingBytes,
+  });
+  if (workingContext) {
+    return workingContext;
   }
   const authorizedRefs = authorizedExecutionPlatformResourceRefs(input.nodeExecutionSnapshot);
   if (
@@ -2506,7 +2739,7 @@ async function buildNodeWorkerPromptAuthoringMaterial(input: {
 
   lines.push("### Exact Expansion Handles");
   lines.push(
-    'The final worker prompt should be self-contained enough to start from directly. Mention openclaw_resource_read only as an exception path for exact refs intentionally supplied here when a specific missing runtime/source fact is needed. Do not make exact-ref hydration the default first move. If repo mapping is weak, instruct the worker to use native task with agentId:"execution-context-scout" and enough prompt/requirement/source material in the child task for the scout to return actual prompt/code/test windows inline to the parent session.',
+    "The final worker prompt should be self-contained enough to start from directly. Mention openclaw_resource_read only as an exception path for exact refs intentionally supplied here when a specific missing runtime/source fact is needed. Mention execution-context-scout only when source ownership is genuinely unknown.",
   );
   if (sourcePromptBodyRefs.length > 0) {
     lines.push(`Full prompt body refs for expansion: ${sourcePromptBodyRefs.join(", ")}`);
@@ -2786,12 +3019,6 @@ function promptQualityDiagnostics(input: {
   if (!sourceAnchored) {
     diagnostics.push("prompt_quality_missing_source_prompt_refs");
   }
-  if (!/first (required )?(move|step)|begin by|start by|start with/u.test(lower)) {
-    diagnostics.push("prompt_quality_missing_first_move");
-  }
-  if (!lower.includes("update_plan")) {
-    diagnostics.push("prompt_quality_missing_update_plan");
-  }
   if (!lower.includes("node_finish") && !lower.includes("node.finish")) {
     diagnostics.push("prompt_quality_missing_node_finish");
   }
@@ -3063,14 +3290,18 @@ export async function authorNodeExecutionPrompt(input: {
       "Use the provided artifacts, requirements, source prompt excerpts, full original operator prompt, refs, and runtime metadata only as source material for synthesis.",
       "Your output must convert that material into one coherent engineering assignment that a capable coding agent can execute directly.",
       "Do not dump RequirementMap JSON, scheduler metadata, raw artifacts, or the full original operator prompt as the task. Translate them into instructions.",
-      "The execution-coding agent already has its worker skill instructions. Do not spend the prompt restating generic worker-loop process. Include process only when it is specific to this node's first move, scope, success gates, delegation needs, validation, or terminal evidence.",
-      "The required execution-node-workflow skill is already active. The prompt may tell the worker to follow the active execution-node-workflow skill, but must not tell it to activate, discover, or read that skill at runtime.",
-      "Prefer a clear prose structure with a title, mission, scoped requirements, relevant mission context, what to investigate/build/change, suggested starting points, in scope, out of scope, done-when, evidence expectations, and blocker/escalation rules when those topics are relevant.",
+      "Do not spend the prompt restating generic worker-loop process. The prompt is a work order, not a workflow manual.",
+      "Do not mention required workflow skills unless a source requirement specifically asks for skill documentation work.",
+      "Prefer a short prose structure with a title, objective, scoped requirements, primary edit surfaces, non-goals, validation expectations, and finish evidence.",
+      "For implementation nodes, start the prompt with edit objectives rather than discovery: expected source change, likely files/symbols if known, validation signal, and allowed scope.",
+      "For implementation nodes, require a first-turn patch hypothesis: target files, target symbols, patch shape, and validation signal before broad context acquisition.",
       "Assigned requirements scope the node. The full original operator prompt is source material for terminology, refs, constraints, and success gates; it does not expand the worker's accountability to the entire mission.",
-      "The prompt must require a visible native OpenClaw update_plan before work. update_plan is the native working plan surface; do not invent an Execution Platform todo ledger.",
-      "The prompt must include a concrete first move after update_plan: decide from the prompt whether there is enough edit-ready context to begin, use exact openclaw_resource_read only for a specific supplied ref when a missing runtime/source fact blocks the next decision, or delegate weak repo/source mapping through native task.",
-      "The prompt must describe the expected dynamic context-task/edit/validation-task/repair loop at the level needed for this node, including native task delegation to execution-context-scout when mapping is weak and native task delegation to execution-validation-scout for non-trivial validation.",
-      "Do not instruct the parent execution-coding agent to use direct repo read, grep, glob, list, exec, raw sessions_spawn, or raw sessions_yield. Those are scout/runtime responsibilities in executable-node mode.",
+      "Do not require update_plan as a first move. Mention todo/update_plan only as durable progress tracking when the node is clearly multi-step.",
+      "Include this exact rule near the top when the node is an implementation task: If you have enough context to make even a small, medium-confidence edit, make that edit now; do not take another context-acquisition turn.",
+      "For large TypeScript files, tell the worker to use lsp documentSymbol or file-scoped grep to locate symbols, then read the exact window. If read returns `Exact next read: read({...})`, tell the worker to use that exact call when continuation is needed.",
+      "Do not include a generic first-move recipe. If a first move is necessary, make it node-specific and edit-first.",
+      "Describe scout and validation use only when it is specific to this node. Do not emit a generic context-task/edit/validation-task/repair loop.",
+      "Allow bounded parent read, grep, and glob for exact local editor navigation. Do not instruct the parent execution-coding agent to use broad crawling, direct exec, raw sessions_spawn, or raw sessions_yield.",
       "Preserve the node objective and assigned requirement verbs exactly. Do not turn a research/report/diagnosis requirement into implementation work just because broader prompt context mentions a system capability.",
       "Runtime owns node ids, lifecycle, evidence acceptance, and node_finish. Scheduler does not author this prompt.",
       "The worker should call node_finish with bounded evidence or a typed blocker when complete; do not tell it to wait passively for runtime acceptance.",
@@ -3242,13 +3473,14 @@ export function createExecutionPlatformResourceReadTool(input: {
   runtimeJobId: string;
   nodeExecutionSnapshot: NodeExecutionSnapshot;
   repository: NodeExecutionRunArtifactRepository;
+  sessionStorePath?: string | null;
 }): AnyAgentTool {
   return {
     name: OPENCLAW_RESOURCE_READ_TOOL_NAME,
     label: "Read Execution Platform resource",
     displaySummary: "Hydrate bounded Execution Platform refs for the current node session.",
     description:
-      "Mechanically hydrate bounded Execution Platform refs from the current node snapshot and runtime artifacts. Use this to read node execution snapshots, requirement refs, source-prompt window refs, and evidence/artifact refs. It does not select relevant context or infer meaning.",
+      "Mechanically hydrate bounded exact OpenClaw refs from the current node snapshot, runtime artifacts, openclaw-managed-output:// tool-output refs, and openclaw-session-working-context:// ledger refs authorized for this node session. Use this to read node execution snapshots, requirement refs, source-prompt window refs, evidence/artifact refs, bounded windows of durably stored truncated output, and bounded prompt-ready working-context/file_graph/change_set/validation_state entries. It does not select relevant context or infer meaning.",
     parameters: ExecutionPlatformResourceReadToolSchema,
     execute: async (_callId, rawParams) => {
       const params = asRecord(rawParams);
@@ -3263,6 +3495,10 @@ export function createExecutionPlatformResourceReadTool(input: {
         typeof params.maxBytes === "number" && Number.isFinite(params.maxBytes)
           ? Math.max(500, Math.min(50_000, Math.floor(params.maxBytes)))
           : 16_000;
+      const offsetBytes =
+        typeof params.offsetBytes === "number" && Number.isFinite(params.offsetBytes)
+          ? Math.max(0, Math.floor(params.offsetBytes))
+          : undefined;
       let remainingBytes = maxBytes;
       const resources: JsonValue[] = [];
       for (const ref of refs) {
@@ -3272,6 +3508,9 @@ export function createExecutionPlatformResourceReadTool(input: {
           nodeExecutionSnapshot: input.nodeExecutionSnapshot,
           repository: input.repository,
           remainingBytes,
+          offsetBytes,
+          stateRoot: resolveStateDir(process.env),
+          sessionStorePath: input.sessionStorePath,
         });
         const record = asRecord(hydrated);
         const byteCount = typeof record.byteCount === "number" ? record.byteCount : 0;
@@ -3305,6 +3544,7 @@ export function createExecutionPlatformResourceReadTool(input: {
 export function createNodeFinishTool(input: {
   nodeRunId: string;
   onFinish?: (finish: NodeFinish) => Promise<void> | void;
+  resolveNativeEvidence?: () => NodeFinishNativeEvidence | Promise<NodeFinishNativeEvidence>;
 }): AnyAgentTool {
   return {
     name: NODE_FINISH_TOOL_NAME,
@@ -3312,18 +3552,74 @@ export function createNodeFinishTool(input: {
     displaySummary:
       "Finish the current Execution Platform graph node with typed evidence or blocker.",
     description:
-      "Terminal tool for an Execution Platform node session. Call this exactly once when the node is completed, blocked, or needs escalation. Assistant prose does not complete the node.",
+      'Terminal tool for an Execution Platform node session. Call this exactly once when the node is completed, blocked, or needs escalation. status must be one of: completed, blocked, needs_escalation. Do not use ok, success, done, needs_review, or $success. Example completed call: {"status":"completed","summary":"Applied the scoped edit and validated the touched behavior.","evidenceRefs":["openclaw-working-context://validation/example"]}. Assistant prose does not complete the node. Completed nodes require changed-file and validation evidence refs; native working-context evidence is attached automatically when available.',
     parameters: NodeFinishToolSchema,
     execute: async (_callId, rawParams) => {
-      const finish = normalizeNodeFinish({ nodeRunId: input.nodeRunId, raw: rawParams });
+      const rawRecord = asRecord(rawParams);
+      const statusRaw = rawRecord.status;
+      const statusText = typeof statusRaw === "string" ? statusRaw.trim() : "";
+      if (!isNodeFinishStatus(statusText)) {
+        return jsonResult(invalidNodeFinishStatusResult(statusRaw));
+      }
+      let finish = normalizeNodeFinish({ nodeRunId: input.nodeRunId, raw: rawParams });
+      const nativeEvidence = (await input.resolveNativeEvidence?.()) ?? null;
+      const autoAttachedEvidenceRefs = nativeEvidence
+        ? uniqueStrings(
+            nativeEvidence.evidenceRefs.filter((ref) => !finish.evidenceRefs.includes(ref)),
+            80,
+          )
+        : [];
+      if (autoAttachedEvidenceRefs.length > 0) {
+        finish = {
+          ...finish,
+          evidenceRefs: uniqueStrings([...finish.evidenceRefs, ...autoAttachedEvidenceRefs], 80),
+        };
+      }
+      const missingEvidence = nativeEvidence
+        ? missingCompletedNodeFinishEvidence({ finish, nativeEvidence })
+        : [];
+      if (missingEvidence.length > 0) {
+        return jsonResult({
+          accepted: false,
+          nodeRunId: finish.nodeRunId,
+          status: finish.status,
+          reason: "missing_required_evidence_refs",
+          required: [...REQUIRED_COMPLETED_NODE_FINISH_EVIDENCE],
+          missing: missingEvidence,
+          evidenceRefCount: finish.evidenceRefs.length,
+          autoAttachedEvidenceRefCount: autoAttachedEvidenceRefs.length,
+          changedFileRefCount: nativeEvidence?.changedFileRefs.length ?? 0,
+          changeSetRefCount: nativeEvidence?.changeSetRefs.length ?? 0,
+          validationEvidenceRefCount: nativeEvidence?.validationEvidenceRefs.length ?? 0,
+          blockerKind: "evidence_closure_missing",
+          reasonCodes: [
+            "node_finish_tool_call_rejected_missing_required_evidence_refs",
+            ...missingEvidence.map((missing) => `node_finish_missing_required_evidence:${missing}`),
+            ...(nativeEvidence?.reasonCodes ?? []),
+          ],
+        });
+      }
       await input.onFinish?.(finish);
       return jsonResult({
         accepted: true,
         nodeRunId: finish.nodeRunId,
         status: finish.status,
         evidenceRefCount: finish.evidenceRefs.length,
+        autoAttachedEvidenceRefCount: autoAttachedEvidenceRefs.length,
+        changedFileRefCount: nativeEvidence?.changedFileRefs.length ?? 0,
+        changeSetRefCount: nativeEvidence?.changeSetRefs.length ?? 0,
+        validationEvidenceRefCount: nativeEvidence?.validationEvidenceRefs.length ?? 0,
         blockerKind: finish.blockerKind,
-        reasonCodes: ["node_finish_tool_call_accepted"],
+        reasonCodes: uniqueStrings([
+          "node_finish_tool_call_accepted",
+          finish.status === "completed"
+            ? "node_finish_completed_required_evidence_refs_present"
+            : null,
+          autoAttachedEvidenceRefs.length > 0
+            ? "node_finish_auto_attached_native_evidence_refs"
+            : null,
+          ...(nativeEvidence?.reasonCodes ?? []),
+        ]),
       });
     },
   };
@@ -3345,6 +3641,16 @@ function traceString(record: Record<string, unknown>, keys: readonly string[]): 
 function traceBoolean(record: Record<string, unknown>, keys: readonly string[]): boolean | null {
   for (const key of keys) {
     const value = booleanValue(record[key]);
+    if (value !== null) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function traceNumber(record: Record<string, unknown>, keys: readonly string[]): number | null {
+  for (const key of keys) {
+    const value = finiteNumber(record[key]);
     if (value !== null) {
       return value;
     }
@@ -3646,6 +3952,81 @@ export function buildNodeAgentSessionTrace(input: {
     ]),
     toolCatalogRef: traceString(nativeTrace, ["sessionLaunchToolCatalogRef", "toolCatalogRef"]),
   };
+  const editTransitionDiagnostics = firstRecord(nativeTrace, [
+    "editTransitionDiagnostics",
+    "editTransition",
+  ]);
+  const modelActivationAtMs = traceNumber(editTransitionDiagnostics, ["modelActivationAtMs"]);
+  const firstEditCompletedAtMs = traceNumber(editTransitionDiagnostics, ["firstEditCompletedAtMs"]);
+  const nodeStartedAtMs = input.nodeRun.startedAt ? Date.parse(input.nodeRun.startedAt) : NaN;
+  const bootstrapToFirstEditWallClockMs =
+    firstEditCompletedAtMs !== null &&
+    Number.isFinite(nodeStartedAtMs) &&
+    firstEditCompletedAtMs >= nodeStartedAtMs
+      ? firstEditCompletedAtMs - nodeStartedAtMs
+      : null;
+  const firstEditAfterModelActivationWallClockMs =
+    firstEditCompletedAtMs !== null &&
+    modelActivationAtMs !== null &&
+    firstEditCompletedAtMs >= modelActivationAtMs
+      ? firstEditCompletedAtMs - modelActivationAtMs
+      : traceNumber(editTransitionDiagnostics, ["firstEditAfterModelActivationMs"]);
+  const firstTodoShapeRecord = firstRecord(editTransitionDiagnostics, ["firstTodoShape"]);
+  const firstTodoShape =
+    Object.keys(firstTodoShapeRecord).length > 0
+      ? {
+          ref: traceString(firstTodoShapeRecord, ["ref"]),
+          activeItem: traceString(firstTodoShapeRecord, ["activeItem"]),
+          itemCount: traceNumber(firstTodoShapeRecord, ["itemCount"]),
+          completedCount: traceNumber(firstTodoShapeRecord, ["completedCount"]),
+          inProgressCount: traceNumber(firstTodoShapeRecord, ["inProgressCount"]),
+          activeItemLooksLikeSourceLookup:
+            traceBoolean(firstTodoShapeRecord, ["activeItemLooksLikeSourceLookup"]) === true,
+        }
+      : null;
+  const editTransition = {
+    bootstrapToFirstEditWallClockMs,
+    modelActivationAtMs,
+    firstEditAfterModelActivationWallClockMs,
+    toolCountBeforeFirstEdit:
+      traceNumber(editTransitionDiagnostics, ["toolCountBeforeFirstEdit"]) ?? 0,
+    sourceToolCountBeforeFirstEdit:
+      traceNumber(editTransitionDiagnostics, ["sourceToolCountBeforeFirstEdit"]) ?? 0,
+    patchHypothesisObserved:
+      traceBoolean(editTransitionDiagnostics, ["patchHypothesisObserved"]) === true,
+    firstPatchHypothesisBeforeToolCallObserved:
+      traceBoolean(editTransitionDiagnostics, ["firstPatchHypothesisBeforeToolCallObserved"]) ===
+      true,
+    firstPatchHypothesisMessageIndex: traceNumber(editTransitionDiagnostics, [
+      "firstPatchHypothesisMessageIndex",
+    ]),
+    pathOnlyReadAfterContinuationHintObserved:
+      traceBoolean(editTransitionDiagnostics, ["pathOnlyReadAfterContinuationHintObserved"]) ===
+      true,
+    pathOnlyReadAfterContinuationHintCount:
+      traceNumber(editTransitionDiagnostics, ["pathOnlyReadAfterContinuationHintCount"]) ?? 0,
+    pathOnlyReadAfterContinuationHintRefs: Array.isArray(
+      editTransitionDiagnostics.pathOnlyReadAfterContinuationHintRefs,
+    )
+      ? (editTransitionDiagnostics.pathOnlyReadAfterContinuationHintRefs as JsonValue[])
+      : [],
+    firstTodoShape,
+    firstTodoLooksLikeSourceLookup:
+      traceBoolean(editTransitionDiagnostics, ["firstTodoLooksLikeSourceLookup"]) === true,
+    activeTodoStillSourceLookupAfterRepeatedSourceCalls:
+      traceBoolean(editTransitionDiagnostics, [
+        "activeTodoStillSourceLookupAfterRepeatedSourceCalls",
+      ]) === true,
+    sourceNavigationReminderObserved:
+      traceBoolean(editTransitionDiagnostics, ["sourceNavigationReminderObserved"]) === true,
+    sourceNavigationReminderRef: traceString(editTransitionDiagnostics, [
+      "sourceNavigationReminderRef",
+    ]),
+    sourceNavigationReminderSourceToolCount: traceNumber(editTransitionDiagnostics, [
+      "sourceNavigationReminderSourceToolCount",
+    ]),
+    lifecycleEndedViaNodeFinish: Boolean(terminalNodeFinishRef) || Boolean(input.finish),
+  };
   const childResultRef = traceString(nativeTrace, [
     "childResultRef",
     "contextScoutResultRef",
@@ -3673,6 +4054,15 @@ export function buildNodeAgentSessionTrace(input: {
     "validationStateRef",
     "validationStateWorkingContextEntryRef",
   ]);
+  const validationEvidenceRef =
+    traceString(nativeTrace, [
+      "validationEvidenceRef",
+      "validationEvidenceChildResultRef",
+      "validationStateRef",
+      "validationStateWorkingContextEntryRef",
+      "validationScoutResultRef",
+      "validationSubagentResultRef",
+    ]) ?? validationStateRef;
   const childSessionKeyRef = traceString(nativeTrace, [
     "childSessionKeyRef",
     "contextScoutSessionKey",
@@ -3786,6 +4176,12 @@ export function buildNodeAgentSessionTrace(input: {
     validationStateObserved:
       Boolean(validationStateRef) ||
       traceBoolean(nativeTrace, ["validationStateObserved"]) === true,
+    validationEvidenceObserved:
+      Boolean(validationEvidenceRef) ||
+      traceBoolean(nativeTrace, ["validationEvidenceObserved"]) === true,
+    sourceNavigationReminderObserved: editTransition.sourceNavigationReminderObserved,
+    activeTodoStillSourceLookupAfterRepeatedSourceCalls:
+      editTransition.activeTodoStillSourceLookupAfterRepeatedSourceCalls,
   };
   const requiredOptics: Array<[keyof typeof observations, string]> = [
     ["workerPromptAuthored", "worker_prompt_authored_missing"],
@@ -3855,6 +4251,7 @@ export function buildNodeAgentSessionTrace(input: {
       nativeCompactionCount,
       compactionObserved: nativeCompactionCount > 0,
     },
+    editTransition,
     providerAttempt,
     todoState,
     sessionLaunch,
@@ -3877,6 +4274,7 @@ export function buildNodeAgentSessionTrace(input: {
       managedOutputWorkingContextEntryRef,
       changeSetRef,
       validationStateRef,
+      validationEvidenceRef,
       contextTodoDecisionRef,
       contextNextActionRef,
       validationTodoDecisionRef,
@@ -3944,6 +4342,15 @@ export function buildNodeAgentSessionTrace(input: {
         observations.changeSetObserved ? "node_agent_session_trace_change_set_observed" : null,
         observations.validationStateObserved
           ? "node_agent_session_trace_validation_state_observed"
+          : null,
+        observations.validationEvidenceObserved
+          ? "node_agent_session_trace_validation_evidence_observed"
+          : null,
+        observations.sourceNavigationReminderObserved
+          ? "node_agent_session_trace_source_navigation_reminder_observed"
+          : null,
+        observations.activeTodoStillSourceLookupAfterRepeatedSourceCalls
+          ? "node_agent_session_trace_source_lookup_todo_after_repeated_source_calls"
           : null,
         observations.childResultDeliveryStatus === "projected"
           ? "node_agent_session_trace_child_result_projected"
@@ -4070,6 +4477,12 @@ export async function runNodeAgentSession(input: {
   let capturedFinishArtifactRef: string | null = null;
   const finishTool = createNodeFinishTool({
     nodeRunId: nodeRun.nodeRunId,
+    resolveNativeEvidence: () =>
+      collectNodeFinishNativeEvidence({
+        config: input.agentParams.config,
+        sessionKey: nodeRun.sessionKey,
+        agentId: nodeRun.agentId,
+      }),
     onFinish: async (finish) => {
       capturedFinish = finish;
       capturedFinishArtifactRef = (await input.recordFinishArtifact?.(finish)) ?? null;

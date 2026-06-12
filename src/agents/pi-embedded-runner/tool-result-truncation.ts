@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { TextContent } from "@mariozechner/pi-ai";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
@@ -36,22 +37,250 @@ export const DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS = 50 * 1024;
  */
 export const HARD_MAX_TOOL_RESULT_CHARS = DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS;
 
+export const DEFAULT_TOOL_OUTPUT_MAX_LINES = 2_000;
+export const DEFAULT_TOOL_OUTPUT_MAX_BYTES = 50 * 1024;
+export const COMPACTION_TOOL_OUTPUT_MAX_BYTES = 2_000;
+export const OLD_TOOL_RESULT_CONTENT_CLEARED = "[Old tool result content cleared]";
+
 /**
  * Minimum characters to keep when truncating.
  * We always keep at least the first portion so the model understands
  * what was in the content.
  */
 const MIN_KEEP_CHARS = 2_000;
-const RECOVERY_MIN_KEEP_CHARS = 0;
+const RECOVERY_MIN_KEEP_CHARS = 2_000;
 
 type ToolResultTruncationOptions = {
   suffix?: string | ((truncatedChars: number) => string);
   minKeepChars?: number;
 };
 
+export type ToolOutputProjectionOptions = {
+  maxLines?: number;
+  maxBytes?: number;
+  direction?: "head" | "tail";
+  stateRoot?: string | null;
+  sessionKey?: string;
+  toolCallId?: string;
+  toolName?: string;
+  outputKind?: string;
+  reason?: string;
+};
+
+export type ToolOutputProjection = {
+  content: string;
+  truncated: boolean;
+  totalLines: number;
+  totalBytes: number;
+  returnedLines: number;
+  returnedBytes: number;
+  omittedLines: number;
+  omittedBytes: number;
+  managedOutput: PersistManagedToolOutputResult | null;
+};
+
 const DEFAULT_SUFFIX = (truncatedChars: number) =>
   formatContextLimitTruncationNotice(truncatedChars);
 export const MIN_TRUNCATED_TEXT_CHARS = MIN_KEEP_CHARS + DEFAULT_SUFFIX(1).length;
+
+function resolvePositiveInt(value: number | undefined, fallback: number): number {
+  return Number.isFinite(value) && typeof value === "number" && value > 0
+    ? Math.floor(value)
+    : fallback;
+}
+
+function byteLengthUtf8(text: string): number {
+  return Buffer.byteLength(text, "utf8");
+}
+
+function truncateUtf8ToMaxBytes(text: string, maxBytes: number): string {
+  if (maxBytes <= 0 || text.length === 0) {
+    return "";
+  }
+  if (byteLengthUtf8(text) <= maxBytes) {
+    return text;
+  }
+  let end = Math.min(text.length, maxBytes);
+  while (end > 0 && byteLengthUtf8(text.slice(0, end)) > maxBytes) {
+    end -= 1;
+  }
+  return text.slice(0, end);
+}
+
+function buildProjectionHint(params: {
+  managedOutput: PersistManagedToolOutputResult | null;
+  omittedLines: number;
+  omittedBytes: number;
+}): string {
+  const omitted =
+    params.omittedBytes > 0
+      ? `${params.omittedBytes} bytes`
+      : `${Math.max(1, params.omittedLines)} lines`;
+  const lines = [`...${omitted} truncated...`, "", "Output truncated."];
+  if (params.managedOutput) {
+    lines.push(
+      `Full output saved to: ${params.managedOutput.outputPath}`,
+      "Use Grep to search the full content or Read with offset/limit to view specific sections.",
+    );
+  }
+  return lines.join("\n");
+}
+
+function buildProjectedToolOutputContent(params: {
+  preview: string;
+  hint: string;
+  direction: "head" | "tail";
+}): string {
+  if (!params.preview) {
+    return params.hint;
+  }
+  return params.direction === "head"
+    ? `${params.preview}\n\n${params.hint}`
+    : `${params.hint}\n\n${params.preview}`;
+}
+
+function fitPreviewWithHint(params: {
+  preview: string;
+  hint: string;
+  direction: "head" | "tail";
+  maxBytes: number;
+}): string {
+  const content = buildProjectedToolOutputContent(params);
+  if (byteLengthUtf8(content) <= params.maxBytes) {
+    return params.preview;
+  }
+  const separatorBytes = params.preview ? 2 : 0;
+  const reservedBytes = byteLengthUtf8(params.hint) + separatorBytes;
+  const previewBudget = Math.max(0, params.maxBytes - reservedBytes);
+  if (params.direction === "tail") {
+    const bytes = Buffer.from(params.preview, "utf8");
+    return truncateUtf8ToMaxBytes(
+      bytes.subarray(Math.max(0, bytes.length - previewBudget)).toString("utf8"),
+      previewBudget,
+    );
+  }
+  return truncateUtf8ToMaxBytes(params.preview, previewBudget);
+}
+
+export function projectToolOutput(params: {
+  text: string;
+  options?: ToolOutputProjectionOptions;
+}): ToolOutputProjection {
+  const options = params.options ?? {};
+  const maxLines = resolvePositiveInt(options.maxLines, DEFAULT_TOOL_OUTPUT_MAX_LINES);
+  const maxBytes = resolvePositiveInt(options.maxBytes, DEFAULT_TOOL_OUTPUT_MAX_BYTES);
+  const direction = options.direction ?? "head";
+  const lines = params.text.split("\n");
+  const totalBytes = byteLengthUtf8(params.text);
+  const totalLines = lines.length;
+
+  if (totalLines <= maxLines && totalBytes <= maxBytes) {
+    return {
+      content: params.text,
+      truncated: false,
+      totalLines,
+      totalBytes,
+      returnedLines: totalLines,
+      returnedBytes: totalBytes,
+      omittedLines: 0,
+      omittedBytes: 0,
+      managedOutput: null,
+    };
+  }
+
+  const outputLines: string[] = [];
+  let returnedBytes = 0;
+  let hitByteCap = false;
+
+  if (direction === "head") {
+    for (let index = 0; index < totalLines && outputLines.length < maxLines; index += 1) {
+      const separatorBytes = outputLines.length > 0 ? 1 : 0;
+      const lineBytes = byteLengthUtf8(lines[index] ?? "") + separatorBytes;
+      if (returnedBytes + lineBytes > maxBytes) {
+        hitByteCap = true;
+        break;
+      }
+      outputLines.push(lines[index] ?? "");
+      returnedBytes += lineBytes;
+    }
+  } else {
+    for (let index = totalLines - 1; index >= 0 && outputLines.length < maxLines; index -= 1) {
+      const separatorBytes = outputLines.length > 0 ? 1 : 0;
+      const lineBytes = byteLengthUtf8(lines[index] ?? "") + separatorBytes;
+      if (returnedBytes + lineBytes > maxBytes) {
+        hitByteCap = true;
+        break;
+      }
+      outputLines.unshift(lines[index] ?? "");
+      returnedBytes += lineBytes;
+    }
+  }
+
+  if (outputLines.length === 0 && params.text.length > 0 && maxBytes > 0) {
+    const byteSlice = Buffer.from(params.text, "utf8").subarray(0, maxBytes).toString("utf8");
+    outputLines.push(byteSlice);
+    returnedBytes = byteLengthUtf8(byteSlice);
+    hitByteCap = true;
+  }
+
+  const omittedLines = Math.max(0, totalLines - outputLines.length);
+  const omittedBytes = Math.max(0, totalBytes - returnedBytes);
+  const managedOutput = persistManagedToolOutputSync({
+    stateRoot: options.stateRoot,
+    sessionKey: options.sessionKey,
+    toolCallId: options.toolCallId,
+    toolName: options.toolName ?? "tool_result",
+    text: params.text,
+    outputKind: options.outputKind ?? "tool_result",
+    reason: options.reason ?? "tool_output_projection",
+  });
+  let preview = outputLines.join("\n");
+  let hint = buildProjectionHint({
+    managedOutput,
+    omittedLines,
+    omittedBytes: hitByteCap ? omittedBytes : 0,
+  });
+  for (let iteration = 0; iteration < 3; iteration += 1) {
+    preview = fitPreviewWithHint({
+      preview,
+      hint,
+      direction,
+      maxBytes,
+    });
+    const nextReturnedBytes = byteLengthUtf8(preview);
+    const nextReturnedLines = preview ? preview.split("\n").length : 0;
+    const nextHint = buildProjectionHint({
+      managedOutput,
+      omittedLines: Math.max(0, totalLines - nextReturnedLines),
+      omittedBytes: Math.max(0, totalBytes - nextReturnedBytes),
+    });
+    if (
+      nextHint === hint &&
+      byteLengthUtf8(buildProjectedToolOutputContent({ preview, hint, direction })) <= maxBytes
+    ) {
+      break;
+    }
+    hint = nextHint;
+  }
+  let content = buildProjectedToolOutputContent({ preview, hint, direction });
+  if (byteLengthUtf8(content) > maxBytes) {
+    content = truncateUtf8ToMaxBytes(content, maxBytes);
+  }
+  returnedBytes = byteLengthUtf8(preview);
+  const returnedLines = preview ? preview.split("\n").length : 0;
+
+  return {
+    content,
+    truncated: true,
+    totalLines,
+    totalBytes,
+    returnedLines,
+    returnedBytes,
+    omittedLines: Math.max(0, totalLines - returnedLines),
+    omittedBytes: Math.max(0, totalBytes - returnedBytes),
+    managedOutput,
+  };
+}
 
 function resolveSuffixFactory(
   suffix: ToolResultTruncationOptions["suffix"],
@@ -275,41 +504,6 @@ function readToolResultStringField(
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-function persistManagedOutputForToolResult(params: {
-  message: AgentMessage;
-  stateRoot?: string | null;
-  sessionKey?: string;
-  reason: string;
-}): PersistManagedToolOutputResult | null {
-  const text = getToolResultTextForManagedOutput(params.message);
-  if (!text) {
-    return null;
-  }
-  return persistManagedToolOutputSync({
-    stateRoot: params.stateRoot,
-    sessionKey: params.sessionKey,
-    toolCallId: readToolResultStringField(params.message, "toolCallId"),
-    toolName: readToolResultStringField(params.message, "toolName") ?? "tool_result",
-    text,
-    outputKind: "tool_result",
-    reason: params.reason,
-  });
-}
-
-function buildManagedOutputTruncationSuffix(
-  managedOutput: PersistManagedToolOutputResult | null,
-): ((truncatedChars: number) => string) | undefined {
-  if (!managedOutput) {
-    return undefined;
-  }
-  return (truncatedChars) =>
-    [
-      formatContextLimitTruncationNotice(truncatedChars),
-      `Full output saved to managedOutputRef=${managedOutput.ref} (${managedOutput.byteCount} bytes, sha256=${managedOutput.textHash}).`,
-      "Inspect through the appropriate scout/tool path; do not read stateRoot files directly or paste raw managed-output files into context.",
-    ].join("\n");
-}
-
 /**
  * Truncate a tool result message's text content blocks to fit within maxChars.
  * Returns a new message (does not mutate the original).
@@ -367,6 +561,44 @@ export function truncateToolResultMessage(
   return { ...msg, content: newContent } as AgentMessage;
 }
 
+export function truncateToolResultMessageWithManagedOutput(params: {
+  message: AgentMessage;
+  maxChars: number;
+  stateRoot?: string | null;
+  sessionKey?: string;
+  reason: string;
+  minKeepChars?: number;
+}): AgentMessage {
+  if ((params.message as { role?: string }).role !== "toolResult") {
+    return params.message;
+  }
+  const text = getToolResultTextForManagedOutput(params.message);
+  if (!text || getToolResultTextLength(params.message) <= params.maxChars) {
+    return params.message;
+  }
+  const projected = projectToolOutput({
+    text,
+    options: {
+      maxLines: DEFAULT_TOOL_OUTPUT_MAX_LINES,
+      maxBytes: Math.max(1, params.maxChars),
+      direction: "head",
+      stateRoot: params.stateRoot,
+      sessionKey: params.sessionKey,
+      toolCallId: readToolResultStringField(params.message, "toolCallId"),
+      toolName: readToolResultStringField(params.message, "toolName") ?? "tool_result",
+      outputKind: "tool_result",
+      reason: params.reason,
+    },
+  });
+  if (!projected.truncated) {
+    return params.message;
+  }
+  return {
+    ...params.message,
+    content: [{ type: "text", text: projected.content }],
+  } as AgentMessage;
+}
+
 /**
  * Truncate oversized tool results in an array of messages (in-memory).
  * Returns a new array with truncated messages.
@@ -412,6 +644,9 @@ export type ToolResultReductionPotential = {
   aggregateBudgetChars: number;
   toolResultCount: number;
   totalToolResultChars: number;
+  mutationToolCallCount: number;
+  mutationToolCallChars: number;
+  mutationToolCallReducibleChars: number;
   oversizedCount: number;
   oversizedReducibleChars: number;
   aggregateReducibleChars: number;
@@ -428,6 +663,413 @@ type ToolResultReplacement = {
   entryId: string;
   message: AgentMessage;
 };
+
+const OLD_TOOL_RESULT_PROTECT_CHARS = 40_000;
+const OLD_TOOL_RESULT_MIN_CLEAR_CHARS = 20_000;
+const PROTECTED_RECENT_USER_TURNS = 2;
+const MUTATION_TOOL_NAMES = new Set(["edit", "apply_patch", "write"]);
+const COMPACT_MUTATION_STRING_FIELD_MIN_CHARS = 256;
+const COMPACT_MUTATION_INPUT_MIN_CHARS = 2_000;
+
+function hashText(text: string): string {
+  return crypto.createHash("sha256").update(text, "utf8").digest("hex");
+}
+
+function readMessageRole(message: AgentMessage | undefined): string {
+  return typeof (message as { role?: unknown } | undefined)?.role === "string"
+    ? (message as { role: string }).role
+    : "";
+}
+
+function isToolCallBlock(block: unknown): block is Record<string, unknown> {
+  if (!block || typeof block !== "object") {
+    return false;
+  }
+  const type = (block as { type?: unknown }).type;
+  return type === "toolCall" || type === "toolUse" || type === "functionCall";
+}
+
+function normalizeToolName(value: unknown): string {
+  return typeof value === "string" ? normalizeLowercaseStringOrEmpty(value) : "";
+}
+
+function readToolCallBlockId(block: Record<string, unknown>): string | undefined {
+  const value = block.id;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readToolResultCallId(message: AgentMessage): string | undefined {
+  const record = message as unknown as Record<string, unknown>;
+  const value = record.toolCallId ?? record.toolUseId ?? record.callId;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function isSuccessfulToolResult(message: AgentMessage): boolean {
+  const record = message as unknown as Record<string, unknown>;
+  return record.isError !== true;
+}
+
+function collectSettledToolResultIdsFromBranch(branch: ToolResultBranchEntry[]): Set<string> {
+  const ids = new Set<string>();
+  for (const entry of branch) {
+    if (entry.type !== "message" || readMessageRole(entry.message) !== "toolResult") {
+      continue;
+    }
+    if (!entry.message || !isSuccessfulToolResult(entry.message)) {
+      continue;
+    }
+    const id = entry.message ? readToolResultCallId(entry.message) : undefined;
+    if (id) {
+      ids.add(id);
+    }
+  }
+  return ids;
+}
+
+function collectSettledToolResultIdsFromMessages(messages: AgentMessage[]): Set<string> {
+  const ids = new Set<string>();
+  for (const message of messages) {
+    if (readMessageRole(message) !== "toolResult") {
+      continue;
+    }
+    if (!isSuccessfulToolResult(message)) {
+      continue;
+    }
+    const id = readToolResultCallId(message);
+    if (id) {
+      ids.add(id);
+    }
+  }
+  return ids;
+}
+
+function buildRecentTurnProtection(branch: ToolResultBranchEntry[]): boolean[] {
+  const protectedIndices = Array.from({ length: branch.length }, () => false);
+  let userTurnsSeen = 0;
+  for (let index = branch.length - 1; index >= 0; index -= 1) {
+    const entry = branch[index];
+    protectedIndices[index] = userTurnsSeen < PROTECTED_RECENT_USER_TURNS;
+    if (entry?.type === "message" && readMessageRole(entry.message) === "user") {
+      userTurnsSeen += 1;
+    }
+  }
+  return protectedIndices;
+}
+
+function isOldToolResultMarker(text: string): boolean {
+  return text.trimStart().startsWith(OLD_TOOL_RESULT_CONTENT_CLEARED);
+}
+
+function buildOldToolResultClearedMarker(params: {
+  text: string;
+  managedOutput: PersistManagedToolOutputResult | null;
+}): string {
+  const preview = truncateUtf8ToMaxBytes(params.text, COMPACTION_TOOL_OUTPUT_MAX_BYTES);
+  const omittedChars = Math.max(0, params.text.length - preview.length);
+  return [
+    OLD_TOOL_RESULT_CONTENT_CLEARED,
+    params.managedOutput
+      ? `Full output saved to: ${params.managedOutput.outputPath}`
+      : "Full output saved to: unavailable",
+    "<content>",
+    preview,
+    omittedChars > 0 ? `[old tool result preview truncated: omitted ${omittedChars} chars]` : null,
+    "</content>",
+    params.managedOutput
+      ? "Use Grep to search the full content or Read with offset/limit to view specific sections."
+      : null,
+  ]
+    .filter((line): line is string => typeof line === "string" && line.length > 0)
+    .join("\n");
+}
+
+function buildOldToolResultClearingReplacements(params: {
+  branch: ToolResultBranchEntry[];
+  stateRoot?: string | null;
+  sessionKey?: string;
+  protectedChars?: number;
+  minClearChars?: number;
+}): ToolResultReplacement[] {
+  const protectedIndices = buildRecentTurnProtection(params.branch);
+  const protectedChars = params.protectedChars ?? OLD_TOOL_RESULT_PROTECT_CHARS;
+  const minClearChars = params.minClearChars ?? OLD_TOOL_RESULT_MIN_CLEAR_CHARS;
+  const replacements: ToolResultReplacement[] = [];
+  let accumulatedChars = 0;
+  let clearedChars = 0;
+
+  for (let index = params.branch.length - 1; index >= 0; index -= 1) {
+    const entry = params.branch[index];
+    if (!entry || protectedIndices[index] || entry.type !== "message" || !entry.message) {
+      continue;
+    }
+    if (readMessageRole(entry.message) !== "toolResult") {
+      continue;
+    }
+    const text = getToolResultTextForManagedOutput(entry.message);
+    if (!text || isOldToolResultMarker(text)) {
+      continue;
+    }
+    accumulatedChars += text.length;
+    if (accumulatedChars <= protectedChars) {
+      continue;
+    }
+    const managedOutput = persistManagedToolOutputSync({
+      stateRoot: params.stateRoot,
+      sessionKey: params.sessionKey,
+      toolCallId: readToolResultCallId(entry.message),
+      toolName: readToolResultStringField(entry.message, "toolName") ?? "tool_result",
+      text,
+      outputKind: "tool_result",
+      reason: "old_tool_result_content_cleared",
+    });
+    const marker = buildOldToolResultClearedMarker({ text, managedOutput });
+    replacements.push({
+      entryId: entry.id,
+      message: {
+        ...entry.message,
+        content: [{ type: "text", text: marker }],
+      } as AgentMessage,
+    });
+    clearedChars += Math.max(0, text.length - marker.length);
+  }
+
+  return clearedChars >= minClearChars ? replacements : [];
+}
+
+function compactReplayString(label: string, value: string): string {
+  return `[${label} omitted from settled tool-call replay; bytes=${byteLengthUtf8(value)}; sha256=${hashText(value)}]`;
+}
+
+function compactMutationValue(value: unknown, label: string): { value: unknown; changed: boolean } {
+  if (typeof value === "string") {
+    if (value.length < COMPACT_MUTATION_STRING_FIELD_MIN_CHARS) {
+      return { value, changed: false };
+    }
+    return { value: compactReplayString(label, value), changed: true };
+  }
+  if (Array.isArray(value)) {
+    let changed = false;
+    const next = value.map((item, index) => {
+      const compacted = compactMutationValue(item, `${label}[${index}]`);
+      changed ||= compacted.changed;
+      return compacted.value;
+    });
+    return { value: next, changed };
+  }
+  if (!value || typeof value !== "object") {
+    return { value, changed: false };
+  }
+  let changed = false;
+  const record = value as Record<string, unknown>;
+  const next: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(record)) {
+    if (key === "oldText" || key === "newText" || key === "content" || key === "patch") {
+      const compacted = compactMutationValue(child, key);
+      changed ||= compacted.changed;
+      next[key] = compacted.value;
+      continue;
+    }
+    if (key === "edits" && Array.isArray(child)) {
+      const compacted = compactMutationValue(child, key);
+      changed ||= compacted.changed;
+      next[key] = compacted.value;
+      continue;
+    }
+    next[key] = child;
+  }
+  if (changed) {
+    next.replayCompacted = true;
+  }
+  return { value: next, changed };
+}
+
+function compactMutationToolCallBlock(block: Record<string, unknown>): {
+  block: Record<string, unknown>;
+  changed: boolean;
+} {
+  const toolName = normalizeToolName(block.name);
+  if (!MUTATION_TOOL_NAMES.has(toolName)) {
+    return { block, changed: false };
+  }
+  const inputKey = Object.hasOwn(block, "arguments") ? "arguments" : "input";
+  const input = block[inputKey];
+  const serialized = JSON.stringify(input ?? {});
+  if (serialized.length < COMPACT_MUTATION_INPUT_MIN_CHARS) {
+    return { block, changed: false };
+  }
+  const compacted = compactMutationValue(input, toolName);
+  if (!compacted.changed) {
+    return { block, changed: false };
+  }
+  return {
+    block: {
+      ...block,
+      [inputKey]: compacted.value,
+    },
+    changed: true,
+  };
+}
+
+function compactAssistantMutationToolCalls(params: {
+  message: AgentMessage;
+  settledToolResultIds: ReadonlySet<string>;
+}): { message: AgentMessage; changed: boolean } {
+  if (readMessageRole(params.message) !== "assistant") {
+    return { message: params.message, changed: false };
+  }
+  const content = (params.message as { content?: unknown }).content;
+  if (!Array.isArray(content)) {
+    return { message: params.message, changed: false };
+  }
+  let changed = false;
+  const nextContent = content.map((block) => {
+    if (!isToolCallBlock(block)) {
+      return block;
+    }
+    const id = readToolCallBlockId(block);
+    if (!id || !params.settledToolResultIds.has(id)) {
+      return block;
+    }
+    const compacted = compactMutationToolCallBlock(block);
+    changed ||= compacted.changed;
+    return compacted.block;
+  });
+  if (!changed) {
+    return { message: params.message, changed: false };
+  }
+  return {
+    message: {
+      ...params.message,
+      content: nextContent,
+    } as AgentMessage,
+    changed: true,
+  };
+}
+
+function buildSettledMutationToolCallInputReplacements(params: {
+  branch: ToolResultBranchEntry[];
+}): ToolResultReplacement[] {
+  const settledToolResultIds = collectSettledToolResultIdsFromBranch(params.branch);
+  if (settledToolResultIds.size === 0) {
+    return [];
+  }
+  const replacements: ToolResultReplacement[] = [];
+  for (let index = 0; index < params.branch.length; index += 1) {
+    const entry = params.branch[index];
+    if (!entry || entry.type !== "message" || !entry.message) {
+      continue;
+    }
+    const compacted = compactAssistantMutationToolCalls({
+      message: entry.message,
+      settledToolResultIds,
+    });
+    if (compacted.changed) {
+      replacements.push({ entryId: entry.id, message: compacted.message });
+    }
+  }
+  return replacements;
+}
+
+function estimateMutationToolCallReduction(messages: AgentMessage[]): {
+  count: number;
+  chars: number;
+  reducibleChars: number;
+} {
+  const settledToolResultIds = collectSettledToolResultIdsFromMessages(messages);
+  if (settledToolResultIds.size === 0) {
+    return { count: 0, chars: 0, reducibleChars: 0 };
+  }
+  let count = 0;
+  let chars = 0;
+  let reducibleChars = 0;
+  for (const message of messages) {
+    if (readMessageRole(message) !== "assistant") {
+      continue;
+    }
+    const content = (message as { content?: unknown }).content;
+    if (!Array.isArray(content)) {
+      continue;
+    }
+    for (const block of content) {
+      if (!isToolCallBlock(block)) {
+        continue;
+      }
+      const id = readToolCallBlockId(block);
+      if (
+        !id ||
+        !settledToolResultIds.has(id) ||
+        !MUTATION_TOOL_NAMES.has(normalizeToolName(block.name))
+      ) {
+        continue;
+      }
+      const before = JSON.stringify(block);
+      const compacted = compactMutationToolCallBlock(block);
+      if (!compacted.changed) {
+        continue;
+      }
+      const after = JSON.stringify(compacted.block);
+      count += 1;
+      chars += before.length;
+      reducibleChars += Math.max(0, before.length - after.length);
+    }
+  }
+  return { count, chars, reducibleChars };
+}
+
+export function projectMessagesForCompactionInput(params: {
+  messages: AgentMessage[];
+  stateRoot?: string | null;
+  sessionKey?: string;
+  maxToolOutputBytes?: number;
+}): {
+  messages: AgentMessage[];
+  projectedCount: number;
+  toolResultProjectedCount: number;
+  mutationToolCallProjectedCount: number;
+} {
+  const maxToolOutputBytes = resolvePositiveInt(
+    params.maxToolOutputBytes,
+    COMPACTION_TOOL_OUTPUT_MAX_BYTES,
+  );
+  const settledToolResultIds = collectSettledToolResultIdsFromMessages(params.messages);
+  let projectedCount = 0;
+  let toolResultProjectedCount = 0;
+  let mutationToolCallProjectedCount = 0;
+  const messages = params.messages.map((message) => {
+    if (readMessageRole(message) === "toolResult") {
+      const capped = truncateToolResultMessageWithManagedOutput({
+        message,
+        maxChars: maxToolOutputBytes,
+        stateRoot: params.stateRoot,
+        sessionKey: params.sessionKey,
+        reason: "compaction_input_tool_output_cap",
+        minKeepChars: 0,
+      });
+      if (capped !== message) {
+        projectedCount += 1;
+        toolResultProjectedCount += 1;
+      }
+      return capped;
+    }
+    const compacted = compactAssistantMutationToolCalls({
+      message,
+      settledToolResultIds,
+    });
+    if (compacted.changed) {
+      projectedCount += 1;
+      mutationToolCallProjectedCount += 1;
+      return compacted.message;
+    }
+    return message;
+  });
+
+  return {
+    messages,
+    projectedCount,
+    toolResultProjectedCount,
+    mutationToolCallProjectedCount,
+  };
+}
 
 function buildAggregateToolResultReplacements(params: {
   branch: ToolResultBranchEntry[];
@@ -487,15 +1129,13 @@ function buildAggregateToolResultReplacements(params: {
 
     const requestedReduction = Math.min(reducibleChars, remainingReduction);
     const targetChars = Math.max(minTruncatedTextChars, candidate.textLength - requestedReduction);
-    const managedOutput = persistManagedOutputForToolResult({
+    const truncatedMessage = truncateToolResultMessageWithManagedOutput({
       message: candidate.message,
+      maxChars: targetChars,
       stateRoot: params.stateRoot,
       sessionKey: params.sessionKey,
       reason: "tool_result_aggregate_truncation",
-    });
-    const truncatedMessage = truncateToolResultMessage(candidate.message, targetChars, {
       minKeepChars,
-      suffix: buildManagedOutputTruncationSuffix(managedOutput),
     });
     const newLength = getToolResultTextLength(truncatedMessage);
     const actualReduction = Math.max(0, candidate.textLength - newLength);
@@ -531,17 +1171,15 @@ function buildOversizedToolResultReplacements(params: {
     if (getToolResultTextLength(msg) <= params.maxChars) {
       continue;
     }
-    const managedOutput = persistManagedOutputForToolResult({
-      message: msg,
-      stateRoot: params.stateRoot,
-      sessionKey: params.sessionKey,
-      reason: "tool_result_oversized_truncation",
-    });
     replacements.push({
       entryId: entry.id,
-      message: truncateToolResultMessage(msg, params.maxChars, {
+      message: truncateToolResultMessageWithManagedOutput({
+        message: msg,
+        maxChars: params.maxChars,
+        stateRoot: params.stateRoot,
+        sessionKey: params.sessionKey,
+        reason: "tool_result_oversized_truncation",
         minKeepChars,
-        suffix: buildManagedOutputTruncationSuffix(managedOutput),
       }),
     });
   }
@@ -684,17 +1322,58 @@ export function estimateToolResultReductionPotential(params: {
     aggregateBudgetChars,
     minKeepChars: RECOVERY_MIN_KEEP_CHARS,
   });
-  const maxReducibleChars = plan.oversizedReducibleChars + plan.aggregateReducibleChars;
+  const mutationReduction = estimateMutationToolCallReduction(messages);
+  const maxReducibleChars =
+    plan.oversizedReducibleChars + plan.aggregateReducibleChars + mutationReduction.reducibleChars;
 
   return {
     maxChars,
     aggregateBudgetChars,
     toolResultCount,
     totalToolResultChars,
+    mutationToolCallCount: mutationReduction.count,
+    mutationToolCallChars: mutationReduction.chars,
+    mutationToolCallReducibleChars: mutationReduction.reducibleChars,
     oversizedCount: plan.oversizedReplacementCount,
     oversizedReducibleChars: plan.oversizedReducibleChars,
     aggregateReducibleChars: plan.aggregateReducibleChars,
     maxReducibleChars,
+  };
+}
+
+function compactOldProviderReplayPayloadsInSessionManager(params: {
+  sessionManager: SessionManager;
+  sessionFile?: string;
+  sessionId?: string;
+  sessionKey?: string;
+  stateRoot?: string | null;
+}): { compacted: boolean; compactedCount: number; reason?: string } {
+  const branch = params.sessionManager.getBranch() as ToolResultBranchEntry[];
+  if (branch.length === 0) {
+    return { compacted: false, compactedCount: 0, reason: "empty session" };
+  }
+  const mutationReplacements = buildSettledMutationToolCallInputReplacements({ branch });
+  const mutationTrimmedBranch = applyToolResultReplacementsToBranch(branch, mutationReplacements);
+  const oldToolResultReplacements = buildOldToolResultClearingReplacements({
+    branch: mutationTrimmedBranch,
+    stateRoot: params.stateRoot,
+    sessionKey: params.sessionKey ?? params.sessionId,
+  });
+  const replacements = [...mutationReplacements, ...oldToolResultReplacements];
+  if (replacements.length === 0) {
+    return { compacted: false, compactedCount: 0, reason: "no old provider replay payloads" };
+  }
+  const rewriteResult = rewriteTranscriptEntriesInSessionManager({
+    sessionManager: params.sessionManager,
+    replacements,
+  });
+  if (rewriteResult.changed && params.sessionFile) {
+    emitSessionTranscriptUpdate(params.sessionFile);
+  }
+  return {
+    compacted: rewriteResult.changed,
+    compactedCount: rewriteResult.rewrittenEntries,
+    reason: rewriteResult.reason,
   };
 }
 
@@ -730,32 +1409,41 @@ function truncateOversizedToolResultsInExistingSessionManager(params: {
     stateRoot: params.stateRoot,
     sessionKey: params.sessionKey ?? params.sessionId,
   });
-  if (plan.replacements.length === 0) {
-    return {
-      truncated: false,
-      truncatedCount: 0,
-      reason: "no oversized or aggregate tool results",
-    };
-  }
-  const rewriteResult = rewriteTranscriptEntriesInSessionManager({
-    sessionManager,
-    replacements: plan.replacements,
-  });
+  const rewriteResult =
+    plan.replacements.length > 0
+      ? rewriteTranscriptEntriesInSessionManager({
+          sessionManager,
+          replacements: plan.replacements,
+        })
+      : {
+          changed: false,
+          bytesFreed: 0,
+          rewrittenEntries: 0,
+          reason: "no oversized or aggregate tool results",
+        };
   if (rewriteResult.changed && params.sessionFile) {
     emitSessionTranscriptUpdate(params.sessionFile);
   }
+  const replayCompaction = compactOldProviderReplayPayloadsInSessionManager({
+    sessionManager,
+    sessionFile: params.sessionFile,
+    sessionId: params.sessionId,
+    sessionKey: params.sessionKey,
+    stateRoot: params.stateRoot,
+  });
 
   log.info(
-    `[tool-result-truncation] Truncated ${rewriteResult.rewrittenEntries} tool result(s) in session ` +
+    `[tool-result-truncation] Truncated ${rewriteResult.rewrittenEntries} tool result(s) and compacted ` +
+      `${replayCompaction.compactedCount} old replay payload(s) in session ` +
       `(contextWindow=${contextWindowTokens} maxChars=${maxChars} aggregateBudgetChars=${aggregateBudgetChars} ` +
       `oversized=${plan.oversizedReplacementCount} aggregate=${plan.aggregateReplacementCount}) ` +
       `sessionKey=${params.sessionKey ?? params.sessionId ?? "unknown"}`,
   );
 
   return {
-    truncated: rewriteResult.changed,
-    truncatedCount: rewriteResult.rewrittenEntries,
-    reason: rewriteResult.reason,
+    truncated: rewriteResult.changed || replayCompaction.compacted,
+    truncatedCount: rewriteResult.rewrittenEntries + replayCompaction.compactedCount,
+    reason: rewriteResult.reason ?? replayCompaction.reason,
   };
 }
 
@@ -833,5 +1521,9 @@ export function sessionLikelyHasOversizedToolResults(params: {
   maxCharsOverride?: number;
 }): boolean {
   const estimate = estimateToolResultReductionPotential(params);
-  return estimate.oversizedCount > 0 || estimate.aggregateReducibleChars > 0;
+  return (
+    estimate.oversizedCount > 0 ||
+    estimate.aggregateReducibleChars > 0 ||
+    estimate.mutationToolCallReducibleChars > 0
+  );
 }

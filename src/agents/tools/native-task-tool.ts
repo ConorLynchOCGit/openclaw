@@ -8,7 +8,6 @@ import {
 } from "../../config/sessions/paths.js";
 import { loadSessionStore, resolveSessionStoreEntry } from "../../config/sessions/store.js";
 import type { SessionSystemPromptReport } from "../../config/sessions/types.js";
-import { projectStructuredWorkingContextText } from "../../config/sessions/working-context.js";
 import { parseAgentSessionKey } from "../../routing/session-key.js";
 import { normalizeLowercaseStringOrEmpty } from "../../shared/string-coerce.js";
 import type { GatewayMessageChannel } from "../../utils/message-channel.js";
@@ -52,7 +51,7 @@ const NativeTaskToolSchema = Type.Object({
   task: Type.Optional(
     Type.String({
       description:
-        "Detailed, self-contained task prompt for a fresh child agent task. Include node scope, relevant requirements, source excerpts/refs, expected output, and constraints. Required unless continuationId is provided.",
+        "Detailed, self-contained task prompt for a fresh child agent task. Include node scope, relevant requirements, source excerpts, expected output, and constraints. Required unless continuationId is provided.",
     }),
   ),
   continuationId: Type.Optional(
@@ -166,18 +165,66 @@ export function resolveParentVisibleChildResultMaxChars(
   );
 }
 
+function childResultContainsExactSourceWindow(text: string): boolean {
+  return (
+    /<content>[\s\S]*^\s*\d+:/mu.test(text) ||
+    /```[\s\S]*^\s*\d+:/mu.test(text) ||
+    /(?:^|\n)#{1,6}\s*Lines?\s+\d+\s*(?:-|through|to)\s*\d+/iu.test(text) ||
+    /(?:^|\n)\*\*[^*\n]*Lines?\s+\d+\s*(?:-|through|to)\s*\d+[^*\n]*\*\*/iu.test(text)
+  );
+}
+
+function isTaskContextMetadataLine(line: string): boolean {
+  return (
+    /\b(?:workingContextRef|workingContextEntryRef|working_context|working-context|file_graph|change_set|validation_state)\b/iu.test(
+      line,
+    ) || line.includes("openclaw-session-working-context://")
+  );
+}
+
+function stripParentVisibleTaskMetadata(text: string): string {
+  const lines = text.split(/\r?\n/);
+  const output: string[] = [];
+  let skippingFileGraph = false;
+  for (const line of lines) {
+    if (/^\s*(?:#{1,6}\s*)?file[_\s-]*graph\s*:?\s*$/iu.test(line)) {
+      skippingFileGraph = true;
+      continue;
+    }
+    if (skippingFileGraph) {
+      if (line.trim() === "") {
+        skippingFileGraph = false;
+      }
+      continue;
+    }
+    if (isTaskContextMetadataLine(line)) {
+      continue;
+    }
+    output.push(line);
+  }
+  return output
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function projectUnstructuredChildResultPreview(params: { text: string; maxChars: number }): string {
   const maxChars = Math.max(1, Math.trunc(params.maxChars));
-  const text = params.text.trim();
+  const text = stripParentVisibleTaskMetadata(params.text.trim());
+  const suffix = "\n[partial child result truncated]";
+  const previewBudget = Math.max(1, maxChars - 240 - suffix.length);
+  const preview = text.slice(0, previewBudget).trimEnd();
+  const hasExactSourceWindow = childResultContainsExactSourceWindow(preview);
   const header = [
-    "Projected oversized unstructured child result preview:",
+    "Partial task result, truncated to parent-visible budget.",
     `originalBytes=${Buffer.byteLength(text, "utf8")}`,
-    "OpenClaw preserved a bounded preview instead of rejecting the task result. Do not edit from this preview unless it contains sufficient exact source windows; otherwise update todo and ask a narrower scout follow-up.",
+    hasExactSourceWindow
+      ? "Exact source windows included below are usable for editing."
+      : "No exact source windows were detected in this preview; this preview is not enough by itself for source edits.",
     "",
   ].join("\n");
-  const suffix = "\n[unstructured child result preview truncated]";
-  const previewBudget = Math.max(1, maxChars - header.length - suffix.length);
-  const projected = `${header}${text.slice(0, previewBudget).trimEnd()}${suffix}`;
+  const adjustedPreviewBudget = Math.max(1, maxChars - header.length - suffix.length);
+  const projected = `${header}${text.slice(0, adjustedPreviewBudget).trimEnd()}${suffix}`;
   if (projected.length <= maxChars) {
     return projected;
   }
@@ -196,16 +243,23 @@ export function buildParentVisibleChildResult(
   resultTruncated?: boolean;
 } {
   const resolvedMaxParentVisibleChars = Math.max(1, Math.trunc(maxParentVisibleChars));
-  const trimmed = text?.trim();
+  const originalTrimmed = text?.trim();
+  const trimmed = originalTrimmed ? stripParentVisibleTaskMetadata(originalTrimmed) : undefined;
   const base = {
     resultMaxParentVisibleChars: resolvedMaxParentVisibleChars,
   };
   if (!trimmed) {
     return { ...base, resultDeliveryStatus: "rejected" };
   }
-  const resultTextByteCount = Buffer.byteLength(trimmed, "utf8");
-  const resultTextHash = crypto.createHash("sha256").update(trimmed).digest("hex");
-  if (trimmed.length <= resolvedMaxParentVisibleChars) {
+  const resultTextByteCount = Buffer.byteLength(originalTrimmed ?? trimmed, "utf8");
+  const resultTextHash = crypto
+    .createHash("sha256")
+    .update(originalTrimmed ?? trimmed)
+    .digest("hex");
+  if (
+    trimmed.length <= resolvedMaxParentVisibleChars &&
+    (originalTrimmed?.length ?? trimmed.length) <= resolvedMaxParentVisibleChars
+  ) {
     return {
       ...base,
       resultText: trimmed,
@@ -215,14 +269,14 @@ export function buildParentVisibleChildResult(
       resultTruncated: false,
     };
   }
-  const projectedText = projectStructuredWorkingContextText({
-    text: trimmed,
-    maxChars: resolvedMaxParentVisibleChars,
-  });
-  if (projectedText) {
+  if (trimmed.length <= resolvedMaxParentVisibleChars) {
+    const previewText = projectUnstructuredChildResultPreview({
+      text: originalTrimmed ?? trimmed,
+      maxChars: resolvedMaxParentVisibleChars,
+    });
     return {
       ...base,
-      resultText: projectedText,
+      resultText: previewText,
       resultTextHash,
       resultTextByteCount,
       resultDeliveryStatus: "projected",
@@ -386,11 +440,6 @@ function childAgentPackContractIssues(input: {
   if (!input.entry.requiredDocs?.length) {
     issues.push(
       `native_task_child_registry_contract_field_missing:${input.childAgentId}:requiredDocs`,
-    );
-  }
-  if (!input.entry.primarySkills?.length) {
-    issues.push(
-      `native_task_child_registry_contract_field_missing:${input.childAgentId}:primarySkills`,
     );
   }
   if (!input.entry.requiredTools?.length) {
@@ -875,14 +924,16 @@ function formatNativeTaskParentVisibleText(params: {
   requestedAgentId: string;
   result: NativeTaskForegroundResult;
 }): string {
-  const decisionFooter = buildParentDecisionFooter(params.requestedAgentId);
+  const nextActionHint = buildParentNextActionHint(params.requestedAgentId);
   if (params.result.status === "completed" && params.result.resultText?.trim()) {
     const projected = params.result.resultDeliveryStatus === "projected";
     return renderNativeTaskOutput({
       childSessionKey: params.result.childSessionKey,
       state: "completed",
-      summary: `Task result from ${params.requestedAgentId} (${params.result.status}${projected ? ", projected" : ""}).`,
-      text: [params.result.resultText.trim(), decisionFooter].join("\n"),
+      summary: `Task result from ${params.requestedAgentId} (${params.result.status}${projected ? ", partial" : ""}).`,
+      text: [params.result.resultText.trim(), nextActionHint]
+        .filter((line) => line.trim().length > 0)
+        .join("\n"),
     });
   }
   if (params.result.childStartFailureKind === "child_result_unshaped") {
@@ -894,9 +945,9 @@ function formatNativeTaskParentVisibleText(params: {
         `Task result from ${params.requestedAgentId} was too large and did not expose structured parent-visible edit context.`,
         "",
         `The child result was ${params.result.resultTextByteCount ?? "unknown"} bytes and exceeded the ${params.result.resultMaxParentVisibleChars ?? DEFAULT_PARENT_VISIBLE_CHILD_RESULT_MAX_CHARS} character parent-visible cap.`,
-        "No structured inline_context_windows/file_graph projection was available. Do not edit from partial context.",
-        "Delegate a narrower follow-up task asking the scout for one exact missing source window or finish blocked if this is repeated.",
-        decisionFooter,
+        "No structured source-window projection was available. Do not treat this partial child text as source evidence for edits.",
+        "Use current local source context if it is already enough, or finish blocked with child_result_unshaped.",
+        nextActionHint,
       ].join("\n"),
     });
   }
@@ -914,7 +965,7 @@ function formatNativeTaskParentVisibleText(params: {
         validationScout
           ? "If retrying validation, ask for the narrowest command/result needed for the current changed files and request bounded output only."
           : "If retrying context, ask for one exact missing source window or a smaller map pass; do not ask for full files or broad dumps.",
-        buildParentFailureDecisionFooter(),
+        buildParentFailureActionHint(),
       ]
         .filter((line): line is string => typeof line === "string" && line.length > 0)
         .join("\n"),
@@ -930,7 +981,7 @@ function formatNativeTaskParentVisibleText(params: {
         "",
         params.result.continuationId ? `continuationId: ${params.result.continuationId}` : null,
         "Do not spawn duplicate scout work for the same question. Do not edit or finish from missing child output.",
-        "Parent decision required: update todo, then call task again with the same agentId and continuationId to wait for the child result, or finish/block only if the child is no longer needed.",
+        "Next action: call task again with the same agentId and continuationId to wait for this child result, or finish blocked only if the child is no longer needed. Update todo when this changes the visible plan.",
       ]
         .filter((line): line is string => typeof line === "string" && line.length > 0)
         .join("\n"),
@@ -947,35 +998,39 @@ function formatNativeTaskParentVisibleText(params: {
         ? `childStartFailureKind: ${params.result.childStartFailureKind}`
         : null,
       params.result.error ? `error: ${params.result.error}` : null,
-      params.result.status === "error" ? buildParentFailureDecisionFooter() : decisionFooter,
+      params.result.status === "error" ? buildParentFailureActionHint() : nextActionHint,
     ]
       .filter((line): line is string => typeof line === "string" && line.length > 0)
       .join("\n"),
   });
 }
 
-function buildParentDecisionFooter(requestedAgentId: string): string {
+function buildParentNextActionHint(requestedAgentId: string): string {
   if (requestedAgentId === "execution-context-scout") {
     return [
       "",
-      "Parent decision required: update todo, then choose one: enough for minimal edit / need exact follow-up / need map pass / blocked.",
-      "If enough, make the smallest useful edit from the returned bounded source windows. If one local window is missing, delegate an exact follow-up. If files or architecture are still ambiguous, delegate a map pass. If source is missing, finish with a typed blocker.",
+      "<system-reminder>",
+      "If you can name the target files and patch shape, edit now. Use local lookup only for one named missing token or source window.",
+      "</system-reminder>",
     ].join("\n");
   }
   if (requestedAgentId === "execution-validation-scout") {
     return [
       "",
-      "Parent decision required: update todo, then choose one: complete / repair from current context / need more context / blocked.",
-      "Then repair, delegate more context, validate again, call node_finish, or finish with a typed blocker.",
+      "<system-reminder>",
+      "If validation evidence identifies file:line errors in known files, use at most one local source lookup per error cluster, then edit. Call node_finish when complete or finish blocked with a typed blocker.",
+      "</system-reminder>",
     ].join("\n");
   }
   return "";
 }
 
-function buildParentFailureDecisionFooter(): string {
+function buildParentFailureActionHint(): string {
   return [
     "",
-    "Parent decision required: update todo, then finish with node_finish blocked unless you already have enough source context to proceed safely. Do not probe gateway-status. Do not use openclaw_resource_read for file:// paths.",
+    "<system-reminder>",
+    "Task failed before parent-visible child context was delivered. Finish with node_finish blocked unless you already have enough source context to proceed safely. Do not probe gateway-status. Update todo when this changes the visible plan.",
+    "</system-reminder>",
   ].join("\n");
 }
 
@@ -1001,7 +1056,7 @@ function formatNativeTaskFailureParentVisibleText(params: {
       `status: ${status}`,
       `childStartFailureKind: ${kind}`,
       error ? `error: ${error}` : null,
-      buildParentFailureDecisionFooter(),
+      buildParentFailureActionHint(),
     ]
       .filter((line): line is string => typeof line === "string" && line.length > 0)
       .join("\n"),
@@ -1072,12 +1127,11 @@ function createNativeTaskToolInternal(opts: NativeTaskToolInternalOptions): AnyA
     name: "task",
     displaySummary: "Delegate bounded work to an allowed child agent.",
     description: [
-      "Delegate a bounded foreground task to an allowed child agent through native OpenClaw sessions.",
+      "Launch an allowed child agent for bounded foreground work through native OpenClaw sessions.",
       `Allowed child agents: ${allowedText}.`,
-      "Use execution-context-scout for source/search/read mapping and execution-validation-scout for validation command selection, execution, and diagnosis.",
-      "For execution-context-scout, ask for bounded inline source windows plus a compact file_graph when multiple files or symbols matter.",
-      "Context scout results should include answer, edit_start_recommendation, high_signal_refs, inline_context_windows, evidence-backed file_graph edges, likely_edit_points, exact follow-up asks, and risks_or_unknowns.",
-      "Do not ask context scouts for full files or broad dumps; ask for the minimum edit-start package needed for the next safe edit.",
+      "Use execution-context-scout for open-ended source, caller, test, or architecture discovery.",
+      "Use execution-validation-scout for validation command selection, execution, and failure diagnosis. Validation scouts prefer repo-native focused commands such as pnpm test:file <test-file>; do not ask them to perform raw tsc flag archaeology unless a repo command failed.",
+      "Do not use task for a specific file path, a specific symbol/class lookup, or code search within one to three known files; use read, grep, or glob for that.",
       "The child runs with fresh context by default and reports results back to the parent session. Do not use this for lifecycle finish; parent execution-coding owns node_finish.",
     ].join("\n"),
     parameters: NativeTaskToolSchema,

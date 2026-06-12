@@ -64,6 +64,7 @@ export type ExecToolDetails =
       tail?: string;
       failureKind?: string;
       managedOutputRef?: string | null;
+      managedOutputPath?: string;
       managedOutputBytes?: number;
       managedOutputHash?: string;
       cwd?: string;

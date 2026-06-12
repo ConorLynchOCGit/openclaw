@@ -679,6 +679,70 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).not.toContain("Default: do not narrate routine, low-risk tool calls");
   });
 
+  it("renders execution-worker profile without general assistant noise", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      promptProfile: "execution_worker",
+      toolNames: ["read", "grep", "glob", "lsp", "edit", "node_finish"],
+      extraSystemPrompt: "Implement the node.",
+      contextFiles: [
+        {
+          path: "docs/agents/execution-coding/runtime/IDENTITY.md",
+          content: "Execution coding identity.",
+        },
+      ],
+      runtimeInfo: {
+        agentId: "execution-coding",
+        model: "openrouter/moonshotai/kimi-k2.6",
+      },
+    });
+
+    expect(prompt).toContain("## Identity");
+    expect(prompt).toContain("## Execution Contract");
+    expect(prompt).toContain(
+      "Your only goal is accepted source edits for this node, then node_finish",
+    );
+    expect(prompt).toContain("largest currently-grounded coherent vertical edit batch");
+    expect(prompt).toContain("Path-only read of a large file floods context");
+    expect(prompt).toContain("## Node Work Order");
+    expect(prompt).toContain("Implement the node.");
+    expect(prompt).toContain("read: Read file contents");
+    expect(prompt).toContain("edit: Make precise edits to files");
+    expect(prompt).toContain("# Project Context");
+    expect(prompt).toContain("docs/agents/execution-coding/runtime/IDENTITY.md");
+    expect(prompt).toContain("## Runtime");
+
+    expect(prompt).not.toContain("You are a personal assistant running inside OpenClaw.");
+    expect(prompt).not.toContain("## Messaging");
+    expect(prompt).not.toContain("## Web Browsing");
+    expect(prompt).not.toContain("## Documentation");
+    expect(prompt).not.toContain("## OpenClaw CLI Quick Reference");
+    expect(prompt).not.toContain("## OpenClaw Self-Update");
+    expect(prompt).not.toContain("## Silent Replies");
+    expect(prompt).not.toContain("## Assistant Output Directives");
+    expect(prompt).not.toContain("## Voice (TTS)");
+    expect(prompt).not.toContain("## Model Aliases");
+  });
+
+  it("renders execution scout profiles as lean evidence workers", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      promptProfile: "execution_context_scout",
+      toolNames: ["read", "grep", "glob"],
+      extraSystemPrompt: "Find the relevant source windows.",
+    });
+
+    expect(prompt).toContain("You are an execution context scout");
+    expect(prompt).toContain("Return concise source windows, coordinates, and findings");
+    expect(prompt).toContain("## Node Work Order");
+    expect(prompt).toContain("Find the relevant source windows.");
+    expect(prompt).not.toContain("You are a personal assistant running inside OpenClaw.");
+    expect(prompt).not.toContain("## Messaging");
+    expect(prompt).not.toContain("## Web Browsing");
+    expect(prompt).not.toContain("## OpenClaw CLI Quick Reference");
+    expect(prompt).not.toContain("## Silent Replies");
+  });
+
   it("includes inline button style guidance when runtime supports inline buttons", () => {
     const prompt = buildAgentSystemPrompt({
       workspaceDir: "/tmp/openclaw",

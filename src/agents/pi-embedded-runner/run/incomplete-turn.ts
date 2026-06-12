@@ -22,7 +22,7 @@ type IncompleteTurnAttempt = Pick<
   | "lastToolError"
   | "lastAssistant"
   | "replayMetadata"
-  | "promptErrorSource"
+  | "promptErrorOrigin"
   | "timedOutDuringCompaction"
 >;
 
@@ -42,7 +42,7 @@ type PlanningOnlyAttempt = Pick<
 
 type RunLivenessAttempt = Pick<
   EmbeddedRunAttemptResult,
-  "lastAssistant" | "promptErrorSource" | "replayMetadata" | "timedOutDuringCompaction"
+  "lastAssistant" | "promptErrorOrigin" | "replayMetadata" | "timedOutDuringCompaction"
 >;
 
 export function isIncompleteTerminalAssistantTurn(params: {
@@ -205,7 +205,7 @@ export function resolveReplayInvalidFlag(params: {
 }): boolean {
   return (
     !params.attempt.replayMetadata.replaySafe ||
-    params.attempt.promptErrorSource === "compaction" ||
+    params.attempt.promptErrorOrigin === "compaction" ||
     params.attempt.timedOutDuringCompaction ||
     Boolean(params.incompleteTurnText)
   );
@@ -222,7 +222,7 @@ export function resolveRunLivenessState(params: {
     return "abandoned";
   }
   if (
-    params.attempt.promptErrorSource === "compaction" ||
+    params.attempt.promptErrorOrigin === "compaction" ||
     params.attempt.timedOutDuringCompaction
   ) {
     return "paused";

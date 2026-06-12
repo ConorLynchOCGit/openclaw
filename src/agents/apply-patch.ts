@@ -11,6 +11,11 @@ import {
 } from "../infra/fs-safe.js";
 import { PATH_ALIAS_POLICIES, type PathAliasPolicy } from "../infra/path-alias-guards.js";
 import { applyUpdateHunk } from "./apply-patch-update.js";
+import {
+  type OpenClawLspDiagnostic,
+  type OpenClawLspService,
+  formatOpenClawLspDiagnosticReport,
+} from "./openclaw-lsp-service.js";
 import { toRelativeSandboxPath, resolvePathFromInput } from "./path-policy.js";
 import { assertSandboxPath } from "./sandbox-paths.js";
 import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
@@ -70,6 +75,7 @@ export type ApplyPatchToolDetails = {
   addedFilePaths: string[];
   modifiedFilePaths: string[];
   deletedFilePaths: string[];
+  lspDiagnostics?: OpenClawLspDiagnostic[];
 };
 
 type SandboxApplyPatchConfig = {
@@ -82,6 +88,7 @@ type ApplyPatchOptions = {
   sandbox?: SandboxApplyPatchConfig;
   /** Restrict patch paths to the workspace root (cwd). Default: true. Set false to opt out. */
   workspaceOnly?: boolean;
+  lspService?: OpenClawLspService;
   signal?: AbortSignal;
 };
 
@@ -92,7 +99,12 @@ const applyPatchSchema = Type.Object({
 });
 
 export function createApplyPatchTool(
-  options: { cwd?: string; sandbox?: SandboxApplyPatchConfig; workspaceOnly?: boolean } = {},
+  options: {
+    cwd?: string;
+    sandbox?: SandboxApplyPatchConfig;
+    workspaceOnly?: boolean;
+    lspService?: OpenClawLspService;
+  } = {},
 ): AgentTool<typeof applyPatchSchema, ApplyPatchToolDetails> {
   const cwd = options.cwd ?? process.cwd();
   const sandbox = options.sandbox;
@@ -120,9 +132,15 @@ export function createApplyPatchTool(
         cwd,
         sandbox,
         workspaceOnly,
+        lspService: options.lspService,
         signal,
       });
 
+      const lspFeedback = await collectApplyPatchLspFeedback({
+        cwd,
+        lspService: options.lspService,
+        changedFilePaths: [...result.summary.added, ...result.summary.modified],
+      });
       return {
         content: [{ type: "text", text: result.text }],
         details: {
@@ -135,10 +153,34 @@ export function createApplyPatchTool(
           addedFilePaths: result.summary.added,
           modifiedFilePaths: result.summary.modified,
           deletedFilePaths: result.summary.deleted,
+          ...(lspFeedback.length > 0 ? { lspDiagnostics: lspFeedback } : {}),
         },
       };
     },
   };
+}
+
+async function collectApplyPatchLspFeedback(params: {
+  cwd: string;
+  lspService?: OpenClawLspService;
+  changedFilePaths: readonly string[];
+}): Promise<OpenClawLspDiagnostic[]> {
+  if (!params.lspService || params.changedFilePaths.length === 0) {
+    return [];
+  }
+  const diagnostics: OpenClawLspDiagnostic[] = [];
+  for (const changedFilePath of params.changedFilePaths) {
+    const absolutePath = path.isAbsolute(changedFilePath)
+      ? changedFilePath
+      : path.resolve(params.cwd, changedFilePath);
+    try {
+      await params.lspService.touchFile(absolutePath, "document");
+      diagnostics.push(...(await params.lspService.diagnosticsForFile(absolutePath)));
+    } catch {
+      // apply_patch should preserve the patch result even if LSP is unavailable.
+    }
+  }
+  return diagnostics;
 }
 
 export async function applyPatch(
@@ -207,8 +249,47 @@ export async function applyPatch(
 
   return {
     summary,
-    text: formatSummary(summary),
+    text: await formatSummaryWithLsp({
+      summary,
+      cwd: options.cwd,
+      lspService: options.lspService,
+    }),
   };
+}
+
+async function formatSummaryWithLsp(params: {
+  summary: ApplyPatchSummary;
+  cwd: string;
+  lspService?: OpenClawLspService;
+}) {
+  const base = formatSummary(params.summary);
+  if (!params.lspService) {
+    return base;
+  }
+  const changedFilePaths = [...params.summary.added, ...params.summary.modified];
+  if (changedFilePaths.length === 0) {
+    return base;
+  }
+  const blocks: string[] = [];
+  for (const changedFilePath of changedFilePaths) {
+    const absolutePath = path.isAbsolute(changedFilePath)
+      ? changedFilePath
+      : path.resolve(params.cwd, changedFilePath);
+    try {
+      await params.lspService.touchFile(absolutePath, "document");
+      const diagnostics = await params.lspService.diagnosticsForFile(absolutePath);
+      const report = formatOpenClawLspDiagnosticReport(changedFilePath, diagnostics);
+      blocks.push(
+        report
+          ? `LSP errors detected in ${changedFilePath}, please fix:\n${report}`
+          : `LSP diagnostics for ${changedFilePath}: none.`,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      blocks.push(`LSP diagnostics unavailable for ${changedFilePath}: ${message}`);
+    }
+  }
+  return `${base}\n\n${blocks.join("\n\n")}`;
 }
 
 function recordSummary(

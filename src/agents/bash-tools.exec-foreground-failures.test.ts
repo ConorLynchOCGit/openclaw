@@ -78,7 +78,8 @@ describe("buildExecForegroundResult", () => {
 
       const text = (result.content[0] as { text?: string }).text ?? "";
       expect(text).toContain("Exec output truncated for model context");
-      expect(text).toContain("managedOutputRef=openclaw-managed-output://");
+      expect(text).toContain("Full output saved to:");
+      expect(text).toContain("Use Grep to search the full content or Read with offset/limit");
       expect(text).toContain("DONE");
       expect(text.length).toBeLessThan(output.length);
       expect(result.details).toMatchObject({
@@ -89,6 +90,7 @@ describe("buildExecForegroundResult", () => {
         totalOutputChars: output.length,
         cwd: "/repo",
         managedOutputRef: expect.stringContaining("openclaw-managed-output://"),
+        managedOutputPath: expect.stringContaining("managed-tool-output"),
         managedOutputBytes: Buffer.byteLength(output, "utf8"),
         managedOutputHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       });

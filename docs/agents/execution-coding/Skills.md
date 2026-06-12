@@ -2,13 +2,14 @@
 
 ## Required Skills
 
-- `execution-node-workflow`
+None.
 
-This skill defines the node execution loop, source/scout delegation rules,
-validation handoff, evidence discipline, and mandatory terminal `node_finish`.
+Execution workers use native agent docs and tool descriptions as the active
+operating contract. `execution-node-workflow` is retained only as an optional
+reference and must not be admitted as always-active bootstrap context.
 
 ## Optional Skills
 
-No optional skills are required for the first executable-node lane. Optional
-skills may be added later only through the native OpenClaw skill surface and
-only when they do not duplicate `execution-node-workflow`.
+Optional skills may be added later only through the native OpenClaw skill
+surface and only when they do not duplicate the native agent docs or tool
+descriptions.

@@ -18,6 +18,7 @@ import { resolveRepoCanonicalReadPath } from "../infra/repo-canonical-paths.js";
 import { detectMime } from "../media/mime.js";
 import { sniffMimeFromBase64 } from "../media/sniff-mime-from-base64.js";
 import type { ImageSanitizationLimits } from "./image-sanitization.js";
+import type { OpenClawLspService } from "./openclaw-lsp-service.js";
 import { toRelativeWorkspacePath } from "./path-policy.js";
 import { wrapEditToolWithRecovery, wrapWriteToolWithMetadata } from "./pi-tools.host-edit.js";
 import {
@@ -50,16 +51,15 @@ type TextContentBlock = Extract<ToolContentBlock, { type: "text" }>;
 
 const DEFAULT_READ_PAGE_LINE_LIMIT = 2000;
 const DEFAULT_READ_PAGE_MAX_BYTES = 50 * 1024;
-const MAX_ADAPTIVE_READ_MAX_BYTES = DEFAULT_READ_PAGE_MAX_BYTES;
-const ADAPTIVE_READ_CONTEXT_SHARE = 0.1;
-const CHARS_PER_TOKEN_ESTIMATE = 4;
 
 type OpenClawReadToolOptions = {
   modelContextWindowTokens?: number;
   imageSanitization?: ImageSanitizationLimits;
   workspaceRoot?: string;
+  stateRoot?: string | null;
   defaultLineLimit?: number;
   maxBytes?: number;
+  lspService?: OpenClawLspService;
 };
 
 type ReadDocumentIngestArbitrationTrigger = "capped_output" | "continued_read" | "repeated_read";
@@ -106,9 +106,9 @@ type ReadDocumentIngestArbitrationOptions = {
 };
 
 const READ_CONTINUATION_NOTICE_RE =
-  /\n\n\[(?:Showing lines [^\]]*?Use offset=\d+ to continue\.|\d+ more lines in file\. Use offset=\d+ to continue\.)\]\s*$/;
+  /\n\n\[(?:Showing lines [^\]]*?(?:Use offset=|nextOffset=)\d+(?: to continue\.| only if[^\]]+|\.)|\d+ more lines in file\. (?:Use offset=|nextOffset=)\d+(?: to continue\.| only if[^\]]+|\.))\]\s*$/;
 const READ_OUTPUT_CAPPED_NOTICE_RE =
-  /\[Read output capped at [^\]]+ Use offset=\d+ to continue\.\]\s*$/;
+  /\[Read output capped at [^\]]+ (?:Use offset=|nextOffset=)\d+(?: to continue\.| only if[^\]]+|\.)\]\s*$/;
 const AUTO_INGEST_TEXT_EXTENSIONS = new Set([
   ".c",
   ".cc",
@@ -196,29 +196,7 @@ function resolveConfiguredReadMaxBytes(options?: OpenClawReadToolOptions): numbe
 }
 
 function resolveAdaptiveReadMaxBytes(options?: OpenClawReadToolOptions): number {
-  const configuredMaxBytes = resolveConfiguredReadMaxBytes(options);
-  const contextWindowTokens = options?.modelContextWindowTokens;
-  if (
-    typeof contextWindowTokens !== "number" ||
-    !Number.isFinite(contextWindowTokens) ||
-    contextWindowTokens <= 0
-  ) {
-    return configuredMaxBytes;
-  }
-  const fromContext = Math.floor(
-    contextWindowTokens * CHARS_PER_TOKEN_ESTIMATE * ADAPTIVE_READ_CONTEXT_SHARE,
-  );
-  return clamp(fromContext, 1, Math.min(configuredMaxBytes, MAX_ADAPTIVE_READ_MAX_BYTES));
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes >= 1024 * 1024) {
-    return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
-  }
-  if (bytes >= 1024) {
-    return `${Math.round(bytes / 1024)}KB`;
-  }
-  return `${bytes}B`;
+  return resolveConfiguredReadMaxBytes(options);
 }
 
 function getToolResultText(result: AgentToolResult<unknown>): string | undefined {
@@ -283,61 +261,6 @@ function withToolResultText(
   };
 }
 
-function truncateUtf8ByBytes(text: string, maxBytes: number): { text: string; truncated: boolean } {
-  if (Buffer.byteLength(text, "utf8") <= maxBytes) {
-    return { text, truncated: false };
-  }
-  let bytes = 0;
-  let output = "";
-  for (const char of text) {
-    const charBytes = Buffer.byteLength(char, "utf8");
-    if (bytes + charBytes > maxBytes) {
-      break;
-    }
-    output += char;
-    bytes += charBytes;
-  }
-  return { text: output.replace(/\s+$/u, ""), truncated: true };
-}
-
-function countCompleteOutputLines(text: string): number {
-  const stripped = stripReadContinuationNotice(text).trimEnd();
-  if (!stripped) {
-    return 0;
-  }
-  return stripped.split(/\r?\n/u).length;
-}
-
-function capReadResultTextByBytes(params: {
-  result: AgentToolResult<unknown>;
-  maxBytes: number;
-  fallbackContinuationOffset?: number;
-}): AgentToolResult<unknown> {
-  const rawText = getToolResultText(params.result);
-  if (typeof rawText !== "string") {
-    return params.result;
-  }
-  const capped = truncateUtf8ByBytes(rawText, params.maxBytes);
-  if (!capped.truncated) {
-    return params.result;
-  }
-  const lineCount = countCompleteOutputLines(capped.text);
-  const derivedContinuationOffset = lineCount > 0 ? lineCount + 1 : null;
-  const continuationOffset =
-    typeof derivedContinuationOffset === "number"
-      ? derivedContinuationOffset
-      : typeof params.fallbackContinuationOffset === "number" &&
-          Number.isFinite(params.fallbackContinuationOffset)
-        ? Math.max(1, Math.floor(params.fallbackContinuationOffset))
-        : 1;
-  return withToolResultText(
-    params.result,
-    `${capped.text}\n\n[Read output capped at ${formatBytes(
-      params.maxBytes,
-    )} for this call. Use offset=${continuationOffset} to continue.]`,
-  );
-}
-
 function stripReadContinuationNotice(text: string): string {
   return text.replace(READ_CONTINUATION_NOTICE_RE, "").replace(READ_OUTPUT_CAPPED_NOTICE_RE, "");
 }
@@ -368,14 +291,27 @@ function parseReadContinuationMetadata(text: string): {
 } {
   const capped = READ_OUTPUT_CAPPED_NOTICE_RE.exec(text);
   if (capped) {
-    const nextOffsetMatch = /Use offset=(\d+) to continue/iu.exec(capped[0]);
+    const nextOffsetMatch = /(?:Use offset=|nextOffset=)(\d+)/iu.exec(capped[0]);
     return {
       nextOffset: nextOffsetMatch ? Number(nextOffsetMatch[1]) : undefined,
       truncatedBy: "bytes",
     };
   }
+  const byteCappedShowing =
+    /\[Showing lines \d+-(\d+) of (\d+) \([^)]+ limit\)\. (?:Use offset=|nextOffset=)(\d+)(?: to continue\.| only if[^\]]+|\.)\]\s*$/iu.exec(
+      text,
+    );
+  if (byteCappedShowing) {
+    return {
+      totalLines: Number(byteCappedShowing[2]),
+      nextOffset: Number(byteCappedShowing[3]),
+      truncatedBy: "bytes",
+    };
+  }
   const showing =
-    /\[Showing lines \d+-(\d+) of (\d+)\. Use offset=(\d+) to continue\.\]\s*$/iu.exec(text);
+    /\[Showing lines \d+-(\d+) of (\d+)\. (?:Use offset=|nextOffset=)(\d+)(?: to continue\.| only if[^\]]+|\.)\]\s*$/iu.exec(
+      text,
+    );
   if (showing) {
     return {
       totalLines: Number(showing[2]),
@@ -383,7 +319,10 @@ function parseReadContinuationMetadata(text: string): {
       truncatedBy: "lines",
     };
   }
-  const more = /\[(\d+) more lines in file\. Use offset=(\d+) to continue\.\]\s*$/iu.exec(text);
+  const more =
+    /\[(\d+) more lines in file\. (?:Use offset=|nextOffset=)(\d+)(?: to continue\.| only if[^\]]+|\.)\]\s*$/iu.exec(
+      text,
+    );
   if (more) {
     return {
       moreLines: Number(more[1]),
@@ -392,7 +331,7 @@ function parseReadContinuationMetadata(text: string): {
     };
   }
   const outputCapped =
-    /\(Output capped at [^)]+ Showing lines \d+-(\d+)\. Use offset=(\d+) to continue\.\)\s*$/iu.exec(
+    /\(Output capped at [^)]+ Showing lines \d+-(\d+)\. (?:Use offset=|nextOffset=)(\d+)(?: to continue\.| only if[^)]+|\.)\)\s*$/iu.exec(
       text,
     );
   if (outputCapped) {
@@ -402,6 +341,52 @@ function parseReadContinuationMetadata(text: string): {
     };
   }
   return {};
+}
+
+function formatOpenCodeReadNotice(params: {
+  notice: string;
+  lineStart: number;
+  lineEnd: number;
+  totalLines: number | null;
+  pathLabel: string;
+  defaultLineLimit: number;
+}): string {
+  const continuationCall = (offset: string | number): string =>
+    `read(${JSON.stringify({
+      path: params.pathLabel,
+      offset: Number(offset),
+      limit: params.defaultLineLimit,
+    })})`;
+  const trimmed = params.notice.trim();
+  const byteCapped =
+    /\[Showing lines (\d+)-(\d+) of \d+ \(([^)]+) limit\)\. Use offset=(\d+) to continue\.\]/iu.exec(
+      trimmed,
+    );
+  if (byteCapped) {
+    return `(Output capped at 50 KB. Showing lines ${byteCapped[1]}-${byteCapped[2]}. Use offset=${byteCapped[4]} to continue. Exact next read: ${continuationCall(byteCapped[4])}.)`;
+  }
+  const showing = /\[Showing lines (\d+)-(\d+) of (\d+)\. Use offset=(\d+) to continue\.\]/iu.exec(
+    trimmed,
+  );
+  if (showing) {
+    return `(Showing lines ${showing[1]}-${showing[2]} of ${showing[3]}. Use offset=${showing[4]} to continue. Exact next read: ${continuationCall(showing[4])}.)`;
+  }
+  const more = /\[(\d+) more lines in file\. Use offset=(\d+) to continue\.\]/iu.exec(trimmed);
+  if (more) {
+    const nextOffset = Number(more[2]);
+    const totalLines =
+      params.totalLines ??
+      (Number.isFinite(nextOffset) ? nextOffset + Number(more[1]) - 1 : params.lineEnd);
+    return `(Showing lines ${params.lineStart}-${params.lineEnd} of ${totalLines}. Use offset=${more[2]} to continue. Exact next read: ${continuationCall(more[2])}.)`;
+  }
+  const capped =
+    /\[Read output capped at ([^\]]+) for this call\. Use offset=(\d+) to continue\.\]/iu.exec(
+      trimmed,
+    );
+  if (capped) {
+    return `(Output capped at ${capped[1]}. Showing lines ${params.lineStart}-${params.lineEnd}. Use offset=${capped[2]} to continue. Exact next read: ${continuationCall(capped[2])}.)`;
+  }
+  return trimmed.replace(/^\[/u, "(").replace(/\]$/u, ")");
 }
 
 function buildReadMetadata(params: {
@@ -488,6 +473,7 @@ function escapeXmlText(value: string): string {
 function lineNumberReadResultText(params: {
   result: AgentToolResult<unknown>;
   pathLabel: string;
+  defaultLineLimit: number;
 }): AgentToolResult<unknown> {
   if (hasImageContent(params.result)) {
     return params.result;
@@ -509,17 +495,37 @@ function lineNumberReadResultText(params: {
   if (!body.trim()) {
     return params.result;
   }
+  const totalLines =
+    typeof read.totalLines === "number" && Number.isFinite(read.totalLines)
+      ? Math.floor(read.totalLines)
+      : null;
+  const lineEnd =
+    typeof read.lineEnd === "number" && Number.isFinite(read.lineEnd)
+      ? Math.floor(read.lineEnd)
+      : Math.floor(lineStart) + body.split(/\r?\n/u).length - 1;
   const numbered = body
     .split(/\r?\n/u)
     .map((line, index) => `${Math.floor(lineStart) + index}: ${line}`)
     .join("\n");
+  const normalizedNotice = notice
+    ? formatOpenCodeReadNotice({
+        notice,
+        lineStart: Math.floor(lineStart),
+        lineEnd,
+        totalLines,
+        pathLabel: params.pathLabel,
+        defaultLineLimit: params.defaultLineLimit,
+      })
+    : totalLines !== null
+      ? `(End of file - total ${totalLines} lines)`
+      : null;
   const wrapped = [
     `<path>${escapeXmlText(params.pathLabel)}</path>`,
     "<type>file</type>",
     "<content>",
     numbered,
+    normalizedNotice ? `\n${normalizedNotice}` : undefined,
     "</content>",
-    notice ? `\n${notice}` : undefined,
   ]
     .filter((line): line is string => typeof line === "string")
     .join("\n");
@@ -733,8 +739,8 @@ function buildReadEofResult(params: {
   const suggestedOffset = params.totalLines > 0 ? params.totalLines : null;
   const guidance =
     params.totalLines > 0
-      ? `No lines were returned. Offset ${params.requestedOffset} is past EOF; the last valid offset is ${params.totalLines}. Use a smaller exact window at or before offset=${params.totalLines}, or stop reading this file.`
-      : `No lines were returned. The file is empty; stop reading this file.`;
+      ? `No lines were returned. Offset ${params.requestedOffset} is past EOF; the last valid offset is ${params.totalLines}.`
+      : "No lines were returned. The file is empty.";
   return {
     content: [
       {
@@ -790,6 +796,120 @@ function normalizePositiveInt(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0
     ? Math.floor(value)
     : fallback;
+}
+
+function pathIsInside(parent: string, child: string): boolean {
+  const relative = path.relative(parent, child);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function resolveManagedOutputReadPath(params: {
+  requestedPath: string | undefined;
+  workspaceRoot?: string;
+  stateRoot?: string | null;
+}): string | null {
+  const requestedPath = params.requestedPath?.trim();
+  if (!requestedPath || !params.stateRoot) {
+    return null;
+  }
+  const resolvedStateRoot = path.resolve(params.stateRoot);
+  const managedOutputRoot = path.join(resolvedStateRoot, "managed-tool-output");
+  const candidate = path.isAbsolute(requestedPath)
+    ? path.resolve(requestedPath)
+    : params.workspaceRoot
+      ? path.resolve(params.workspaceRoot, requestedPath)
+      : path.resolve(requestedPath);
+  if (!pathIsInside(managedOutputRoot, candidate) || path.extname(candidate) !== ".txt") {
+    return null;
+  }
+  return candidate;
+}
+
+async function readManagedOutputPathAsSource(params: {
+  absolutePath: string;
+  pathLabel: string;
+  args: Record<string, unknown>;
+  maxBytes: number;
+  defaultLineLimit: number;
+}): Promise<AgentToolResult<unknown> | null> {
+  const stat = await fs.stat(params.absolutePath).catch(() => null);
+  if (!stat?.isFile()) {
+    return null;
+  }
+  const raw = await fs.readFile(params.absolutePath, "utf8");
+  const allLines = raw.length === 0 ? [] : raw.split(/\r?\n/u);
+  const totalLines = allLines.length;
+  const offset = normalizePositiveInt(params.args.offset, 1);
+  const limit = Math.min(
+    normalizePositiveInt(params.args.limit, params.defaultLineLimit),
+    params.defaultLineLimit,
+  );
+  const startIndex = Math.max(0, offset - 1);
+  const selected: string[] = [];
+  let selectedBytes = 0;
+  for (const line of allLines.slice(startIndex, startIndex + limit)) {
+    const nextBytes =
+      selectedBytes + Buffer.byteLength(line, "utf8") + (selected.length > 0 ? 1 : 0);
+    if (nextBytes > params.maxBytes && selected.length > 0) {
+      break;
+    }
+    if (nextBytes > params.maxBytes) {
+      selected.push(line.slice(0, Math.max(0, params.maxBytes - selectedBytes)));
+      selectedBytes = params.maxBytes;
+      break;
+    }
+    selected.push(line);
+    selectedBytes = nextBytes;
+  }
+  const returnedLines = selected.length;
+  const lineEnd = returnedLines > 0 ? offset + returnedLines - 1 : offset;
+  const nextOffset = startIndex + returnedLines < totalLines ? offset + returnedLines : null;
+  const numbered = selected.map((line, index) => `${offset + index}: ${line}`).join("\n");
+  const continuation =
+    nextOffset !== null
+      ? `(Showing lines ${offset}-${lineEnd} of ${totalLines}. Use offset=${nextOffset} to continue. Exact next read: read(${JSON.stringify(
+          {
+            path: params.pathLabel,
+            offset: nextOffset,
+            limit: params.defaultLineLimit,
+          },
+        )}).)`
+      : `(End of file - total ${totalLines} lines)`;
+  const text = [
+    `<path>${escapeXmlText(params.pathLabel)}</path>`,
+    "<type>file</type>",
+    "<content>",
+    numbered,
+    "",
+    continuation,
+    "</content>",
+  ].join("\n");
+  return {
+    content: [{ type: "text", text }],
+    isError: false,
+    details: {
+      status: "ok",
+      read: {
+        type: "file",
+        lineStart: offset,
+        lineEnd,
+        totalLines,
+        returnedLines,
+        truncated: nextOffset !== null,
+        truncatedBy: nextOffset !== null ? "lines" : null,
+        nextOffset,
+        validOffsetRange: {
+          start: totalLines > 0 ? 1 : 0,
+          end: totalLines,
+        },
+        suggestedOffset: nextOffset,
+        bytesRead: Buffer.byteLength(selected.join("\n"), "utf8"),
+        maxBytes: params.maxBytes,
+        managedOutputPath: params.absolutePath,
+      },
+      text,
+    },
+  } as AgentToolResult<unknown>;
 }
 
 async function tryReadDirectoryWithPagination(params: {
@@ -1173,11 +1293,7 @@ async function executeReadWithAdaptivePaging(params: {
   const hasExplicitLimit =
     typeof userLimit === "number" && Number.isFinite(userLimit) && userLimit > 0;
   if (hasExplicitLimit) {
-    const result = await params.base.execute(params.toolCallId, params.args, params.signal);
-    return capReadResultTextByBytes({
-      result,
-      maxBytes: params.maxBytes,
-    });
+    return await params.base.execute(params.toolCallId, params.args, params.signal);
   }
 
   const offsetRaw = params.args.offset;
@@ -1185,7 +1301,7 @@ async function executeReadWithAdaptivePaging(params: {
     typeof offsetRaw === "number" && Number.isFinite(offsetRaw) && offsetRaw > 0
       ? Math.floor(offsetRaw)
       : 1;
-  const defaultPageResult = await params.base.execute(
+  return await params.base.execute(
     params.toolCallId,
     {
       ...params.args,
@@ -1194,11 +1310,6 @@ async function executeReadWithAdaptivePaging(params: {
     },
     params.signal,
   );
-  return capReadResultTextByBytes({
-    result: defaultPageResult,
-    maxBytes: params.maxBytes,
-    fallbackContinuationOffset: nextOffset + params.defaultLineLimit,
-  });
 }
 
 function rewriteReadImageHeader(text: string, mimeType: string): string {
@@ -1545,6 +1656,8 @@ type SandboxToolParams = {
   imageSanitization?: ImageSanitizationLimits;
   defaultLineLimit?: number;
   maxBytes?: number;
+  stateRoot?: string | null;
+  lspService?: OpenClawLspService;
 };
 
 export function createSandboxedReadTool(params: SandboxToolParams) {
@@ -1557,6 +1670,8 @@ export function createSandboxedReadTool(params: SandboxToolParams) {
     workspaceRoot: params.root,
     defaultLineLimit: params.defaultLineLimit,
     maxBytes: params.maxBytes,
+    stateRoot: params.stateRoot,
+    lspService: params.lspService,
   });
 }
 
@@ -1566,6 +1681,7 @@ export function createSandboxedWriteTool(params: SandboxToolParams) {
   }) as unknown as AnyAgentTool;
   const withMetadata = wrapWriteToolWithMetadata(base, {
     root: params.root,
+    lspService: params.lspService,
     access: async (absolutePath: string) => {
       const stat = await params.bridge.stat({ filePath: absolutePath, cwd: params.root });
       if (!stat) {
@@ -1577,23 +1693,30 @@ export function createSandboxedWriteTool(params: SandboxToolParams) {
 }
 
 export function createSandboxedEditTool(params: SandboxToolParams) {
+  const operations = createSandboxEditOperations(params);
   const base = createEditTool(params.root, {
-    operations: createSandboxEditOperations(params),
+    operations,
   }) as unknown as AnyAgentTool;
   const withRecovery = wrapEditToolWithRecovery(base, {
     root: params.root,
+    lspService: params.lspService,
     readFile: async (absolutePath: string) =>
       (await params.bridge.readFile({ filePath: absolutePath, cwd: params.root })).toString("utf8"),
+    writeFile: operations.writeFile,
   });
   return wrapToolParamValidation(withRecovery, REQUIRED_PARAM_GROUPS.edit);
 }
 
-export function createHostWorkspaceWriteTool(root: string, options?: { workspaceOnly?: boolean }) {
+export function createHostWorkspaceWriteTool(
+  root: string,
+  options?: { workspaceOnly?: boolean; lspService?: OpenClawLspService },
+) {
   const base = createWriteTool(root, {
     operations: createHostWriteOperations(root, options),
   }) as unknown as AnyAgentTool;
   const withMetadata = wrapWriteToolWithMetadata(base, {
     root,
+    lspService: options?.lspService,
     access: async (absolutePath: string) => {
       await fs.access(path.resolve(expandTildeToOsHome(absolutePath)));
     },
@@ -1601,13 +1724,19 @@ export function createHostWorkspaceWriteTool(root: string, options?: { workspace
   return wrapToolParamValidation(withMetadata, REQUIRED_PARAM_GROUPS.write);
 }
 
-export function createHostWorkspaceEditTool(root: string, options?: { workspaceOnly?: boolean }) {
+export function createHostWorkspaceEditTool(
+  root: string,
+  options?: { workspaceOnly?: boolean; lspService?: OpenClawLspService },
+) {
+  const operations = createHostEditOperations(root, options);
   const base = createEditTool(root, {
-    operations: createHostEditOperations(root, options),
+    operations,
   }) as unknown as AnyAgentTool;
   const withRecovery = wrapEditToolWithRecovery(base, {
     root,
+    lspService: options?.lspService,
     readFile: (absolutePath: string) => fs.readFile(absolutePath, "utf-8"),
+    writeFile: operations.writeFile,
   });
   return wrapToolParamValidation(withRecovery, REQUIRED_PARAM_GROUPS.edit);
 }
@@ -1618,6 +1747,14 @@ export function createOpenClawReadTool(
 ): AnyAgentTool {
   return {
     ...base,
+    description: [
+      base.description,
+      "Returns actual line-numbered source for bounded file reads. To read around line N, pass offset=N and a bounded limit; mentioning a line number in assistant text does not select that window. Omitting offset starts at line 1. Large reads are capped and include total lines plus the next offset.",
+      "For large TypeScript symbol, type, function, class, or interface navigation, use lsp documentSymbol/workspaceSymbol before sequential reads unless you already know the exact line window. Use file-scoped grep for exact text search.",
+      "Call this tool in parallel when you know multiple independent files to read.",
+    ]
+      .filter((line): line is string => typeof line === "string" && line.trim().length > 0)
+      .join(" "),
     execute: async (toolCallId, params, signal) => {
       const record = getToolParamsRecord(params);
       assertRequiredParams(record, REQUIRED_PARAM_GROUPS.read, base.name);
@@ -1641,12 +1778,28 @@ export function createOpenClawReadTool(
         typeof normalizedArgs.path === "string" && normalizedArgs.path.trim()
           ? normalizedArgs.path
           : "<unknown>";
-      const directoryResult = await tryReadDirectoryWithPagination({
-        args: normalizedArgs,
-        pathLabel: requestedPath ?? normalizedPathLabel,
+      const managedOutputPath = resolveManagedOutputReadPath({
+        requestedPath: requestedPath ?? normalizedPathLabel,
         workspaceRoot: options?.workspaceRoot,
-        defaultLineLimit,
+        stateRoot: options?.stateRoot,
       });
+      const managedOutputResult = managedOutputPath
+        ? await readManagedOutputPathAsSource({
+            absolutePath: managedOutputPath,
+            pathLabel: requestedPath ?? normalizedPathLabel,
+            args: normalizedArgs,
+            maxBytes,
+            defaultLineLimit,
+          })
+        : null;
+      const directoryResult =
+        managedOutputResult ??
+        (await tryReadDirectoryWithPagination({
+          args: normalizedArgs,
+          pathLabel: requestedPath ?? normalizedPathLabel,
+          workspaceRoot: options?.workspaceRoot,
+          defaultLineLimit,
+        }));
       const result =
         directoryResult ??
         (await executeReadWithAdaptivePaging({
@@ -1673,13 +1826,30 @@ export function createOpenClawReadTool(
       const lineNumberedResult = lineNumberReadResultText({
         result: strippedDetailsResult,
         pathLabel: filePath,
+        defaultLineLimit,
       });
       const normalizedResult = await normalizeReadImageResult(lineNumberedResult, filePath);
-      return sanitizeToolResultImages(
+      const sanitizedResult = await sanitizeToolResultImages(
         normalizedResult,
         `read:${filePath}`,
         options?.imageSanitization,
       );
+      const lspWarmPath =
+        typeof normalizedArgs.path === "string" && normalizedArgs.path.trim()
+          ? options?.workspaceRoot
+            ? resolveToolPathAgainstWorkspaceRoot({
+                filePath: normalizedArgs.path,
+                root: options.workspaceRoot,
+              })
+            : normalizedArgs.path
+          : null;
+      const readSucceeded = (sanitizedResult as { isError?: unknown }).isError !== true;
+      if (lspWarmPath && readSucceeded) {
+        void options?.lspService?.touchFile(lspWarmPath).catch(() => {
+          // Read output must stay source-shaped; LSP warm-up is best-effort.
+        });
+      }
+      return sanitizedResult;
     },
   };
 }

@@ -139,6 +139,36 @@ describe("subagent spawn model + thinking plan", () => {
     });
   });
 
+  it("self-resolves target agent thinking defaults from the native agent registry", () => {
+    const cfg = createConfig({
+      agents: {
+        defaults: { subagents: { thinking: "high" } },
+        list: [
+          {
+            id: "execution-context-scout",
+            thinkingDefault: "low",
+            model: { primary: "openrouter/qwen/qwen3-coder-plus" },
+          },
+        ],
+      },
+    });
+
+    const plan = resolveSubagentModelAndThinkingPlan({
+      cfg,
+      targetAgentId: "execution-context-scout",
+    });
+
+    expect(plan).toMatchObject({
+      status: "ok",
+      resolvedModel: "openrouter/qwen/qwen3-coder-plus",
+      thinkingOverride: "low",
+      initialSessionPatch: {
+        model: "openrouter/qwen/qwen3-coder-plus",
+        thinkingLevel: "low",
+      },
+    });
+  });
+
   it("uses config default timeout when agent omits runTimeoutSeconds", () => {
     expect(
       resolveConfiguredSubagentRunTimeoutSeconds({

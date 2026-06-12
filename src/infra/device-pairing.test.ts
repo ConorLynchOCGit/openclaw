@@ -161,6 +161,30 @@ describe("device pairing tokens", () => {
     expect(second.request.requestId).toBe(first.request.requestId);
   });
 
+  test("requesting device pairing does not rewrite paired device state", async () => {
+    const baseDir = await makeDevicePairingDir();
+    await setupPairedOperatorDevice(baseDir, ["operator.read", "operator.write"]);
+    const { pairedPath } = resolvePairingPaths(baseDir, "devices");
+    const pairedBefore = await readFile(pairedPath, "utf8");
+
+    const request = await requestDevicePairing(
+      {
+        deviceId: "device-1",
+        publicKey: "public-key-1",
+        role: "operator",
+        scopes: ["operator.read", "operator.write"],
+        clientId: "openclaw-control-ui",
+        clientMode: "webchat",
+      },
+      baseDir,
+    );
+
+    expect(request.status).toBe("pending");
+    expect(request.request.isRepair).toBe(true);
+    expect(await readFile(pairedPath, "utf8")).toBe(pairedBefore);
+    await expect(getPairedDevice("device-1", baseDir)).resolves.toBeTruthy();
+  });
+
   test("re-requesting with identical params preserves the original ts to prevent queue-jumping", async () => {
     // Regression: refreshPendingDevicePairingRequest must not bump ts to Date.now().
     // An attacker who reconnects with the same key/role/scopes could otherwise

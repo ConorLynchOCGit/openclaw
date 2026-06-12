@@ -496,7 +496,8 @@ describe("runtime job repository", () => {
           promptRef: "node-agent-worker-prompt://job-resource-contracts/implementation-1",
           nodeRunId: "node-run-1",
           snapshotRef: "node-execution-snapshot://job-resource-contracts/implementation-1",
-          promptText: "Use update_plan, search/edit/validate, and finish with node_finish.",
+          promptText:
+            "Patch the assigned source, validate the touched behavior, and finish with node_finish.",
           promptHash: "sha256:worker-prompt-hash",
           modelRunRef: "model-run://node-worker-prompt/1",
           rawPromptStored: false,

@@ -15,10 +15,15 @@ export function resolveSubagentThinkingOverride(params: {
   targetAgentConfig?: unknown;
   thinkingOverrideRaw?: string;
 }) {
-  const targetSubagents = asRecord(asRecord(params.targetAgentConfig)?.subagents);
+  const targetAgent = asRecord(params.targetAgentConfig);
+  const targetSubagents = asRecord(targetAgent?.subagents);
+  const defaultAgent = asRecord(params.cfg.agents?.defaults);
   const defaultSubagents = asRecord(params.cfg.agents?.defaults?.subagents);
   const resolvedThinkingDefaultRaw =
-    readString(targetSubagents ?? {}, "thinking") ?? readString(defaultSubagents ?? {}, "thinking");
+    readString(targetAgent ?? {}, "thinkingDefault") ??
+    readString(targetSubagents ?? {}, "thinking") ??
+    readString(defaultSubagents ?? {}, "thinking") ??
+    readString(defaultAgent ?? {}, "thinkingDefault");
 
   const thinkingCandidateRaw = params.thinkingOverrideRaw || resolvedThinkingDefaultRaw;
   if (!thinkingCandidateRaw) {

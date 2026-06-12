@@ -1028,7 +1028,7 @@ export function buildRuntimeNodeCapabilityManifest(): RuntimeNodeCapabilityManif
         workflowId: "agent_team.coding",
         displayName: "OpenClaw-native execution-coding node agent session",
         modelPolicyRefs: [
-          "policy://openclaw-native-node/execution-coding/kimi-k2.6-high-reasoning",
+          "policy://openclaw-native-node/execution-coding/kimi-k2.6-implementation-reasoning",
           "policy://openclaw-native-node/execution-context-scout/qwen-fast-search",
           "policy://openclaw-native-node/execution-validation-scout/qwen-fast-validation",
         ],
@@ -1070,7 +1070,7 @@ export function buildRuntimeNodeCapabilityManifest(): RuntimeNodeCapabilityManif
         ],
         knownLimitations: [
           "not_for_large_architectural_refactors",
-          "requires coherent node prompt and active execution-node-workflow skill",
+          "requires coherent edit-first node prompt and native execution-coding tool contract",
           "requires child scout results to enter parent context before synthesis",
           "context overflow must compact native session state rather than fall back to EP worker loops",
         ],
@@ -1125,7 +1125,7 @@ export function buildRuntimeNodeCapabilityManifest(): RuntimeNodeCapabilityManif
         workflowId: "agent_team.coding",
         displayName: "OpenClaw-native test-authoring node agent session",
         modelPolicyRefs: [
-          "policy://openclaw-native-node/execution-coding/kimi-k2.6-high-reasoning",
+          "policy://openclaw-native-node/execution-coding/kimi-k2.6-implementation-reasoning",
           "policy://openclaw-native-node/execution-context-scout/qwen-fast-search",
           "policy://openclaw-native-node/execution-validation-scout/qwen-fast-validation",
         ],
@@ -1166,7 +1166,7 @@ export function buildRuntimeNodeCapabilityManifest(): RuntimeNodeCapabilityManif
         ],
         knownLimitations: [
           "must_not_count_skipped_or_weakened_tests_as_success",
-          "requires coherent node prompt and active execution-node-workflow skill",
+          "requires coherent edit-first node prompt and native execution-coding tool contract",
         ],
       }),
       capability({

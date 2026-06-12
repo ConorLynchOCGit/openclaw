@@ -39,7 +39,7 @@ export function makeAttemptResult(
     idleTimedOut: false,
     timedOutDuringCompaction: false,
     promptError: null,
-    promptErrorSource: null,
+    promptErrorOrigin: null,
     sessionIdUsed: "test-session",
     assistantTexts: ["Hello!"],
     toolMetas,

@@ -643,6 +643,16 @@ export function buildRequiredActiveSkillSnapshot(
     ...opts,
     skillFilter: requiredSkillNames,
   });
+  if (requiredSkillNames.length === 0) {
+    return {
+      ...baseSnapshot,
+      prompt: "",
+      skills: [],
+      skillFilter: [],
+      activeContextSources: [],
+      resolvedSkills: [],
+    };
+  }
   const resolvedByName = new Map(
     (baseSnapshot.resolvedSkills ?? []).map((skill) => [skill.name, skill]),
   );

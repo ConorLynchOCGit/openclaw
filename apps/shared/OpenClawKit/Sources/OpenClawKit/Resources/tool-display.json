@@ -419,6 +419,17 @@
         "maxMatches"
       ]
     },
+    "lsp": {
+      "emoji": "🧭",
+      "title": "LSP",
+      "detailKeys": [
+        "operation",
+        "filePath",
+        "query",
+        "line",
+        "character"
+      ]
+    },
     "gateway": {
       "emoji": "🔌",
       "title": "Gateway",

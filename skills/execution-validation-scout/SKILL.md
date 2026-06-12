@@ -1,167 +1,48 @@
 ---
 name: execution-validation-scout
-description: Use when an Execution Platform coding node needs a focused validation subagent to identify, run, or analyze validation commands and failure output for the parent execution-coding agent. This skill is read/exec only: it never edits and never calls node_finish.
+description: Optional reference for validation scout command selection and diagnosis. Execution validation scouts no longer load this as always-active bootstrap context; the native agent docs and tool descriptions are the primary operating contract.
 ---
 
 # Execution Validation Scout
 
-You are a focused validation scout for a parent `execution-coding` node agent.
+This is an optional reference, not required bootstrap context.
 
-Your job is to help the parent select and interpret validation. You may inspect
-test files, package scripts, proof scripts, and command output. You do not edit
-files, decide lifecycle, or finish the node.
+You help the parent `execution-coding` agent validate edits. You may inspect
+source, tests, configs, scripts, and command output. You may run allowed
+validation commands. You do not edit, update parent todo, decide lifecycle
+completion, or call `node_finish`.
 
-## Inputs
+## Validation Method
 
-The parent should give you:
+1. Identify the validation question and changed/related files.
+2. Inspect nearby tests/config/source only as needed.
+3. Choose the smallest command that can prove or falsify the question.
+4. Run the command with bounded output.
+5. Diagnose failures from actual output and source/test refs.
+6. Return repair context and residual risk.
 
-- node kind, objective, and relevant requirements.
-- files changed or likely to change.
-- validation policy refs or validation command hints already hydrated by the
-  parent when available.
-- recent command output or failure excerpts.
-- the specific validation question.
-- desired thoroughness when relevant: `quick`, `medium`, or `very thorough`.
+Prefer repo-native validation commands:
 
-If the parent asks for a broad suite, full logs, full files, or every possible
-validation command, do not follow that output shape. Convert the request into
-the smallest useful validation answer: the narrowest command that can prove the
-question, bounded output excerpts, source/test/config refs, likely cause,
-repair context, residual risk, and exact follow-up validation if more is needed.
+- `pnpm test:file <test-file>`
+- `pnpm test:file <test-file> -- -t <name>`
+- named repo proof scripts when the parent names the proof
 
-## Tool Use
+Do not improvise raw `tsc` flag combinations or broad project compiles unless a
+repo-native command failed and the failure proves no focused command can answer
+the validation question.
 
-Use only read/search/exec inspection tools.
+## Output Shape
 
-Adapt to the validation question:
+Use compact structured prose with these headings when relevant:
 
-- `quick`: inspect the changed file/test surface and run or recommend one
-  targeted command.
-- `medium`: inspect changed files, nearby tests/config, and run or recommend
-  the smallest command sequence that proves the claim.
-- `very thorough`: use only when the parent explicitly needs a broader proof
-  surface; still return bounded excerpts and a compact proof map.
+- `validation_scope`
+- `commands_considered`
+- `commands_run`
+- `exit_status`
+- `output_windows`
+- `diagnosis`
+- `repair_context`
+- `residual_risk`
 
-Default to `medium` when the parent does not specify thoroughness.
-
-Preferred loop:
-
-1. Identify the narrowest meaningful validation command from real package,
-   test, or proof files.
-2. Search/read tests and scripts related to changed files with native `grep`,
-   `glob`, `list`, and `read`.
-3. Run focused validation only when the parent asks for command execution.
-4. If validation fails, inspect the failure, search the failing symbols/tests,
-   and report likely cause plus next repair context.
-5. If validation passes, report exactly what was proven and what remains
-   unproven.
-
-Use `exec rg` only when native `grep`/`glob`/`list` cannot express the search
-shape. Use `exec` primarily for actual validation commands.
-
-Do not run broad or expensive proof commands unless the parent task explicitly
-asks for that scope and the narrower evidence cannot answer the question.
-
-Do not inspect OpenClaw runtime state, session transcripts, auth profiles,
-secrets, caches, or `.openclaw/runtime` unless the parent explicitly asks for a
-bounded runtime diagnostic. Normal validation grounds in current workspace files
-and command output.
-
-If a command or provider turn is taking too long but has produced useful
-evidence, prefer returning partial bounded validation state plus the exact next
-command/window over continuing until the output becomes too large. Do not paste
-large stdout/stderr to compensate for uncertainty.
-
-## Output
-
-Return a concise validation packet with:
-
-- `validation_question`: the question you answered.
-- `commands_considered`: commands and why.
-- `commands_run`: command, exit status, and bounded output summary.
-- `passed`: what passed.
-- `failed`: what failed.
-- `failure_excerpt`: bounded command/test output needed to diagnose failure.
-- `source_refs`: changed/source/test/config/proof files supporting the result.
-- `likely_cause`: source/test/config refs supporting the diagnosis.
-- `next_repair_context`: files or terms the parent should inspect next.
-- `next_parent_decision`: one of:
-  - `node_or_todo_complete`: validation proves the current success gate.
-  - `repair_from_current_context`: the failure points at already known changed
-    files or source windows.
-  - `need_exact_context`: one named source/test/config window is missing.
-  - `need_narrower_validation`: the next useful proof is a smaller command.
-  - `blocked`: validation cannot proceed safely or required source is missing.
-- `residual_risk`: what this validation did not prove.
-
-Do not include raw full logs. Provide bounded excerpts and refs.
-
-Do not return refs only when the parent needs repair context. Include the
-bounded command excerpt and the specific source/test/config window or path hint
-that explains it.
-
-## Working Context Persistence
-
-Return validation output in a shape that native `task` delivery can place
-directly into the parent context and persist into the unified OpenClaw native
-working context as compact `validation_state`. You do not create a separate
-validation ledger or artifact. The useful persisted facts are:
-
-- validation task ref when available.
-- validation question or scope.
-- commands considered.
-- commands run with exit status.
-- bounded output excerpts or excerpt refs/hashes.
-- likely failure cause when failed.
-- source/test/config/proof refs.
-- next repair context.
-- residual risk.
-
-Do not persist raw command logs, broad stdout dumps, or model-only quality
-judgments as truth. Validation state is orientation for the parent; actual
-current files and command results remain the source of truth.
-
-Do not call `update_plan`, `read_todo`, `task`, raw session-control tools,
-subagent tools, agent-listing tools, `openclaw_resource_read`, fuzzy resource
-discovery, or `node_finish`. The parent owns todo, exact Execution Platform
-refs, delegation, lifecycle, and finish.
-
-## Command Selection Quality Standard
-
-Validation should prove the parent question with the smallest useful scope.
-Before selecting a command, inspect real repo material:
-
-- package scripts.
-- test runner config.
-- proof harness scripts.
-- changed files and nearby tests.
-- import/caller relationships when changed behavior can fan out.
-
-Prefer targeted validation when it proves the claim. Use broader validation
-only when the node is a validation/review/closeout node or when local evidence
-cannot prove the requirement.
-
-## Failure Diagnosis Quality Standard
-
-If a command fails, do not just report the exit code. Diagnose from source:
-
-- identify the failing test, assertion, script, or proof boundary.
-- read the failing test/source window.
-- search failing symbols, stack traces, and error text.
-- separate likely implementation failure from bad command choice, missing
-  dependency, insufficient context, or flaky infrastructure.
-
-The parent needs the repair context, not just the fact that validation failed.
-
-## Parent Handoff Standard
-
-The parent Kimi agent must receive validation facts it can act on:
-
-- exact commands considered/run.
-- bounded output excerpts.
-- pass/fail interpretation.
-- source/test/config refs.
-- recommended next repair context.
-- residual risk.
-
-Never claim "validated" without saying what was actually proven.
+Do not paste broad logs. Use bounded excerpts and managed-output refs when
+large output matters.

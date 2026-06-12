@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
 import { resolveBootstrapRepoPath } from "./bootstrap-repo-paths.js";
+import type { PromptProfile } from "./system-prompt.types.js";
 
 export const AGENT_PACK_REGISTRY_RELATIVE_PATH = "docs/agents/registry.yaml";
 
@@ -26,6 +27,7 @@ export type AgentPackRegistryEntry = {
   requiredTools?: string[];
   forbiddenTools?: string[];
   toolBudget?: AgentPackToolBudgetPolicy;
+  promptProfile?: PromptProfile;
 };
 
 function rawRecord(value: unknown): Record<string, unknown> {
@@ -40,6 +42,20 @@ function rawList(value: unknown): Record<string, unknown>[] {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function optionalPromptProfile(value: unknown): PromptProfile | undefined {
+  const profile = optionalString(value);
+  if (
+    profile === "general_assistant" ||
+    profile === "execution_worker" ||
+    profile === "execution_context_scout" ||
+    profile === "execution_validation_scout" ||
+    profile === "compaction"
+  ) {
+    return profile;
+  }
+  return undefined;
 }
 
 function stringList(value: unknown): string[] {
@@ -102,6 +118,7 @@ function parseAgentPackRegistryEntries(input: {
         allowedChildAgents: stringList(entry.allowedChildAgents),
         requiredTools: stringList(entry.requiredTools),
         forbiddenTools: stringList(entry.forbiddenTools),
+        promptProfile: optionalPromptProfile(entry.promptProfile),
         ...(toolBudget ? { toolBudget } : {}),
       };
     })

@@ -9,10 +9,11 @@ LOCAL_READY="${OPENCLAW_GATEWAY_LOCAL_READY_URL:-http://127.0.0.1:28789/readyz}"
 ARTIFACT_DIR="${OPENCLAW_GATEWAY_RELOAD_ARTIFACT_DIR:-$ROOT_DIR/.artifacts/docker-gateway-reload}"
 ALLOW_DIRTY_RUNTIME_SHAPE=0
 SKIP_BUILD=0
+SYNC_LSP_RUNTIME_DEPS=0
 
 usage() {
   cat <<'EOF'
-Usage: scripts/docker/reload-gateway-dist.sh [--allow-dirty-runtime-shape] [--skip-build]
+Usage: scripts/docker/reload-gateway-dist.sh [--allow-dirty-runtime-shape] [--skip-build] [--sync-lsp-runtime-deps]
 
 Fast reloads gateway/runtime TypeScript code and source-backed OpenClaw assets
 without rebuilding the Docker image:
@@ -30,6 +31,7 @@ Allowed for:
 Use full scripts/docker/rebuild-gateway.sh instead for:
   - Dockerfile or docker-compose changes
   - package.json, pnpm-lock.yaml, patch, native-addon, or runtime dependency changes
+    other than the approved LSP runtime dependency sync described below
   - UI/QA asset image proofs
   - env/port/auth/pairing/container-shape changes
   - final production image proof
@@ -37,6 +39,15 @@ Use full scripts/docker/rebuild-gateway.sh instead for:
 --allow-dirty-runtime-shape is an explicit operator override for dirty files that
 the current reload does not depend on. It records the dirty runtime-shape paths
 in the evidence artifact instead of silently ignoring them.
+
+--sync-lsp-runtime-deps permits the narrow OpenCode-style LSP runtime dependency
+delta for typescript-language-server and vscode-jsonrpc without a full image
+rebuild. It copies the already-installed package directories from host
+node_modules into live /app/node_modules and verifies that the live container
+can resolve:
+  - typescript-language-server/lib/cli.mjs
+  - vscode-jsonrpc
+  - typescript/lib/tsserver.js
 EOF
 }
 
@@ -52,6 +63,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-build)
       SKIP_BUILD=1
+      shift
+      ;;
+    --sync-lsp-runtime-deps)
+      SYNC_LSP_RUNTIME_DEPS=1
       shift
       ;;
     *)
@@ -80,6 +95,98 @@ const text = fs.readFileSync(0, "utf8");
 const lines = text.split(/\r?\n/u).filter(Boolean);
 process.stdout.write(JSON.stringify(lines));
 '
+}
+
+approved_lsp_dependency_shape() {
+  node <<'NODE'
+const fs = require("fs");
+const cp = require("child_process");
+
+const allowedDeps = new Set(["typescript-language-server", "vscode-jsonrpc"]);
+
+function readJson(text) {
+  return JSON.parse(text);
+}
+
+function readHeadPackageJson() {
+  try {
+    return readJson(cp.execFileSync("git", ["show", "HEAD:package.json"], { encoding: "utf8" }));
+  } catch (error) {
+    console.error(`could not read HEAD:package.json: ${error.message}`);
+    process.exit(1);
+  }
+}
+
+function normalizePackageJson(pkg) {
+  const copy = JSON.parse(JSON.stringify(pkg));
+  if (copy.dependencies && typeof copy.dependencies === "object") {
+    for (const dep of allowedDeps) {
+      delete copy.dependencies[dep];
+    }
+  }
+  return copy;
+}
+
+const before = readHeadPackageJson();
+const after = readJson(fs.readFileSync("package.json", "utf8"));
+
+if (JSON.stringify(normalizePackageJson(before)) !== JSON.stringify(normalizePackageJson(after))) {
+  console.error("package.json has runtime-shape changes outside the approved LSP dependency keys");
+  process.exit(1);
+}
+
+for (const dep of allowedDeps) {
+  if (!after.dependencies || typeof after.dependencies[dep] !== "string" || after.dependencies[dep].length === 0) {
+    console.error(`package.json is missing approved LSP dependency ${dep}`);
+    process.exit(1);
+  }
+}
+NODE
+}
+
+lsp_runtime_dependency_probe_json() {
+  if ! docker inspect "$CONTAINER" >/dev/null 2>&1; then
+    printf '{"ok":false,"container":%s,"error":"container_not_found","checks":[]}' "$(json_escape "$CONTAINER")"
+    return 0
+  fi
+
+  docker exec "$CONTAINER" sh -lc 'cd /app && node - <<'"'"'NODE'"'"'
+const checks = [
+  { name: "typescript-language-server", moduleId: "typescript-language-server/lib/cli.mjs" },
+  { name: "vscode-jsonrpc", moduleId: "vscode-jsonrpc" },
+  { name: "typescript-tsserver", moduleId: "typescript/lib/tsserver.js" },
+];
+const results = checks.map((check) => {
+  try {
+    return { name: check.name, moduleId: check.moduleId, ok: true, resolvedPath: require.resolve(check.moduleId) };
+  } catch (error) {
+    return { name: check.name, moduleId: check.moduleId, ok: false, errorCode: error && error.code ? String(error.code) : "resolve_failed" };
+  }
+});
+process.stdout.write(JSON.stringify({ ok: results.every((result) => result.ok), checks: results }));
+NODE' 2>/dev/null || printf '{"ok":false,"error":"container_probe_failed","checks":[]}'
+}
+
+sync_lsp_runtime_dependencies() {
+  echo "==> Syncing approved LSP runtime dependencies into $CONTAINER:/app"
+
+  local deps_tar="/tmp/openclaw-gateway-lsp-runtime-deps-${timestamp}.tar"
+  for package_dir in node_modules/typescript-language-server node_modules/vscode-jsonrpc; do
+    if [[ ! -d "$ROOT_DIR/$package_dir" ]]; then
+      echo "Host package directory $package_dir is missing; run pnpm install or use full rebuild." >&2
+      exit 10
+    fi
+  done
+  tar -C "$ROOT_DIR" -cf "$deps_tar" node_modules/typescript-language-server node_modules/vscode-jsonrpc
+  docker cp "$deps_tar" "$CONTAINER:/tmp/openclaw-gateway-lsp-runtime-deps.tar"
+  rm -f "$deps_tar"
+
+  docker exec -u 0 "$CONTAINER" sh -lc '
+    set -eu
+    tar -C /app -xf /tmp/openclaw-gateway-lsp-runtime-deps.tar
+    rm -f /tmp/openclaw-gateway-lsp-runtime-deps.tar
+    chown -R node:node /app/node_modules/typescript-language-server /app/node_modules/vscode-jsonrpc
+  '
 }
 
 env_file_value() {
@@ -140,13 +247,29 @@ dirty_shape_paths="$(
     | sort -u
 )"
 
-if [[ -n "$dirty_shape_paths" && "$ALLOW_DIRTY_RUNTIME_SHAPE" != "1" ]]; then
+blocking_dirty_shape_paths="$dirty_shape_paths"
+approved_lsp_runtime_dependency_shape=false
+if [[ "$SYNC_LSP_RUNTIME_DEPS" == "1" ]]; then
+  if approved_lsp_dependency_shape; then
+    approved_lsp_runtime_dependency_shape=true
+    blocking_dirty_shape_paths="$(
+      printf '%s\n' "$dirty_shape_paths" \
+        | awk 'NF && $0 != "package.json" && $0 != "pnpm-lock.yaml"' \
+        | sort -u
+    )"
+  fi
+fi
+
+if [[ -n "$blocking_dirty_shape_paths" && "$ALLOW_DIRTY_RUNTIME_SHAPE" != "1" ]]; then
   {
     printf '{\n'
     printf '  "artifactKind": "gateway_dist_reload_evidence",\n'
     printf '  "status": "blocked_dirty_runtime_shape",\n'
     printf '  "generatedAt": %s,\n' "$(json_escape "$(date -u +%Y-%m-%dT%H:%M:%SZ)")"
     printf '  "dirtyRuntimeShapePaths": %s,\n' "$(printf '%s\n' "$dirty_shape_paths" | json_array_from_lines)"
+    printf '  "blockingDirtyRuntimeShapePaths": %s,\n' "$(printf '%s\n' "$blocking_dirty_shape_paths" | json_array_from_lines)"
+    printf '  "lspRuntimeDependencySyncRequested": %s,\n' "$([[ "$SYNC_LSP_RUNTIME_DEPS" == "1" ]] && echo true || echo false)"
+    printf '  "approvedLspRuntimeDependencyShape": %s,\n' "$approved_lsp_runtime_dependency_shape"
     printf '  "useFullRebuildCommand": "scripts/docker/rebuild-gateway.sh",\n'
     printf '  "rawPromptStored": false,\n'
     printf '  "rawResponseStored": false,\n'
@@ -154,7 +277,7 @@ if [[ -n "$dirty_shape_paths" && "$ALLOW_DIRTY_RUNTIME_SHAPE" != "1" ]]; then
     printf '}\n'
   } >"$artifact"
   echo "Narrow reload blocked because runtime-shape files are dirty:" >&2
-  printf '%s\n' "$dirty_shape_paths" >&2
+  printf '%s\n' "$blocking_dirty_shape_paths" >&2
   echo "Use full rebuild, or rerun with --allow-dirty-runtime-shape if these paths are unrelated." >&2
   echo "Evidence: $artifact" >&2
   exit 3
@@ -166,6 +289,53 @@ pre_ready="$(health_json "$LOCAL_READY")"
 if ! docker inspect "$CONTAINER" >/dev/null 2>&1; then
   echo "Container $CONTAINER not found; use scripts/docker/rebuild-gateway.sh." >&2
   exit 4
+fi
+
+lsp_runtime_dependency_probe="$(lsp_runtime_dependency_probe_json)"
+if ! node -e 'const p=JSON.parse(process.argv[1]); process.exit(p.ok ? 0 : 1)' "$lsp_runtime_dependency_probe"; then
+  if [[ "$SYNC_LSP_RUNTIME_DEPS" != "1" ]]; then
+    {
+      printf '{\n'
+      printf '  "artifactKind": "gateway_dist_reload_evidence",\n'
+      printf '  "status": "blocked_missing_lsp_runtime_dependencies",\n'
+      printf '  "generatedAt": %s,\n' "$(json_escape "$(date -u +%Y-%m-%dT%H:%M:%SZ)")"
+      printf '  "service": %s,\n' "$(json_escape "$SERVICE")"
+      printf '  "container": %s,\n' "$(json_escape "$CONTAINER")"
+      printf '  "lspRuntimeDependencies": %s,\n' "$lsp_runtime_dependency_probe"
+      printf '  "useDistReloadWithLspDependencySyncCommand": "scripts/docker/reload-gateway-dist.sh --sync-lsp-runtime-deps",\n'
+      printf '  "useFullRebuildCommand": "scripts/docker/rebuild-gateway.sh",\n'
+      printf '  "rawPromptStored": false,\n'
+      printf '  "rawResponseStored": false,\n'
+      printf '  "rawLogsStored": false\n'
+      printf '}\n'
+    } >"$artifact"
+    echo "Narrow reload blocked because approved LSP runtime dependencies are missing in $CONTAINER." >&2
+    echo "Rerun with --sync-lsp-runtime-deps, or use full rebuild." >&2
+    echo "Evidence: $artifact" >&2
+    exit 8
+  fi
+
+  sync_lsp_runtime_dependencies
+  lsp_runtime_dependency_probe="$(lsp_runtime_dependency_probe_json)"
+  if ! node -e 'const p=JSON.parse(process.argv[1]); process.exit(p.ok ? 0 : 1)' "$lsp_runtime_dependency_probe"; then
+    {
+      printf '{\n'
+      printf '  "artifactKind": "gateway_dist_reload_evidence",\n'
+      printf '  "status": "blocked_lsp_runtime_dependency_sync_failed",\n'
+      printf '  "generatedAt": %s,\n' "$(json_escape "$(date -u +%Y-%m-%dT%H:%M:%SZ)")"
+      printf '  "service": %s,\n' "$(json_escape "$SERVICE")"
+      printf '  "container": %s,\n' "$(json_escape "$CONTAINER")"
+      printf '  "lspRuntimeDependencies": %s,\n' "$lsp_runtime_dependency_probe"
+      printf '  "useFullRebuildCommand": "scripts/docker/rebuild-gateway.sh",\n'
+      printf '  "rawPromptStored": false,\n'
+      printf '  "rawResponseStored": false,\n'
+      printf '  "rawLogsStored": false\n'
+      printf '}\n'
+    } >"$artifact"
+    echo "LSP runtime dependency sync did not make required dependencies resolvable; use full rebuild." >&2
+    echo "Evidence: $artifact" >&2
+    exit 9
+  fi
 fi
 
 stale_env_lines=""
@@ -336,6 +506,9 @@ container_started_at="$(docker inspect --format '{{.State.StartedAt}}' "$CONTAIN
   printf '  "containerImage": %s,\n' "$(json_escape "$container_image")"
   printf '  "containerStartedAt": %s,\n' "$(json_escape "$container_started_at")"
   printf '  "buildStatus": %s,\n' "$(json_escape "$build_status")"
+  printf '  "lspRuntimeDependencySyncRequested": %s,\n' "$([[ "$SYNC_LSP_RUNTIME_DEPS" == "1" ]] && echo true || echo false)"
+  printf '  "approvedLspRuntimeDependencyShape": %s,\n' "$approved_lsp_runtime_dependency_shape"
+  printf '  "lspRuntimeDependencies": %s,\n' "$lsp_runtime_dependency_probe"
   printf '  "distHash": %s,\n' "$(json_escape "$dist_hash")"
   printf '  "sourceAssetsHash": %s,\n' "$(json_escape "$source_assets_hash")"
   printf '  "containerSourceAssetsHash": %s,\n' "$(json_escape "$container_source_assets_hash")"

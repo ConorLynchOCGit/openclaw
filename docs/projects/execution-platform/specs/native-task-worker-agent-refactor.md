@@ -128,7 +128,8 @@ It does not own:
 - test command selection;
 - test execution;
 - log diagnosis;
-- managed-output inspection.
+- managed-output filesystem inspection. Exact `openclaw-managed-output://...`
+  refs may be hydrated through native `openclaw_resource_read`.
 
 ### 2. Remove Parent Acquisition Tools
 
@@ -1389,15 +1390,16 @@ Focused proof verifies:
 - validation task results persist compact `validation_state` entries into the
   same native working context, with validation refs/status and bounded result
   summaries rather than raw command logs;
-- context scout task result includes the fixed parent decision footer as part
-  of native tool-result delivery, not as a separate prompt or scheduler phase;
-- context scout result is delivered before the next parent todo/edit/task/block
-  action;
-- Kimi records a native todo/plan readiness decision after scout result:
-  enough context for the next useful edit, more context required, or typed
-  blocker;
-- the next parent action after context scout is native todo decision plus one
-  of edit, focused context task, or typed `node_finish` blocker;
+- context scout task result includes compact parent-visible next-action
+  guidance as part of native tool-result delivery, not as a separate prompt,
+  scheduler phase, or hard post-task todo gate;
+- context scout result is delivered before the next parent edit/read/grep/task,
+  todo update, validation, or block action;
+- Kimi records native todo/plan readiness decisions when they change the
+  visible plan, close/start a todo, or explain a blocker;
+- the next parent action after context scout is one of edit, bounded
+  read/grep for one exact local lookup, focused context task, validation, todo
+  update, or typed `node_finish` blocker;
 - when Kimi lacks enough context for the next useful edit, it delegates another
   focused context scout task rather than parent-side broad crawling;
 - Kimi acts after result delivery;
@@ -1407,9 +1409,9 @@ Focused proof verifies:
   a validation question;
 - validation scout runs non-trivial validation;
 - validation result reaches parent;
-- validation scout task result includes the fixed parent decision footer as
-  part of native tool-result delivery, not as a separate prompt or scheduler
-  phase;
+- validation scout task result includes compact parent-visible next-action
+  guidance as part of native tool-result delivery, not as a separate prompt,
+  scheduler phase, or hard post-task todo gate;
 - validation result is delivered before parent repair/finish/follow-up context
   delegation;
 - Kimi records a native todo/plan sufficiency decision after validation:

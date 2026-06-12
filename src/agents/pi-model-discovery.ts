@@ -311,3 +311,65 @@ export function discoverAuthStorage(
 export function discoverModels(authStorage: PiAuthStorage, agentDir: string): PiModelRegistry {
   return createOpenClawModelRegistry(authStorage, path.join(agentDir, "models.json"), agentDir);
 }
+
+export type DiscoveredAgentModelRuntime = {
+  authStorage: PiAuthStorage;
+  modelRegistry: PiModelRegistry;
+};
+
+const discoveredAgentModelRuntimeCache = new Map<string, DiscoveredAgentModelRuntime>();
+
+type DiscoverAgentModelRuntimeFactory = (
+  agentDir: string,
+  options?: { syncExternalCli?: boolean },
+) => DiscoveredAgentModelRuntime;
+
+function buildDiscoveredAgentModelRuntimeCacheKey(
+  agentDir: string,
+  options?: { syncExternalCli?: boolean },
+): string {
+  return JSON.stringify({
+    agentDir: path.resolve(agentDir),
+    syncExternalCli: options?.syncExternalCli === true,
+  });
+}
+
+export function clearDiscoveredAgentModelRuntimeCacheForTest(): void {
+  discoveredAgentModelRuntimeCache.clear();
+}
+
+function discoverAgentModelRuntimeWithFactory(
+  agentDir: string,
+  options?: { syncExternalCli?: boolean },
+  factory?: DiscoverAgentModelRuntimeFactory,
+): DiscoveredAgentModelRuntime {
+  const cacheKey = buildDiscoveredAgentModelRuntimeCacheKey(agentDir, options);
+  const cached = discoveredAgentModelRuntimeCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+  const runtime =
+    factory?.(agentDir, options) ??
+    (() => {
+      const authStorage = discoverAuthStorage(agentDir, options);
+      const modelRegistry = discoverModels(authStorage, agentDir);
+      return { authStorage, modelRegistry };
+    })();
+  discoveredAgentModelRuntimeCache.set(cacheKey, runtime);
+  return runtime;
+}
+
+export function discoverAgentModelRuntimeForTest(
+  agentDir: string,
+  options: { syncExternalCli?: boolean } | undefined,
+  factory: DiscoverAgentModelRuntimeFactory,
+): DiscoveredAgentModelRuntime {
+  return discoverAgentModelRuntimeWithFactory(agentDir, options, factory);
+}
+
+export function discoverAgentModelRuntime(
+  agentDir: string,
+  options?: { syncExternalCli?: boolean },
+): DiscoveredAgentModelRuntime {
+  return discoverAgentModelRuntimeWithFactory(agentDir, options);
+}

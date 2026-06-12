@@ -3,7 +3,11 @@ import {
   applyPluginTextReplacements,
   mergePluginTextTransforms,
 } from "../agents/plugin-text-transforms.js";
-import type { ProviderSystemPromptContribution } from "../agents/system-prompt-contribution.js";
+import {
+  mergeProviderSystemPromptContributions,
+  resolveBuiltInProviderSystemPromptContribution,
+  type ProviderSystemPromptContribution,
+} from "../agents/system-prompt-contribution.js";
 import type { ModelProviderConfig } from "../config/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { normalizeOptionalString } from "../shared/string-coerce.js";
@@ -118,9 +122,18 @@ export function resolveProviderSystemPromptContribution(params: {
   env?: NodeJS.ProcessEnv;
   context: ProviderSystemPromptContributionContext;
 }): ProviderSystemPromptContribution | undefined {
-  return (
+  const builtInContribution = resolveBuiltInProviderSystemPromptContribution({
+    provider: params.provider,
+    modelId: params.context.modelId,
+    agentId: params.context.agentId,
+    promptProfile: params.context.promptProfile,
+  });
+  const pluginContribution =
     resolveProviderRuntimePlugin(params)?.resolveSystemPromptContribution?.(params.context) ??
-    undefined
+    undefined;
+  return mergeProviderSystemPromptContributions(
+    builtInContribution,
+    pluginContribution ?? undefined,
   );
 }
 

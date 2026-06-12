@@ -57,7 +57,7 @@ import { resolveSourceBackedAgentBootstrapFilePaths } from "../agents/bootstrap-
 import { DEFAULT_PROVIDER } from "../agents/defaults.js";
 import { parseModelRef } from "../agents/model-selection.js";
 import { runEmbeddedPiAgent } from "../agents/pi-embedded-runner/run.js";
-import { discoverAuthStorage, discoverModels } from "../agents/pi-model-discovery.js";
+import { discoverAgentModelRuntime } from "../agents/pi-model-discovery.js";
 import { isNodeAgentNativeTaskParentToolAllowed } from "../agents/pi-tools.js";
 import { resolveEffectiveToolPolicyAccess } from "../agents/pi-tools.policy.js";
 import { buildRequiredActiveSkillSnapshot, type SkillSnapshot } from "../agents/skills.js";
@@ -71,6 +71,7 @@ import {
   loadConfig,
   resolveConfigPath,
   resolveConfigSnapshotHash,
+  setRuntimeConfigSnapshot,
 } from "../config/config.js";
 import { resolveStateDir } from "../config/paths.js";
 import { normalizeRuntimePathAliases } from "../config/runtime-source-record.js";
@@ -184,7 +185,9 @@ function loadSourceBackedConfigForNodeLaunch(): ReturnType<typeof loadConfig> {
     if (!isRecord(parsed) || Object.hasOwn(parsed, "$include")) {
       return loadConfig();
     }
-    return parsed as ReturnType<typeof loadConfig>;
+    const config = parsed as ReturnType<typeof loadConfig>;
+    setRuntimeConfigSnapshot(config, config);
+    return config;
   } catch {
     return loadConfig();
   }
@@ -270,9 +273,6 @@ function executionAgentPackContractIssues(input: {
   }
   if (!input.entry.requiredDocs?.length) {
     issues.push(`node_agent_registry_contract_field_missing:${input.agentId}:requiredDocs`);
-  }
-  if (!input.entry.primarySkills?.length) {
-    issues.push(`node_agent_registry_contract_field_missing:${input.agentId}:primarySkills`);
   }
   if (input.requireAllowedChildAgents && !input.entry.allowedChildAgents?.length) {
     issues.push(`node_agent_registry_contract_field_missing:${input.agentId}:allowedChildAgents`);
@@ -1190,8 +1190,8 @@ function fixedWorkerPromptDiagnostics(promptText: string): string[] {
   if (/```json|^\s*\{[\s\S]*"requirementId"/u.test(promptText)) {
     diagnostics.push("prompt_quality_possible_artifact_dump");
   }
-  if (!lower.includes("update_plan")) {
-    diagnostics.push("prompt_quality_missing_update_plan");
+  if (!/todo|update_plan|progress/u.test(lower)) {
+    diagnostics.push("prompt_quality_missing_progress_tracking");
   }
   if (!lower.includes("node_finish") && !lower.includes("node.finish")) {
     diagnostics.push("prompt_quality_missing_node_finish");
@@ -1406,12 +1406,6 @@ export function prepareOpenClawNodeStart(input: {
   if (!agentModel?.model || !/kimi/i.test(agentModel.model)) {
     reasonCodes.push("node_agent_model_profile_not_kimi");
   }
-  if (agentThinkingLevel !== "xhigh") {
-    reasonCodes.push("node_agent_thinking_level_below_required_xhigh");
-  }
-  if (agentReasoningLevel !== "stream" && agentReasoningLevel !== "on") {
-    reasonCodes.push("node_agent_reasoning_level_below_required");
-  }
   const parentEffectiveToolNames = resolveParentNativeTaskEffectiveToolNames({
     config,
     nodeRun: input.nodeRun,
@@ -1587,18 +1581,15 @@ export function prepareOpenClawNodeStart(input: {
           ? "node_agent_subagent_policy_insufficient"
           : !agentModel?.model || !/kimi/i.test(agentModel.model)
             ? "node_agent_model_profile_not_kimi"
-            : agentThinkingLevel !== "xhigh" ||
-                (agentReasoningLevel !== "stream" && agentReasoningLevel !== "on")
-              ? "node_agent_model_reasoning_profile_insufficient"
-              : blockedTools.length > 0
-                ? blockedTools.some((tool) => tool.agentId !== input.nodeRun.agentId)
-                  ? "node_agent_required_scout_tool_policy_insufficient"
-                  : "node_agent_tool_policy_insufficient"
-                : missingAssets.length > 0
-                  ? "node_agent_asset_missing"
-                  : workspaceFailure
-                    ? "node_agent_runtime_workspace_unavailable"
-                    : null;
+            : blockedTools.length > 0
+              ? blockedTools.some((tool) => tool.agentId !== input.nodeRun.agentId)
+                ? "node_agent_required_scout_tool_policy_insufficient"
+                : "node_agent_tool_policy_insufficient"
+              : missingAssets.length > 0
+                ? "node_agent_asset_missing"
+                : workspaceFailure
+                  ? "node_agent_runtime_workspace_unavailable"
+                  : null;
 
   if (blockerKind) {
     const receipt = baseNodeAgentLaunchProofState({
@@ -1627,10 +1618,6 @@ export function prepareOpenClawNodeStart(input: {
           : null,
         !agentModel?.model || !/kimi/i.test(agentModel.model)
           ? "node_agent_model_profile_not_kimi"
-          : null,
-        agentThinkingLevel !== "xhigh" ? "node_agent_thinking_level_below_required_xhigh" : null,
-        agentReasoningLevel !== "stream" && agentReasoningLevel !== "on"
-          ? "node_agent_reasoning_level_below_required"
           : null,
         ...blockedTools.map(
           (tool) => `node_agent_tool_policy_blocked:${tool.agentId}:${tool.toolName}`,
@@ -2037,8 +2024,8 @@ export function createOpenClawNodeSessionExecutor(input: {
       });
       const nodeAgentStepBudget = deriveNodeAgentStepBudgetFromSnapshot(nodeExecutionSnapshot);
       const nodeAgentDir = resolveAgentDir(config, nodeRun.agentId);
-      const nodeAgentAuthStorage = discoverAuthStorage(nodeAgentDir, { syncExternalCli: false });
-      const nodeAgentModelRegistry = discoverModels(nodeAgentAuthStorage, nodeAgentDir);
+      const { authStorage: nodeAgentAuthStorage, modelRegistry: nodeAgentModelRegistry } =
+        discoverAgentModelRuntime(nodeAgentDir, { syncExternalCli: false });
       logNodeAgentStartTiming("node_model_runtime_admitted", nodeAgentStartTimingStartedAt, {
         agentDir: nodeAgentDir,
       });
@@ -2096,6 +2083,9 @@ export function createOpenClawNodeSessionExecutor(input: {
                 runtimeJobId: nodeExecutionSnapshot.runtimeJobId,
                 nodeExecutionSnapshot,
                 repository: input.runtimeJobs,
+                sessionStorePath: resolveStorePath(config.session?.store, {
+                  agentId: nodeRun.agentId,
+                }),
               }),
             ],
           },

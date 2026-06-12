@@ -184,6 +184,11 @@ describe("google transport stream", () => {
         { type: "text", text: "answer" },
         { type: "toolCall", name: "lookup", arguments: { q: "hello" } },
       ],
+      providerResponseDiagnostics: {
+        rawFinishReason: "STOP",
+        rawToolCallChunkCount: 1,
+        rawReasoningFieldPresent: true,
+      },
     });
   });
 

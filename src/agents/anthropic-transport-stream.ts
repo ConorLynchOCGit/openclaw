@@ -96,6 +96,11 @@ type MutableAssistantOutput = {
   timestamp: number;
   responseId?: string;
   errorMessage?: string;
+  providerResponseDiagnostics?: {
+    rawFinishReason?: string | null;
+    rawToolCallChunkCount?: number;
+    rawReasoningFieldPresent?: boolean;
+  };
 };
 
 function supportsAdaptiveThinking(modelId: string): boolean {
@@ -670,6 +675,9 @@ export function createAnthropicMessagesTransportStreamFn(): StreamFn {
         ) as AsyncIterable<Record<string, unknown>>;
         stream.push({ type: "start", partial: output as never });
         const blocks = output.content;
+        let rawFinishReason: string | null = null;
+        let rawToolCallChunkCount = 0;
+        let rawReasoningFieldPresent = false;
         for await (const event of anthropicStream) {
           if (event.type === "message_start") {
             const message = event.message as
@@ -707,6 +715,7 @@ export function createAnthropicMessagesTransportStreamFn(): StreamFn {
               continue;
             }
             if (contentBlock?.type === "thinking") {
+              rawReasoningFieldPresent = true;
               const block: TransportContentBlock = {
                 type: "thinking",
                 thinking: "",
@@ -722,6 +731,7 @@ export function createAnthropicMessagesTransportStreamFn(): StreamFn {
               continue;
             }
             if (contentBlock?.type === "redacted_thinking") {
+              rawReasoningFieldPresent = true;
               const block: TransportContentBlock = {
                 type: "thinking",
                 thinking: "[Reasoning redacted]",
@@ -738,6 +748,7 @@ export function createAnthropicMessagesTransportStreamFn(): StreamFn {
               continue;
             }
             if (contentBlock?.type === "tool_use") {
+              rawToolCallChunkCount += 1;
               const block: TransportContentBlock = {
                 type: "toolCall",
                 id: typeof contentBlock.id === "string" ? contentBlock.id : "",
@@ -786,6 +797,7 @@ export function createAnthropicMessagesTransportStreamFn(): StreamFn {
               delta?.type === "thinking_delta" &&
               typeof delta.thinking === "string"
             ) {
+              rawReasoningFieldPresent = true;
               block.thinking += delta.thinking;
               stream.push({
                 type: "thinking_delta",
@@ -862,6 +874,7 @@ export function createAnthropicMessagesTransportStreamFn(): StreamFn {
             const delta = event.delta as { stop_reason?: string } | undefined;
             const usage = event.usage as Record<string, unknown> | undefined;
             if (delta?.stop_reason) {
+              rawFinishReason = delta.stop_reason;
               output.stopReason = mapStopReason(delta.stop_reason);
             }
             if (typeof usage?.input_tokens === "number") {
@@ -884,6 +897,15 @@ export function createAnthropicMessagesTransportStreamFn(): StreamFn {
             calculateCost(model, output.usage);
           }
         }
+        const hasToolCalls = output.content.some((block) => block.type === "toolCall");
+        if (output.stopReason === "toolUse" && !hasToolCalls) {
+          output.stopReason = "stop";
+        }
+        output.providerResponseDiagnostics = {
+          rawFinishReason,
+          rawToolCallChunkCount,
+          rawReasoningFieldPresent,
+        };
         finalizeTransportStream({ stream, output, signal: transportOptions.signal });
       } catch (error) {
         failTransportStream({

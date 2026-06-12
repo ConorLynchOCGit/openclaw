@@ -8,6 +8,7 @@ import { buildAgentSystemPrompt } from "../../system-prompt.js";
 import {
   buildAfterTurnRuntimeContext,
   buildNodeAgentSessionTraceFromEvents,
+  buildProviderRequestDiagnostics,
   composeSystemPromptWithHookContext,
   decodeHtmlEntitiesInObject,
   filterEffectiveToolsForNodeAgentNativeTaskMode,
@@ -16,7 +17,6 @@ import {
   mergeOrphanedTrailingUserPrompt,
   NATIVE_TASK_RESULT_AWAITING_PARENT_CONTEXT_REASON,
   prependSystemPromptAddition,
-  prependSystemPromptAdditionReplacingNativeWorkingContext,
   resetEmbeddedAgentBaseStreamFnCacheForTest,
   resolveEmbeddedAgentBaseStreamFn,
   resolveAttemptFsWorkspaceOnly,
@@ -146,6 +146,8 @@ describe("filterEffectiveToolsForNodeAgentNativeTaskMode", () => {
         { name: "read_todo" },
         { name: "task" },
         { name: "edit" },
+        { name: "apply_patch" },
+        { name: "lsp" },
         { name: "node_finish" },
         { name: "openclaw_resource_read" },
         { name: "lsp_workspace_symbols" },
@@ -160,8 +162,8 @@ describe("filterEffectiveToolsForNodeAgentNativeTaskMode", () => {
       "read_todo",
       "task",
       "edit",
+      "lsp",
       "node_finish",
-      "openclaw_resource_read",
       "read",
     ]);
   });
@@ -307,17 +309,48 @@ describe("native task result parent-context preservation", () => {
   it("projects decision footers and post-validation parent action from native events", () => {
     const trace = buildNodeAgentSessionTraceFromEvents([
       {
+        eventType: "node_agent_tool_result",
+        toolResultRef: "openclaw-tool-result://child-context/grep-1",
+        runId: "run-child-context",
+        agentId: "execution-context-scout",
+        sessionKey: "agent:execution-context-scout:subagent:child-context",
+        toolName: "grep",
+        toolCallId: "grep-1",
+        status: "completed",
+        grepQuery: "createNativeTaskTool",
+        grepPath: "src/agents/tools/native-task-tool.ts",
+      },
+      {
+        eventType: "node_agent_tool_result",
+        toolResultRef: "openclaw-tool-result://child-context/read-1",
+        runId: "run-child-context",
+        agentId: "execution-context-scout",
+        sessionKey: "agent:execution-context-scout:subagent:child-context",
+        toolName: "read",
+        toolCallId: "read-1",
+        status: "completed",
+        readPath: "src/agents/tools/native-task-tool.ts",
+        readOffset: 5265,
+        readLimit: 80,
+      },
+      {
         eventType: "node_agent_native_task_result",
         taskRef: "openclaw-native-task-result://run/task-context",
         requestedAgentId: "execution-context-scout",
         childSessionKey: "agent:execution-context-scout:subagent:child-context",
+        childRunId: "run-child-context",
+        childProvider: "openrouter",
+        childModel: "qwen/qwen3-coder",
         childResultRef: "openclaw-child-result://context",
         resultDeliveredToParentContext: true,
         resultDeliveryStatus: "projected",
+        childProgressOutcome: "child_partial_context_returned",
         workingContextRef: "openclaw-session-working-context://parent",
         workingContextEntryRef: "openclaw-session-working-context://parent/context",
         workingContextHasInlineContextWindows: true,
         workingContextHasFileGraph: true,
+        workingContextHasSymbolWindows: true,
+        workingContextHasMissingWindows: true,
         parentDecisionFooterIncluded: true,
         parentDecisionFooterKind: "minimal_edit_readiness",
       },
@@ -347,6 +380,8 @@ describe("native task result parent-context preservation", () => {
         taskRef: "openclaw-native-task-result://run/task-validation",
         requestedAgentId: "execution-validation-scout",
         childSessionKey: "agent:execution-validation-scout:subagent:child-validation",
+        childProvider: "openrouter",
+        childModel: "qwen/qwen3-coder",
         childResultRef: "openclaw-child-result://validation",
         resultDeliveredToParentContext: true,
         workingContextEntryRef: "openclaw-session-working-context://parent/validation",
@@ -393,6 +428,174 @@ describe("native task result parent-context preservation", () => {
       managedOutputObserved: true,
       validationStateRef: "openclaw-session-working-context://parent/validation",
       childResultDeliveryStatus: "projected",
+      contextScoutProvider: "openrouter",
+      contextScoutModel: "qwen/qwen3-coder",
+      nativeTaskSummaries: [
+        expect.objectContaining({
+          requestedAgentId: "execution-context-scout",
+          childProgressOutcome: "child_partial_context_returned",
+          resultDeliveryStatus: "projected",
+        }),
+        expect.objectContaining({
+          requestedAgentId: "execution-validation-scout",
+        }),
+      ],
+      contextScoutHasSymbolWindows: true,
+      contextScoutHasMissingWindows: true,
+      contextScoutToolCallCount: 2,
+      contextScoutToolCallCountsByType: {
+        grep: 1,
+        read: 1,
+      },
+      contextScoutReadCallCount: 1,
+      contextScoutGrepCallCount: 1,
+      contextScoutStartedWithRead: false,
+      contextScoutRawTopOfFileReadCount: 0,
+      contextScoutFirstToolCalls: [
+        expect.objectContaining({
+          toolName: "grep",
+          grepQuery: "createNativeTaskTool",
+          grepPath: "src/agents/tools/native-task-tool.ts",
+        }),
+        expect.objectContaining({
+          toolName: "read",
+          readPath: "src/agents/tools/native-task-tool.ts",
+          readOffset: 5265,
+          readLimit: 80,
+        }),
+      ],
+      contextScoutHandoffQualityDiagnostics: {
+        hasSymbolWindows: true,
+        hasInlineContextWindows: true,
+        hasFileGraph: true,
+        hasMissingWindows: true,
+        readCallCount: 1,
+        grepCallCount: 1,
+        startedWithRead: false,
+        rawTopOfFileReadCount: 0,
+        oversizedProjected: true,
+      },
+      validationScoutProvider: "openrouter",
+      validationScoutModel: "qwen/qwen3-coder",
+    });
+  });
+
+  it("projects edit-transition diagnostics from compact parent tool events", () => {
+    const trace = buildNodeAgentSessionTraceFromEvents([
+      {
+        eventType: "node_agent_provider_request_diagnostics",
+        recordedAtMs: 1_786_123_453_000,
+      },
+      {
+        eventType: "node_agent_tool_result",
+        toolResultRef: "openclaw-tool-result://run/compacted-replay-edit",
+        agentId: "execution-coding",
+        toolName: "edit",
+        completedAtMs: 1_786_123_453_100,
+        replayCompacted: true,
+        mutatingAction: true,
+      },
+      {
+        eventType: "node_agent_tool_result",
+        toolResultRef: "openclaw-tool-result://run/plan-source-lookup",
+        toolName: "update_plan",
+        todoRef: "openclaw-session-todo://parent",
+        todoItemCount: 3,
+        todoCompletedCount: 0,
+        todoInProgressCount: 1,
+        todoActiveItem: "Read existing work-queue read model and event substrate files",
+      },
+      {
+        eventType: "node_agent_tool_result",
+        toolResultRef: "openclaw-tool-result://run/lsp-symbols",
+        agentId: "execution-coding",
+        toolName: "lsp",
+        completedAtMs: 1_786_123_454_000,
+      },
+      ...Array.from({ length: 6 }, (_, index) => ({
+        eventType: "node_agent_tool_result",
+        toolResultRef: `openclaw-tool-result://run/read-${index + 1}`,
+        agentId: "execution-coding",
+        toolName: "read",
+        readPath: "extensions/execution-platform/src/work-queue/execution-read-model.ts",
+        readOffset: index * 120 + 1,
+        readLimit: 120,
+        ...(index === 5
+          ? {
+              sourceNavigationReminderShown: true,
+              sourceNavigationCountSinceEdit: 6,
+            }
+          : {}),
+      })),
+      {
+        eventType: "node_agent_tool_result",
+        toolResultRef: "openclaw-tool-result://run/edit-after-source-navigation",
+        agentId: "execution-coding",
+        toolName: "edit",
+        completedAtMs: 1_786_123_456_000,
+        mutatingAction: true,
+      },
+      {
+        eventType: "node_agent_native_task_result",
+        taskRef: "openclaw-native-task://run/validation",
+        requestedAgentId: "execution-validation-scout",
+        completedAtMs: 1_786_123_457_000,
+      },
+      {
+        eventType: "node_agent_tool_result",
+        toolResultRef: "openclaw-tool-result://run/repair-edit-after-validation",
+        agentId: "execution-coding",
+        toolName: "edit",
+        completedAtMs: 1_786_123_458_500,
+        mutatingAction: true,
+      },
+    ]);
+
+    expect(trace).toMatchObject({
+      firstPlanUpdateRef: "openclaw-session-todo://parent",
+      firstEditRef: "openclaw-tool-result://run/edit-after-source-navigation",
+      editTransitionDiagnostics: {
+        firstEditObserved: true,
+        firstEditCompletedAtMs: 1_786_123_456_000,
+        firstEditAfterModelActivationMs: 3_000,
+        firstLspObserved: true,
+        firstLspRef: "openclaw-tool-result://run/lsp-symbols",
+        firstLspCompletedAtMs: 1_786_123_454_000,
+        firstLspAfterModelActivationMs: 1_000,
+        liveToolCallCount: 10,
+        liveToolCallCountsByType: {
+          edit: 2,
+          lsp: 1,
+          read: 6,
+          update_plan: 1,
+        },
+        liveReadCallCount: 6,
+        liveGrepCallCount: 0,
+        liveEditCallCount: 2,
+        replayCompactedToolCallCount: 1,
+        toolCountBeforeFirstEdit: 8,
+        sourceToolCountBeforeFirstEdit: 6,
+        validationDelegationRef: "openclaw-native-task://run/validation",
+        validationDelegationCompletedAtMs: 1_786_123_457_000,
+        validationDelegationAfterModelActivationMs: 4_000,
+        repairEditAfterValidationObserved: true,
+        repairEditAfterValidationRef: "openclaw-tool-result://run/repair-edit-after-validation",
+        repairEditAfterValidationCompletedAtMs: 1_786_123_458_500,
+        repairEditAfterValidationMs: 1_500,
+        firstTodoLooksLikeSourceLookup: true,
+        activeTodoStillSourceLookupAfterRepeatedSourceCalls: true,
+        sourceNavigationReminderObserved: true,
+        sourceNavigationReminderRef: "openclaw-tool-result://run/read-6",
+        sourceNavigationReminderSourceToolCount: 6,
+        firstTodoShape: {
+          ref: "openclaw-session-todo://parent",
+          activeItem: "Read existing work-queue read model and event substrate files",
+          itemCount: 3,
+          completedCount: 0,
+          inProgressCount: 1,
+          activeItemLooksLikeSourceLookup: true,
+        },
+      },
     });
   });
 
@@ -499,6 +702,317 @@ describe("native task result parent-context preservation", () => {
       nativeTaskResultCount: 0,
       nodeAgentToolResultCount: 0,
     });
+  });
+
+  it("projects preemptive compaction checkpoint boundaries", () => {
+    const trace = buildNodeAgentSessionTraceFromEvents([
+      {
+        eventType: "node_agent_preemptive_compaction_checkpoint",
+        reason: "after_first_successful_edit_batch",
+        sessionKey: "agent:execution-coding:node:nrun",
+        runId: "run-checkpoints",
+        agentId: "execution-coding",
+        boundaryStream: "node-agent",
+        toolName: "edit",
+        toolResultRef: "openclaw-tool-result://run/edit-1",
+        changeSetWorkingContextEntryRef: "openclaw-session-working-context://parent/change-1",
+        truncationAttempted: true,
+        truncated: true,
+        truncatedCount: 2,
+      },
+      {
+        eventType: "node_agent_preemptive_compaction_checkpoint",
+        reason: "before_validation_scout",
+        sessionKey: "agent:execution-coding:node:nrun",
+        runId: "run-checkpoints",
+        agentId: "execution-coding",
+        boundaryStream: "tool",
+        toolName: "task",
+        requestedAgentId: "execution-validation-scout",
+        truncationAttempted: true,
+        truncated: false,
+        truncatedCount: 0,
+      },
+      {
+        eventType: "node_agent_preemptive_compaction_checkpoint",
+        reason: "after_validation_result",
+        sessionKey: "agent:execution-coding:node:nrun",
+        runId: "run-checkpoints",
+        agentId: "execution-coding",
+        boundaryStream: "node-agent",
+        toolName: "task",
+        requestedAgentId: "execution-validation-scout",
+        validationEvidenceRef: "openclaw-session-working-context://parent/validation-1",
+        truncationAttempted: true,
+        truncated: false,
+        truncatedCount: 0,
+      },
+      {
+        eventType: "node_agent_preemptive_compaction_checkpoint",
+        reason: "before_node_finish",
+        sessionKey: "agent:execution-coding:node:nrun",
+        runId: "run-checkpoints",
+        agentId: "execution-coding",
+        boundaryStream: "tool",
+        toolName: "node_finish",
+        truncationAttempted: true,
+        truncated: false,
+        truncatedCount: 0,
+      },
+    ]);
+
+    expect(trace).toMatchObject({
+      preemptiveCheckpointCount: 4,
+      preemptiveCheckpointReasons: [
+        "after_first_successful_edit_batch",
+        "before_validation_scout",
+        "after_validation_result",
+        "before_node_finish",
+      ],
+      preemptiveCheckpointTruncatedCount: 1,
+    });
+  });
+
+  it("projects provider request diagnostics, mutation visibility, and tool-call linkage optics", () => {
+    const providerDiagnostics = buildProviderRequestDiagnostics({
+      payload: {
+        messages: [{ role: "user", content: "raw prompt must not be stored" }],
+        tools: [
+          {
+            name: "edit",
+            description: "raw edit description must not be stored",
+            parameters: { type: "object", properties: { path: { type: "string" } } },
+          },
+          {
+            name: "lsp",
+            description: "raw lsp description must not be stored",
+            input_schema: { type: "object", properties: { operation: { type: "string" } } },
+          },
+          {
+            type: "function",
+            function: {
+              name: "grep",
+              description: "raw function tool description must not be stored",
+              parameters: { type: "object", properties: { pattern: { type: "string" } } },
+            },
+          },
+          { name: "read", description: "raw tool description must not be stored" },
+        ],
+        reasoning: { effort: "none", exclude: true, hidden: "drop-me" },
+        reasoning_effort: "none",
+        include_reasoning: false,
+        parallel_tool_calls: true,
+        tool_choice: "auto",
+        max_tokens: 8192,
+        temperature: 0.2,
+        top_p: 0.9,
+        stream: true,
+        authorization: "secret",
+      },
+      provider: "openrouter",
+      model: "moonshotai/kimi-k2.6",
+      api: "anthropic-messages",
+      attempt: 1,
+      agentId: "execution-coding",
+      nodeRunId: "node-run-provider-diagnostics",
+      sessionKey: "agent:execution-coding:node:nrun_provider_optics",
+      runId: "run-provider-optics",
+      systemPromptReceipt: {
+        systemPromptHash: "system-prompt-hash",
+        systemPromptBytes: 12_345,
+        rawSystemPromptStored: false,
+        kimiImplementationWorkerPrompt: {
+          required: true,
+          present: true,
+          contributionHash: "kimi-contribution-hash",
+          contributionBytes: 1286,
+        },
+      },
+    });
+    const trace = buildNodeAgentSessionTraceFromEvents([
+      {
+        eventType: "session_launch",
+        sessionLaunchRef: "openclaw-session-launch://parent",
+        admissionStatus: "accepted",
+        provider: "openrouter",
+        model: "moonshotai/kimi-k2.6",
+        persisted: true,
+      },
+      providerDiagnostics,
+      {
+        eventType: "node_agent_provider_wait_lock_handoff",
+        sessionKey: "agent:execution-coding:node:nrun_provider_optics",
+        runId: "run-provider-optics",
+        agentId: "execution-coding",
+        phase: "suspended",
+      },
+      {
+        eventType: "node_agent_provider_wait_lock_handoff",
+        sessionKey: "agent:execution-coding:node:nrun_provider_optics",
+        runId: "run-provider-optics",
+        agentId: "execution-coding",
+        phase: "resumed",
+        method: "result",
+      },
+      {
+        eventType: "node_agent_provider_turn_optics",
+        sessionKey: "agent:execution-coding:node:nrun_provider_optics",
+        runId: "run-provider-optics",
+        agentId: "execution-coding",
+        provider: "openrouter",
+        model: "moonshotai/kimi-k2.6",
+        thinkingLevel: "medium",
+        providerVisibleTools: ["edit", "read"],
+        mutatingTools: ["edit"],
+        applyPatchVisible: false,
+        turns: [
+          {
+            messageIndex: 2,
+            stopReason: "toolUse",
+            hasNewToolCalls: true,
+            toolCalls: [{ id: "call_edit_1", name: "edit" }],
+            matchingToolResultIds: ["call_edit_1"],
+            missingToolResultIds: [],
+          },
+        ],
+        toolResultIds: ["call_edit_1"],
+        toolCallIdLinkageOk: true,
+        parallelToolCallTurns: 1,
+        averageToolCallsPerTurn: 2,
+        serialAcquisitionTurns: 0,
+      },
+      {
+        eventType: "node_agent_provider_response_normalization_receipt",
+        sessionKey: "agent:execution-coding:node:nrun_provider_optics",
+        runId: "run-provider-optics",
+        agentId: "execution-coding",
+        provider: "openrouter",
+        model: "moonshotai/kimi-k2.6",
+        thinkingLevel: "medium",
+        rawTransportCaptured: false,
+        rawFinishReason: null,
+        rawToolCallChunkCount: null,
+        rawReasoningFieldCaptured: false,
+        rawResponseStored: false,
+        normalizedAssistantTurnCount: 1,
+        normalizedToolCallCount: 1,
+        normalizedToolCallIds: ["call_edit_1"],
+        normalizedToolNames: ["edit"],
+        normalizedStopReasons: ["toolUse"],
+        stopReasonToolUseWithoutToolCalls: 0,
+        stopReasonStopWithToolCalls: 0,
+        finalTextAndToolCallsCoexisted: false,
+        jsonLookingToolCallTextCount: 0,
+        toolResultIds: ["call_edit_1"],
+        missingToolResultIds: [],
+        toolCallIdLinkageOk: true,
+      },
+    ]);
+
+    expect(trace).toMatchObject({
+      providerRequestDiagnosticCount: 1,
+      providerResponseNormalizationReceiptPresent: true,
+      providerResponseRawTransportCaptured: false,
+      providerResponseRawResponseStored: false,
+      providerResponseToolCallIdLinkageOk: true,
+      providerResponseStopReasonToolUseWithoutToolCalls: 0,
+      providerResponseStopReasonStopWithToolCalls: 0,
+      providerRequestParallelToolCalls: true,
+      providerRequestReasoning: { effort: "none", exclude: true },
+      providerRequestReasoningEffort: "none",
+      providerRequestIncludeReasoning: false,
+      providerWaitLockHandoffCount: 2,
+      providerWaitLockSuspendedCount: 1,
+      providerWaitLockResumedCount: 1,
+      parallelToolCallTurns: 1,
+      averageToolCallsPerTurn: 2,
+      serialAcquisitionTurns: 0,
+      providerTurnMutatingTools: ["edit"],
+      providerTurnApplyPatchVisible: false,
+      providerTurnToolCallIdLinkageOk: true,
+      providerRequestDiagnostics: expect.objectContaining({
+        provider: "openrouter",
+        model: "moonshotai/kimi-k2.6",
+        api: "anthropic-messages",
+        parallel_tool_calls: true,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+        systemPromptReceipt: {
+          systemPromptHash: "system-prompt-hash",
+          systemPromptBytes: 12_345,
+          rawSystemPromptStored: false,
+          kimiImplementationWorkerPrompt: {
+            required: true,
+            present: true,
+            contributionHash: "kimi-contribution-hash",
+            contributionBytes: expect.any(Number),
+          },
+        },
+        providerToolCatalogReceipt: {
+          orderedToolNames: ["edit", "lsp", "grep", "read"],
+          toolCount: 4,
+          mutatingTools: ["edit"],
+          lspVisible: true,
+          lspIndex: 1,
+          tools: [
+            expect.objectContaining({
+              name: "edit",
+              providerIndex: 0,
+              descriptionBytes: expect.any(Number),
+              descriptionHash: expect.any(String),
+              parametersBytes: expect.any(Number),
+              parametersHash: expect.any(String),
+            }),
+            expect.objectContaining({
+              name: "lsp",
+              providerIndex: 1,
+            }),
+            expect.objectContaining({
+              name: "grep",
+              providerIndex: 2,
+              descriptionBytes: expect.any(Number),
+              descriptionHash: expect.any(String),
+              parametersBytes: expect.any(Number),
+              parametersHash: expect.any(String),
+            }),
+            expect.objectContaining({
+              name: "read",
+              providerIndex: 3,
+            }),
+          ],
+        },
+      }),
+      providerTurnOptics: expect.objectContaining({
+        provider: "openrouter",
+        model: "moonshotai/kimi-k2.6",
+        thinkingLevel: "medium",
+        providerVisibleTools: ["edit", "read"],
+        turns: [
+          expect.objectContaining({
+            stopReason: "toolUse",
+            hasNewToolCalls: true,
+            matchingToolResultIds: ["call_edit_1"],
+          }),
+        ],
+      }),
+      providerResponseNormalizationReceipt: expect.objectContaining({
+        rawTransportCaptured: false,
+        rawResponseStored: false,
+        normalizedToolCallCount: 1,
+        normalizedToolCallIds: ["call_edit_1"],
+        stopReasonToolUseWithoutToolCalls: 0,
+        toolCallIdLinkageOk: true,
+      }),
+    });
+    expect(JSON.stringify(trace)).not.toContain("raw prompt must not be stored");
+    expect(JSON.stringify(trace)).not.toContain("raw tool description must not be stored");
+    expect(JSON.stringify(trace)).not.toContain("raw edit description must not be stored");
+    expect(JSON.stringify(trace)).not.toContain("raw lsp description must not be stored");
+    expect(JSON.stringify(trace)).not.toContain("raw function tool description must not be stored");
+    expect(JSON.stringify(trace)).not.toContain("secret");
+    expect(JSON.stringify(trace)).not.toContain("drop-me");
   });
 });
 
@@ -3130,30 +3644,6 @@ describe("prependSystemPromptAddition", () => {
     });
 
     expect(result).toBe("base system");
-  });
-
-  it("replaces stale native working context instead of appending another file graph block", () => {
-    const oldWorkingContext = [
-      "<openclaw_native_working_context>",
-      "## OpenClaw Native Working Context",
-      "file_graph: old.ts -> stale.ts",
-      "</openclaw_native_working_context>",
-    ].join("\n");
-    const nextWorkingContext = [
-      "<openclaw_native_working_context>",
-      "## OpenClaw Native Working Context",
-      "file_graph: current.ts -> target.ts",
-      "</openclaw_native_working_context>",
-    ].join("\n");
-
-    const result = prependSystemPromptAdditionReplacingNativeWorkingContext({
-      systemPrompt: `${oldWorkingContext}\n\nbase system`,
-      systemPromptAddition: nextWorkingContext,
-    });
-
-    expect(result).toContain("file_graph: current.ts -> target.ts");
-    expect(result).not.toContain("file_graph: old.ts -> stale.ts");
-    expect(result.match(/<openclaw_native_working_context>/g)).toHaveLength(1);
   });
 });
 

@@ -14,6 +14,7 @@ import type { ModelCatalogEntry } from "../agents/model-catalog.types.js";
 import type { FailoverReason } from "../agents/pi-embedded-helpers/types.js";
 import type { ModelProviderRequestTransportOverrides } from "../agents/provider-request-config.js";
 import type { ProviderSystemPromptContribution } from "../agents/system-prompt-contribution.js";
+import type { PromptProfile } from "../agents/system-prompt.types.js";
 import type { PromptMode } from "../agents/system-prompt.types.js";
 import type { AnyAgentTool } from "../agents/tools/common.js";
 import type { ReplyPayload } from "../auto-reply/reply-payload.js";
@@ -1036,6 +1037,7 @@ export type ProviderSystemPromptContributionContext = {
   provider: string;
   modelId: string;
   promptMode: PromptMode;
+  promptProfile?: PromptProfile;
   runtimeChannel?: string;
   runtimeCapabilities?: string[];
   agentId?: string;

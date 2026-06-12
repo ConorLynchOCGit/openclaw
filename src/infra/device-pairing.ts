@@ -12,10 +12,10 @@ import {
 import {
   createAsyncLock,
   pruneExpiredPending,
-  readJsonFile,
+  readPairingJsonFile,
   reconcilePendingPairingRequests,
   resolvePairingPaths,
-  writeJsonAtomic,
+  writePairingJsonAtomic,
 } from "./pairing-files.js";
 import { rejectPendingPairingRequest } from "./pairing-pending.js";
 import { generatePairingToken, verifyPairingToken } from "./pairing-token.js";
@@ -143,8 +143,8 @@ export function formatDevicePairingForbiddenMessage(result: DevicePairingForbidd
 async function loadState(baseDir?: string): Promise<DevicePairingStateFile> {
   const { pendingPath, pairedPath } = resolvePairingPaths(baseDir, "devices");
   const [pending, paired] = await Promise.all([
-    readJsonFile<Record<string, DevicePairingPendingRequest>>(pendingPath),
-    readJsonFile<Record<string, PairedDevice>>(pairedPath),
+    readPairingJsonFile<Record<string, DevicePairingPendingRequest>>(pendingPath),
+    readPairingJsonFile<Record<string, PairedDevice>>(pairedPath),
   ]);
   const state: DevicePairingStateFile = {
     pendingById: pending ?? {},
@@ -157,9 +157,17 @@ async function loadState(baseDir?: string): Promise<DevicePairingStateFile> {
 async function persistState(state: DevicePairingStateFile, baseDir?: string) {
   const { pendingPath, pairedPath } = resolvePairingPaths(baseDir, "devices");
   await Promise.all([
-    writeJsonAtomic(pendingPath, state.pendingById),
-    writeJsonAtomic(pairedPath, state.pairedByDeviceId),
+    writePairingJsonAtomic(pendingPath, state.pendingById),
+    writePairingJsonAtomic(pairedPath, state.pairedByDeviceId),
   ]);
+}
+
+async function persistPendingState(
+  state: Pick<DevicePairingStateFile, "pendingById">,
+  baseDir?: string,
+) {
+  const { pendingPath } = resolvePairingPaths(baseDir, "devices");
+  await writePairingJsonAtomic(pendingPath, state.pendingById);
 }
 
 function normalizeDeviceId(deviceId: string) {
@@ -526,7 +534,7 @@ export async function requestDevicePairing(
           },
         });
       },
-      persist: async () => await persistState(state, baseDir),
+      persist: async () => await persistPendingState(state, baseDir),
     });
   });
 }

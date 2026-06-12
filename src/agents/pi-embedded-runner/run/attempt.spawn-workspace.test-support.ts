@@ -599,7 +599,7 @@ vi.mock("../tool-split.js", () => ({
 
 vi.mock("../utils.js", () => ({
   describeUnknownError: (error: unknown) => formatErrorMessage(error),
-  mapThinkingLevel: () => undefined,
+  mapThinkingLevel: (level?: string) => (level === "adaptive" ? "medium" : (level ?? "off")),
 }));
 
 vi.mock("./compaction-retry-aggregate-timeout.js", () => ({
@@ -641,6 +641,7 @@ export type MutableSession = {
   messages: unknown[];
   isCompacting: boolean;
   isStreaming: boolean;
+  thinkingLevel?: string;
   agent: {
     streamFn?: unknown;
     transport?: string;
@@ -650,6 +651,7 @@ export type MutableSession = {
     };
   };
   prompt: (prompt: string, options?: { images?: unknown[] }) => Promise<void>;
+  setThinkingLevel: (level: string) => void;
   abort: () => Promise<void>;
   dispose: () => void;
   steer: (text: string) => Promise<void>;
@@ -766,6 +768,7 @@ export async function cleanupTempPaths(tempPaths: string[]) {
 
 export function createDefaultEmbeddedSession(params?: {
   initialMessages?: unknown[];
+  thinkingLevel?: string;
   prompt?: (
     session: MutableSession,
     prompt: string,
@@ -777,6 +780,7 @@ export function createDefaultEmbeddedSession(params?: {
     messages: [...(params?.initialMessages ?? [])],
     isCompacting: false,
     isStreaming: false,
+    thinkingLevel: params?.thinkingLevel,
     agent: {
       state: {
         get messages() {
@@ -796,6 +800,9 @@ export function createDefaultEmbeddedSession(params?: {
         ...session.messages,
         { role: "assistant", content: "done", timestamp: 2 },
       ];
+    },
+    setThinkingLevel: (level) => {
+      session.thinkingLevel = level;
     },
     abort: async () => {},
     dispose: () => {},
@@ -932,9 +939,15 @@ export async function createContextEngineAttemptRunner(params: {
     .mockReset()
     .mockReturnValue({ messages: seedMessages });
 
-  hoisted.createAgentSessionMock.mockImplementation(async () => ({
+  hoisted.createAgentSessionMock.mockImplementation(async (createParams) => ({
     session: createDefaultEmbeddedSession({
       initialMessages: seedMessages,
+      thinkingLevel:
+        createParams && typeof createParams === "object"
+          ? typeof (createParams as { thinkingLevel?: unknown }).thinkingLevel === "string"
+            ? (createParams as { thinkingLevel: string }).thinkingLevel
+            : ""
+          : undefined,
       prompt: params.sessionPrompt,
     }),
   }));

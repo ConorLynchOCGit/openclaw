@@ -1,10 +1,15 @@
 import { resolveStorePath } from "../config/sessions/paths.js";
+import { loadSessionStore, resolveSessionStoreEntry } from "../config/sessions/store.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { callGateway } from "../gateway/call.js";
 import { getActiveRuntimeWebToolsMetadata } from "../secrets/runtime.js";
 import { normalizeDeliveryContext } from "../utils/delivery-context.js";
 import type { GatewayMessageChannel } from "../utils/message-channel.js";
-import { resolveAgentWorkspaceDir, resolveSessionAgentIds } from "./agent-scope.js";
+import {
+  resolveAgentIdFromSessionKey,
+  resolveAgentWorkspaceDir,
+  resolveSessionAgentIds,
+} from "./agent-scope.js";
 import { resolveOpenClawPluginToolsForOptions } from "./openclaw-plugin-tools.js";
 import { applyNodesToolWorkspaceGuard } from "./openclaw-tools.nodes-workspace-guard.js";
 import {
@@ -27,6 +32,7 @@ import { createMessageTool } from "./tools/message-tool.js";
 import { createMusicGenerateTool } from "./tools/music-generate-tool.js";
 import { createNativeTaskTool } from "./tools/native-task-tool.js";
 import { createNodesTool } from "./tools/nodes-tool.js";
+import { createOpenClawResourceReadTool } from "./tools/openclaw-resource-read-tool.js";
 import { createPdfTool } from "./tools/pdf-tool.js";
 import { createResolveOpenClawPathTool } from "./tools/resolve-openclaw-path-tool.js";
 import { createResolveOpenClawResourceTool } from "./tools/resolve-openclaw-resource-tool.js";
@@ -53,6 +59,38 @@ const defaultOpenClawToolsDeps: OpenClawToolsDeps = {
 };
 
 let openClawToolsDeps: OpenClawToolsDeps = defaultOpenClawToolsDeps;
+
+function resolveResourceReadSessionStorePaths(params: {
+  config?: OpenClawConfig;
+  sessionKey?: string;
+  currentStorePath: string;
+}): string[] {
+  const paths = [params.currentStorePath];
+  const sessionKey = params.sessionKey?.trim();
+  if (!sessionKey) {
+    return paths;
+  }
+  try {
+    const store = loadSessionStore(params.currentStorePath, { skipCache: true });
+    const resolved = resolveSessionStoreEntry({ store, sessionKey });
+    for (const relatedSessionKey of [
+      resolved.existing?.spawnedBy,
+      resolved.existing?.parentSessionKey,
+    ]) {
+      const relatedAgentId = resolveAgentIdFromSessionKey(relatedSessionKey);
+      if (relatedAgentId) {
+        paths.push(
+          resolveStorePath(params.config?.session?.store, {
+            agentId: relatedAgentId,
+          }),
+        );
+      }
+    }
+  } catch {
+    // Resource reads remain best-effort outside the current session store.
+  }
+  return [...new Set(paths)];
+}
 
 export function createOpenClawTools(
   options?: {
@@ -99,6 +137,8 @@ export function createOpenClawTools(
     disableMessageTool?: boolean;
     /** If true, skip plugin tool resolution and return only shipped core tools. */
     disablePluginTools?: boolean;
+    /** If true, omit the generic exact-ref resource reader because a richer runtime one is injected. */
+    omitOpenClawResourceReadTool?: boolean;
     /** Force native update_plan into this effective tool set. */
     forceUpdatePlanTool?: boolean;
     /** Enable the native OpenClaw task delegation surface for this session. */
@@ -147,6 +187,11 @@ export function createOpenClawTools(
   );
   const sessionStorePath = resolveStorePath(resolvedConfig?.session?.store, {
     agentId: sessionAgentId,
+  });
+  const resourceReadSessionStorePaths = resolveResourceReadSessionStorePaths({
+    config: resolvedConfig,
+    sessionKey: options?.agentSessionKey,
+    currentStorePath: sessionStorePath,
   });
   const deliveryContext = normalizeDeliveryContext({
     channel: options?.agentChannel,
@@ -292,6 +337,15 @@ export function createOpenClawTools(
     createResolveOpenClawResourceTool({
       workspaceDir,
     }),
+    ...(options?.omitOpenClawResourceReadTool === true
+      ? []
+      : [
+          createOpenClawResourceReadTool({
+            sessionKey: options?.agentSessionKey,
+            sessionStorePath,
+            sessionStorePaths: resourceReadSessionStorePaths,
+          }),
+        ]),
     createHostOperatorRepoTool(),
     createAgentsListTool({
       agentSessionKey: options?.agentSessionKey,

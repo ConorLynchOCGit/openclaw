@@ -3,26 +3,28 @@ status: repo_agent_registry_surface
 source: docs/agents/registry.yaml
 agents:
   - id: execution-coding
+    promptProfile: execution_worker
     durablePath: docs/agents/execution-coding
     runtimeSourcePath: docs/agents/execution-coding/runtime
     runtimeSurfacePath: /root/services/openclaw-roles/live/.openclaw/runtime/agents/execution-coding/agent
     runtimeSurfaceAliasPath: /home/node/.openclaw/agents/execution-coding/agent
     projectRoot: /root/services/openclaw-roles/live
-    primarySkills:
-      - execution-node-workflow
+    primarySkills: []
+    forbiddenTools:
+      - apply_patch
   - id: execution-context-scout
+    promptProfile: execution_context_scout
     durablePath: docs/agents/execution-context-scout
     runtimeSourcePath: docs/agents/execution-context-scout/runtime
     runtimeSurfacePath: /root/services/openclaw-roles/live/.openclaw/runtime/agents/execution-context-scout/agent
     runtimeSurfaceAliasPath: /home/node/.openclaw/agents/execution-context-scout/agent
     projectRoot: /root/services/openclaw-roles/live
-    primarySkills:
-      - execution-context-scout
+    primarySkills: []
   - id: execution-validation-scout
+    promptProfile: execution_validation_scout
     durablePath: docs/agents/execution-validation-scout
     runtimeSourcePath: docs/agents/execution-validation-scout/runtime
     runtimeSurfacePath: /root/services/openclaw-roles/live/.openclaw/runtime/agents/execution-validation-scout/agent
     runtimeSurfaceAliasPath: /home/node/.openclaw/agents/execution-validation-scout/agent
     projectRoot: /root/services/openclaw-roles/live
-    primarySkills:
-      - execution-validation-scout
+    primarySkills: []

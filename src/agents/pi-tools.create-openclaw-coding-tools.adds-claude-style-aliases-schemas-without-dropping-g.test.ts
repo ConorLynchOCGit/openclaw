@@ -71,7 +71,7 @@ describe("createOpenClawCodingTools read behavior", () => {
       expect(text).not.toContain("line-2001");
       expect(text).not.toContain("line-5000");
       expect(text).not.toContain("Read output capped at");
-      expect(text).toContain("[3000 more lines in file. Use offset=2001 to continue.]");
+      expect(text).toContain("[3000 more lines in file. nextOffset=2001.]");
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true });
     }
@@ -177,7 +177,7 @@ describe("createOpenClawCodingTools read behavior", () => {
       const text = extractToolText(result);
       expect(text).toContain("line-0001");
       expect(text).toMatch(/50(?:\.0)?KB|50 KB/u);
-      expect(text).toMatch(/Use offset=\d+ to continue/u);
+      expect(text).toMatch(/nextOffset=\d+/u);
       expect(text).not.toContain("line-0600");
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true });
@@ -200,7 +200,7 @@ describe("createOpenClawCodingTools read behavior", () => {
       });
       const result = await readTool.execute("read-short-cap-1", { path: "long-lines.txt" });
       const text = extractToolText(result);
-      const continuation = /Use offset=(\d+) to continue/u.exec(text);
+      const continuation = /nextOffset=(\d+)/u.exec(text);
       expect(continuation).not.toBeNull();
       expect(Number(continuation?.[1])).toBeGreaterThan(1);
       expect(Number(continuation?.[1])).toBeLessThanOrEqual(lines.length);

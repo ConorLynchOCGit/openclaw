@@ -1,9 +1,5 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
-import {
-  buildSessionWorkingContextPromptAddition,
-  readSessionWorkingContext,
-} from "../../../config/sessions/working-context.js";
 import type { MemoryCitationsMode } from "../../../config/types.memory.js";
 import type { ContextEngine, ContextEngineRuntimeContext } from "../../../context-engine/types.js";
 import { recordModelMemoryCaptureSeamEvidence } from "../../model-memory.capture-seams.js";
@@ -284,14 +280,6 @@ export async function assembleAttemptContextEngine(params: {
     ...(params.prompt !== undefined ? { prompt: params.prompt } : {}),
   };
   const result = await params.contextEngine.assemble(assembleParams);
-  const workingContextPromptAddition = buildAttemptWorkingContextPromptAddition({
-    sessionKey: params.sessionKey,
-    sessionStorePath: params.sessionStorePath,
-  });
-  const systemPromptAddition = [result.systemPromptAddition, workingContextPromptAddition]
-    .map((entry) => entry?.trim())
-    .filter((entry): entry is string => Boolean(entry))
-    .join("\n\n");
   void recordModelMemoryProductionHookProbe({
     hookName: "ContextEngine.assemble",
     triggerSurface: "pi_embedded_runner.context_engine.assemble",
@@ -319,29 +307,7 @@ export async function assembleAttemptContextEngine(params: {
       modelId: params.modelId,
     },
   }).catch(() => undefined);
-  return systemPromptAddition
-    ? {
-        ...result,
-        systemPromptAddition,
-      }
-    : result;
-}
-
-export function buildAttemptWorkingContextPromptAddition(params: {
-  sessionKey?: string;
-  sessionStorePath?: string;
-  maxChars?: number;
-}): string | undefined {
-  const sessionKey = params.sessionKey?.trim();
-  const sessionStorePath = params.sessionStorePath?.trim();
-  if (!sessionKey || !sessionStorePath) {
-    return undefined;
-  }
-  const workingContext = readSessionWorkingContext({
-    storePath: sessionStorePath,
-    sessionKey,
-  });
-  return buildSessionWorkingContextPromptAddition(workingContext, { maxChars: params.maxChars });
+  return result;
 }
 
 export async function finalizeAttemptContextEngineTurn(params: {

@@ -2,33 +2,39 @@
 
 ## Required Context
 
-- comprehensive node assignment prompt
+- node assignment prompt
 - node execution snapshot ref
-- active `execution-node-workflow` skill
+- bounded source tools: `lsp`, `read`, `grep`, and `glob`
+- one visible mutation tool, normally `edit`
 - native todo/update-plan surface
-- native task delegation surface
-- exact bounded `read` for known source windows only
+- native `task` delegation surface
 - `node_finish`
-- exact-ref `openclaw_resource_read`
 - allowed scouts: `execution-context-scout` and `execution-validation-scout`
 
 ## First Reads
 
-1. Read the assignment prompt as the primary work order.
-2. Create a visible native plan.
-3. Hydrate exact refs only as needed.
-4. Delegate repo/source mapping to `execution-context-scout` when target files
-   are not already obvious.
-5. If a scout result or prompt names an exact path and only a small adjacent
-   source window is missing, use `read` with explicit `offset` and `limit`.
-6. Edit only after real source context is available.
+Read the node assignment prompt and any explicitly supplied source or validation
+evidence. Use direct source tools for exact missing files, symbols, or windows.
+
+## Startup Contract
+
+Read the assignment prompt as the work order. The execution-worker system prompt
+owns the active edit-first contract, context strategy, validation policy, and
+terminal lifecycle rules.
+
+Use todo as a progress mirror for multi-step work. It is not a permission step
+before editing.
+
+Use direct source tools for exact local lookup. Delegate only genuinely
+open-ended mapping or validation-heavy work.
+
+Finish through `node_finish`.
 
 ## Stop Conditions
 
-- required workflow skill, task tool, todo surface, mutation surface, or
-  `node_finish` is missing
 - node prompt is empty, incoherent, or not scoped to the current node
-- scout result does not deliver real source into parent-visible context
-- validation cannot be selected or run when required for the node
+- required tools or allowed scouts are missing
+- required source is inaccessible after bounded lookup/delegation
+- validation cannot be selected or run when required
 - the next action would require scheduler, lifecycle, or evidence-acceptance
-  ownership
+  ownership outside `node_finish`

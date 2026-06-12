@@ -1,9 +1,8 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { updateSessionWorkingContext } from "../../../config/sessions/working-context.js";
 import { LegacyContextEngine } from "../../../context-engine/legacy.js";
 import { buildMemorySystemPromptAddition } from "../../../plugin-sdk/core.js";
 import {
@@ -214,34 +213,7 @@ describe("runEmbeddedAttempt context engine sessionKey forwarding", () => {
     });
   });
 
-  it("adds native session working context to context-engine system prompt additions", async () => {
-    const dir = await mkdtemp(path.join(os.tmpdir(), "openclaw-working-context-assemble-"));
-    tempPaths.push(dir);
-    const storePath = path.join(dir, "sessions.json");
-    await writeFile(
-      storePath,
-      JSON.stringify({
-        [sessionKey]: { sessionId: embeddedSessionId, updatedAt: 1 },
-      }),
-      "utf8",
-    );
-    await updateSessionWorkingContext({
-      storePath,
-      sessionKey,
-      now: 1234,
-      entry: {
-        kind: "context_window",
-        requestedAgentId: "execution-context-scout",
-        sourceToolCallId: "task-context",
-        text: [
-          "Bounded source windows:",
-          "```ts",
-          "export const nativeWorkingContextMarker = true;",
-          "```",
-          "file_graph: src/a.ts -> src/b.ts",
-        ].join("\n"),
-      },
-    });
+  it("does not add native session working context to context-engine system prompt additions", async () => {
     const contextEngine = createTestContextEngine({
       assemble: async ({ messages }) => ({
         messages,
@@ -250,14 +222,11 @@ describe("runEmbeddedAttempt context engine sessionKey forwarding", () => {
       }),
     });
 
-    const result = await runAssemble(sessionKey, contextEngine, {
-      sessionStorePath: storePath,
-    });
+    const result = await runAssemble(sessionKey, contextEngine);
 
     expect(result?.systemPromptAddition).toContain("## Memory Recall");
-    expect(result?.systemPromptAddition).toContain("OpenClaw Native Working Context");
-    expect(result?.systemPromptAddition).toContain("nativeWorkingContextMarker");
-    expect(result?.systemPromptAddition).toContain("file_graph");
+    expect(result?.systemPromptAddition).not.toContain("OpenClaw Native Working Context");
+    expect(result?.systemPromptAddition).not.toContain("file_graph");
   });
 
   it("forwards sessionKey to ingestBatch when afterTurn is absent", async () => {

@@ -1,10 +1,21 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 
 export const CHARS_PER_TOKEN_ESTIMATE = 4;
-export const TOOL_RESULT_CHARS_PER_TOKEN_ESTIMATE = 2;
+export const TOOL_RESULT_CHARS_PER_TOKEN_ESTIMATE = CHARS_PER_TOKEN_ESTIMATE;
 const IMAGE_CHAR_ESTIMATE = 8_000;
 
 export type MessageCharEstimateCache = WeakMap<AgentMessage, number>;
+
+export type ProviderVisibleContextBreakdown = {
+  messageCount: number;
+  toolResultCount: number;
+  toolResultWithDetailsCount: number;
+  totalVisibleChars: number;
+  toolResultTextChars: number;
+  likelySourceOrLocatorChars: number;
+  nonSourceVisibleChars: number;
+  strippedToolDetailsChars: number;
+};
 
 function isTextBlock(block: unknown): block is { type: "text"; text: string } {
   return !!block && typeof block === "object" && (block as { type?: unknown }).type === "text";
@@ -71,6 +82,70 @@ export function getToolResultText(msg: AgentMessage): string {
   return chunks.join("\n");
 }
 
+function getVisibleText(msg: AgentMessage): string {
+  const content = (msg as { content?: unknown }).content;
+  if (typeof content === "string") {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return "";
+  }
+  const chunks: string[] = [];
+  for (const block of content) {
+    if (isTextBlock(block)) {
+      chunks.push(block.text);
+    }
+  }
+  return chunks.join("\n");
+}
+
+function looksLikeSourceOrLocatorText(text: string): boolean {
+  return (
+    text.includes("<path>") ||
+    text.includes("<content>") ||
+    /^\d+:/mu.test(text) ||
+    /(?:^|\n)[^\n:]+:\d+:/u.test(text)
+  );
+}
+
+export function estimateProviderVisibleContextBreakdown(
+  messages: readonly AgentMessage[],
+): ProviderVisibleContextBreakdown {
+  let totalVisibleChars = 0;
+  let toolResultTextChars = 0;
+  let likelySourceOrLocatorChars = 0;
+  let strippedToolDetailsChars = 0;
+  let toolResultCount = 0;
+  let toolResultWithDetailsCount = 0;
+  for (const msg of messages) {
+    const visibleText = getVisibleText(msg);
+    totalVisibleChars += visibleText.length;
+    if (!isToolResultMessage(msg)) {
+      continue;
+    }
+    toolResultCount += 1;
+    toolResultTextChars += visibleText.length;
+    if (looksLikeSourceOrLocatorText(visibleText)) {
+      likelySourceOrLocatorChars += visibleText.length;
+    }
+    const details = (msg as { details?: unknown }).details;
+    if (details !== undefined) {
+      toolResultWithDetailsCount += 1;
+      strippedToolDetailsChars += estimateUnknownChars(details);
+    }
+  }
+  return {
+    messageCount: messages.length,
+    toolResultCount,
+    toolResultWithDetailsCount,
+    totalVisibleChars,
+    toolResultTextChars,
+    likelySourceOrLocatorChars,
+    nonSourceVisibleChars: Math.max(0, totalVisibleChars - likelySourceOrLocatorChars),
+    strippedToolDetailsChars,
+  };
+}
+
 function estimateMessageChars(msg: AgentMessage): number {
   if (!msg || typeof msg !== "object") {
     return 0;
@@ -121,13 +196,7 @@ function estimateMessageChars(msg: AgentMessage): number {
 
   if (isToolResultMessage(msg)) {
     const content = getToolResultContent(msg);
-    let chars = estimateContentBlockChars(content);
-    const details = (msg as { details?: unknown }).details;
-    chars += estimateUnknownChars(details);
-    const weightedChars = Math.ceil(
-      chars * (CHARS_PER_TOKEN_ESTIMATE / TOOL_RESULT_CHARS_PER_TOKEN_ESTIMATE),
-    );
-    return Math.max(chars, weightedChars);
+    return estimateContentBlockChars(content);
   }
 
   return 256;

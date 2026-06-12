@@ -1,7 +1,59 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import { resolveStateDir } from "../config/paths.js";
 
 export { createAsyncLock, readJsonFile, writeJsonAtomic } from "./json-files.js";
+import { writeJsonAtomic } from "./json-files.js";
+
+function getErrorCode(err: unknown): string | undefined {
+  return err instanceof Error ? (err as NodeJS.ErrnoException).code : undefined;
+}
+
+async function resolveTargetOwnership(
+  filePath: string,
+): Promise<{ uid: number; gid: number } | null> {
+  try {
+    const stat = await fs.stat(filePath);
+    return { uid: stat.uid, gid: stat.gid };
+  } catch (err) {
+    if (getErrorCode(err) !== "ENOENT") {
+      return null;
+    }
+  }
+
+  try {
+    const stat = await fs.stat(path.dirname(filePath));
+    return { uid: stat.uid, gid: stat.gid };
+  } catch {
+    return null;
+  }
+}
+
+export async function readPairingJsonFile<T>(filePath: string): Promise<T | null> {
+  try {
+    const raw = await fs.readFile(filePath, "utf8");
+    return JSON.parse(raw) as T;
+  } catch (err) {
+    if (getErrorCode(err) === "ENOENT") {
+      return null;
+    }
+    throw err;
+  }
+}
+
+export async function writePairingJsonAtomic(filePath: string, value: unknown) {
+  const ownership = await resolveTargetOwnership(filePath);
+  await writeJsonAtomic(filePath, value);
+  if (!ownership) {
+    return;
+  }
+  try {
+    await fs.chown(filePath, ownership.uid, ownership.gid);
+  } catch {
+    // Non-root writers usually cannot chown. The normal runtime writer already
+    // owns the file, so this is only needed for host-side repair/approval tools.
+  }
+}
 
 export function resolvePairingPaths(baseDir: string | undefined, subdir: string) {
   const root = baseDir ?? resolveStateDir();

@@ -73,6 +73,11 @@ export function resolveGatewayErrorDetailCode(
  * browser client supports a bounded one-time retry with a cached device token
  * when the endpoint is trusted. Reconnect suppression for mismatch is handled
  * with client state (after retry budget is exhausted).
+ *
+ * PAIRING_REQUIRED is also intentionally excluded: approval happens
+ * out-of-band after the request websocket closes, so the browser must retry
+ * on its normal backoff to observe the approved device record and receive its
+ * device token.
  */
 export function isNonRecoverableAuthError(error: GatewayErrorInfo | undefined): boolean {
   if (!error) {
@@ -85,7 +90,6 @@ export function isNonRecoverableAuthError(error: GatewayErrorInfo | undefined): 
     code === ConnectErrorDetailCodes.AUTH_PASSWORD_MISSING ||
     code === ConnectErrorDetailCodes.AUTH_PASSWORD_MISMATCH ||
     code === ConnectErrorDetailCodes.AUTH_RATE_LIMITED ||
-    code === ConnectErrorDetailCodes.PAIRING_REQUIRED ||
     code === ConnectErrorDetailCodes.CONTROL_UI_DEVICE_IDENTITY_REQUIRED ||
     code === ConnectErrorDetailCodes.DEVICE_IDENTITY_REQUIRED
   );

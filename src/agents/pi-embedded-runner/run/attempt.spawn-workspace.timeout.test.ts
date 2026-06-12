@@ -4,6 +4,7 @@ import {
   createContextEngineAttemptRunner,
   getHoisted,
   resetEmbeddedAttemptHarness,
+  testModel,
 } from "./attempt.spawn-workspace.test-support.js";
 
 const hoisted = getHoisted();
@@ -37,6 +38,34 @@ describe("runEmbeddedAttempt undici timeout wiring", () => {
     expect(hoisted.ensureGlobalUndiciEnvProxyDispatcherMock).toHaveBeenCalledOnce();
     expect(hoisted.ensureGlobalUndiciStreamTimeoutsMock).toHaveBeenCalledWith({
       timeoutMs: 123_456,
+    });
+  });
+
+  it("passes admitted context-scout thinking into the PI session creation path", async () => {
+    await createContextEngineAttemptRunner({
+      sessionKey: "agent:execution-context-scout:subagent:thinking-test",
+      tempPaths,
+      contextEngine: {
+        assemble: async ({ messages }) => ({
+          messages,
+          estimatedTokens: 1,
+        }),
+      },
+      attemptOverrides: {
+        agentId: "execution-context-scout",
+        provider: "openrouter",
+        modelId: "qwen/qwen3-coder-plus",
+        model: { ...testModel, reasoning: false },
+        thinkLevel: "low",
+      },
+    });
+
+    expect(hoisted.createAgentSessionMock).toHaveBeenCalledOnce();
+    expect(hoisted.createAgentSessionMock.mock.calls[0]?.[0]).toMatchObject({
+      thinkingLevel: "low",
+      model: expect.objectContaining({
+        reasoning: true,
+      }),
     });
   });
 });

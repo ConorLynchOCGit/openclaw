@@ -4,9 +4,9 @@ import { Type } from "@sinclair/typebox";
 import {
   type AnyAgentTool,
   ToolInputError,
-  jsonResult,
   readNumberParam,
   readStringParam,
+  textResult,
 } from "./common.js";
 
 const DEFAULT_EXCLUDED_DIRS = new Set([
@@ -19,12 +19,17 @@ const DEFAULT_EXCLUDED_DIRS = new Set([
   "node_modules",
 ]);
 const DEFAULT_EXCLUDED_RELATIVE_ROOTS = [".openclaw/runtime"];
-const DEFAULT_MAX_FILES = 2_000;
 const DEFAULT_MAX_RESULTS = 100;
 const DEFAULT_MAX_MATCHES = 100;
-const MAX_FILE_BYTES_FOR_GREP = 512 * 1024;
 const MAX_MATCH_LINE_LENGTH = 2000;
-const MAX_CONTEXT_LINES = 3;
+
+type GrepMatch = {
+  path: string;
+  line: number;
+  text: string;
+  contextBefore?: Array<{ line: number; text: string }>;
+  contextAfter?: Array<{ line: number; text: string }>;
+};
 
 type RepoDiscoveryToolOptions = {
   workspaceRoot: string;
@@ -32,22 +37,17 @@ type RepoDiscoveryToolOptions = {
   ignoredRelativeRoots?: readonly string[];
   defaultMaxResults?: number;
   defaultMaxMatches?: number;
-  defaultMaxFiles?: number;
 };
 
 const GlobToolSchema = Type.Object({
-  pattern: Type.Optional(
-    Type.String({
-      description:
-        "File glob such as **/*.ts, src/agents/**/*.ts, or docs/**/*.md. Omit to list files under path.",
-    }),
-  ),
+  pattern: Type.String({
+    description: "File glob such as **/*.ts, src/agents/**/*.ts, or docs/**/*.md.",
+  }),
   path: Type.Optional(
     Type.String({
-      description: "Optional workspace-relative file or directory to search within.",
+      description: "Optional workspace-relative directory to search within.",
     }),
   ),
-  maxResults: Type.Optional(Type.Number({ description: "Maximum file refs to return." })),
 });
 
 const ListToolSchema = Type.Object({
@@ -63,7 +63,10 @@ const ListToolSchema = Type.Object({
 });
 
 const GrepToolSchema = Type.Object({
-  query: Type.String({ description: "Text or regular expression to search for." }),
+  query: Type.String({
+    description:
+      "Regular expression pattern to search for by default. Set regex:false for a literal text search.",
+  }),
   path: Type.Optional(
     Type.String({
       description: "Optional workspace-relative file or directory to search within.",
@@ -75,12 +78,9 @@ const GrepToolSchema = Type.Object({
     }),
   ),
   regex: Type.Optional(
-    Type.Boolean({ description: "Treat query as a JavaScript regular expression." }),
+    Type.Boolean({ description: "Use JavaScript regular expression matching. Defaults to true." }),
   ),
   caseSensitive: Type.Optional(Type.Boolean({ description: "Use case-sensitive matching." })),
-  contextLines: Type.Optional(Type.Number({ description: "Number of nearby lines to include." })),
-  maxMatches: Type.Optional(Type.Number({ description: "Maximum matches to return." })),
-  maxFiles: Type.Optional(Type.Number({ description: "Maximum candidate files to inspect." })),
 });
 
 function clampInteger(
@@ -195,6 +195,16 @@ function globToRegExp(glob: string): RegExp {
   return new RegExp(`^${source}$`, "u");
 }
 
+function expandBraceAlternates(pattern: string): string[] {
+  const match = /\{([^{}]+)\}/u.exec(pattern);
+  if (!match?.[1]) {
+    return [pattern];
+  }
+  const before = pattern.slice(0, match.index);
+  const after = pattern.slice(match.index + match[0].length);
+  return match[1].split(",").flatMap((part) => expandBraceAlternates(`${before}${part}${after}`));
+}
+
 function matchesGlob(relativePath: string, pattern: string | undefined): boolean {
   const trimmed = pattern?.trim();
   if (!trimmed) {
@@ -204,24 +214,20 @@ function matchesGlob(relativePath: string, pattern: string | undefined): boolean
   if (!normalized.includes("*") && !normalized.includes("?")) {
     return relativePath === normalized || relativePath.includes(normalized);
   }
-  return globToRegExp(normalized).test(relativePath);
+  return expandBraceAlternates(normalized).some((expanded) =>
+    globToRegExp(expanded).test(relativePath),
+  );
 }
 
 async function walkFiles(input: {
   workspaceRoot: string;
   relativeRoot: string;
   pattern?: string;
-  maxFiles: number;
   ignoredRelativeRoots: readonly string[];
-}): Promise<{ files: string[]; truncated: boolean }> {
+}): Promise<{ files: string[] }> {
   const files: string[] = [];
-  let truncated = false;
 
   async function walk(relativePath: string): Promise<void> {
-    if (files.length >= input.maxFiles) {
-      truncated = true;
-      return;
-    }
     if (isIgnoredRelativePath(relativePath, input.ignoredRelativeRoots)) {
       return;
     }
@@ -247,10 +253,6 @@ async function walkFiles(input: {
     const entries = await fs.readdir(absolute, { withFileTypes: true }).catch(() => []);
     entries.sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
-      if (files.length >= input.maxFiles) {
-        truncated = true;
-        return;
-      }
       if (entry.isDirectory() && isExcludedDirectory(entry.name)) {
         continue;
       }
@@ -263,7 +265,59 @@ async function walkFiles(input: {
   }
 
   await walk(input.relativeRoot);
-  return { files, truncated };
+  return { files };
+}
+
+async function resolveExactFileCandidate(input: {
+  workspaceRoot: string;
+  relativeRoot: string;
+  pattern?: string;
+}): Promise<string[] | null> {
+  const normalized = normalizeRelativePath(input.relativeRoot);
+  if (!normalized || normalized === ".") {
+    return null;
+  }
+  const absolute = resolveWorkspaceTarget(input.workspaceRoot, normalized);
+  const stat = await fs.lstat(absolute).catch(() => null);
+  if (!stat?.isFile()) {
+    return null;
+  }
+  return matchesGlob(normalized, input.pattern) ? [normalized] : [];
+}
+
+async function resolveManagedOutputExactFileCandidate(input: {
+  workspaceRoot: string;
+  stateRoot?: string | null;
+  requestedPath?: string;
+  pattern?: string;
+}): Promise<string[] | null> {
+  const requestedPath = input.requestedPath?.trim();
+  const stateRoot = input.stateRoot?.trim();
+  if (!requestedPath || !stateRoot) {
+    return null;
+  }
+  const resolvedStateRoot = path.resolve(stateRoot);
+  const managedOutputRoot = path.join(resolvedStateRoot, "managed-tool-output");
+  const absolute = path.isAbsolute(requestedPath)
+    ? path.resolve(requestedPath)
+    : path.resolve(input.workspaceRoot, requestedPath);
+  if (!pathWithin(absolute, managedOutputRoot) || path.extname(absolute) !== ".txt") {
+    return null;
+  }
+  const stat = await fs.stat(absolute).catch(() => null);
+  if (!stat?.isFile()) {
+    return null;
+  }
+  const normalizedAbsolute = absolute.split(path.sep).join("/");
+  const basename = path.basename(absolute);
+  if (
+    input.pattern &&
+    !matchesGlob(normalizedAbsolute, input.pattern) &&
+    !matchesGlob(basename, input.pattern)
+  ) {
+    return [];
+  }
+  return [absolute];
 }
 
 function formatFileRefs(files: string[]): string {
@@ -336,9 +390,9 @@ function isProbablyBinary(buffer: Buffer): boolean {
 function buildLineMatcher(input: { query: string; regex: boolean; caseSensitive: boolean }) {
   if (input.regex) {
     try {
+      const pattern = new RegExp(input.query, input.caseSensitive ? "u" : "iu");
       return {
-        match: (line: string) =>
-          new RegExp(input.query, input.caseSensitive ? "u" : "iu").test(line),
+        match: (line: string) => pattern.test(line),
       };
     } catch (error) {
       throw new ToolInputError(
@@ -355,23 +409,36 @@ function buildLineMatcher(input: { query: string; regex: boolean; caseSensitive:
   };
 }
 
+function buildInvalidRegexDiagnostic(params: { query: string; error: unknown }) {
+  const errorMessage = params.error instanceof Error ? params.error.message : String(params.error);
+  const text = [
+    `Invalid regex: ${errorMessage}`,
+    "Retry the same query with regex:false for a literal search, or escape the regex metacharacters before searching.",
+  ].join("\n");
+  return textResult(text, {
+    status: "invalid_regex",
+    query: params.query,
+    regex: true,
+    error: `invalid regex: ${errorMessage}`,
+    suggestedRetry: {
+      query: params.query,
+      regex: false,
+    },
+    text,
+  });
+}
+
 async function grepFiles(input: {
   workspaceRoot: string;
   files: string[];
   query: string;
   regex: boolean;
   caseSensitive: boolean;
-  contextLines: number;
   maxMatches: number;
+  contextLines?: number;
 }) {
   const matcher = buildLineMatcher(input);
-  const matches: Array<{
-    path: string;
-    line: number;
-    text: string;
-    before?: string[];
-    after?: string[];
-  }> = [];
+  const matches: GrepMatch[] = [];
   let searchedFileCount = 0;
   let truncated = false;
 
@@ -380,9 +447,11 @@ async function grepFiles(input: {
       truncated = true;
       break;
     }
-    const absolute = resolveWorkspaceTarget(input.workspaceRoot, file);
+    const absolute = path.isAbsolute(file)
+      ? path.resolve(file)
+      : resolveWorkspaceTarget(input.workspaceRoot, file);
     const stat = await fs.stat(absolute).catch(() => null);
-    if (!stat?.isFile() || stat.size > MAX_FILE_BYTES_FOR_GREP) {
+    if (!stat?.isFile()) {
       continue;
     }
     const buffer = await fs.readFile(absolute).catch(() => null);
@@ -400,45 +469,84 @@ async function grepFiles(input: {
       if (!matcher.match(line)) {
         continue;
       }
-      const beforeStart = Math.max(0, index - input.contextLines);
-      const afterEnd = Math.min(lines.length, index + input.contextLines + 1);
+      const contextLines = Math.max(0, Math.min(3, input.contextLines ?? 0));
+      const contextBefore =
+        contextLines > 0
+          ? lines.slice(Math.max(0, index - contextLines), index).map((contextLine, offset) => ({
+              line: Math.max(1, index - contextLines + offset + 1),
+              text: contextLine.slice(0, MAX_MATCH_LINE_LENGTH),
+            }))
+          : undefined;
+      const contextAfter =
+        contextLines > 0
+          ? lines.slice(index + 1, index + 1 + contextLines).map((contextLine, offset) => ({
+              line: index + offset + 2,
+              text: contextLine.slice(0, MAX_MATCH_LINE_LENGTH),
+            }))
+          : undefined;
       matches.push({
-        path: file,
+        path: absolute,
         line: index + 1,
         text: line.slice(0, MAX_MATCH_LINE_LENGTH),
-        ...(input.contextLines > 0
-          ? {
-              before: lines
-                .slice(beforeStart, index)
-                .map((entry) => entry.slice(0, MAX_MATCH_LINE_LENGTH)),
-              after: lines
-                .slice(index + 1, afterEnd)
-                .map((entry) => entry.slice(0, MAX_MATCH_LINE_LENGTH)),
-            }
-          : {}),
+        ...(contextBefore && contextBefore.length > 0 ? { contextBefore } : {}),
+        ...(contextAfter && contextAfter.length > 0 ? { contextAfter } : {}),
       });
     }
   }
   return { matches, searchedFileCount, truncated };
 }
 
-function formatGrepMatches(
-  matches: Array<{ path: string; line: number; text: string; before?: string[]; after?: string[] }>,
-): string {
+function formatGrepMatches(matches: readonly GrepMatch[]): string {
   if (matches.length === 0) {
-    return "No matches found.";
+    return "No files found";
   }
-  return matches
-    .map((match) => {
-      const contextBefore = (match.before ?? []).map((line) => `  ${line}`).join("\n");
-      const contextAfter = (match.after ?? []).map((line) => `  ${line}`).join("\n");
-      return [
-        `${match.path}:${match.line}: ${match.text}`,
-        ...(contextBefore ? [contextBefore] : []),
-        ...(contextAfter ? [contextAfter] : []),
-      ].join("\n");
-    })
-    .join("\n\n");
+  const byPath = new Map<string, GrepMatch[]>();
+  for (const match of matches) {
+    byPath.set(match.path, [...(byPath.get(match.path) ?? []), match]);
+  }
+  const output: string[] = [];
+  for (const [filePath, fileMatches] of byPath.entries()) {
+    if (output.length > 0) {
+      output.push("");
+    }
+    output.push(`${filePath}:`);
+    for (const match of fileMatches) {
+      for (const context of match.contextBefore ?? []) {
+        output.push(`  ${context.line}: ${context.text}`);
+      }
+      output.push(`  Line ${match.line}: ${match.text}`);
+      for (const context of match.contextAfter ?? []) {
+        output.push(`  ${context.line}: ${context.text}`);
+      }
+    }
+  }
+  return output.join("\n");
+}
+
+function formatGrepText(params: {
+  matches: readonly GrepMatch[];
+  truncated: boolean;
+  searchedFileCount: number;
+  hiddenCount: number;
+  hiddenCountExact: boolean;
+}): string {
+  const hiddenLabel = params.hiddenCountExact
+    ? `${params.hiddenCount}`
+    : `at least ${Math.max(1, params.hiddenCount)}`;
+  if (params.matches.length > 0) {
+    const output = [
+      `Found ${params.matches.length} matches${params.truncated ? " (more matches available)" : ""}`,
+      formatGrepMatches(params.matches),
+    ];
+    if (params.truncated) {
+      output.push(
+        "",
+        `(Results truncated: showing ${params.matches.length} matches (${hiddenLabel} hidden). Consider using a more specific path or pattern.)`,
+      );
+    }
+    return output.join("\n");
+  }
+  return "No files found";
 }
 
 export function createGlobTool(opts: RepoDiscoveryToolOptions): AnyAgentTool {
@@ -459,26 +567,27 @@ export function createGlobTool(opts: RepoDiscoveryToolOptions): AnyAgentTool {
     execute: async (_toolCallId, rawParams) => {
       const params =
         rawParams && typeof rawParams === "object" ? (rawParams as Record<string, unknown>) : {};
-      const pattern = readStringParam(params, "pattern", { required: false });
+      const pattern = readStringParam(params, "pattern", { required: true });
       const relativeRoot = normalizeRelativePath(
         readStringParam(params, "path", { required: false }),
       );
-      const maxResults = clampInteger(
-        readNumberParam(params, "maxResults", { required: false, integer: true }),
-        defaultMaxResults,
-        1,
-        DEFAULT_MAX_RESULTS,
-      );
+      const maxResults = defaultMaxResults;
       const result = await walkFiles({
         workspaceRoot: opts.workspaceRoot,
         relativeRoot,
         pattern,
-        maxFiles: Math.max(maxResults, DEFAULT_MAX_FILES),
         ignoredRelativeRoots,
       });
       const files = result.files.slice(0, maxResults);
-      const truncated = result.truncated || result.files.length > maxResults;
-      return jsonResult({
+      const truncated = result.files.length > maxResults;
+      const text = appendTruncationGuidance({
+        text: formatFileRefs(files),
+        truncated,
+        visible: files.length,
+        noun: "files",
+        guidance: "Use a more specific path or glob pattern.",
+      });
+      return textResult(text, {
         status: "ok",
         root: relativeRoot,
         pattern: pattern ?? null,
@@ -486,13 +595,7 @@ export function createGlobTool(opts: RepoDiscoveryToolOptions): AnyAgentTool {
         count: files.length,
         truncated,
         hiddenCount: Math.max(0, result.files.length - files.length),
-        text: appendTruncationGuidance({
-          text: formatFileRefs(files),
-          truncated,
-          visible: files.length,
-          noun: "files",
-          guidance: "Use a more specific path or glob pattern.",
-        }),
+        text,
       });
     },
   };
@@ -538,22 +641,23 @@ export function createListTool(opts: RepoDiscoveryToolOptions): AnyAgentTool {
         maxResults,
         ignoredRelativeRoots,
       });
-      const text =
+      const baseText =
         result.entries.length === 0
           ? "No entries found."
           : result.entries.map((entry) => `${entry.type}\t${entry.path}`).join("\n");
-      return jsonResult({
+      const text = appendTruncationGuidance({
+        text: baseText,
+        truncated: result.truncated,
+        visible: result.returnedEntries,
+        total: result.totalEntries,
+        noun: "entries",
+        guidance: `Use offset=${result.nextOffset} to continue or choose a narrower directory.`,
+      });
+      return textResult(text, {
         status: "ok",
         path: relativePath,
         ...result,
-        text: appendTruncationGuidance({
-          text,
-          truncated: result.truncated,
-          visible: result.returnedEntries,
-          total: result.totalEntries,
-          noun: "entries",
-          guidance: `Use offset=${result.nextOffset} to continue or choose a narrower directory.`,
-        }),
+        text,
       });
     },
   };
@@ -567,13 +671,12 @@ export function createGrepTool(opts: RepoDiscoveryToolOptions): AnyAgentTool {
     1,
     DEFAULT_MAX_MATCHES,
   );
-  const defaultMaxFiles = clampInteger(opts.defaultMaxFiles, DEFAULT_MAX_FILES, 1, 10_000);
   return {
     name: "grep",
     label: "Grep",
     displaySummary: "Search bounded workspace text.",
     description:
-      "Search workspace text and return bounded file/line matches. Use this for repo discovery and keyword pivots before reading files. For simple file-pattern discovery use glob.",
+      "Search workspace text using regular expressions by default and return bounded file/line matches grouped by path. When a target file or directory is already known, pass path for that file or directory instead of repo-wide search. Use this for repo discovery and keyword pivots before reading files. For simple file-pattern discovery use glob. Set regex:false for literal text search.",
     parameters: GrepToolSchema,
     execute: async (_toolCallId, rawParams) => {
       const params =
@@ -583,60 +686,70 @@ export function createGrepTool(opts: RepoDiscoveryToolOptions): AnyAgentTool {
         readStringParam(params, "path", { required: false }),
       );
       const glob = readStringParam(params, "glob", { required: false });
-      const contextLines = clampInteger(
-        readNumberParam(params, "contextLines", { required: false, integer: true }),
-        0,
-        0,
-        MAX_CONTEXT_LINES,
-      );
-      const maxMatches = clampInteger(
-        readNumberParam(params, "maxMatches", { required: false, integer: true }),
-        defaultMaxMatches,
-        1,
-        DEFAULT_MAX_MATCHES,
-      );
-      const maxFiles = clampInteger(
-        readNumberParam(params, "maxFiles", { required: false, integer: true }),
-        defaultMaxFiles,
-        1,
-        10_000,
-      );
-      const candidateFiles = await walkFiles({
+      const maxMatches = defaultMaxMatches;
+      const regex = params.regex !== false;
+      const managedOutputFileCandidate = await resolveManagedOutputExactFileCandidate({
         workspaceRoot: opts.workspaceRoot,
-        relativeRoot,
+        stateRoot: opts.stateRoot,
+        requestedPath: readStringParam(params, "path", { required: false }),
         pattern: glob,
-        maxFiles,
-        ignoredRelativeRoots,
       });
-      const result = await grepFiles({
-        workspaceRoot: opts.workspaceRoot,
-        files: candidateFiles.files,
-        query,
-        regex: params.regex === true,
-        caseSensitive: params.caseSensitive === true,
-        contextLines,
-        maxMatches,
+      const exactFileCandidate =
+        managedOutputFileCandidate ??
+        (await resolveExactFileCandidate({
+          workspaceRoot: opts.workspaceRoot,
+          relativeRoot,
+          pattern: glob,
+        }));
+      const candidateFiles = exactFileCandidate
+        ? { files: exactFileCandidate, truncated: false }
+        : await walkFiles({
+            workspaceRoot: opts.workspaceRoot,
+            relativeRoot,
+            pattern: glob,
+            ignoredRelativeRoots,
+          });
+      let result: Awaited<ReturnType<typeof grepFiles>>;
+      try {
+        result = await grepFiles({
+          workspaceRoot: opts.workspaceRoot,
+          files: candidateFiles.files,
+          query,
+          regex,
+          caseSensitive: params.caseSensitive === true,
+          maxMatches,
+          contextLines: exactFileCandidate ? 2 : 0,
+        });
+      } catch (error) {
+        if (error instanceof ToolInputError && error.message.startsWith("invalid regex:")) {
+          return buildInvalidRegexDiagnostic({ query, error });
+        }
+        throw error;
+      }
+      const truncated = result.truncated;
+      const hiddenCount = truncated
+        ? Math.max(0, candidateFiles.files.length - result.searchedFileCount)
+        : 0;
+      const hiddenCountExact = true;
+      const text = formatGrepText({
+        matches: result.matches,
+        truncated,
+        searchedFileCount: result.searchedFileCount,
+        hiddenCount,
+        hiddenCountExact,
       });
-      const truncated = candidateFiles.truncated || result.truncated;
-      return jsonResult({
+      return textResult(text, {
         status: "ok",
         query,
+        regex,
         root: relativeRoot,
         glob: glob ?? null,
         matches: result.matches,
         matchCount: result.matches.length,
         searchedFileCount: result.searchedFileCount,
         truncated,
-        hiddenCount: truncated
-          ? Math.max(0, candidateFiles.files.length - result.searchedFileCount)
-          : 0,
-        text: appendTruncationGuidance({
-          text: formatGrepMatches(result.matches),
-          truncated,
-          visible: result.matches.length,
-          noun: "matches",
-          guidance: "Use a more specific path, glob, or query before reading files.",
-        }),
+        hiddenCount,
+        text,
       });
     },
   };
