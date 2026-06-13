@@ -45,6 +45,8 @@ export type CurrentInboundPromptContext = {
 export type RunEmbeddedAgentParams = {
   sessionId: string;
   sessionKey?: string;
+  /** Immutable gateway lifecycle ownership captured when this execution was admitted. */
+  lifecycleGeneration?: string;
   /** Provider prompt-cache affinity key; distinct from transcript/session identity. */
   promptCacheKey?: string;
   /** Session-like key for sandbox and tool-policy resolution. Defaults to sessionKey. */
@@ -176,7 +178,7 @@ export type RunEmbeddedAgentParams = {
   runTimeoutOverrideMs?: number;
   runId: string;
   abortSignal?: AbortSignal;
-  onExecutionStarted?: () => void;
+  onExecutionStarted?: (info?: { lifecycleGeneration?: string }) => void;
   onExecutionPhase?: (info: {
     phase: EmbeddedAgentExecutionPhase;
     provider?: string;
@@ -194,6 +196,7 @@ export type RunEmbeddedAgentParams = {
     model?: string;
     backend?: string;
   }) => void;
+  onSessionIdChanged?: (sessionId: string) => void;
   replyOperation?: ReplyOperation;
   shouldEmitToolResult?: () => boolean;
   shouldEmitToolOutput?: () => boolean;

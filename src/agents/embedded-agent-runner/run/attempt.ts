@@ -175,6 +175,11 @@ import { wrapStreamFnTextTransforms } from "../../plugin-text-transforms.js";
 import { resolveAgentPromptSurfaceForSessionKey } from "../../prompt-surface.js";
 import { describeProviderRequestRoutingSummary } from "../../provider-attribution.js";
 import { registerProviderStreamForModel } from "../../provider-stream.js";
+import {
+  AGENT_RUN_RESTART_ABORT_STOP_REASON,
+  createAgentRunRestartAbortError,
+  isAgentRunRestartAbortReason,
+} from "../../run-termination.js";
 import { collectRuntimeChannelCapabilities } from "../../runtime-capabilities.js";
 import {
   logAgentRuntimeToolDiagnostics,
@@ -3327,6 +3332,7 @@ export async function runEmbeddedAttempt(
         buildEmbeddedSubscriptionParams({
           session: activeSession,
           runId: params.runId,
+          lifecycleGeneration: params.lifecycleGeneration,
           messageChannel: runtimeChannel,
           initialReplayState: params.initialReplayState,
           hookRunner: getGlobalHookRunner() ?? undefined,
@@ -3351,6 +3357,10 @@ export async function runEmbeddedAttempt(
           onAgentEvent: params.onAgentEvent,
           terminalLifecyclePhase: params.deferTerminalLifecycleEnd ? "finishing" : "end",
           isTerminalAborted: () => aborted,
+          resolveTerminalStopReason: () =>
+            isAgentRunRestartAbortReason(runAbortController.signal.reason)
+              ? AGENT_RUN_RESTART_ABORT_STOP_REASON
+              : undefined,
           onBeforeLifecycleTerminal: () => {
             if (
               requiresCompletionRequiredAsyncTaskWait({
@@ -3453,9 +3463,9 @@ export async function runEmbeddedAttempt(
         }
       };
 
-      const abortActiveRunExternally = () => {
+      const abortActiveRunExternally = (reason?: "user_abort" | "restart" | "superseded") => {
         externalAbort = true;
-        abortRun();
+        abortRun(false, reason === "restart" ? createAgentRunRestartAbortError() : undefined);
       };
       const queueHandle: EmbeddedAgentQueueHandle & {
         kind: "embedded";
@@ -3473,7 +3483,7 @@ export async function runEmbeddedAttempt(
         supportsTranscriptCommitWait: true,
         sourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
         cancel: abortActiveRunExternally,
-        abort: abortActiveRunExternally,
+        abort: (reason) => abortActiveRunExternally(reason),
       };
       let lastAssistant: AssistantMessage | undefined;
       let currentAttemptAssistant: EmbeddedRunAttemptResult["currentAttemptAssistant"];
