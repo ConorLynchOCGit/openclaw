@@ -33,17 +33,11 @@ export const AGENT_TEAM_CODING_PLUGIN_EXECUTOR_KEYS = [
 ] as const;
 
 export const AGENT_TEAM_CODING_PLUGIN_RUNTIME_TOOL_FAMILIES: RuntimeToolFamily[] = [
-  "scheduler.decompose_graph",
-  "scheduler.select_next_node",
-  "scheduler.evaluate_node_result",
-  "scheduler.repair_decision",
-  "worker.invoke",
   "coding.compound",
   "source_prompt.context",
   "code_intelligence.query",
   "file_edit.propose",
   "file_edit.apply",
-  "edit_transaction.lifecycle",
   "validation.run",
   "model.call",
   "human_task.request",

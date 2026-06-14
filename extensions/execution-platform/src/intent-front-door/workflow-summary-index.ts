@@ -162,10 +162,7 @@ function summarizeExecutableCapabilities(contract: ExecutionWorkflowContract): s
   ) {
     capabilities.add("research");
   }
-  if (
-    contract.workflowId.includes("product_spec_planning") ||
-    actionKinds.has("propose_child_actions")
-  ) {
+  if (actionKinds.has("propose_child_actions")) {
     capabilities.add("plan");
     capabilities.add("action_graph_proposal");
     capabilities.add("human_decision");
@@ -182,11 +179,6 @@ function summarizeSubjectDomains(contract: ExecutionWorkflowContract): string[] 
     domains.add("repo");
     domains.add("spec");
     domains.add("workflow");
-  }
-  if (contract.workflowId.includes("product_spec_planning")) {
-    domains.add("product_spec");
-    domains.add("planning_capsule");
-    domains.add("action_graph");
   }
   if (contract.workflowId.includes("web_research")) {
     domains.add("external_source");

@@ -11,19 +11,13 @@ export type RuntimeToolStatus =
 
 export type RuntimeToolFamily =
   | "router.front_door"
-  | "scheduler.decompose_graph"
-  | "scheduler.select_next_node"
-  | "scheduler.evaluate_node_result"
-  | "scheduler.repair_decision"
   | "artifact.payload"
   | "source_prompt.context"
   | "planning.lifecycle"
   | "mission.ledger"
   | "code_intelligence.query"
   | "model.call"
-  | "worker.invoke"
   | "coding.compound"
-  | "edit_transaction.lifecycle"
   | "file_edit.propose"
   | "file_edit.apply"
   | "validation.plan"
@@ -41,10 +35,6 @@ export type RuntimeToolFamily =
   | "memory.retrieve"
   | "memory.capture"
   | "research.fetch"
-  | "product_spec_planning.create_spec"
-  | "product_spec_planning.review_spec"
-  | "product_spec_planning.validate_spec"
-  | "product_spec_planning.generate_spec"
   | "diagnostic.bounded";
 
 export type RuntimeToolAuthorityClass =

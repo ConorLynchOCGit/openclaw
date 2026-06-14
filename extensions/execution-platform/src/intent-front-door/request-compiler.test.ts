@@ -122,11 +122,11 @@ describe("Front-door request compiler", () => {
 
   it("compiles implementation work with a non-executor workflow target subject", () => {
     const output = codingOutput({
-      subjectWorkflowIds: ["agent_team.product_spec_planning"],
+      subjectWorkflowIds: ["agent_team.architecture"],
       targetSubjectRefs: [
         {
           targetKind: "workflow",
-          targetRef: "workflow://agent_team.product_spec_planning",
+          targetRef: "workflow://agent_team.architecture",
           confidence: 0.96,
         },
       ],
@@ -142,12 +142,12 @@ describe("Front-door request compiler", () => {
       selectedExecutionReason:
         "Requested capabilities require source edits, tests, docs, review, and closeout.",
       targetSubjectReason:
-        "Product/Spec Planning is the workflow being upgraded, not the executor workflow.",
+        "Architecture workflow is the workflow being upgraded, not the executor workflow.",
       requestedActions: [
-        createCanonicalRouterAction("code_edit", "upgrade Product/Spec Planning workflow", 0.95),
-        createCanonicalRouterAction("test", "validate Product/Spec Planning workflow", 0.9),
-        createCanonicalRouterAction("docs_update", "document Product/Spec Planning workflow", 0.9),
-        createCanonicalRouterAction("review", "review Product/Spec Planning workflow", 0.9),
+        createCanonicalRouterAction("code_edit", "upgrade architecture workflow", 0.95),
+        createCanonicalRouterAction("test", "validate architecture workflow", 0.9),
+        createCanonicalRouterAction("docs_update", "document architecture workflow", 0.9),
+        createCanonicalRouterAction("review", "review architecture workflow", 0.9),
         createCanonicalRouterAction("closeout", "close out bounded runtime evidence", 0.9),
       ],
     });
@@ -159,24 +159,24 @@ describe("Front-door request compiler", () => {
     expect(result).toMatchObject({
       workflowId: "agent_team.coding",
       executorWorkflowId: "agent_team.coding",
-      subjectWorkflowIds: ["agent_team.product_spec_planning"],
+      subjectWorkflowIds: ["agent_team.architecture"],
       requestedCapabilities: ["code_edit", "test", "docs_update", "review", "closeout"],
     });
     expect(result.targetSubjectRefs).toEqual([
       {
         targetKind: "workflow",
-        targetRef: "workflow://agent_team.product_spec_planning",
+        targetRef: "workflow://agent_team.architecture",
         confidence: 0.96,
       },
     ]);
     expect(result.runtimeJobCreateRequest.payload).toMatchObject({
       workflowId: "agent_team.coding",
       executorWorkflowId: "agent_team.coding",
-      subjectWorkflowIds: ["agent_team.product_spec_planning"],
+      subjectWorkflowIds: ["agent_team.architecture"],
       targetSubjectRefs: [
         {
           targetKind: "workflow",
-          targetRef: "workflow://agent_team.product_spec_planning",
+          targetRef: "workflow://agent_team.architecture",
           confidence: 0.96,
         },
       ],
@@ -184,7 +184,7 @@ describe("Front-door request compiler", () => {
     });
   });
 
-  it("carries router tool protocol refs into runtime job payload and RequirementMap handoff", () => {
+  it("carries router tool protocol refs into runtime job payload", () => {
     const output = codingOutput({
       requestedCapabilities: ["code_edit", "test", "review", "closeout"],
       constraints: [
@@ -235,16 +235,14 @@ describe("Front-door request compiler", () => {
       throw new Error("expected runtime job compile result");
     }
     expect(result.routerToolInvocationRefs).toHaveLength(ROUTER_FRONT_DOOR_RUNTIME_TOOL_IDS.length);
-    expect(result.requirementMapHandoffRef).toBe(routerToolProtocol.requirementMapHandoffRef);
     expect(result.runtimeJobCreateRequest.payload).toMatchObject({
       routerToolProtocolRef: "router-front-door-tool-protocol://runtime-job://front-door-test",
-      requirementMapHandoffRef: routerToolProtocol.requirementMapHandoffRef,
     });
   });
 
   it("keeps executor capability checks contract-owned instead of router-capability-owned", () => {
     const productSpecWorkflow = DEFAULT_EXECUTION_WORKFLOW_REGISTRY.workflows.find(
-      (candidate) => candidate.workflowId === "agent_team.product_spec_planning",
+      (candidate) => candidate.workflowId === "agent_team.architecture",
     )!;
     const output = createBaseCanonicalRouterOutput({
       route: "workflow_execution",
@@ -413,7 +411,7 @@ describe("Front-door request compiler", () => {
             ),
             createCanonicalRouterAction(
               "test",
-              "run approved focused validation command pnpm test:file extensions/execution-platform/src/work-queue/product-spec-planning-worker-contract.test.ts",
+              "run approved focused validation command pnpm test:file extensions/execution-platform/src/work-queue/workflow-evidence-profile.test.ts",
               0.9,
             ),
           ],

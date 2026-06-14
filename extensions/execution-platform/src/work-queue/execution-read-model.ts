@@ -34,13 +34,6 @@ import { WORKFLOW_DEFINITION_RESOLUTION_ARTIFACT_TYPE } from "../workflows/workf
 import { WORKFLOW_EVIDENCE_PROFILE_EVALUATION_ARTIFACT_TYPE } from "../workflows/workflow-evidence-profile.ts";
 import { WORKFLOW_PLUGIN_RESOLUTION_ARTIFACT_TYPE } from "../workflows/workflow-plugin.ts";
 import { projectDbPrimaryWorkQueueItem } from "./db-primary-work-queue-projection.ts";
-import { summarizeProductSpecPlanningValidationRepairEvidence } from "./product-spec-planning-validation-repair-evidence.ts";
-import {
-  PRODUCT_SPEC_PLANNING_WORKER_CONTRACT_ARTIFACT_TYPE as PRODUCT_SPEC_PLANNING_WORKER_CONTRACT_ARTIFACT_TYPE_CANONICAL,
-  normalizeProductSpecPlanningMode,
-  validateProductSpecPlanningActionGraphProposal,
-  validateProductSpecPlanningWorkerContract,
-} from "./product-spec-planning-worker-contract.ts";
 import { activeGraphProgressReadback } from "./projections/active-graph-progress.ts";
 import { runtimeArtifactPayloadManifestSummary } from "./projections/runtime-artifact-manifest.ts";
 import type { WorkItemTruth, WorkRun } from "./types.ts";
@@ -165,78 +158,9 @@ export type WorkQueueExecutionReadModel = {
       state: "ready" | "needs_review" | "missing";
       humanReportSummary: string | null;
       eli5Progress: string | null;
-      planningMode: WorkQueueProductSpecPlanningMode | null;
-      planningOutputKind: WorkQueueProductSpecPlanningOutputKind | null;
-      planningWorkflowRefs: string[];
-      planningCapsuleRefs: string[];
-      researchBriefRefs: string[];
-      researchInfluenceRefs: string[];
-      staleExternalAssumptionFlags: string[];
-      childActionProposalRefs: string[];
-      actionGraphProposalRefs: string[];
-      compileReadinessState:
-        | "not_requested"
-        | "needs_validation"
-        | "blocked"
-        | "compile_ready"
-        | null;
-      compileBlockedReasonCodes: string[];
       humanDecisionRefs: string[];
-      humanDecisionRequestRefs: string[];
       humanDecisionState: "present" | "pending" | "not_required";
-      planningDecisionState: "pending" | "accepted" | "rejected" | "not_required" | "unknown";
-      humanDecisionOptions: Array<{
-        optionId: string;
-        optionSummary: string;
-        tradeoffSummary: string | null;
-        afterSelectionSummary: string | null;
-        decisionRef: string | null;
-      }>;
-      humanDecisionResponseShape: string | null;
-      humanDecisionDeadlineExpiresAt: string | null;
-      humanDecisionBlockingGraphRefs: string[];
-      humanDecisionResumeRefs: string[];
-      humanDecisionBoundedResponseRefs: string[];
       validationRefs: string[];
-      childProposalSummaries: Array<{
-        actionId: string;
-        title: string | null;
-        assignedWorkflow: string | null;
-        assignedRoleOrOwner: string | null;
-        dependencyCount: number;
-        authorityBoundary: string | null;
-        compileReadinessState: string | null;
-        validationExpectations: string[];
-      }>;
-      planningEvidenceSummary: {
-        artifactKind: "product_spec_planning_owner_evidence_summary";
-        changedFileRefs: string[];
-        runtimeWorkflowMappingRefs: string[];
-        workflowRegistrationEvidenceRefs: string[];
-        executableNodeMappingEvidenceRefs: string[];
-        orchestratorFirstEvidenceRefs: string[];
-        planningCapsuleLifecycleState:
-          | "missing"
-          | "draft_present"
-          | "revision_present"
-          | "final_accepted";
-        planningCapsuleLifecycleRefs: string[];
-        actionGraphCompileReadinessState:
-          | "not_requested"
-          | "needs_validation"
-          | "blocked"
-          | "compile_ready"
-          | null;
-        actionGraphCompileReadinessRefs: string[];
-        actionGraphProposalCompileValidationRefs: string[];
-        compileBlockedReasonCodes: string[];
-        commitmentEvidenceClaimRefs: string[];
-        childActionsExecuted: boolean;
-        runtimeJobsCreated: boolean;
-        boundedEvidenceState: "bounded" | "needs_review" | "missing";
-        rawStorageEvidenceRefs: string[];
-        reasonCodes: string[];
-      };
       taskSuccess: string | null;
       qualityAssessment: string | null;
       workflowFitAssessment: string | null;
@@ -1459,27 +1383,6 @@ export type WorkQueueFrontDoorRoutingProjection = {
   workQueueLifecycleMutationAllowed: false;
 };
 
-const PRODUCT_SPEC_PLANNING_WORKER_CONTRACT_ARTIFACT_TYPE =
-  PRODUCT_SPEC_PLANNING_WORKER_CONTRACT_ARTIFACT_TYPE_CANONICAL;
-
-export const WORK_QUEUE_PRODUCT_SPEC_PLANNING_MODES = [
-  "plan_only",
-  "child_action_graph_proposal",
-  "compile_ready",
-] as const;
-
-export type WorkQueueProductSpecPlanningMode =
-  (typeof WORK_QUEUE_PRODUCT_SPEC_PLANNING_MODES)[number];
-
-export const WORK_QUEUE_PRODUCT_SPEC_PLANNING_OUTPUT_KINDS = [
-  "plan_only_output",
-  "child_action_graph_proposal_output",
-  "compile_ready_output",
-] as const;
-
-export type WorkQueueProductSpecPlanningOutputKind =
-  (typeof WORK_QUEUE_PRODUCT_SPEC_PLANNING_OUTPUT_KINDS)[number];
-
 function asRecord(value: unknown): Record<string, unknown> | null {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -1607,67 +1510,6 @@ function isReviewEvidenceRef(ref: string): boolean {
   return normalized.startsWith("review://") || normalized.includes("/review/");
 }
 
-function isProductSpecWorkflowRegistrationEvidenceRef(ref: string): boolean {
-  const normalized = ref.trim().toLowerCase();
-  if (normalized === "workflow://agent_team.product_spec_planning") {
-    return true;
-  }
-  return (
-    normalized.includes("agent_team.product_spec_planning") &&
-    (normalized.includes("workflow-definition") ||
-      normalized.includes("workflow_definition") ||
-      normalized.includes("workflow-plugin") ||
-      normalized.includes("workflow_plugin") ||
-      normalized.includes("workflow-registry") ||
-      normalized.includes("workflow_registry"))
-  );
-}
-
-function isProductSpecExecutableNodeMappingEvidenceRef(ref: string): boolean {
-  const normalized = ref.trim().toLowerCase();
-  return (
-    normalized.includes("runtime-node-capability") ||
-    normalized.includes("runtime_node_capability") ||
-    normalized.includes("capability-registry") ||
-    normalized.includes("capability_registry") ||
-    normalized.includes("executor-coverage") ||
-    normalized.includes("executor_coverage") ||
-    normalized.includes("executor-mapping") ||
-    normalized.includes("executor_mapping") ||
-    normalized.includes("node-mapping") ||
-    normalized.includes("node_mapping") ||
-    normalized.includes("runtime-workflow-graph-engine") ||
-    normalized.includes("runtime_workflow_graph_engine")
-  );
-}
-
-function isProductSpecOrchestratorFirstEvidenceRef(ref: string): boolean {
-  const normalized = ref.trim().toLowerCase();
-  if (isProductSpecExecutableNodeMappingEvidenceRef(ref)) {
-    return false;
-  }
-  return (
-    normalized.includes("planning_orchestrator") ||
-    normalized.includes("planning-orchestrator") ||
-    normalized.includes("orchestrator-first") ||
-    normalized.includes("orchestrator_first") ||
-    normalized.includes("first-node")
-  );
-}
-
-function isProductSpecActionGraphCompileEvidenceRef(ref: string): boolean {
-  const normalized = ref.trim().toLowerCase();
-  return (
-    normalized.includes("action-graph") ||
-    normalized.includes("action_graph") ||
-    normalized.includes("compile-runtime-plan") ||
-    normalized.includes("compile_runtime_plan") ||
-    normalized.includes("compile-readiness") ||
-    normalized.includes("compile_readiness") ||
-    normalized.includes("proposal/compile")
-  );
-}
-
 function isRawStorageEvidenceRef(ref: string): boolean {
   return /raw[-_ ]?(page|content|prompt|response|transcript|log|db[-_ ]?row)|provider[-_ ]?log|tool[-_ ]?log|command[-_ ]?log|hidden[-_ ]?reasoning|secret/iu.test(
     ref,
@@ -1704,38 +1546,6 @@ function commitmentEvidenceMap(acceptedEvidenceRefs: string[]) {
     reviewRefs,
     otherEvidenceRefs: acceptedEvidenceRefs.filter((ref) => !classified.has(ref)).slice(0, 8),
   };
-}
-
-function productSpecPlanningCapsuleLifecycleState(input: {
-  refs: string[];
-  records: Record<string, unknown>[];
-}): "missing" | "draft_present" | "revision_present" | "final_accepted" {
-  if (input.refs.length === 0 && input.records.length === 0) {
-    return "missing";
-  }
-  if (
-    input.records.some(
-      (record) =>
-        stringValue(record.lifecycleState) === "final_accepted" ||
-        record.accepted === true ||
-        (record.modelAuthored === true &&
-          stringValue(record.compileReadinessState) === "compile_ready"),
-    )
-  ) {
-    return "final_accepted";
-  }
-  if (
-    input.records.some((record) => {
-      const version = record.capsuleVersion;
-      return (
-        Boolean(stringValue(record.previousCapsuleRef)) ||
-        (typeof version === "number" && version > 1)
-      );
-    })
-  ) {
-    return "revision_present";
-  }
-  return "draft_present";
 }
 
 function actionGraphRecord(truth: WorkItemTruth): Record<string, unknown> | null {
@@ -2776,146 +2586,6 @@ function permissionReadbackProjection(
   });
 }
 
-function planningModeFromDecisionRef(
-  decisionRef: string | null,
-): WorkQueueProductSpecPlanningMode | null {
-  const normalized = decisionRef?.trim().toLowerCase() ?? "";
-  if (!normalized) {
-    return null;
-  }
-  if (normalized.startsWith("owner-decision://product-spec-planning/default-plan-only")) {
-    return "plan_only";
-  }
-  if (
-    normalized.startsWith(
-      "owner-decision://product-spec-planning/default-child-action-graph-proposal",
-    ) ||
-    normalized.startsWith(
-      "owner-decision://product-spec-planning/default-child-action-graph-proposals",
-    )
-  ) {
-    return "child_action_graph_proposal";
-  }
-  if (normalized.startsWith("owner-decision://product-spec-planning/default-compile-ready")) {
-    return "compile_ready";
-  }
-  return null;
-}
-
-function planningDecisionStateFromRecord(
-  record: Record<string, unknown> | null,
-): "pending" | "accepted" | "rejected" | "not_required" | "unknown" | null {
-  const normalized = (
-    stringValue(record?.decisionState) ??
-    stringValue(record?.planningDecisionState) ??
-    stringValue(record?.outcome) ??
-    stringValue(record?.status) ??
-    stringValue(record?.state)
-  )
-    ?.trim()
-    .toLowerCase();
-  if (!normalized) {
-    return null;
-  }
-  if (["accepted", "approved", "selected", "resolved", "present"].includes(normalized)) {
-    return "accepted";
-  }
-  if (["rejected", "declined", "denied", "canceled", "cancelled"].includes(normalized)) {
-    return "rejected";
-  }
-  if (["pending", "waiting", "open", "requested", "waiting_for_human"].includes(normalized)) {
-    return "pending";
-  }
-  if (["not_required", "not-required", "skipped", "none"].includes(normalized)) {
-    return "not_required";
-  }
-  return "unknown";
-}
-
-function productSpecPlanningDecisionState(input: {
-  humanDecisionRefs: string[];
-  humanDecisionRequestRefs: string[];
-  humanDecisionRecords: Record<string, unknown>[];
-  humanDecisionRequestRecords: Record<string, unknown>[];
-}): "pending" | "accepted" | "rejected" | "not_required" | "unknown" {
-  const explicitStates = new Set(
-    [...input.humanDecisionRecords, ...input.humanDecisionRequestRecords].flatMap((record) => {
-      const state = planningDecisionStateFromRecord(record);
-      return state ? [state] : [];
-    }),
-  );
-  if (explicitStates.has("rejected")) {
-    return "rejected";
-  }
-  if (explicitStates.has("accepted") || input.humanDecisionRefs.length > 0) {
-    return "accepted";
-  }
-  if (explicitStates.has("pending") || input.humanDecisionRequestRefs.length > 0) {
-    return "pending";
-  }
-  if (explicitStates.has("not_required")) {
-    return "not_required";
-  }
-  if (explicitStates.has("unknown")) {
-    return "unknown";
-  }
-  return "not_required";
-}
-
-function productSpecPlanningDecisionOptions(records: Record<string, unknown>[]): Array<{
-  optionId: string;
-  optionSummary: string;
-  tradeoffSummary: string | null;
-  afterSelectionSummary: string | null;
-  decisionRef: string | null;
-}> {
-  return records
-    .flatMap((record) => {
-      const explicitOptions = arrayValue(record.decisionOptions ?? record.options, 8)
-        .map(asRecord)
-        .filter((option): option is Record<string, unknown> => Boolean(option))
-        .map((option, index) => {
-          const decisionRef = stringValue(option.decisionRef) ?? stringValue(option.ref);
-          const optionSummary =
-            stringValue(option.optionSummary) ??
-            stringValue(option.summary) ??
-            stringValue(option.label) ??
-            stringValue(option.title) ??
-            decisionRef ??
-            `Option ${index + 1}`;
-          return {
-            optionId:
-              stringValue(option.optionId) ?? stringValue(option.id) ?? `option-${index + 1}`,
-            optionSummary: optionSummary.slice(0, 260),
-            tradeoffSummary:
-              (stringValue(option.tradeoffSummary) ?? stringValue(option.tradeoff))?.slice(
-                0,
-                500,
-              ) ?? null,
-            afterSelectionSummary:
-              (
-                stringValue(option.afterSelectionSummary) ??
-                stringValue(option.whatHappensAfterSelection)
-              )?.slice(0, 500) ?? null,
-            decisionRef,
-          };
-        });
-      if (explicitOptions.length > 0) {
-        return explicitOptions;
-      }
-      const optionsAndTradeoffs = stringArrayValue(record.optionsAndTradeoffs, 8);
-      const afterSelection = stringArrayValue(record.whatHappensAfterEachOption, 8);
-      return optionsAndTradeoffs.map((optionAndTradeoff, index) => ({
-        optionId: `option-${index + 1}`,
-        optionSummary: optionAndTradeoff.slice(0, 260),
-        tradeoffSummary: optionAndTradeoff.slice(0, 500),
-        afterSelectionSummary: afterSelection[index]?.slice(0, 500) ?? null,
-        decisionRef: null,
-      }));
-    })
-    .slice(0, 8);
-}
-
 function ownerRuntimeReadback(
   capsuleArtifact: RuntimeJobArtifact | undefined,
   artifacts: RuntimeJobArtifact[] = [],
@@ -2999,72 +2669,6 @@ function ownerRuntimeReadback(
       12,
     ),
   };
-  const planningContractArtifact = latestArtifact(
-    artifacts,
-    PRODUCT_SPEC_PLANNING_WORKER_CONTRACT_ARTIFACT_TYPE,
-  );
-  const capsulePlanningContractRecord = asRecord(capsule?.productSpecPlanningContract);
-  const artifactPlanningContractRecord = asRecord(planningContractArtifact?.metadata);
-  const planningContract = capsulePlanningContractRecord ?? artifactPlanningContractRecord;
-  const productSpecArtifactRecord = (
-    artifact: RuntimeJobArtifact,
-  ): Record<string, unknown> | null => asRecord(artifact.metadata);
-  const productSpecArtifactKind = (artifact: RuntimeJobArtifact): string | null =>
-    stringValue(productSpecArtifactRecord(artifact)?.artifactKind) ??
-    (artifact.artifactType.startsWith("agent_team.product_spec_planning")
-      ? artifact.artifactType.replace(/^agent_team\./u, "")
-      : null);
-  const productSpecArtifactsByKind = (artifactKind: string): RuntimeJobArtifact[] =>
-    artifacts.filter((artifact) => productSpecArtifactKind(artifact) === artifactKind);
-  const productSpecRecordsByKind = (artifactKind: string): Record<string, unknown>[] =>
-    productSpecArtifactsByKind(artifactKind)
-      .map(productSpecArtifactRecord)
-      .filter((record): record is Record<string, unknown> => Boolean(record));
-  const stringArraysFromRecords = (
-    records: Record<string, unknown>[],
-    key: string,
-    limit = 20,
-  ): string[] => records.flatMap((record) => stringArrayValue(record[key], limit));
-  const planningCapsuleArtifacts = productSpecArtifactsByKind("product_spec_planning_capsule");
-  const researchBriefArtifacts = productSpecArtifactsByKind("product_spec_planning_research_brief");
-  const actionGraphProposalArtifacts = productSpecArtifactsByKind(
-    "product_spec_planning_action_graph_proposal",
-  );
-  const humanDecisionRequestArtifacts = productSpecArtifactsByKind(
-    "product_spec_planning_human_decision_request",
-  );
-  const planningCapsuleRecords = productSpecRecordsByKind("product_spec_planning_capsule");
-  const researchBriefRecords = productSpecRecordsByKind("product_spec_planning_research_brief");
-  const actionGraphProposalRecords = productSpecRecordsByKind(
-    "product_spec_planning_action_graph_proposal",
-  );
-  const humanDecisionRequestRecords = productSpecRecordsByKind(
-    "product_spec_planning_human_decision_request",
-  );
-  const planningModeCandidate = stringValue(planningContract?.planningMode);
-  const planningOutputKindCandidate = stringValue(planningContract?.planningOutputKind);
-  const planningMode = WORK_QUEUE_PRODUCT_SPEC_PLANNING_MODES.includes(
-    planningModeCandidate as WorkQueueProductSpecPlanningMode,
-  )
-    ? (planningModeCandidate as WorkQueueProductSpecPlanningMode)
-    : null;
-  const planningOutputKind = WORK_QUEUE_PRODUCT_SPEC_PLANNING_OUTPUT_KINDS.includes(
-    planningOutputKindCandidate as WorkQueueProductSpecPlanningOutputKind,
-  )
-    ? (planningOutputKindCandidate as WorkQueueProductSpecPlanningOutputKind)
-    : null;
-  const planningWorkflowRefs = boundedUniqueStringValues(
-    stringArrayValue(planningContract?.workflowRefs, 12),
-    12,
-  );
-  const childActionProposalRefs = boundedUniqueStringValues(
-    stringArrayValue(planningContract?.childActionProposalRefs, 20),
-    20,
-  );
-  const validationRefs = boundedUniqueStringValues(
-    stringArrayValue(planningContract?.validationRefs, 20),
-    20,
-  );
   const runtimeValidationRefs = boundedUniqueStringValues(
     artifacts
       .filter(
@@ -3075,437 +2679,48 @@ function ownerRuntimeReadback(
       .map((artifact) => artifact.uri),
     20,
   );
-  const validationRepairEvidence = summarizeProductSpecPlanningValidationRepairEvidence({
-    validationRefs: runtimeValidationRefs,
-    artifacts: artifacts
-      .filter(
-        (artifact) =>
-          artifact.artifactType === "agent_team.dynamic_validation" ||
-          artifact.artifactType === "agent_team.dynamic_validation_repair_loop",
-      )
-      .map((artifact) => ({
-        artifactType: artifact.artifactType,
-        uri: artifact.uri,
-        metadata: asRecord(artifact.metadata),
-      })),
-  });
+  const missionValidationRefs = boundedUniqueStringValues(
+    missionContractReadback.blockingCommitments.flatMap((commitment) => commitment.validationRefs),
+    20,
+  );
+  const validationRefs = boundedUniqueStringValues(
+    [...runtimeValidationRefs, ...missionValidationRefs],
+    20,
+  );
   const humanDecisionArtifacts = artifacts.filter(
     (artifact) => artifact.artifactType === "agent_team.human_scope_decision",
   );
-  const humanDecisionRecords = humanDecisionArtifacts
-    .map((artifact) => asRecord(artifact.metadata))
-    .filter((record): record is Record<string, unknown> => Boolean(record));
   const humanDecisionRefs = boundedUniqueStringValues(
-    [
-      ...stringArrayValue(planningContract?.humanDecisionRefs, 12),
-      ...humanDecisionArtifacts.flatMap((artifact) => {
-        const decisionRef = stringValue(asRecord(artifact.metadata)?.boundedDecisionRef);
-        return decisionRef ? [decisionRef, artifact.uri] : [artifact.uri];
-      }),
-    ],
-    12,
-  );
-  const humanDecisionBoundedResponseRefs = boundedUniqueStringValues(
-    stringArraysFromRecords(humanDecisionRequestRecords, "boundedResponseRefs", 12),
-    12,
-  );
-  const humanDecisionResumeRefs = boundedUniqueStringValues(
-    stringArraysFromRecords(humanDecisionRequestRecords, "resumeRefs", 12),
-    12,
-  );
-  const humanDecisionBlockingGraphRefs = boundedUniqueStringValues(
-    [
-      ...stringArraysFromRecords(humanDecisionRequestRecords, "blockingGraphRefs", 20),
-      ...stringArraysFromRecords(humanDecisionRequestRecords, "blockingGraphNodeRefs", 20),
-    ],
-    20,
-  );
-  const humanDecisionRequestRefs = boundedUniqueStringValues(
-    [
-      ...humanDecisionRequestArtifacts.map((artifact) => artifact.uri),
-      ...stringArraysFromRecords(humanDecisionRequestRecords, "decisionRefs", 12),
-      ...humanDecisionBoundedResponseRefs,
-      ...humanDecisionResumeRefs,
-    ],
-    12,
-  );
-  const humanDecisionOptions = productSpecPlanningDecisionOptions(humanDecisionRequestRecords);
-  const humanDecisionResponseShape = firstBoundedString(humanDecisionRequestRecords, [
-    "requiredResponseShape",
-    "allowedResponseShape",
-    "responseShape",
-  ]);
-  const humanDecisionDeadlineExpiresAt = firstBoundedString(humanDecisionRequestRecords, [
-    "deadlineExpiresAt",
-    "expiresAt",
-    "expirationRef",
-  ]);
-  const planningDecisionState = productSpecPlanningDecisionState({
-    humanDecisionRefs,
-    humanDecisionRequestRefs,
-    humanDecisionRecords,
-    humanDecisionRequestRecords,
-  });
-  const planningContractValidation = planningContract
-    ? validateProductSpecPlanningWorkerContract({
-        ...planningContract,
-        rawPromptStored:
-          planningContract.rawPromptStored === undefined ? false : planningContract.rawPromptStored,
-        rawResponseStored:
-          planningContract.rawResponseStored === undefined
-            ? false
-            : planningContract.rawResponseStored,
-        rawLogsStored:
-          planningContract.rawLogsStored === undefined ? false : planningContract.rawLogsStored,
-        workQueueLifecycleMutationAllowed:
-          planningContract.workQueueLifecycleMutationAllowed === undefined
-            ? false
-            : planningContract.workQueueLifecycleMutationAllowed,
-      })
-    : null;
-  const acceptedPlanningContract = planningContractValidation?.accepted
-    ? planningContractValidation.contract
-    : null;
-  const planningContractRejected = Boolean(planningContract) && !acceptedPlanningContract;
-  const inferredPlanningModeFromDecision =
-    [...humanDecisionRefs, ...humanDecisionRequestRefs]
-      .map((ref) => planningModeFromDecisionRef(ref))
-      .find((mode) => mode !== null) ?? null;
-  const resolvedPlanningMode =
-    acceptedPlanningContract?.planningMode ??
-    planningMode ??
-    normalizeProductSpecPlanningMode(stringValue(planningContract?.planningMode)) ??
-    inferredPlanningModeFromDecision;
-  const resolvedPlanningOutputKind =
-    acceptedPlanningContract?.planningOutputKind ??
-    planningOutputKind ??
-    (resolvedPlanningMode === "plan_only"
-      ? "plan_only_output"
-      : resolvedPlanningMode === "child_action_graph_proposal"
-        ? "child_action_graph_proposal_output"
-        : resolvedPlanningMode === "compile_ready"
-          ? "compile_ready_output"
-          : null);
-  const planningContractReasonCodes = boundedUniqueStringValues(
-    planningContractRejected ? (planningContractValidation?.reasonCodes ?? []) : [],
-    12,
-  );
-  const inferredModeReasonCodes =
-    resolvedPlanningMode && !acceptedPlanningContract
-      ? ["product_spec_planning_mode_inferred_without_accepted_contract"]
-      : [];
-  const resolvedPlanningWorkflowRefs = boundedUniqueStringValues(
-    acceptedPlanningContract?.workflowRefs ?? planningWorkflowRefs,
-    12,
-  );
-  const resolvedChildActionProposalRefs = boundedUniqueStringValues(
-    acceptedPlanningContract?.childActionProposalRefs ?? childActionProposalRefs,
-    20,
-  );
-  const planningCapsuleRefs = boundedUniqueStringValues(
-    planningCapsuleArtifacts.map((artifact) => artifact.uri),
-    20,
-  );
-  const researchBriefRefs = boundedUniqueStringValues(
-    researchBriefArtifacts.map((artifact) => artifact.uri),
-    20,
-  );
-  const researchInfluenceRefs = boundedUniqueStringValues(
-    [
-      ...stringArraysFromRecords(planningCapsuleRecords, "researchInfluenceRefs", 20),
-      ...researchBriefArtifacts
-        .filter(
-          (artifact) => productSpecArtifactRecord(artifact)?.influencedPlanningCapsule === true,
-        )
-        .map((artifact) => artifact.uri),
-    ],
-    20,
-  );
-  const staleExternalAssumptionFlags = boundedUniqueStringValues(
-    [
-      ...stringArraysFromRecords(planningCapsuleRecords, "staleExternalAssumptionFlags", 12),
-      ...stringArraysFromRecords(researchBriefRecords, "staleExternalAssumptionFlags", 12),
-    ],
-    12,
-  );
-  const actionGraphProposalRefs = boundedUniqueStringValues(
-    [
-      ...resolvedChildActionProposalRefs,
-      ...actionGraphProposalArtifacts.map((artifact) => artifact.uri),
-    ],
-    20,
-  );
-  const childProposalSummaries = actionGraphProposalRecords
-    .flatMap((record) =>
-      Array.isArray(record.proposedChildActions) ? record.proposedChildActions : [],
-    )
-    .map((value) => asRecord(value))
-    .filter((record): record is Record<string, unknown> => Boolean(record))
-    .map((record) => ({
-      actionId: stringValue(record.actionId) ?? "unknown",
-      title: stringValue(record.title),
-      assignedWorkflow: stringValue(record.assignedWorkflow),
-      assignedRoleOrOwner: stringValue(record.assignedRoleOrOwner),
-      dependencyCount: stringArrayValue(record.dependencies, 20).length,
-      authorityBoundary: stringValue(record.authorityBoundary),
-      compileReadinessState: stringValue(record.runtimeJobCompileReadiness),
-      validationExpectations: stringArrayValue(record.validationExpectations, 12),
-    }))
-    .slice(0, 20);
-  const compileReadinessCandidates = [
-    ...actionGraphProposalRecords.map((record) => stringValue(record.compileReadinessState)),
-    ...planningCapsuleRecords.map((record) => stringValue(record.compileReadinessState)),
-    acceptedPlanningContract?.planningMode === "compile_ready" ? "compile_ready" : null,
-    resolvedPlanningMode === "compile_ready" ? "compile_ready" : null,
-  ];
-  const compileReadinessState =
-    compileReadinessCandidates.find(
-      (
-        candidate,
-      ): candidate is "not_requested" | "needs_validation" | "blocked" | "compile_ready" =>
-        candidate === "not_requested" ||
-        candidate === "needs_validation" ||
-        candidate === "blocked" ||
-        candidate === "compile_ready",
-    ) ?? null;
-  const actionGraphProposalReviewRecords = actionGraphProposalRecords.filter(
-    (record) =>
-      stringValue(record.compileReadinessState) === "blocked" ||
-      record.accepted === false ||
-      record.valid === false ||
-      stringArrayValue(record.reasonCodes, 20).length > 0 ||
-      stringArrayValue(record.blockedReasonCodes, 20).length > 0 ||
-      stringArrayValue(record.blockedReasons, 20).length > 0,
-  );
-  const reportedCompileBlockedReasonCodes = boundedUniqueStringValues(
-    [
-      ...stringArraysFromRecords(actionGraphProposalRecords, "blockedReasonCodes", 20),
-      ...stringArraysFromRecords(actionGraphProposalRecords, "blockedReasons", 20),
-      ...stringArraysFromRecords(actionGraphProposalRecords, "reasonCodes", 20),
-      ...actionGraphProposalRecords.flatMap((record) =>
-        arrayValue(record.proposedChildActions, 40).flatMap((value) => {
-          const childAction = asRecord(value);
-          return childAction
-            ? [
-                ...stringArrayValue(childAction.blockedReasonCodes, 12),
-                ...stringArrayValue(childAction.blockedReasons, 12),
-              ]
-            : [];
-        }),
-      ),
-    ],
-    20,
-  );
-  const validatedCompileBlockedReasonCodes = boundedUniqueStringValues(
-    actionGraphProposalReviewRecords.flatMap((record) => {
-      const validation = validateProductSpecPlanningActionGraphProposal({
-        ...record,
-        rawPromptStored: record.rawPromptStored ?? false,
-        rawResponseStored: record.rawResponseStored ?? false,
-        rawLogsStored: record.rawLogsStored ?? false,
-        workQueueLifecycleMutationAllowed: record.workQueueLifecycleMutationAllowed ?? false,
-      });
-      return validation.accepted ? [] : validation.reasonCodes;
+    humanDecisionArtifacts.flatMap((artifact) => {
+      const decisionRef = stringValue(asRecord(artifact.metadata)?.boundedDecisionRef);
+      return decisionRef ? [decisionRef, artifact.uri] : [artifact.uri];
     }),
-    20,
+    12,
   );
-  const resolvedValidationRefs = boundedUniqueStringValues(
-    [...(acceptedPlanningContract?.validationRefs ?? validationRefs), ...runtimeValidationRefs],
-    20,
-  );
-  const planningCapsuleLifecycleState = productSpecPlanningCapsuleLifecycleState({
-    refs: planningCapsuleRefs,
-    records: planningCapsuleRecords,
-  });
-  const productSpecEvidenceRefs = boundedUniqueStringValues(
-    [
-      ...resolvedPlanningWorkflowRefs,
-      ...planningCapsuleRefs,
-      ...researchBriefRefs,
-      ...researchInfluenceRefs,
-      ...actionGraphProposalRefs,
-      ...humanDecisionRefs,
-      ...humanDecisionRequestRefs,
-      ...resolvedValidationRefs,
-    ],
-    80,
-  );
-  const productSpecRawStorageEvidenceRefs = boundedUniqueStringValues(
-    productSpecEvidenceRefs.filter(isRawStorageEvidenceRef),
-    8,
-  );
-  const planningRawStorageEvidenceRefs = boundedUniqueStringValues(
-    [...missionContractReadback.rawStorageEvidenceRefs, ...productSpecRawStorageEvidenceRefs],
-    8,
-  );
-  const planningEvidenceBoundedState =
-    planningRawStorageEvidenceRefs.length > 0
-      ? ("needs_review" as const)
-      : missionContractReadback.boundedEvidenceState === "needs_review"
-        ? ("needs_review" as const)
-        : productSpecEvidenceRefs.length > 0 ||
-            missionContractReadback.boundedEvidenceState === "bounded"
-          ? ("bounded" as const)
-          : ("missing" as const);
-  const childActionsExecuted = actionGraphProposalRecords.some(
-    (record) => record.childActionsExecuted === true,
-  );
-  const runtimeJobsCreated = actionGraphProposalRecords.some(
-    (record) => record.runtimeJobsCreated === true,
-  );
-  const compileBlockedReasonCodes = boundedUniqueStringValues(
-    [
-      ...(compileReadinessState === "blocked"
-        ? ["product_spec_planning_compile_readiness_blocked"]
-        : []),
-      ...reportedCompileBlockedReasonCodes,
-      ...validatedCompileBlockedReasonCodes,
-      ...(childActionsExecuted ? ["product_spec_planning_proposed_child_actions_executed"] : []),
-      ...(runtimeJobsCreated ? ["product_spec_planning_child_runtime_jobs_created"] : []),
-      ...(planningRawStorageEvidenceRefs.length > 0
-        ? ["product_spec_planning_raw_storage_evidence_ref_present"]
-        : []),
-    ],
-    20,
-  );
-  const changedFileEvidenceRefs = boundedUniqueStringValues(
-    missionContractReadback.blockingCommitments.flatMap((commitment) => commitment.changedFileRefs),
-    20,
-  );
-  const missionAcceptedEvidenceRefs = boundedUniqueStringValues(
-    missionBlockingCommitments.flatMap((commitment) =>
-      stringArrayValue(commitment?.acceptedEvidenceRefs, 40),
-    ),
-    80,
-  );
-  const workflowRegistrationEvidenceRefs = boundedUniqueStringValues(
-    [
-      ...resolvedPlanningWorkflowRefs.filter(isProductSpecWorkflowRegistrationEvidenceRef),
-      ...missionAcceptedEvidenceRefs.filter(isProductSpecWorkflowRegistrationEvidenceRef),
-    ],
-    20,
-  );
-  const executableNodeMappingEvidenceRefs = boundedUniqueStringValues(
-    missionAcceptedEvidenceRefs.filter(isProductSpecExecutableNodeMappingEvidenceRef),
-    20,
-  );
-  const orchestratorFirstEvidenceRefs = boundedUniqueStringValues(
-    missionAcceptedEvidenceRefs.filter(isProductSpecOrchestratorFirstEvidenceRef),
-    20,
-  );
-  const actionGraphCompileReadinessRefs = boundedUniqueStringValues(
-    [...actionGraphProposalRefs, ...resolvedValidationRefs],
-    20,
-  );
-  const actionGraphProposalCompileValidationRefs = boundedUniqueStringValues(
-    [
-      ...actionGraphCompileReadinessRefs,
-      ...missionAcceptedEvidenceRefs.filter(isProductSpecActionGraphCompileEvidenceRef),
-    ],
-    20,
-  );
-  const commitmentEvidenceClaimRefs = boundedUniqueStringValues(missionAcceptedEvidenceRefs, 40);
-  const planningEvidenceSummary = {
-    artifactKind: "product_spec_planning_owner_evidence_summary" as const,
-    changedFileRefs: changedFileEvidenceRefs,
-    runtimeWorkflowMappingRefs: resolvedPlanningWorkflowRefs,
-    workflowRegistrationEvidenceRefs,
-    executableNodeMappingEvidenceRefs,
-    orchestratorFirstEvidenceRefs,
-    planningCapsuleLifecycleState,
-    planningCapsuleLifecycleRefs: planningCapsuleRefs,
-    actionGraphCompileReadinessState: compileReadinessState,
-    actionGraphCompileReadinessRefs,
-    actionGraphProposalCompileValidationRefs,
-    compileBlockedReasonCodes,
-    commitmentEvidenceClaimRefs,
-    childActionsExecuted,
-    runtimeJobsCreated,
-    boundedEvidenceState: planningEvidenceBoundedState,
-    rawStorageEvidenceRefs: planningRawStorageEvidenceRefs,
-    reasonCodes: boundedUniqueStringValues(
-      [
-        planningEvidenceBoundedState === "needs_review"
-          ? "product_spec_planning_bounded_evidence_needs_review"
-          : planningEvidenceBoundedState === "bounded"
-            ? "product_spec_planning_bounded_evidence_refs_only"
-            : "product_spec_planning_bounded_evidence_missing",
-        changedFileEvidenceRefs.length > 0
-          ? "product_spec_planning_source_change_evidence_present"
-          : "product_spec_planning_source_change_evidence_missing",
-        resolvedPlanningWorkflowRefs.length > 0
-          ? "product_spec_planning_runtime_workflow_mapping_present"
-          : "product_spec_planning_runtime_workflow_mapping_missing",
-        workflowRegistrationEvidenceRefs.length > 0
-          ? "product_spec_planning_workflow_registration_evidence_present"
-          : "product_spec_planning_workflow_registration_evidence_missing",
-        executableNodeMappingEvidenceRefs.length > 0
-          ? "product_spec_planning_executable_node_mapping_evidence_present"
-          : "product_spec_planning_executable_node_mapping_evidence_missing",
-        orchestratorFirstEvidenceRefs.length > 0
-          ? "product_spec_planning_orchestrator_first_evidence_present"
-          : "product_spec_planning_orchestrator_first_evidence_missing",
-        `product_spec_planning_capsule_lifecycle:${planningCapsuleLifecycleState}`,
-        compileReadinessState
-          ? `product_spec_planning_compile_readiness:${compileReadinessState}`
-          : "product_spec_planning_compile_readiness_missing",
-        ...compileBlockedReasonCodes,
-        actionGraphProposalCompileValidationRefs.length > 0
-          ? "product_spec_planning_action_graph_compile_validation_evidence_present"
-          : "product_spec_planning_action_graph_compile_validation_evidence_missing",
-        commitmentEvidenceClaimRefs.length > 0
-          ? "product_spec_planning_commitment_evidence_claim_refs_present"
-          : "product_spec_planning_commitment_evidence_claim_refs_missing",
-        childActionsExecuted
-          ? "product_spec_planning_proposed_child_actions_executed"
-          : "product_spec_planning_proposed_child_actions_not_executed",
-        runtimeJobsCreated
-          ? "product_spec_planning_child_runtime_jobs_created"
-          : "product_spec_planning_child_runtime_jobs_not_created",
-      ],
-      12,
-    ),
-  };
-  const planningEli5Progress =
-    (acceptedPlanningContract?.eli5Progress ?? stringValue(planningContract?.eli5Progress))?.slice(
-      0,
-      1_000,
-    ) ?? null;
   const limitations = boundedUniqueStringValues(
     [
       ...stringArrayValue(humanReport?.limitations, 10),
-      ...(acceptedPlanningContract?.limitations ??
-        stringArrayValue(planningContract?.limitations, 10)),
+      ...stringArrayValue(capsule?.limitations, 10),
     ],
     10,
   );
   const hasModelReport = humanReport?.source === "model" && Boolean(humanReport?.reportMarkdown);
-  const validationRepairMissingAfterFailure =
-    validationRepairEvidence.hasFailureAttemptRef && !validationRepairEvidence.hasRepairAttemptRef;
-  const planningBoundaryNeedsReview =
-    compileBlockedReasonCodes.length > 0 || planningEvidenceBoundedState === "needs_review";
+  const missionBoundaryNeedsReview =
+    missionContractReadback.boundedEvidenceState === "needs_review";
   const state =
-    hasModelReport &&
-    !planningContractRejected &&
-    !validationRepairMissingAfterFailure &&
-    !planningBoundaryNeedsReview
+    hasModelReport && !missionBoundaryNeedsReview
       ? "ready"
-      : capsuleArtifact || planningContractArtifact
+      : capsuleArtifact || missionArtifact
         ? "needs_review"
         : "missing";
   const modelHumanReportSummary = stringValue(humanReport?.reportMarkdown)?.slice(0, 1_000) ?? null;
   const inferredHumanReportSummary = modelHumanReportSummary
     ? null
     : [
-        resolvedPlanningMode ? `Planning mode: ${resolvedPlanningMode}.` : null,
         stringValue(structuredSummary?.taskSuccess)
           ? `Task success: ${stringValue(structuredSummary?.taskSuccess)}.`
           : null,
-        validationRepairEvidence.hasFailureAttemptRef
-          ? validationRepairEvidence.hasRepairAttemptRef
-            ? "Validation failure and repair evidence recorded in this runtime job."
-            : "Validation failure evidence exists, but accepted repair evidence is still missing."
-          : null,
+        validationRefs.length > 0 ? `${validationRefs.length} validation ref(s) recorded.` : null,
         humanDecisionRefs.length > 0
           ? `${humanDecisionRefs.length} bounded human decision ref(s) recorded.`
           : null,
@@ -3517,36 +2732,10 @@ function ownerRuntimeReadback(
     artifactKind: "work_queue_owner_runtime_readback",
     state,
     humanReportSummary: modelHumanReportSummary ?? inferredHumanReportSummary,
-    eli5Progress: stringValue(humanReport?.eli5Progress)?.slice(0, 1_000) ?? planningEli5Progress,
-    planningMode: resolvedPlanningMode,
-    planningOutputKind: resolvedPlanningOutputKind,
-    planningWorkflowRefs: resolvedPlanningWorkflowRefs,
-    planningCapsuleRefs,
-    researchBriefRefs,
-    researchInfluenceRefs,
-    staleExternalAssumptionFlags,
-    childActionProposalRefs: resolvedChildActionProposalRefs,
-    actionGraphProposalRefs,
-    compileReadinessState,
-    compileBlockedReasonCodes,
+    eli5Progress: stringValue(humanReport?.eli5Progress)?.slice(0, 1_000) ?? null,
     humanDecisionRefs,
-    humanDecisionRequestRefs,
-    humanDecisionState:
-      humanDecisionRefs.length > 0
-        ? "present"
-        : humanDecisionRequestRefs.length > 0
-          ? "pending"
-          : "not_required",
-    planningDecisionState,
-    humanDecisionOptions,
-    humanDecisionResponseShape,
-    humanDecisionDeadlineExpiresAt,
-    humanDecisionBlockingGraphRefs,
-    humanDecisionResumeRefs,
-    humanDecisionBoundedResponseRefs,
-    validationRefs: resolvedValidationRefs,
-    childProposalSummaries,
-    planningEvidenceSummary,
+    humanDecisionState: humanDecisionRefs.length > 0 ? "present" : "not_required",
+    validationRefs,
     taskSuccess: stringValue(structuredSummary?.taskSuccess),
     qualityAssessment: stringValue(structuredSummary?.qualityAssessment),
     workflowFitAssessment: stringValue(structuredSummary?.workflowFitAssessment),
@@ -3560,21 +2749,14 @@ function ownerRuntimeReadback(
     capsuleHash: stringValue(factualRefs?.capsuleHash) ?? stringValue(capsule?.capsuleHash),
     reasonCodes:
       state === "ready"
-        ? boundedUniqueStringValues(
-            [
-              "model_authored_closeout_capsule_readback_ready",
-              ...validationRepairEvidence.reasonCodes,
-            ],
-            20,
-          )
+        ? ["model_authored_closeout_capsule_readback_ready"]
         : state === "needs_review"
           ? boundedUniqueStringValues(
               [
                 "closeout_capsule_model_report_missing_or_degraded",
-                ...planningContractReasonCodes,
-                ...inferredModeReasonCodes,
-                ...validationRepairEvidence.reasonCodes,
-                ...compileBlockedReasonCodes,
+                ...(missionBoundaryNeedsReview
+                  ? ["mission_contract_bounded_evidence_needs_review"]
+                  : []),
               ],
               20,
             )

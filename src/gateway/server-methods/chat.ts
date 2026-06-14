@@ -2279,11 +2279,11 @@ async function tryResumeHumanOperatorDecisionFromChat(params: {
     });
     return { handled: true, runtimeJobId: resolved.runtimeJobId, teamRunId: null };
   }
-  const decisionRef = `owner-decision://product-spec-planning/${parsed.decision}`;
+  const decisionRef = `owner-decision://human-task/${resolved.humanTaskId}/${parsed.decision}`;
   await params.runtime.runtimeWorkGraphs.resumeHumanTask({
     humanTaskId: resolved.humanTaskId,
     boundedResponseRef: decisionRef,
-    decisionRefs: [`decision://product-spec-planning/${parsed.decision}`],
+    decisionRefs: [`decision://human-task/${resolved.humanTaskId}/${parsed.decision}`],
   });
   await params.runtime.runtimeJobs.resumePendingJobWithPayloadPatch({
     jobId: resolved.runtimeJobId,

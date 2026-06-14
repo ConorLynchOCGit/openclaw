@@ -26,7 +26,6 @@ import {
   type LiveRouterReasoningEffort,
   type RouterModelCandidateRef,
 } from "../../extensions/execution-platform/runtime-api.js";
-import { registerSchedulerRuntimeTools } from "../../extensions/execution-platform/src/workflows/scheduler-runtime-tools.js";
 import { CodexAppServerJsonExecutor } from "../../extensions/model-memory/src/mmv2/codex-app-server-json-executor.js";
 import { OpenClawAgentRuntime } from "../agents/openclaw-agent-runtime.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -315,7 +314,6 @@ export async function getExecutionPlatformRuntime(
     const runtimeToolTraces = new RuntimeToolTraceRepository(database.sqlClient);
     const runtimeToolRegistry = new RuntimeToolRegistry();
     registerRouterFrontDoorRuntimeTools({ registry: runtimeToolRegistry });
-    registerSchedulerRuntimeTools({ registry: runtimeToolRegistry, includeWorkerInvoke: true });
     registerValidationQaRuntimeTools({ registry: runtimeToolRegistry });
     registerCloseoutFinalizationRuntimeTools({ registry: runtimeToolRegistry });
     registerCloseoutGenerateRuntimeTool({

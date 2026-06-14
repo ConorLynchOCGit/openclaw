@@ -10,7 +10,6 @@ import { workflowEvidenceProfileForWorkflow } from "./workflow-evidence-profile.
 import {
   ARCHITECTURE_RED_TEAM_ROLE_COVERAGE_PROFILE,
   CODING_TEAM_ROLE_COVERAGE_PROFILE,
-  PRODUCT_SPEC_PLANNING_ROLE_COVERAGE_PROFILE,
 } from "./workflow-node-execution-contracts.ts";
 import {
   type WorkflowResourceNeed,
@@ -48,7 +47,6 @@ function closeoutPolicy(): WorkflowDefinition["closeoutPolicy"] {
 }
 
 const GENERIC_REQUIRED_PHASES: WorkflowPhase[] = [
-  "requirement_map",
   "source_grounding",
   "source_material",
   "domain_action_gate",
@@ -161,7 +159,6 @@ function orchestrationPolicy(input: {
     entryNodePolicy: input.entryNodePolicy ?? null,
     evidenceProfileId: input.evidenceProfileId,
     evidenceClassesByPhase: {
-      requirement_map: ["runtime_graph"],
       source_grounding: ["worker_tool_trace"],
       source_material: ["worker_tool_trace"],
       domain_action_gate: ["worker_tool_trace"],
@@ -207,9 +204,8 @@ function baseDefinition(input: {
 }): WorkflowDefinition {
   const evidenceProfile = workflowEvidenceProfileForWorkflow(input.workflowId);
   const runtimeToolFamilies = input.runtimeToolFamilies ?? [
-    "scheduler.decompose_graph",
-    "scheduler.select_next_node",
-    "worker.invoke",
+    "model.call",
+    "work_queue.project_event",
     "closeout.generate",
   ];
   const requiredPhases = input.requiredPhases ?? GENERIC_REQUIRED_PHASES;
@@ -337,17 +333,11 @@ export function buildCanonicalWorkflowDefinitions(): WorkflowDefinition[] {
         "role:observability_scribe",
       ],
       runtimeToolFamilies: [
-        "scheduler.decompose_graph",
-        "scheduler.select_next_node",
-        "scheduler.evaluate_node_result",
-        "scheduler.repair_decision",
         "source_prompt.context",
         "code_intelligence.query",
-        "worker.invoke",
         "model.call",
         "file_edit.propose",
         "file_edit.apply",
-        "edit_transaction.lifecycle",
         "validation.run",
         "validation.review",
         "work_queue.project_event",
@@ -358,109 +348,10 @@ export function buildCanonicalWorkflowDefinitions(): WorkflowDefinition[] {
       ],
       liveProofRequirements: [
         "definition_resolution",
-        "requirement_map",
         "runtime_graph",
         "runtime_tool_traces",
         "workflow_evidence_profile",
         "completion_review",
-        "model_authored_closeout",
-      ],
-    }),
-    baseDefinition({
-      workflowId: "agent_team.product_spec_planning",
-      displayName: "Product And Spec Planning",
-      workflowKind: "planning",
-      status: "production_ready",
-      productionEnabled: true,
-      schedulerBacked: true,
-      roleCoverageProfileRef: PRODUCT_SPEC_PLANNING_ROLE_COVERAGE_PROFILE.profileId,
-      capabilityProfileRefs: ["capability-profile://agent_team.product_spec_planning/planning.v1"],
-      requiredRoleClasses: ["orchestrator", "planning", "review", "closeout"],
-      optionalRoleClasses: ["research", "human", "implementation", "observability"],
-      allowedCapabilityIds: [
-        "planning_orchestrator",
-        "web_research",
-        "planning_capsule",
-        "action_graph_compile",
-        "human_task",
-        "reviewer",
-        "closeout",
-      ],
-      resourceNeeds: [
-        resourceNeed({
-          workflowId: "agent_team.product_spec_planning",
-          roleClass: "planning",
-          required: true,
-          repoResourceAccess: "candidate_refs",
-          externalResourceAccess: "research_brief_refs",
-          reasonCode: "planning_requires_source_prompt_and_project_context",
-        }),
-        resourceNeed({
-          workflowId: "agent_team.product_spec_planning",
-          roleClass: "research",
-          required: false,
-          repoResourceAccess: "none",
-          externalResourceAccess: "research_brief_refs",
-          reasonCode: "planning_may_require_current_external_research",
-        }),
-      ],
-      entryNodePolicy: {
-        policyId: "agent_team.product_spec_planning.entry_node.v1",
-        requiredBeforeOtherExecution: true,
-        allowedInitialCapabilityIds: ["planning_orchestrator"],
-        allowedInitialRoleClasses: ["planning"],
-        blockedUntilStartedReasonCode:
-          "workflow_entry_node_policy_planning_orchestrator_required_before_child_nodes",
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawLogsStored: false,
-      },
-      allowedNodeKinds: [
-        "orchestrator_plan",
-        "web_research",
-        "planning_capsule",
-        "human_task",
-        "action_graph_compile",
-        "reviewer",
-        "closeout",
-      ],
-      requiredNodeKinds: ["orchestrator_plan", "planning_capsule", "closeout"],
-      nodeExecutorKeys: [
-        "role:orchestrator",
-        "role:planning_orchestrator",
-        "kind:orchestrator_plan",
-        "kind:web_research",
-        "kind:planning_capsule",
-        "kind:human_task",
-        "kind:action_graph_compile",
-        "kind:compiler",
-        "kind:closeout",
-      ],
-      runtimeToolFamilies: [
-        "scheduler.decompose_graph",
-        "scheduler.select_next_node",
-        "scheduler.evaluate_node_result",
-        "scheduler.repair_decision",
-        "artifact.payload",
-        "source_prompt.context",
-        "planning.lifecycle",
-        "worker.invoke",
-        "model.call",
-        "research.fetch",
-        "validation.run",
-        "validation.result",
-        "human_task.request",
-        "human_task.resume",
-        "work_queue.project_event",
-        "closeout.generate",
-      ],
-      liveProofRequirements: [
-        "workflow_plugin_resolution",
-        "planning_capsule",
-        "research_brief_if_current_external_assumptions_needed",
-        "action_graph_proposal",
-        "compile_readiness",
-        "human_decision_if_required",
         "model_authored_closeout",
       ],
     }),
@@ -549,11 +440,6 @@ export function buildCanonicalWorkflowDefinitions(): WorkflowDefinition[] {
         "kind:closeout",
       ],
       runtimeToolFamilies: [
-        "scheduler.decompose_graph",
-        "scheduler.select_next_node",
-        "scheduler.evaluate_node_result",
-        "scheduler.repair_decision",
-        "worker.invoke",
         "model.call",
         "research.fetch",
         "validation.review",
@@ -843,10 +729,6 @@ export function buildAgentTeamCodingWorkflowDefinition(): WorkflowDefinition {
   return buildCanonicalWorkflowDefinitionById("agent_team.coding");
 }
 
-export function buildProductSpecPlanningWorkflowDefinition(): WorkflowDefinition {
-  return buildCanonicalWorkflowDefinitionById("agent_team.product_spec_planning");
-}
-
 export function buildArchitectureRedTeamWorkflowDefinition(): WorkflowDefinition {
   return buildCanonicalWorkflowDefinitionById("agent_team.architecture_red_team");
 }
@@ -855,7 +737,6 @@ export function defaultWorkflowDefinitions(): Array<[string, () => WorkflowDefin
   return [
     ["agent_team.architecture_red_team", buildArchitectureRedTeamWorkflowDefinition],
     ["agent_team.coding", buildAgentTeamCodingWorkflowDefinition],
-    ["agent_team.product_spec_planning", buildProductSpecPlanningWorkflowDefinition],
   ];
 }
 

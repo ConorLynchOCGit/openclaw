@@ -22,15 +22,15 @@ function validGateRun(): ArchitectureRedTeamGateRun {
     gateRunId: "red-team-gate-test",
     gateLevel: 2,
     workflowId: "agent_team.architecture_red_team",
-    targetSystemRef: "workflow://agent_team.product_spec_planning",
-    targetProofRef: "proof://product-spec-planning/live-ux",
+    targetSystemRef: "workflow://agent_team.coding",
+    targetProofRef: "proof://native-orchestration/post-turn",
     runtimeJobId: "runtime-test",
     workItemId: "work-item-test",
     boundaryMap: {
       ...storageFlags,
       boundaryMapId: "boundary-map-test",
-      targetSystemRef: "workflow://agent_team.product_spec_planning",
-      targetProofRef: "proof://product-spec-planning/live-ux",
+      targetSystemRef: "workflow://agent_team.coding",
+      targetProofRef: "proof://native-orchestration/post-turn",
       pathSegments: ["router", "mission_ledger", "scheduler", "worker", "closeout"],
       modelRuntimeToolBoundaries: [
         {
@@ -127,8 +127,8 @@ function validGateRun(): ArchitectureRedTeamGateRun {
     ],
     proofReadinessDecision: {
       ...storageFlags,
-      decisionId: "decision.product-spec-ready",
-      targetProofRef: "proof://product-spec-planning/live-ux",
+      decisionId: "decision.native-orchestration-ready",
+      targetProofRef: "proof://native-orchestration/post-turn",
       decision: "ready",
       p0BlockerRefs: [],
       ownerAcceptanceRefs: [],
@@ -138,7 +138,7 @@ function validGateRun(): ArchitectureRedTeamGateRun {
     },
     finalReview: {
       ...storageFlags,
-      reviewId: "review.product-spec-preproof",
+      reviewId: "review.native-orchestration-preproof",
       reviewerModelRef: "model-policy://architecture-red-team/reviewer",
       reviewSummary: "The gate is ready for proof with known post-proof hardening.",
       confidence: "high",

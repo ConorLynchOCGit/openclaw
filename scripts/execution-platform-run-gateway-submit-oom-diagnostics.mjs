@@ -51,30 +51,6 @@ function assertSafetyFlags(value, label) {
   }
 }
 
-async function walk(relativePath, out = []) {
-  const absolute = path.join(ROOT, relativePath);
-  let entries = [];
-  try {
-    entries = await fs.readdir(absolute, { withFileTypes: true });
-  } catch {
-    return out;
-  }
-  for (const entry of entries) {
-    const child = path.join(relativePath, entry.name);
-    if (entry.isDirectory()) {
-      if (!["node_modules", ".git", "dist", "build"].includes(entry.name)) {
-        await walk(child, out);
-      }
-      continue;
-    }
-    if (entry.isFile()) {
-      const stat = await fs.stat(path.join(ROOT, child));
-      out.push({ path: child, bytes: stat.size });
-    }
-  }
-  return out;
-}
-
 async function writeJson(filePath, value) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
@@ -203,9 +179,6 @@ async function main() {
     const hydratedDiagnostics = diagnosticsArtifact
       ? await runtimeJobs.hydrateJsonPayloadArtifact(diagnosticsArtifact)
       : null;
-    const productSpecArtifacts = (await walk(".artifacts/execution-platform")).filter((entry) =>
-      entry.path.includes("product-spec"),
-    );
 
     if (!accepted.accepted || !accepted.runtimeJobId) {
       throw new Error("accepted_submit_not_accepted");
@@ -257,13 +230,6 @@ async function main() {
       promptNotDirectHeapSource:
         (accepted.frontDoorSubmitDiagnosticsManifest.promptByteLength ?? 0) < 16 * 1024,
       oomAttributionRequiresPhaseEvidence: true,
-      artifactVolumeContext: {
-        productSpecArtifactCount: productSpecArtifacts.length,
-        productSpecArtifactBytes: productSpecArtifacts.reduce((sum, entry) => sum + entry.bytes, 0),
-        largestProductSpecArtifacts: productSpecArtifacts
-          .toSorted((left, right) => right.bytes - left.bytes)
-          .slice(0, 10),
-      },
       conclusion:
         "Submit diagnostics now distinguish prompt bytes, workflow summary bytes, conversation context bytes, router payload bytes, provider/router phases, runtime enqueue, artifact attachment, and process heap counters. This does not hide the prompt from the router and does not raise caps.",
       ...safety,

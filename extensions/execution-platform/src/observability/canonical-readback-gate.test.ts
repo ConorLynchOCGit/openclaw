@@ -4,10 +4,10 @@ import { buildCanonicalReadbackGate } from "./canonical-readback-gate.ts";
 describe("canonical readback gate", () => {
   it("does not infer node-local resource demand from stale reason-code text", () => {
     const gate = buildCanonicalReadbackGate({
-      graphId: "product-spec-graph",
+      graphId: "native-orchestration-graph",
       terminalStatus: "needs_review",
       progress: {
-        nodeId: "product-spec-orchestrator-plan",
+        nodeId: "native-orchestration-orchestrator-plan",
         activeNodeKind: "orchestrator_plan",
         reasonCodes: [
           "node_resource_demand_required",
@@ -39,7 +39,7 @@ describe("canonical readback gate", () => {
 
   it("rejects retired resource narrowing projection gates as missing runtime state", () => {
     const gate = buildCanonicalReadbackGate({
-      graphId: "product-spec-graph",
+      graphId: "native-orchestration-graph",
       progress: {
         nodeId: "orchestrator-plan-scope",
         activeNodeKind: "orchestrator_plan",
@@ -62,7 +62,7 @@ describe("canonical readback gate", () => {
 
   it("rejects retired target-selection projection gates", () => {
     const gate = buildCanonicalReadbackGate({
-      graphId: "product-spec-graph",
+      graphId: "native-orchestration-graph",
       progress: {
         nodeId: "implementation-domain-resource-selection",
         activeNodeKind: "implementation_scoped",
@@ -97,7 +97,7 @@ describe("canonical readback gate", () => {
 
   it("does not infer lifecycle from stale currentPhase when projection is missing", () => {
     const gate = buildCanonicalReadbackGate({
-      graphId: "product-spec-graph",
+      graphId: "native-orchestration-graph",
       progress: {
         nodeId: "stale-readback-node",
         activeNodeKind: "implementation_scoped",
@@ -116,7 +116,7 @@ describe("canonical readback gate", () => {
 
   it("does not resurrect retired worker packet contract blockers", () => {
     const gate = buildCanonicalReadbackGate({
-      graphId: "product-spec-graph",
+      graphId: "native-orchestration-graph",
       progress: {
         nodeId: "implementation-worker",
         activeNodeKind: "implementation",
@@ -140,20 +140,17 @@ describe("canonical readback gate", () => {
     });
   });
 
-  it("projects runner-owned RequirementMap and DiscoveryBrief phases", () => {
+  it("projects runner-owned stale intake and DiscoveryBrief phases", () => {
     const inventoryGate = buildCanonicalReadbackGate({
-      graphId: "product-spec-graph",
-      rootCause: { reasonCodes: ["requirement_map_native_tool_phase_started"] },
+      graphId: "native-orchestration-graph",
+      rootCause: { reasonCodes: ["legacy_intake_phase_started"] },
       progress: {
-        currentPhase: "requirement_map_authoring",
-        reasonCodes: [
-          "requirement_map_native_tool_phase_started",
-          "requirement_map_native_tool_batch_call",
-        ],
+        currentPhase: "legacy_intake_authoring",
+        reasonCodes: ["legacy_intake_phase_started", "legacy_intake_batch_call"],
       },
     });
     const discoveryGate = buildCanonicalReadbackGate({
-      graphId: "product-spec-graph",
+      graphId: "native-orchestration-graph",
       rootCause: { reasonCodes: ["worker_discovery_brief_phase_started"] },
       progress: {
         currentPhase: "implementation_discovery_brief_repair",
@@ -164,13 +161,13 @@ describe("canonical readback gate", () => {
       },
     });
 
-    expect(inventoryGate.gateKind).toBe("requirement_map");
+    expect(inventoryGate.gateKind).toBe("legacy_intake");
     expect(discoveryGate.gateKind).toBe("discovery_brief_required");
   });
 
   it("projects node agent start receipts and typed lock blockers without generic collapse", () => {
     const gate = buildCanonicalReadbackGate({
-      graphId: "product-spec-graph",
+      graphId: "native-orchestration-graph",
       progress: {
         nodeId: "implementation-node",
         activeNodeKind: "implementation",

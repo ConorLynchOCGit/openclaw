@@ -74,7 +74,7 @@ describe("Planning Capsule lifecycle", () => {
       const workQueue = new WorkQueueRepository(database.sql, runtimeJobs);
       await workQueue.createWorkItem({
         workItemId: "planning-work-item",
-        itemType: "product_spec_planning",
+        itemType: "architecture_planning",
         title: "Product/Spec Planning production upgrade",
         metadata: { source: "test" },
       });
@@ -138,7 +138,7 @@ describe("Planning Capsule lifecycle", () => {
 
       expect(capsule.lifecycleState).toBe("planning_draft");
       expect(capsule.childActions).toHaveLength(2);
-      expect(capsule.workflowRecommendations).toContain("agent_team.product_spec_planning");
+      expect(capsule.workflowRecommendations).toContain("agent_team.architecture");
       expect(validatePlanningCapsule(capsule)).toMatchObject({ accepted: true });
 
       const persisted = await createPlanningCapsuleFromOpportunitySeed({

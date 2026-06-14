@@ -8,7 +8,6 @@ const stringList = (maxItems: number, maxChars = 260) =>
 
 export const CONTEXT_SNAPSHOT_SOURCE_KINDS = [
   "source_prompt_excerpt",
-  "requirement_map",
   "native_context_scout_result",
   "node_agent_worker_prompt",
   "file_snapshot",

@@ -8,8 +8,6 @@ export * from "./execution-control-endpoints.ts";
 export * from "./execution-eligibility-read-model.ts";
 export * from "./execution-read-model.ts";
 export * from "./generated-item-lifecycle.ts";
-export * from "./product-spec-planning-proof-review.ts";
-export * from "./product-spec-planning-worker-contract.ts";
 export * from "./planning-lifecycle.ts";
 export * from "./work-queue-repository.ts";
 export * from "./work-queue-event-store.ts";

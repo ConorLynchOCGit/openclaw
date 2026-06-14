@@ -38,13 +38,12 @@ function baseEnvelopeInput(
       routerToolProtocolRef: "router-front-door-tool-protocol://request-1",
       routerToolInvocationRefs: ["runtime-tool://router/classify_intent/request-1"],
       requestCompilerRef: "runtime-job://job-1/execution/front-door/compiled-request",
-      requirementMapHandoffRef: "requirement-map-handoff://request-1",
     },
     executionRefs: {
       runtimeJobId: "job-1",
       runtimeJobPayloadHash: "b".repeat(64),
       queueName: "agent-team",
-      workItemId: "openclaw-convergence.pre-product-spec-04-ux-replay-payload-parity",
+      workItemId: "openclaw-convergence.pre-native-orchestration-04-ux-replay-payload-parity",
       idempotencyScope: "workflow:agent_team.coding",
       idempotencyKeyHash: "c".repeat(64),
       graphId: "graph-1",
@@ -53,8 +52,6 @@ function baseEnvelopeInput(
       missionLedgerInputRef: "mission-ledger-input://aaaaaaaaaaaaaaaa",
       missionLedgerPromptHash: "a".repeat(64),
       missionLedgerRef: "mission-ledger://job-1/ledger",
-      requirementMapInputRef: "source-contract-input://job-1",
-      requirementMapRef: "source-contracts://job-1",
     },
     schedulerRefs: {
       workflowDefinitionRef: "workflow-definition://agent_team.coding",

@@ -54,7 +54,7 @@ export type ModelContractBoundaryKind =
   | "commitment_work_packet"
   | "context_scout"
   | "resource_repair"
-  | "scheduler_graph_patch"
+  | "graph_compile_plan"
   | "capability_selection"
   | "worker_file_edit_loop"
   | "validation_qa"
@@ -315,8 +315,8 @@ export function buildModelContractBoundaryRegistry(): ModelContractBoundaryDefin
       ],
     }),
     boundary({
-      boundaryKind: "scheduler_graph_patch",
-      title: "Staged Scheduler Protocol",
+      boundaryKind: "graph_compile_plan",
+      title: "Runtime Graph Compile Plan",
       modelAuthoredSemanticFields: [
         "workUnitId",
         "objective",

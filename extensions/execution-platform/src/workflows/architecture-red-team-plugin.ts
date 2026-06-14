@@ -26,11 +26,6 @@ export const ARCHITECTURE_RED_TEAM_PLUGIN_EXECUTOR_KEYS = [
 ] as const;
 
 export const ARCHITECTURE_RED_TEAM_PLUGIN_RUNTIME_TOOL_FAMILIES: RuntimeToolFamily[] = [
-  "scheduler.decompose_graph",
-  "scheduler.select_next_node",
-  "scheduler.evaluate_node_result",
-  "scheduler.repair_decision",
-  "worker.invoke",
   "model.call",
   "research.fetch",
   "validation.review",

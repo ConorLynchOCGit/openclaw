@@ -22,7 +22,6 @@ import { WorkQueueRepository } from "../../extensions/execution-platform/src/wor
 import { NATIVE_EXECUTION_SESSION_JOB_TYPE } from "../../extensions/execution-platform/src/workflows/native-agentic-orchestration.ts";
 import { startAcceptedNativeExecutionSessionForTest } from "../../extensions/execution-platform/src/workflows/native-execution-test-fixtures.ts";
 import { RuntimeWorkGraphRepository } from "../../extensions/execution-platform/src/workflows/runtime-work-graph-repository.ts";
-import { registerSchedulerRuntimeTools } from "../../extensions/execution-platform/src/workflows/scheduler-runtime-tools.ts";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
   createGatewayStructuredRouterProvider,
@@ -70,7 +69,6 @@ function createTestRuntimeToolKernel(
 ) {
   const registry = new RuntimeToolRegistry();
   registerRouterFrontDoorRuntimeTools({ registry });
-  registerSchedulerRuntimeTools({ registry, includeWorkerInvoke: true });
   return new RuntimeToolKernel({
     registry,
     traces: new RuntimeToolTraceRepository(sql),

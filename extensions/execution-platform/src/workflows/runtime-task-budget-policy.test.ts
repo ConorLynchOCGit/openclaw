@@ -10,16 +10,17 @@ import {
 } from "./runtime-task-budget-policy.ts";
 
 describe("runtime task budget policy", () => {
-  it("gives Product/Spec-class work a long-running budget instead of the kernel default", () => {
+  it("gives explicitly long-running work a long-running budget instead of the kernel default", () => {
     const manifest = buildRuntimeNodeCapabilityManifest();
     const capability = findRuntimeNodeCapability("implementation_complex", manifest);
 
     const policy = deriveRuntimeTaskBudgetPolicy({
-      workflowId: "agent_team.product_spec_planning",
+      workflowId: "agent_team.coding",
       nodeKind: "implementation",
       roleId: "implementation_engineer",
       capability,
       missionCommitmentCount: 5,
+      expectedLongRunning: true,
     });
 
     expect(policy.budgetClass).toBe("long_running");
@@ -39,7 +40,7 @@ describe("runtime task budget policy", () => {
 
   it("rejects long-running policies that collapse back to a two-minute timeout", () => {
     const policy = deriveRuntimeTaskBudgetPolicy({
-      workflowId: "agent_team.product_spec_planning",
+      workflowId: "agent_team.coding",
       expectedLongRunning: true,
     });
 

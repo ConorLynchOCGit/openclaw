@@ -2,25 +2,25 @@ import { describe, expect, it } from "vitest";
 import { evaluateArchitectureTransitionTopologyGate } from "./architecture-transition-topology-gate.ts";
 
 describe("architecture transition topology gate", () => {
-  it("passes scheduler graph patch executable topology without graph-level context fanout", () => {
+  it("passes runtime graph executable topology without graph-level context fanout", () => {
     const gate = evaluateArchitectureTransitionTopologyGate({
       graph: {
         nodes: [
-          { nodeId: "implementation-product-spec-routing", nodeKind: "implementation" },
-          { nodeId: "validation-product-spec-routing", nodeKind: "validation" },
+          { nodeId: "implementation-native-routing", nodeKind: "implementation" },
+          { nodeId: "validation-native-routing", nodeKind: "validation" },
         ],
         edges: [
           {
-            fromNodeId: "implementation-product-spec-routing",
-            toNodeId: "validation-product-spec-routing",
+            fromNodeId: "implementation-native-routing",
+            toNodeId: "validation-native-routing",
             edgeKind: "handoff",
           },
         ],
       },
       schedulerProgress: [
         {
-          schedulerToolId: "scheduler.accept_graph_patch",
-          currentPhase: "scheduler_graph_patch_accepted",
+          schedulerToolId: "runtime_graph.accept",
+          currentPhase: "runtime_graph_accepted",
         },
       ],
     });
@@ -36,13 +36,13 @@ describe("architecture transition topology gate", () => {
     const gate = evaluateArchitectureTransitionTopologyGate({
       graph: {
         nodes: [
-          { nodeId: "context-product-spec-routing", nodeKind: "context_scout" },
-          { nodeId: "implementation-product-spec-routing", nodeKind: "implementation" },
+          { nodeId: "context-native-routing", nodeKind: "context_scout" },
+          { nodeId: "implementation-native-routing", nodeKind: "implementation" },
         ],
         edges: [
           {
-            fromNodeId: "context-product-spec-routing",
-            toNodeId: "implementation-product-spec-routing",
+            fromNodeId: "context-native-routing",
+            toNodeId: "implementation-native-routing",
             edgeKind: "context_supplies",
           },
         ],
@@ -58,7 +58,7 @@ describe("architecture transition topology gate", () => {
         "legacy_resource_fulfillment_gate_retired",
       ]),
     );
-    expect(gate.evidence.contextScoutGraphNodeIds).toContain("context-product-spec-routing");
+    expect(gate.evidence.contextScoutGraphNodeIds).toContain("context-native-routing");
     expect(gate.evidence.resourceFulfillmentEdgeCount).toBe(1);
   });
 

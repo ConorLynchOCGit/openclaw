@@ -149,12 +149,12 @@ describe("coding-team objective scope", () => {
   it("augments canonical execution-platform scope with explicit paths instead of narrowing away source", () => {
     const scope = resolveCodingTeamObjectiveScope({
       objectiveForModel: [
-        "Implement Product/Spec Planning Production Upgrade.",
-        "Also update scripts/execution-platform-run-product-spec-checkpointed-test.mjs",
-        "and docs/projects/execution-platform/specs/runtime-work-graph.md.",
+        "Implement Native Agent Runtime Cutover cleanup.",
+        "Also update scripts/execution-platform-run-native-orchestration-proof.mjs",
+        "and docs/projects/execution-platform/specs/openclaw-final-native-agent-runtime-cutover.md.",
       ].join("\n"),
       objectiveForEvidence:
-        "Implement Product/Spec Planning Production Upgrade with scripts and docs updates.",
+        "Implement Native Agent Runtime Cutover cleanup with scripts and docs updates.",
       fallbackRepoScopePaths: ["extensions/execution-platform/src/codex-bridge/"],
       fallbackValidationCommands: [
         "pnpm test:file extensions/execution-platform/src/workflows/native-cutover-inventory.test.ts",

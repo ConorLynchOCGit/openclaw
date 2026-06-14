@@ -933,7 +933,7 @@ function blockingCompileReasonCodes(reasonCodes: string[]): string[] {
       code.includes("_not_allowed") ||
       code.includes("_duplicate") ||
       code.includes("runtime_owned_field") ||
-      code.includes("scheduler_graph_patch_model_authored_runtime_envelope_not_allowed"),
+      code.includes("graph_compile_model_authored_runtime_envelope_not_allowed"),
   );
 }
 
@@ -983,7 +983,7 @@ export function compileOrchestratorGraphDecision(
     options.disallowModelAuthoredRuntimeEnvelope &&
     ((Array.isArray(record.newNodes) && record.newNodes.length > 0) ||
       (Array.isArray(record.selectedCapabilities) && record.selectedCapabilities.length > 0))
-      ? ["scheduler_graph_patch_model_authored_runtime_envelope_not_allowed"]
+      ? ["graph_compile_model_authored_runtime_envelope_not_allowed"]
       : [];
   const nodeResultReasonCodes = nodeResults.flatMap((result) => result.reasonCodes);
   const selectedCapabilityReasonCodes = selectedCapabilityNodes.reasonCodes;

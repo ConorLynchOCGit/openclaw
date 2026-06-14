@@ -495,14 +495,14 @@ export function evaluateExecutionPlatformBoundaryGuardrails(
     if (
       classification.category === "production_runtime" &&
       !BOUNDARY_GUARDRAIL_DEFINITION_PATHS.has(path) &&
-      source.includes("execution-platform-run-product-spec-boundary-replay")
+      source.includes("boundary-replay")
     ) {
       findings.push({
         severity: "hard_block",
         path,
-        pattern: "execution-platform-run-product-spec-boundary-replay",
-        reasonCode: "production_imports_product_spec_replay_script",
-        summary: "Production runtime references Product/Spec proof replay script.",
+        pattern: "boundary-replay",
+        reasonCode: "production_imports_boundary_replay_script",
+        summary: "Production runtime references a replay harness script.",
       });
     }
   }
@@ -570,7 +570,7 @@ function classifyCategory(path: string, reasonCodes: string[]): ExecutionPlatfor
       reasonCodes.push("classified_replay_script");
       return "replay_harness";
     }
-    if (path.includes("-proof") || path.includes("run-product-spec-checkpointed-test")) {
+    if (path.includes("-proof") || path.includes("checkpointed-test")) {
       reasonCodes.push("classified_proof_script");
       return "proof_script";
     }

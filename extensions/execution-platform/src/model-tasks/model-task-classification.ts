@@ -19,7 +19,6 @@ export const MODEL_CONTRACT_BOUNDARY_SCHEMA_VERSION =
 
 export const MODEL_CONTRACT_BOUNDARIES = [
   "router_front_door",
-  "requirement_map_native_tool",
   "source_prompt_excerpt_interpretation",
   "scheduler_global_reasoning",
   "scheduler_capability_selection",
@@ -312,7 +311,6 @@ export const MODEL_TASK_POLICY_REGISTRY: Record<ModelTaskClass, ModelTaskPolicy>
     },
     telemetryPolicy: telemetryPolicy(),
     supportedScopes: [
-      "intake.requirement_map.native_tool_batch",
       "context.scout.summary",
       "validation.summary",
       "evidence.summary",
@@ -347,12 +345,7 @@ export const MODEL_TASK_POLICY_REGISTRY: Record<ModelTaskClass, ModelTaskPolicy>
       terminalStatusWhenExhausted: "needs_review",
     },
     telemetryPolicy: telemetryPolicy(),
-    supportedScopes: [
-      "router.enum_repair",
-      "requirement_map.targeted_repair",
-      "scheduler.field_repair",
-      "validation.field_repair",
-    ],
+    supportedScopes: ["router.enum_repair", "scheduler.field_repair", "validation.field_repair"],
     productionReadinessStatus: "production_primary",
     rawPromptStored: false,
     rawResponseStored: false,
@@ -503,18 +496,7 @@ type ModelTaskCallSitePolicyOverride = {
 const MODEL_TASK_CALL_SITE_POLICY_OVERRIDES: Record<
   string,
   Partial<Record<ModelTaskClass, ModelTaskCallSitePolicyOverride>>
-> = {
-  "intake.requirement_map.native_tool_batch": {
-    local_semantic_extraction: {
-      policyRefSuffix: "intake-requirement-map-native-tool-batch",
-      timeoutMs: 180_000,
-      softTimeoutMs: 120_000,
-      maxInputBytes: 96_000,
-      maxOutputTokens: 4_000,
-      reasonCode: "model_task_call_site_bounds:intake.requirement_map.native_tool_batch",
-    },
-  },
-};
+> = {};
 
 function callSitePolicyOverride(
   taskClass: ModelTaskClass,
@@ -550,14 +532,6 @@ const MODEL_CONTRACT_BOUNDARY_DEFINITIONS: Record<
     callSite: "router.front_door",
     allowedToolFamily: "router.front_door",
     allowedOutputContractId: "intent_front_door_route_decision",
-    allowedOutputContractVersion: "v1",
-  },
-  requirement_map_native_tool: {
-    boundaryId: "requirement_map_native_tool",
-    taskClass: "local_semantic_extraction",
-    callSite: "intake.requirement_map.native_tool_batch",
-    allowedToolFamily: "requirement_map",
-    allowedOutputContractId: "requirement_map_native_tool_call",
     allowedOutputContractVersion: "v1",
   },
   source_prompt_excerpt_interpretation: {

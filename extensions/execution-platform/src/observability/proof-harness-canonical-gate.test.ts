@@ -8,7 +8,7 @@ import {
 describe("proof harness canonical gate projection", () => {
   it("rejects retired topology as graph compile invalid before context supply", () => {
     const projection = projectProofHarnessCanonicalGate({
-      graphId: "product-spec-graph",
+      graphId: "native-orchestration-graph",
       latestProgress: {
         nodeId: "context-scout-legacy",
         currentPhase: "resource_fulfillment",
@@ -33,7 +33,7 @@ describe("proof harness canonical gate projection", () => {
         gateStatus: "blocked",
         confidence: "canonical",
         blockerCode: "architecture_transition_topology_invalid",
-        nextLegalTransition: "compile_scheduler_graph_patch",
+        nextLegalTransition: "compile_runtime_graph",
         rawPromptStored: false,
         rawProviderLogStored: false,
       },
@@ -47,9 +47,9 @@ describe("proof harness canonical gate projection", () => {
     );
   });
 
-  it("keeps canonical node-local state ahead of stale RequirementMap checkpoints", () => {
+  it("keeps canonical node-local state ahead of stale intake checkpoints", () => {
     const projection = projectProofHarnessCanonicalGate({
-      graphId: "product-spec-graph",
+      graphId: "native-orchestration-graph",
       checkpointKind: "requirement_map",
       latestProgress: {
         nodeId: "implementation-1",
@@ -77,7 +77,7 @@ describe("proof harness canonical gate projection", () => {
 
   it("blocks retired checkpoint labels when canonical node-local state is absent", () => {
     const projection = projectProofHarnessCanonicalGate({
-      graphId: "product-spec-graph",
+      graphId: "native-orchestration-graph",
       checkpointKind: "after-context-synthesis",
       latestProgress: {},
     });

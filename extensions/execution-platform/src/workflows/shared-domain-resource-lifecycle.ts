@@ -9,7 +9,6 @@ const stringList = (maxItems: number, maxChars = 220) =>
 
 export const SharedDomainProfileIdSchema = z.enum([
   "coding",
-  "product_spec_planning",
   "architecture_red_team",
   "research",
   "docs",
@@ -133,9 +132,6 @@ function unique<T extends string>(values: Array<T | null | undefined>, max = 32)
 export function sharedDomainProfileIdForCapabilityTraits(
   input: SharedDomainCapabilityTraits,
 ): SharedDomainProfileId {
-  if (input.workflowId === "agent_team.product_spec_planning") {
-    return "product_spec_planning";
-  }
   if (input.workflowId === "agent_team.architecture_red_team") {
     return "architecture_red_team";
   }
@@ -187,61 +183,6 @@ export function buildSharedDomainResourceLifecycleProfile(
           "review",
           "docs",
           "readback",
-          "closeout",
-          "source_material",
-        ],
-        requiredPacketKinds: [],
-      };
-    }
-    if (profileId === "product_spec_planning") {
-      return {
-        resourceKinds: [
-          "source_prompt_section",
-          "owner_constraint",
-          "project_fact",
-          "planning_framework_contract",
-          "research_brief",
-          "citation",
-          "planning_capsule",
-          "planning_capsule_revision",
-          "action_graph_candidate",
-          "compile_readiness_input",
-          "human_decision_ref",
-          "workflow_manifest_ref",
-          "proof_artifact_ref",
-          "closeout_ref",
-          "memory_pack",
-        ],
-        actionGateKinds: [
-          "planning_framework_contract_gate",
-          "research_brief_gate",
-          "planning_capsule_gate",
-          "planning_capsule_revision_gate",
-          "action_graph_proposal_gate",
-          "compile_readiness_gate",
-          "human_decision_gate",
-          "closeout_gate",
-        ],
-        workerActionToolIds: [
-          "planning.intent.record",
-          "planning.framework_contract.record",
-          "planning.research.request_brief",
-          "planning.capsule.draft",
-          "planning.capsule.revise",
-          "planning.action_graph.propose",
-          "planning.compile_readiness.evaluate",
-          "planning.human_decision.request",
-          "planning.closeout.summarize",
-        ],
-        evidenceKinds: [
-          "planning_intent",
-          "planning_framework_contract",
-          "research_brief",
-          "planning_capsule",
-          "planning_capsule_revision",
-          "action_graph_proposal",
-          "compile_readiness",
-          "human_decision",
           "closeout",
           "source_material",
         ],
@@ -431,9 +372,6 @@ export function sharedDomainWorkerActionToolIdsForCapabilityTraits(
   if (input.canDoWebResearch && input.roleClass !== "orchestration") {
     tools.push("planning.research.request_brief");
   }
-  if (input.workflowId === "agent_team.product_spec_planning" && input.roleClass === "planning") {
-    tools.push("planning.framework_contract.record");
-  }
   if (input.canCreatePlanningCapsules && input.roleClass !== "orchestration") {
     tools.push("planning.capsule.draft", "planning.capsule.revise");
   }
@@ -467,15 +405,8 @@ export function sharedDomainEvidenceKindsForCapabilityTraits(
       input.canEditSource ? "source_change" : null,
       input.canWriteTests || input.canRunValidation ? "test_validation" : null,
       input.canDoWebResearch ? "research_brief" : null,
-      input.workflowId === "agent_team.product_spec_planning" ? "planning_intent" : null,
-      input.workflowId === "agent_team.product_spec_planning"
-        ? "planning_framework_contract"
-        : null,
       input.canCreatePlanningCapsules ? "planning_capsule" : null,
       input.canProposeChildActions ? "action_graph_proposal" : null,
-      input.canRunValidation && input.workflowId === "agent_team.product_spec_planning"
-        ? "compile_readiness"
-        : null,
       input.canRequestHumanInput || input.roleClass === "human" ? "human_decision" : null,
       input.roleClass === "review" ? "review" : null,
       input.roleClass === "observability" ? "readback" : null,
@@ -507,30 +438,6 @@ export function validateSharedDomainLifecycleCapability(input: {
   const parsedProfile = SharedDomainProfileIdSchema.safeParse(input.domainProfileId);
   if (!parsedProfile.success) {
     reasonCodes.push("shared_domain_lifecycle_profile_invalid");
-  }
-  const planningProfile = input.domainProfileId === "product_spec_planning";
-  if (planningProfile && (input.canEditSource || input.canWriteTests)) {
-    reasonCodes.push("shared_domain_planning_profile_must_not_grant_file_edit_traits");
-  }
-  if (
-    planningProfile &&
-    input.requiredSnapshotKinds.some((kind) =>
-      ["target_file_snapshot", "target_snapshot"].includes(kind),
-    )
-  ) {
-    reasonCodes.push("shared_domain_planning_profile_must_not_require_file_snapshots");
-  }
-  if (
-    planningProfile &&
-    input.domainWorkerActionToolIds.some((toolId) => toolId.startsWith("worker.edit."))
-  ) {
-    reasonCodes.push("shared_domain_planning_profile_must_not_expose_file_edit_tools");
-  }
-  if (
-    planningProfile &&
-    input.allowedLifecycleTransitions.some((toolId) => toolId.startsWith("worker.patch."))
-  ) {
-    reasonCodes.push("shared_domain_planning_profile_must_not_expose_patch_author_tools");
   }
   if (
     input.workflowId === "agent_team.coding" &&

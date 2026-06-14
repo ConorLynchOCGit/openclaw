@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { PRODUCT_SPEC_PLANNING_PLUGIN_EXECUTOR_KEYS } from "./product-spec-planning-plugin.ts";
 import { RuntimeWorkflowGraphEngine } from "./runtime-workflow-graph-engine.ts";
 
 const executor = {
@@ -29,12 +28,6 @@ function codingExecutors() {
     "role:reviewer": executor,
     "role:observability_scribe": executor,
   };
-}
-
-function productSpecExecutors() {
-  return Object.fromEntries(
-    PRODUCT_SPEC_PLANNING_PLUGIN_EXECUTOR_KEYS.map((key) => [key, executor]),
-  );
 }
 
 describe("RuntimeWorkflowGraphEngine", () => {
@@ -82,24 +75,5 @@ describe("RuntimeWorkflowGraphEngine", () => {
     expect(readiness.missingPluginExecutorKeys).toEqual(
       expect.arrayContaining(["kind:closeout", "role:reviewer"]),
     );
-  });
-
-  it("accepts production Product/Spec Planning with scheduler executors and runtime-tool kernel", () => {
-    const engine = new RuntimeWorkflowGraphEngine({
-      graphs: {} as never,
-      runtimeToolKernel: {} as never,
-    });
-
-    const readiness = engine.evaluateReadiness({
-      workflowId: "agent_team.product_spec_planning",
-      executors: productSpecExecutors(),
-    });
-
-    expect(readiness.ready).toBe(true);
-    expect(readiness.pluginId).toBe("workflow-plugin.agent_team.product_spec_planning.v1");
-    expect(readiness.missingExecutorKeys).toEqual([]);
-    expect(readiness.missingPluginExecutorKeys).toEqual([]);
-    expect(readiness.reasonCodes).toContain("workflow_definition_production_enabled");
-    expect(readiness.reasonCodes).toContain("workflow_definition_scheduler_backed");
   });
 });

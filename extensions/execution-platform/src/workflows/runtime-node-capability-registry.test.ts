@@ -6,7 +6,6 @@ import {
   findProviderCapabilityProfile,
   runtimeNodeCapabilityManifestForModel,
   validateProviderCapabilityProfileRegistry,
-  validateRuntimeCapabilityExecutorCoverage,
 } from "./runtime-node-capability-registry.ts";
 import { TEAM_GRAPH_NODE_KINDS } from "./runtime-work-graph.ts";
 
@@ -231,83 +230,6 @@ describe("runtime node capability registry", () => {
     );
   });
 
-  it("includes product/spec planning capabilities in the same manifest contract", () => {
-    const manifest = buildRuntimeNodeCapabilityManifest();
-    expect(manifest.capabilities.map((capability) => capability.capabilityId)).toEqual(
-      expect.arrayContaining([
-        "planning_orchestrator",
-        "web_research",
-        "planning_capsule_draft",
-        "planning_capsule_revision",
-        "human_planning_decision",
-        "action_graph_proposal",
-        "compile_runtime_plan",
-        "planning_closeout",
-      ]),
-    );
-    const compileRuntimePlan = manifest.capabilities.find(
-      (capability) => capability.capabilityId === "compile_runtime_plan",
-    );
-    expect(compileRuntimePlan).toMatchObject({
-      graphNodeKind: "compiler",
-      canRunValidation: true,
-      canCompileRuntimeJobs: false,
-    });
-    expect(compileRuntimePlan?.authorityBoundaries).toContain(
-      "no_runtime_job_creation_without_later_authority",
-    );
-    const planningCapsule = manifest.capabilities.find(
-      (capability) => capability.capabilityId === "planning_capsule_draft",
-    );
-    expect(planningCapsule).toMatchObject({
-      domainProfileId: "product_spec_planning",
-      requiredResourcePacketKind: null,
-    });
-    expect(planningCapsule?.domainResourceKinds).toEqual(
-      expect.arrayContaining([
-        "source_prompt_section",
-        "owner_constraint",
-        "planning_framework_contract",
-        "planning_capsule",
-        "action_graph_candidate",
-      ]),
-    );
-    expect(planningCapsule?.domainActionGateKinds).toEqual(
-      expect.arrayContaining([
-        "planning_framework_contract_gate",
-        "planning_capsule_gate",
-        "action_graph_proposal_gate",
-      ]),
-    );
-    expect(planningCapsule?.domainWorkerActionToolIds).toEqual(
-      expect.arrayContaining([
-        "planning.framework_contract.record",
-        "planning.capsule.draft",
-        "planning.action_graph.propose",
-      ]),
-    );
-    expect(planningCapsule?.requiredSnapshotKinds).not.toContain("target_file_snapshot");
-    expect(planningCapsule?.domainWorkerActionToolIds).not.toContain("worker.edit.plan");
-    for (const capability of manifest.capabilities.filter(
-      (entry) => entry.workflowId === "agent_team.product_spec_planning",
-    )) {
-      if (capability.requiresResources) {
-        expect(capability.supportedExecutionIntents).toContain("source_grounding");
-      }
-      expect(capability.supportedExecutionIntents).not.toContain("resource_demand");
-      expect(capability.supportedExecutionIntents).not.toContain("resource_fulfillment");
-      expect(capability.supportedExecutionIntents).not.toContain("source_edit");
-      expect(capability.supportedExecutionIntents).not.toContain("resource_materialization");
-      expect(capability.domainProfileId).toBe("product_spec_planning");
-      expect(capability.allowedLifecycleTransitions).not.toContain("worker.edit.plan");
-      expect(capability.allowedLifecycleTransitions).not.toContain("worker.patch.author_edit");
-      expect(capability.allowedLifecycleTransitions).not.toContain(
-        "worker.patch.force_author_from_plan",
-      );
-      expect(capability.domainWorkerActionToolIds).not.toContain("worker.edit.plan");
-    }
-  });
-
   it("can filter the model-visible manifest to only executable scheduler capabilities", () => {
     const manifest = runtimeNodeCapabilityManifestForModel({
       executableExecutorKeys: ["kind:implementation", "role:orchestrator"],
@@ -415,50 +337,6 @@ describe("runtime node capability registry", () => {
     expect(manifest.capabilities.map((capability) => capability.executorKey)).not.toContain(
       "kind:context_synthesis",
     );
-  });
-
-  it("reports exact Product/Spec Planning executor coverage before live proof", () => {
-    const incomplete = validateRuntimeCapabilityExecutorCoverage({
-      workflowId: "agent_team.product_spec_planning",
-      executableExecutorKeys: ["role:planning_orchestrator", "kind:web_research"],
-    });
-
-    expect(incomplete.valid).toBe(false);
-    expect(incomplete.coveredCapabilityIds).toEqual(
-      expect.arrayContaining(["planning_orchestrator", "web_research"]),
-    );
-    expect(incomplete.missingCapabilityIds).toEqual(
-      expect.arrayContaining([
-        "planning_capsule_draft",
-        "planning_capsule_revision",
-        "human_planning_decision",
-        "action_graph_proposal",
-        "compile_runtime_plan",
-        "planning_closeout",
-      ]),
-    );
-    expect(incomplete.reasonCodes).toContain("runtime_capability_executor_coverage_missing");
-    expect(incomplete.reasonCodes).toContain("missing_executor:kind:planning_capsule");
-    expect(incomplete.rawPromptStored).toBe(false);
-    expect(incomplete.rawResponseStored).toBe(false);
-
-    const complete = validateRuntimeCapabilityExecutorCoverage({
-      workflowId: "agent_team.product_spec_planning",
-      executableExecutorKeys: [
-        "role:planning_orchestrator",
-        "kind:web_research",
-        "kind:planning_capsule",
-        "kind:human_task",
-        "kind:action_graph_compile",
-        "kind:compiler",
-        "kind:closeout",
-      ],
-    });
-
-    expect(complete.valid).toBe(true);
-    expect(complete.missingCapabilityIds).toEqual([]);
-    expect(complete.missingExecutorKeys).toEqual([]);
-    expect(complete.reasonCodes).toEqual(["runtime_capability_executor_coverage_complete"]);
   });
 
   it("derives lifecycle profile tools from the runner descriptor registry", () => {

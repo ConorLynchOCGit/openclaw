@@ -31,6 +31,7 @@ describe("model task classification and utility policy", () => {
       "context_scout_handoff",
       "domain_resource_selection",
       "resource_materialization",
+      "requirement_map_native_tool",
     ]) {
       expect(MODEL_CONTRACT_BOUNDARIES).not.toContain(boundaryId);
     }
@@ -62,14 +63,16 @@ describe("model task classification and utility policy", () => {
   });
 
   it("binds exact contract boundaries to task class, model policy, and output contracts", () => {
-    const requirementMapBinding = modelContractBoundaryBindingFor("requirement_map_native_tool");
-    expect(requirementMapBinding).toMatchObject({
-      boundaryId: "requirement_map_native_tool",
+    const sourcePromptBinding = modelContractBoundaryBindingFor(
+      "source_prompt_excerpt_interpretation",
+    );
+    expect(sourcePromptBinding).toMatchObject({
+      boundaryId: "source_prompt_excerpt_interpretation",
       taskClass: "local_semantic_extraction",
       preferredModelRef: "qwen/qwen3-coder-next",
       reasoningMode: "none",
-      allowedToolFamily: "requirement_map",
-      allowedOutputContractId: "requirement_map_native_tool_call",
+      allowedToolFamily: "source_prompt.excerpt_interpretation",
+      allowedOutputContractId: "source_prompt_excerpt_interpretation",
       providerCallAllowed: true,
     });
   });
@@ -77,20 +80,20 @@ describe("model task classification and utility policy", () => {
   it("preflights exact model-policy binding mismatches before provider calls", () => {
     const classification = classifyModelTaskCall({
       taskClass: "local_semantic_extraction",
-      callSite: "intake.requirement_map.native_tool_batch",
+      callSite: "source_prompt.excerpt_interpretation",
     });
 
     const accepted = evaluateModelPolicyBindingPreflight({
       classification,
-      actualAllowedToolFamily: "requirement_map",
-      actualOutputContractId: "requirement_map_native_tool_call",
+      actualAllowedToolFamily: "source_prompt.excerpt_interpretation",
+      actualOutputContractId: "source_prompt_excerpt_interpretation",
       actualOutputContractVersion: "v1",
       requestedInputBytes: 12_000,
-      requestedTimeoutMs: 120_000,
+      requestedTimeoutMs: 90_000,
     });
     expect(accepted.accepted).toBe(true);
     expect(accepted.modelPolicyBindingRef).toBe(
-      "model-contract-boundary://requirement_map_native_tool",
+      "model-contract-boundary://source_prompt_excerpt_interpretation",
     );
 
     const blocked = evaluateModelPolicyBindingPreflight({
@@ -150,16 +153,16 @@ describe("model task classification and utility policy", () => {
   it("records policy exceptions without losing the semantic task class", () => {
     const classification = classifyModelTaskCall({
       taskClass: "local_semantic_extraction",
-      callSite: "requirement_map.rescue_author",
+      callSite: "source_prompt.rescue_author",
       overrideModelRef: "openai-codex/gpt-5.5",
-      overrideReasonCode: "requirement_map_author_rescue",
+      overrideReasonCode: "source_prompt_author_rescue",
       overrideRationale: "Primary cheap lane failed to return usable content.",
     });
 
     expect(classification.taskClass).toBe("local_semantic_extraction");
     expect(classification.selectedModelRef).toBe("openai-codex/gpt-5.5");
     expect(classification.exception).toMatchObject({
-      reasonCode: "requirement_map_author_rescue",
+      reasonCode: "source_prompt_author_rescue",
       rawPromptStored: false,
       rawResponseStored: false,
     });
@@ -168,37 +171,6 @@ describe("model task classification and utility policy", () => {
       selectedModelRef: "openai-codex/gpt-5.5",
       rawPromptStored: false,
     });
-  });
-
-  it("applies RequirementMap native-tool bounds without widening ordinary local extraction", () => {
-    const defaultClassification = classifyModelTaskCall({
-      taskClass: "local_semantic_extraction",
-      callSite: "context.scout.summary",
-    });
-    const requirementMapClassification = classifyModelTaskCall({
-      taskClass: "local_semantic_extraction",
-      callSite: "intake.requirement_map.native_tool_batch",
-    });
-
-    expect(defaultClassification.timeoutMs).toBe(90_000);
-    expect(requirementMapClassification.timeoutMs).toBe(180_000);
-    expect(requirementMapClassification.softTimeoutMs).toBe(120_000);
-    expect(requirementMapClassification.maxInputBytes).toBe(96_000);
-    expect(requirementMapClassification.maxOutputTokens).toBe(4_000);
-    expect(requirementMapClassification.modelPolicyRef).toBe(
-      "model-task-policy://local-semantic-extraction/qwen3-coder-next/intake-requirement-map-native-tool-batch",
-    );
-    expect(requirementMapClassification.reasonCodes).toContain(
-      "model_task_call_site_bounds:intake.requirement_map.native_tool_batch",
-    );
-
-    const accepted = evaluateModelPolicyBindingPreflight({
-      classification: requirementMapClassification,
-      requestedInputBytes: 33_000,
-      requestedTimeoutMs: 180_000,
-      requestedMaxOutputTokens: 4_000,
-    });
-    expect(accepted.accepted).toBe(true);
   });
 
   it("does not keep retired context narrowing as a model-contract boundary", () => {

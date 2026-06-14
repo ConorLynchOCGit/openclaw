@@ -273,11 +273,11 @@ describe("CanonicalRouterSchema", () => {
       executorWorkflowId: "agent_team.coding",
       workflowId: "agent_team.coding",
       jobType: "executor.agent_team",
-      subjectWorkflowIds: ["agent_team.product_spec_planning"],
+      subjectWorkflowIds: ["agent_team.architecture"],
       targetSubjectRefs: [
         {
           targetKind: "workflow",
-          targetRef: "workflow://agent_team.product_spec_planning",
+          targetRef: "workflow://agent_team.architecture",
           confidence: 0.95,
         },
       ],
@@ -298,9 +298,9 @@ describe("CanonicalRouterSchema", () => {
     expect(parsed.valid).toBe(true);
     expect(parsed.output?.executorWorkflowId).toBe("agent_team.coding");
     expect(parsed.output?.workflowId).toBe("agent_team.coding");
-    expect(parsed.output?.subjectWorkflowIds).toContain("agent_team.product_spec_planning");
+    expect(parsed.output?.subjectWorkflowIds).toContain("agent_team.architecture");
     expect(parsed.output?.targetSubjectRefs[0]?.targetRef).toBe(
-      "workflow://agent_team.product_spec_planning",
+      "workflow://agent_team.architecture",
     );
   });
 
@@ -316,7 +316,7 @@ describe("CanonicalRouterSchema", () => {
         requestedActions: [createCanonicalRouterAction("code_edit", "edit code", 0.9)],
         sideEffectClass: "code_edit",
       }),
-      workflowId: "agent_team.product_spec_planning",
+      workflowId: "agent_team.architecture",
     });
     expect(parsed.valid).toBe(false);
     expect(parsed.reasonCodes).toContain(

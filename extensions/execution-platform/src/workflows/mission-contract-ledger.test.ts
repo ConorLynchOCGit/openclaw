@@ -183,7 +183,7 @@ describe("mission contract ledger", () => {
     expect(() =>
       parseMissionContractLedger({
         ...ledger,
-        deliverableKind: "product_spec_planning",
+        deliverableKind: "unknown_deliverable_kind",
       }),
     ).toThrow();
   });

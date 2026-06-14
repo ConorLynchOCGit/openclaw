@@ -145,7 +145,7 @@ export function projectProofHarnessCanonicalGate(input: {
         blockerCode: "architecture_transition_topology_invalid",
         blockerSummary:
           "Retired graph-level resource scout/context supply/context synthesis topology cannot satisfy the proof harness.",
-        nextLegalTransition: "compile_scheduler_graph_patch",
+        nextLegalTransition: "compile_runtime_graph",
         reasonCodes: topologyReasonCodes,
       })
     : staleCheckpointGateRejected && baseGate.sourceKind === "missing"

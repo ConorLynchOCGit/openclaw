@@ -491,10 +491,6 @@ describe("RuntimeToolKernel", () => {
           status: "kernel_primary",
         }),
         expect.objectContaining({
-          surfaceId: "scheduler-decisions",
-          status: "scheduler_node_execution_primary",
-        }),
-        expect.objectContaining({
           surfaceId: "work-queue-tool-event-readback",
           status: "production_primary",
         }),

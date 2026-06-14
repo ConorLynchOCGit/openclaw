@@ -73,7 +73,6 @@ export const UxReplayPayloadRouteRefsSchema = z
     routerToolProtocolRef: boundedString(320).nullable(),
     routerToolInvocationRefs: z.array(boundedString(320)).max(40),
     requestCompilerRef: boundedString(320),
-    requirementMapHandoffRef: boundedString(320),
   })
   .strict();
 
@@ -94,8 +93,6 @@ export const UxReplayPayloadMissionLedgerRefsSchema = z
     missionLedgerInputRef: boundedString(320),
     missionLedgerPromptHash: boundedString(90),
     missionLedgerRef: boundedString(320).nullable(),
-    requirementMapInputRef: boundedString(320),
-    requirementMapRef: boundedString(320).nullable(),
   })
   .strict();
 
@@ -208,7 +205,6 @@ export function normalizeUxReplayPayloadForParity(
       executeNow: envelope.routeRefs.executeNow,
       routerToolProtocolRef: envelope.routeRefs.routerToolProtocolRef,
       routerToolInvocationRefs: envelope.routeRefs.routerToolInvocationRefs,
-      requirementMapHandoffRef: envelope.routeRefs.requirementMapHandoffRef,
     },
     execution: {
       queueName: envelope.executionRefs.queueName,
@@ -276,9 +272,7 @@ export function validateUxReplayPayloadProofEligibility(
     parsed.ownerPrompt.sourcePromptArtifactRef ? null : "source_prompt_artifact_ref_missing",
     parsed.routeRefs.routerDecisionRef ? null : "router_decision_ref_missing",
     parsed.routeRefs.requestCompilerRef ? null : "request_compiler_ref_missing",
-    parsed.routeRefs.requirementMapHandoffRef ? null : "requirement_map_handoff_ref_missing",
     parsed.missionLedgerRefs.missionLedgerInputRef ? null : "mission_ledger_input_ref_missing",
-    parsed.missionLedgerRefs.requirementMapInputRef ? null : "requirement_map_input_ref_missing",
     parsed.schedulerRefs.schedulerHandoffRefs.length > 0 ? null : "scheduler_handoff_refs_missing",
   ].filter((code): code is string => Boolean(code));
   const surfaceAllowed =
@@ -323,7 +317,6 @@ export function summarizeUxReplayPayloadParityEnvelope(
     runtimeJobId: envelope.executionRefs.runtimeJobId,
     workItemId: envelope.executionRefs.workItemId,
     missionLedgerInputRef: envelope.missionLedgerRefs.missionLedgerInputRef,
-    requirementMapInputRef: envelope.missionLedgerRefs.requirementMapInputRef,
     schedulerHandoffRefs: envelope.schedulerRefs.schedulerHandoffRefs,
     reasonCodes: envelope.reasonCodes,
     rawPromptStored: false,

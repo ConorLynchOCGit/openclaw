@@ -8,9 +8,9 @@ import { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel.ts";
 import { RuntimeToolRegistry } from "../runtime-tool-call/runtime-tool-registry.ts";
 import { RuntimeToolTraceRepository } from "../runtime-tool-call/runtime-tool-trace-repository.ts";
 import {
-  registerSchedulerRuntimeTools,
-  SCHEDULER_RUNTIME_TOOL_IDS,
-} from "../workflows/scheduler-runtime-tools.ts";
+  buildCodeIntelligenceRuntimeToolDefinition,
+  createCodeIntelligenceRuntimeToolExecutor,
+} from "./code-intelligence-runtime-tools.ts";
 import { isCodeIntelligenceRuntimeToolId } from "./code-intelligence-runtime-tools.ts";
 import { createCodeIntelligenceService } from "./code-intelligence-service.ts";
 import { CODE_INTELLIGENCE_RUNTIME_TOOL_IDS } from "./types.ts";
@@ -38,13 +38,13 @@ describe("code intelligence runtime tools", () => {
       try {
         await applyExecutionPlatformMigrations(database.sql);
         const registry = new RuntimeToolRegistry();
-        registerSchedulerRuntimeTools({
-          registry,
-          codeIntelligenceService: createCodeIntelligenceService({ rootDir }),
-        });
-        expect(SCHEDULER_RUNTIME_TOOL_IDS).toEqual(
-          expect.arrayContaining([...CODE_INTELLIGENCE_RUNTIME_TOOL_IDS]),
-        );
+        const service = createCodeIntelligenceService({ rootDir });
+        for (const toolId of CODE_INTELLIGENCE_RUNTIME_TOOL_IDS) {
+          registry.register(
+            buildCodeIntelligenceRuntimeToolDefinition(toolId),
+            createCodeIntelligenceRuntimeToolExecutor({ service }),
+          );
+        }
         expect(registry.require("code.search_symbols").definition).toMatchObject({
           toolFamily: "code_intelligence.query",
           authorityClass: "read_only",

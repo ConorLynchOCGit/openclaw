@@ -23,7 +23,6 @@ describe("runtime artifact contract registry", () => {
         "execution_platform.mission_contract_ledger",
         "execution_platform.source_prompt_artifact",
         "execution_platform.source_prompt_window",
-        "execution_platform.requirement_map",
         "execution_platform.node_execution_run_record",
         "execution_platform.node_execution_snapshot",
         "execution_platform.node_agent_worker_prompt",
@@ -33,7 +32,6 @@ describe("runtime artifact contract registry", () => {
         "execution_platform.node_agent_start_receipt",
         "execution_platform.action_review_artifact",
         "execution_platform.worker_edit_review_artifact",
-        "execution.generic_orchestration_runtime_result",
         "execution_platform.mission_ledger_stability_diagnostic_run",
         "execution_platform.mission_ledger_stability_diagnostic_pair",
         "execution_platform.mission_ledger_stability_verdict",
@@ -82,15 +80,14 @@ describe("runtime artifact contract registry", () => {
         bodySchemaRef: "NodeAgentStartReceipt",
       },
     );
-    expect(isRuntimeArtifactPayloadRequired("execution_platform.requirement_map")).toBe(true);
+    expect(isRuntimeArtifactPayloadRequired("execution_platform.requirement_map")).toBe(false);
+    expect(isRuntimeArtifactPayloadRequired("execution.generic_orchestration_runtime_result")).toBe(
+      false,
+    );
     expect(isRuntimeArtifactPayloadRequired("execution_platform.source_prompt_window")).toBe(true);
     expect(getRuntimeArtifactContract("execution_platform.source_prompt_window")).toMatchObject({
       storagePolicy: "payload_required",
       bodySchemaRef: "SourcePromptWindowArtifact",
-    });
-    expect(getRuntimeArtifactContract("execution_platform.requirement_map")).toMatchObject({
-      storagePolicy: "payload_required",
-      bodySchemaRef: "RequirementMap",
     });
     for (const retiredArtifactType of [
       "execution_platform.resource_scout_execution_packet",

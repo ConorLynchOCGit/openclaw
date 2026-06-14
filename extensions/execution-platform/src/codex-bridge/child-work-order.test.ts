@@ -175,34 +175,34 @@ describe("child work order contract", () => {
       responseText: JSON.stringify({
         relevantFileRefs: [
           {
-            fileRef: "extensions/execution-platform/src/workflows/product-spec-planning-plugin.ts",
-            reason: "Defines product/spec planning workflow plugin.",
-            symbols: ["buildProductSpecPlanningWorkflowPlugin"],
+            fileRef: "extensions/execution-platform/src/workflows/agent-team-coding-plugin.ts",
+            reason: "Defines the coding workflow plugin.",
+            symbols: ["buildAgentTeamCodingWorkflowPlugin"],
           },
         ],
         likelyEditPoints: [
           {
-            fileRef: "extensions/execution-platform/src/workflows/product-spec-planning-plugin.ts",
+            fileRef: "extensions/execution-platform/src/workflows/agent-team-coding-plugin.ts",
             region: "workflow definition",
-            rationale: "Wire scheduler-backed planning node executors.",
+            rationale: "Wire coding node executors.",
           },
         ],
         handoffSummaryForImplementation:
-          "Use the product/spec planning plugin as the first implementation target.",
+          "Use the coding plugin as the first implementation target.",
       }),
       targetRefs: ["extensions/execution-platform/src/workflows/"],
       validationCommandRefs: [],
     });
 
     expect(output.relevantFiles[0]).toMatchObject({
-      path: "extensions/execution-platform/src/workflows/product-spec-planning-plugin.ts",
-      whyRelevant: "Defines product/spec planning workflow plugin.",
-      keySymbolsOrFunctions: ["buildProductSpecPlanningWorkflowPlugin"],
+      path: "extensions/execution-platform/src/workflows/agent-team-coding-plugin.ts",
+      whyRelevant: "Defines the coding workflow plugin.",
+      keySymbolsOrFunctions: ["buildAgentTeamCodingWorkflowPlugin"],
     });
     expect(output.recommendedEditPoints[0]).toMatchObject({
-      path: "extensions/execution-platform/src/workflows/product-spec-planning-plugin.ts",
+      path: "extensions/execution-platform/src/workflows/agent-team-coding-plugin.ts",
       symbolOrRegion: "workflow definition",
-      reason: "Wire scheduler-backed planning node executors.",
+      reason: "Wire coding node executors.",
     });
   });
 

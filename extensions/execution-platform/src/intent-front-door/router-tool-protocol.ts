@@ -205,7 +205,7 @@ export function routerFrontDoorSmallVerbNativeToolDefinitions(
   const descriptionByTool: Partial<Record<RouterFrontDoorSmallVerbToolId, string>> = {
     "router.set_route": "Set the canonical route family for the owner request.",
     "router.classify_primary_outcome":
-      "Classify the user's primary requested outcome without authoring RequirementMap or authority details.",
+      "Classify the user's primary requested outcome without authoring authority details.",
     "router.select_executor_workflow":
       "Select the executor workflow and job type that can perform the primary requested work.",
     "router.report_ambiguity":
@@ -620,7 +620,6 @@ export type RouterFrontDoorToolProtocolResult = {
   targetSubjectRefs: Array<{ targetKind: string; targetRef: string; confidence: number | null }>;
   requestedCapabilities: string[];
   constraintSummaries: Array<{ constraintKind: string; objectSummary: string; confidence: number }>;
-  requirementMapHandoffRef: string;
   validationOutcome: IntentValidationDecision["outcome"] | null;
   validationReasonCodes: string[];
   reasonCodes: string[];
@@ -690,10 +689,6 @@ export function buildRouterFrontDoorToolProtocolResult(input: {
     })),
     requestedCapabilities: input.routerOutput.requestedCapabilities,
     constraintSummaries: input.routerOutput.constraints,
-    requirementMapHandoffRef: `requirement-map-handoff://${input.requestId}#${input.promptHash.slice(
-      0,
-      16,
-    )}`,
     validationOutcome: input.validation?.outcome ?? null,
     validationReasonCodes: input.validation?.reasonCodes.slice(0, 30) ?? [],
     reasonCodes: [
@@ -748,7 +743,6 @@ export function routerFrontDoorToolProtocolMetadata(
     artifactKind: protocol.artifactKind,
     protocolVersion: protocol.protocolVersion,
     status: protocol.status,
-    requirementMapHandoffRef: protocol.requirementMapHandoffRef,
     toolInvocationRefs: protocol.toolInvocationRefs,
     phaseStatuses: protocol.phaseStatuses,
     rawPromptStored: false,

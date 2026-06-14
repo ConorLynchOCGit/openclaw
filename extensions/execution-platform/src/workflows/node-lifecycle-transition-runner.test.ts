@@ -12,7 +12,6 @@ import {
 import { buildRuntimeNodeCapabilityManifest } from "./runtime-node-capability-registry.ts";
 import type { RuntimeWorkGraphSnapshot } from "./runtime-work-graph-repository.ts";
 import type { TeamGraphNode, TeamGraphNodeKind, TeamRunGraph } from "./runtime-work-graph.ts";
-import { SCHEDULER_RUNTIME_TOOL_IDS } from "./scheduler-runtime-tools.ts";
 
 const now = new Date("2026-05-28T00:00:00.000Z");
 
@@ -84,9 +83,11 @@ function snapshot(nodes: TeamGraphNode[]): RuntimeWorkGraphSnapshot {
 
 describe("NodeLifecycleTransitionRunner", () => {
   it("exposes only native OpenClaw agent-session lifecycle gates", () => {
-    const schedulerToolIds = new Set<string>(SCHEDULER_RUNTIME_TOOL_IDS);
+    const lifecycleToolIds = new Set<string>(
+      Object.values(NODE_LIFECYCLE_GATE_TRANSITIONS).flatMap((toolIds) => [...toolIds]),
+    );
     const descriptorValidation = validateLifecycleDescriptorToolRegistration({
-      registeredToolIds: schedulerToolIds,
+      registeredToolIds: lifecycleToolIds,
     });
     expect(descriptorValidation).toMatchObject({
       valid: true,

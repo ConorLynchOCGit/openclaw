@@ -408,11 +408,11 @@ describe("Intent front door validator", () => {
     const decision = validateIntentFrontDoorDecision({
       parseResult: parseCanonicalRouterOutput(
         codingOutput({
-          subjectWorkflowIds: ["agent_team.product_spec_planning"],
+          subjectWorkflowIds: ["agent_team.architecture"],
           targetSubjectRefs: [
             {
               targetKind: "workflow",
-              targetRef: "workflow://agent_team.product_spec_planning",
+              targetRef: "workflow://agent_team.architecture",
               confidence: 0.95,
             },
           ],
@@ -443,8 +443,8 @@ describe("Intent front door validator", () => {
       route: "workflow_execution",
       responseMode: "create_runtime_job",
       executeNow: true,
-      executorWorkflowId: "agent_team.product_spec_planning",
-      workflowId: "agent_team.product_spec_planning",
+      executorWorkflowId: "agent_team.architecture",
+      workflowId: "agent_team.architecture",
       jobType: "executor.workflow",
       confidence: 0.95,
       objectiveSummary: "Plan the named workflow.",

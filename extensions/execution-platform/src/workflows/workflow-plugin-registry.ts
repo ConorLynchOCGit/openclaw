@@ -1,7 +1,6 @@
 import type { JsonValue } from "../runtime-job-repository.ts";
 import { buildAgentTeamCodingWorkflowPlugin } from "./agent-team-coding-plugin.ts";
 import { buildArchitectureRedTeamWorkflowPlugin } from "./architecture-red-team-plugin.ts";
-import { buildProductSpecPlanningWorkflowPlugin } from "./product-spec-planning-plugin.ts";
 import type { RuntimeNodeCapabilityManifest } from "./runtime-node-capability-registry.ts";
 import type { WorkflowDefinition } from "./workflow-definition.ts";
 import type { RuntimeWorkGraphNodeExecutor } from "./workflow-node-execution-contracts.ts";
@@ -63,11 +62,7 @@ export class WorkflowPluginRegistry {
   summarize(): WorkflowPluginRegistrySummary {
     const workflowIds = [...this.factories.keys()].toSorted();
     const productionWorkflowIds = workflowIds.filter((workflowId) =>
-      [
-        "agent_team.architecture_red_team",
-        "agent_team.coding",
-        "agent_team.product_spec_planning",
-      ].includes(workflowId),
+      ["agent_team.architecture_red_team", "agent_team.coding"].includes(workflowId),
     );
     return {
       artifactKind: "workflow_plugin_registry_summary",
@@ -85,7 +80,6 @@ export function defaultWorkflowPluginFactories(): Array<[string, WorkflowPluginF
   return [
     ["agent_team.architecture_red_team", buildArchitectureRedTeamWorkflowPlugin],
     ["agent_team.coding", buildAgentTeamCodingWorkflowPlugin],
-    ["agent_team.product_spec_planning", buildProductSpecPlanningWorkflowPlugin],
   ];
 }
 

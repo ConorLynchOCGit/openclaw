@@ -21,12 +21,6 @@ describe("workflow definition registry", () => {
           schedulerBacked: true,
         }),
         expect.objectContaining({
-          workflowId: "agent_team.product_spec_planning",
-          status: "production_ready",
-          productionEnabled: true,
-          schedulerBacked: true,
-        }),
-        expect.objectContaining({
           workflowId: "workflow.design",
           status: "registered_needs_executor_migration",
           schedulerBacked: true,
@@ -44,10 +38,11 @@ describe("workflow definition registry", () => {
     for (const definition of listCanonicalWorkflowDefinitions()) {
       expect(definition.orchestrationPolicy.workflowId).toBe(definition.workflowId);
       expect(definition.requiredPhases).toEqual(
-        expect.arrayContaining(["requirement_map", "closeout"]),
+        expect.arrayContaining(["source_grounding", "source_material", "closeout"]),
       );
       expect(definition.requiredPhases).toContain("source_grounding");
       expect(definition.requiredPhases).toContain("source_material");
+      expect(definition.requiredPhases).not.toContain("requirement_map");
       expect(definition.requiredPhases).not.toContain("resource_demand");
       expect(definition.requiredPhases).not.toContain("resource_fulfillment");
       expect(Object.keys(definition.orchestrationPolicy.evidenceClassesByPhase)).toContain(
@@ -56,7 +51,7 @@ describe("workflow definition registry", () => {
       expect(Object.keys(definition.orchestrationPolicy.evidenceClassesByPhase)).toContain(
         "source_material",
       );
-      expect(Object.keys(definition.orchestrationPolicy.evidenceClassesByPhase)).toContain(
+      expect(Object.keys(definition.orchestrationPolicy.evidenceClassesByPhase)).not.toContain(
         "requirement_map",
       );
       expect(Object.keys(definition.orchestrationPolicy.evidenceClassesByPhase)).not.toContain(

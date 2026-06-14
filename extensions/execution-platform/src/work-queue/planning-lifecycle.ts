@@ -222,7 +222,7 @@ export function buildPlanningCapsuleFromOpportunitySeed(
     seed.kind === "new_skill_candidate" || seed.kind === "existing_skill_edit"
       ? "workflow.docs_skills"
       : seed.kind === "proactive_plan"
-        ? "agent_team.product_spec_planning"
+        ? "agent_team.architecture"
         : "agent_team.coding";
   return {
     artifactKind: PLANNING_CAPSULE_ARTIFACT_KIND,
@@ -244,7 +244,7 @@ export function buildPlanningCapsuleFromOpportunitySeed(
       {
         actionId: `${seed.seedId}-planning-review`,
         title: "Review and refine the opportunity seed into an approved action graph",
-        assignedWorkflow: "agent_team.product_spec_planning",
+        assignedWorkflow: "agent_team.architecture",
         dependencyActionIds: [],
         status: "proposed",
         evidenceRefs: [input.sourceCloseoutRef, ...(input.seed.evidenceRefs ?? [])].slice(0, 10),
@@ -258,7 +258,9 @@ export function buildPlanningCapsuleFromOpportunitySeed(
         evidenceRefs: [input.sourceCloseoutRef, input.qualityReviewRef ?? ""].filter(Boolean),
       },
     ],
-    workflowRecommendations: ["agent_team.product_spec_planning", workflowRecommendation],
+    workflowRecommendations: Array.from(
+      new Set(["agent_team.architecture", workflowRecommendation]),
+    ),
     contextMemoryNeeds: [
       "Retrieve bounded source closeout refs and related project-state context before revision.",
     ],

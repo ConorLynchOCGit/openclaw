@@ -422,50 +422,13 @@ export function buildRuntimeToolificationTruthRegistry(): RuntimeToolificationSu
       blockerReasonCodes: [],
     }),
     surface({
-      surfaceId: "scheduler-toolification",
-      title: "Scheduler Toolification And Split Planning/Execution",
-      kind: "scheduler",
-      ownerSystemArea: "execution-platform",
-      currentStatus: "production_primary",
-      targetStatus: "production_primary",
-      canonicalToolFamilies: [
-        "scheduler.decompose_graph",
-        "scheduler.select_next_node",
-        "scheduler.evaluate_node_result",
-        "scheduler.repair_decision",
-        "worker.invoke",
-      ],
-      productionEntryRefs: [
-        "extensions/execution-platform/src/workflows/scheduler-stage-runner.ts",
-        "extensions/execution-platform/src/workflows/scheduler-runtime-tools.ts",
-      ],
-      compatibilityEntryRefs: [],
-      currentBoundary:
-        "Production agent_team.coding scheduler decisions and worker invocation are kernel-backed.",
-      targetBoundary:
-        "All scheduler decision and node execution surfaces stay kernel-backed with commitment evidence.",
-      nextQueueItemId: null,
-      gates: {
-        traceRequired: true,
-        workQueueReadbackRequired: true,
-        liveUxProofRequired: false,
-        compatibilityRetirementRequired: false,
-        closeoutRequired: true,
-      },
-      evidenceRefs: [
-        ".artifacts/execution-platform/scheduler-toolification-split-planning-summary.json",
-        ".artifacts/execution-platform/mission-ledger-tool-event-readback-summary.json",
-      ],
-      blockerReasonCodes: [],
-    }),
-    surface({
       surfaceId: "mission-ledger-evidence-finalization",
       title: "Mission Ledger Evidence Claims And Finalization Handoff",
       kind: "scheduler",
       ownerSystemArea: "execution-platform",
       currentStatus: "production_primary",
       targetStatus: "production_primary",
-      canonicalToolFamilies: ["scheduler.evaluate_node_result", "closeout.generate"],
+      canonicalToolFamilies: ["mission.ledger", "closeout.generate"],
       productionEntryRefs: [
         "extensions/execution-platform/src/workflows/mission-contract-ledger.ts",
         "extensions/execution-platform/src/workflows/shared-execution-finish-service.ts",
@@ -700,12 +663,7 @@ export function buildRuntimeToolificationTruthRegistry(): RuntimeToolificationSu
       ownerSystemArea: "execution-platform",
       currentStatus: "production_primary",
       targetStatus: "production_primary",
-      canonicalToolFamilies: [
-        "scheduler.decompose_graph",
-        "scheduler.select_next_node",
-        "worker.invoke",
-        "work_queue.project_event",
-      ],
+      canonicalToolFamilies: ["work_queue.project_event", "model.call"],
       productionEntryRefs: [
         "extensions/execution-platform/src/workflows/",
         "extensions/execution-platform/src/work-queue/execution-read-model.ts",
@@ -736,12 +694,7 @@ export function buildRuntimeToolificationTruthRegistry(): RuntimeToolificationSu
       ownerSystemArea: "execution-platform",
       currentStatus: "production_primary",
       targetStatus: "production_primary",
-      canonicalToolFamilies: [
-        "scheduler.decompose_graph",
-        "scheduler.select_next_node",
-        "worker.invoke",
-        "closeout.generate",
-      ],
+      canonicalToolFamilies: ["model.call", "closeout.generate"],
       productionEntryRefs: [
         "extensions/execution-platform/src/workflows/workflow-definition.ts",
         "extensions/execution-platform/src/workflows/workflow-definition-registry.ts",
@@ -775,9 +728,6 @@ export function buildRuntimeToolificationTruthRegistry(): RuntimeToolificationSu
       currentStatus: "production_primary",
       targetStatus: "production_primary",
       canonicalToolFamilies: [
-        "scheduler.decompose_graph",
-        "scheduler.select_next_node",
-        "worker.invoke",
         "file_edit.propose",
         "file_edit.apply",
         "validation.run",
@@ -808,39 +758,6 @@ export function buildRuntimeToolificationTruthRegistry(): RuntimeToolificationSu
         ".artifacts/execution-platform/coding-team-plugin-adoption-gate-proof.json",
       ],
       blockerReasonCodes: [],
-    }),
-    surface({
-      surfaceId: "product-spec-planning-workflow",
-      title: "Product/Spec Planning Production Upgrade",
-      kind: "workflow",
-      ownerSystemArea: "execution-platform",
-      currentStatus: "queued_for_toolification",
-      targetStatus: "live_ux_proven",
-      canonicalToolFamilies: [
-        "scheduler.decompose_graph",
-        "research.fetch",
-        "human_task.request",
-        "work_queue.project_event",
-      ],
-      productionEntryRefs: [
-        "extensions/execution-platform/src/workflows/product-spec-planning-workflow.ts",
-        "extensions/execution-platform/src/work-queue/product-spec-planning-worker-contract.ts",
-      ],
-      compatibilityEntryRefs: [],
-      currentBoundary:
-        "Product/spec planning has contracts and proof surfaces but not the final live UX proof.",
-      targetBoundary:
-        "Product/spec planning runs as a scheduler-backed workflow with research, planning capsule, human decision, compile, and closeout.",
-      nextQueueItemId: "openclaw-convergence.active-queue-34",
-      gates: {
-        traceRequired: true,
-        workQueueReadbackRequired: true,
-        liveUxProofRequired: true,
-        compatibilityRetirementRequired: false,
-        closeoutRequired: true,
-      },
-      evidenceRefs: [],
-      blockerReasonCodes: ["product_spec_planning_live_ux_proof_pending"],
     }),
     surface({
       surfaceId: "memory-retrieval-context-proactivity-toolification",
@@ -875,15 +792,11 @@ export function buildRuntimeToolificationTruthRegistry(): RuntimeToolificationSu
 
 function legacyStatusForSurface(
   surface: RuntimeToolificationSurface,
-  legacySurfaceId: string,
 ): RuntimeToolAdoptionSurfaceStatus {
   if (surface.surfaceId === "runtime-tool-call-kernel") {
     return "kernel_primary";
   }
-  if (
-    surface.currentStatus === "production_primary" &&
-    (surface.kind === "scheduler" || legacySurfaceId === "runtime-work-graph-node-execution")
-  ) {
+  if (surface.currentStatus === "production_primary" && surface.kind === "scheduler") {
     return "scheduler_node_execution_primary";
   }
   if (surface.currentStatus === "production_primary") {
@@ -919,18 +832,6 @@ export const RUNTIME_TOOL_ADOPTION_BOUNDARY_LEGACY_ALIASES: RuntimeToolAdoptionB
       canonicalSurfaceId: "runtime-tool-call-kernel",
     },
     {
-      legacySurfaceId: "runtime-work-graph-node-execution",
-      canonicalSurfaceId: "scheduler-toolification",
-      currentBoundaryOverride:
-        "Scheduler stage/tool modules expose traceable planning policy; native node execution now runs through RuntimeJob envelope effects.",
-      targetBoundaryOverride:
-        "All scheduler policy, progress, and evidence uses runtime tool traces without the deleted work-graph scheduler engine.",
-    },
-    {
-      legacySurfaceId: "scheduler-decisions",
-      canonicalSurfaceId: "scheduler-toolification",
-    },
-    {
       legacySurfaceId: "model-task-middleware",
       canonicalSurfaceId: "model-call-toolification",
     },
@@ -959,7 +860,7 @@ export function buildRuntimeToolAdoptionBoundaryMapFromRegistry(
     }
     return {
       surfaceId: alias.legacySurfaceId,
-      status: legacyStatusForSurface(surface, alias.legacySurfaceId),
+      status: legacyStatusForSurface(surface),
       currentBoundary: alias.currentBoundaryOverride ?? surface.currentBoundary,
       targetBoundary: alias.targetBoundaryOverride ?? surface.targetBoundary,
       nextQueueItem: surface.nextQueueItemId,

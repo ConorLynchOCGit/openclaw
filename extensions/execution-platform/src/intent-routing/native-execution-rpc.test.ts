@@ -1275,11 +1275,11 @@ describe("native execution rpc", () => {
             confidence: 0.99,
           },
         ],
-        subjectWorkflowIds: ["agent_team.product_spec_planning"],
+        subjectWorkflowIds: ["agent_team.architecture"],
         targetSubjectRefs: [
           {
             targetKind: "workflow",
-            targetRef: "agent_team.product_spec_planning",
+            targetRef: "agent_team.architecture",
             confidence: 0.99,
           },
         ],
@@ -1410,11 +1410,11 @@ describe("native execution rpc", () => {
         objectiveSummary: "Implement a production workflow upgrade.",
         requestedCapabilities: [],
         requestedActions: [],
-        subjectWorkflowIds: ["agent_team.product_spec_planning"],
+        subjectWorkflowIds: ["agent_team.architecture"],
         targetSubjectRefs: [
           {
             targetKind: "workflow",
-            targetRef: "workflow://agent_team.product_spec_planning",
+            targetRef: "workflow://agent_team.architecture",
             confidence: 0.95,
           },
         ],
@@ -1441,10 +1441,10 @@ describe("native execution rpc", () => {
       expect(submit.workflowId).toBe("agent_team.coding");
       expect(submit.frontDoorCompiledRequest).toMatchObject({
         executorWorkflowId: "agent_team.coding",
-        subjectWorkflowIds: ["agent_team.product_spec_planning"],
+        subjectWorkflowIds: ["agent_team.architecture"],
       });
       const artifacts = await runtimeJobs.listArtifacts(submit.runtimeJobId ?? "");
-      expect(JSON.stringify(artifacts)).toContain("workflow://agent_team.product_spec_planning");
+      expect(JSON.stringify(artifacts)).toContain("workflow://agent_team.architecture");
     } finally {
       await db.close();
     }
@@ -1459,18 +1459,18 @@ describe("native execution rpc", () => {
         route: "workflow_execution",
         responseMode: "create_runtime_job",
         executeNow: true,
-        executorWorkflowId: "agent_team.product_spec_planning",
-        workflowId: "agent_team.product_spec_planning",
+        executorWorkflowId: "agent_team.architecture",
+        workflowId: "agent_team.architecture",
         jobType: "executor.workflow",
         confidence: 0.94,
         objectiveSummary: "Produce planning artifacts for the Product/Spec workflow.",
         requestedCapabilities: ["plan", "action_graph_proposal", "runtime_job_compile", "closeout"],
         requestedActions: [createCanonicalRouterAction("plan", "produce planning output", 0.94)],
-        subjectWorkflowIds: ["agent_team.product_spec_planning"],
+        subjectWorkflowIds: ["agent_team.architecture"],
         targetSubjectRefs: [
           {
             targetKind: "workflow",
-            targetRef: "workflow://agent_team.product_spec_planning",
+            targetRef: "workflow://agent_team.architecture",
             confidence: 0.95,
           },
         ],
@@ -1510,7 +1510,7 @@ describe("native execution rpc", () => {
       expect(JSON.stringify(provider.requests[0])).not.toContain(
         "intake_route_contract_repair_attempted",
       );
-      expect(submit.workflowId).toBe("agent_team.product_spec_planning");
+      expect(submit.workflowId).toBe("agent_team.architecture");
       expect(submit.reasonCodes).toEqual(
         expect.arrayContaining([
           "intake_route_contract_primary_outcome_mismatch",

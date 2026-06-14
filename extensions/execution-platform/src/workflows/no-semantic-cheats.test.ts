@@ -29,6 +29,12 @@ describe("no semantic cheats in runtime boundary code", () => {
       "extensions/execution-platform/src/workflows/non-codex-task-decomposition-policy.ts",
       "extensions/execution-platform/src/workflows/runtime-work-graph-superstep.ts",
       "extensions/execution-platform/src/workflows/generic-workflow-runner-retirement-contract.ts",
+      "extensions/execution-platform/src/workflows/intake-stage-runner.ts",
+      "extensions/execution-platform/src/workflows/requirement-map.ts",
+      "extensions/execution-platform/src/workflows/scheduler-stage-runner.ts",
+      "extensions/execution-platform/src/workflows/scheduler-graph-patch.ts",
+      "extensions/execution-platform/src/workflows/scheduler-graph-admission.ts",
+      "extensions/execution-platform/src/workflows/scheduler-runtime-tools.ts",
     ]) {
       expect(exists(file)).toBe(false);
     }
@@ -39,13 +45,9 @@ describe("no semantic cheats in runtime boundary code", () => {
     const nodeLifecycle = source(
       "extensions/execution-platform/src/workflows/node-lifecycle-transition-runner.ts",
     );
-    const schedulerStage = source(
-      "extensions/execution-platform/src/workflows/scheduler-stage-runner.ts",
-    );
 
     expect(graph).not.toContain('"work_intent"');
     expect(nodeLifecycle).not.toContain('nodeKind === "work_intent"');
-    expect(schedulerStage).not.toContain("compile_work_intent_graph");
   });
 
   it("keeps retired Product/Spec proof replay surfaces absent", () => {
@@ -69,17 +71,12 @@ describe("no semantic cheats in runtime boundary code", () => {
     const actionReview = source(
       "extensions/execution-platform/src/workflows/action-review-artifacts.ts",
     );
-    const schedulerTools = source(
-      "extensions/execution-platform/src/workflows/scheduler-runtime-tools.ts",
-    );
 
     expect(actionReview).toContain("ActionReviewArtifactSchema");
     expect(actionReview).toContain("WorkerEditReviewArtifactSchema");
     expect(actionReview).not.toContain("Product/Spec");
     expect(actionReview).not.toContain('includes("implementation")');
     expect(actionReview).not.toContain('includes("context")');
-    expect(schedulerTools).toContain("action_review.create");
-    expect(schedulerTools).toContain("worker.edit.persist_review_artifact");
   });
 
   it("uses the boundary guardrail audit for production/proof import separation", () => {

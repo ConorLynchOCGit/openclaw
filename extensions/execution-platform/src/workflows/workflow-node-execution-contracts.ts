@@ -87,11 +87,6 @@ export const CODING_TEAM_ROLE_COVERAGE_PROFILE: RuntimeWorkGraphRoleCoverageProf
   requiredClasses: ["context", "implementation", "validation_or_test", "review"],
 };
 
-export const PRODUCT_SPEC_PLANNING_ROLE_COVERAGE_PROFILE: RuntimeWorkGraphRoleCoverageProfile = {
-  profileId: "agent_team.product_spec_planning.role_coverage.v1",
-  requiredClasses: ["planning", "planning_capsule", "action_proposal_or_compile", "closeout"],
-};
-
 export const ARCHITECTURE_RED_TEAM_ROLE_COVERAGE_PROFILE: RuntimeWorkGraphRoleCoverageProfile = {
   profileId: "agent_team.architecture_red_team.role_coverage.v1",
   requiredClasses: ["planning", "research", "review", "closeout"],

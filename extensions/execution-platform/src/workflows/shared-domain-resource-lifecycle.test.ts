@@ -10,14 +10,14 @@ import {
 } from "./shared-domain-resource-lifecycle.ts";
 
 describe("shared domain resource lifecycle", () => {
-  it("models coding and Product/Spec Planning as domain profiles over one lifecycle spine", () => {
+  it("models coding and architecture review as domain profiles over one lifecycle spine", () => {
     const coding = buildSharedDomainResourceLifecycleProfile("coding");
-    const planning = buildSharedDomainResourceLifecycleProfile("product_spec_planning");
+    const architecture = buildSharedDomainResourceLifecycleProfile("architecture_red_team");
 
     expect(coding.genericLifecycleOwner).toBe("NodeLifecycleTransitionRunner");
-    expect(planning.genericLifecycleOwner).toBe("NodeLifecycleTransitionRunner");
+    expect(architecture.genericLifecycleOwner).toBe("NodeLifecycleTransitionRunner");
     expect(coding.compatibilityFallbackAllowed).toBe(false);
-    expect(planning.compatibilityFallbackAllowed).toBe(false);
+    expect(architecture.compatibilityFallbackAllowed).toBe(false);
     expect(coding.resourceKinds).toEqual(
       expect.arrayContaining(["repo_file", "bounded_file_window", "target_snapshot"]),
     );
@@ -26,30 +26,29 @@ describe("shared domain resource lifecycle", () => {
     );
     expect(coding.workerActionToolIds).not.toContain("worker.edit.plan");
     expect(coding.workerActionToolIds).not.toContain("worker.validation.run_structural_default");
-    expect(planning.resourceKinds).toEqual(
+    expect(architecture.resourceKinds).toEqual(
       expect.arrayContaining([
         "source_prompt_section",
-        "owner_constraint",
         "planning_framework_contract",
         "planning_capsule",
         "action_graph_candidate",
-        "compile_readiness_input",
       ]),
     );
-    expect(planning.workerActionToolIds).toEqual(
+    expect(architecture.workerActionToolIds).toEqual(
       expect.arrayContaining([
+        "planning.intent.record",
         "planning.capsule.draft",
         "planning.framework_contract.record",
         "planning.action_graph.propose",
-        "planning.compile_readiness.evaluate",
+        "planning.closeout.summarize",
       ]),
     );
-    expect(planning.workerActionToolIds).not.toContain("worker.edit.plan");
+    expect(architecture.workerActionToolIds).not.toContain("worker.edit.plan");
   });
 
-  it("derives planning capability traits without file edit gates or runtime semantic judgment", () => {
+  it("derives architecture planning traits without file edit gates or runtime semantic judgment", () => {
     const traits = {
-      workflowId: "agent_team.product_spec_planning",
+      workflowId: "agent_team.architecture_red_team",
       roleClass: "planning",
       canInspectRepo: true,
       canEditSource: false,
@@ -63,7 +62,7 @@ describe("shared domain resource lifecycle", () => {
       canReviewSecurityPrivacy: false,
     };
 
-    expect(sharedDomainProfileIdForCapabilityTraits(traits)).toBe("product_spec_planning");
+    expect(sharedDomainProfileIdForCapabilityTraits(traits)).toBe("architecture_red_team");
     expect(sharedDomainResourceKindsForCapabilityTraits(traits)).toEqual(
       expect.arrayContaining([
         "source_prompt_section",
@@ -91,35 +90,32 @@ describe("shared domain resource lifecycle", () => {
     );
     expect(sharedDomainEvidenceKindsForCapabilityTraits(traits)).toEqual(
       expect.arrayContaining([
-        "planning_intent",
         "planning_framework_contract",
+        "research_brief",
         "planning_capsule",
         "action_graph_proposal",
-        "compile_readiness",
         "human_decision",
       ]),
     );
   });
 
-  it("rejects planning profiles that smuggle coding edit or snapshot gates", () => {
+  it("rejects coding capabilities that smuggle edit authority without native agent-session invocation", () => {
     const validation = validateSharedDomainLifecycleCapability({
-      capabilityId: "planning_capsule_draft",
-      workflowId: "agent_team.product_spec_planning",
-      domainProfileId: "product_spec_planning",
-      canEditSource: false,
+      capabilityId: "implementation",
+      workflowId: "agent_team.coding",
+      domainProfileId: "coding",
+      canEditSource: true,
       canWriteTests: false,
       requiredSnapshotKinds: ["target_file_snapshot"],
-      allowedLifecycleTransitions: ["worker.patch.force_author_from_plan"],
-      domainResourceKinds: ["planning_capsule"],
+      allowedLifecycleTransitions: ["node.agent_session.invoke"],
+      domainResourceKinds: ["repo_file", "diff"],
       domainWorkerActionToolIds: ["worker.edit.plan"],
     });
 
     expect(validation.valid).toBe(false);
     expect(validation.reasonCodes).toEqual(
       expect.arrayContaining([
-        "shared_domain_planning_profile_must_not_require_file_snapshots",
-        "shared_domain_planning_profile_must_not_expose_file_edit_tools",
-        "shared_domain_planning_profile_must_not_expose_patch_author_tools",
+        "shared_domain_coding_edit_profile_missing_node_agent_session_invoke",
       ]),
     );
   });

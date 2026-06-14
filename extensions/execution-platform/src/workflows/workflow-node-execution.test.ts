@@ -257,7 +257,7 @@ describe("generic workflow node execution result", () => {
 
   it("derives workflow evidence class refs from canonical node results", () => {
     const result = genericWorkflowNodeResultFromRuntime({
-      workflowId: "agent_team.product_spec_planning",
+      workflowId: "agent_team.architecture_red_team",
       graphId: "graph-1",
       nodeId: "node-1",
       nodeKind: "planning_capsule",

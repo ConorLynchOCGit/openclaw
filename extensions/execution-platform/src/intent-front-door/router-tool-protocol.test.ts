@@ -277,7 +277,7 @@ describe("router front-door tool protocol", () => {
     expect(compiled.output?.requestedCapabilities).toEqual([]);
   });
 
-  it("compiles staged router tool traces into a bounded RequirementMap handoff", () => {
+  it("compiles staged router tool traces into bounded router protocol evidence", () => {
     const protocol = buildRouterFrontDoorToolProtocolResult({
       requestId: "native-exec-router-test",
       promptHash: "a".repeat(64),
@@ -300,9 +300,6 @@ describe("router front-door tool protocol", () => {
     expect(protocol.phaseStatuses.map((phase) => phase.toolId)).toEqual([
       ...ROUTER_FRONT_DOOR_RUNTIME_TOOL_IDS,
     ]);
-    expect(protocol.requirementMapHandoffRef).toBe(
-      "requirement-map-handoff://native-exec-router-test#aaaaaaaaaaaaaaaa",
-    );
     expect(protocol.constraintSummaries[0]?.constraintKind).toBe("safety_boundary");
     expect(protocol.rawPromptStored).toBe(false);
     expect(() => assertRouterFrontDoorToolProtocolCanCompile(protocol)).not.toThrow();

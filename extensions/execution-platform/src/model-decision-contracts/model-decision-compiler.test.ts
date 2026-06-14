@@ -74,7 +74,7 @@ describe("model decision compiler helpers", () => {
         "commitment_work_packet",
         "context_scout",
         "resource_repair",
-        "scheduler_graph_patch",
+        "graph_compile_plan",
         "capability_selection",
         "worker_file_edit_loop",
         "validation_qa",
@@ -89,7 +89,7 @@ describe("model decision compiler helpers", () => {
 
   it("rejects nested runtime-owned fields without semantic prompt-specific judgment", () => {
     const compiled = compileModelContractBoundary({
-      boundaryKind: "scheduler_graph_patch",
+      boundaryKind: "graph_compile_plan",
       failedDecisionId: "decision-runtime-owned",
       value: {
         workUnitId: "wu-1",
@@ -104,12 +104,12 @@ describe("model decision compiler helpers", () => {
 
     expect(compiled.accepted).toBe(false);
     expect(compiled.reasonCodes).toContain(
-      "model_contract_runtime_owned_field_rejected:scheduler_graph_patch.metadata.executorKey",
+      "model_contract_runtime_owned_field_rejected:graph_compile_plan.metadata.executorKey",
     );
     expect(compiled.repairRequest.missingFields).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          path: "scheduler_graph_patch.metadata.executorKey",
+          path: "graph_compile_plan.metadata.executorKey",
           expectedType: "omit runtime-owned field",
           validAlternatives: expect.arrayContaining(["selectedCapabilityId", "objective"]),
         }),
@@ -171,7 +171,7 @@ describe("model decision compiler helpers", () => {
         },
       ],
       pathPrefix: "modelToolDraft.workUnits",
-      boundaryKind: "scheduler_graph_patch",
+      boundaryKind: "graph_compile_plan",
       codePrefix: "model_tool_runtime_owned_field_rejected",
     });
 
@@ -180,24 +180,24 @@ describe("model decision compiler helpers", () => {
     ]);
   });
 
-  it("does not change compiler result for Product/Spec wording", () => {
+  it("does not change compiler result for domain wording", () => {
     const base = compileModelContractBoundary({
-      boundaryKind: "scheduler_graph_patch",
+      boundaryKind: "graph_compile_plan",
       value: {
         objective: "Implement the workflow.",
         roleRationale: "This is the next scoped unit.",
       },
     });
-    const productSpec = compileModelContractBoundary({
-      boundaryKind: "scheduler_graph_patch",
+    const domainSpecific = compileModelContractBoundary({
+      boundaryKind: "graph_compile_plan",
       value: {
-        objective: "Implement the Product/Spec Planning workflow.",
+        objective: "Implement the native runtime cleanup workflow.",
         roleRationale: "This is the next scoped unit.",
       },
     });
 
-    expect(productSpec.accepted).toBe(base.accepted);
-    expect(productSpec.diagnostics.map((issue) => issue.code)).toEqual(
+    expect(domainSpecific.accepted).toBe(base.accepted);
+    expect(domainSpecific.diagnostics.map((issue) => issue.code)).toEqual(
       base.diagnostics.map((issue) => issue.code),
     );
   });

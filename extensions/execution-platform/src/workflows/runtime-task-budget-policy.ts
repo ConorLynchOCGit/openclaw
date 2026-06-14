@@ -49,17 +49,13 @@ export type RuntimeTaskBudgetPolicyInput = {
 };
 
 const MIN_LONG_TASK_TIMEOUT_MS = 15 * 60_000;
-const PRODUCT_SPEC_TIMEOUT_MS = 45 * 60_000;
+const LONG_RUNNING_TIMEOUT_MS = 45 * 60_000;
 const COMPLEX_TIMEOUT_MS = 30 * 60_000;
 const STANDARD_TIMEOUT_MS = 15 * 60_000;
 const TINY_TIMEOUT_MS = 5 * 60_000;
 
-function isProductSpecWorkflow(workflowId: string | null | undefined): boolean {
-  return workflowId === "agent_team.product_spec_planning";
-}
-
 function budgetClassFor(input: RuntimeTaskBudgetPolicyInput): RuntimeTaskBudgetClass {
-  if (input.expectedLongRunning === true || isProductSpecWorkflow(input.workflowId)) {
+  if (input.expectedLongRunning === true) {
     return "long_running";
   }
   if (
@@ -79,7 +75,7 @@ function budgetClassFor(input: RuntimeTaskBudgetPolicyInput): RuntimeTaskBudgetC
 function timeoutForBudgetClass(budgetClass: RuntimeTaskBudgetClass): number {
   switch (budgetClass) {
     case "long_running":
-      return PRODUCT_SPEC_TIMEOUT_MS;
+      return LONG_RUNNING_TIMEOUT_MS;
     case "complex":
       return COMPLEX_TIMEOUT_MS;
     case "standard":

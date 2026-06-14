@@ -3,8 +3,8 @@ export type CanonicalReadbackGateKind =
   | "prompt_submission"
   | "front_door_routing"
   | "mission_ledger"
-  | "requirement_map"
-  | "requirement_map_blocked"
+  | "legacy_intake"
+  | "legacy_intake_blocked"
   | "discovery_brief_required"
   | "discovery_brief_blocked"
   | "discovery_brief_payload_over_profile"
@@ -181,8 +181,8 @@ const CANONICAL_READBACK_GATE_KIND_VALUES = new Set<CanonicalReadbackGateKind>([
   "prompt_submission",
   "front_door_routing",
   "mission_ledger",
-  "requirement_map",
-  "requirement_map_blocked",
+  "legacy_intake",
+  "legacy_intake_blocked",
   "discovery_brief_required",
   "discovery_brief_blocked",
   "discovery_brief_payload_over_profile",
@@ -466,14 +466,14 @@ function gateKindFromCanonicalState(input: {
     return "discovery_brief_payload_over_profile";
   }
   if (
-    currentPhase === "requirement_map_authoring" ||
-    currentPhase === "requirement_map_blocked" ||
-    currentPhase === "requirement_map_compile" ||
-    reasonCodes.some((code) => code.includes("requirement_map_authoring_blocked"))
+    currentPhase === "legacy_intake_authoring" ||
+    currentPhase === "legacy_intake_blocked" ||
+    currentPhase === "legacy_intake_compile" ||
+    reasonCodes.some((code) => code.includes("legacy_intake_authoring_blocked"))
   ) {
-    return reasonCodes.some((code) => code.includes("requirement_map_authoring_blocked"))
-      ? "requirement_map_blocked"
-      : "requirement_map";
+    return reasonCodes.some((code) => code.includes("legacy_intake_authoring_blocked"))
+      ? "legacy_intake_blocked"
+      : "legacy_intake";
   }
   if (
     currentPhase === "implementation_discovery_brief_authoring" ||
@@ -613,11 +613,11 @@ function progressHasIntakeGate(progress: Record<string, unknown>): boolean {
   const schedulerPhase = typeof progress.schedulerPhase === "string" ? progress.schedulerPhase : "";
   const reasonCodes = boundedStrings(progress.reasonCodes, 40);
   return (
-    currentPhase.startsWith("requirement_map_") ||
+    currentPhase.startsWith("legacy_intake_") ||
     currentPhase.startsWith("implementation_discovery_brief_") ||
-    schedulerPhase.startsWith("requirement_map_") ||
+    schedulerPhase.startsWith("legacy_intake_") ||
     schedulerPhase.startsWith("implementation_discovery_brief_") ||
-    reasonCodes.some((code) => code.startsWith("requirement_map_"))
+    reasonCodes.some((code) => code.startsWith("legacy_intake_"))
   );
 }
 

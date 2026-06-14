@@ -20,7 +20,6 @@ function acceptedProfile() {
     closeoutSource: "model",
     evidenceClassRefs: {
       runtime_graph: ["runtime-graph://graph-1"],
-      scheduler_tool_trace: ["runtime-tool://scheduler.select_next_node/invocation-1"],
       worker_tool_trace: ["runtime-tool://worker.invoke/invocation-1"],
       source_change: ["repo://file.ts#hash"],
       validation: ["validation://test"],

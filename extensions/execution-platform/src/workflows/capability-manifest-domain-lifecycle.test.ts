@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { RuntimeToolRegistry } from "../runtime-tool-call/runtime-tool-registry.ts";
 import {
   CAPABILITY_DOMAIN_LIFECYCLE_MANIFEST_MAX_BYTES,
   compileCapabilityManifestRuntimeToolOutput,
@@ -8,7 +7,6 @@ import {
   buildRuntimeNodeCapabilityManifest,
   runtimeNodeCapabilityManifestForModel,
 } from "./runtime-node-capability-registry.ts";
-import { registerSchedulerRuntimeTools } from "./scheduler-runtime-tools.ts";
 
 describe("capability manifest domain lifecycle", () => {
   it("keeps the model-facing capability menu compact and lookup-backed", () => {
@@ -48,11 +46,11 @@ describe("capability manifest domain lifecycle", () => {
       const output = compileCapabilityManifestRuntimeToolOutput({
         toolId,
         metadata: {
-          capabilityId: "planning_capsule_draft",
-          workflowId: "agent_team.product_spec_planning",
+          capabilityId: "architecture_mapper",
+          workflowId: "agent_team.architecture_red_team",
           phase: "execution",
           executionIntent: "domain_action",
-          requiredSourceMaterialKinds: ["planning_domain_resource_refs"],
+          requiredSourceMaterialKinds: ["source_prompt_section"],
           requiredEvidenceKinds: ["planning_capsule"],
         },
       });
@@ -79,8 +77,8 @@ describe("capability manifest domain lifecycle", () => {
     const output = compileCapabilityManifestRuntimeToolOutput({
       toolId: "capability.validate_intent",
       metadata: {
-        capabilityId: "planning_capsule_draft",
-        workflowId: "agent_team.product_spec_planning",
+        capabilityId: "architecture_mapper",
+        workflowId: "agent_team.architecture_red_team",
         executionIntent: "source_edit",
         requiredSourceMaterialKinds: ["target_snapshot"],
         requiredEvidenceKinds: ["source_change"],
@@ -100,37 +98,6 @@ describe("capability manifest domain lifecycle", () => {
       runtimeSemanticJudgmentAllowed: false,
       rawPromptStored: false,
       rawResponseStored: false,
-    });
-  });
-
-  it("executes registered capability tools through the scheduler runtime registry", async () => {
-    const registry = new RuntimeToolRegistry();
-    registerSchedulerRuntimeTools({ registry, includeWorkerInvoke: true });
-
-    const registered = registry.require("capability.require_resources");
-    expect(registered.executor).toBeDefined();
-    const result = await registered.executor!.execute({
-      definition: registered.definition,
-      toolId: "capability.require_resources",
-      invocationId: "test-capability-require-resources",
-      idempotencyScope: "test",
-      idempotencyKey: "capability-require-resources",
-      inputSummary: "Require resources for Product/Spec planning capsule.",
-      metadata: {
-        capabilityId: "planning_capsule_draft",
-      },
-      rawPromptStored: false,
-      rawResponseStored: false,
-    });
-
-    expect(result.status).toBe("succeeded");
-    expect(result.outputSummary).toContain("planning_capsule_draft");
-    expect(result.reasonCodes).toEqual(["capability_require_resources_succeeded"]);
-    expect(result.metadata).toMatchObject({
-      toolId: "capability.require_resources",
-      capabilityId: "planning_capsule_draft",
-      requiredResourcePacketKind: null,
-      rawToolLogStored: false,
     });
   });
 });

@@ -34,7 +34,7 @@ describe("structured tool/schema adapter", () => {
     const profile = buildStructuredAdapterProviderProfile(
       classifyModelTaskCall({
         taskClass: "schema_normalization",
-        callSite: "requirement_map.targeted_repair",
+        callSite: "router.enum_repair",
       }),
     );
     const preflight = structuredAdapterPreflight({
@@ -53,7 +53,7 @@ describe("structured tool/schema adapter", () => {
     const profile = buildStructuredAdapterProviderProfile(
       classifyModelTaskCall({
         taskClass: "local_semantic_extraction",
-        callSite: "intake.requirement_map.native_tool_batch",
+        callSite: "source_prompt.excerpt_interpretation",
       }),
     );
     const firstDiagnostics = structuredAdapterDiagnostics({

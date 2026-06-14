@@ -14,7 +14,7 @@ describe("runtime toolification truth registry", () => {
 
     expect(summary.surfaceCount).toBeGreaterThan(8);
     expect(summary.productionPrimaryCount).toBeGreaterThan(3);
-    expect(summary.queuedForToolificationCount).toBeGreaterThanOrEqual(2);
+    expect(summary.queuedForToolificationCount).toBeGreaterThanOrEqual(1);
     expect(summary.nextQueueItemIds).not.toContain(
       "openclaw-convergence.toolification-10-closeout-generate-toolification",
     );
@@ -67,22 +67,14 @@ describe("runtime toolification truth registry", () => {
       nextQueueItemId: null,
       blockerReasonCodes: [],
     });
-    expect(
-      surfaces.find((surface) => surface.surfaceId === "generic-workflow-runner-retirement"),
-    ).toMatchObject({
-      currentStatus: "production_primary",
-      targetStatus: "production_primary",
-      nextQueueItemId: null,
-      blockerReasonCodes: [],
-      gates: {
-        compatibilityRetirementRequired: true,
-      },
-    });
+    expect(surfaces.map((surface) => surface.surfaceId)).not.toContain(
+      "generic-workflow-runner-retirement",
+    );
   });
 
   it("accepts production-primary claims only when required refs exist", () => {
     const surface = buildRuntimeToolificationTruthRegistry().find(
-      (item) => item.surfaceId === "scheduler-toolification",
+      (item) => item.surfaceId === "router-front-door-tool-protocol",
     );
     expect(surface).toBeTruthy();
 
@@ -92,7 +84,7 @@ describe("runtime toolification truth registry", () => {
         surfaceId: surface!.surfaceId,
         claimKind: "production_primary",
         claimedStatus: "production_primary",
-        evidenceRefs: ["artifact://scheduler/evidence"],
+        evidenceRefs: ["artifact://router/evidence"],
         rawPromptStored: false,
         rawResponseStored: false,
         rawLogsStored: false,
@@ -110,10 +102,11 @@ describe("runtime toolification truth registry", () => {
         surfaceId: surface!.surfaceId,
         claimKind: "production_primary",
         claimedStatus: "production_primary",
-        evidenceRefs: ["artifact://scheduler/evidence"],
-        toolInvocationRefs: ["runtime-tool://scheduler/decompose"],
-        workQueueReadbackRefs: ["work-queue-readback://scheduler"],
-        closeoutRefs: ["closeout://scheduler"],
+        evidenceRefs: ["artifact://router/evidence"],
+        toolInvocationRefs: ["runtime-tool://router/front-door"],
+        workQueueReadbackRefs: ["work-queue-readback://router"],
+        closeoutRefs: ["closeout://router"],
+        retiredCompatibilityRefs: ["retired-compat://router-front-door-proof-runner"],
         rawPromptStored: false,
         rawResponseStored: false,
         rawLogsStored: false,

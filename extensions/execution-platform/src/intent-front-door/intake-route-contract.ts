@@ -127,7 +127,7 @@ export function validateIntakeRouteContract(input: {
   }
 
   if (contract.requiredRequestedActions.length > 0) {
-    reasonCodes.push("intake_route_contract_actions_deferred_to_requirement_map");
+    reasonCodes.push("intake_route_contract_actions_deferred_to_runtime_policy");
   }
 
   const executorWorkflowId = input.routerOutput.executorWorkflowId ?? input.routerOutput.workflowId;
@@ -146,7 +146,7 @@ export function validateIntakeRouteContract(input: {
     (reason) =>
       reason.startsWith("intake_route_contract_") &&
       reason !== "intake_route_contract_validation_applied" &&
-      reason !== "intake_route_contract_actions_deferred_to_requirement_map",
+      reason !== "intake_route_contract_actions_deferred_to_runtime_policy",
   );
   return {
     accepted,

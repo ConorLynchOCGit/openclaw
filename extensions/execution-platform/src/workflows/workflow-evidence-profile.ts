@@ -5,7 +5,6 @@ export const WORKFLOW_EVIDENCE_PROFILE_EVALUATION_ARTIFACT_TYPE =
 
 export type WorkflowEvidenceClass =
   | "runtime_graph"
-  | "scheduler_tool_trace"
   | "worker_tool_trace"
   | "model_call_trace"
   | "script_validation_trace"
@@ -314,29 +313,6 @@ export type CompileReadinessValidation = RuntimeArtifactStorageFlags & {
   supersededByValidationId: string | null;
 };
 
-export type ProductSpecPlanningCloseout = RuntimeArtifactStorageFlags & {
-  artifactKind: "product_spec_planning_closeout";
-  closeoutId: string;
-  workflowId: string;
-  runtimeJobId: string;
-  authority: Extract<ArtifactAuthority, "model" | "human">;
-  lifecycle: Extract<ArtifactLifecycle, "draft" | "submitted" | "accepted" | "superseded">;
-  validationState: ArtifactValidationState;
-  missionLedgerRef: string;
-  planningIntentRef: string;
-  planningCapsuleRefs: string[];
-  actionGraphProposalRefs: string[];
-  compileReadinessRefs: string[];
-  humanDecisionRefs: string[];
-  researchBriefRefs: string[];
-  commitmentEvidenceRefs: string[];
-  limitationRefs: string[];
-  eli5SummaryRef: string;
-  childExecutionStarted: false;
-  revisionRef: string | null;
-  supersededByCloseoutId: string | null;
-};
-
 const MAX_REFS_PER_CLASS = 12;
 const MAX_REASON_CODES = 24;
 const MAX_LIMITATIONS = 12;
@@ -459,7 +435,14 @@ export function validatePlanningIntentRecord(intent: unknown): {
     ["authorityLimitRefs", "planning_intent_record_authority_limit_refs_must_be_array"],
     ["uncertaintyRefs", "planning_intent_record_uncertainty_refs_must_be_array"],
     ["evidenceExpectationRefs", "planning_intent_record_evidence_expectation_refs_missing"],
-  ].map(([field, reason]) => [field, reason, field === "targetSubjectRefs" || field === "evidenceExpectationRefs"] as const)) {
+  ].map(
+    ([field, reason]) =>
+      [
+        field,
+        reason,
+        field === "targetSubjectRefs" || field === "evidenceExpectationRefs",
+      ] as const,
+  )) {
     if (required ? !nonEmptyStringArray(artifact[field]) : !stringArray(artifact[field])) {
       reasonCodes.push(reason);
     }
@@ -756,58 +739,6 @@ export function validateCompileReadinessValidation(validation: unknown): {
   return { valid: reasonCodes.length === 0, reasonCodes };
 }
 
-export function validateProductSpecPlanningCloseout(closeout: unknown): {
-  valid: boolean;
-  reasonCodes: string[];
-} {
-  const reasonCodes: string[] = [];
-  const artifact = objectRecord(closeout);
-  if (!artifact) {
-    return { valid: false, reasonCodes: ["product_spec_planning_closeout_not_object"] };
-  }
-  requireCommonArtifactFields(
-    artifact,
-    {
-      idField: "closeoutId",
-      idReason: "product_spec_planning_closeout_id_missing",
-      prefix: "product_spec_planning_closeout",
-      authorities: ["model", "human"],
-      lifecycles: ["draft", "submitted", "accepted", "superseded"],
-    },
-    reasonCodes,
-  );
-  for (const [field, reason] of [
-    ["missionLedgerRef", "product_spec_planning_closeout_mission_ledger_ref_missing"],
-    ["planningIntentRef", "product_spec_planning_closeout_planning_intent_ref_missing"],
-    ["eli5SummaryRef", "product_spec_planning_closeout_eli5_summary_ref_missing"],
-  ] as const) {
-    if (!nonEmptyString(artifact[field])) {
-      reasonCodes.push(reason);
-    }
-  }
-  for (const [field, reason, required] of [
-    ["planningCapsuleRefs", "product_spec_planning_closeout_capsule_refs_missing"],
-    ["actionGraphProposalRefs", "product_spec_planning_closeout_action_graph_refs_missing"],
-    ["compileReadinessRefs", "product_spec_planning_closeout_compile_readiness_refs_missing"],
-    ["humanDecisionRefs", "product_spec_planning_closeout_human_decision_refs_must_be_array"],
-    ["researchBriefRefs", "product_spec_planning_closeout_research_brief_refs_must_be_array"],
-    ["commitmentEvidenceRefs", "product_spec_planning_closeout_commitment_evidence_refs_missing"],
-    ["limitationRefs", "product_spec_planning_closeout_limitation_refs_must_be_array"],
-  ].map(([field, reason]) => [
-    field,
-    reason,
-    ["planningCapsuleRefs", "actionGraphProposalRefs", "compileReadinessRefs", "commitmentEvidenceRefs"].includes(field),
-  ] as const)) {
-    if (required ? !nonEmptyStringArray(artifact[field]) : !stringArray(artifact[field])) {
-      reasonCodes.push(reason);
-    }
-  }
-  if (artifact.childExecutionStarted !== false) {
-    reasonCodes.push("product_spec_planning_closeout_child_execution_started_must_be_false");
-  }
-  return { valid: reasonCodes.length === 0, reasonCodes };
-}
-
 function refsFor(
   refs: Partial<Record<WorkflowEvidenceClass, string[]>>,
 ): Partial<Record<WorkflowEvidenceClass, string[]>> {
@@ -831,7 +762,6 @@ export function listWorkflowEvidenceProfiles(): WorkflowEvidenceProfile[] {
       displayName: "Coding Team",
       requiredEvidenceClasses: [
         "runtime_graph",
-        "scheduler_tool_trace",
         "worker_tool_trace",
         "source_change",
         "validation",
@@ -850,42 +780,11 @@ export function listWorkflowEvidenceProfiles(): WorkflowEvidenceProfile[] {
       rawLogsStored: false,
     },
     {
-      profileId: "workflow-evidence-profile.product-spec-planning.v1",
-      workflowId: "agent_team.product_spec_planning",
-      displayName: "Product/Spec Planning",
-      requiredEvidenceClasses: [
-        "runtime_graph",
-        "scheduler_tool_trace",
-        "planning_intent",
-        "planning_capsule",
-        "action_graph_proposal",
-        "compile_readiness",
-        "closeout",
-        "work_queue_readback",
-      ],
-      optionalEvidenceClasses: [
-        "planning_framework_contract",
-        "research_brief",
-        "planning_capsule_revision",
-        "human_decision",
-        "model_call_trace",
-      ],
-      cleanSuccessAllowed: true,
-      closeoutMustBeModelAuthored: true,
-      deepCompletionReviewRequired: true,
-      ownerReadbackRequired: true,
-      reasonCodes: ["product_spec_profile_requires_planning_capsule_compile_readiness_closeout"],
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawLogsStored: false,
-    },
-    {
       profileId: "workflow-evidence-profile.architecture-red-team.v1",
       workflowId: "agent_team.architecture_red_team",
       displayName: "Architecture Red-Team And Research Gate",
       requiredEvidenceClasses: [
         "runtime_graph",
-        "scheduler_tool_trace",
         "model_call_trace",
         "research_brief",
         "review",

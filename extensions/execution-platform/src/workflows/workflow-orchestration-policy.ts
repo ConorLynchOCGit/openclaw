@@ -3,7 +3,6 @@ import type { RuntimeToolFamily } from "../runtime-tool-call/runtime-tool-types.
 import type { WorkflowEvidenceClass } from "./workflow-evidence-profile.ts";
 
 export type WorkflowPhase =
-  | "requirement_map"
   | "source_grounding"
   | "source_material"
   | "domain_action_gate"
@@ -133,7 +132,6 @@ export type WorkflowOrchestrationPolicyValidation = {
 };
 
 const COMPLEX_REQUIRED_PHASES: WorkflowPhase[] = [
-  "requirement_map",
   "work_breakdown",
   "capability_selection",
   "graph_compile",

@@ -116,10 +116,8 @@ describe("LiveStructuredModelIntentRouterProvider", () => {
     expect(systemPrompt).toContain("research_only: current-doc research");
     expect(systemPrompt).toContain("Workflow menu:");
     expect(systemPrompt).toContain("agent_team.coding: implementation executor");
-    expect(systemPrompt).toContain("agent_team.product_spec_planning: planning executor");
-    expect(systemPrompt).toContain(
-      "agent_team.product_spec_planning is not an implementation or coding executor",
-    );
+    expect(systemPrompt).toContain("agent_team.architecture: architecture/spec planning/review");
+    expect(systemPrompt).not.toContain("agent_team.architecture");
     expect(systemPrompt).toContain("often the subject being changed, not the executor");
     expect(systemPrompt).toContain("imply agent_team.coding as the executor");
     expect(systemPrompt).toContain("single_agent.web_research");
@@ -134,7 +132,7 @@ describe("LiveStructuredModelIntentRouterProvider", () => {
     expect(systemPrompt).not.toContain("blocked_route_repair_attempted");
     expect(systemPrompt).toContain("Context trust contract:");
     expect(systemPrompt).toContain("Native tool contract:");
-    expect(systemPrompt).toContain("IntakeDecompositionRunner authors the RequirementMap");
+    expect(systemPrompt).toContain("Runtime policy preserves authority and execution boundaries");
     expect(systemPrompt).toContain("router.classify_primary_outcome");
     expect(systemPrompt).not.toContain("router.confirm_executor_subject_split");
     expect(systemPrompt).toContain("router.select_executor_workflow");
@@ -206,8 +204,8 @@ describe("LiveStructuredModelIntentRouterProvider", () => {
     expect(menu).toContain("Workflow menu:");
     expect(menu).toContain("workflow.docs_skills");
     expect(menu).toContain("agent_team.coding: implementation executor");
-    expect(menu).toContain("agent_team.product_spec_planning: planning executor");
-    expect(menu).toContain("not for coding, implementation");
+    expect(menu).toContain("agent_team.architecture: architecture/spec planning/review");
+    expect(menu).not.toContain("agent_team.architecture");
     expect(menu).not.toMatch(/few-shot|example:/iu);
   });
 
@@ -579,14 +577,14 @@ describe("OpenRouterIntentFrontDoorRouterClient", () => {
     ];
   }
 
-  function productSpecPlanningExecutorSelectionNativeToolCalls(): Array<{
+  function architectureExecutorSelectionNativeToolCalls(): Array<{
     name: string;
     arguments: Record<string, unknown>;
   }> {
     return [
       {
         name: "router_select_executor_workflow",
-        arguments: { workflowId: "agent_team.product_spec_planning", jobType: "executor.workflow" },
+        arguments: { workflowId: "agent_team.architecture", jobType: "executor.agent_team" },
       },
     ];
   }
@@ -949,7 +947,7 @@ describe("OpenRouterIntentFrontDoorRouterClient", () => {
       .fn<typeof fetch>()
       .mockResolvedValueOnce(providerNativeToolResponse(routeClassificationNativeToolCalls()))
       .mockResolvedValueOnce(
-        providerNativeToolResponse(productSpecPlanningExecutorSelectionNativeToolCalls()),
+        providerNativeToolResponse(architectureExecutorSelectionNativeToolCalls()),
       )
       .mockResolvedValueOnce(providerNativeToolResponse(executorSelectionNativeToolCalls()));
     const client = new OpenRouterIntentFrontDoorRouterClient({
@@ -979,7 +977,7 @@ describe("OpenRouterIntentFrontDoorRouterClient", () => {
       jobType: "executor.agent_team",
     });
     expect(response.reasonCodes).toContain(
-      "router_stage_selected_executor_workflow:agent_team.product_spec_planning",
+      "router_stage_selected_executor_workflow:agent_team.architecture",
     );
     expect(response.reasonCodes).toContain(
       "router_stage_selected_executor_workflow:agent_team.coding",

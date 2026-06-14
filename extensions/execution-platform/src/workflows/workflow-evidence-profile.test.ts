@@ -8,7 +8,6 @@ import {
   validatePlanningCapsuleRevision,
   validatePlanningFrameworkContractRecord,
   validatePlanningIntentRecord,
-  validateProductSpecPlanningCloseout,
   validateResearchBrief,
   validateWorkflowPlanningCapsuleEvidence,
   workflowEvidenceProfileForWorkflow,
@@ -29,7 +28,6 @@ describe("workflow evidence profiles", () => {
       closeoutSource: "model",
       evidenceClassRefs: {
         runtime_graph: ["runtime-graph://graph-1"],
-        scheduler_tool_trace: ["runtime-tool://scheduler.select_next_node/invocation-1"],
         worker_tool_trace: ["runtime-tool://worker.invoke/invocation-1"],
         source_change: ["repo://extensions/execution-platform/src/example.ts#sha256:abc"],
         validation: ["validation://pnpm-test-file"],
@@ -69,7 +67,6 @@ describe("workflow evidence profiles", () => {
       closeoutSource: "degraded_system_fallback",
       evidenceClassRefs: {
         runtime_graph: ["runtime-graph://graph-1"],
-        scheduler_tool_trace: ["runtime-tool://scheduler.select_next_node/invocation-1"],
         worker_tool_trace: ["runtime-tool://worker.invoke/invocation-1"],
         source_change: ["repo://extensions/execution-platform/src/example.ts#sha256:abc"],
         validation: ["validation://pnpm-test-file"],
@@ -104,7 +101,6 @@ describe("workflow evidence profiles", () => {
     expect(profiles.map((profile) => profile.workflowId)).toEqual(
       expect.arrayContaining([
         "agent_team.coding",
-        "agent_team.product_spec_planning",
         "single_agent.web_research",
         "workflow.web_research",
         "workflow.docs_skills",
@@ -118,37 +114,24 @@ describe("workflow evidence profiles", () => {
       workflowEvidenceProfileForWorkflow("single_agent.web_research").cleanSuccessAllowed,
     ).toBe(true);
     expect(workflowEvidenceProfileForWorkflow("unknown.workflow").cleanSuccessAllowed).toBe(false);
-    expect(
-      workflowEvidenceProfileForWorkflow("agent_team.product_spec_planning").requiredEvidenceClasses,
-    ).toEqual(
-      expect.arrayContaining([
-        "planning_intent",
-        "planning_capsule",
-        "action_graph_proposal",
-        "compile_readiness",
-      ]),
-    );
-    expect(
-      workflowEvidenceProfileForWorkflow("agent_team.product_spec_planning").optionalEvidenceClasses,
-    ).toContain("planning_framework_contract");
   });
 
-  it("validates product/spec planning artifact contracts without raw storage", () => {
+  it("validates planning artifact contracts without raw storage", () => {
     expect(
       validatePlanningIntentRecord({
         artifactKind: "planning_intent_record",
         intentId: "intent-1",
-        workflowId: "agent_team.product_spec_planning",
+        workflowId: "workflow.architecture",
         runtimeJobId: "job-1",
         authority: "model",
         lifecycle: "accepted",
         validationState: "valid",
         objectiveRef: "planning-intent://intent-1/objective",
-        targetSubjectRefs: ["workflow://agent_team.product_spec_planning"],
+        targetSubjectRefs: ["workflow://workflow.architecture"],
         scopeRef: "planning-intent://intent-1/scope",
         constraintRefs: ["planning-intent://intent-1/constraint/no-auto-exec"],
         nonGoalRefs: [],
-        authorityLimitRefs: ["policy://product-spec/proposal-only"],
+        authorityLimitRefs: ["policy://architecture-review/proposal-only"],
         uncertaintyRefs: ["planning-intent://intent-1/uncertainty/current-facts"],
         evidenceExpectationRefs: ["evidence://planning-capsule"],
         researchNeeded: false,
@@ -163,12 +146,12 @@ describe("workflow evidence profiles", () => {
       validateResearchBrief({
         artifactKind: "research_brief",
         briefId: "brief-1",
-        workflowId: "agent_team.product_spec_planning",
+        workflowId: "workflow.architecture",
         runtimeJobId: "job-1",
         authority: "model",
         lifecycle: "accepted",
         validationState: "valid",
-        topicRef: "topic://product-spec",
+        topicRef: "topic://architecture-review",
         findingRefs: ["research://finding-1"],
         limitationRefs: [],
         revisionRef: null,
@@ -181,12 +164,12 @@ describe("workflow evidence profiles", () => {
       validatePlanningFrameworkContractRecord({
         artifactKind: "planning_framework_contract",
         contractId: "framework-contract-1",
-        workflowId: "agent_team.product_spec_planning",
+        workflowId: "workflow.architecture",
         runtimeJobId: "job-1",
         authority: "model",
         lifecycle: "accepted",
         validationState: "valid",
-        targetSubjectRefs: ["workflow://agent_team.product_spec_planning"],
+        targetSubjectRefs: ["workflow://workflow.architecture"],
         lifecyclePhaseRefs: ["lifecycle://resource-focus", "lifecycle://domain-action-gate"],
         resourceContractRefs: ["resource-contract://planning-domain"],
         actionGateRefs: ["domain-action-gate://planning-framework-contract"],
@@ -206,7 +189,7 @@ describe("workflow evidence profiles", () => {
       validateWorkflowPlanningCapsuleEvidence({
         artifactKind: "planning_capsule",
         capsuleId: "capsule-1",
-        workflowId: "agent_team.product_spec_planning",
+        workflowId: "workflow.architecture",
         runtimeJobId: "job-1",
         authority: "model",
         lifecycle: "accepted",
@@ -224,7 +207,7 @@ describe("workflow evidence profiles", () => {
       validatePlanningCapsuleRevision({
         artifactKind: "planning_capsule_revision",
         revisionId: "revision-1",
-        workflowId: "agent_team.product_spec_planning",
+        workflowId: "workflow.architecture",
         runtimeJobId: "job-1",
         authority: "model",
         lifecycle: "submitted",
@@ -246,7 +229,7 @@ describe("workflow evidence profiles", () => {
       validateHumanPlanningDecision({
         artifactKind: "human_decision",
         decisionId: "decision-1",
-        workflowId: "agent_team.product_spec_planning",
+        workflowId: "workflow.architecture",
         runtimeJobId: "job-1",
         authority: "human",
         lifecycle: "paused",
@@ -267,7 +250,7 @@ describe("workflow evidence profiles", () => {
       validateActionGraphProposal({
         artifactKind: "action_graph_proposal",
         proposalId: "proposal-1",
-        workflowId: "agent_team.product_spec_planning",
+        workflowId: "workflow.architecture",
         runtimeJobId: "job-1",
         authority: "model",
         lifecycle: "submitted",
@@ -287,7 +270,7 @@ describe("workflow evidence profiles", () => {
       validateCompileReadinessValidation({
         artifactKind: "compile_readiness",
         validationId: "compile-1",
-        workflowId: "agent_team.product_spec_planning",
+        workflowId: "workflow.architecture",
         runtimeJobId: "job-1",
         authority: "runtime",
         lifecycle: "failed",
@@ -303,32 +286,6 @@ describe("workflow evidence profiles", () => {
         ...safety,
       }),
     ).toMatchObject({ valid: true });
-
-    expect(
-      validateProductSpecPlanningCloseout({
-        artifactKind: "product_spec_planning_closeout",
-        closeoutId: "closeout-1",
-        workflowId: "agent_team.product_spec_planning",
-        runtimeJobId: "job-1",
-        authority: "model",
-        lifecycle: "accepted",
-        validationState: "valid",
-        missionLedgerRef: "mission-ledger://job-1",
-        planningIntentRef: "planning-intent://intent-1",
-        planningCapsuleRefs: ["planning-capsule://capsule-1"],
-        actionGraphProposalRefs: ["action-graph-proposal://proposal-1"],
-        compileReadinessRefs: ["compile-readiness://compile-1"],
-        humanDecisionRefs: [],
-        researchBriefRefs: [],
-        commitmentEvidenceRefs: ["evidence-claim://commitment-1"],
-        limitationRefs: [],
-        eli5SummaryRef: "closeout://closeout-1/eli5",
-        childExecutionStarted: false,
-        revisionRef: null,
-        supersededByCloseoutId: null,
-        ...safety,
-      }),
-    ).toMatchObject({ valid: true });
   });
 
   it("rejects raw storage, unsafe human decision storage, and auto-start action proposals", () => {
@@ -336,12 +293,12 @@ describe("workflow evidence profiles", () => {
       validateResearchBrief({
         artifactKind: "research_brief",
         briefId: "brief-1",
-        workflowId: "agent_team.product_spec_planning",
+        workflowId: "workflow.architecture",
         runtimeJobId: "job-1",
         authority: "model",
         lifecycle: "accepted",
         validationState: "valid",
-        topicRef: "topic://product-spec",
+        topicRef: "topic://architecture-review",
         findingRefs: [],
         limitationRefs: [],
         revisionRef: null,
@@ -359,7 +316,7 @@ describe("workflow evidence profiles", () => {
       validatePlanningIntentRecord({
         artifactKind: "planning_intent_record",
         intentId: "intent-1",
-        workflowId: "agent_team.product_spec_planning",
+        workflowId: "workflow.architecture",
         runtimeJobId: "job-1",
         authority: "model",
         lifecycle: "accepted",
@@ -390,12 +347,12 @@ describe("workflow evidence profiles", () => {
       validatePlanningFrameworkContractRecord({
         artifactKind: "planning_framework_contract",
         contractId: "framework-contract-unsafe",
-        workflowId: "agent_team.product_spec_planning",
+        workflowId: "workflow.architecture",
         runtimeJobId: "job-1",
         authority: "model",
         lifecycle: "accepted",
         validationState: "valid",
-        targetSubjectRefs: ["workflow://agent_team.product_spec_planning"],
+        targetSubjectRefs: ["workflow://workflow.architecture"],
         lifecyclePhaseRefs: [],
         resourceContractRefs: ["resource-contract://planning-domain"],
         actionGateRefs: ["domain-action-gate://planning-framework-contract"],
@@ -420,7 +377,7 @@ describe("workflow evidence profiles", () => {
       validateHumanPlanningDecision({
         artifactKind: "human_decision",
         decisionId: "decision-1",
-        workflowId: "agent_team.product_spec_planning",
+        workflowId: "workflow.architecture",
         runtimeJobId: "job-1",
         authority: "human",
         lifecycle: "resumed",
@@ -446,7 +403,7 @@ describe("workflow evidence profiles", () => {
       validateActionGraphProposal({
         artifactKind: "action_graph_proposal",
         proposalId: "proposal-1",
-        workflowId: "agent_team.product_spec_planning",
+        workflowId: "workflow.architecture",
         runtimeJobId: "job-1",
         authority: "model",
         lifecycle: "submitted",
@@ -464,38 +421,6 @@ describe("workflow evidence profiles", () => {
       valid: false,
       reasonCodes: expect.arrayContaining([
         "action_graph_proposal_child_execution_auto_start_must_be_false",
-      ]),
-    });
-
-    expect(
-      validateProductSpecPlanningCloseout({
-        artifactKind: "product_spec_planning_closeout",
-        closeoutId: "closeout-1",
-        workflowId: "agent_team.product_spec_planning",
-        runtimeJobId: "job-1",
-        authority: "model",
-        lifecycle: "submitted",
-        validationState: "pending",
-        missionLedgerRef: "mission-ledger://job-1",
-        planningIntentRef: "planning-intent://intent-1",
-        planningCapsuleRefs: [],
-        actionGraphProposalRefs: ["action-graph-proposal://proposal-1"],
-        compileReadinessRefs: ["compile-readiness://compile-1"],
-        humanDecisionRefs: [],
-        researchBriefRefs: [],
-        commitmentEvidenceRefs: ["evidence-claim://commitment-1"],
-        limitationRefs: [],
-        eli5SummaryRef: "closeout://closeout-1/eli5",
-        childExecutionStarted: true,
-        revisionRef: null,
-        supersededByCloseoutId: null,
-        ...safety,
-      }),
-    ).toMatchObject({
-      valid: false,
-      reasonCodes: expect.arrayContaining([
-        "product_spec_planning_closeout_capsule_refs_missing",
-        "product_spec_planning_closeout_child_execution_started_must_be_false",
       ]),
     });
   });

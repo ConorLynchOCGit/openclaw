@@ -32,7 +32,7 @@ export type RuntimeRepairFailureClass = (typeof RUNTIME_REPAIR_FAILURE_CLASSES)[
 export const RUNTIME_REPAIR_BOUNDARY_KINDS = [
   "router",
   "mission_ledger",
-  "requirement_map",
+  "legacy_intake",
   "execution_contract",
   "context_scout",
   "artifact_storage",
@@ -492,7 +492,7 @@ export function failureClassFromReasonCodes(input: {
   if (/adapter|worker_loop|file_edit|patch|edit_transaction/iu.test(combined)) {
     return "adapter_protocol_failure";
   }
-  if (/edge|graph|decomposition|scheduler.*rejected|scheduler_graph_patch/iu.test(combined)) {
+  if (/edge|graph|decomposition|runtime_graph|graph_compile|scheduler.*rejected/iu.test(combined)) {
     return "graph_structure_insufficient";
   }
   if (/work[_-]queue|projection|readback/iu.test(combined)) {

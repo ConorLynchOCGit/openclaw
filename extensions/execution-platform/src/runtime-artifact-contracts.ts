@@ -169,13 +169,6 @@ const BODY_ARTIFACT_CONTRACTS: RuntimeArtifactContract[] = [
     legacyBodyKeys: ["sourcePromptWindow", "sourcePromptWindowBody", "body"],
   }),
   payloadContract({
-    artifactType: "execution_platform.requirement_map",
-    contractId: "runtime-artifact.requirement-map.v1",
-    domain: "mission",
-    bodySchemaRef: "RequirementMap",
-    legacyBodyKeys: ["requirementMap", "requirementMapBody", "body"],
-  }),
-  payloadContract({
     artifactType: "execution_platform.node_execution_run_record",
     contractId: "runtime-artifact.node-execution-run-record.v1",
     domain: "worker",
