@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { resolveOpenClawAgentDir } from "./agent-paths.js";
 import {
   CUSTOM_PROXY_MODELS_CONFIG,
   installModelsConfigTestHooks,
@@ -101,6 +102,42 @@ describe("models-config write serialization", () => {
 
       await ensureOpenClawModelsJson(CUSTOM_PROXY_MODELS_CONFIG);
       expect(planOpenClawModelsJsonMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("reuses an existing models.json before replanning when reuse-existing is requested", async () => {
+    await withModelsTempHome(async () => {
+      const agentDir = resolveOpenClawAgentDir();
+      await fs.mkdir(agentDir, { recursive: true });
+      await fs.writeFile(
+        path.join(agentDir, "models.json"),
+        `${JSON.stringify(
+          {
+            providers: {
+              "custom-proxy": {
+                baseUrl: "http://localhost:4000/v1",
+                models: [],
+              },
+            },
+          },
+          null,
+          2,
+        )}\n`,
+        { mode: 0o600 },
+      );
+      resetModelsJsonReadyCacheForTest();
+      planOpenClawModelsJsonMock.mockClear();
+
+      const result = await ensureOpenClawModelsJson({ models: { providers: {} } }, undefined, {
+        policy: "reuse-existing",
+      });
+
+      expect(result.wrote).toBe(false);
+      expect(planOpenClawModelsJsonMock).not.toHaveBeenCalled();
+      const parsed = await readGeneratedModelsJson<{
+        providers: { "custom-proxy"?: { baseUrl?: string } };
+      }>();
+      expect(parsed.providers["custom-proxy"]?.baseUrl).toBe("http://localhost:4000/v1");
     });
   });
 });

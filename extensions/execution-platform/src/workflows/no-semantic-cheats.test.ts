@@ -95,22 +95,17 @@ describe("no semantic cheats in runtime boundary code", () => {
     expect(scheduler).not.toContain("context-synthesis");
   });
 
-  it("keeps default context synthesis retired in scheduler and replay code", () => {
+  it("keeps default context synthesis retired in scheduler and deletes the old replay script", () => {
     const scheduler = source(
       "extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.ts",
     );
-    const replay = source("scripts/execution-platform-run-product-spec-boundary-replay.mjs");
 
     expect(scheduler).not.toContain("contextSynthesisCoordinationRequired");
     expect(scheduler).not.toContain("context_synthesis_requires_explicit_coordination_policy");
     expect(scheduler).not.toContain("runtime_policy_default_context_synthesis_retired");
     expect(scheduler).not.toContain("context_synthesis");
     expect(scheduler).not.toContain("context-synthesis");
-    expect(replay).not.toContain(
-      "runtime-work-graph://${node.graphId}/context-synthesis/product-spec-planning-native-workflow-implementation-synthesis",
-    );
-    expect(replay).not.toContain('ref.includes("context-synthesis")');
-    expect(replay).not.toContain("after-context-synthesis");
+    expect(exists("scripts/execution-platform-run-product-spec-boundary-replay.mjs")).toBe(false);
   });
 
   it("keeps Product/Spec-specific prompt examples out of generic graph contract repair", () => {
@@ -168,23 +163,12 @@ describe("no semantic cheats in runtime boundary code", () => {
   });
 
   it("keeps retired resource selection deleted from production execution", () => {
-    const replay = source("scripts/execution-platform-run-product-spec-boundary-replay.mjs");
     const productionRunner = source(
       "extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts",
     );
-    const domainResourceSelectionReplaySection = replay.slice(
-      replay.indexOf("async function compileReplayDomainResourceSelectionPacket"),
-      replay.indexOf("function replayContextRefsForNode"),
-    );
 
     expect(exists("extensions/execution-platform/src/workflows/resource-selection.ts")).toBe(false);
-    expect(replay).not.toContain("compileReplayDomainResourceSelectionPacket");
-    expect(replay).not.toContain("resource.selection.propose");
-    expect(replay).not.toContain("resource.selection.mark_blocked");
-    expect(domainResourceSelectionReplaySection).not.toContain("new CodexDynamicJsonClient");
-    expect(domainResourceSelectionReplaySection).not.toContain("executeModelToolTurn");
-    expect(replay).not.toContain("const concreteIntentRefs = [");
-    expect(replay).not.toContain("...selectedTargetFileRefs,\n      ...replayNodeTargetRefs(node)");
+    expect(exists("scripts/execution-platform-run-product-spec-boundary-replay.mjs")).toBe(false);
     expect(productionRunner).not.toContain("const concreteIntentRefs = [");
     expect(productionRunner).not.toContain(
       '...metadataStringArray(metadata, "selectedTargetFileRefs"),\n          ...metadataStringArray(metadata, "selectedConcreteTargetRefs"),\n          ...metadataStringArray(metadata, "targetRefs"),',
@@ -244,31 +228,21 @@ describe("no semantic cheats in runtime boundary code", () => {
     const schedulerTools = source(
       "extensions/execution-platform/src/workflows/scheduler-runtime-tools.ts",
     );
-    const nodeSession = source("extensions/execution-platform/src/workflows/node-agent-session.ts");
 
     expect(exists("extensions/execution-platform/src/workflows/context-scope-revision.ts")).toBe(
       false,
     );
+    expect(exists("extensions/execution-platform/src/workflows/node-agent-session.ts")).toBe(false);
     expect(schedulerTools).not.toContain("resource.scope.select_legal_subset");
     expect(schedulerTools).not.toContain("resource.scope.explain_unshardable_unit");
-    expect(nodeSession).not.toContain("resource.scope.select_legal_subset");
-    expect(nodeSession).not.toContain("resource.scope.explain_unshardable_unit");
   });
 
   it("keeps retired node resource ledger deleted from production execution", () => {
-    const nodeSession = source("extensions/execution-platform/src/workflows/node-agent-session.ts");
-    const runner = source("src/gateway/execution-platform-agent-team-runner.ts");
-
     expect(exists("extensions/execution-platform/src/workflows/node-resource-ledger.ts")).toBe(
       false,
     );
-    expect(nodeSession).not.toContain("NodeExecutionAssignment");
-    expect(nodeSession).toContain("NodeAgentWorkerPrompt");
-    expect(nodeSession).toContain("NODE_EXECUTION_STORAGE_POLICY");
-    expect(nodeSession).toContain("boundedRefsOnly: true");
-    expect(runner).toContain("node_finish");
-    expect(runner).not.toContain("nodeResourceLedger");
-    expect(runner).not.toContain("node_resource_ledger");
+    expect(exists("extensions/execution-platform/src/workflows/node-agent-session.ts")).toBe(false);
+    expect(exists("src/gateway/execution-platform-agent-team-runner.ts")).toBe(false);
   });
 
   it("uses the boundary guardrail audit for production/proof import separation", () => {

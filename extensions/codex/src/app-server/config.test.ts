@@ -67,6 +67,28 @@ describe("Codex app-server config", () => {
     expect(runtime.serviceTier).toBe("priority");
   });
 
+  it("runs the Codex app-server inside the OpenClaw-owned runtime home", () => {
+    const runtime = resolveCodexAppServerRuntimeOptions({
+      env: {
+        HOME: "/home/node",
+        OPENCLAW_RUNTIME_HOME: "/home/node/.openclaw/runtime",
+        CODEX_HOME: "/root/.codex",
+      },
+    });
+
+    expect(runtime.start.env).toEqual(
+      expect.objectContaining({
+        OPENCLAW_RUNTIME_HOME: "/home/node/.openclaw/runtime",
+        HOME: "/home/node/.openclaw/runtime",
+        XDG_STATE_HOME: "/home/node/.openclaw/runtime/state",
+        XDG_CONFIG_HOME: "/home/node/.openclaw/runtime/config",
+        XDG_CACHE_HOME: "/home/node/.openclaw/runtime/cache",
+        TMPDIR: "/home/node/.openclaw/runtime/tmp",
+        CODEX_HOME: "/home/node/.openclaw/runtime/providers/codex",
+      }),
+    );
+  });
+
   it("requires a websocket url when websocket transport is configured", () => {
     expect(() =>
       resolveCodexAppServerRuntimeOptions({

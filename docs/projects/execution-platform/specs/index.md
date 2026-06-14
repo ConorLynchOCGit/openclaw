@@ -90,6 +90,10 @@ title: "Execution Platform Specs"
 81. [OpenClaw Kimi Real-Usage Compaction OpenCode Parity](/projects/execution-platform/specs/openclaw-kimi-real-usage-compaction-opencode-parity)
 82. [OpenClaw Native Context Runtime Pressure Refactor](/projects/execution-platform/specs/openclaw-native-context-runtime-pressure-refactor)
 83. [OpenClaw Native Mutation Runtime And Prompt Profiles](/projects/execution-platform/specs/openclaw-native-mutation-runtime-and-prompt-profiles)
+84. [OpenClaw Native Agentic Orchestration Architecture](/projects/execution-platform/specs/openclaw-native-agentic-orchestration-architecture)
+85. [OpenClaw Native Agent Runtime Core And Envelopes](/projects/execution-platform/specs/openclaw-native-agent-runtime-core-and-envelopes)
+86. [OpenClaw Native Legacy Cleanup Inventory](/projects/execution-platform/specs/openclaw-native-legacy-cleanup-inventory)
+87. [OpenClaw Final Native Agent Runtime Cutover](/projects/execution-platform/specs/openclaw-final-native-agent-runtime-cutover)
 
 ## Routing, Readiness, And Execution Truth
 

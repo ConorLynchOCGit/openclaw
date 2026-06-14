@@ -100,6 +100,31 @@ describe("Execution Platform feature flag registry", () => {
     expect(decision.reasonCodes).toContain("legacy_semantic_intent_routing_fallback_disabled");
   });
 
+  it("keeps legacy front-door execution compatibility disabled unless explicitly enabled", () => {
+    const disabledRegistry = buildExecutionPlatformFeatureFlagRegistry();
+    expect(
+      evaluateExecutionPlatformFlag(disabledRegistry, "legacy_front_door_execution_compatibility", {
+        critical: true,
+      }),
+    ).toMatchObject({
+      allowed: false,
+      decision: "disabled",
+    });
+
+    const enabledRegistry = buildExecutionPlatformFeatureFlagRegistry({
+      env: { OPENCLAW_LEGACY_FRONT_DOOR_EXECUTION_COMPATIBILITY_ENABLED: "1" },
+      scope: "owner_only",
+    });
+    expect(
+      evaluateExecutionPlatformFlag(enabledRegistry, "legacy_front_door_execution_compatibility", {
+        critical: true,
+      }),
+    ).toMatchObject({
+      allowed: true,
+      decision: "allowed",
+    });
+  });
+
   it("blocks unknown critical flags fail-closed", () => {
     const registry = buildExecutionPlatformFeatureFlagRegistry();
     const decision = evaluateExecutionPlatformFlag(registry, "missing_critical_gate", {

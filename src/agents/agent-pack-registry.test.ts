@@ -70,7 +70,7 @@ describe("agent pack registry", () => {
         discoveryDefaultMaxMatches: 60,
         discoveryDefaultMaxFiles: 1_000,
       },
-      requiredTools: ["read", "list", "glob", "grep", "openclaw_resource_read"],
+      requiredTools: ["read", "list", "glob", "grep"],
       forbiddenTools: expect.arrayContaining(["edit", "task", "node_finish"]),
     });
     expect(validationScout).toMatchObject({
@@ -84,11 +84,46 @@ describe("agent pack registry", () => {
         discoveryDefaultMaxMatches: 80,
         discoveryDefaultMaxFiles: 1_500,
       },
-      requiredTools: ["read", "list", "glob", "grep", "exec", "openclaw_resource_read"],
+      requiredTools: ["read", "list", "glob", "grep", "exec"],
       forbiddenTools: expect.arrayContaining(["write", "node_finish"]),
     });
     expect(contextScout?.requiredTools).not.toContain("source_context_batch");
     expect(validationScout?.requiredTools).not.toContain("source_context_batch");
+  });
+
+  it("resolves execution orchestrator and critic packs from the native registry", async () => {
+    const entries = await loadAgentPackRegistryEntries();
+    const orchestrator = findAgentPackRegistryEntry({
+      entries,
+      agentId: "execution-orchestrator",
+    });
+    const critic = findAgentPackRegistryEntry({
+      entries,
+      agentId: "execution-critic",
+    });
+
+    expect(orchestrator).toMatchObject({
+      promptProfile: "execution_orchestrator",
+      allowedChildAgents: [
+        "execution-coding",
+        "execution-critic",
+        "execution-context-scout",
+        "execution-validation-scout",
+      ],
+    });
+    expect(critic).toMatchObject({
+      promptProfile: "execution_critic",
+      requiredDocs: ["IDENTITY.md", "AGENTS.md", "BOOTSTRAP.md", "TOOLS.md"],
+      primarySkills: [],
+      requiredTools: ["read", "grep", "glob", "lsp", "update_plan", "read_todo"],
+      forbiddenTools: expect.arrayContaining(["edit", "apply_patch", "exec", "node_finish"]),
+    });
+    expect(
+      resolveAgentPackRuntimeSourceRoot({
+        entry: critic!,
+        defaultProjectRoot: process.cwd(),
+      }),
+    ).toBe(path.join(process.cwd(), "docs", "agents", "execution-critic", "runtime"));
   });
 
   it("resolves execution tool budgets through the sync native registry path", () => {

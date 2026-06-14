@@ -42,11 +42,21 @@ import { createSessionsListTool } from "./tools/sessions-list-tool.js";
 import { createSessionsSendTool } from "./tools/sessions-send-tool.js";
 import { createSessionsSpawnTool } from "./tools/sessions-spawn-tool.js";
 import { createSessionsYieldTool } from "./tools/sessions-yield-tool.js";
+import {
+  createStartExecutionSessionTool,
+  type StartExecutionSessionToolInput,
+  type StartExecutionSessionToolResult,
+} from "./tools/start-execution-session-tool.js";
 import { createSubagentsTool } from "./tools/subagents-tool.js";
 import { createTtsTool } from "./tools/tts-tool.js";
 import { createReadTodoTool, createUpdatePlanTool } from "./tools/update-plan-tool.js";
 import { createVideoGenerateTool } from "./tools/video-generate-tool.js";
 import { createWebFetchTool, createWebSearchTool } from "./tools/web-tools.js";
+import {
+  createWorkQueueExecutionEligibilityTool,
+  type WorkQueueExecutionEligibilityToolInput,
+  type WorkQueueExecutionEligibilityToolResult,
+} from "./tools/work-queue-execution-eligibility-tool.js";
 import { resolveWorkspaceRoot } from "./workspace-dir.js";
 
 type OpenClawToolsDeps = {
@@ -147,6 +157,16 @@ export function createOpenClawTools(
       allowedAgentIds: readonly string[];
       parentVisibleResultMaxChars?: number;
       runChildTask: NativeTaskRunChildTask;
+    };
+    /** Runtime-owned launcher for native RuntimeJob-backed execution sessions. */
+    nativeExecutionSession?: {
+      enabled: boolean;
+      startExecutionSession: (
+        input: StartExecutionSessionToolInput,
+      ) => Promise<StartExecutionSessionToolResult>;
+      readWorkQueueEligibility?: (
+        input: WorkQueueExecutionEligibilityToolInput,
+      ) => Promise<WorkQueueExecutionEligibilityToolResult>;
     };
     /** Trusted sender id from inbound context (not tool args). */
     requesterSenderId?: string | null;
@@ -281,6 +301,19 @@ export function createOpenClawTools(
           workspaceDir: spawnWorkspaceDir,
         })
       : null;
+  const startExecutionSessionTool =
+    options?.nativeExecutionSession?.enabled === true
+      ? createStartExecutionSessionTool({
+          startExecutionSession: options.nativeExecutionSession.startExecutionSession,
+        })
+      : null;
+  const workQueueExecutionEligibilityTool =
+    options?.nativeExecutionSession?.enabled === true &&
+    options.nativeExecutionSession.readWorkQueueEligibility
+      ? createWorkQueueExecutionEligibilityTool({
+          readEligibility: options.nativeExecutionSession.readWorkQueueEligibility,
+        })
+      : null;
   const messageTool = options?.disableMessageTool
     ? null
     : createMessageTool({
@@ -351,6 +384,7 @@ export function createOpenClawTools(
       agentSessionKey: options?.agentSessionKey,
       requesterAgentIdOverride: options?.requesterAgentIdOverride,
     }),
+    ...collectPresentOpenClawTools([workQueueExecutionEligibilityTool, startExecutionSessionTool]),
     ...(options?.forceUpdatePlanTool === true ||
     isUpdatePlanToolEnabledForOpenClawTools({
       config: resolvedConfig,

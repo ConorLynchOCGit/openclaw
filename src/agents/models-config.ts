@@ -249,6 +249,22 @@ export async function ensureOpenClawModelsJson(
   const cfg = resolved.config;
   const agentDir = agentDirOverride?.trim() ? agentDirOverride.trim() : resolveOpenClawAgentDir();
   const targetPath = path.join(agentDir, "models.json");
+  const existingModelsFile = await readExistingModelsFile(targetPath);
+  logModelsJsonTiming("existing_models_read", timingStartedAt, {
+    existingByteCount: Buffer.byteLength(existingModelsFile.raw, "utf8"),
+    policy: options?.policy ?? "refresh",
+  });
+  if (options?.policy === "reuse-existing" && existingModelsFile.raw.trim()) {
+    const result = { agentDir, wrote: false };
+    const fingerprint = stableStringify({
+      policy: "reuse-existing",
+      modelsHash: sha256Text(existingModelsFile.raw),
+    });
+    MODELS_JSON_STATE.readyCache.set(targetPath, Promise.resolve({ fingerprint, result }));
+    await ensureModelsFileModeForModelsJson(targetPath);
+    logModelsJsonTiming("existing_models_reused", timingStartedAt);
+    return result;
+  }
   const sourceFingerprint = await buildModelsJsonSourceFingerprint({
     config: cfg,
     sourceConfigForSecrets: resolved.sourceConfigForSecrets,
@@ -258,22 +274,11 @@ export async function ensureOpenClawModelsJson(
     agentDir,
     policy: options?.policy ?? "refresh",
   });
-  const existingModelsFile = await readExistingModelsFile(targetPath);
-  logModelsJsonTiming("existing_models_read", timingStartedAt, {
-    existingByteCount: Buffer.byteLength(existingModelsFile.raw, "utf8"),
-  });
   const existingModelsHash = sha256Text(existingModelsFile.raw);
   const fingerprint = buildModelsJsonReadinessFingerprint({
     sourceFingerprint,
     modelsHash: existingModelsHash,
   });
-  if (options?.policy === "reuse-existing" && existingModelsFile.raw.trim()) {
-    const result = { agentDir, wrote: false };
-    MODELS_JSON_STATE.readyCache.set(targetPath, Promise.resolve({ fingerprint, result }));
-    await ensureModelsFileModeForModelsJson(targetPath);
-    logModelsJsonTiming("existing_models_reused", timingStartedAt);
-    return result;
-  }
   const cached = MODELS_JSON_STATE.readyCache.get(targetPath);
   if (cached) {
     const settled = await cached;

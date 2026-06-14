@@ -345,6 +345,57 @@ describe("handleToolExecutionEnd native task working context", () => {
       await fs.rm(dir, { recursive: true, force: true });
     }
   });
+
+  it("emits execution-critic decisions as ordinary native task result metadata", async () => {
+    const { ctx, onAgentEvent } = createTestContext();
+    ctx.params.agentId = "execution-orchestrator";
+    ctx.params.sessionKey = "agent:execution-orchestrator:session:native";
+
+    await handleToolExecutionEnd(ctx, {
+      type: "tool_execution_end",
+      toolName: "task",
+      toolCallId: "task-execution-critic",
+      isError: false,
+      result: {
+        content: [
+          {
+            type: "text",
+            text: [
+              "Task result from execution-critic (completed).",
+              "REVISE",
+              "Use shared runtime finish evidence instead of model-owned refs.",
+            ].join("\n"),
+          },
+        ],
+        details: {
+          status: "completed",
+          sourceTool: "task",
+          requestedAgentId: "execution-critic",
+          childSessionKey: "agent:execution-critic:subagent:child-critic",
+          runId: "run-child-critic",
+          foreground: true,
+          resultDeliveredToParentContext: true,
+          childIdentityVerified: true,
+          criticDecision: "REVISE",
+          criticDecisionValid: true,
+          criticDecisionExpectedFirstLine: "ACCEPT|REVISE|BLOCK",
+        },
+      },
+    });
+
+    expect(onAgentEvent).toHaveBeenCalledWith({
+      stream: "node-agent",
+      data: expect.objectContaining({
+        eventType: "node_agent_native_task_result",
+        requestedAgentId: "execution-critic",
+        criticDecision: "REVISE",
+        criticDecisionValid: true,
+        criticDecisionExpectedFirstLine: "ACCEPT|REVISE|BLOCK",
+      }),
+    });
+    const emitted = JSON.stringify(onAgentEvent.mock.calls);
+    expect(emitted).not.toContain("Use shared runtime finish evidence");
+  });
 });
 
 describe("handleToolExecutionEnd node-agent tool result trace", () => {

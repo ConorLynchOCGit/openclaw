@@ -96,6 +96,20 @@ executionAgentMaterializations:
     runtimeAliasPath: /home/node/.openclaw/agents/execution-coding/agent
     runtimeFileClass: source_materialized
     recordMode: materialized
+  - agentId: execution-orchestrator
+    projectRoot: /root/services/openclaw-roles/live
+    sourcePath: docs/agents/execution-orchestrator/runtime
+    runtimePath: /root/services/openclaw-roles/live/.openclaw/runtime/agents/execution-orchestrator/agent
+    runtimeAliasPath: /home/node/.openclaw/agents/execution-orchestrator/agent
+    runtimeFileClass: source_materialized
+    recordMode: materialized
+  - agentId: execution-critic
+    projectRoot: /root/services/openclaw-roles/live
+    sourcePath: docs/agents/execution-critic/runtime
+    runtimePath: /root/services/openclaw-roles/live/.openclaw/runtime/agents/execution-critic/agent
+    runtimeAliasPath: /home/node/.openclaw/agents/execution-critic/agent
+    runtimeFileClass: source_materialized
+    recordMode: materialized
   - agentId: execution-context-scout
     projectRoot: /root/services/openclaw-roles/live
     sourcePath: docs/agents/execution-context-scout/runtime
@@ -134,6 +148,12 @@ executionSkillMaterializations:
     recordMode: materialized
 activeConfigRequirements:
   - agentId: execution-coding
+    requiresProjectRoot: /root/services/openclaw-roles/live
+    runtimeWorkspaceClass: runtime_state
+  - agentId: execution-orchestrator
+    requiresProjectRoot: /root/services/openclaw-roles/live
+    runtimeWorkspaceClass: runtime_state
+  - agentId: execution-critic
     requiresProjectRoot: /root/services/openclaw-roles/live
     runtimeWorkspaceClass: runtime_state
   - agentId: execution-context-scout

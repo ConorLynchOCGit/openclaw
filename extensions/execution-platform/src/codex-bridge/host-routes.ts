@@ -7,7 +7,6 @@ import {
   type NativeExecutionRpcAuth,
 } from "../intent-routing/native-execution-rpc.ts";
 import type { JsonValue, RuntimeJobRepository } from "../runtime-job-repository.ts";
-import type { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel.ts";
 import {
   handleWorkQueueCancelExecutionEndpoint,
   handleWorkQueuePauseExecutionEndpoint,
@@ -19,13 +18,8 @@ import {
   summarizeWorkQueueExecutionForUi,
 } from "../work-queue/execution-read-model.ts";
 import type { WorkQueueRepository } from "../work-queue/work-queue-repository.ts";
-import { ProductionWorkflowExecutionFactory } from "../workflows/production-workflow-execution-factory.ts";
+import type { StartExecutionSessionVisibleInput } from "../workflows/native-agentic-orchestration.ts";
 import type { RuntimeWorkGraphRepository } from "../workflows/runtime-work-graph-repository.ts";
-import {
-  handleQueueRunnerRunOnceEndpoint,
-  type QueueRunnerEndpointAuth,
-  type QueueRunnerEndpointRequest,
-} from "./queued-bridge-runner-endpoint.ts";
 
 export type ExecutionPlatformHostRoute = {
   path: string;
@@ -38,29 +32,17 @@ export type ExecutionPlatformHostRoute = {
 export type ExecutionPlatformHostRouteDependencies = {
   runtimeJobs?: RuntimeJobRepository;
   runtimeWorkGraphs?: RuntimeWorkGraphRepository;
-  runtimeToolKernel?: RuntimeToolKernel | null;
   workQueue?: WorkQueueRepository;
   nativeExecutionRpc?: NativeExecutionRpcService;
-  queueRunnerEndpoint?: typeof handleQueueRunnerRunOnceEndpoint;
-  agentTeamRuntimeRunOnce?: (input: {
-    runtimeJobId: string;
-    workerId: string;
-    queueName?: string | null;
-  }) => Promise<{
-    claimed: boolean;
-    completed: boolean;
-    failed: boolean;
-    status: string;
-    runtimeJobId: string | null;
-    teamRunId: string | null;
-    workflowId: string | null;
-    workerId: string;
-    reasonCodes: string[];
-  }>;
   nativeHttpAuth?: TrustedNativeExecutionHttpAuthContext;
 };
 
 type JsonRecord = Record<string, unknown>;
+type HostRouteAuth = {
+  actorId: string;
+  role: "admin" | "service" | "operator";
+  authenticated: boolean;
+};
 type NativeExecutionSourceRoute =
   | "ux"
   | "terminal"
@@ -123,7 +105,7 @@ async function readJsonBody(req: IncomingMessage, maxBytes = 64 * 1024): Promise
   return parsed;
 }
 
-function authFromBody(body: JsonRecord): QueueRunnerEndpointAuth {
+function authFromBody(body: JsonRecord): HostRouteAuth {
   const auth = isRecord(body.auth) ? body.auth : {};
   return {
     actorId: readString(auth.actorId) ?? "",
@@ -189,6 +171,21 @@ function readApprovalRefs(value: unknown) {
     .slice(0, 20);
 }
 
+function readStartExecutionSessionVisibleInput(
+  body: JsonRecord,
+): StartExecutionSessionVisibleInput {
+  const request = isRecord(body.request) ? body.request : body;
+  return {
+    objective: readPromptText(request.objective) ?? "",
+    refs: Array.isArray(request.refs) ? request.refs : [],
+    constraints:
+      typeof request.constraints === "string" || Array.isArray(request.constraints)
+        ? (request.constraints as string | string[])
+        : undefined,
+    validationSignal: readPromptText(request.validationSignal),
+  };
+}
+
 function nativeAuthFromBody(
   body: JsonRecord,
   trustedHttpAuth?: TrustedNativeExecutionHttpAuthContext,
@@ -231,127 +228,6 @@ function unsafeBody(value: unknown): boolean {
   return /raw-transcript-marker|raw-prompt-marker|secret-marker|\bsk-[a-z0-9_-]{12,}/iu.test(
     JSON.stringify(value),
   );
-}
-
-export async function handleExecutionPlatformQueueRunnerHostRoute(
-  req: IncomingMessage,
-  res: ServerResponse,
-  dependencies: ExecutionPlatformHostRouteDependencies = {},
-): Promise<boolean> {
-  if (req.method !== "POST") {
-    writeJson(res, 405, { error: "method_not_allowed" });
-    return true;
-  }
-  let body: JsonRecord = {};
-  try {
-    body = await readJsonBody(req);
-    if (unsafeBody(body)) {
-      writeJson(res, 400, { error: "unsafe_request_content" });
-      return true;
-    }
-    if (readBoolean(body.nativeWorkflowRunOnce) === true && dependencies.runtimeJobs) {
-      if (readBoolean(body.gatewayWorkerRunOnceProofMode) !== true) {
-        writeJson(res, 409, {
-          accepted: false,
-          nativeWorkflowRunOnce: true,
-          blockingReasons: ["gateway_worker_run_once_disabled_by_enqueue_only_boundary"],
-          reasonCodes: ["gateway_must_enqueue_runtime_jobs_not_execute_workers"],
-          daemonStarted: false,
-          schedulerStarted: false,
-          workQueueLifecycleMutated: false,
-        });
-        return true;
-      }
-      const auth = authFromBody(body);
-      if (!auth.authenticated || !auth.actorId) {
-        writeJson(res, 401, { accepted: false, blockingReasons: ["operator_auth_required"] });
-        return true;
-      }
-      const runtimeJobId = readString(body.runtimeJobId);
-      const job = runtimeJobId ? await dependencies.runtimeJobs.getJob(runtimeJobId) : null;
-      if (!job) {
-        writeJson(res, 400, {
-          accepted: false,
-          blockingReasons: ["runtime_job_not_found"],
-          runtimeJobId: runtimeJobId ?? null,
-        });
-        return true;
-      }
-      const queueName = readString(body.queueName);
-      const workerId = readString(body.workerId) ?? `operator:${auth.actorId}`;
-      if (job.jobType === "executor.agent_team" && !dependencies.agentTeamRuntimeRunOnce) {
-        writeJson(res, 409, {
-          accepted: false,
-          nativeWorkflowRunOnce: true,
-          blockingReasons: ["configured_agent_team_supervisor_required"],
-          reasonCodes: ["agent_team_run_once_requires_configured_worker_supervisor"],
-          runtimeJobId: job.jobId,
-          daemonStarted: false,
-          schedulerStarted: false,
-          workQueueLifecycleMutated: false,
-        });
-        return true;
-      }
-      const runOnceResult = await new ProductionWorkflowExecutionFactory({
-        runtimeJobs: dependencies.runtimeJobs,
-        runtimeWorkGraphs: dependencies.runtimeWorkGraphs,
-        runtimeToolKernel: dependencies.runtimeToolKernel ?? null,
-        workQueue: dependencies.workQueue,
-        agentTeamRuntimeRunOnce: dependencies.agentTeamRuntimeRunOnce,
-      }).runOnce({
-        runtimeJobId: job.jobId,
-        workerId,
-        queueName: queueName ?? "agent-team",
-      });
-      writeJson(res, runOnceResult.claimed ? 200 : 400, {
-        accepted: runOnceResult.claimed,
-        nativeWorkflowRunOnce: true,
-        claimed: runOnceResult.claimed,
-        completed: runOnceResult.completed,
-        failed: runOnceResult.failed,
-        runtimeJobId: runOnceResult.runtimeJobId,
-        teamRunId: "teamRunId" in runOnceResult ? runOnceResult.teamRunId : null,
-        workflowId: "workflowId" in runOnceResult ? runOnceResult.workflowId : null,
-        reasonCodes:
-          "reasonCodes" in runOnceResult && Array.isArray(runOnceResult.reasonCodes)
-            ? runOnceResult.reasonCodes.slice(0, 20)
-            : [],
-        boundedProof: {
-          workerId: runOnceResult.workerId,
-          queueName: queueName ?? "agent-team",
-          runtimeJobIdFilter: job.jobId,
-          claimed: runOnceResult.claimed,
-          completed: runOnceResult.completed,
-          failed: runOnceResult.failed,
-          daemonStarted: false,
-          schedulerStarted: false,
-          workQueueLifecycleMutated: false,
-        },
-        daemonStarted: false,
-        schedulerStarted: false,
-        workQueueLifecycleMutated: false,
-      });
-      return true;
-    }
-    const request: QueueRunnerEndpointRequest = {
-      auth: authFromBody(body),
-      workerId: readString(body.workerId),
-      queueName: readString(body.queueName),
-      runtimeJobId: readString(body.runtimeJobId),
-      dryRun: readBoolean(body.dryRun),
-      runtime: dependencies.runtimeJobs ? { runtimeJobs: dependencies.runtimeJobs } : undefined,
-    };
-    const result = await (dependencies.queueRunnerEndpoint ?? handleQueueRunnerRunOnceEndpoint)(
-      request,
-    );
-    writeJson(res, result.accepted ? 200 : 401, result as unknown as JsonValue);
-    return true;
-  } catch (error) {
-    writeJson(res, 400, {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return true;
-  }
 }
 
 export async function handleExecutionPlatformWorkQueueControlHostRoute(
@@ -399,7 +275,15 @@ export async function handleExecutionPlatformWorkQueueControlHostRoute(
 }
 
 export async function handleExecutionPlatformNativeExecutionHostRoute(
-  operation: "submit" | "status" | "apply-control" | "work-queue-projection" | "closeout",
+  operation:
+    | "native-readyz"
+    | "preflight"
+    | "start-session"
+    | "submit"
+    | "status"
+    | "apply-control"
+    | "work-queue-projection"
+    | "closeout",
   req: IncomingMessage,
   res: ServerResponse,
   dependencies: {
@@ -425,40 +309,62 @@ export async function handleExecutionPlatformNativeExecutionHostRoute(
     const auth = nativeAuthFromBody(body, dependencies.nativeHttpAuth);
     const runtimeJobId = readString(body.runtimeJobId) ?? "";
     const result =
-      operation === "submit"
-        ? await service.submit({
-            prompt: readPromptText(body.prompt) ?? "",
-            auth,
-            workItemId: readString(body.workItemId) ?? null,
-            approvalRefs: readApprovalRefs(body.approvalRefs),
-            sourceRoute: auth.sourceRoute,
-            sourcePromptRef: readSourcePromptRef(body.sourcePromptRef),
-            intakeRouteContract: body.intakeRouteContract,
-          })
-        : operation === "status"
-          ? await service.status(runtimeJobId)
-          : operation === "apply-control"
-            ? await service.applyControl({
-                actionKind:
-                  body.actionKind === "pause" ||
-                  body.actionKind === "redirect" ||
-                  body.actionKind === "cancel" ||
-                  body.actionKind === "retry" ||
-                  body.actionKind === "mark_needs_review" ||
-                  body.actionKind === "view_closeout"
-                    ? body.actionKind
-                    : "view_closeout",
-                actionId: readString(body.actionId) ?? "native-execution-control",
-                workItemId: readString(body.workItemId) ?? "",
-                runtimeJobId,
+      operation === "native-readyz"
+        ? await service.nativeReady(auth)
+        : operation === "preflight"
+          ? await service.preflightSession({
+              request: readStartExecutionSessionVisibleInput(body),
+              auth,
+              workItemId: readString(body.workItemId) ?? null,
+              queueName: readString(body.queueName) ?? null,
+              agentProfile: readString(body.agentProfile) ?? null,
+              idempotencyKey: readString(body.idempotencyKey) ?? null,
+              idempotencyScope: readString(body.idempotencyScope) ?? null,
+            })
+          : operation === "start-session"
+            ? await service.startSession({
+                request: readStartExecutionSessionVisibleInput(body),
                 auth,
-                metadata: isRecord(body.metadata)
-                  ? (body.metadata as Record<string, JsonValue>)
-                  : undefined,
+                workItemId: readString(body.workItemId) ?? null,
+                queueName: readString(body.queueName) ?? null,
+                agentProfile: readString(body.agentProfile) ?? null,
+                idempotencyKey: readString(body.idempotencyKey) ?? null,
+                idempotencyScope: readString(body.idempotencyScope) ?? null,
               })
-            : operation === "work-queue-projection"
-              ? await service.readWorkQueueProjection(readString(body.workItemId) ?? "")
-              : await service.readCloseout(runtimeJobId);
+            : operation === "submit"
+              ? await service.submit({
+                  prompt: readPromptText(body.prompt) ?? "",
+                  auth,
+                  workItemId: readString(body.workItemId) ?? null,
+                  approvalRefs: readApprovalRefs(body.approvalRefs),
+                  sourceRoute: auth.sourceRoute,
+                  sourcePromptRef: readSourcePromptRef(body.sourcePromptRef),
+                  intakeRouteContract: body.intakeRouteContract,
+                })
+              : operation === "status"
+                ? await service.status(runtimeJobId)
+                : operation === "apply-control"
+                  ? await service.applyControl({
+                      actionKind:
+                        body.actionKind === "pause" ||
+                        body.actionKind === "redirect" ||
+                        body.actionKind === "cancel" ||
+                        body.actionKind === "retry" ||
+                        body.actionKind === "mark_needs_review" ||
+                        body.actionKind === "view_closeout"
+                          ? body.actionKind
+                          : "view_closeout",
+                      actionId: readString(body.actionId) ?? "native-execution-control",
+                      workItemId: readString(body.workItemId) ?? "",
+                      runtimeJobId,
+                      auth,
+                      metadata: isRecord(body.metadata)
+                        ? (body.metadata as Record<string, JsonValue>)
+                        : undefined,
+                    })
+                  : operation === "work-queue-projection"
+                    ? await service.readWorkQueueProjection(readString(body.workItemId) ?? "")
+                    : await service.readCloseout(runtimeJobId);
     const accepted = !(
       typeof result === "object" &&
       result !== null &&
@@ -512,6 +418,39 @@ export async function handleExecutionPlatformNativeExecutionHostRoute(
         workerContractState: null,
         workerAdapterId: null,
         reasonCodes: ["host_route_submit_error"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        workQueueLifecycleMutated: false,
+      });
+      return true;
+    }
+    if (operation === "start-session") {
+      writeJson(res, 400, {
+        artifactKind: "native_execution_start_session_result",
+        accepted: false,
+        status: "rejected",
+        statusCode: 400,
+        runtimeJobId: null,
+        sessionId: null,
+        agentProfile: null,
+        jobType: null,
+        queueName: null,
+        startStatus: null,
+        eventType: null,
+        launch: {
+          status: "not_configured",
+          workerId: null,
+          queueName: null,
+          reasonCodes: [],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+          workQueueLifecycleMutated: false,
+        },
+        reasonCodes: [
+          "host_route_start_session_error",
+          error instanceof Error ? error.message : String(error),
+        ],
         rawPromptStored: false,
         rawResponseStored: false,
         workQueueLifecycleMutated: false,
@@ -711,21 +650,12 @@ export function createExecutionPlatformHostRoutes(
   },
 ): ExecutionPlatformHostRoute[] {
   return [
-    {
-      path: "/api/execution-platform/queue-runner/run-once",
-      auth: "gateway",
-      match: "exact",
-      gatewayRuntimeScopeSurface: "trusted-operator",
-      handler: (req, res) =>
-        handleExecutionPlatformQueueRunnerHostRoute(req, res, {
-          runtimeJobs: dependencies.runtimeJobs,
-          runtimeWorkGraphs: dependencies.runtimeWorkGraphs,
-          workQueue: dependencies.workQueue,
-        }),
-    },
     ...(
       [
         ["submit", "/api/execution-platform/execution/submit"],
+        ["native-readyz", "/api/execution-platform/execution/native-readyz"],
+        ["preflight", "/api/execution-platform/execution/preflight"],
+        ["start-session", "/api/execution-platform/execution/start-session"],
         ["status", "/api/execution-platform/execution/status"],
         ["apply-control", "/api/execution-platform/execution/apply-control"],
         ["work-queue-projection", "/api/execution-platform/execution/work-queue-projection"],

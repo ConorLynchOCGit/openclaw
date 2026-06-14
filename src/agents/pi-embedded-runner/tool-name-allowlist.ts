@@ -1,5 +1,5 @@
 import type { AgentTool } from "@mariozechner/pi-agent-core";
-import type { ClientToolDefinition } from "./run/params.js";
+import type { ClientToolDefinition } from "../command/shared-types.js";
 
 function addName(names: Set<string>, value: unknown): void {
   if (typeof value !== "string") {

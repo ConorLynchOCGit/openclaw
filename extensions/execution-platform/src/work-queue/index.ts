@@ -5,6 +5,7 @@ export * from "./closeout-capsule-opportunities.ts";
 export * from "./db-primary-work-queue-projection.ts";
 export * from "./execution-control-api.ts";
 export * from "./execution-control-endpoints.ts";
+export * from "./execution-eligibility-read-model.ts";
 export * from "./execution-read-model.ts";
 export * from "./generated-item-lifecycle.ts";
 export * from "./product-spec-planning-proof-review.ts";

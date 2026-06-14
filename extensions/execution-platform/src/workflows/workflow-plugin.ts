@@ -20,6 +20,14 @@ export type WorkflowPluginStatus =
   | "blocked"
   | "test_only";
 
+export type WorkflowPluginNativeExecutableNodePolicy = {
+  requiresNodeLifecycleTransitionRunner: boolean;
+  requiresNodeExecutionSnapshot: boolean;
+  requiresRunNodeAgentSession: boolean;
+  requiresOpenclawResourceRead: boolean;
+  requiresNodeFinish: boolean;
+};
+
 export type WorkflowPluginSchedulerPolicy = {
   requireCostAwareCapabilityPolicy: boolean;
   requireEvidenceClaimsForMissionLedger: boolean;
@@ -39,6 +47,7 @@ export type WorkflowPluginSchedulerPolicy = {
   rawPromptStored: false;
   rawResponseStored: false;
   rawLogsStored: false;
+  nativeExecutableNodePolicy: WorkflowPluginNativeExecutableNodePolicy;
 };
 
 export type WorkflowPluginSchedulerOptions = Pick<
@@ -142,6 +151,7 @@ export type WorkflowPluginResolution = {
   rawResponseStored: false;
   rawLogsStored: false;
   workQueueLifecycleMutated: false;
+  nativeExecutableNodePolicy: WorkflowPluginNativeExecutableNodePolicy;
 };
 
 function nonEmpty(values: readonly string[]): boolean {
@@ -217,6 +227,36 @@ export function validateWorkflowPlugin(input: {
   }
   if (plugin.productionEnabled && !plugin.schedulerPolicy.firstNodeApprovalRequired) {
     reasonCodes.push("workflow_plugin_first_node_approval_required");
+  }
+  if (
+    plugin.productionEnabled &&
+    !plugin.schedulerPolicy.nativeExecutableNodePolicy.requiresNodeLifecycleTransitionRunner
+  ) {
+    reasonCodes.push("workflow_plugin_native_node_lifecycle_transition_runner_required");
+  }
+  if (
+    plugin.productionEnabled &&
+    !plugin.schedulerPolicy.nativeExecutableNodePolicy.requiresNodeExecutionSnapshot
+  ) {
+    reasonCodes.push("workflow_plugin_native_node_execution_snapshot_required");
+  }
+  if (
+    plugin.productionEnabled &&
+    !plugin.schedulerPolicy.nativeExecutableNodePolicy.requiresRunNodeAgentSession
+  ) {
+    reasonCodes.push("workflow_plugin_native_run_node_agent_session_required");
+  }
+  if (
+    plugin.productionEnabled &&
+    !plugin.schedulerPolicy.nativeExecutableNodePolicy.requiresOpenclawResourceRead
+  ) {
+    reasonCodes.push("workflow_plugin_native_openclaw_resource_read_required");
+  }
+  if (
+    plugin.productionEnabled &&
+    !plugin.schedulerPolicy.nativeExecutableNodePolicy.requiresNodeFinish
+  ) {
+    reasonCodes.push("workflow_plugin_native_node_finish_required");
   }
   if (
     plugin.productionEnabled &&
@@ -325,6 +365,7 @@ export function workflowPluginResolutionFor(input: {
     rawResponseStored: false,
     rawLogsStored: false,
     workQueueLifecycleMutated: false,
+    nativeExecutableNodePolicy: input.plugin.schedulerPolicy.nativeExecutableNodePolicy,
   };
 }
 

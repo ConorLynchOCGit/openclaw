@@ -126,6 +126,54 @@ describe("runtime worker supervisor", () => {
     });
   });
 
+  it("exposes runNext and runJob as resident-worker dispatch names", async () => {
+    await withRepository(async (repository) => {
+      await repository.enqueueJob({
+        jobId: "job-supervisor-run-next",
+        jobType: "executor.agent_team",
+        payload: { workflowId: "agent_team.coding" },
+      });
+      await repository.enqueueJob({
+        jobId: "job-supervisor-run-job",
+        jobType: "executor.agent_team",
+        payload: { workflowId: "agent_team.coding" },
+      });
+      const supervisor = new RuntimeWorkerSupervisor({
+        repository,
+        workerId: "worker-supervisor",
+        adapters: [
+          {
+            adapterId: "worker.acp-codex.coding",
+            jobTypes: ["executor.agent_team"],
+            execute: async ({ job }) => ({
+              status: "completed",
+              summary: `completed ${job.jobId}`,
+              result: { jobId: job.jobId },
+              artifactRefs: [`runtime-job://${job.jobId}/closeout`],
+              completedWorkEvidenceRefs: [`runtime-job://${job.jobId}/test-proof`],
+              reasonCodes: ["adapter_completed_with_evidence"],
+              rawPromptStored: false,
+              rawResponseStored: false,
+              rawLogsStored: false,
+              workQueueLifecycleMutated: false,
+            }),
+          },
+        ],
+      });
+
+      await expect(
+        supervisor.runJob({ runtimeJobId: "job-supervisor-run-job" }),
+      ).resolves.toMatchObject({
+        status: "completed",
+        runtimeJobId: "job-supervisor-run-job",
+      });
+      await expect(supervisor.runNext()).resolves.toMatchObject({
+        status: "completed",
+        runtimeJobId: "job-supervisor-run-next",
+      });
+    });
+  });
+
   it("renews the runtime lease while adapter execution is in progress", async () => {
     await withRepositoryClock(async ({ repository, setNow }) => {
       await repository.enqueueJob({

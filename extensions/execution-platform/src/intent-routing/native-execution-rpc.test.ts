@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { applyExecutionPlatformMigrations } from "../db/migrations.ts";
 import { createExecutionPlatformPgMemTestDatabase } from "../db/pg-test.ts";
 import {
@@ -14,8 +14,14 @@ import {
   RuntimeJobRepository,
 } from "../runtime-job-repository.ts";
 import { WorkQueueRepository } from "../work-queue/work-queue-repository.ts";
-import { buildDefaultWorkflowWorkerAdapterRegistry } from "../workers/index.ts";
-import { NativeExecutionRpcService } from "./native-execution-rpc.ts";
+import {
+  NATIVE_EXECUTION_SESSION_JOB_TYPE,
+  startNativeExecutionSession,
+} from "../workflows/native-agentic-orchestration.ts";
+import {
+  NativeExecutionRpcService,
+  type NativeExecutionRpcDependencies,
+} from "./native-execution-rpc.ts";
 
 describe("native execution rpc", () => {
   function fixedFrontDoorProvider(
@@ -54,12 +60,21 @@ describe("native execution rpc", () => {
     };
   }
 
+  function createNativeExecutionRpcServiceForTest(
+    dependencies: NativeExecutionRpcDependencies,
+  ): NativeExecutionRpcService {
+    return new NativeExecutionRpcService({
+      startExecutionSession: async (input) => startNativeExecutionSession(input),
+      ...dependencies,
+    });
+  }
+
   it("pre-gates slash commands, empty prompts, and unauthenticated submits before router calls", async () => {
     const db = await createExecutionPlatformPgMemTestDatabase();
     try {
       await applyExecutionPlatformMigrations(db.sql);
       const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
-      const rpc = new NativeExecutionRpcService({
+      const rpc = createNativeExecutionRpcServiceForTest({
         runtimeJobs,
       });
 
@@ -124,7 +139,7 @@ describe("native execution rpc", () => {
     try {
       await applyExecutionPlatformMigrations(db.sql);
       const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
-      const rpc = new NativeExecutionRpcService({
+      const rpc = createNativeExecutionRpcServiceForTest({
         runtimeJobs,
       });
       const submit = await rpc.submit({
@@ -142,12 +157,397 @@ describe("native execution rpc", () => {
     }
   });
 
-  it("pre-gates every known slash command away from execution.submit", async () => {
+  it("records accepted Work Queue controls as native session-tree control events", async () => {
+    const db = await createExecutionPlatformPgMemTestDatabase();
+    try {
+      await applyExecutionPlatformMigrations(db.sql);
+      const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
+      const started = await startNativeExecutionSession({
+        runtimeJobs,
+        request: {
+          objective: "Execute native session control proof.",
+          refs: ["work-queue://item/control-proof"],
+        },
+      });
+      const rpc = createNativeExecutionRpcServiceForTest({
+        runtimeJobs,
+      });
+
+      const decision = await rpc.applyControl({
+        actionKind: "redirect",
+        actionId: "redirect-1",
+        workItemId: "control-proof",
+        runtimeJobId: started.runtimeJobId,
+        auth: { actorId: "operator", authenticated: true, role: "operator" },
+        metadata: {
+          redirectMessage: "Use the native execution orchestrator.",
+        },
+      });
+
+      expect(decision.accepted).toBe(true);
+      const events = await runtimeJobs.listEvents(started.runtimeJobId, 20);
+      const nativeControl = events.find(
+        (event) => event.eventType === "execution.control.redirect",
+      );
+      expect(nativeControl?.data).toMatchObject({
+        schemaVersion: "openclaw.runtime-execution-event-envelope.v1",
+        runtimeJobId: started.runtimeJobId,
+        sessionId: started.sessionId,
+        eventKind: "control_recorded",
+        controlKind: "redirect",
+        redirectMessage: "Use the native execution orchestrator.",
+        workQueueLifecycleMutationAllowed: false,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawToolLogStored: false,
+      });
+    } finally {
+      await db.close();
+    }
+  });
+
+  it("starts a native execution session directly without the free-form front door", async () => {
+    const db = await createExecutionPlatformPgMemTestDatabase();
+    try {
+      await applyExecutionPlatformMigrations(db.sql);
+      const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
+      const launchCalls: Array<{
+        runtimeJobId: string;
+        sessionId: string;
+        agentProfile: string;
+        queueName: string;
+        workerId: string;
+      }> = [];
+      const rpc = createNativeExecutionRpcServiceForTest({
+        runtimeJobs,
+        startExecutionSession: async (input) => startNativeExecutionSession(input),
+        launchNativeExecutionSession: async (input) => {
+          launchCalls.push(input);
+        },
+      });
+
+      const result = await rpc.startSession({
+        request: {
+          objective: "Execute the runtime artifact retention policy work item.",
+          refs: ["work-queue://item/runtime-artifact-retention"],
+          constraints: ["Do not mutate Work Queue lifecycle."],
+          validationSignal: "Run the focused runtime artifact tests.",
+        },
+        auth: {
+          actorId: "operator",
+          authenticated: true,
+          role: "operator",
+          sourceRoute: "service",
+        },
+        workItemId: "runtime-artifact-retention",
+        queueName: "native-execution",
+        agentProfile: "execution-orchestrator",
+        idempotencyKey: "native-start-proof",
+      });
+
+      expect(result).toMatchObject({
+        accepted: true,
+        status: "accepted",
+        statusCode: 202,
+        jobType: "openclaw.accepted_agent_run",
+        queueName: "native-execution",
+        agentProfile: "execution-orchestrator",
+        launch: {
+          status: "scheduled",
+          queueName: "native-execution",
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+          workQueueLifecycleMutated: false,
+        },
+        rawPromptStored: false,
+        rawResponseStored: false,
+        workQueueLifecycleMutated: false,
+      });
+      expect(result.runtimeJobId).toBeTruthy();
+      expect(result.sessionId).toBeTruthy();
+      expect(result.reasonCodes).toContain("native_execution_session_started");
+      expect(result.reasonCodes).toContain("native_execution_session_launch_scheduled");
+      expect(launchCalls).toEqual([
+        expect.objectContaining({
+          runtimeJobId: result.runtimeJobId,
+          sessionId: result.sessionId,
+          agentProfile: "execution-orchestrator",
+          queueName: "native-execution",
+        }),
+      ]);
+      const job = await runtimeJobs.getJob(result.runtimeJobId!);
+      expect(job?.jobType).toBe("openclaw.accepted_agent_run");
+      expect(JSON.stringify(job?.payload)).not.toContain("RequirementMap");
+      expect(JSON.stringify(job?.payload)).not.toContain("SchedulerGraphPatch");
+      const events = await runtimeJobs.listEvents(result.runtimeJobId!, 20);
+      expect(events.some((event) => event.eventType === "execution.session.started")).toBe(true);
+      const dispatchEvent = events.find(
+        (event) =>
+          event.eventType === "execution.launch.timing" &&
+          JSON.stringify(event.data).includes("runtime_worker_dispatch_scheduled"),
+      );
+      expect(dispatchEvent?.data).toMatchObject({
+        schemaVersion: "openclaw.runtime-execution-event-envelope.v1",
+        runtimeJobId: result.runtimeJobId,
+        sessionId: result.sessionId,
+        eventKind: "launch_timing_recorded",
+        extra: {
+          stage: "runtime_worker_dispatch_scheduled",
+          schedulerClass: "runtime_worker_supervisor",
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          rawToolLogStored: false,
+        },
+      });
+
+      await runtimeJobs.recordEvent({
+        jobId: result.runtimeJobId!,
+        eventType: "execution.launch.timing",
+        data: {
+          extra: {
+            stage: "executor_entered",
+            elapsedMs: 10,
+            executionClass: "native_runtime_job",
+            schedulerClass: "runtime_agent_executor",
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+            rawToolLogStored: false,
+          },
+        },
+      });
+      await runtimeJobs.recordEvent({
+        jobId: result.runtimeJobId!,
+        eventType: "execution.launch.timing",
+        data: {
+          extra: {
+            stage: "model_stream_started",
+            elapsedMs: 120,
+            provider: "openrouter",
+            modelId: "moonshotai/kimi-k2.6",
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+            rawToolLogStored: false,
+          },
+        },
+      });
+      const status = await rpc.status(result.runtimeJobId!);
+      expect(status).toMatchObject({
+        runtimeJobId: result.runtimeJobId,
+        runtimeJobState: "pending",
+        live: {
+          currentPhase: "model_active",
+          latestLaunchPhase: "model_active",
+          providerRequestSeen: true,
+          modelActivitySeen: true,
+          rawPromptStored: false,
+          rawProviderLogStored: false,
+          diagnostics: {
+            latestStageLabel: "model_stream_started",
+            rawPromptStored: false,
+          },
+        },
+      });
+      expect(JSON.stringify(status)).not.toContain(
+        "Execute the runtime artifact retention policy work item.",
+      );
+    } finally {
+      await db.close();
+    }
+  });
+
+  it("fails closed when native start is not composed with the admitted start service", async () => {
     const db = await createExecutionPlatformPgMemTestDatabase();
     try {
       await applyExecutionPlatformMigrations(db.sql);
       const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
       const rpc = new NativeExecutionRpcService({
+        runtimeJobs,
+      });
+
+      const result = await rpc.startSession({
+        request: {
+          objective: "Execute the runtime artifact retention policy work item.",
+          refs: ["work-queue://item/runtime-artifact-retention"],
+        },
+        auth: {
+          actorId: "operator",
+          authenticated: true,
+          role: "operator",
+          sourceRoute: "service",
+        },
+        workItemId: "runtime-artifact-retention",
+        queueName: "native-execution",
+        agentProfile: "execution-orchestrator",
+        idempotencyKey: "native-start-proof",
+      });
+
+      expect(result).toMatchObject({
+        accepted: false,
+        status: "rejected",
+        statusCode: 503,
+        reasonCodes: ["native_execution_start_session_not_configured"],
+      });
+      expect(await runtimeJobs.listRecentJobs()).toHaveLength(0);
+    } finally {
+      await db.close();
+    }
+  });
+
+  it("preflights a native execution session without enqueueing or launching", async () => {
+    const db = await createExecutionPlatformPgMemTestDatabase();
+    try {
+      await applyExecutionPlatformMigrations(db.sql);
+      const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
+      const preflightCalls: unknown[] = [];
+      const rpc = createNativeExecutionRpcServiceForTest({
+        runtimeJobs,
+        preflightExecutionSession: async (input) => {
+          preflightCalls.push(input);
+          return {
+            artifactKind: "openclaw.runtime_generation.acceptance",
+            accepted: true,
+            runtimeGenerationId: "runtime-generation:test",
+            error: null,
+            reasonCodes: ["runtime_generation_acceptance_passed"],
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+            rawToolLogStored: false,
+            secretsStored: false,
+          };
+        },
+      });
+
+      const result = await rpc.preflightSession({
+        request: {
+          objective: "Execute the runtime artifact retention policy work item.",
+          refs: ["work-queue://item/runtime-artifact-retention"],
+          constraints: ["Do not mutate Work Queue lifecycle."],
+          validationSignal: "Run the focused runtime artifact tests.",
+        },
+        auth: {
+          actorId: "operator",
+          authenticated: true,
+          role: "operator",
+          sourceRoute: "service",
+        },
+        workItemId: "runtime-artifact-retention",
+        queueName: "native-execution",
+        agentProfile: "execution-orchestrator",
+        idempotencyKey: "native-preflight-proof",
+      });
+
+      expect(result).toMatchObject({
+        artifactKind: "native_execution_preflight_session_result",
+        accepted: true,
+        status: "accepted",
+        statusCode: 200,
+        runtimeGenerationId: "runtime-generation:test",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+        secretsStored: false,
+        workQueueLifecycleMutated: false,
+      });
+      expect(result.reasonCodes).toEqual(
+        expect.arrayContaining(["runtime_generation_acceptance_passed"]),
+      );
+      expect(preflightCalls).toHaveLength(1);
+      expect(await runtimeJobs.listRecentJobs()).toHaveLength(0);
+    } finally {
+      await db.close();
+    }
+  });
+
+  it("returns native-readyz diagnostics without creating runtime jobs", async () => {
+    const db = await createExecutionPlatformPgMemTestDatabase();
+    try {
+      await applyExecutionPlatformMigrations(db.sql);
+      const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
+      const nativeReadiness = vi.fn(async () => ({
+        artifactKind: "openclaw.native_execution.readiness",
+        schemaVersion: "openclaw.native-execution.readiness.v1",
+        accepted: true,
+        status: "ready",
+        runtimeUid: 1000,
+        runtimeGid: 1000,
+        configPath: "/home/node/.openclaw/config.json5",
+        configSnapshotId: "config:test",
+        catalogSnapshotId: "catalog-readiness:test",
+        runtimeRoots: {
+          canonicalSourceRoot: "/repo",
+          runtimeWorkspaceDir: "/runtime/workspace",
+          transcriptRoot: "/runtime/transcripts",
+          artifactRoot: "/runtime/artifacts",
+        },
+        agentChecks: [],
+        assetChecks: [],
+        reasonCodes: ["native_execution_ready"],
+        nativeDoctorReadOnly: true,
+        providerCatalogRefreshed: false,
+        runtimeJobCreated: false,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+        secretsStored: false,
+      }));
+      const rpc = createNativeExecutionRpcServiceForTest({
+        runtimeJobs,
+        nativeReadiness,
+      });
+
+      const result = await rpc.nativeReady({
+        actorId: "operator",
+        authenticated: true,
+        role: "operator",
+        sourceRoute: "service",
+      });
+
+      expect(result).toMatchObject({
+        artifactKind: "openclaw.native_execution.readiness",
+        accepted: true,
+        status: "ready",
+        nativeDoctorReadOnly: true,
+        providerCatalogRefreshed: false,
+        runtimeJobCreated: false,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+        secretsStored: false,
+      });
+      expect(nativeReadiness).toHaveBeenCalledTimes(1);
+      expect(await runtimeJobs.listRecentJobs()).toHaveLength(0);
+
+      const rejected = await rpc.nativeReady({
+        actorId: "anonymous",
+        authenticated: false,
+        role: "operator",
+      });
+      expect(rejected).toMatchObject({
+        accepted: false,
+        status: "not_ready",
+        reasonCodes: ["authenticated_operator_required"],
+        runtimeJobCreated: false,
+      });
+      expect(nativeReadiness).toHaveBeenCalledTimes(1);
+    } finally {
+      await db.close();
+    }
+  });
+
+  it("pre-gates every known slash command away from execution.submit", async () => {
+    const db = await createExecutionPlatformPgMemTestDatabase();
+    try {
+      await applyExecutionPlatformMigrations(db.sql);
+      const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
+      const rpc = createNativeExecutionRpcServiceForTest({
         runtimeJobs,
       });
       for (const command of listKnownProtocolSlashCommands()) {
@@ -183,7 +583,7 @@ describe("native execution rpc", () => {
     try {
       await applyExecutionPlatformMigrations(db.sql);
       const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
-      const rpc = new NativeExecutionRpcService({ runtimeJobs });
+      const rpc = createNativeExecutionRpcServiceForTest({ runtimeJobs });
       const submit = await rpc.submit({
         prompt: "Have the team fix a small issue.",
         auth: {
@@ -229,7 +629,7 @@ describe("native execution rpc", () => {
         sideEffectClass: "code_edit",
         riskClass: "medium",
       });
-      const rpc = new NativeExecutionRpcService({
+      const rpc = createNativeExecutionRpcServiceForTest({
         runtimeJobs,
         routingTelemetryStore,
         structuredRouterProvider: fixedFrontDoorProvider(output),
@@ -269,9 +669,9 @@ describe("native execution rpc", () => {
           "before_router_model_call",
           "after_router_model_call",
           "front_door_request_compiled",
-          "worker_readiness_checked",
-          "before_runtime_job_enqueue",
-          "after_runtime_job_enqueue",
+          "native_execution_dispatch_checked",
+          "before_native_execution_session_start",
+          "after_native_execution_session_start",
           "before_front_door_artifact_attachment",
           "after_front_door_artifact_attachment",
         ]),
@@ -295,31 +695,56 @@ describe("native execution rpc", () => {
       const jobs = await runtimeJobs.listRecentJobs();
       expect(jobs).toHaveLength(1);
       expect(jobs[0]?.payload).toMatchObject({
-        workflowId: "agent_team.coding",
-        sourcePromptRef: {
-          refKind: "gateway_chat_transcript",
-          promptHash: submit.frontDoorCompiledRequest?.promptHash,
-          promptLength: "Use the full team to improve bounded readback.".length,
-          sessionKey: "agent:main:main",
-          sessionId: "session-1",
-          runId: "run-front-door",
-          sourceRoute: "ux",
-          rawPromptStored: false,
-        },
+        artifactKind: "openclaw.accepted_agent_run",
+        objective: expect.stringContaining("Run bounded coding workflow."),
+        refs: expect.arrayContaining([
+          expect.objectContaining({
+            ref: "gateway-chat-transcript://session-1/run-front-door",
+            kind: "gateway_chat_transcript",
+          }),
+          expect.objectContaining({
+            ref: `runtime-job://${submit.runtimeJobId}/execution/front-door/native-handoff`,
+            kind: "front_door_native_handoff",
+          }),
+        ]),
         rawPromptStored: false,
         rawResponseStored: false,
-        workQueueLifecycleMutated: false,
+      });
+      expect(jobs[0]?.jobType).toBe(NATIVE_EXECUTION_SESSION_JOB_TYPE);
+      expect(submit.sessionId).toBeTruthy();
+      expect(submit.agentProfile).toBe("execution-orchestrator");
+      expect(submit.nativeExecutionLaunch).toMatchObject({
+        status: "not_configured",
+        rawPromptStored: false,
+        rawResponseStored: false,
       });
       const artifacts = await runtimeJobs.listArtifacts(submit.runtimeJobId ?? "");
       expect(artifacts.map((artifact) => artifact.artifactType)).toEqual(
         expect.arrayContaining([
           "execution.front_door.router_result",
           "execution.front_door.validation",
+          "execution.front_door.native_handoff",
           "execution.front_door.compiled_request",
           "execution.front_door.memory_policy",
           "execution.front_door.submit_heap_diagnostics",
         ]),
       );
+      const nativeHandoffArtifact = artifacts.find(
+        (artifact) => artifact.artifactType === "execution.front_door.native_handoff",
+      );
+      expect(nativeHandoffArtifact?.metadata).toMatchObject({
+        artifactKind: "execution.front_door.native_handoff",
+        schemaVersion: "openclaw.front-door.native-handoff.v1",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        routingContext: {
+          frontDoorWorkflowHint: "agent_team.coding",
+          rawPromptStored: false,
+          rawResponseStored: false,
+        },
+      });
+      expect(JSON.stringify(nativeHandoffArtifact?.metadata)).not.toContain("RequirementMap");
+      expect(JSON.stringify(nativeHandoffArtifact?.metadata)).not.toContain("SchedulerGraphPatch");
       const diagnosticsArtifact = artifacts.find(
         (artifact) => artifact.artifactType === "execution.front_door.submit_heap_diagnostics",
       );
@@ -365,7 +790,7 @@ describe("native execution rpc", () => {
         reasonCodes: ["prohibited_constraint_misread"],
       });
       const provider = sequenceFrontDoorProvider([blocked]);
-      const rpc = new NativeExecutionRpcService({
+      const rpc = createNativeExecutionRpcServiceForTest({
         runtimeJobs,
         structuredRouterProvider: provider,
       });
@@ -415,7 +840,7 @@ describe("native execution rpc", () => {
         reasonCodes: ["direct_lifecycle_mutation_requested"],
       });
       const provider = sequenceFrontDoorProvider([blocked]);
-      const rpc = new NativeExecutionRpcService({
+      const rpc = createNativeExecutionRpcServiceForTest({
         runtimeJobs,
         structuredRouterProvider: provider,
       });
@@ -479,7 +904,7 @@ describe("native execution rpc", () => {
         reasonCodes: ["action_separation_repaired_constraint_action"],
       });
       const provider = sequenceFrontDoorProvider([conflicted, repaired]);
-      const rpc = new NativeExecutionRpcService({
+      const rpc = createNativeExecutionRpcServiceForTest({
         runtimeJobs,
         structuredRouterProvider: provider,
       });
@@ -552,7 +977,7 @@ describe("native execution rpc", () => {
         reasonCodes: ["true_requested_negated_action_conflict"],
       });
       const provider = sequenceFrontDoorProvider([conflicted, clarified]);
-      const rpc = new NativeExecutionRpcService({
+      const rpc = createNativeExecutionRpcServiceForTest({
         runtimeJobs,
         structuredRouterProvider: provider,
       });
@@ -579,7 +1004,7 @@ describe("native execution rpc", () => {
     }
   });
 
-  it("blocks runtime enqueue when worker adapter contract is not live", async () => {
+  it("does not let legacy worker adapter readiness block native-session submit", async () => {
     const db = await createExecutionPlatformPgMemTestDatabase();
     try {
       await applyExecutionPlatformMigrations(db.sql);
@@ -596,62 +1021,9 @@ describe("native execution rpc", () => {
         requestedAuthority: "local_yolo",
         sideEffectClass: "code_edit",
       });
-      const rpc = new NativeExecutionRpcService({
+      const rpc = createNativeExecutionRpcServiceForTest({
         runtimeJobs,
         structuredRouterProvider: fixedFrontDoorProvider(output),
-        workerAdapterRegistry: buildDefaultWorkflowWorkerAdapterRegistry({
-          generatedAt: "2026-05-08T00:00:00.000Z",
-        }),
-      });
-
-      const submit = await rpc.submit({
-        prompt: "Have the team make a bounded coding change.",
-        auth: {
-          actorId: "operator",
-          authenticated: true,
-          role: "operator",
-          sessionId: "session-1",
-        },
-      });
-
-      expect(submit.accepted).toBe(false);
-      expect(submit.statusCode).toBe(409);
-      expect(submit.runtimeJobId).toBeNull();
-      expect(submit.workerContractState).toBe("blocked_no_worker");
-      expect(submit.reasonCodes).toEqual(
-        expect.arrayContaining(["worker_contract_state_blocked_no_worker_blocks_enqueue"]),
-      );
-      expect(await runtimeJobs.listRecentJobs()).toHaveLength(0);
-    } finally {
-      await db.close();
-    }
-  });
-
-  it("records worker contract state when enqueue is allowed", async () => {
-    const db = await createExecutionPlatformPgMemTestDatabase();
-    try {
-      await applyExecutionPlatformMigrations(db.sql);
-      const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
-      const output = createBaseCanonicalRouterOutput({
-        route: "workflow_execution",
-        responseMode: "create_runtime_job",
-        executeNow: true,
-        workflowId: "agent_team.coding",
-        jobType: "executor.agent_team",
-        confidence: 0.95,
-        objectiveSummary: "Run bounded coding workflow.",
-        requestedActions: [createCanonicalRouterAction("code_edit", "bounded edit", 0.95)],
-        requestedAuthority: "local_yolo",
-        sideEffectClass: "code_edit",
-      });
-      const rpc = new NativeExecutionRpcService({
-        runtimeJobs,
-        structuredRouterProvider: fixedFrontDoorProvider(output),
-        workerAdapterRegistry: buildDefaultWorkflowWorkerAdapterRegistry({
-          generatedAt: "2026-05-08T00:00:00.000Z",
-          contractStateByWorkflowId: { "agent_team.coding": "shadow" },
-          adapterIdByWorkflowId: { "agent_team.coding": "worker.acp-codex.coding" },
-        }),
       });
 
       const submit = await rpc.submit({
@@ -665,14 +1037,57 @@ describe("native execution rpc", () => {
       });
 
       expect(submit.accepted).toBe(true);
-      expect(submit.workerContractState).toBe("shadow");
-      expect(submit.workerAdapterId).toBe("worker.acp-codex.coding");
+      expect(submit.statusCode).toBe(202);
+      expect(submit.runtimeJobId).toBeTruthy();
+      expect(submit.jobType).toBe(NATIVE_EXECUTION_SESSION_JOB_TYPE);
+      expect(submit.reasonCodes).toEqual(
+        expect.arrayContaining(["native_submit_front_door_native_execution_session_started"]),
+      );
+      expect(await runtimeJobs.listRecentJobs()).toHaveLength(1);
+    } finally {
+      await db.close();
+    }
+  });
+
+  it("keeps legacy worker contract state out of native-session submit", async () => {
+    const db = await createExecutionPlatformPgMemTestDatabase();
+    try {
+      await applyExecutionPlatformMigrations(db.sql);
+      const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
+      const output = createBaseCanonicalRouterOutput({
+        route: "workflow_execution",
+        responseMode: "create_runtime_job",
+        executeNow: true,
+        workflowId: "agent_team.coding",
+        jobType: "executor.agent_team",
+        confidence: 0.95,
+        objectiveSummary: "Run bounded coding workflow.",
+        requestedActions: [createCanonicalRouterAction("code_edit", "bounded edit", 0.95)],
+        requestedAuthority: "local_yolo",
+        sideEffectClass: "code_edit",
+      });
+      const rpc = createNativeExecutionRpcServiceForTest({
+        runtimeJobs,
+        structuredRouterProvider: fixedFrontDoorProvider(output),
+      });
+
+      const submit = await rpc.submit({
+        prompt: "Have the team make a bounded coding change.",
+        auth: {
+          actorId: "operator",
+          authenticated: true,
+          role: "operator",
+          sessionId: "session-1",
+        },
+      });
+
+      expect(submit.accepted).toBe(true);
       const artifacts = await runtimeJobs.listArtifacts(submit.runtimeJobId ?? "");
-      expect(artifacts.map((artifact) => artifact.artifactType)).toContain(
+      expect(artifacts.map((artifact) => artifact.artifactType)).not.toContain(
         "execution.worker_contract_state",
       );
       await expect(runtimeJobs.listEvents(submit.runtimeJobId ?? "")).resolves.toEqual(
-        expect.arrayContaining([
+        expect.not.arrayContaining([
           expect.objectContaining({ eventType: "execution.worker_dispatch_pending" }),
         ]),
       );
@@ -714,7 +1129,7 @@ describe("native execution rpc", () => {
       try {
         await applyExecutionPlatformMigrations(db.sql);
         const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
-        const rpc = new NativeExecutionRpcService({
+        const rpc = createNativeExecutionRpcServiceForTest({
           runtimeJobs,
           structuredRouterProvider: fixedFrontDoorProvider(output),
         });
@@ -787,14 +1202,14 @@ describe("native execution rpc", () => {
 
     for (const [output, expected] of [
       [blockedSend, "clarification_gate_required"],
-      [deployHeld, "native_submit_front_door_job_enqueued"],
+      [deployHeld, "native_submit_front_door_native_execution_session_started"],
       [deployBoundaryConflict, "requested_action_conflicts_with_negation:deploy"],
     ] as const) {
       const db = await createExecutionPlatformPgMemTestDatabase();
       try {
         await applyExecutionPlatformMigrations(db.sql);
         const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
-        const rpc = new NativeExecutionRpcService({
+        const rpc = createNativeExecutionRpcServiceForTest({
           runtimeJobs,
           structuredRouterProvider: fixedFrontDoorProvider(output),
         });
@@ -874,7 +1289,7 @@ describe("native execution rpc", () => {
         sideEffectClass: "code_edit",
         reasonCodes: ["invalid_negated_action_repaired_to_constraint_scoped_plan_action"],
       });
-      const rpc = new NativeExecutionRpcService({
+      const rpc = createNativeExecutionRpcServiceForTest({
         runtimeJobs,
         structuredRouterProvider: fixedFrontDoorProvider(output),
       });
@@ -891,7 +1306,9 @@ describe("native execution rpc", () => {
       });
 
       expect(submit.accepted).toBe(true);
-      expect(submit.reasonCodes).toContain("native_submit_front_door_job_enqueued");
+      expect(submit.reasonCodes).toContain(
+        "native_submit_front_door_native_execution_session_started",
+      );
       expect(
         submit.frontDoorCompiledRequest?.compiledActions.map((action) => action.action),
       ).toEqual(["plan", "code_edit", "test"]);
@@ -950,7 +1367,7 @@ describe("native execution rpc", () => {
           },
         ],
       });
-      const rpc = new NativeExecutionRpcService({
+      const rpc = createNativeExecutionRpcServiceForTest({
         runtimeJobs,
         structuredRouterProvider: fixedFrontDoorProvider(output),
       });
@@ -1007,7 +1424,7 @@ describe("native execution rpc", () => {
         reasonCodes: ["router_primary_outcome:implement_existing_system"],
       });
       const provider = sequenceFrontDoorProvider([codingExecutor]);
-      const rpc = new NativeExecutionRpcService({
+      const rpc = createNativeExecutionRpcServiceForTest({
         runtimeJobs,
         structuredRouterProvider: provider,
       });
@@ -1064,7 +1481,7 @@ describe("native execution rpc", () => {
         reasonCodes: ["router_primary_outcome:produce_plan"],
       });
       const provider = sequenceFrontDoorProvider([planningRoute]);
-      const rpc = new NativeExecutionRpcService({
+      const rpc = createNativeExecutionRpcServiceForTest({
         runtimeJobs,
         structuredRouterProvider: provider,
       });
@@ -1126,7 +1543,7 @@ describe("native execution rpc", () => {
         itemType: "execution_workflow",
         title: "Native missing runtime control",
       });
-      const rpc = new NativeExecutionRpcService({
+      const rpc = createNativeExecutionRpcServiceForTest({
         runtimeJobs,
         workQueue,
       });
@@ -1172,7 +1589,7 @@ describe("native execution rpc", () => {
         workItemId: workItem.workItemId,
         payload: {},
       });
-      const rpc = new NativeExecutionRpcService({
+      const rpc = createNativeExecutionRpcServiceForTest({
         runtimeJobs,
         workQueue,
       });

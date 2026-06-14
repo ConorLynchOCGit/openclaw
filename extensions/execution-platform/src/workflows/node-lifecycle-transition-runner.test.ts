@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { JsonValue } from "../runtime-job-repository.ts";
-import { NODE_EXECUTION_STORAGE_POLICY } from "./node-agent-session.ts";
+import { NODE_EXECUTION_STORAGE_POLICY } from "./node-execution-snapshot.ts";
 import {
   buildNodeLifecycleProjectionManifest,
   lifecycleDescriptorForGate,

@@ -26,3 +26,11 @@ Current tranche status:
 - [Web Researcher](/agents/web-researcher)
 - [Writer](/agents/writer)
 - [X Manager](/agents/x-manager)
+
+## Execution Platform agents
+
+- [Execution Orchestrator](/agents/execution-orchestrator)
+- [Execution Coding](/agents/execution-coding)
+- [Execution Critic](/agents/execution-critic)
+- [Execution Context Scout](/agents/execution-context-scout)
+- [Execution Validation Scout](/agents/execution-validation-scout)

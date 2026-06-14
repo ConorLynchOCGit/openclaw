@@ -68,10 +68,16 @@ describe("codex provider", () => {
 
     expect(listModels).not.toHaveBeenCalled();
     expect(result.provider.models.map((model) => model.id)).toEqual([
+      "gpt-5.5",
       "gpt-5.4",
       "gpt-5.4-mini",
       "gpt-5.2",
     ]);
+    expect(result.provider.models[0]).toMatchObject({
+      id: "gpt-5.5",
+      reasoning: true,
+      compat: { supportsReasoningEffort: true },
+    });
   });
 
   it("keeps a static fallback catalog when live discovery is explicitly disabled by env", async () => {
@@ -84,6 +90,7 @@ describe("codex provider", () => {
 
     expect(listModels).not.toHaveBeenCalled();
     expect(result.provider.models.map((model) => model.id)).toEqual([
+      "gpt-5.5",
       "gpt-5.4",
       "gpt-5.4-mini",
       "gpt-5.2",
@@ -165,6 +172,26 @@ describe("codex provider", () => {
       compat: { supportsReasoningEffort: true },
     });
     expect(provider.supportsXHighThinking?.({ provider: "codex", modelId: "o4-mini" })).toBe(true);
+  });
+
+  it("treats gpt-5.5 as a modern xhigh-capable Codex model", () => {
+    const provider = buildCodexProvider();
+
+    const model = provider.resolveDynamicModel?.({
+      provider: "codex",
+      modelId: "gpt-5.5",
+      modelRegistry: { find: () => null },
+    } as never);
+
+    expect(model).toMatchObject({
+      id: "gpt-5.5",
+      provider: "codex",
+      api: "openai-codex-responses",
+      reasoning: true,
+      compat: { supportsReasoningEffort: true },
+    });
+    expect(provider.supportsXHighThinking?.({ provider: "codex", modelId: "gpt-5.5" })).toBe(true);
+    expect(provider.isModernModelRef?.({ provider: "codex", modelId: "gpt-5.5" })).toBe(true);
   });
 
   it("declares synthetic auth because the harness owns Codex credentials", () => {

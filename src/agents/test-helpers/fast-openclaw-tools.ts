@@ -41,8 +41,23 @@ const coreTools = [
 ];
 
 vi.mock("../openclaw-tools.js", () => ({
-  createOpenClawTools: (options?: { nativeTask?: { enabled?: boolean } }) => [
+  createOpenClawTools: (options?: {
+    nativeTask?: { enabled?: boolean };
+    nativeExecutionSession?: {
+      enabled?: boolean;
+      readWorkQueueEligibility?: unknown;
+      startExecutionSession?: unknown;
+    };
+  }) => [
     ...coreTools.map((tool) => ({ ...tool })),
+    ...(options?.nativeExecutionSession?.enabled === true &&
+    options.nativeExecutionSession.readWorkQueueEligibility
+      ? [stubTool("work_queue_execution_eligibility")]
+      : []),
+    ...(options?.nativeExecutionSession?.enabled === true &&
+    options.nativeExecutionSession.startExecutionSession
+      ? [stubTool("start_execution_session")]
+      : []),
     ...(options?.nativeTask?.enabled === true ? [stubTool("task")] : []),
   ],
   __testing: {

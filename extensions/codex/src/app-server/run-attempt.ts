@@ -39,13 +39,54 @@ type CodexAppServerClientFactory = (
   startOptions?: CodexAppServerStartOptions,
 ) => Promise<CodexAppServerClient>;
 
+type CodexProviderTurnPhase =
+  | "provider_client_starting"
+  | "provider_client_ready"
+  | "thread_binding_started"
+  | "thread_binding_ready"
+  | "provider_request_started"
+  | "model_stream_started"
+  | "tool_call_started"
+  | "tool_call_completed"
+  | "tool_call_failed"
+  | "model_stream_completed"
+  | "agent_turn_failed";
+
+type CodexProviderTurnEvent = {
+  phase: CodexProviderTurnPhase;
+  failedPhase?: CodexProviderTurnPhase;
+  toolName?: string;
+  errorName?: string;
+  errorCode?: string;
+  errorMessage?: string;
+};
+
 let clientFactory: CodexAppServerClientFactory = (startOptions) =>
   getSharedCodexAppServerClient({ startOptions });
 
 export async function runCodexAppServerAttempt(
   params: EmbeddedRunAttemptParams,
-  options: { pluginConfig?: unknown } = {},
+  options: {
+    pluginConfig?: unknown;
+    emitProviderTurnEvent?: (event: CodexProviderTurnEvent) => void;
+  } = {},
 ): Promise<EmbeddedRunAttemptResult> {
+  const emitProviderTurnEvent = (event: CodexProviderTurnEvent): void => {
+    options.emitProviderTurnEvent?.(event);
+  };
+  const emitProviderFailure = (failedPhase: CodexProviderTurnPhase, error: unknown): void => {
+    emitProviderTurnEvent({
+      phase: "agent_turn_failed",
+      failedPhase,
+      errorName: error instanceof Error ? error.name : "Error",
+      errorCode:
+        error && typeof error === "object" && typeof (error as { code?: unknown }).code === "string"
+          ? (error as { code: string }).code
+          : undefined,
+      errorMessage:
+        error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+    });
+  };
   const appServer = resolveCodexAppServerRuntimeOptions({ pluginConfig: options.pluginConfig });
   const resolvedWorkspace = resolveUserPath(params.workspaceDir);
   await fs.mkdir(resolvedWorkspace, { recursive: true });
@@ -101,7 +142,10 @@ export async function runCodexAppServerAttempt(
       timeoutMs: params.timeoutMs,
       signal: runAbortController.signal,
       operation: async () => {
+        emitProviderTurnEvent({ phase: "provider_client_starting" });
         const startupClient = await clientFactory(appServer.start);
+        emitProviderTurnEvent({ phase: "provider_client_ready" });
+        emitProviderTurnEvent({ phase: "thread_binding_started" });
         const startupThread = await startOrResumeThread({
           client: startupClient,
           params,
@@ -109,10 +153,12 @@ export async function runCodexAppServerAttempt(
           dynamicTools: toolBridge.specs,
           appServer,
         });
+        emitProviderTurnEvent({ phase: "thread_binding_ready" });
         return { client: startupClient, thread: startupThread };
       },
     }));
   } catch (error) {
+    emitProviderFailure("thread_binding_started", error);
     clearSharedCodexAppServerClient();
     params.abortSignal?.removeEventListener("abort", abortFromUpstream);
     throw error;
@@ -173,11 +219,26 @@ export async function runCodexAppServerAttempt(
     if (!call || call.threadId !== thread.threadId || call.turnId !== turnId) {
       return undefined;
     }
-    return toolBridge.handleToolCall(call) as Promise<JsonValue>;
+    emitProviderTurnEvent({ phase: "tool_call_started", toolName: call.tool });
+    try {
+      const result = await toolBridge.handleToolCall(call);
+      emitProviderTurnEvent({ phase: "tool_call_completed", toolName: call.tool });
+      return result as JsonValue;
+    } catch (error) {
+      emitProviderTurnEvent({
+        phase: "tool_call_failed",
+        toolName: call.tool,
+        errorName: error instanceof Error ? error.name : "Error",
+        errorMessage:
+          error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+      });
+      throw error;
+    }
   });
 
   let turn: CodexTurnStartResponse;
   try {
+    emitProviderTurnEvent({ phase: "provider_request_started" });
     turn = await client.request<CodexTurnStartResponse>(
       "turn/start",
       buildTurnStartParams(params, {
@@ -188,12 +249,14 @@ export async function runCodexAppServerAttempt(
       { timeoutMs: params.timeoutMs, signal: runAbortController.signal },
     );
   } catch (error) {
+    emitProviderFailure("provider_request_started", error);
     notificationCleanup();
     requestCleanup();
     params.abortSignal?.removeEventListener("abort", abortFromUpstream);
     throw error;
   }
   turnId = turn.turn.id;
+  emitProviderTurnEvent({ phase: "model_stream_started" });
   projector = new CodexAppServerEventProjector(params, thread.threadId, turnId);
   for (const notification of pendingNotifications.splice(0)) {
     await enqueueNotification(notification);
@@ -240,6 +303,7 @@ export async function runCodexAppServerAttempt(
 
   try {
     await completion;
+    emitProviderTurnEvent({ phase: "model_stream_completed" });
     const result = activeProjector.buildResult(toolBridge.telemetry, { yieldDetected });
     await mirrorTranscriptBestEffort({
       params,
@@ -252,7 +316,7 @@ export async function runCodexAppServerAttempt(
       timedOut,
       aborted: result.aborted || runAbortController.signal.aborted,
       promptError: timedOut ? "codex app-server attempt timed out" : result.promptError,
-      promptErrorSource: timedOut ? "prompt" : result.promptErrorSource,
+      promptErrorOrigin: timedOut ? "prompt" : result.promptErrorOrigin,
     };
   } finally {
     clearTimeout(timeout);

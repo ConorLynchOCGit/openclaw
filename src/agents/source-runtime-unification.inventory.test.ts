@@ -8,6 +8,8 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 
 const EXECUTION_AGENT_IDS = [
   "execution-coding",
+  "execution-orchestrator",
+  "execution-critic",
   "execution-context-scout",
   "execution-validation-scout",
 ] as const;

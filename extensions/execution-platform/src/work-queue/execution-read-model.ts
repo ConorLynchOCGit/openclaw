@@ -61,6 +61,33 @@ export type WorkQueueExecutionReadModel = {
     runtimeJobState: RuntimeJob["state"];
     executorKind: string;
     activeSessionId: string | null;
+    nativeSessionTree: {
+      artifactKind: "work_queue_native_session_tree_projection";
+      state: "present" | "missing";
+      parentSessionId: string | null;
+      activeSessionId: string | null;
+      activeChildCount: number;
+      blockingChildCount: number;
+      backgroundChildCount: number;
+      failedChildCount: number;
+      completedChildCount: number;
+      openBlockingChildSessionIds: string[];
+      failedBlockingChildSessionIds: string[];
+      completedChildSessionIds: string[];
+      backgroundChildSessionIds: string[];
+      currentBlocker: string | null;
+      waitingForHumanQuestion: string | null;
+      latestMeaningfulProgressSummary: string | null;
+      finishEvidenceStatus: "accepted" | "rejected" | "missing" | "unknown";
+      finishEventRef: string | null;
+      eventRefs: string[];
+      reasonCodes: string[];
+      rawPromptStored: false;
+      rawResponseStored: false;
+      rawProviderLogStored: false;
+      rawToolLogStored: false;
+      workQueueLifecycleMutationAllowed: false;
+    };
     streamSummary: {
       eventCount: number;
       latestSummary: string | null;
@@ -3838,6 +3865,182 @@ function nestedProgressEvent(event: RuntimeJobEvent | undefined): Record<string,
   return asRecord(eventDataRecord(event).event) ?? {};
 }
 
+function runtimeEventRef(event: RuntimeJobEvent): string {
+  return `runtime-job://${event.jobId}/event/${event.eventId}`;
+}
+
+function nativeExecutionEventKind(event: RuntimeJobEvent): string {
+  return stringValue(eventDataRecord(event).eventKind) ?? event.eventType;
+}
+
+function nativeSessionTreeProjection(
+  job: RuntimeJob,
+  events: RuntimeJobEvent[],
+): WorkQueueExecutionRuntimeJobReadModel["nativeSessionTree"] {
+  const nativeEvents = events.filter((event) => {
+    const data = eventDataRecord(event);
+    return (
+      stringValue(data.runtimeJobId) === job.jobId ||
+      stringValue(data.sessionId) !== null ||
+      stringValue(data.childSessionId) !== null ||
+      event.eventType.startsWith("execution.")
+    );
+  });
+  const childStates = new Map<
+    string,
+    {
+      relation: "blocking" | "background" | null;
+      terminal: boolean;
+      failed: boolean;
+    }
+  >();
+  let parentSessionId: string | null = null;
+  let activeSessionId: string | null = null;
+  let currentBlocker: string | null = null;
+  let waitingForHumanQuestion: string | null = null;
+  let latestMeaningfulProgressSummary: string | null = null;
+  let finishEvidenceStatus: "accepted" | "rejected" | "missing" | "unknown" = "missing";
+  let finishEventRef: string | null = null;
+  const reasonCodes: string[] = [];
+
+  for (const event of nativeEvents) {
+    const data = eventDataRecord(event);
+    const sessionId = stringValue(data.sessionId);
+    const eventParentSessionId = stringValue(data.parentSessionId);
+    const childSessionId = stringValue(data.childSessionId);
+    const relationRaw = stringValue(data.childRelation);
+    const relation =
+      relationRaw === "blocking" || relationRaw === "background" ? relationRaw : null;
+    const kind = nativeExecutionEventKind(event);
+
+    parentSessionId = parentSessionId ?? eventParentSessionId ?? sessionId;
+    activeSessionId = sessionId ?? activeSessionId;
+
+    if (childSessionId) {
+      const existing = childStates.get(childSessionId) ?? {
+        relation,
+        terminal: false,
+        failed: false,
+      };
+      existing.relation = existing.relation ?? relation;
+      if (
+        kind === "child_session_completed" ||
+        kind === "child_session_failed" ||
+        kind === "child_session_canceled" ||
+        event.eventType === "execution.child.completed" ||
+        event.eventType === "execution.child.failed" ||
+        event.eventType === "execution.child.canceled"
+      ) {
+        existing.terminal = true;
+      }
+      if (kind === "child_session_failed" || event.eventType === "execution.child.failed") {
+        existing.failed = true;
+      }
+      childStates.set(childSessionId, existing);
+    }
+
+    const summary =
+      stringValue(data.latestMeaningfulProgressSummary) ??
+      stringValue(data.progressSummary) ??
+      stringValue(data.summary);
+    if (summary) {
+      latestMeaningfulProgressSummary = summary.slice(0, 500);
+    }
+    const blocker =
+      stringValue(data.blockerKind) ??
+      stringValue(data.blockerSummary) ??
+      stringValue(data.reason) ??
+      stringValue(data.correction);
+    if (blocker) {
+      currentBlocker = blocker.slice(0, 500);
+    }
+    const question =
+      stringValue(data.waitingForHumanQuestion) ??
+      stringValue(data.question) ??
+      stringValue(data.clarificationQuestion);
+    if (question) {
+      waitingForHumanQuestion = question.slice(0, 500);
+    }
+    if (event.eventType === "execution.finish.accepted") {
+      finishEvidenceStatus = "accepted";
+      finishEventRef = runtimeEventRef(event);
+    } else if (event.eventType === "execution.finish.rejected") {
+      finishEvidenceStatus = "rejected";
+      finishEventRef = runtimeEventRef(event);
+    } else if (kind === "finish_recorded" && finishEvidenceStatus === "missing") {
+      finishEvidenceStatus =
+        booleanValue(data.accepted) === true
+          ? "accepted"
+          : booleanValue(data.accepted) === false
+            ? "rejected"
+            : "unknown";
+      finishEventRef = runtimeEventRef(event);
+    }
+  }
+
+  const openBlockingChildSessionIds: string[] = [];
+  const failedBlockingChildSessionIds: string[] = [];
+  const completedChildSessionIds: string[] = [];
+  const backgroundChildSessionIds: string[] = [];
+  for (const [childSessionId, state] of childStates.entries()) {
+    if (state.relation === "background") {
+      backgroundChildSessionIds.push(childSessionId);
+    }
+    if (state.terminal && !state.failed) {
+      completedChildSessionIds.push(childSessionId);
+    }
+    if (state.relation === "blocking" && !state.terminal) {
+      openBlockingChildSessionIds.push(childSessionId);
+    }
+    if (state.relation === "blocking" && state.failed) {
+      failedBlockingChildSessionIds.push(childSessionId);
+    }
+  }
+
+  if (nativeEvents.length > 0) {
+    reasonCodes.push("native_session_tree_runtime_events_observed");
+  }
+  if (openBlockingChildSessionIds.length > 0) {
+    reasonCodes.push("native_session_tree_open_blocking_children");
+  }
+  if (failedBlockingChildSessionIds.length > 0) {
+    reasonCodes.push("native_session_tree_failed_blocking_children");
+  }
+  if (finishEvidenceStatus !== "missing") {
+    reasonCodes.push(`native_session_tree_finish_${finishEvidenceStatus}`);
+  }
+
+  return {
+    artifactKind: "work_queue_native_session_tree_projection",
+    state: nativeEvents.length > 0 ? "present" : "missing",
+    parentSessionId,
+    activeSessionId,
+    activeChildCount: Array.from(childStates.values()).filter((state) => !state.terminal).length,
+    blockingChildCount: Array.from(childStates.values()).filter(
+      (state) => state.relation === "blocking",
+    ).length,
+    backgroundChildCount: backgroundChildSessionIds.length,
+    failedChildCount: Array.from(childStates.values()).filter((state) => state.failed).length,
+    completedChildCount: completedChildSessionIds.length,
+    openBlockingChildSessionIds: boundedUniqueStringValues(openBlockingChildSessionIds, 20),
+    failedBlockingChildSessionIds: boundedUniqueStringValues(failedBlockingChildSessionIds, 20),
+    completedChildSessionIds: boundedUniqueStringValues(completedChildSessionIds, 20),
+    backgroundChildSessionIds: boundedUniqueStringValues(backgroundChildSessionIds, 20),
+    currentBlocker,
+    waitingForHumanQuestion,
+    latestMeaningfulProgressSummary,
+    finishEvidenceStatus,
+    finishEventRef,
+    eventRefs: nativeEvents.map(runtimeEventRef).slice(0, 20),
+    reasonCodes: boundedUniqueStringValues(reasonCodes, 20),
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+    workQueueLifecycleMutationAllowed: false,
+  };
+}
+
 function appServerProgressReadback(
   events: RuntimeJobEvent[],
 ): WorkQueueExecutionRuntimeJobReadModel["ownerProgressReadback"]["appServerProgress"] {
@@ -5363,6 +5566,7 @@ export async function buildWorkQueueExecutionReadModel(input: {
     const heartbeatAgeMs = heartbeat ? now.getTime() - heartbeat.eventTime.getTime() : null;
     const reviewRecord = asRecord(review?.metadata);
     const workflow = workflowProjection(job, artifacts);
+    const nativeSessionTree = nativeSessionTreeProjection(job, events);
     const hydratedMissionContractBody = await hydrateLatestRuntimeArtifactBody({
       runtimeJobs: input.runtimeJobs,
       artifacts,
@@ -5381,7 +5585,9 @@ export async function buildWorkQueueExecutionReadModel(input: {
       runtimeJobId,
       runtimeJobState: job.state,
       executorKind: runForJob(truth, runtimeJobId)?.executorKind ?? job.jobType,
-      activeSessionId: stringValue(liveResultRecord?.sessionId),
+      activeSessionId:
+        stringValue(liveResultRecord?.sessionId) ?? nativeSessionTree.activeSessionId,
+      nativeSessionTree,
       streamSummary: {
         eventCount: streamEvents.length,
         latestSummary: latestStreamSummary,
@@ -5479,6 +5685,7 @@ export function summarizeWorkQueueExecutionForUi(model: WorkQueueExecutionReadMo
     permissionReadback: latestRuntimeJob?.permissionReadback ?? null,
     ownerReadback: latestRuntimeJob?.ownerReadback ?? null,
     ownerProgressReadback: latestRuntimeJob?.ownerProgressReadback ?? null,
+    nativeSessionTree: latestRuntimeJob?.nativeSessionTree ?? null,
     routing: latestRuntimeJob?.workflow.routing ?? null,
     agentTeam: latestRuntimeJob?.agentTeam ?? null,
     webResearch: latestRuntimeJob?.webResearch ?? null,

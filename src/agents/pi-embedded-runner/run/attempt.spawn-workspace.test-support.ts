@@ -690,14 +690,17 @@ type SessionPromptOverride = (
 ) => Promise<void>;
 
 let runEmbeddedAttemptPromise:
-  | Promise<typeof import("./attempt.js").runEmbeddedAttempt>
+  | Promise<typeof import("../../interaction-attempt-runtime/attempt.js").runInteractionAttempt>
   | undefined;
-const ATTEMPT_SPAWN_WORKSPACE_TEST_SPECIFIER = "./attempt.ts?spawn-workspace-test";
+const ATTEMPT_SPAWN_WORKSPACE_TEST_SPECIFIER =
+  "../../interaction-attempt-runtime/attempt.ts?spawn-workspace-test";
 
 async function loadRunEmbeddedAttempt() {
   runEmbeddedAttemptPromise ??= (
-    import(ATTEMPT_SPAWN_WORKSPACE_TEST_SPECIFIER) as Promise<typeof import("./attempt.js")>
-  ).then((mod) => mod.runEmbeddedAttempt);
+    import(ATTEMPT_SPAWN_WORKSPACE_TEST_SPECIFIER) as Promise<
+      typeof import("../../interaction-attempt-runtime/attempt.js")
+    >
+  ).then((mod) => mod.runInteractionAttempt);
   return await runEmbeddedAttemptPromise;
 }
 

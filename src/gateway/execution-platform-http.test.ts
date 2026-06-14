@@ -19,6 +19,10 @@ import { RuntimeToolRegistry } from "../../extensions/execution-platform/src/run
 import { RuntimeToolTraceRepository } from "../../extensions/execution-platform/src/runtime-tool-call/runtime-tool-trace-repository.ts";
 import { WorkQueueEventStore } from "../../extensions/execution-platform/src/work-queue/work-queue-event-store.ts";
 import { WorkQueueRepository } from "../../extensions/execution-platform/src/work-queue/work-queue-repository.ts";
+import {
+  NATIVE_EXECUTION_SESSION_JOB_TYPE,
+  startNativeExecutionSession,
+} from "../../extensions/execution-platform/src/workflows/native-agentic-orchestration.ts";
 import { RuntimeWorkGraphRepository } from "../../extensions/execution-platform/src/workflows/runtime-work-graph-repository.ts";
 import { registerSchedulerRuntimeTools } from "../../extensions/execution-platform/src/workflows/scheduler-runtime-tools.ts";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -113,7 +117,7 @@ describe("execution platform gateway HTTP routes", () => {
       ),
     ).toBe(true);
     expect(shouldHandleExecutionPlatformPath("/api/execution-platform/queue-runner/run-once")).toBe(
-      true,
+      false,
     );
     expect(shouldHandleExecutionPlatformPath("/api/execution-platform")).toBe(false);
     expect(shouldHandleExecutionPlatformPath("/api/channels/test")).toBe(false);
@@ -159,6 +163,7 @@ describe("execution platform gateway HTTP routes", () => {
         vars: {
           OPENCLAW_INTENT_FRONT_DOOR_LIVE_ROUTER_ENABLED: "1",
           OPENCLAW_NATIVE_EXECUTION_SUBMIT_FRONT_DOOR_ENABLED: "1",
+          OPENCLAW_LEGACY_FRONT_DOOR_EXECUTION_COMPATIBILITY_ENABLED: "1",
           OPENCLAW_INTENT_FRONT_DOOR_ROUTER_PROVIDER_PROFILE: "provider://fixture",
           OPENCLAW_INTENT_FRONT_DOOR_ROUTER_MODEL_REF:
             "model-route://intent-front-door/router/fixture",
@@ -177,6 +182,7 @@ describe("execution platform gateway HTTP routes", () => {
         vars: {
           OPENCLAW_INTENT_FRONT_DOOR_LIVE_ROUTER_ENABLED: "1",
           OPENCLAW_NATIVE_EXECUTION_SUBMIT_FRONT_DOOR_ENABLED: "1",
+          OPENCLAW_LEGACY_FRONT_DOOR_EXECUTION_COMPATIBILITY_ENABLED: "1",
           OPENCLAW_INTENT_FRONT_DOOR_ROUTER_PROVIDER_PROFILE: "provider://fixture",
           OPENCLAW_INTENT_FRONT_DOOR_ROUTER_MODEL_REF:
             "model-route://intent-front-door/router/fixture",
@@ -198,6 +204,7 @@ describe("execution platform gateway HTTP routes", () => {
         vars: {
           OPENCLAW_INTENT_FRONT_DOOR_LIVE_ROUTER_ENABLED: "1",
           OPENCLAW_NATIVE_EXECUTION_SUBMIT_FRONT_DOOR_ENABLED: "1",
+          OPENCLAW_LEGACY_FRONT_DOOR_EXECUTION_COMPATIBILITY_ENABLED: "1",
           OPENCLAW_INTENT_FRONT_DOOR_ROUTER_PROVIDER_PROFILE:
             "provider-profile://intent-front-door/router/openrouter",
           OPENCLAW_INTENT_FRONT_DOOR_ROUTER_POLICY_REF:
@@ -211,7 +218,7 @@ describe("execution platform gateway HTTP routes", () => {
     expect(provider).toBeInstanceOf(LiveStructuredModelIntentRouterProvider);
   });
 
-  it("does not register the live router provider until native submit gate is enabled", () => {
+  it("does not register the live router provider until native submit is enabled", () => {
     const baseVars = {
       OPENCLAW_INTENT_FRONT_DOOR_LIVE_ROUTER_ENABLED: "1",
       OPENCLAW_INTENT_FRONT_DOOR_ROUTER_PROVIDER_PROFILE: "provider://fixture",
@@ -249,6 +256,7 @@ describe("execution platform gateway HTTP routes", () => {
       runtimeJobs,
       workQueue,
       structuredRouterProvider: fixedFrontDoorProvider(codingWorkflowRoute()),
+      startExecutionSession: async (input) => startNativeExecutionSession(input),
     });
     const response = createResponse();
 
@@ -280,7 +288,7 @@ describe("execution platform gateway HTTP routes", () => {
     };
     expect(payload.accepted).toBe(true);
     expect(payload.workflowId).toBe("agent_team.coding");
-    expect(payload.jobType).toBe("executor.agent_team");
+    expect(payload.jobType).toBe(NATIVE_EXECUTION_SESSION_JOB_TYPE);
     expect(payload.rawPromptStored).toBe(false);
   });
 
@@ -299,6 +307,7 @@ describe("execution platform gateway HTTP routes", () => {
       runtimeJobs,
       workQueue,
       structuredRouterProvider: fixedFrontDoorProvider(codingWorkflowRoute()),
+      startExecutionSession: async (input) => startNativeExecutionSession(input),
     });
     const response = createResponse();
     const req = jsonRequest("/api/execution-platform/execution/submit", {
@@ -340,7 +349,38 @@ describe("execution platform gateway HTTP routes", () => {
     expect(payload.rawPromptStored).toBe(false);
     const job = await runtimeJobs.getJob(payload.runtimeJobId);
     expect(job?.payload).toMatchObject({
-      operator: { actorId: "operator-from-http", sessionId: "agent:main:main" },
+      artifactKind: "openclaw.accepted_agent_run",
+      refs: expect.arrayContaining([
+        expect.objectContaining({
+          ref: expect.stringContaining("native-submit://"),
+          kind: "native_submit",
+        }),
+      ]),
+      rawPromptStored: false,
+      rawResponseStored: false,
+    });
+    const artifacts = await runtimeJobs.listArtifacts(payload.runtimeJobId);
+    const nativeHandoff = artifacts.find(
+      (artifact) => artifact.artifactType === "execution.front_door.native_handoff",
+    );
+    expect(nativeHandoff?.metadata).toMatchObject({
+      artifactKind: "execution.front_door.native_handoff",
+      routingContext: {
+        rawPromptStored: false,
+        rawResponseStored: false,
+      },
+      rawPromptStored: false,
+      rawResponseStored: false,
+    });
+    const compiledRequest = artifacts.find(
+      (artifact) => artifact.artifactType === "execution.front_door.compiled_request",
+    );
+    expect(compiledRequest?.metadata).toMatchObject({
+      runtimeJobCreateRequest: {
+        payload: {
+          operator: { actorId: "operator-from-http", sessionId: "agent:main:main" },
+        },
+      },
       sourcePromptRef: {
         refKind: "native_submit",
         sessionKey: "agent:main:main",
@@ -369,6 +409,7 @@ describe("execution platform gateway HTTP routes", () => {
       runtimeJobs,
       workQueue,
       structuredRouterProvider: fixedFrontDoorProvider(codingWorkflowRoute()),
+      startExecutionSession: async (input) => startNativeExecutionSession(input),
     });
     const prompt = "Implement Product/Spec Planning.\n\nPreserve this final newline.\n";
     const response = createResponse();
@@ -408,10 +449,29 @@ describe("execution platform gateway HTTP routes", () => {
       job?.payload && typeof job.payload === "object" && !Array.isArray(job.payload)
         ? job.payload
         : {};
-    expect(jobPayload.sourcePromptRef).toMatchObject({
-      promptHash: sha256Text(prompt),
-      promptLength: prompt.length,
+    expect(jobPayload).toMatchObject({
+      artifactKind: "openclaw.accepted_agent_run",
       rawPromptStored: false,
+      rawResponseStored: false,
+    });
+    const artifacts = await runtimeJobs.listArtifacts(payload.runtimeJobId);
+    const nativeHandoff = artifacts.find(
+      (artifact) => artifact.artifactType === "execution.front_door.native_handoff",
+    );
+    expect(nativeHandoff?.metadata).toMatchObject({
+      artifactKind: "execution.front_door.native_handoff",
+      rawPromptStored: false,
+      rawResponseStored: false,
+    });
+    const compiledRequest = artifacts.find(
+      (artifact) => artifact.artifactType === "execution.front_door.compiled_request",
+    );
+    expect(compiledRequest?.metadata).toMatchObject({
+      sourcePromptRef: {
+        promptHash: sha256Text(prompt),
+        promptLength: prompt.length,
+        rawPromptStored: false,
+      },
     });
   });
 

@@ -12,6 +12,25 @@ gates.
 
 ## Current Focus
 
+2026-06-12 native agentic orchestration update: the next governing
+near-final architecture spec is
+[OpenClaw Native Agentic Orchestration Architecture](/projects/execution-platform/specs/openclaw-native-agentic-orchestration-architecture).
+It records the plan to retire route/intake/scheduler small-verb workflows as
+canonical meaning owners and move orchestration onto native OpenClaw runtime
+jobs, sessions, handoffs, todo, runtime events, progress-sensitive safety
+rails, child-session branching, Work Queue read models, and one shared
+runtime-owned evidence finish service. The first implementation requirement
+is that this spec be durable and indexed before functional code edits begin.
+
+The companion runtime-core/envelope spec is
+[OpenClaw Native Agent Runtime Core And Envelopes](/projects/execution-platform/specs/openclaw-native-agent-runtime-core-and-envelopes),
+and cleanup/deletion work is tracked in
+[OpenClaw Native Legacy Cleanup Inventory](/projects/execution-platform/specs/openclaw-native-legacy-cleanup-inventory).
+The cleanup inventory is the durable checklist for retiring run-once leaks,
+old deterministic front-door route/intake/scheduler paths, Product/Spec
+boundary replay as a canonical proof path, and stale path/session assumptions
+after representative native proofs pass.
+
 2026-06-04 scheduler graph-patch update: the next Product/Spec proof is
 blocked by
 [Scheduler Graph Patch Runner](/projects/execution-platform/specs/scheduler-graph-patch-runner).

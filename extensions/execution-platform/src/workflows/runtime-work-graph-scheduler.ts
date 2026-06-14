@@ -21,7 +21,7 @@ import {
 import {
   NODE_EXECUTION_SNAPSHOT_ARTIFACT_TYPE,
   type NodeExecutionSnapshot,
-} from "./node-agent-session.ts";
+} from "./node-execution-snapshot.ts";
 import {
   NODE_LIFECYCLE_PROJECTION_ARTIFACT_TYPE,
   NodeLifecycleTransitionRunner,

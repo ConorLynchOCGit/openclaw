@@ -354,6 +354,41 @@ describe("native task tool", () => {
     expect(details).not.toHaveProperty("resultText");
   });
 
+  it("extracts execution critic first-line decisions into task result details", async () => {
+    const runChildTask = vi.fn(
+      async (): Promise<NativeTaskForegroundResult> => ({
+        status: "completed",
+        foreground: true,
+        childSessionKey: "agent:execution-critic:subagent:child-critic",
+        runId: "run-critic-1",
+        waitStatus: "ok",
+        startedAt: 1000,
+        endedAt: 1100,
+        resultText:
+          "REVISE\nUse the shared finish service instead of asking the model to invent evidence refs.",
+        resultDeliveredToParentContext: true,
+      }),
+    );
+    const tool = createNativeTaskTool({
+      allowedAgentIds: ["execution-critic"],
+      runChildTask,
+    });
+
+    const result = await tool.execute("task-critic", {
+      agentId: "execution-critic",
+      task: "Review the finish plan.",
+    });
+
+    expect(readDetails(result)).toMatchObject({
+      requestedAgentId: "execution-critic",
+      criticDecision: "REVISE",
+      criticDecisionValid: true,
+      criticDecisionExpectedFirstLine: "ACCEPT|REVISE|BLOCK",
+    });
+    expect(readContentText(result)).toContain("REVISE");
+    expect(readContentText(result)).not.toContain('"resultText"');
+  });
+
   it("uses the native child-session runner when provided instead of gateway spawn/wait", async () => {
     const runChildTask = vi.fn(
       async (params): Promise<NativeTaskForegroundResult> => ({

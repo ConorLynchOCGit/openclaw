@@ -11,7 +11,6 @@ import {
 const productionFilesThatWriteRuntimeArtifacts = [
   "extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts",
   "extensions/execution-platform/src/codex-bridge/context-scout-node-executor.ts",
-  "src/gateway/execution-platform-agent-team-runner.ts",
 ];
 
 const registeredBodyArtifactTypes = listRuntimeArtifactContracts()
@@ -40,8 +39,6 @@ describe("runtime artifact contract registry", () => {
         "execution_platform.mission_ledger_stability_diagnostic_pair",
         "execution_platform.mission_ledger_stability_verdict",
         "execution_platform.fast_model.no_content_diagnostic",
-        "execution_platform.architecture_residue_source_inventory",
-        "execution_platform.architecture_residue_model_audit",
         "execution_platform.runtime_graph_patch",
         "execution_platform.provider_diagnostics.response_shape",
         "execution_platform.proof_environment.heap_phase_snapshot",
@@ -157,12 +154,6 @@ describe("runtime artifact contract registry", () => {
     expect(isRuntimeArtifactPayloadRequired("execution_platform.worker_edit_review_artifact")).toBe(
       true,
     );
-    expect(
-      isRuntimeArtifactPayloadRequired("execution_platform.architecture_residue_source_inventory"),
-    ).toBe(true);
-    expect(
-      isRuntimeArtifactPayloadRequired("execution_platform.architecture_residue_model_audit"),
-    ).toBe(true);
     expect(
       isRuntimeArtifactPayloadRequired("execution_platform.provider_diagnostics.response_shape"),
     ).toBe(true);

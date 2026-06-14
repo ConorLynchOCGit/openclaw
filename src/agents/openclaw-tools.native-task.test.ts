@@ -57,7 +57,7 @@ describe("openclaw-tools native task routing", () => {
         childAgentId: "execution-context-scout",
         task: "Return bounded source context.",
         label: "native route",
-        runTimeoutSeconds: 9,
+        parentVisibleResultMaxChars: 12000,
       }),
     );
     expect(callGatewayMock).not.toHaveBeenCalled();

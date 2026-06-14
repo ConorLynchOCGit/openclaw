@@ -56,7 +56,7 @@ export class CodexAppServerEventProjector {
   private reasoningEnded = false;
   private completedTurn: CodexTurn | undefined;
   private promptError: unknown;
-  private promptErrorSource: EmbeddedRunAttemptResult["promptErrorSource"] = null;
+  private promptErrorOrigin: EmbeddedRunAttemptResult["promptErrorOrigin"] = null;
   private aborted = false;
   private tokenUsage: NormalizedUsage | undefined;
   private guardianReviewCount = 0;
@@ -110,7 +110,7 @@ export class CodexAppServerEventProjector {
         break;
       case "error":
         this.promptError = readString(params, "message") ?? "codex app-server error";
-        this.promptErrorSource = "prompt";
+        this.promptErrorOrigin = "prompt";
         break;
       default:
         break;
@@ -158,7 +158,7 @@ export class CodexAppServerEventProjector {
       idleTimedOut: false,
       timedOutDuringCompaction: false,
       promptError,
-      promptErrorSource: promptError ? this.promptErrorSource || "prompt" : null,
+      promptErrorOrigin: promptError ? this.promptErrorOrigin || "prompt" : null,
       sessionIdUsed: this.params.sessionId,
       bootstrapPromptWarningSignaturesSeen: this.params.bootstrapPromptWarningSignaturesSeen,
       bootstrapPromptWarningSignature: this.params.bootstrapPromptWarningSignature,
@@ -195,7 +195,7 @@ export class CodexAppServerEventProjector {
   markTimedOut(): void {
     this.aborted = true;
     this.promptError = "codex app-server attempt timed out";
-    this.promptErrorSource = "prompt";
+    this.promptErrorOrigin = "prompt";
   }
 
   isCompacting(): boolean {
@@ -350,7 +350,7 @@ export class CodexAppServerEventProjector {
     }
     if (turn.status === "failed") {
       this.promptError = turn.error?.message ?? "codex app-server turn failed";
-      this.promptErrorSource = "prompt";
+      this.promptErrorOrigin = "prompt";
     }
     for (const item of turn.items ?? []) {
       if (item.type === "agentMessage" && typeof item.text === "string" && item.text) {

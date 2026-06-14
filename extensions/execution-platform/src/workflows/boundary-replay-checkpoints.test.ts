@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { applyExecutionPlatformMigrations } from "../db/migrations.ts";
@@ -56,24 +56,12 @@ async function withReplayRuntime<T>(
 }
 
 describe("boundary replay checkpoints", () => {
-  it("blocks worker execution before scheduling when node worker prompt text client is missing", async () => {
-    const source = await readFile(
-      path.join(process.cwd(), "scripts/execution-platform-run-product-spec-boundary-replay.mjs"),
-      "utf8",
-    );
-    const preflightIndex = source.indexOf("const workerExecutionPreflight = {");
-    const blockIndex = source.indexOf(
-      "if (executeWorkers && !workerExecutionPreflight.promptTextModelClientPresent)",
-    );
-    const schedulerRunIndex = source.indexOf("schedulerResult = await scheduler.run(");
-
-    expect(preflightIndex).toBeGreaterThanOrEqual(0);
-    expect(blockIndex).toBeGreaterThan(preflightIndex);
-    expect(schedulerRunIndex).toBeGreaterThan(blockIndex);
-    expect(source).toContain("worker_execution_preflight_blocked");
-    expect(source).toContain("node_worker_prompt_transport_missing");
-    expect(source).toContain("process.exitCode = diagnosticExitZero ? 0 : 1");
-    expect(source.slice(blockIndex, schedulerRunIndex)).toContain("return;");
+  it("keeps the obsolete Product/Spec boundary replay script deleted", () => {
+    expect(
+      fs.existsSync(
+        path.join(process.cwd(), "scripts/execution-platform-run-product-spec-boundary-replay.mjs"),
+      ),
+    ).toBe(false);
   });
 
   it("exposes a workflow-agnostic registry for every checkpoint kind", () => {

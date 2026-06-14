@@ -1,4 +1,12 @@
 import type { ImageContent } from "@mariozechner/pi-ai";
+import type {
+  StartExecutionSessionToolInput,
+  StartExecutionSessionToolResult,
+} from "../agents/tools/start-execution-session-tool.js";
+import type {
+  WorkQueueExecutionEligibilityToolInput,
+  WorkQueueExecutionEligibilityToolResult,
+} from "../agents/tools/work-queue-execution-eligibility-tool.js";
 import type { PromptImageOrderEntry } from "../media/prompt-image-order.js";
 import type { ReplyPayload } from "./reply-payload.js";
 import type { TypingController } from "./reply/typing.js";
@@ -166,4 +174,14 @@ export type GetReplyOptions = {
   hasRepliedRef?: { value: boolean };
   /** Override agent timeout in seconds (0 = no timeout). Threads through to resolveAgentTimeoutMs. */
   timeoutOverrideSeconds?: number;
+  /** Runtime-owned launcher for native RuntimeJob-backed execution sessions. */
+  nativeExecutionSession?: {
+    enabled: boolean;
+    startExecutionSession: (
+      input: StartExecutionSessionToolInput,
+    ) => Promise<StartExecutionSessionToolResult>;
+    readWorkQueueEligibility?: (
+      input: WorkQueueExecutionEligibilityToolInput,
+    ) => Promise<WorkQueueExecutionEligibilityToolResult>;
+  };
 };

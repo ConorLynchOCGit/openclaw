@@ -123,6 +123,13 @@ export function buildAgentTeamCodingWorkflowPlugin(input: {
       rawPromptStored: false,
       rawResponseStored: false,
       rawLogsStored: false,
+      nativeExecutableNodePolicy: {
+        requiresNodeLifecycleTransitionRunner: true,
+        requiresNodeExecutionSnapshot: true,
+        requiresRunNodeAgentSession: true,
+        requiresOpenclawResourceRead: true,
+        requiresNodeFinish: true,
+      },
     },
     schedulerOptions: {
       requireCostAwareCapabilityPolicy: true,

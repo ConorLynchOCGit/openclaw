@@ -32,6 +32,7 @@ export type ExecutionPlatformFeatureFlagId =
   | "two_lane_router_owner_canary"
   | "normal_chat_gateway_front_door_handoff"
   | "native_execution_submit_front_door"
+  | "legacy_front_door_execution_compatibility"
   | "convergence_tracker_live_seed"
   | "production_deploy_kill_switch"
   | "external_outbound_kill_switch"
@@ -160,6 +161,7 @@ export const REQUIRED_EXECUTION_PLATFORM_FEATURE_FLAG_IDS: ExecutionPlatformFeat
   "two_lane_router_owner_canary",
   "normal_chat_gateway_front_door_handoff",
   "native_execution_submit_front_door",
+  "legacy_front_door_execution_compatibility",
   "convergence_tracker_live_seed",
   "production_deploy_kill_switch",
   "external_outbound_kill_switch",
@@ -258,6 +260,22 @@ const FLAG_DEFINITIONS: ExecutionPlatformFeatureFlagDefinition[] = [
     blocksWhenActive: false,
     allowsWhenActive: true,
     reasonCodes: ["native_execution_submit_front_door_disabled_by_default"],
+  },
+  {
+    flagId: "legacy_front_door_execution_compatibility",
+    envName: "OPENCLAW_LEGACY_FRONT_DOOR_EXECUTION_COMPATIBILITY_ENABLED",
+    kind: "legacy_fallback",
+    ownerArea: "intent-front-door",
+    description:
+      "Temporary compatibility gate for the legacy deterministic front-door execution submit path.",
+    defaultState: "disabled",
+    sourceRef: "extensions/execution-platform/src/intent-routing/native-execution-rpc.ts",
+    configRef: "env:OPENCLAW_LEGACY_FRONT_DOOR_EXECUTION_COMPATIBILITY_ENABLED",
+    riskClass: "critical",
+    scope: "owner_only",
+    blocksWhenActive: false,
+    allowsWhenActive: true,
+    reasonCodes: ["legacy_front_door_execution_compatibility_disabled_by_default"],
   },
   {
     flagId: "convergence_tracker_live_seed",

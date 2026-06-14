@@ -7,13 +7,15 @@ import { RuntimeJobRepository } from "../runtime-job-repository.ts";
 import { buildWorkQueueExecutionReadModel } from "../work-queue/execution-read-model.ts";
 import { WorkQueueRepository } from "../work-queue/work-queue-repository.ts";
 import { HumanOperatorTaskAdapter } from "../workflows/human-operator-task-adapter.ts";
+import {
+  NATIVE_EXECUTION_SESSION_JOB_TYPE,
+  NATIVE_EXECUTION_SESSION_QUEUE,
+} from "../workflows/native-agentic-orchestration.ts";
 import { RuntimeWorkGraphRepository } from "../workflows/runtime-work-graph-repository.ts";
 import {
   createExecutionPlatformHostRoutes,
   createProductionSupervisorConfig,
   handleExecutionPlatformDbWorkQueueHostRoute,
-  handleExecutionPlatformQueueRunnerHostRoute,
-  handleExecutionPlatformWorkQueueControlHostRoute,
   preflightAcpBridgeEndpoint,
   ProductionSupervisor,
   runAcpBridgeRealEndpointPilot,
@@ -143,28 +145,27 @@ class FakeResponse extends Writable {
 }
 
 async function callRoute(
-  handler: (req: FakeRequest, res: FakeResponse) => Promise<boolean>,
+  handler: (req: never, res: never) => Promise<boolean>,
   body: unknown,
 ): Promise<{ statusCode: number; json: unknown }> {
   const req = new FakeRequest(body);
   const res = new FakeResponse();
-  await handler(req, res);
+  await handler(req as never, res as never);
   return { statusCode: res.statusCode, json: res.json() };
 }
 
 describe("Execution Platform host routes and supervisor productionization", () => {
-  it("wires host routes for queue runner and Work Queue controls with auth", async () => {
+  it("wires native execution and Work Queue controls without queue-runner run-once", async () => {
     await withRuntimeHarness(async ({ runtimeJobs }) => {
-      await runtimeJobs.enqueueJob({
-        jobId: "host-route-bridge-job",
-        jobType: CODEX_BRIDGE_JOB_TYPE,
-        queueName: "host-routes",
-        payload: bridgePayload(),
-      });
       const routes = createExecutionPlatformHostRoutes({ runtimeJobs });
+      expect(routes.map((route) => route.path)).not.toContain(
+        "/api/execution-platform/queue-runner/run-once",
+      );
       expect(routes.map((route) => route.path)).toEqual(
         expect.arrayContaining([
-          "/api/execution-platform/queue-runner/run-once",
+          "/api/execution-platform/execution/native-readyz",
+          "/api/execution-platform/execution/preflight",
+          "/api/execution-platform/execution/start-session",
           "/api/execution-platform/work-queue/list",
           "/api/execution-platform/work-queue/detail",
           "/api/execution-platform/work-queue/delta",
@@ -181,106 +182,23 @@ describe("Execution Platform host routes and supervisor productionization", () =
       );
       expect(routes.every((route) => route.match === "exact")).toBe(true);
 
-      const rejected = await callRoute(
-        (req, res) =>
-          handleExecutionPlatformQueueRunnerHostRoute(req as never, res as never, { runtimeJobs }),
-        { auth: { actorId: "", role: "operator", authenticated: false }, dryRun: true },
-      );
-      expect(rejected.statusCode).toBe(401);
-
-      const dryRun = await callRoute(
-        (req, res) =>
-          handleExecutionPlatformQueueRunnerHostRoute(req as never, res as never, { runtimeJobs }),
-        {
-          auth: { actorId: "operator", role: "operator", authenticated: true },
-          workerId: "host-route-worker",
-          queueName: "host-routes",
-          dryRun: true,
-        },
-      );
-      expect(dryRun.statusCode).toBe(200);
-      expect(JSON.stringify(dryRun.json)).toContain("host-route-bridge-job");
-
-      const nativeRunBlocked = await callRoute(
-        (req, res) =>
-          handleExecutionPlatformQueueRunnerHostRoute(req as never, res as never, { runtimeJobs }),
-        {
-          auth: { actorId: "operator", role: "operator", authenticated: true },
-          nativeWorkflowRunOnce: true,
-          runtimeJobId: "host-route-bridge-job",
-        },
-      );
-      expect(nativeRunBlocked.statusCode).toBe(409);
-      expect(JSON.stringify(nativeRunBlocked.json)).toContain(
-        "gateway_worker_run_once_disabled_by_enqueue_only_boundary",
-      );
-
-      await runtimeJobs.enqueueJob({
-        jobId: "host-route-agent-team-native-job",
-        jobType: "executor.agent_team",
-        queueName: "agent-team",
-        payload: { workflowId: "agent_team.coding" },
+      const startSessionHandler = routes.find(
+        (route) => route.path === "/api/execution-platform/execution/start-session",
+      )?.handler;
+      expect(startSessionHandler).toBeDefined();
+      const startSession = await callRoute(startSessionHandler!, {
+        auth: { actorId: "operator", role: "operator", authenticated: true },
+        objective: "Start native execution from the resident gateway route.",
+        refs: ["work-queue://item/native-start-route"],
+        constraints: ["Use native execution sessions."],
+        validationSignal: "Validate via focused tests.",
+        queueName: NATIVE_EXECUTION_SESSION_QUEUE,
+        agentProfile: "execution-orchestrator",
+        idempotencyKey: "host-route-start-session",
       });
-      const configuredNativeRun = await callRoute(
-        (req, res) =>
-          handleExecutionPlatformQueueRunnerHostRoute(req as never, res as never, {
-            runtimeJobs,
-            agentTeamRuntimeRunOnce: async ({ runtimeJobId, workerId }) => ({
-              claimed: true,
-              completed: false,
-              failed: true,
-              status: "failed",
-              runtimeJobId,
-              teamRunId: "team-run-host-route-agent-team-native-job",
-              workflowId: "agent_team.coding",
-              workerId,
-              reasonCodes: ["configured_gateway_agent_team_supervisor_used"],
-            }),
-          }),
-        {
-          auth: { actorId: "operator", role: "operator", authenticated: true },
-          nativeWorkflowRunOnce: true,
-          gatewayWorkerRunOnceProofMode: true,
-          runtimeJobId: "host-route-agent-team-native-job",
-        },
-      );
-      expect(configuredNativeRun.statusCode).toBe(200);
-      expect(JSON.stringify(configuredNativeRun.json)).toContain(
-        "configured_gateway_agent_team_supervisor_used",
-      );
-      expect(JSON.stringify(configuredNativeRun.json)).toContain(
-        "team-run-host-route-agent-team-native-job",
-      );
-
-      const unconfiguredNativeRun = await callRoute(
-        (req, res) =>
-          handleExecutionPlatformQueueRunnerHostRoute(req as never, res as never, { runtimeJobs }),
-        {
-          auth: { actorId: "operator", role: "operator", authenticated: true },
-          nativeWorkflowRunOnce: true,
-          gatewayWorkerRunOnceProofMode: true,
-          runtimeJobId: "host-route-agent-team-native-job",
-        },
-      );
-      expect(unconfiguredNativeRun.statusCode).toBe(409);
-      expect(JSON.stringify(unconfiguredNativeRun.json)).toContain(
-        "configured_agent_team_supervisor_required",
-      );
-
-      const pause = await callRoute(
-        (req, res) =>
-          handleExecutionPlatformWorkQueueControlHostRoute("pause", req as never, res as never, {
-            runtimeJobs,
-          }),
-        {
-          auth: { actorId: "operator", role: "operator", authenticated: true },
-          runtimeJobId: "host-route-bridge-job",
-          sessionId: "session-host-route",
-          reason: "pause through host route",
-        },
-      );
-      expect(pause.statusCode).toBe(200);
-      expect(JSON.stringify(pause.json)).toContain("pause");
+      expect(startSession.statusCode).toBe(200);
+      expect(JSON.stringify(startSession.json)).toContain("native_execution_start_session_result");
+      expect(JSON.stringify(startSession.json)).toContain(NATIVE_EXECUTION_SESSION_JOB_TYPE);
     });
   });
 

@@ -43,11 +43,19 @@ type BuildCatalogOptions = {
 
 const FALLBACK_CODEX_MODELS = [
   {
+    id: "gpt-5.5",
+    model: "gpt-5.5",
+    displayName: "gpt-5.5",
+    description: "Latest frontier agentic coding and orchestration model.",
+    isDefault: true,
+    inputModalities: ["text", "image"],
+    supportedReasoningEfforts: ["low", "medium", "high", "xhigh"],
+  },
+  {
     id: "gpt-5.4",
     model: "gpt-5.4",
     displayName: "gpt-5.4",
     description: "Latest frontier agentic coding model.",
-    isDefault: true,
     inputModalities: ["text", "image"],
     supportedReasoningEfforts: ["low", "medium", "high", "xhigh"],
   },
@@ -221,5 +229,7 @@ function isKnownXHighCodexModel(modelId: string): boolean {
 
 function isModernCodexModel(modelId: string): boolean {
   const lower = modelId.trim().toLowerCase();
-  return lower === "gpt-5.4" || lower === "gpt-5.4-mini" || lower === "gpt-5.2";
+  return (
+    lower === "gpt-5.5" || lower === "gpt-5.4" || lower === "gpt-5.4-mini" || lower === "gpt-5.2"
+  );
 }

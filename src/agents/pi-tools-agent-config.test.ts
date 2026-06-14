@@ -335,6 +335,102 @@ describe("Agent-specific tool filtering", () => {
     expect(toolNames.indexOf("node_finish")).toBeLessThan(toolNames.indexOf("read"));
   });
 
+  it("filters native execution orchestrator catalog to registry parent tools", () => {
+    const parentToolNames = [
+      "work_queue_execution_eligibility",
+      "start_execution_session",
+      "task",
+      "update_plan",
+      "read_todo",
+      "node_finish",
+      "agents_list",
+      "session_status",
+    ];
+    const cfg = createMainAgentConfig({
+      tools: {
+        allow: [
+          ...parentToolNames,
+          "read",
+          "glob",
+          "grep",
+          "lsp",
+          "edit",
+          "write",
+          "exec",
+          "sessions_spawn",
+          "sessions_yield",
+        ],
+      },
+      agentTools: {
+        allow: [
+          ...parentToolNames,
+          "read",
+          "glob",
+          "grep",
+          "lsp",
+          "edit",
+          "write",
+          "exec",
+          "sessions_spawn",
+          "sessions_yield",
+        ],
+      },
+    });
+
+    const tools = createOpenClawCodingTools({
+      config: cfg,
+      sessionKey: "agent:execution-orchestrator:native-session:session_test",
+      agentId: "execution-orchestrator",
+      workspaceDir: "/tmp/test",
+      agentDir: "/tmp/agent",
+      nativeRuntimeTools: [createStubNodeTool("node_finish")],
+      nativeExecutionSession: {
+        enabled: true,
+        startExecutionSession: async () => ({
+          status: "started",
+          runtimeJobId: "runtime-job-child",
+          sessionId: "session-child",
+          agentProfile: "execution-orchestrator",
+          eventType: "execution.session.started",
+        }),
+        readWorkQueueEligibility: async () => ({
+          artifactKind: "work_queue_execution_eligibility_read_model",
+          eligible: [],
+          excluded: [],
+          source: "execution_platform_work_queue_db",
+          ranking: "db_queue_rank_only",
+          semanticExecutorSelection: false,
+          workQueueLifecycleMutationAllowed: false,
+        }),
+      },
+      nodeAgentNativeTaskMode: {
+        enabled: true,
+        allowedAgentIds: [
+          "execution-coding",
+          "execution-critic",
+          "execution-context-scout",
+          "execution-validation-scout",
+        ],
+        parentToolNames,
+        runChildTask: async () => ({
+          status: "error",
+          foreground: true,
+          childSessionKey: "agent:execution-coding:subagent:test",
+          runId: "run-test",
+          waitStatus: "error",
+          resultDeliveredToParentContext: false,
+        }),
+      },
+      allowGatewaySubagentBinding: true,
+    });
+    const toolNames = tools.map((tool) => tool.name);
+
+    expect(toolNames).toEqual(expect.arrayContaining(parentToolNames));
+    expect(toolNames).not.toEqual(expect.arrayContaining(["read", "glob", "grep", "lsp"]));
+    expect(toolNames).not.toEqual(expect.arrayContaining(["edit", "write", "exec"]));
+    expect(toolNames).not.toEqual(expect.arrayContaining(["sessions_spawn", "sessions_yield"]));
+  });
+
   it("uses native-task catalog filtering, not parent crawl guard, as executable-node control plane", () => {
     const cfg = createMainAgentConfig({
       tools: {

@@ -9,12 +9,7 @@ import {
   resolveAgentPackRuntimeSourceRoot,
   type AgentPackRegistryEntry,
 } from "./agent-pack-registry.js";
-import {
-  resolveAgentConfig,
-  resolveAgentDir,
-  resolveAgentProjectRootDir,
-  resolveSessionAgentIds,
-} from "./agent-scope.js";
+import { resolveAgentConfig, resolveAgentDir, resolveSessionAgentIds } from "./agent-scope.js";
 import { getOrLoadBootstrapFiles } from "./bootstrap-cache.js";
 import { materializeCanonicalBootstrapCompatibilityFiles } from "./bootstrap-canonicalization.js";
 import { applyBootstrapHookOverrides } from "./bootstrap-hooks.js";
@@ -27,6 +22,10 @@ import {
   resolveBootstrapMaxChars,
   resolveBootstrapTotalMaxChars,
 } from "./pi-embedded-helpers.js";
+import {
+  resolveGatewayVisibleRuntimePath,
+  resolveRuntimeWorkspaceForAgent,
+} from "./runtime-workspace-locator.js";
 import {
   isSourceRuntimeMaterializedAgentStart,
   loadSourceRuntimeUnificationManifest,
@@ -221,6 +220,16 @@ function applyContextModeFilter(params: {
   return [];
 }
 
+function shouldUseEmptyLightweightBootstrap(params: {
+  contextMode?: BootstrapContextMode;
+  runKind?: BootstrapContextRunKind;
+}): boolean {
+  return (
+    (params.contextMode ?? "full") === "lightweight" &&
+    (params.runKind ?? "default") !== "heartbeat"
+  );
+}
+
 function shouldExcludeHeartbeatBootstrapFile(params: {
   config?: OpenClawConfig;
   sessionKey?: string;
@@ -286,9 +295,16 @@ async function resolveSourceBackedAgentBootstrapSource(params: {
   if (!entry) {
     return null;
   }
-  const defaultProjectRoot = params.config
-    ? resolveAgentProjectRootDir(params.config, sessionAgentId)
-    : resolveBootstrapRepoRoot({ importMetaUrl: import.meta.url, cwd: process.cwd() });
+  const runtimeWorkspace = params.config
+    ? resolveRuntimeWorkspaceForAgent({
+        config: params.config,
+        agentId: sessionAgentId,
+      })
+    : null;
+  const defaultProjectRoot =
+    runtimeWorkspace?.canonicalProjectRoot ??
+    runtimeWorkspace?.executableWorkspaceDir ??
+    resolveBootstrapRepoRoot({ importMetaUrl: import.meta.url, cwd: process.cwd() });
   const sourceRoot = resolveAgentPackRuntimeSourceRoot({
     entry,
     defaultProjectRoot,
@@ -296,10 +312,11 @@ async function resolveSourceBackedAgentBootstrapSource(params: {
   if (!sourceRoot) {
     throw new Error(`source-backed agent runtime source missing: ${sessionAgentId}`);
   }
+  const runtimeVisibleSourceRoot = resolveGatewayVisibleRuntimePath(sourceRoot);
   return sourceRoot
     ? {
         agentId: sessionAgentId,
-        sourceRoot,
+        sourceRoot: runtimeVisibleSourceRoot,
       }
     : null;
 }
@@ -502,6 +519,10 @@ async function resolveBootstrapArtifactsForRun(params: {
   bootstrapFiles: WorkspaceBootstrapFile[];
   modelMemoryOverlay: ModelMemoryBootstrapOverlay | null;
 }> {
+  if (shouldUseEmptyLightweightBootstrap(params)) {
+    return { bootstrapFiles: [], modelMemoryOverlay: null };
+  }
+
   const sourceBacked = await resolveSourceBackedAgentBootstrapArtifactsForRun(params);
   if (sourceBacked) {
     return sourceBacked;

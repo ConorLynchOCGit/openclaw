@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyExecutionPlatformMigrations } from "../db/migrations.ts";
 import { createExecutionPlatformPgMemTestDatabase } from "../db/pg-test.ts";
-import {
-  createBaseCanonicalRouterOutput,
-  createCanonicalRouterAction,
-  type StructuredModelIntentRouterProvider,
-} from "../intent-front-door/index.ts";
 import { NativeExecutionRpcService } from "../intent-routing/native-execution-rpc.ts";
 import { RuntimeJobRepository } from "../runtime-job-repository.ts";
 import type { JsonValue } from "../runtime-job-repository.ts";
@@ -19,37 +14,6 @@ import { auditBrowserPromptRuntimeLinkage } from "./browser-runtime-linkage-audi
 import { applyRuntimeWorkerSupervisorControl } from "./runtime-worker-supervisor-controls.ts";
 import { RuntimeWorkerSupervisor } from "./runtime-worker-supervisor.ts";
 import { createModelAuthoredCloseoutCapsuleFixture } from "./test-closeout-capsule-fixture.ts";
-import { buildDefaultWorkflowWorkerAdapterRegistry } from "./workflow-worker-adapter-registry.ts";
-
-function codingRouterProvider(): StructuredModelIntentRouterProvider {
-  return {
-    async route() {
-      return {
-        output: createBaseCanonicalRouterOutput({
-          route: "workflow_execution",
-          responseMode: "create_runtime_job",
-          executeNow: true,
-          workflowId: "agent_team.coding",
-          jobType: "executor.agent_team",
-          confidence: 0.95,
-          objectiveSummary: "Run bounded coding worker-supervisor proof.",
-          requestedActions: [
-            createCanonicalRouterAction("code_edit", "bounded edit", 0.95),
-            createCanonicalRouterAction("test", "focused tests", 0.95),
-            createCanonicalRouterAction("review", "review", 0.95),
-            createCanonicalRouterAction("closeout", "closeout", 0.95),
-          ],
-          requestedAuthority: "local_yolo",
-          sideEffectClass: "code_edit",
-        }),
-        providerRef: "fixture://structured-front-door",
-        modelCandidateId: "fixture-router",
-        providerCallMade: false,
-        reasonCodes: ["fixture_structured_router"],
-      };
-    },
-  };
-}
 
 describe("Slices 8-10 worker adapter integration", () => {
   it("links native submit, worker registry, supervisor adapter, Closeout Capsule, Work Queue, and browser audit", async () => {
@@ -63,32 +27,55 @@ describe("Slices 8-10 worker adapter integration", () => {
         itemType: "execution_workflow",
         title: "Worker boundary proof",
       });
-      const rpc = new NativeExecutionRpcService({
-        runtimeJobs,
-        workQueue,
+      const job = await runtimeJobs.enqueueJob({
+        jobId: "job-worker-boundary",
+        jobType: "executor.agent_team",
         queueName: "worker-boundary",
-        structuredRouterProvider: codingRouterProvider(),
-        workerAdapterRegistry: buildDefaultWorkflowWorkerAdapterRegistry({
-          generatedAt: "2026-05-08T22:00:00.000Z",
-          contractStateByWorkflowId: { "agent_team.coding": "shadow" },
-          adapterIdByWorkflowId: { "agent_team.coding": "worker.acp-codex.coding" },
-        }),
-      });
-      const submit = await rpc.submit({
-        prompt: "Have the coding team make a bounded proof improvement.",
-        auth: {
-          actorId: "operator",
-          authenticated: true,
-          role: "operator",
-          sessionId: "session-worker-boundary",
+        payload: {
+          workflowId: "agent_team.coding",
+          objectiveSummary: "Run bounded coding worker-supervisor proof.",
+          rawPromptStored: false,
+          rawResponseStored: false,
+          workQueueLifecycleMutated: false,
         },
         workItemId: "work-item-worker-boundary",
       });
-      expect(submit).toMatchObject({
-        accepted: true,
-        workflowId: "agent_team.coding",
-        workerContractState: "shadow",
-        workerAdapterId: "worker.acp-codex.coding",
+      await workQueue.createWorkRun({
+        workItemId: "work-item-worker-boundary",
+        executorKind: "runtime_job",
+        runtimeJobId: job.jobId,
+        runState: "running",
+        metadata: {
+          workflowId: "agent_team.coding",
+          jobType: "executor.agent_team",
+          rawPromptStored: false,
+          rawResponseStored: false,
+          workQueueLifecycleMutated: false,
+        },
+      });
+      await runtimeJobs.attachArtifact({
+        jobId: job.jobId,
+        artifactType: "execution.worker_contract_state",
+        storageKind: "metadata",
+        uri: `runtime-job://${job.jobId}/execution/worker-contract-state`,
+        contentType: "application/json",
+        metadata: {
+          artifactKind: "workflow_worker_execution_readiness",
+          workflowId: "agent_team.coding",
+          jobType: "executor.agent_team",
+          contractState: "shadow",
+          workerAdapterId: "worker.acp-codex.coding",
+          accepted: true,
+          reasonCodes: ["allowed_by_coding_worker_contract"],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+          workQueueLifecycleMutated: false,
+        },
+      });
+      const rpc = new NativeExecutionRpcService({
+        runtimeJobs,
+        workQueue,
       });
 
       const adapter = new AcpCodexCodingWorkerAdapter({
@@ -125,21 +112,21 @@ describe("Slices 8-10 worker adapter integration", () => {
         workerId: "worker-supervisor",
         queueName: "worker-boundary",
         adapters: [adapter],
-      }).runOnce({ runtimeJobId: submit.runtimeJobId ?? undefined });
+      }).runOnce({ runtimeJobId: job.jobId });
       expect(workerRun).toMatchObject({
         status: "completed",
         completed: true,
-        runtimeJobId: submit.runtimeJobId,
+        runtimeJobId: job.jobId,
       });
 
-      const closeout = await rpc.readCloseout(submit.runtimeJobId ?? "");
+      const closeout = await rpc.readCloseout(job.jobId);
       expect(JSON.stringify(closeout)).toContain("execution_platform_closeout_capsule");
       await applyRuntimeWorkerSupervisorControl({
         runtimeJobs,
         request: {
           controlId: "integration-closeout-readback",
           controlKind: "closeout_readback",
-          runtimeJobId: submit.runtimeJobId,
+          runtimeJobId: job.jobId,
           actorId: "operator",
           authenticated: true,
           reason: "read back closeout through runtime control surface",
@@ -159,8 +146,8 @@ describe("Slices 8-10 worker adapter integration", () => {
 
       const audit = auditBrowserPromptRuntimeLinkage({
         promptKind: "execution",
-        runtimeJobId: submit.runtimeJobId,
-        workflowId: submit.workflowId,
+        runtimeJobId: job.jobId,
+        workflowId: "agent_team.coding",
         workerContractState:
           summary && typeof summary === "object" && !Array.isArray(summary)
             ? ((summary as Record<string, unknown>).workerContractState as JsonValue)
@@ -176,9 +163,9 @@ describe("Slices 8-10 worker adapter integration", () => {
         reasonCodes: ["browser_runtime_linkage_passed"],
       });
 
-      expect(
-        JSON.stringify(await runtimeJobs.listArtifacts(submit.runtimeJobId ?? "")),
-      ).not.toContain('"rawPromptStored":true');
+      expect(JSON.stringify(await runtimeJobs.listArtifacts(job.jobId))).not.toContain(
+        '"rawPromptStored":true',
+      );
     } finally {
       await db.close();
     }

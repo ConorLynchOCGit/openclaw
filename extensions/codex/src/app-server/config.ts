@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { buildOpenClawProviderProcessEnv } from "../../../../src/agents/openclaw-runtime-home.js";
 
 export type CodexAppServerTransportMode = "stdio" | "websocket";
 export type CodexAppServerApprovalPolicy = "never" | "on-request" | "on-failure" | "untrusted";
@@ -12,6 +13,7 @@ export type CodexAppServerStartOptions = {
   url?: string;
   authToken?: string;
   headers: Record<string, string>;
+  env: Record<string, string>;
 };
 
 export type CodexAppServerRuntimeOptions = {
@@ -129,6 +131,7 @@ export function resolveCodexAppServerRuntimeOptions(
       ...(url ? { url } : {}),
       ...(authToken ? { authToken } : {}),
       headers,
+      env: buildOpenClawProviderProcessEnv("codex", env),
     },
     requestTimeoutMs: normalizePositiveNumber(config.requestTimeoutMs, 60_000),
     approvalPolicy:
@@ -163,6 +166,7 @@ export function codexAppServerStartOptionsKey(options: CodexAppServerStartOption
     headers: Object.entries(options.headers).toSorted(([left], [right]) =>
       left.localeCompare(right),
     ),
+    env: Object.entries(options.env).toSorted(([left], [right]) => left.localeCompare(right)),
   });
 }
 

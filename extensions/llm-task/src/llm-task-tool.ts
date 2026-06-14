@@ -1,14 +1,12 @@
-import fs from "node:fs/promises";
-import path from "node:path";
 import { Type } from "@sinclair/typebox";
 import Ajv from "ajv";
-import { normalizeOptionalString } from "openclaw/plugin-sdk/text-runtime";
 import {
-  formatXHighModelHint,
-  normalizeThinkLevel,
-  resolvePreferredOpenClawTmpDir,
-  supportsXHighThinking,
-} from "../api.js";
+  completeWithPreparedSimpleCompletionModel,
+  extractAssistantText,
+  prepareSimpleCompletionModel,
+} from "openclaw/plugin-sdk/simple-completion-runtime";
+import { normalizeOptionalString } from "openclaw/plugin-sdk/text-runtime";
+import { formatXHighModelHint, normalizeThinkLevel, supportsXHighThinking } from "../api.js";
 import type { OpenClawPluginApi } from "../api.js";
 
 const AjvCtor = Ajv as unknown as typeof import("ajv").default;
@@ -20,13 +18,6 @@ function stripCodeFences(s: string): string {
     return (m[1] ?? "").trim();
   }
   return trimmed;
-}
-
-function collectText(payloads: Array<{ text?: string; isError?: boolean }> | undefined): string {
-  const texts = (payloads ?? [])
-    .filter((p) => !p.isError && typeof p.text === "string")
-    .map((p) => p.text ?? "");
-  return texts.join("\n").trim();
 }
 
 function toModelKey(provider?: string, model?: string): string | undefined {
@@ -184,37 +175,39 @@ export function createLlmTaskTool(api: OpenClawPluginApi) {
 
       const fullPrompt = `${system}\n\nTASK:\n${prompt}\n\nINPUT_JSON:\n${inputJson}\n`;
 
-      let tmpDir: string | null = null;
-      try {
-        tmpDir = await fs.mkdtemp(
-          path.join(resolvePreferredOpenClawTmpDir(), "openclaw-llm-task-"),
-        );
-        const sessionId = `llm-task-${Date.now()}`;
-        const sessionFile = path.join(tmpDir, "session.json");
+      const prepared = await prepareSimpleCompletionModel({
+        cfg: api.config,
+        provider,
+        modelId: model,
+        profileId: authProfileId,
+        allowMissingApiKeyModes: ["aws-sdk"],
+      });
+      if ("error" in prepared) {
+        throw new Error(prepared.error);
+      }
 
-        const runEmbeddedPiAgent = api.runtime.agent.runEmbeddedPiAgent;
-        const result = await runEmbeddedPiAgent({
-          sessionId,
-          sessionFile,
-          workspaceDir: api.config?.agents?.defaults?.workspace ?? process.cwd(),
-          config: api.config,
-          prompt: fullPrompt,
-          timeoutMs,
-          runId: `llm-task-${Date.now()}`,
-          provider,
-          model,
-          authProfileId,
-          authProfileIdSource: authProfileId ? "user" : "auto",
-          thinkLevel,
-          streamParams,
-          disableTools: true,
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const result = await completeWithPreparedSimpleCompletionModel({
+          model: prepared.model,
+          auth: prepared.auth,
+          context: {
+            messages: [
+              {
+                role: "user",
+                content: fullPrompt,
+                timestamp: Date.now(),
+              },
+            ],
+          },
+          options: {
+            ...streamParams,
+            signal: controller.signal,
+          },
         });
 
-        const text = collectText(
-          typeof result === "object" && result !== null && "payloads" in result
-            ? (result as { payloads?: Array<{ text?: string; isError?: boolean }> }).payloads
-            : undefined,
-        );
+        const text = extractAssistantText(result).trim();
         if (!text) {
           throw new Error("LLM returned empty output");
         }
@@ -249,13 +242,7 @@ export function createLlmTaskTool(api: OpenClawPluginApi) {
           details: { json: parsed, provider, model },
         };
       } finally {
-        if (tmpDir) {
-          try {
-            await fs.rm(tmpDir, { recursive: true, force: true });
-          } catch {
-            // ignore
-          }
-        }
+        clearTimeout(timer);
       }
     },
   };

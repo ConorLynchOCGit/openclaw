@@ -5,6 +5,7 @@ export * from "./browser-runtime-linkage-audit.ts";
 export * from "./docs-skills-worker-adapter.ts";
 export * from "./middleware-worker-adapters.ts";
 export * from "./middleware-bypass-audit.ts";
+export * from "./native-execution-session-worker-adapter.ts";
 export * from "./qa-test-worker-adapter.ts";
 export * from "./research-to-coding-handoff-worker.ts";
 export * from "./runtime-worker-supervisor-controls.ts";

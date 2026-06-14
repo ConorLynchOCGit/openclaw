@@ -134,6 +134,7 @@ type FallbackRunnerParams = {
 };
 
 type EmbeddedAgentParams = {
+  nativeExecutionSession?: GetReplyOptions["nativeExecutionSession"];
   onToolResult?: (payload: { text?: string; mediaUrls?: string[] }) => Promise<void> | void;
   onItemEvent?: (payload: {
     itemId?: string;
@@ -241,6 +242,54 @@ describe("runAgentTurnWithFallback", () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("passes runtime-owned native execution session launcher into embedded agent runs", async () => {
+    const startExecutionSession = vi.fn(async () => ({
+      status: "started",
+      runtimeJobId: "job-1",
+      sessionId: "session-1",
+    }));
+    state.runEmbeddedPiAgentMock.mockResolvedValueOnce({ payloads: [{ text: "final" }], meta: {} });
+
+    const runAgentTurnWithFallback = await getRunAgentTurnWithFallback();
+    const result = await runAgentTurnWithFallback({
+      commandBody: "execute the next work queue item",
+      followupRun: createFollowupRun(),
+      sessionCtx: {
+        Provider: "webchat",
+        MessageSid: "msg",
+      } as unknown as TemplateContext,
+      opts: {
+        nativeExecutionSession: {
+          enabled: true,
+          startExecutionSession,
+        },
+      } satisfies GetReplyOptions,
+      typingSignals: createMockTypingSignaler(),
+      blockReplyPipeline: null,
+      blockStreamingEnabled: false,
+      resolvedBlockStreamingBreak: "message_end",
+      applyReplyToMode: (payload) => payload,
+      shouldEmitToolResult: () => true,
+      shouldEmitToolOutput: () => false,
+      pendingToolTasks: new Set<Promise<void>>(),
+      resetSessionAfterCompactionFailure: async () => false,
+      resetSessionAfterRoleOrderingConflict: async () => false,
+      isHeartbeat: false,
+      sessionKey: "main",
+      getActiveSessionEntry: () => undefined,
+      resolvedVerboseLevel: "off",
+    });
+
+    expect(result.kind).toBe("success");
+    expect(state.runEmbeddedPiAgentMock).toHaveBeenCalledTimes(1);
+    expect(state.runEmbeddedPiAgentMock.mock.calls[0]?.[0]).toMatchObject({
+      nativeExecutionSession: {
+        enabled: true,
+        startExecutionSession,
+      },
+    });
   });
 
   it("forwards media-only tool results without typing text", async () => {

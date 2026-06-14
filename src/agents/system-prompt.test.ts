@@ -661,6 +661,20 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain(`respond with ONLY: ${SILENT_REPLY_TOKEN}`);
   });
 
+  it("adds native execution routing guidance to the general profile when native tools are visible", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      toolNames: ["work_queue_execution_eligibility", "start_execution_session"],
+    });
+
+    expect(prompt).toContain("Native execution routing:");
+    expect(prompt).toContain(
+      "prefer `start_execution_session` over legacy route/intake/scheduler flows",
+    );
+    expect(prompt).toContain("call `work_queue_execution_eligibility` first when visible");
+    expect(prompt).toContain("Do not create RequirementMaps, SchedulerGraphPatches");
+  });
+
   it("reapplies provider prompt contributions", () => {
     const prompt = buildAgentSystemPrompt({
       workspaceDir: "/tmp/openclaw",
@@ -722,6 +736,98 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).not.toContain("## Assistant Output Directives");
     expect(prompt).not.toContain("## Voice (TTS)");
     expect(prompt).not.toContain("## Model Aliases");
+  });
+
+  it("keeps the execution-worker contract when lightweight bootstrap omits context files", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      promptProfile: "execution_worker",
+      toolNames: ["read", "grep", "glob", "lsp", "edit", "node_finish"],
+      extraSystemPrompt: "Implement the node.",
+      contextFiles: [],
+      runtimeInfo: {
+        agentId: "execution-coding",
+        model: "openrouter/moonshotai/kimi-k2.6",
+      },
+    });
+
+    expect(prompt).toContain("## Identity");
+    expect(prompt).toContain("## Execution Contract");
+    expect(prompt).toContain(
+      "Your only goal is accepted source edits for this node, then node_finish",
+    );
+    expect(prompt).toContain("largest currently-grounded coherent vertical edit batch");
+    expect(prompt).toContain("Path-only read of a large file floods context");
+    expect(prompt).toContain("## Node Work Order");
+    expect(prompt).toContain("Implement the node.");
+    expect(prompt).not.toContain("# Project Context");
+    expect(prompt).not.toContain("You are a personal assistant running inside OpenClaw.");
+  });
+
+  it("renders execution-orchestrator profile as a lean native session coordinator", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      promptProfile: "execution_orchestrator",
+      toolNames: [
+        "work_queue_execution_eligibility",
+        "start_execution_session",
+        "task",
+        "update_plan",
+        "node_finish",
+      ],
+      extraSystemPrompt: "Coordinate this runtime job.",
+      runtimeInfo: {
+        agentId: "execution-orchestrator",
+        model: "openrouter/anthropic/claude-sonnet",
+      },
+    });
+
+    expect(prompt).toContain("You are an execution orchestrator running inside OpenClaw");
+    expect(prompt).toContain(
+      "work_queue_execution_eligibility: Read deterministic Work Queue execution eligibility",
+    );
+    expect(prompt).toContain("start_execution_session: Start or resume RuntimeJob-backed");
+    expect(prompt).toContain(
+      "Agents choose paths; runtime records truth; Work Queue reads back truth.",
+    );
+    expect(prompt).toContain(
+      "read deterministic eligibility with work_queue_execution_eligibility before starting execution",
+    );
+    expect(prompt).toContain("Do not create RequirementMaps, SchedulerGraphPatches");
+    expect(prompt).toContain("Represent branches as native child sessions/handoffs");
+    expect(prompt).toContain("Finish through the visible finish tool");
+    expect(prompt).toContain("## Execution Work Order");
+    expect(prompt).toContain("Coordinate this runtime job.");
+    expect(prompt).not.toContain("You are a personal assistant running inside OpenClaw.");
+    expect(prompt).not.toContain("## Messaging");
+    expect(prompt).not.toContain("## Web Browsing");
+    expect(prompt).not.toContain("## OpenClaw CLI Quick Reference");
+    expect(prompt).not.toContain("## Silent Replies");
+  });
+
+  it("renders execution-critic profile as a bounded actionable reviewer", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      promptProfile: "execution_critic",
+      toolNames: ["read", "grep", "lsp"],
+      extraSystemPrompt: "Review this handoff before implementation.",
+      runtimeInfo: {
+        agentId: "execution-critic",
+        model: "openrouter/anthropic/claude-sonnet",
+      },
+    });
+
+    expect(prompt).toContain("You are an execution critic running inside OpenClaw");
+    expect(prompt).toContain("First line must be exactly one of: ACCEPT, REVISE, or BLOCK.");
+    expect(prompt).toContain("No abstract feedback. No generic best practices.");
+    expect(prompt).toContain("Do not own lifecycle, persistence, terminal state");
+    expect(prompt).toContain("## Critique Work Order");
+    expect(prompt).toContain("Review this handoff before implementation.");
+    expect(prompt).not.toContain("You are a personal assistant running inside OpenClaw.");
+    expect(prompt).not.toContain("## Messaging");
+    expect(prompt).not.toContain("## Web Browsing");
+    expect(prompt).not.toContain("## OpenClaw CLI Quick Reference");
+    expect(prompt).not.toContain("## Silent Replies");
   });
 
   it("renders execution scout profiles as lean evidence workers", () => {

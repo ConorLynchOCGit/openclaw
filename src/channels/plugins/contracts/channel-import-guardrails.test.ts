@@ -51,7 +51,6 @@ const ALLOWED_CORE_PRIVATE_EXTENSION_IMPORT_FILES = new Set([
   "src/infra/work-episode-outcome-pack.ts",
   "src/agents/model-memory/live-runtime/route-aware-context-pack.ts",
   "src/agents/model-memory/live-runtime/runtime-middleware-bridge.ts",
-  "src/gateway/execution-platform-agent-team-runner.ts",
   "src/gateway/execution-platform-http.ts",
   "src/gateway/server-methods/shared-types.ts",
   "src/gateway/server-runtime-subscriptions.ts",

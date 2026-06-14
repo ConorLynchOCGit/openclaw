@@ -146,6 +146,80 @@ agents:
       - subagents
       - agents_list
     basePackComplete: true
+  - id: execution-orchestrator
+    promptProfile: execution_orchestrator
+    displayName: Execution Orchestrator
+    classification: execution_platform_agent
+    durablePath: docs/agents/execution-orchestrator
+    runtimeSourcePath: docs/agents/execution-orchestrator/runtime
+    runtimeSurfacePath: /root/services/openclaw-roles/live/.openclaw/runtime/agents/execution-orchestrator/agent
+    runtimeSurfaceAliasPath: /home/node/.openclaw/agents/execution-orchestrator/agent
+    projectRoot: /root/services/openclaw-roles/live
+    status: source_runtime_unification_source_added
+    requiredDocs:
+      - IDENTITY.md
+      - AGENTS.md
+      - BOOTSTRAP.md
+      - TOOLS.md
+    primarySkills: []
+    allowedChildAgents:
+      - execution-coding
+      - execution-critic
+      - execution-context-scout
+      - execution-validation-scout
+    requiredTools:
+      - work_queue_execution_eligibility
+      - start_execution_session
+      - task
+      - update_plan
+      - read_todo
+      - node_finish
+      - agents_list
+      - session_status
+    forbiddenTools:
+      - write
+      - edit
+      - apply_patch
+      - exec
+      - process
+      - openclaw_resource_read
+    basePackComplete: true
+  - id: execution-critic
+    promptProfile: execution_critic
+    displayName: Execution Critic
+    classification: execution_platform_agent
+    durablePath: docs/agents/execution-critic
+    runtimeSourcePath: docs/agents/execution-critic/runtime
+    runtimeSurfacePath: /root/services/openclaw-roles/live/.openclaw/runtime/agents/execution-critic/agent
+    runtimeSurfaceAliasPath: /home/node/.openclaw/agents/execution-critic/agent
+    projectRoot: /root/services/openclaw-roles/live
+    status: source_runtime_unification_source_added
+    requiredDocs:
+      - IDENTITY.md
+      - AGENTS.md
+      - BOOTSTRAP.md
+      - TOOLS.md
+    primarySkills: []
+    requiredTools:
+      - read
+      - grep
+      - glob
+      - lsp
+      - update_plan
+      - read_todo
+    forbiddenTools:
+      - write
+      - edit
+      - apply_patch
+      - exec
+      - process
+      - node_finish
+      - openclaw_resource_read
+      - sessions_spawn
+      - sessions_yield
+      - subagents
+      - agents_list
+    basePackComplete: true
   - id: execution-context-scout
     promptProfile: execution_context_scout
     displayName: Execution Context Scout
@@ -173,7 +247,6 @@ agents:
       - list
       - glob
       - grep
-      - openclaw_resource_read
     forbiddenTools:
       - write
       - edit
@@ -217,7 +290,6 @@ agents:
       - glob
       - grep
       - exec
-      - openclaw_resource_read
     forbiddenTools:
       - write
       - edit

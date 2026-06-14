@@ -5,6 +5,7 @@ import type { ReplyOperation } from "../../../auto-reply/reply/reply-run-registr
 import type { ReasoningLevel, ThinkLevel, VerboseLevel } from "../../../auto-reply/thinking.js";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import type { PromptImageOrderEntry } from "../../../media/prompt-image-order.js";
+import type { ProviderRuntimeModel } from "../../../plugins/provider-runtime-model.types.js";
 import type { CommandQueueEnqueueFn } from "../../../process/command-queue.types.js";
 import type { InputProvenance } from "../../../sessions/input-provenance.js";
 import type { ExecElevatedDefaults, ExecToolDefaults } from "../../bash-tools.exec-types.js";
@@ -21,6 +22,14 @@ import type { NativeTaskRunChildTask } from "../../session-runtime/native-task-t
 import type { SessionLockAcquisitionTrace } from "../../session-write-lock.js";
 import type { SkillSnapshot } from "../../skills.js";
 import type { RequiredProviderContextAdmission } from "../../system-prompt-report.js";
+import type {
+  StartExecutionSessionToolInput,
+  StartExecutionSessionToolResult,
+} from "../../tools/start-execution-session-tool.js";
+import type {
+  WorkQueueExecutionEligibilityToolInput,
+  WorkQueueExecutionEligibilityToolResult,
+} from "../../tools/work-queue-execution-eligibility-tool.js";
 export type { ClientToolDefinition } from "../../command/shared-types.js";
 
 export type EmbeddedRunTrigger = "cron" | "heartbeat" | "manual" | "memory" | "overflow" | "user";
@@ -95,6 +104,8 @@ export type RunEmbeddedPiAgentParams = {
   authStorage?: AuthStorage;
   /** Optional caller-admitted model registry to avoid rediscovery below session launch. */
   modelRegistry?: ModelRegistry;
+  /** Optional caller-admitted runtime model. When present, this is the model authority for native launches. */
+  admittedRuntimeModel?: ProviderRuntimeModel;
   authProfileId?: string;
   authProfileIdSource?: "auto" | "user";
   thinkLevel?: ThinkLevel;
@@ -121,6 +132,16 @@ export type RunEmbeddedPiAgentParams = {
    * not for replay-only side channels.
    */
   nativeRuntimeTools?: AnyAgentTool[];
+  /** Runtime-owned launcher for native RuntimeJob-backed execution sessions. */
+  nativeExecutionSession?: {
+    enabled: boolean;
+    startExecutionSession: (
+      input: StartExecutionSessionToolInput,
+    ) => Promise<StartExecutionSessionToolResult>;
+    readWorkQueueEligibility?: (
+      input: WorkQueueExecutionEligibilityToolInput,
+    ) => Promise<WorkQueueExecutionEligibilityToolResult>;
+  };
   /** Optional node-scoped authority overlay that narrows native OpenClaw tools. */
   nodeAuthorityOverlay?: OpenClawNodeAuthorityOverlay;
   /** Optional OpenClaw-native guard for execution node parent crawl behavior. */
@@ -130,6 +151,7 @@ export type RunEmbeddedPiAgentParams = {
     enabled: boolean;
     allowedAgentIds: readonly string[];
     mutationToolName?: string;
+    parentToolNames?: readonly string[];
     parentVisibleResultMaxChars?: number;
     runChildTask?: NativeTaskRunChildTask;
   };

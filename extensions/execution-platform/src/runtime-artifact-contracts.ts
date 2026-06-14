@@ -274,24 +274,6 @@ const BODY_ARTIFACT_CONTRACTS: RuntimeArtifactContract[] = [
     legacyBodyKeys: ["fastModelNoContentDiagnostic", "body"],
   }),
   payloadContract({
-    artifactType: "execution_platform.architecture_residue_source_inventory",
-    contractId: "runtime-artifact.architecture-residue-source-inventory.v1",
-    domain: "diagnostic",
-    bodySchemaRef: "ArchitectureResidueSourceInventoryReport",
-    legacyBodyKeys: [
-      "architectureResidueInventoryReport",
-      "architectureResidueSourceInventory",
-      "body",
-    ],
-  }),
-  payloadContract({
-    artifactType: "execution_platform.architecture_residue_model_audit",
-    contractId: "runtime-artifact.architecture-residue-model-audit.v1",
-    domain: "diagnostic",
-    bodySchemaRef: "ArchitectureResidueModelAudit",
-    legacyBodyKeys: ["architectureResidueModelAudit", "architectureResidueModelAuditBody", "body"],
-  }),
-  payloadContract({
     artifactType: "execution_platform.runtime_graph_patch",
     contractId: "runtime-artifact.runtime-graph-patch.v1",
     domain: "scheduler",

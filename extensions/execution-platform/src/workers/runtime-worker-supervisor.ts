@@ -151,7 +151,7 @@ export class RuntimeWorkerSupervisor {
     }
   }
 
-  async runOnce(input: { runtimeJobId?: string } = {}): Promise<RuntimeWorkerSupervisorRunResult> {
+  async runNext(input: { runtimeJobId?: string } = {}): Promise<RuntimeWorkerSupervisorRunResult> {
     if (input.runtimeJobId) {
       const current = await this.options.repository.getJob(input.runtimeJobId);
       if (current && current.state !== "pending") {
@@ -476,12 +476,20 @@ export class RuntimeWorkerSupervisor {
     }
   }
 
+  async runJob(input: { runtimeJobId: string }): Promise<RuntimeWorkerSupervisorRunResult> {
+    return await this.runNext({ runtimeJobId: input.runtimeJobId });
+  }
+
+  async runOnce(input: { runtimeJobId?: string } = {}): Promise<RuntimeWorkerSupervisorRunResult> {
+    return await this.runNext(input);
+  }
+
   async runUntilIdle(
     maxJobs = Number.POSITIVE_INFINITY,
   ): Promise<RuntimeWorkerSupervisorRunResult[]> {
     const results: RuntimeWorkerSupervisorRunResult[] = [];
     while (results.length < maxJobs) {
-      const result = await this.runOnce();
+      const result = await this.runNext();
       if (result.status === "idle") {
         break;
       }

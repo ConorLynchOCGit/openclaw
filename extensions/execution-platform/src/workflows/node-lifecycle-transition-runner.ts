@@ -4,7 +4,7 @@ import {
   NODE_EXECUTION_SNAPSHOT_ARTIFACT_TYPE,
   resolveNodeExecutionAgentId,
   type NodeExecutionSnapshot,
-} from "./node-agent-session.ts";
+} from "./node-execution-snapshot.ts";
 import {
   isNodeLifecycleGate,
   legalTransitionsForLifecycleGate,

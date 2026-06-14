@@ -12,6 +12,32 @@ agents:
     primarySkills: []
     forbiddenTools:
       - apply_patch
+  - id: execution-orchestrator
+    promptProfile: execution_orchestrator
+    durablePath: docs/agents/execution-orchestrator
+    runtimeSourcePath: docs/agents/execution-orchestrator/runtime
+    runtimeSurfacePath: /root/services/openclaw-roles/live/.openclaw/runtime/agents/execution-orchestrator/agent
+    runtimeSurfaceAliasPath: /home/node/.openclaw/agents/execution-orchestrator/agent
+    projectRoot: /root/services/openclaw-roles/live
+    primarySkills: []
+    forbiddenTools:
+      - write
+      - edit
+      - apply_patch
+  - id: execution-critic
+    promptProfile: execution_critic
+    durablePath: docs/agents/execution-critic
+    runtimeSourcePath: docs/agents/execution-critic/runtime
+    runtimeSurfacePath: /root/services/openclaw-roles/live/.openclaw/runtime/agents/execution-critic/agent
+    runtimeSurfaceAliasPath: /home/node/.openclaw/agents/execution-critic/agent
+    projectRoot: /root/services/openclaw-roles/live
+    primarySkills: []
+    forbiddenTools:
+      - write
+      - edit
+      - apply_patch
+      - exec
+      - process
   - id: execution-context-scout
     promptProfile: execution_context_scout
     durablePath: docs/agents/execution-context-scout

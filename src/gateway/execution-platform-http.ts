@@ -16,7 +16,6 @@ import {
   registerCloseoutFinalizationRuntimeTools,
   registerCloseoutGenerateRuntimeTool,
   registerRouterFrontDoorRuntimeTools,
-  registerSchedulerRuntimeTools,
   registerValidationQaRuntimeTools,
   RuntimeJobRepository,
   RuntimeWorkGraphRepository,
@@ -27,10 +26,13 @@ import {
   type LiveRouterReasoningEffort,
   type RouterModelCandidateRef,
 } from "../../extensions/execution-platform/runtime-api.js";
+import { registerSchedulerRuntimeTools } from "../../extensions/execution-platform/src/workflows/scheduler-runtime-tools.js";
 import { CodexAppServerJsonExecutor } from "../../extensions/model-memory/src/mmv2/codex-app-server-json-executor.js";
+import { OpenClawAgentRuntime } from "../agents/openclaw-agent-runtime.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { runGatewayAgentTeamRuntimeJobOnce } from "./execution-platform-agent-team-runner.js";
 import type { AuthorizedGatewayHttpRequest } from "./http-utils.js";
+import { NativeExecutionStartService } from "./native-execution-start-service.js";
+import { ResidentNativeExecutionWorkerSupervisor } from "./resident-native-execution-worker-supervisor.js";
 
 type ExecutionPlatformRouteRuntime = {
   runtimeJobs: RuntimeJobRepository;
@@ -39,6 +41,8 @@ type ExecutionPlatformRouteRuntime = {
   workQueue: WorkQueueRepository;
   nativeExecutionRpc: NativeExecutionRpcService;
   runtimeToolKernel: RuntimeToolKernel;
+  agentRuntime?: OpenClawAgentRuntime;
+  nativeExecutionWorkerSupervisor?: ResidentNativeExecutionWorkerSupervisor;
   shutdown?: () => Promise<void>;
 };
 
@@ -294,8 +298,7 @@ function resolveNativeHttpAuthContext(
 export function shouldHandleExecutionPlatformPath(pathname: string): boolean {
   return (
     pathname.startsWith("/api/execution-platform/execution/") ||
-    pathname.startsWith("/api/execution-platform/work-queue/") ||
-    pathname === "/api/execution-platform/queue-runner/run-once"
+    pathname.startsWith("/api/execution-platform/work-queue/")
   );
 }
 
@@ -336,14 +339,27 @@ export async function getExecutionPlatformRuntime(
     const workQueue = new WorkQueueRepository(database.sqlClient, runtimeJobs, {
       eventStore: workQueueEvents,
     });
+    const agentRuntime = await OpenClawAgentRuntime.build({ config });
+    const nativeExecutionWorkerSupervisor = new ResidentNativeExecutionWorkerSupervisor({
+      runtimeJobs,
+      workQueue,
+      agentRuntime,
+    });
+    const nativeExecutionStartService = new NativeExecutionStartService({ agentRuntime });
     const nativeExecutionRpc = new NativeExecutionRpcService({
       runtimeJobs,
       workQueue,
       runtimeToolKernel,
+      nativeReadiness: () => nativeExecutionStartService.readiness(),
+      preflightExecutionSession: (input) => nativeExecutionStartService.preflight(input),
+      startExecutionSession: (input) => nativeExecutionStartService.start(input),
       structuredRouterProvider: createGatewayStructuredRouterProvider(config) ?? undefined,
       submitDiagnosticsSink: createFileGatewaySubmitDiagnosticsSink({
         rootDir: process.cwd(),
       }),
+      launchNativeExecutionSession: async ({ workerId, queueName }) => {
+        nativeExecutionWorkerSupervisor.wakeQueue({ workerId, queueName });
+      },
     });
     return {
       runtimeJobs,
@@ -351,8 +367,11 @@ export async function getExecutionPlatformRuntime(
       runtimeToolKernel,
       workQueueEvents,
       workQueue,
+      agentRuntime,
       nativeExecutionRpc,
+      nativeExecutionWorkerSupervisor,
       shutdown: async () => {
+        await nativeExecutionWorkerSupervisor.drain();
         runtimePromise = null;
         await database.pool.end();
       },
@@ -382,20 +401,9 @@ export async function handleExecutionPlatformHttpRequest(
     const route = createExecutionPlatformHostRoutes({
       runtimeJobs: runtime.runtimeJobs,
       runtimeWorkGraphs: runtime.runtimeWorkGraphs,
-      runtimeToolKernel: runtime.runtimeToolKernel,
       workQueue: runtime.workQueue,
       nativeExecutionRpc: runtime.nativeExecutionRpc,
       nativeHttpAuth: resolveNativeHttpAuthContext(req, params.requestAuth),
-      agentTeamRuntimeRunOnce: ({ runtimeJobId, workerId, queueName }) =>
-        runGatewayAgentTeamRuntimeJobOnce({
-          runtimeJobs: runtime.runtimeJobs,
-          runtimeWorkGraphs: runtime.runtimeWorkGraphs,
-          runtimeToolKernel: runtime.runtimeToolKernel,
-          workQueue: runtime.workQueue,
-          runtimeJobId,
-          workerId,
-          queueName,
-        }),
     }).find((route) => route.path === pathname);
     if (!route) {
       writeJson(res, 404, { error: "execution_platform_route_not_registered" });

@@ -291,6 +291,9 @@ if ! docker inspect "$CONTAINER" >/dev/null 2>&1; then
   exit 4
 fi
 
+echo "==> Reconciling OpenClaw-owned runtime home"
+runtime_home_reconciliation="$("$ROOT_DIR/scripts/docker/reconcile-runtime-home.sh")"
+
 lsp_runtime_dependency_probe="$(lsp_runtime_dependency_probe_json)"
 if ! node -e 'const p=JSON.parse(process.argv[1]); process.exit(p.ok ? 0 : 1)' "$lsp_runtime_dependency_probe"; then
   if [[ "$SYNC_LSP_RUNTIME_DEPS" != "1" ]]; then
@@ -509,6 +512,7 @@ container_started_at="$(docker inspect --format '{{.State.StartedAt}}' "$CONTAIN
   printf '  "lspRuntimeDependencySyncRequested": %s,\n' "$([[ "$SYNC_LSP_RUNTIME_DEPS" == "1" ]] && echo true || echo false)"
   printf '  "approvedLspRuntimeDependencyShape": %s,\n' "$approved_lsp_runtime_dependency_shape"
   printf '  "lspRuntimeDependencies": %s,\n' "$lsp_runtime_dependency_probe"
+  printf '  "runtimeHomeReconciliation": %s,\n' "$runtime_home_reconciliation"
   printf '  "distHash": %s,\n' "$(json_escape "$dist_hash")"
   printf '  "sourceAssetsHash": %s,\n' "$(json_escape "$source_assets_hash")"
   printf '  "containerSourceAssetsHash": %s,\n' "$(json_escape "$container_source_assets_hash")"

@@ -655,6 +655,24 @@ describe("resolveBootstrapContextForRun", () => {
     expect(files).toEqual([]);
   });
 
+  it("does not touch source-backed docs or workspace files in lightweight default mode", async () => {
+    const workspaceDir = path.join(
+      process.cwd(),
+      ".artifacts",
+      "missing-lightweight-bootstrap-workspace",
+    );
+
+    const files = await resolveBootstrapFilesForRun({
+      workspaceDir,
+      sessionKey: "agent:execution-coding:node:nrun-test",
+      agentId: "execution-coding",
+      contextMode: "lightweight",
+      runKind: "default",
+    });
+
+    expect(files).toEqual([]);
+  });
+
   it("drops HEARTBEAT.md for non-heartbeat runs when the heartbeat prompt section is disabled", async () => {
     const workspaceDir = await makeTempWorkspace("openclaw-bootstrap-");
     await fs.writeFile(path.join(workspaceDir, "HEARTBEAT.md"), "check inbox", "utf8");

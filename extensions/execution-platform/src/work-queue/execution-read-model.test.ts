@@ -12,6 +12,7 @@ import { applyRuntimeWorkerSupervisorControl } from "../workers/runtime-worker-s
 import { createModelAuthoredCloseoutCapsuleFixture } from "../workers/test-closeout-capsule-fixture.ts";
 import { recordWorkerCloseoutCapsule } from "../workers/worker-closeout-capsule.ts";
 import { buildAgentTeamCodingWorkflowPlugin } from "../workflows/agent-team-coding-plugin.ts";
+import { startNativeExecutionSession } from "../workflows/native-agentic-orchestration.ts";
 import {
   SKILLIFIER_RUNTIME_JOB_TYPE,
   SKILLIFIER_WORKFLOW_ID,
@@ -76,6 +77,138 @@ async function withRuntime<T>(
 }
 
 describe("Work Queue front-door routing projection", () => {
+  it("projects native execution session tree truth from runtime events", async () => {
+    await withRuntime(async ({ runtimeJobs, workQueue }) => {
+      const workItem = await workQueue.createWorkItem({
+        workItemId: "native-session-tree-readback-item",
+        itemType: "execution_workflow",
+        title: "Native session tree readback",
+      });
+      const started = await startNativeExecutionSession({
+        runtimeJobs,
+        request: {
+          objective: "Execute native agentic orchestration.",
+          refs: [{ ref: "work-queue://item/native-session-tree-readback-item" }],
+          validationSignal: "session tree projects correctly",
+        },
+        runtime: {
+          sessionId: "session-native-parent",
+          agentProfile: "execution-orchestrator",
+          workItemId: workItem.workItemId,
+          idempotencyKey: "native-session-tree-readback",
+        },
+      });
+      await workQueue.createWorkRun({
+        runId: "native-session-tree-readback-run",
+        workItemId: workItem.workItemId,
+        executorKind: "runtime_job",
+        runtimeJobId: started.runtimeJobId,
+        runState: "running",
+      });
+      await runtimeJobs.recordEvent({
+        jobId: started.runtimeJobId,
+        eventType: "execution.child.started",
+        data: {
+          runtimeJobId: started.runtimeJobId,
+          sessionId: "session-native-parent",
+          eventKind: "child_session_started",
+          parentSessionId: "session-native-parent",
+          childSessionId: "session-open-blocking",
+          childRelation: "blocking",
+          timestamp: "2026-06-12T00:00:01.000Z",
+          summary: "Coding child started.",
+          rawPromptStored: false,
+          rawResponseStored: false,
+        },
+      });
+      await runtimeJobs.recordEvent({
+        jobId: started.runtimeJobId,
+        eventType: "execution.child.started",
+        data: {
+          runtimeJobId: started.runtimeJobId,
+          sessionId: "session-native-parent",
+          eventKind: "child_session_started",
+          parentSessionId: "session-native-parent",
+          childSessionId: "session-background",
+          childRelation: "background",
+          timestamp: "2026-06-12T00:00:02.000Z",
+          summary: "Background review started.",
+          rawPromptStored: false,
+          rawResponseStored: false,
+        },
+      });
+      await runtimeJobs.recordEvent({
+        jobId: started.runtimeJobId,
+        eventType: "execution.child.failed",
+        data: {
+          runtimeJobId: started.runtimeJobId,
+          sessionId: "session-native-parent",
+          eventKind: "child_session_failed",
+          parentSessionId: "session-native-parent",
+          childSessionId: "session-failed-blocking",
+          childRelation: "blocking",
+          timestamp: "2026-06-12T00:00:03.000Z",
+          blockerKind: "validation_failed",
+          reason: "Validation child failed.",
+          rawPromptStored: false,
+          rawResponseStored: false,
+        },
+      });
+      await runtimeJobs.recordEvent({
+        jobId: started.runtimeJobId,
+        eventType: "execution.finish.rejected",
+        data: {
+          runtimeJobId: started.runtimeJobId,
+          sessionId: "session-native-parent",
+          eventKind: "finish_recorded",
+          parentSessionId: null,
+          childSessionId: null,
+          childRelation: null,
+          timestamp: "2026-06-12T00:00:04.000Z",
+          accepted: false,
+          summary: "Finish rejected pending child repair.",
+          correction: "Repair the failed child or finish blocked.",
+          waitingForHumanQuestion: "Should the failed child be canceled?",
+          rawPromptStored: false,
+          rawResponseStored: false,
+        },
+      });
+
+      const model = await buildWorkQueueExecutionReadModel({
+        runtimeJobs,
+        workQueue,
+        workItemId: workItem.workItemId,
+      });
+      const tree = model.runtimeJobs[0]?.nativeSessionTree;
+
+      expect(tree).toMatchObject({
+        state: "present",
+        parentSessionId: "session-native-parent",
+        activeSessionId: "session-native-parent",
+        activeChildCount: 2,
+        blockingChildCount: 2,
+        backgroundChildCount: 1,
+        failedChildCount: 1,
+        completedChildCount: 0,
+        openBlockingChildSessionIds: ["session-open-blocking"],
+        failedBlockingChildSessionIds: ["session-failed-blocking"],
+        backgroundChildSessionIds: ["session-background"],
+        currentBlocker: "Repair the failed child or finish blocked.",
+        waitingForHumanQuestion: "Should the failed child be canceled?",
+        latestMeaningfulProgressSummary: "Finish rejected pending child repair.",
+        finishEvidenceStatus: "rejected",
+        rawPromptStored: false,
+        workQueueLifecycleMutationAllowed: false,
+      });
+      expect(summarizeWorkQueueExecutionForUi(model)).toMatchObject({
+        nativeSessionTree: expect.objectContaining({
+          finishEvidenceStatus: "rejected",
+          openBlockingChildSessionIds: ["session-open-blocking"],
+        }),
+      });
+    });
+  });
+
   it("surfaces runtime artifact payload manifests without hydrating large bodies", async () => {
     await withRuntime(async ({ runtimeJobs, workQueue }) => {
       const workItem = await workQueue.createWorkItem({

@@ -47,6 +47,7 @@ import {
 } from "./model.forward-compat.test-support.js";
 import { resolveModel } from "./model.js";
 import {
+  buildOpenAICodexForwardCompatExpectation,
   makeModel,
   mockDiscoveredModel,
   mockOpenAICodexTemplateModel,
@@ -133,6 +134,15 @@ describe("resolveModel forward-compat errors and overrides", () => {
       "openai-codex",
       "gpt-4.1-mini",
     );
+  });
+
+  it("builds an openai-codex fallback for gpt-5.5", () => {
+    mockOpenAICodexTemplateModel(discoverModels);
+
+    const result = resolveModelForTest("openai-codex", "gpt-5.5", "/tmp/agent");
+
+    expect(result.error).toBeUndefined();
+    expect(result.model).toMatchObject(buildOpenAICodexForwardCompatExpectation("gpt-5.5"));
   });
 
   it("rejects direct openai gpt-5.3-codex-spark with a codex-only hint", () => {

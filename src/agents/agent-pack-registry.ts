@@ -48,7 +48,9 @@ function optionalPromptProfile(value: unknown): PromptProfile | undefined {
   const profile = optionalString(value);
   if (
     profile === "general_assistant" ||
+    profile === "execution_orchestrator" ||
     profile === "execution_worker" ||
+    profile === "execution_critic" ||
     profile === "execution_context_scout" ||
     profile === "execution_validation_scout" ||
     profile === "compaction"

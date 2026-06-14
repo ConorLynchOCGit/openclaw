@@ -12,7 +12,7 @@ import {
   makeEmbeddedRunnerAttempt,
 } from "./test-helpers/pi-embedded-runner-e2e-fixtures.js";
 
-const runEmbeddedAttemptMock = vi.fn<(params: unknown) => Promise<EmbeddedRunAttemptResult>>();
+const runInteractionAttemptMock = vi.fn<(params: unknown) => Promise<EmbeddedRunAttemptResult>>();
 const { computeBackoffMock, sleepWithAbortMock } = vi.hoisted(() => ({
   computeBackoffMock: vi.fn(
     (
@@ -23,13 +23,13 @@ const { computeBackoffMock, sleepWithAbortMock } = vi.hoisted(() => ({
   sleepWithAbortMock: vi.fn(async (_ms: number, _abortSignal?: AbortSignal) => undefined),
 }));
 
-vi.mock("./pi-embedded-runner/run/attempt.js", async () => {
-  const actual = await vi.importActual<typeof import("./pi-embedded-runner/run/attempt.js")>(
-    "./pi-embedded-runner/run/attempt.js",
+vi.mock("./interaction-attempt-runtime/attempt.js", async () => {
+  const actual = await vi.importActual<typeof import("./interaction-attempt-runtime/attempt.js")>(
+    "./interaction-attempt-runtime/attempt.js",
   );
   return {
     ...actual,
-    runEmbeddedAttempt: (params: unknown) => runEmbeddedAttemptMock(params),
+    runInteractionAttempt: (params: unknown) => runInteractionAttemptMock(params),
   };
 });
 
@@ -93,7 +93,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
-  runEmbeddedAttemptMock.mockReset();
+  runInteractionAttemptMock.mockReset();
   computeBackoffMock.mockClear();
   sleepWithAbortMock.mockClear();
 });
@@ -278,7 +278,7 @@ function mockPrimaryOverloadedThenFallbackSuccess() {
 }
 
 function mockPrimaryPromptErrorThenFallbackSuccess(errorMessage: string) {
-  runEmbeddedAttemptMock.mockImplementation(async (params: unknown) => {
+  runInteractionAttemptMock.mockImplementation(async (params: unknown) => {
     const attemptParams = params as { provider: string };
     if (attemptParams.provider === "openai") {
       return makeEmbeddedRunnerAttempt({
@@ -301,7 +301,7 @@ function mockPrimaryPromptErrorThenFallbackSuccess(errorMessage: string) {
 }
 
 function mockPrimaryErrorThenFallbackSuccess(errorMessage: string) {
-  runEmbeddedAttemptMock.mockImplementation(async (params: unknown) => {
+  runInteractionAttemptMock.mockImplementation(async (params: unknown) => {
     const attemptParams = params as { provider: string; modelId: string; authProfileId?: string };
     if (attemptParams.provider === "openai") {
       return makeEmbeddedRunnerAttempt({
@@ -330,7 +330,7 @@ function mockPrimaryErrorThenFallbackSuccess(errorMessage: string) {
 }
 
 function mockPrimaryRunLoopRateLimitThenFallbackSuccess(errorMessage: string) {
-  runEmbeddedAttemptMock.mockImplementation(async (params: unknown) => {
+  runInteractionAttemptMock.mockImplementation(async (params: unknown) => {
     const attemptParams = params as { provider: string };
     if (attemptParams.provider === "openai") {
       return makeEmbeddedRunnerAttempt({
@@ -359,11 +359,13 @@ function mockPrimaryRunLoopRateLimitThenFallbackSuccess(errorMessage: string) {
 }
 
 function expectOpenAiThenGroqAttemptOrder(params?: { expectOpenAiAuthProfileId?: string }) {
-  expect(runEmbeddedAttemptMock).toHaveBeenCalledTimes(2);
-  const firstCall = runEmbeddedAttemptMock.mock.calls[0]?.[0] as
+  expect(runInteractionAttemptMock).toHaveBeenCalledTimes(2);
+  const firstCall = runInteractionAttemptMock.mock.calls[0]?.[0] as
     | { provider?: string; authProfileId?: string }
     | undefined;
-  const secondCall = runEmbeddedAttemptMock.mock.calls[1]?.[0] as { provider?: string } | undefined;
+  const secondCall = runInteractionAttemptMock.mock.calls[1]?.[0] as
+    | { provider?: string }
+    | undefined;
   expect(firstCall).toBeDefined();
   expect(secondCall).toBeDefined();
   expect(firstCall?.provider).toBe("openai");
@@ -374,7 +376,7 @@ function expectOpenAiThenGroqAttemptOrder(params?: { expectOpenAiAuthProfileId?:
 }
 
 function mockAllProvidersOverloaded() {
-  runEmbeddedAttemptMock.mockImplementation(async (params: unknown) => {
+  runInteractionAttemptMock.mockImplementation(async (params: unknown) => {
     const attemptParams = params as { provider: string; modelId: string; authProfileId?: string };
     if (attemptParams.provider === "openai" || attemptParams.provider === "groq") {
       return makeEmbeddedRunnerAttempt({
@@ -472,7 +474,7 @@ describe("runWithModelFallback + runEmbeddedPiAgent failover behavior", () => {
       expect(usageStats["openai:p1"]?.disabledUntil).toBeUndefined();
       expect(usageStats["groq:p1"]?.disabledUntil).toBeUndefined();
 
-      expect(runEmbeddedAttemptMock).toHaveBeenCalledTimes(2);
+      expect(runInteractionAttemptMock).toHaveBeenCalledTimes(2);
       expect(computeBackoffMock).not.toHaveBeenCalled();
       expect(sleepWithAbortMock).not.toHaveBeenCalled();
     });
@@ -517,7 +519,7 @@ describe("runWithModelFallback + runEmbeddedPiAgent failover behavior", () => {
 
       expect(firstResult.provider).toBe("groq");
 
-      runEmbeddedAttemptMock.mockClear();
+      runInteractionAttemptMock.mockClear();
       computeBackoffMock.mockClear();
       sleepWithAbortMock.mockClear();
 
@@ -591,8 +593,8 @@ describe("runWithModelFallback + runEmbeddedPiAgent failover behavior", () => {
         message: "Operation aborted",
       });
 
-      expect(runEmbeddedAttemptMock).toHaveBeenCalledTimes(1);
-      const firstCall = runEmbeddedAttemptMock.mock.calls[0]?.[0] as
+      expect(runInteractionAttemptMock).toHaveBeenCalledTimes(1);
+      const firstCall = runInteractionAttemptMock.mock.calls[0]?.[0] as
         | { provider?: string }
         | undefined;
       expect(firstCall?.provider).toBe("openai");
@@ -631,7 +633,7 @@ describe("runWithModelFallback + runEmbeddedPiAgent failover behavior", () => {
         }),
       );
 
-      runEmbeddedAttemptMock.mockImplementation(async (params: unknown) => {
+      runInteractionAttemptMock.mockImplementation(async (params: unknown) => {
         const attemptParams = params as {
           provider: string;
           modelId: string;
@@ -679,10 +681,10 @@ describe("runWithModelFallback + runEmbeddedPiAgent failover behavior", () => {
       // - 1 rotation to p2 (capped)
       // - escalation to groq (1 attempt)
       // Total: 3 attempts, NOT 4 (which would mean all 3 openai profiles tried)
-      const openaiAttempts = runEmbeddedAttemptMock.mock.calls.filter(
+      const openaiAttempts = runInteractionAttemptMock.mock.calls.filter(
         (call) => (call[0] as { provider?: string })?.provider === "openai",
       );
-      const groqAttempts = runEmbeddedAttemptMock.mock.calls.filter(
+      const groqAttempts = runInteractionAttemptMock.mock.calls.filter(
         (call) => (call[0] as { provider?: string })?.provider === "groq",
       );
       expect(openaiAttempts.length).toBe(2);
@@ -694,7 +696,7 @@ describe("runWithModelFallback + runEmbeddedPiAgent failover behavior", () => {
     await withAgentWorkspace(async ({ agentDir, workspaceDir }) => {
       await writeMultiProfileAuthStore(agentDir);
 
-      runEmbeddedAttemptMock.mockImplementation(async (params: unknown) => {
+      runInteractionAttemptMock.mockImplementation(async (params: unknown) => {
         const attemptParams = params as { provider: string };
         if (attemptParams.provider === "openai") {
           return makeEmbeddedRunnerAttempt({
@@ -733,10 +735,10 @@ describe("runWithModelFallback + runEmbeddedPiAgent failover behavior", () => {
       });
 
       expect(result.provider).toBe("groq");
-      const openaiAttempts = runEmbeddedAttemptMock.mock.calls.filter(
+      const openaiAttempts = runInteractionAttemptMock.mock.calls.filter(
         (call) => (call[0] as { provider?: string })?.provider === "openai",
       );
-      const groqAttempts = runEmbeddedAttemptMock.mock.calls.filter(
+      const groqAttempts = runInteractionAttemptMock.mock.calls.filter(
         (call) => (call[0] as { provider?: string })?.provider === "groq",
       );
       expect(openaiAttempts.length).toBe(1);
@@ -761,10 +763,10 @@ describe("runWithModelFallback + runEmbeddedPiAgent failover behavior", () => {
       expect(result.model).toBe("mock-2");
       expect(result.result.payloads?.[0]?.text ?? "").toContain("fallback ok");
 
-      const openaiAttempts = runEmbeddedAttemptMock.mock.calls.filter(
+      const openaiAttempts = runInteractionAttemptMock.mock.calls.filter(
         (call) => (call[0] as { provider?: string })?.provider === "openai",
       );
-      const groqAttempts = runEmbeddedAttemptMock.mock.calls.filter(
+      const groqAttempts = runInteractionAttemptMock.mock.calls.filter(
         (call) => (call[0] as { provider?: string })?.provider === "groq",
       );
       expect(openaiAttempts.length).toBe(2);
@@ -794,10 +796,10 @@ describe("runWithModelFallback + runEmbeddedPiAgent failover behavior", () => {
       expect(result.attempts[0]?.reason).toBe("rate_limit");
       expect(result.result.payloads?.[0]?.text ?? "").toContain("fallback ok");
 
-      const openaiAttempts = runEmbeddedAttemptMock.mock.calls.filter(
+      const openaiAttempts = runInteractionAttemptMock.mock.calls.filter(
         (call) => (call[0] as { provider?: string })?.provider === "openai",
       );
-      const groqAttempts = runEmbeddedAttemptMock.mock.calls.filter(
+      const groqAttempts = runInteractionAttemptMock.mock.calls.filter(
         (call) => (call[0] as { provider?: string })?.provider === "groq",
       );
       expect(openaiAttempts.length).toBe(3);
@@ -823,10 +825,10 @@ describe("runWithModelFallback + runEmbeddedPiAgent failover behavior", () => {
       });
 
       expect(result.provider).toBe("groq");
-      const openaiAttempts = runEmbeddedAttemptMock.mock.calls.filter(
+      const openaiAttempts = runInteractionAttemptMock.mock.calls.filter(
         (call) => (call[0] as { provider?: string })?.provider === "openai",
       );
-      const groqAttempts = runEmbeddedAttemptMock.mock.calls.filter(
+      const groqAttempts = runInteractionAttemptMock.mock.calls.filter(
         (call) => (call[0] as { provider?: string })?.provider === "groq",
       );
       expect(openaiAttempts.length).toBe(1);
@@ -850,10 +852,10 @@ describe("runWithModelFallback + runEmbeddedPiAgent failover behavior", () => {
       expect(result.provider).toBe("groq");
       expect(result.model).toBe("mock-2");
 
-      const openaiAttempts = runEmbeddedAttemptMock.mock.calls.filter(
+      const openaiAttempts = runInteractionAttemptMock.mock.calls.filter(
         (call) => (call[0] as { provider?: string })?.provider === "openai",
       );
-      const groqAttempts = runEmbeddedAttemptMock.mock.calls.filter(
+      const groqAttempts = runInteractionAttemptMock.mock.calls.filter(
         (call) => (call[0] as { provider?: string })?.provider === "groq",
       );
       expect(openaiAttempts.length).toBe(2);
@@ -879,10 +881,10 @@ describe("runWithModelFallback + runEmbeddedPiAgent failover behavior", () => {
       });
 
       expect(result.provider).toBe("groq");
-      const openaiAttempts = runEmbeddedAttemptMock.mock.calls.filter(
+      const openaiAttempts = runInteractionAttemptMock.mock.calls.filter(
         (call) => (call[0] as { provider?: string })?.provider === "openai",
       );
-      const groqAttempts = runEmbeddedAttemptMock.mock.calls.filter(
+      const groqAttempts = runInteractionAttemptMock.mock.calls.filter(
         (call) => (call[0] as { provider?: string })?.provider === "groq",
       );
       expect(openaiAttempts.length).toBe(1);

@@ -26,6 +26,9 @@ fi
 
 cd "$ROOT_DIR"
 
+echo "==> Reconciling OpenClaw-owned runtime home"
+bash "$ROOT_DIR/scripts/docker/reconcile-runtime-home.sh"
+
 echo "==> Rebuilding and recreating openclaw-gateway"
 docker compose up -d --build --force-recreate openclaw-gateway
 

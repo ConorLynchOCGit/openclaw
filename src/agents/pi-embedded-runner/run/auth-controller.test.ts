@@ -291,6 +291,105 @@ describe("createEmbeddedRunAuthController", () => {
     );
   });
 
+  it("rechecks the selected provider auth lease before a provider call", async () => {
+    const harness = createMutableAuthControllerHarness();
+    const setRuntimeApiKey = vi.fn<(provider: string, apiKey: string) => void>();
+
+    mocks.getApiKeyForModel.mockResolvedValue({
+      apiKey: "source-api-key",
+      mode: "api-key",
+      profileId: "default",
+      source: "OPENCLAW_TEST_API_KEY (shell env)",
+    });
+    mocks.prepareProviderRuntimeAuth.mockResolvedValue(null);
+
+    const controller = createMutableEmbeddedRunAuthController({
+      harness,
+      setRuntimeApiKey,
+    });
+
+    await controller.initializeAuthProfile();
+    const lease = await controller.recheckProviderAuthLease();
+
+    expect(lease).toMatchObject({
+      provider: "custom-openai",
+      modelId: "test-model",
+      authMode: "api-key",
+      credentialSourceClass: "env",
+      profileId: "default",
+      runtimeAuth: false,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+      secretsStored: false,
+    });
+    expect(lease).not.toHaveProperty("apiKey");
+    expect(lease).not.toHaveProperty("source");
+  });
+
+  it("refreshes an expired runtime auth lease at provider-call time", async () => {
+    const harness = createMutableAuthControllerHarness();
+    const setRuntimeApiKey = vi.fn<(provider: string, apiKey: string) => void>();
+
+    mocks.getApiKeyForModel.mockResolvedValue({
+      apiKey: "source-api-key",
+      mode: "oauth",
+      profileId: "default",
+      source: "profile:default",
+    });
+    mocks.prepareProviderRuntimeAuth
+      .mockResolvedValueOnce({
+        apiKey: "expired-runtime-api-key",
+        expiresAt: Date.now() - 1_000,
+      })
+      .mockResolvedValueOnce({
+        apiKey: "fresh-runtime-api-key",
+        expiresAt: Date.now() + 60_000,
+      });
+
+    const controller = createMutableEmbeddedRunAuthController({
+      harness,
+      setRuntimeApiKey,
+    });
+
+    try {
+      await controller.initializeAuthProfile();
+      const lease = await controller.recheckProviderAuthLease();
+
+      expect(mocks.prepareProviderRuntimeAuth).toHaveBeenCalledTimes(2);
+      expect(setRuntimeApiKey).toHaveBeenLastCalledWith("custom-openai", "fresh-runtime-api-key");
+      expect(lease).toMatchObject({
+        provider: "custom-openai",
+        modelId: "test-model",
+        authMode: "oauth",
+        credentialSourceClass: "runtime_auth",
+        profileId: "default",
+        runtimeAuth: true,
+      });
+      expect(lease.expiresInMs).toBeGreaterThan(0);
+    } finally {
+      controller.stopRuntimeAuthRefreshTimer();
+    }
+  });
+
+  it("fails provider-call recheck with AUTH_UNAVAILABLE when no selected lease exists", async () => {
+    const harness = createMutableAuthControllerHarness();
+    const setRuntimeApiKey = vi.fn<(provider: string, apiKey: string) => void>();
+    const controller = createMutableEmbeddedRunAuthController({
+      harness,
+      setRuntimeApiKey,
+    });
+
+    await expect(controller.recheckProviderAuthLease()).rejects.toMatchObject({
+      name: "FailoverError",
+      code: "AUTH_UNAVAILABLE",
+      reason: "auth",
+      provider: "custom-openai",
+      model: "test-model",
+    });
+  });
+
   it("ignores stale scheduled refresh results after auth profile rotation", async () => {
     vi.useFakeTimers();
     try {

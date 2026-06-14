@@ -1,5 +1,6 @@
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { ThinkLevel } from "../../../auto-reply/thinking.js";
+import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import { formatErrorMessage } from "../../../infra/errors.js";
 import { prepareProviderRuntimeAuth } from "../../../plugins/provider-runtime.js";
 import {
@@ -10,6 +11,7 @@ import {
 import { FailoverError, resolveFailoverStatus } from "../../failover-error.js";
 import { shouldAllowCooldownProbeForReason } from "../../failover-policy.js";
 import { getApiKeyForModel, type ResolvedProviderAuth } from "../../model-auth.js";
+import { normalizeProviderId } from "../../model-selection.js";
 import {
   classifyFailoverReason,
   isFailoverErrorMessage,
@@ -26,9 +28,25 @@ import {
   RUNTIME_AUTH_REFRESH_RETRY_MS,
   type RuntimeAuthState,
 } from "./helpers.js";
-import type { RunEmbeddedPiAgentParams } from "./params.js";
 
 type ApiKeyInfo = ResolvedProviderAuth;
+
+export type ProviderAuthLeaseRecheckResult = {
+  provider: string;
+  modelId: string;
+  authMode: string;
+  credentialSourceClass: string;
+  profileId?: string;
+  runtimeAuth: boolean;
+  expiresAt?: number;
+  expiresInMs?: number;
+  checkedAt: number;
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawProviderLogStored: false;
+  rawToolLogStored: false;
+  secretsStored: false;
+};
 
 type RuntimeApiKeySink = {
   setRuntimeApiKey(provider: string, apiKey: string): void;
@@ -41,7 +59,7 @@ type LogLike = {
 };
 
 export function createEmbeddedRunAuthController(params: {
-  config: RunEmbeddedPiAgentParams["config"];
+  config?: OpenClawConfig;
   agentDir: string;
   workspaceDir: string;
   authStore: AuthProfileStore;
@@ -71,6 +89,73 @@ export function createEmbeddedRunAuthController(params: {
   setThinkLevel(next: ThinkLevel): void;
   log: LogLike;
 }) {
+  const classifyCredentialSourceClass = (source: string | undefined): string => {
+    const normalized = source?.trim().toLowerCase() ?? "";
+    if (!normalized) {
+      return "unknown";
+    }
+    if (normalized.startsWith("profile:")) {
+      return "auth_profile";
+    }
+    if (normalized.includes("env") || /^[a-z0-9_]+$/i.test(source?.trim() ?? "")) {
+      return "env";
+    }
+    if (normalized.includes("models.json") || normalized.includes("config")) {
+      return "config";
+    }
+    if (normalized.includes("synthetic")) {
+      return "synthetic";
+    }
+    if (normalized.includes("aws")) {
+      return "aws-sdk";
+    }
+    return "other";
+  };
+
+  const buildAuthLeaseResult = (lease: {
+    authMode: string;
+    credentialSourceClass: string;
+    profileId?: string;
+    runtimeAuth: boolean;
+    expiresAt?: number;
+  }): ProviderAuthLeaseRecheckResult => {
+    const now = Date.now();
+    const expiresInMs =
+      typeof lease.expiresAt === "number" ? Math.max(0, lease.expiresAt - now) : undefined;
+    return {
+      provider: params.getProvider(),
+      modelId: params.getModelId(),
+      authMode: lease.authMode,
+      credentialSourceClass: lease.credentialSourceClass,
+      ...(lease.profileId ? { profileId: lease.profileId } : {}),
+      runtimeAuth: lease.runtimeAuth,
+      ...(typeof lease.expiresAt === "number" ? { expiresAt: lease.expiresAt } : {}),
+      ...(typeof expiresInMs === "number" ? { expiresInMs } : {}),
+      checkedAt: now,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+      secretsStored: false,
+    };
+  };
+
+  const throwAuthLeaseError = (paramsForError: {
+    code: "AUTH_UNAVAILABLE" | "AUTH_EXPIRED";
+    message: string;
+    cause?: unknown;
+  }): never => {
+    throw new FailoverError(paramsForError.message, {
+      reason: "auth",
+      provider: params.getProvider(),
+      model: params.getModelId(),
+      profileId: params.getLastProfileId(),
+      status: resolveFailoverStatus("auth"),
+      code: paramsForError.code,
+      cause: paramsForError.cause,
+    });
+  };
+
   const applyPreparedRuntimeRequestOverrides = (paramsForApply: {
     runtimeModel: Model<Api>;
     preparedAuth: {
@@ -517,10 +602,109 @@ export function createEmbeddedRunAuthController(params: {
     }
   };
 
+  const recheckProviderAuthLease = async (): Promise<ProviderAuthLeaseRecheckResult> => {
+    const provider = params.getProvider();
+    const modelId = params.getModelId();
+    const runtimeProvider = params.getRuntimeModel().provider;
+    if (normalizeProviderId(runtimeProvider) !== normalizeProviderId(provider)) {
+      throwAuthLeaseError({
+        code: "AUTH_UNAVAILABLE",
+        message:
+          `Provider auth lease mismatch for ${provider}/${modelId}: ` +
+          `runtime model provider is ${runtimeProvider}.`,
+      });
+    }
+
+    const inFlight = params.getRuntimeAuthState()?.refreshInFlight;
+    if (inFlight) {
+      await inFlight;
+    }
+
+    let activeRuntimeAuthState = params.getRuntimeAuthState();
+    if (activeRuntimeAuthState) {
+      if (
+        typeof activeRuntimeAuthState.expiresAt === "number" &&
+        activeRuntimeAuthState.expiresAt <= Date.now()
+      ) {
+        if (!hasRefreshableRuntimeAuth()) {
+          throwAuthLeaseError({
+            code: "AUTH_EXPIRED",
+            message: `Runtime auth lease expired for ${provider}/${modelId}.`,
+          });
+        }
+        try {
+          await refreshRuntimeAuth("provider-call-recheck");
+          scheduleRuntimeAuthRefresh();
+        } catch (err) {
+          throwAuthLeaseError({
+            code: "AUTH_EXPIRED",
+            message: `Runtime auth lease expired for ${provider}/${modelId}.`,
+            cause: err,
+          });
+        }
+        activeRuntimeAuthState = params.getRuntimeAuthState();
+        if (
+          activeRuntimeAuthState &&
+          typeof activeRuntimeAuthState.expiresAt === "number" &&
+          activeRuntimeAuthState.expiresAt <= Date.now()
+        ) {
+          throwAuthLeaseError({
+            code: "AUTH_EXPIRED",
+            message: `Runtime auth lease expired for ${provider}/${modelId}.`,
+          });
+        }
+      }
+      if (!activeRuntimeAuthState) {
+        throwAuthLeaseError({
+          code: "AUTH_UNAVAILABLE",
+          message: `Runtime auth lease unavailable for ${provider}/${modelId}.`,
+        });
+      }
+      if (activeRuntimeAuthState) {
+        return buildAuthLeaseResult({
+          authMode: activeRuntimeAuthState.authMode,
+          credentialSourceClass: "runtime_auth",
+          profileId: activeRuntimeAuthState.profileId,
+          runtimeAuth: true,
+          expiresAt: activeRuntimeAuthState.expiresAt,
+        });
+      }
+    }
+
+    const currentApiKeyInfo = params.getApiKeyInfo();
+    if (!currentApiKeyInfo) {
+      throwAuthLeaseError({
+        code: "AUTH_UNAVAILABLE",
+        message: `Provider auth unavailable for ${provider}/${modelId}.`,
+      });
+    }
+    if (currentApiKeyInfo) {
+      if (currentApiKeyInfo.mode !== "aws-sdk" && !currentApiKeyInfo.apiKey?.trim()) {
+        throwAuthLeaseError({
+          code: "AUTH_UNAVAILABLE",
+          message: `Provider auth unavailable for ${provider}/${modelId}.`,
+        });
+      }
+      return buildAuthLeaseResult({
+        authMode: currentApiKeyInfo.mode,
+        credentialSourceClass: classifyCredentialSourceClass(currentApiKeyInfo.source),
+        profileId: currentApiKeyInfo.profileId,
+        runtimeAuth: false,
+      });
+    }
+
+    throwAuthLeaseError({
+      code: "AUTH_UNAVAILABLE",
+      message: `Provider auth unavailable for ${provider}/${modelId}.`,
+    });
+    throw new Error(`Provider auth unavailable for ${provider}/${modelId}.`);
+  };
+
   return {
     advanceAuthProfile,
     initializeAuthProfile,
     maybeRefreshRuntimeAuthForAuthError,
+    recheckProviderAuthLease,
     stopRuntimeAuthRefreshTimer,
   };
 }

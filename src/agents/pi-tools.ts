@@ -82,6 +82,14 @@ import {
 import { ToolAuthorizationError } from "./tools/common.js";
 import { createLspTool } from "./tools/lsp-tool.js";
 import { createGlobTool, createGrepTool, createListTool } from "./tools/repo-discovery-tools.js";
+import type {
+  StartExecutionSessionToolInput,
+  StartExecutionSessionToolResult,
+} from "./tools/start-execution-session-tool.js";
+import type {
+  WorkQueueExecutionEligibilityToolInput,
+  WorkQueueExecutionEligibilityToolResult,
+} from "./tools/work-queue-execution-eligibility-tool.js";
 import { resolveWorkspaceRoot } from "./workspace-dir.js";
 
 function isOpenAIProvider(provider?: string) {
@@ -126,9 +134,16 @@ const NODE_AGENT_PARENT_READ_DEFAULT_LINES = OPENCODE_READ_DEFAULT_LINES;
 export function isNodeAgentNativeTaskParentToolAllowed(input: {
   toolName?: string | null;
   mutationToolName?: string | null;
+  parentToolNames?: readonly string[] | null;
 }): boolean {
   const toolName = normalizeToolName(input.toolName ?? "");
   const mutationToolName = normalizeToolName(input.mutationToolName ?? "edit");
+  const parentToolNames = input.parentToolNames?.length
+    ? new Set(input.parentToolNames.map((entry) => normalizeToolName(entry)).filter(Boolean))
+    : null;
+  if (parentToolNames) {
+    return parentToolNames.has(toolName);
+  }
   return Boolean(
     toolName &&
     (NODE_AGENT_NATIVE_TASK_ALWAYS_ALLOWED_TOOL_NAMES.has(toolName) ||
@@ -141,6 +156,7 @@ function stripNodeAgentNativeTaskParentDenyPolicy(input: {
   mode?: {
     enabled?: boolean;
     mutationToolName?: string;
+    parentToolNames?: readonly string[];
   };
 }): typeof input.policy {
   if (input.mode?.enabled !== true || !input.policy?.deny?.length) {
@@ -151,6 +167,7 @@ function stripNodeAgentNativeTaskParentDenyPolicy(input: {
       !isNodeAgentNativeTaskParentToolAllowed({
         toolName,
         mutationToolName: input.mode?.mutationToolName,
+        parentToolNames: input.mode?.parentToolNames,
       }),
   );
   return deny.length === input.policy.deny.length ? input.policy : { ...input.policy, deny };
@@ -840,6 +857,7 @@ function filterToolsForNodeAgentNativeTaskMode(input: {
     enabled?: boolean;
     allowedAgentIds?: readonly string[];
     mutationToolName?: string;
+    parentToolNames?: readonly string[];
   };
 }): AnyAgentTool[] {
   if (!input.mode?.enabled) {
@@ -851,6 +869,7 @@ function filterToolsForNodeAgentNativeTaskMode(input: {
       return isNodeAgentNativeTaskParentToolAllowed({
         toolName: tool.name,
         mutationToolName,
+        parentToolNames: input.mode?.parentToolNames,
       });
     })
     .map((tool) => {
@@ -1175,6 +1194,16 @@ export function createOpenClawCodingTools(options?: {
    * rest of OpenClaw's native tools.
    */
   nativeRuntimeTools?: AnyAgentTool[];
+  /** Runtime-owned launcher for native RuntimeJob-backed execution sessions. */
+  nativeExecutionSession?: {
+    enabled: boolean;
+    startExecutionSession: (
+      input: StartExecutionSessionToolInput,
+    ) => Promise<StartExecutionSessionToolResult>;
+    readWorkQueueEligibility?: (
+      input: WorkQueueExecutionEligibilityToolInput,
+    ) => Promise<WorkQueueExecutionEligibilityToolResult>;
+  };
   /** Optional node-scoped authority overlay that narrows native file/exec tools. */
   nodeAuthorityOverlay?: OpenClawNodeAuthorityOverlay;
   /** Optional OpenClaw-native guard for execution node parent crawl behavior. */
@@ -1191,6 +1220,7 @@ export function createOpenClawCodingTools(options?: {
     enabled: boolean;
     allowedAgentIds: readonly string[];
     mutationToolName?: string;
+    parentToolNames?: readonly string[];
     parentVisibleResultMaxChars?: number;
     runChildTask?: NativeTaskRunChildTask;
   };
@@ -1252,14 +1282,24 @@ export function createOpenClawCodingTools(options?: {
   const nodeNativeTaskMutationToolName = normalizeToolName(
     options?.nodeAgentNativeTaskMode?.mutationToolName ?? "edit",
   );
-  const nodeNativeTaskAlsoAllow = isExecutionCodingNodeParent({
-    agentId,
-    requestedAgentId: options?.agentId,
-    sessionKey: options?.sessionKey,
-    nodeNativeTaskEnabled: options?.nodeAgentNativeTaskMode?.enabled,
-  })
-    ? [nodeNativeTaskMutationToolName]
-    : undefined;
+  const nodeNativeTaskParentToolNames = options?.nodeAgentNativeTaskMode?.parentToolNames;
+  const nodeNativeTaskAlsoAllow =
+    options?.nodeAgentNativeTaskMode?.enabled === true && nodeNativeTaskParentToolNames?.length
+      ? Array.from(
+          new Set(
+            nodeNativeTaskParentToolNames
+              .map((toolName) => normalizeToolName(toolName))
+              .filter(Boolean),
+          ),
+        )
+      : isExecutionCodingNodeParent({
+            agentId,
+            requestedAgentId: options?.agentId,
+            sessionKey: options?.sessionKey,
+            nodeNativeTaskEnabled: options?.nodeAgentNativeTaskMode?.enabled,
+          })
+        ? [nodeNativeTaskMutationToolName]
+        : undefined;
   const profilePolicyWithAlsoAllow = stripNodeAgentNativeTaskParentDenyPolicy({
     policy: mergeAlsoAllowPolicy(
       mergeAlsoAllowPolicy(profilePolicy, profileAlsoAllow),
@@ -1310,6 +1350,7 @@ export function createOpenClawCodingTools(options?: {
           isNodeAgentNativeTaskParentToolAllowed({
             toolName,
             mutationToolName: options.nodeAgentNativeTaskMode?.mutationToolName,
+            parentToolNames: nodeNativeTaskParentToolNames,
           }),
         ) === true,
     );
@@ -1601,6 +1642,7 @@ export function createOpenClawCodingTools(options?: {
           nodeNativeTaskEnabled: options?.nodeAgentNativeTaskMode?.enabled,
         }) || options?.nativeRuntimeTools?.some((tool) => tool.name === "openclaw_resource_read"),
       forceUpdatePlanTool: options?.nodeAgentNativeTaskMode?.enabled === true,
+      nativeExecutionSession: options?.nativeExecutionSession,
       ...(options?.nodeAgentNativeTaskMode?.enabled === true
         ? {
             nativeTask: {

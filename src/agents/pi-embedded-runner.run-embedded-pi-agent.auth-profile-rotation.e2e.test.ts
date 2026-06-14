@@ -9,7 +9,7 @@ import type { AuthProfileFailureReason } from "./auth-profiles.js";
 import { buildAttemptReplayMetadata } from "./pi-embedded-runner/run/incomplete-turn.js";
 import type { EmbeddedRunAttemptResult } from "./pi-embedded-runner/run/types.js";
 
-const runEmbeddedAttemptMock = vi.fn<(params: unknown) => Promise<EmbeddedRunAttemptResult>>();
+const runInteractionAttemptMock = vi.fn<(params: unknown) => Promise<EmbeddedRunAttemptResult>>();
 const resolveCopilotApiTokenMock = vi.fn();
 const { computeBackoffMock, sleepWithAbortMock } = vi.hoisted(() => ({
   computeBackoffMock: vi.fn(
@@ -58,8 +58,8 @@ const installRunEmbeddedMocks = () => {
       modelRegistry: {},
     }),
   }));
-  vi.doMock("./pi-embedded-runner/run/attempt.js", () => ({
-    runEmbeddedAttempt: (params: unknown) => runEmbeddedAttemptMock(params),
+  vi.doMock("./interaction-attempt-runtime/attempt.js", () => ({
+    runInteractionAttempt: (params: unknown) => runInteractionAttemptMock(params),
   }));
   vi.doMock("../plugins/provider-runtime.js", async () => {
     const actual = await vi.importActual<typeof import("../plugins/provider-runtime.js")>(
@@ -134,9 +134,9 @@ async function runEmbeddedPiAgentInline(
 
 beforeEach(() => {
   vi.useRealTimers();
-  runEmbeddedAttemptMock.mockReset();
-  runEmbeddedAttemptMock.mockImplementation(async () => {
-    throw new Error("unexpected extra runEmbeddedAttempt call");
+  runInteractionAttemptMock.mockReset();
+  runInteractionAttemptMock.mockImplementation(async () => {
+    throw new Error("unexpected extra runInteractionAttempt call");
   });
   resolveCopilotApiTokenMock.mockReset();
   resolveCopilotApiTokenMock.mockImplementation(async () => {
@@ -385,7 +385,7 @@ const buildCopilotAssistant = (overrides: Partial<AssistantMessage> = {}) =>
   buildAssistant({ provider: "github-copilot", model: copilotModelId, ...overrides });
 
 const mockFailedThenSuccessfulAttempt = (errorMessage = "rate limit") => {
-  runEmbeddedAttemptMock
+  runInteractionAttemptMock
     .mockResolvedValueOnce(
       makeAttempt({
         assistantTexts: [],
@@ -407,7 +407,7 @@ const mockFailedThenSuccessfulAttempt = (errorMessage = "rate limit") => {
 };
 
 const mockPromptErrorThenSuccessfulAttempt = (errorMessage: string) => {
-  runEmbeddedAttemptMock
+  runInteractionAttemptMock
     .mockResolvedValueOnce(
       makeAttempt({
         promptError: new Error(errorMessage),
@@ -475,7 +475,7 @@ async function runAutoPinnedRotationCase(params: {
   runId: string;
   config?: OpenClawConfig;
 }) {
-  runEmbeddedAttemptMock.mockReset();
+  runInteractionAttemptMock.mockReset();
   return withAgentWorkspace(async ({ agentDir, workspaceDir }) => {
     await writeAuthStore(agentDir);
     mockFailedThenSuccessfulAttempt(params.errorMessage);
@@ -487,7 +487,7 @@ async function runAutoPinnedRotationCase(params: {
       config: params.config,
     });
 
-    expect(runEmbeddedAttemptMock).toHaveBeenCalledTimes(2);
+    expect(runInteractionAttemptMock).toHaveBeenCalledTimes(2);
     const usageStats = await readUsageStats(agentDir);
     return { usageStats };
   });
@@ -499,7 +499,7 @@ async function runAutoPinnedPromptErrorRotationCase(params: {
   runId: string;
   config?: OpenClawConfig;
 }) {
-  runEmbeddedAttemptMock.mockReset();
+  runInteractionAttemptMock.mockReset();
   return withAgentWorkspace(async ({ agentDir, workspaceDir }) => {
     await writeAuthStore(agentDir);
     mockPromptErrorThenSuccessfulAttempt(params.errorMessage);
@@ -511,14 +511,14 @@ async function runAutoPinnedPromptErrorRotationCase(params: {
       config: params.config,
     });
 
-    expect(runEmbeddedAttemptMock).toHaveBeenCalledTimes(2);
+    expect(runInteractionAttemptMock).toHaveBeenCalledTimes(2);
     const usageStats = await readUsageStats(agentDir);
     return { usageStats };
   });
 }
 
 function mockSingleSuccessfulAttempt() {
-  runEmbeddedAttemptMock.mockResolvedValueOnce(
+  runInteractionAttemptMock.mockResolvedValueOnce(
     makeAttempt({
       assistantTexts: ["ok"],
       lastAssistant: buildAssistant({
@@ -534,7 +534,7 @@ function mockSingleErrorAttempt(params: {
   provider?: string;
   model?: string;
 }) {
-  runEmbeddedAttemptMock.mockResolvedValueOnce(
+  runInteractionAttemptMock.mockResolvedValueOnce(
     makeAttempt({
       assistantTexts: [],
       lastAssistant: buildAssistant({
@@ -612,7 +612,7 @@ async function runTurnWithCooldownSeed(params: {
       runId: params.runId,
     });
 
-    expect(runEmbeddedAttemptMock).toHaveBeenCalledTimes(1);
+    expect(runInteractionAttemptMock).toHaveBeenCalledTimes(1);
     return { usageStats: await readUsageStats(agentDir), now };
   });
 }
@@ -641,7 +641,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
           baseUrl: "https://api.copilot.example",
         });
 
-      runEmbeddedAttemptMock
+      runInteractionAttemptMock
         .mockResolvedValueOnce(
           makeAttempt({
             assistantTexts: [],
@@ -676,7 +676,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
         runId: "run:copilot-auth-error",
       });
 
-      expect(runEmbeddedAttemptMock).toHaveBeenCalledTimes(2);
+      expect(runInteractionAttemptMock).toHaveBeenCalledTimes(2);
       expect(resolveCopilotApiTokenMock).toHaveBeenCalledTimes(2);
     } finally {
       await fs.rm(agentDir, { recursive: true, force: true });
@@ -712,7 +712,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
           baseUrl: "https://api.copilot.example",
         });
 
-      runEmbeddedAttemptMock
+      runInteractionAttemptMock
         .mockResolvedValueOnce(
           makeAttempt({
             assistantTexts: [],
@@ -760,7 +760,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
         timeoutMs: 5_000,
         runId: "run:copilot-auth-repeat",
       });
-      expect(runEmbeddedAttemptMock).toHaveBeenCalledTimes(4);
+      expect(runInteractionAttemptMock).toHaveBeenCalledTimes(4);
       expect(resolveCopilotApiTokenMock).toHaveBeenCalledTimes(3);
     } finally {
       await fs.rm(agentDir, { recursive: true, force: true });
@@ -784,7 +784,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
         baseUrl: "https://api.copilot.example",
       });
 
-      runEmbeddedAttemptMock.mockResolvedValueOnce(
+      runInteractionAttemptMock.mockResolvedValueOnce(
         makeAttempt({
           assistantTexts: ["ok"],
           lastAssistant: buildCopilotAssistant({
@@ -952,7 +952,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
     await withAgentWorkspace(async ({ agentDir, workspaceDir }) => {
       await writeAuthStore(agentDir);
 
-      runEmbeddedAttemptMock.mockResolvedValueOnce(
+      runInteractionAttemptMock.mockResolvedValueOnce(
         makeAttempt({
           aborted: true,
           timedOut: true,
@@ -981,7 +981,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
         runId: "run:compaction-timeout",
       });
 
-      expect(runEmbeddedAttemptMock).toHaveBeenCalledTimes(1);
+      expect(runInteractionAttemptMock).toHaveBeenCalledTimes(1);
       expect(result.meta.aborted).toBe(true);
 
       await expectProfileP2UsageUnchanged(agentDir);
@@ -992,7 +992,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
     await withAgentWorkspace(async ({ agentDir, workspaceDir }) => {
       await writeAuthStore(agentDir);
 
-      runEmbeddedAttemptMock.mockResolvedValueOnce(
+      runInteractionAttemptMock.mockResolvedValueOnce(
         makeAttempt({
           promptError: new Error("rate limit exceeded"),
           promptErrorOrigin: "compaction",
@@ -1020,7 +1020,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
         runId: "run:compaction-wait-abort",
       });
 
-      expect(runEmbeddedAttemptMock).toHaveBeenCalledTimes(1);
+      expect(runInteractionAttemptMock).toHaveBeenCalledTimes(1);
       expect(result.payloads?.[0]?.text).toContain("partial");
       await expectProfileP2UsageUnchanged(agentDir);
     });
@@ -1048,7 +1048,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
         runId: "run:user",
       });
 
-      expect(runEmbeddedAttemptMock).toHaveBeenCalledTimes(1);
+      expect(runInteractionAttemptMock).toHaveBeenCalledTimes(1);
       await expectProfileP2UsageUnchanged(agentDir);
     });
   });
@@ -1091,7 +1091,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
         runId: "run:user-order-excluded",
       });
 
-      expect(runEmbeddedAttemptMock).toHaveBeenCalledTimes(1);
+      expect(runInteractionAttemptMock).toHaveBeenCalledTimes(1);
       const usageStats = await readUsageStats(agentDir);
       expect(usageStats["openai:p1"]?.lastUsed).toBe(1);
       expect(typeof usageStats["openai:p2"]?.lastUsed).toBe("number");
@@ -1103,7 +1103,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
     await withAgentWorkspace(async ({ agentDir, workspaceDir }) => {
       await writeAuthStore(agentDir, { includeAnthropic: true });
 
-      runEmbeddedAttemptMock.mockResolvedValueOnce(
+      runInteractionAttemptMock.mockResolvedValueOnce(
         makeAttempt({
           assistantTexts: ["ok"],
           lastAssistant: buildAssistant({
@@ -1129,7 +1129,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
         runId: "run:mismatch",
       });
 
-      expect(runEmbeddedAttemptMock).toHaveBeenCalledTimes(1);
+      expect(runInteractionAttemptMock).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -1176,7 +1176,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
         model: "mock-1",
       });
 
-      expect(runEmbeddedAttemptMock).not.toHaveBeenCalled();
+      expect(runInteractionAttemptMock).not.toHaveBeenCalled();
     });
   });
 
@@ -1189,7 +1189,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
         },
       });
 
-      runEmbeddedAttemptMock.mockResolvedValueOnce(
+      runInteractionAttemptMock.mockResolvedValueOnce(
         makeAttempt({
           assistantTexts: ["ok"],
           lastAssistant: buildAssistant({
@@ -1215,7 +1215,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
         runId: "run:cooldown-probe",
       });
 
-      expect(runEmbeddedAttemptMock).toHaveBeenCalledTimes(1);
+      expect(runInteractionAttemptMock).toHaveBeenCalledTimes(1);
       expect(result.payloads?.[0]?.text ?? "").toContain("ok");
     });
   });
@@ -1237,7 +1237,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
         },
       });
 
-      runEmbeddedAttemptMock.mockResolvedValueOnce(
+      runInteractionAttemptMock.mockResolvedValueOnce(
         makeAttempt({
           assistantTexts: ["ok"],
           lastAssistant: buildAssistant({
@@ -1263,7 +1263,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
         runId: "run:overloaded-cooldown-probe",
       });
 
-      expect(runEmbeddedAttemptMock).toHaveBeenCalledTimes(1);
+      expect(runInteractionAttemptMock).toHaveBeenCalledTimes(1);
       expect(result.payloads?.[0]?.text ?? "").toContain("ok");
     });
   });
@@ -1285,7 +1285,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
         },
       });
 
-      runEmbeddedAttemptMock.mockResolvedValueOnce(
+      runInteractionAttemptMock.mockResolvedValueOnce(
         makeAttempt({
           assistantTexts: ["ok"],
           lastAssistant: buildAssistant({
@@ -1311,7 +1311,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
         runId: "run:billing-cooldown-probe-no-fallbacks",
       });
 
-      expect(runEmbeddedAttemptMock).toHaveBeenCalledTimes(1);
+      expect(runInteractionAttemptMock).toHaveBeenCalledTimes(1);
       expect(result.payloads?.[0]?.text ?? "").toContain("ok");
     });
   });
@@ -1348,7 +1348,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
         model: "mock-1",
       });
 
-      expect(runEmbeddedAttemptMock).not.toHaveBeenCalled();
+      expect(runInteractionAttemptMock).not.toHaveBeenCalled();
     });
   });
 
@@ -1392,7 +1392,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
         model: "mock-1",
       });
 
-      expect(runEmbeddedAttemptMock).not.toHaveBeenCalled();
+      expect(runInteractionAttemptMock).not.toHaveBeenCalled();
     });
   });
 
@@ -1423,7 +1423,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
           }),
         ).rejects.toMatchObject({ name: "FailoverError", reason: "auth" });
 
-        expect(runEmbeddedAttemptMock).not.toHaveBeenCalled();
+        expect(runInteractionAttemptMock).not.toHaveBeenCalled();
       });
     } finally {
       if (previousOpenAiKey === undefined) {
@@ -1472,7 +1472,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
       });
       expect(thrown).toBeInstanceOf(Error);
       expect((thrown as Error).message).toContain("openai (mock-rotated) returned a billing error");
-      expect(runEmbeddedAttemptMock).toHaveBeenCalledTimes(1);
+      expect(runInteractionAttemptMock).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -1502,7 +1502,7 @@ describe("runEmbeddedPiAgent auth profile rotation", () => {
         runId: "run:rotate-skip-cooldown",
       });
 
-      expect(runEmbeddedAttemptMock).toHaveBeenCalledTimes(2);
+      expect(runInteractionAttemptMock).toHaveBeenCalledTimes(2);
       const usageStats = await readUsageStats(agentDir);
       expect(typeof usageStats["openai:p1"]?.lastUsed).toBe("number");
       expect(typeof usageStats["openai:p3"]?.lastUsed).toBe("number");

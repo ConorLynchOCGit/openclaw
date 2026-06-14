@@ -43,7 +43,12 @@ import {
   type PromptRouterMemoryPolicyDecision,
   type PromptRouterMemoryRouteKind,
 } from "../model-memory-runtime/index.ts";
-import type { JsonValue, RuntimeJob, RuntimeJobRepository } from "../runtime-job-repository.ts";
+import type {
+  JsonValue,
+  RuntimeJob,
+  RuntimeJobEvent,
+  RuntimeJobRepository,
+} from "../runtime-job-repository.ts";
 import type { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel.ts";
 import {
   recordWorkQueueExecutionAction,
@@ -57,11 +62,14 @@ import {
 } from "../work-queue/execution-read-model.ts";
 import type { WorkQueueRepository } from "../work-queue/work-queue-repository.ts";
 import {
-  evaluateWorkflowWorkerExecutionReadiness,
-  summarizeWorkflowWorkerExecutionReadiness,
-  type WorkflowWorkerAdapterRegistry,
-  type WorkflowWorkerExecutionReadiness,
-} from "../workers/index.ts";
+  NATIVE_EXECUTION_SESSION_JOB_TYPE,
+  NATIVE_EXECUTION_SESSION_QUEUE,
+  type NativeExecutionRef,
+  type StartNativeExecutionSessionInput,
+  type StartNativeExecutionSessionResult,
+  type StartExecutionSessionVisibleInput,
+} from "../workflows/native-agentic-orchestration.ts";
+import { applyNativeExecutionControl } from "../workflows/native-execution-control.ts";
 import {
   DEFAULT_EXECUTION_WORKFLOW_REGISTRY,
   getWorkflowContract,
@@ -99,6 +107,565 @@ function stringArrayFromValue(value: unknown): string[] {
     : [];
 }
 
+function nativeSessionIdFromRuntimeJob(job: RuntimeJob): string {
+  const payload = asRecord(job.payload);
+  const session = asRecord(payload?.session);
+  return (
+    stringValueFromRecord(session, "sessionId") ??
+    stringValueFromRecord(payload, "sessionId") ??
+    job.jobId
+  );
+}
+
+function nativeControlKindFromWorkQueueAction(
+  actionKind: WorkQueueExecutionActionKind,
+): "pause" | "redirect" | "cancel" | null {
+  return actionKind === "pause" || actionKind === "redirect" || actionKind === "cancel"
+    ? actionKind
+    : null;
+}
+
+function numberValueFromRecord(record: Record<string, unknown> | null, key: string): number | null {
+  const value = record?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function booleanValueFromRecord(
+  record: Record<string, unknown> | null,
+  key: string,
+): boolean | null {
+  const value = record?.[key];
+  return typeof value === "boolean" ? value : null;
+}
+
+function boundedStringValueFromRecord(
+  record: Record<string, unknown> | null,
+  key: string,
+  maxChars = 500,
+): string | null {
+  const value = stringValueFromRecord(record, key);
+  return value ? value.slice(0, maxChars) : null;
+}
+
+function eventExtraRecord(event: RuntimeJobEvent): Record<string, unknown> | null {
+  const data = asRecord(event.data);
+  return asRecord(data?.extra) ?? data;
+}
+
+function eventErrorRecord(event: RuntimeJobEvent): Record<string, unknown> | null {
+  return asRecord(asRecord(event.data)?.error);
+}
+
+type NativeExecutionLivePhase =
+  | "job_claimed"
+  | "scheduler_waiting"
+  | "scheduler_entered"
+  | "agent_bootstrap"
+  | "prepare_run"
+  | "run_environment_preparing"
+  | "run_environment_prepared"
+  | "model_auth_preparing"
+  | "model_auth_prepared"
+  | "open_session"
+  | "before_submit"
+  | "provider_preparing"
+  | "provider_request"
+  | "model_active"
+  | "tool_active"
+  | "after_provider_turn"
+  | "compacting"
+  | "finishing"
+  | "terminal"
+  | "unknown";
+
+function nativeExecutionPhaseForLaunchStage(stage: string | null): NativeExecutionLivePhase | null {
+  if (!stage) {
+    return null;
+  }
+  if (stage === "runner_entered") {
+    return "job_claimed";
+  }
+  if (
+    stage === "runtime_worker_dispatch_scheduled" ||
+    stage === "before_session_lane_enqueue" ||
+    stage === "before_global_lane_enqueue"
+  ) {
+    return "scheduler_waiting";
+  }
+  if (
+    stage === "executor_entered" ||
+    stage === "agent_core_starting" ||
+    stage === "caller_owned_scheduler_entered" ||
+    stage === "entered_session_lane" ||
+    stage === "entered_global_lane"
+  ) {
+    return "scheduler_entered";
+  }
+  if (
+    stage === "interaction_runtime_entered" ||
+    stage === "run_interaction_turn" ||
+    stage === "config_loaded" ||
+    stage === "agent_pack_registry_loaded" ||
+    stage === "agent_runtime_resolved" ||
+    stage === "before_embedded_agent" ||
+    stage === "runtime_plugins_loaded" ||
+    stage === "models_json_reused_admitted_runtime" ||
+    stage === "models_json_ensure_started" ||
+    stage === "models_json_ensured" ||
+    stage === "hook_model_selection_resolved" ||
+    stage === "model_registry_reused" ||
+    stage === "model_registry_discovered" ||
+    stage === "model_resolved" ||
+    stage === "auth_store_loaded" ||
+    stage === "auth_profile_initialized" ||
+    stage === "context_runtime_resolved" ||
+    stage === "attempt_workspace_ready"
+  ) {
+    return "agent_bootstrap";
+  }
+  if (stage === "prepare_run" || stage === "services_prepared") {
+    return "prepare_run";
+  }
+  if (stage === "run_environment_preparing") {
+    return "run_environment_preparing";
+  }
+  if (stage === "run_environment_prepared") {
+    return "run_environment_prepared";
+  }
+  if (stage === "model_auth_preparing") {
+    return "model_auth_preparing";
+  }
+  if (stage === "model_auth_prepared" || stage === "model_auth_runtime_applied") {
+    return "model_auth_prepared";
+  }
+  if (stage === "open_session") {
+    return "open_session";
+  }
+  if (stage === "before_submit") {
+    return "before_submit";
+  }
+  if (stage === "after_provider_turn") {
+    return "after_provider_turn";
+  }
+  if (stage === "finishing") {
+    return "finishing";
+  }
+  if (
+    stage === "provider_auth_rechecked" ||
+    stage === "provider_auth_recheck_failed" ||
+    stage === "provider_turn_entering" ||
+    stage === "provider_capability_entered" ||
+    stage === "provider_client_starting" ||
+    stage === "provider_client_ready" ||
+    stage === "thread_binding_started" ||
+    stage === "thread_binding_ready"
+  ) {
+    return "provider_preparing";
+  }
+  if (stage === "provider_request_started") {
+    return "provider_request";
+  }
+  if (stage === "model_stream_started") {
+    return "model_active";
+  }
+  if (
+    stage === "tool_call_started" ||
+    stage === "tool_call_completed" ||
+    stage === "tool_call_failed"
+  ) {
+    return "tool_active";
+  }
+  if (stage === "model_stream_completed" || stage === "agent_turn_completed") {
+    return "after_provider_turn";
+  }
+  if (stage === "agent_turn_failed") {
+    return "terminal";
+  }
+  if (stage === "agent_core_completed" || stage === "embedded_agent_completed") {
+    return "finishing";
+  }
+  if (stage === "agent_core_failed" || stage === "runtime_job_cancel_observed") {
+    return "terminal";
+  }
+  if (stage === "runtime_worker_dispatch_failed") {
+    return "terminal";
+  }
+  return null;
+}
+
+function nativeExecutionPhaseForEvent(event: RuntimeJobEvent): NativeExecutionLivePhase | null {
+  if (event.eventType === "execution.launch.timing") {
+    return nativeExecutionPhaseForLaunchStage(
+      stringValueFromRecord(eventExtraRecord(event), "stage"),
+    );
+  }
+  if (event.eventType === "execution.agent.launch") {
+    return "model_active";
+  }
+  if (event.eventType === "execution.provider.request") {
+    return "provider_request";
+  }
+  if (event.eventType.includes("compaction") || event.eventType.includes("context_pressure")) {
+    return "compacting";
+  }
+  if (event.eventType.includes(".tool.") || event.eventType === "execution.tool.recorded") {
+    return "tool_active";
+  }
+  if (
+    event.eventType === "execution.mutation.recorded" ||
+    event.eventType === "execution.validation.recorded" ||
+    event.eventType === "execution.critic.recorded"
+  ) {
+    return "tool_active";
+  }
+  if (event.eventType === "execution.finish.recorded" || event.eventType.includes("finish")) {
+    return "finishing";
+  }
+  return null;
+}
+
+function compactNativeExecutionEvent(event: RuntimeJobEvent): JsonValue {
+  const data = asRecord(event.data);
+  const extra = eventExtraRecord(event);
+  const error = eventErrorRecord(event);
+  const stage = stringValueFromRecord(extra, "stage");
+  return {
+    eventId: event.eventId,
+    eventType: event.eventType,
+    eventTime: event.eventTime.toISOString(),
+    workerId: event.workerId,
+    leasePresent: Boolean(event.leaseId),
+    eventKind: stringValueFromRecord(data, "eventKind"),
+    stage,
+    currentPhase:
+      nativeExecutionPhaseForEvent(event) ??
+      stringValueFromRecord(extra, "currentPhase") ??
+      stringValueFromRecord(extra, "phase"),
+    elapsedMs: numberValueFromRecord(extra, "elapsedMs"),
+    executorElapsedMs: numberValueFromRecord(extra, "executorElapsedMs"),
+    executionClass: stringValueFromRecord(extra, "executionClass"),
+    schedulerClass: stringValueFromRecord(extra, "schedulerClass"),
+    schedulingMode: stringValueFromRecord(extra, "schedulingMode"),
+    sessionLane: stringValueFromRecord(extra, "sessionLane"),
+    globalLane: stringValueFromRecord(extra, "globalLane"),
+    queuedAhead: numberValueFromRecord(extra, "queuedAhead"),
+    waitMs: numberValueFromRecord(extra, "waitMs"),
+    agentId: stringValueFromRecord(extra, "agentId"),
+    provider: stringValueFromRecord(extra, "provider"),
+    model: stringValueFromRecord(extra, "model"),
+    providerLeaseId: stringValueFromRecord(extra, "providerLeaseId"),
+    providerTransportKind: stringValueFromRecord(extra, "providerTransportKind"),
+    providerHarnessId: stringValueFromRecord(extra, "providerHarnessId"),
+    providerFallbackAllowed: booleanValueFromRecord(extra, "providerFallbackAllowed"),
+    toolName: stringValueFromRecord(extra, "toolName"),
+    status: stringValueFromRecord(extra, "status"),
+    runtimeGenerationId: stringValueFromRecord(extra, "runtimeGenerationId"),
+    configSnapshotId: stringValueFromRecord(extra, "configSnapshotId"),
+    catalogSnapshotId: stringValueFromRecord(extra, "catalogSnapshotId"),
+    errorCode: boundedStringValueFromRecord(error, "code", 200),
+    errorName: boundedStringValueFromRecord(extra, "errorName", 200),
+    errorMessage:
+      boundedStringValueFromRecord(extra, "errorMessage") ??
+      boundedStringValueFromRecord(error, "message"),
+    rawPromptStored: booleanValueFromRecord(data, "rawPromptStored") ?? false,
+    rawResponseStored: booleanValueFromRecord(data, "rawResponseStored") ?? false,
+    rawProviderLogStored: booleanValueFromRecord(data, "rawProviderLogStored") ?? false,
+    rawToolLogStored: booleanValueFromRecord(data, "rawToolLogStored") ?? false,
+  };
+}
+
+function compactNativeExecutionRuntimeJob(job: RuntimeJob | null): JsonValue {
+  if (!job) {
+    return null;
+  }
+  const payload = asRecord(job.payload);
+  const runRequest = asRecord(payload?.runRequest);
+  const modelProfile = asRecord(runRequest?.modelProfile);
+  const runMetadata = asRecord(runRequest?.metadata);
+  const result = asRecord(job.result);
+  const error = asRecord(job.error);
+  return {
+    jobId: job.jobId,
+    jobType: job.jobType,
+    queueName: job.queueName,
+    state: job.state,
+    workerId: job.workerId,
+    workItemId: job.workItemId,
+    attempts: job.attempts,
+    createdAt: job.createdAt.toISOString(),
+    updatedAt: job.updatedAt.toISOString(),
+    startedAt: job.startedAt?.toISOString() ?? null,
+    completedAt: job.completedAt?.toISOString() ?? null,
+    canceledAt: job.canceledAt?.toISOString() ?? null,
+    payloadKeys: payload ? Object.keys(payload).toSorted().slice(0, 80) : [],
+    resultKeys: result ? Object.keys(result).toSorted().slice(0, 80) : [],
+    errorKeys: error ? Object.keys(error).toSorted().slice(0, 80) : [],
+    errorCode: boundedStringValueFromRecord(error, "code", 200),
+    errorMessage: boundedStringValueFromRecord(error, "message"),
+    runtimeGenerationId: boundedStringValueFromRecord(payload, "runtimeGenerationId", 240),
+    agentId: boundedStringValueFromRecord(payload, "agentId", 160),
+    envelope: boundedStringValueFromRecord(payload, "envelope", 80),
+    policyRef: boundedStringValueFromRecord(payload, "policyRef", 200),
+    configSnapshotId: boundedStringValueFromRecord(runMetadata, "configSnapshotId", 300),
+    catalogSnapshotId: boundedStringValueFromRecord(runMetadata, "catalogSnapshotId", 300),
+    resolvedAgentModelIdentity: compactModelProfile(modelProfile),
+    requestParameterSummary: compactModelRequestParameters(modelProfile),
+    promptProfileHash: boundedStringValueFromRecord(runMetadata, "promptProfileHash", 120),
+    toolPolicyHash: boundedStringValueFromRecord(runMetadata, "toolPolicyHash", 120),
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+  };
+}
+
+function compactModelProfile(model: Record<string, unknown> | null): JsonValue {
+  return model
+    ? {
+        provider: boundedStringValueFromRecord(model, "provider", 120),
+        modelId: boundedStringValueFromRecord(model, "model", 160),
+      }
+    : null;
+}
+
+function compactModelRequestParameters(model: Record<string, unknown> | null): JsonValue {
+  return model
+    ? {
+        thinking: boundedStringValueFromRecord(model, "thinkingLevel", 80),
+        reasoning: boundedStringValueFromRecord(model, "reasoningLevel", 80),
+      }
+    : null;
+}
+
+function compactProviderRuntimeError(error: Record<string, unknown> | null): JsonValue {
+  return error
+    ? {
+        failedPhase: boundedStringValueFromRecord(error, "failedPhase", 160),
+        provider: boundedStringValueFromRecord(error, "provider", 120),
+        model: boundedStringValueFromRecord(error, "model", 160),
+        transportKind: boundedStringValueFromRecord(error, "transportKind", 120),
+        errorCode: boundedStringValueFromRecord(error, "errorCode", 200),
+        errorMessage: boundedStringValueFromRecord(error, "errorMessage", 500),
+      }
+    : null;
+}
+
+function compactNativeExecutionPreflightResult(input: {
+  value: unknown;
+  statusCode?: number;
+}): NativeExecutionPreflightSessionResult {
+  const value = asRecord(input.value);
+  const accepted = value?.accepted === true;
+  const providerError = asRecord(value?.error);
+  const reasonCodes = stringArrayFromValue(value?.reasonCodes).slice(0, 40);
+  return {
+    artifactKind: "native_execution_preflight_session_result",
+    accepted,
+    status: accepted ? "accepted" : "rejected",
+    statusCode: input.statusCode ?? (accepted ? 200 : 400),
+    runtimeGenerationId: boundedStringValueFromRecord(value, "runtimeGenerationId", 240),
+    providerRuntimeError: compactProviderRuntimeError(providerError),
+    reasonCodes: reasonCodes.length > 0 ? reasonCodes : ["runtime_generation_acceptance"],
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+    secretsStored: false,
+    workQueueLifecycleMutated: false,
+  };
+}
+
+const NON_PROGRESS_EVENT_TYPES = new Set([
+  "job.lease_renewed",
+  "runtime_worker.supervisor_heartbeat",
+]);
+
+function isMeaningfulNativeExecutionProgress(event: RuntimeJobEvent): boolean {
+  if (NON_PROGRESS_EVENT_TYPES.has(event.eventType)) {
+    return false;
+  }
+  return true;
+}
+
+function summarizeNativeExecutionLiveStatus(input: {
+  job: RuntimeJob | null;
+  events: RuntimeJobEvent[];
+}): JsonValue {
+  const payload = asRecord(input.job?.payload);
+  const runRequest = asRecord(payload?.runRequest);
+  const modelProfile = asRecord(runRequest?.modelProfile);
+  const runMetadata = asRecord(runRequest?.metadata);
+  const eventCounts: Record<string, number> = {};
+  const launchStages: JsonValue[] = [];
+  let latestMeaningfulEvent: RuntimeJobEvent | null = null;
+  let latestLaunchStage: string | null = null;
+  let latestLaunchPhase: NativeExecutionLivePhase | null = null;
+  let latestPhase: NativeExecutionLivePhase | null = null;
+  let modelActivitySeen = false;
+  let providerRequestSeen = false;
+  let providerPreparingSeen = false;
+  let agentLaunchSeen = false;
+  let toolActivitySeen = false;
+  let mutationSeen = false;
+  let validationSeen = false;
+  let finishSeen = false;
+  let latestErrorEvent: RuntimeJobEvent | null = null;
+  for (const event of input.events) {
+    eventCounts[event.eventType] = (eventCounts[event.eventType] ?? 0) + 1;
+    const extra = eventExtraRecord(event);
+    const error = eventErrorRecord(event);
+    if (
+      boundedStringValueFromRecord(extra, "errorName", 200) ||
+      boundedStringValueFromRecord(extra, "errorMessage") ||
+      boundedStringValueFromRecord(error, "code", 200) ||
+      boundedStringValueFromRecord(error, "message")
+    ) {
+      latestErrorEvent = event;
+    }
+    if (isMeaningfulNativeExecutionProgress(event)) {
+      latestMeaningfulEvent = event;
+    }
+    if (event.eventType === "execution.launch.timing") {
+      const stage = stringValueFromRecord(extra, "stage");
+      const phase = nativeExecutionPhaseForLaunchStage(stage);
+      latestLaunchStage = stage ?? latestLaunchStage;
+      latestLaunchPhase = phase ?? latestLaunchPhase;
+      latestPhase = phase ?? latestPhase;
+      if (phase === "provider_preparing") {
+        providerPreparingSeen = true;
+      }
+      if (phase === "provider_request") {
+        providerRequestSeen = true;
+        modelActivitySeen = true;
+      }
+      if (phase === "model_active") {
+        providerRequestSeen = true;
+        modelActivitySeen = true;
+      }
+      if (phase === "tool_active") {
+        toolActivitySeen = true;
+        modelActivitySeen = true;
+      }
+      if (phase === "finishing" || phase === "terminal") {
+        finishSeen = true;
+      }
+      launchStages.push({
+        stage,
+        phase,
+        elapsedMs: numberValueFromRecord(extra, "elapsedMs"),
+        executorElapsedMs: numberValueFromRecord(extra, "executorElapsedMs"),
+        executionClass: stringValueFromRecord(extra, "executionClass"),
+        schedulerClass: stringValueFromRecord(extra, "schedulerClass"),
+        schedulingMode: stringValueFromRecord(extra, "schedulingMode"),
+        sessionLane: stringValueFromRecord(extra, "sessionLane"),
+        globalLane: stringValueFromRecord(extra, "globalLane"),
+        eventTime: event.eventTime.toISOString(),
+      });
+    }
+    if (event.eventType === "execution.agent.launch") {
+      agentLaunchSeen = true;
+      latestPhase = "agent_bootstrap";
+    }
+    if (event.eventType === "execution.provider.request") {
+      providerRequestSeen = true;
+      modelActivitySeen = true;
+      latestPhase = "provider_request";
+    }
+    if (event.eventType.includes(".tool.") || event.eventType === "execution.tool.recorded") {
+      toolActivitySeen = true;
+      modelActivitySeen = true;
+      latestPhase = "tool_active";
+    }
+    if (event.eventType === "execution.mutation.recorded") {
+      mutationSeen = true;
+      modelActivitySeen = true;
+      latestPhase = "tool_active";
+    }
+    if (event.eventType === "execution.validation.recorded") {
+      validationSeen = true;
+      modelActivitySeen = true;
+      latestPhase = "tool_active";
+    }
+    if (event.eventType === "execution.finish.recorded" || event.eventType.includes("finish")) {
+      finishSeen = true;
+      modelActivitySeen = true;
+      latestPhase = "finishing";
+    }
+  }
+  const nowMs = Date.now();
+  const latestMeaningfulEventAgeMs = latestMeaningfulEvent
+    ? Math.max(0, nowMs - latestMeaningfulEvent.eventTime.getTime())
+    : null;
+  const compactLatestErrorEvent = latestErrorEvent
+    ? asRecord(compactNativeExecutionEvent(latestErrorEvent))
+    : null;
+  const jobError = asRecord(input.job?.error);
+  let latestError: JsonValue = null;
+  if (compactLatestErrorEvent) {
+    latestError = {
+      eventId: boundedStringValueFromRecord(compactLatestErrorEvent, "eventId", 200),
+      eventType: boundedStringValueFromRecord(compactLatestErrorEvent, "eventType", 200),
+      stage: boundedStringValueFromRecord(compactLatestErrorEvent, "stage", 160),
+      currentPhase: boundedStringValueFromRecord(compactLatestErrorEvent, "currentPhase", 160),
+      errorCode: boundedStringValueFromRecord(compactLatestErrorEvent, "errorCode", 200),
+      errorName: boundedStringValueFromRecord(compactLatestErrorEvent, "errorName", 200),
+      errorMessage: boundedStringValueFromRecord(compactLatestErrorEvent, "errorMessage", 500),
+    };
+  } else if (jobError) {
+    latestError = {
+      errorCode: boundedStringValueFromRecord(jobError, "code", 200),
+      errorMessage: boundedStringValueFromRecord(jobError, "message", 500),
+    };
+  }
+  return {
+    runtimeJobId: input.job?.jobId ?? null,
+    runtimeJobState: input.job?.state ?? null,
+    runtimeGenerationId: boundedStringValueFromRecord(payload, "runtimeGenerationId", 240),
+    agentId: boundedStringValueFromRecord(payload, "agentId", 160),
+    envelope: boundedStringValueFromRecord(payload, "envelope", 80),
+    policyRef: boundedStringValueFromRecord(payload, "policyRef", 200),
+    configSnapshotId: boundedStringValueFromRecord(runMetadata, "configSnapshotId", 300),
+    catalogSnapshotId: boundedStringValueFromRecord(runMetadata, "catalogSnapshotId", 300),
+    resolvedAgentModelIdentity: compactModelProfile(modelProfile),
+    requestParameterSummary: compactModelRequestParameters(modelProfile),
+    promptProfileHash: boundedStringValueFromRecord(runMetadata, "promptProfileHash", 120),
+    toolPolicyHash: boundedStringValueFromRecord(runMetadata, "toolPolicyHash", 120),
+    currentPhase:
+      input.job?.state && ["succeeded", "failed", "canceled", "timed_out"].includes(input.job.state)
+        ? "terminal"
+        : (latestPhase ?? latestLaunchPhase ?? "unknown"),
+    latestLaunchPhase,
+    modelActivitySeen,
+    providerRequestSeen,
+    providerPreparingSeen,
+    agentLaunchSeen,
+    toolActivitySeen,
+    mutationSeen,
+    validationSeen,
+    finishSeen,
+    eventCounts,
+    launchStages: launchStages.slice(-40),
+    diagnostics: {
+      latestStageLabel: latestLaunchStage,
+      latestMeaningfulEventType: latestMeaningfulEvent?.eventType ?? null,
+      latestError,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+    },
+    latestMeaningfulEvent: latestMeaningfulEvent
+      ? compactNativeExecutionEvent(latestMeaningfulEvent)
+      : null,
+    latestMeaningfulEventAgeMs,
+    latestEvents: input.events.slice(-20).map(compactNativeExecutionEvent),
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+  };
+}
+
 export type NativeExecutionRpcAuth = {
   actorId: string;
   authenticated: boolean;
@@ -118,12 +685,79 @@ export type NativeExecutionSubmitRequest = {
   intakeRouteContract?: unknown;
 };
 
+export type NativeExecutionStartSessionRequest = {
+  request: StartExecutionSessionVisibleInput;
+  auth: NativeExecutionRpcAuth;
+  workItemId?: string | null;
+  queueName?: string | null;
+  agentProfile?: string | null;
+  idempotencyKey?: string | null;
+  idempotencyScope?: string | null;
+};
+
+export type NativeExecutionPreflightSessionResult = {
+  artifactKind: "native_execution_preflight_session_result";
+  accepted: boolean;
+  status: "accepted" | "rejected";
+  statusCode: number;
+  runtimeGenerationId: string | null;
+  providerRuntimeError: JsonValue;
+  reasonCodes: string[];
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawProviderLogStored: false;
+  rawToolLogStored: false;
+  secretsStored: false;
+  workQueueLifecycleMutated: false;
+};
+
+export type NativeExecutionStartSessionResult = {
+  artifactKind: "native_execution_start_session_result";
+  accepted: boolean;
+  status: "accepted" | "rejected";
+  statusCode: number;
+  runtimeJobId: string | null;
+  sessionId: string | null;
+  agentProfile: string | null;
+  jobType: string | null;
+  queueName: string | null;
+  startStatus: string | null;
+  eventType: string | null;
+  launch: NativeExecutionStartSessionLaunchStatus;
+  reasonCodes: string[];
+  rawPromptStored: false;
+  rawResponseStored: false;
+  workQueueLifecycleMutated: false;
+};
+
+export type NativeExecutionStartSessionLaunchStatus = {
+  status: "not_configured" | "scheduled";
+  workerId: string | null;
+  queueName: string | null;
+  reasonCodes: string[];
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawLogsStored: false;
+  workQueueLifecycleMutated: false;
+};
+
+export type NativeExecutionStartSessionLaunchInput = {
+  runtimeJobId: string;
+  sessionId: string;
+  agentProfile: string;
+  queueName: string;
+  workerId: string;
+};
+
 export type NativeExecutionSubmitResult = {
   artifactKind: "native_execution_submit_result";
   accepted: boolean;
   status: "accepted" | "rejected";
   statusCode: number;
   runtimeJobId: string | null;
+  sessionId: string | null;
+  agentProfile: string | null;
+  nativeExecutionLaunch: NativeExecutionStartSessionLaunchStatus | null;
   routeDecision: null;
   validation: null;
   compiledRequest: null;
@@ -139,8 +773,6 @@ export type NativeExecutionSubmitResult = {
   frontDoorSubmitDiagnosticsArtifactRef: string | null;
   workflowId: string | null;
   jobType: string | null;
-  workerContractState: WorkflowWorkerExecutionReadiness["contractState"] | null;
-  workerAdapterId: string | null;
   reasonCodes: string[];
   rawPromptStored: false;
   rawResponseStored: false;
@@ -156,8 +788,13 @@ export type NativeExecutionRpcDependencies = {
   registry?: WorkflowRegistry;
   structuredRouterProvider?: StructuredModelIntentRouterProvider;
   routingTelemetryStore?: RoutingTelemetryStore;
-  workerAdapterRegistry?: WorkflowWorkerAdapterRegistry;
   submitDiagnosticsSink?: GatewaySubmitDiagnosticsSink;
+  nativeReadiness?: () => Promise<unknown>;
+  preflightExecutionSession?: (input: StartNativeExecutionSessionInput) => Promise<unknown>;
+  startExecutionSession?: (
+    input: StartNativeExecutionSessionInput,
+  ) => Promise<StartNativeExecutionSessionResult>;
+  launchNativeExecutionSession?: (input: NativeExecutionStartSessionLaunchInput) => Promise<void>;
   queueName?: string;
 };
 
@@ -171,6 +808,161 @@ function hashPrompt(value: string): string {
 
 function summarizePrompt(value: string): string {
   return value.replace(/\s+/gu, " ").trim().slice(0, 600);
+}
+
+type FrontDoorCompiledRuntimeRequest = Extract<
+  FrontDoorCompileResult,
+  { artifactKind: "front_door_compiled_runtime_job_request" }
+>;
+
+function sourcePromptRefUri(
+  sourcePromptRef: FrontDoorCompiledRuntimeRequest["sourcePromptRef"],
+): string | null {
+  if (!sourcePromptRef) {
+    return null;
+  }
+  if (sourcePromptRef.refKind === "gateway_chat_transcript") {
+    const session = sourcePromptRef.sessionId ?? sourcePromptRef.sessionKey ?? "unknown-session";
+    const run = sourcePromptRef.runId ?? "unknown-run";
+    return `gateway-chat-transcript://${session}/${run}`;
+  }
+  return `native-submit://${sourcePromptRef.promptHash.slice(0, 32)}`;
+}
+
+function buildNativeExecutionRefsFromFrontDoorCompiled(
+  compiled: FrontDoorCompiledRuntimeRequest,
+): NativeExecutionRef[] {
+  const refs: NativeExecutionRef[] = [
+    {
+      ref: `runtime-job://${compiled.requestId}/execution/front-door/native-handoff`,
+      type: "artifact",
+      kind: "front_door_native_handoff",
+      source: "native_execution_submit",
+    },
+  ];
+  const sourcePrompt = sourcePromptRefUri(compiled.sourcePromptRef);
+  if (sourcePrompt) {
+    refs.push({
+      ref: sourcePrompt,
+      type: "prompt",
+      kind: compiled.sourcePromptRef?.refKind ?? "source_prompt",
+      source: "front_door_submit",
+    });
+  }
+  if (compiled.workQueueLink.workItemId) {
+    refs.push({
+      ref: `work-queue://${compiled.workQueueLink.workItemId}`,
+      type: "work_queue_item",
+      kind: "source_work_item",
+      source: "front_door_submit",
+    });
+  }
+  for (const target of compiled.targetSubjectRefs.slice(0, 20)) {
+    refs.push({
+      ref: target.targetRef,
+      type: "target_subject",
+      kind: target.targetKind,
+      source: "front_door_router",
+    });
+  }
+  for (const authorityRef of compiled.authorityRefs.slice(0, 10)) {
+    refs.push({
+      ref: authorityRef,
+      type: "authority",
+      kind: "authority_ref",
+      source: "front_door_router",
+    });
+  }
+  const seen = new Set<string>();
+  return refs.filter((ref) => {
+    const key = JSON.stringify(ref);
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function buildNativeFrontDoorHandoffArtifact(input: {
+  compiled: FrontDoorCompiledRuntimeRequest;
+  nativeRequest: StartExecutionSessionVisibleInput;
+}): JsonValue {
+  return {
+    artifactKind: "execution.front_door.native_handoff",
+    schemaVersion: "openclaw.front-door.native-handoff.v1",
+    objective: input.nativeRequest.objective,
+    refs: input.nativeRequest.refs as unknown as JsonValue,
+    constraints: input.nativeRequest.constraints as unknown as JsonValue,
+    validationSignal: input.nativeRequest.validationSignal ?? null,
+    routingContext: {
+      frontDoorWorkflowHint: input.compiled.workflowId,
+      executorWorkflowHint: input.compiled.executorWorkflowId,
+      subjectWorkflowHints: input.compiled.subjectWorkflowIds,
+      requestedCapabilities: input.compiled.requestedCapabilities,
+      targetSubjectRefs: input.compiled.targetSubjectRefs as unknown as JsonValue,
+      authorityRefs: input.compiled.authorityRefs,
+      approvalRefs: input.compiled.approvalRefs,
+      sourcePromptRef: input.compiled.sourcePromptRef as unknown as JsonValue,
+      promptHash: input.compiled.promptHash,
+      promptLength: input.compiled.sourcePromptRef?.promptLength ?? null,
+      rawPromptStored: false,
+      rawResponseStored: false,
+    },
+    actions: input.compiled.compiledActions.map((action) => ({
+      action: action.action,
+      objectSummary: action.objectSummary,
+      source: action.source,
+      confidence: action.confidence,
+    })) as unknown as JsonValue,
+    auditArtifactRefs: [
+      `runtime-job://${input.compiled.requestId}/execution/front-door/router-result`,
+      `runtime-job://${input.compiled.requestId}/execution/front-door/validation`,
+      `runtime-job://${input.compiled.requestId}/execution/front-door/compiled-request`,
+      `runtime-job://${input.compiled.requestId}/execution/front-door/memory-policy`,
+    ],
+    notes: [
+      "This is the model-facing native execution handoff.",
+      "Front-door workflow fields are routing hints only, not a required legacy workflow runner.",
+      "Use native session tools, child sessions, validation, and shared finish evidence closure.",
+    ],
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+    rawCommandLogStored: false,
+    secretsStored: false,
+    workQueueLifecycleMutated: false,
+  };
+}
+
+function buildNativeExecutionRequestFromFrontDoorCompiled(
+  compiled: FrontDoorCompiledRuntimeRequest,
+): StartExecutionSessionVisibleInput {
+  const actionSummary = compiled.compiledActions
+    .map((action) => `${action.action}: ${action.objectSummary}`)
+    .slice(0, 12);
+  const constraints = [
+    `Front-door workflow hint: ${compiled.workflowId}. Treat this as routing context, not a required legacy workflow runner.`,
+    "Execute through native OpenClaw session tools, native child sessions/handoffs, and shared finish evidence closure.",
+    "Treat front-door compile/router artifacts as audit evidence, not as required model-facing workflow inputs.",
+    ...compiled.constraints
+      .map((constraint) => `${constraint.constraintKind}: ${constraint.objectSummary}`)
+      .slice(0, 20),
+  ];
+  return {
+    objective: [
+      compiled.objectiveSummary,
+      actionSummary.length > 0 ? `Requested actions: ${actionSummary.join("; ")}` : null,
+    ]
+      .filter((line): line is string => typeof line === "string" && line.trim().length > 0)
+      .join("\n\n")
+      .slice(0, 8_000),
+    refs: buildNativeExecutionRefsFromFrontDoorCompiled(compiled),
+    constraints,
+    validationSignal:
+      "Validation is required before finish. Use the native execution session's domain tools and linked front-door artifacts to choose focused validation.",
+  };
 }
 
 function jsonBytes(value: unknown): number | null {
@@ -438,6 +1230,144 @@ export class NativeExecutionRpcService {
     this.structuredRouterProvider = dependencies.structuredRouterProvider ?? null;
   }
 
+  async preflightSession(
+    request: NativeExecutionStartSessionRequest,
+  ): Promise<NativeExecutionPreflightSessionResult> {
+    if (!request.auth.authenticated) {
+      return {
+        artifactKind: "native_execution_preflight_session_result",
+        accepted: false,
+        status: "rejected",
+        statusCode: 401,
+        runtimeGenerationId: null,
+        providerRuntimeError: null,
+        reasonCodes: ["authenticated_operator_required"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+        secretsStored: false,
+        workQueueLifecycleMutated: false,
+      };
+    }
+    const preflight = this.dependencies.preflightExecutionSession;
+    if (!preflight) {
+      return {
+        artifactKind: "native_execution_preflight_session_result",
+        accepted: false,
+        status: "rejected",
+        statusCode: 503,
+        runtimeGenerationId: null,
+        providerRuntimeError: null,
+        reasonCodes: ["runtime_generation_acceptance_not_configured"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+        secretsStored: false,
+        workQueueLifecycleMutated: false,
+      };
+    }
+    try {
+      const agentProfile = request.agentProfile?.trim() || undefined;
+      const result = await preflight({
+        runtimeJobs: this.dependencies.runtimeJobs,
+        request: request.request,
+        runtime: {
+          queueName: request.queueName?.trim() || NATIVE_EXECUTION_SESSION_QUEUE,
+          agentProfile,
+          workItemId: request.workItemId?.trim() || null,
+          idempotencyScope:
+            request.idempotencyScope?.trim() ||
+            `native-execution-rpc:${request.workItemId?.trim() || request.auth.sessionId || request.auth.actorId}`,
+          idempotencyKey: request.idempotencyKey?.trim() || undefined,
+        },
+      });
+      return compactNativeExecutionPreflightResult({
+        value: result,
+      });
+    } catch (error) {
+      return {
+        artifactKind: "native_execution_preflight_session_result",
+        accepted: false,
+        status: "rejected",
+        statusCode: 400,
+        runtimeGenerationId: null,
+        providerRuntimeError: null,
+        reasonCodes: [
+          "runtime_generation_acceptance_failed",
+          error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+        ],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+        secretsStored: false,
+        workQueueLifecycleMutated: false,
+      };
+    }
+  }
+
+  async nativeReady(auth: NativeExecutionRpcAuth): Promise<JsonValue> {
+    if (!auth.authenticated) {
+      return {
+        artifactKind: "native_execution_readiness_result",
+        accepted: false,
+        status: "not_ready",
+        statusCode: 401,
+        reasonCodes: ["authenticated_operator_required"],
+        nativeDoctorReadOnly: true,
+        providerCatalogRefreshed: false,
+        runtimeJobCreated: false,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+        secretsStored: false,
+      };
+    }
+    if (!this.dependencies.nativeReadiness) {
+      return {
+        artifactKind: "native_execution_readiness_result",
+        accepted: false,
+        status: "not_ready",
+        statusCode: 503,
+        reasonCodes: ["native_execution_readiness_not_configured"],
+        nativeDoctorReadOnly: true,
+        providerCatalogRefreshed: false,
+        runtimeJobCreated: false,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+        secretsStored: false,
+      };
+    }
+    try {
+      const result = await this.dependencies.nativeReadiness();
+      return result as JsonValue;
+    } catch (error) {
+      return {
+        artifactKind: "native_execution_readiness_result",
+        accepted: false,
+        status: "not_ready",
+        statusCode: 400,
+        reasonCodes: [
+          "native_execution_readiness_failed",
+          error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+        ],
+        nativeDoctorReadOnly: true,
+        providerCatalogRefreshed: false,
+        runtimeJobCreated: false,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+        secretsStored: false,
+      };
+    }
+  }
+
   private async recordRouterFrontDoorToolProtocol(input: {
     requestId: string;
     promptHash: string;
@@ -490,6 +1420,173 @@ export class NativeExecutionRpcService {
       validation: input.validation,
       toolInvocations,
     });
+  }
+
+  async startSession(
+    request: NativeExecutionStartSessionRequest,
+  ): Promise<NativeExecutionStartSessionResult> {
+    if (!request.auth.authenticated) {
+      return this.startSessionResult({
+        statusCode: 401,
+        reasonCodes: ["authenticated_operator_required"],
+      });
+    }
+    try {
+      const startExecutionSession = this.dependencies.startExecutionSession;
+      if (!startExecutionSession) {
+        return this.startSessionResult({
+          statusCode: 503,
+          reasonCodes: ["native_execution_start_session_not_configured"],
+        });
+      }
+      const result = await startExecutionSession({
+        runtimeJobs: this.dependencies.runtimeJobs,
+        request: request.request,
+        runtime: {
+          queueName: request.queueName?.trim() || NATIVE_EXECUTION_SESSION_QUEUE,
+          agentProfile: request.agentProfile?.trim() || undefined,
+          workItemId: request.workItemId?.trim() || null,
+          idempotencyScope:
+            request.idempotencyScope?.trim() ||
+            `native-execution-rpc:${request.workItemId?.trim() || request.auth.sessionId || request.auth.actorId}`,
+          idempotencyKey: request.idempotencyKey?.trim() || undefined,
+        },
+      });
+      if (this.dependencies.workQueue && request.workItemId?.trim()) {
+        await this.dependencies.workQueue.createWorkRun({
+          workItemId: request.workItemId.trim(),
+          executorKind: "runtime_job",
+          runtimeJobId: result.runtimeJobId,
+          runState: "running",
+          metadata: {
+            jobType: NATIVE_EXECUTION_SESSION_JOB_TYPE,
+            nativeExecutionSession: true,
+            agentProfile: result.agentProfile,
+            sessionId: result.sessionId,
+            sourceRoute: request.auth.sourceRoute ?? null,
+            workQueueLifecycleMutated: false,
+            rawPromptStored: false,
+            rawResponseStored: false,
+          },
+        });
+      }
+      const launch = await this.scheduleNativeExecutionSessionLaunch({
+        runtimeJobId: result.runtimeJobId,
+        sessionId: result.sessionId,
+        agentProfile: result.agentProfile,
+        queueName:
+          result.runtimeJob.queueName ??
+          request.queueName?.trim() ??
+          NATIVE_EXECUTION_SESSION_QUEUE,
+        workerId: `native-execution-rpc:${request.auth.actorId}`.slice(0, 120),
+      });
+      return this.startSessionResult({
+        accepted: true,
+        statusCode: 202,
+        runtimeJobId: result.runtimeJobId,
+        sessionId: result.sessionId,
+        agentProfile: result.agentProfile,
+        jobType: result.runtimeJob.jobType,
+        queueName: result.runtimeJob.queueName,
+        startStatus: result.status,
+        eventType: result.event.eventType,
+        launch,
+        reasonCodes: [`native_execution_session_${result.status}`, ...launch.reasonCodes],
+      });
+    } catch (error) {
+      return this.startSessionResult({
+        statusCode: 400,
+        reasonCodes: [
+          "native_execution_start_session_failed",
+          error instanceof Error ? error.message : String(error),
+        ],
+      });
+    }
+  }
+
+  private async scheduleNativeExecutionSessionLaunch(
+    input: NativeExecutionStartSessionLaunchInput,
+  ): Promise<NativeExecutionStartSessionLaunchStatus> {
+    const launch = this.dependencies.launchNativeExecutionSession;
+    if (!launch) {
+      return {
+        status: "not_configured",
+        workerId: null,
+        queueName: input.queueName,
+        reasonCodes: ["native_execution_session_launch_not_configured"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawLogsStored: false,
+        workQueueLifecycleMutated: false,
+      };
+    }
+    await this.dependencies.runtimeJobs.recordEvent({
+      jobId: input.runtimeJobId,
+      eventType: "execution.launch.timing",
+      workerId: input.workerId,
+      data: {
+        schemaVersion: "openclaw.runtime-execution-event-envelope.v1",
+        runtimeJobId: input.runtimeJobId,
+        sessionId: input.sessionId,
+        eventKind: "launch_timing_recorded",
+        extra: {
+          sourceEventType: "native_execution_launch_timing",
+          stage: "runtime_worker_dispatch_scheduled",
+          elapsedMs: 0,
+          executionClass: "native_runtime_job",
+          schedulerClass: "runtime_worker_supervisor",
+          agentId: input.agentProfile,
+          workerId: input.workerId,
+          queueName: input.queueName,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          rawToolLogStored: false,
+          workQueueLifecycleMutationAllowed: false,
+        },
+      },
+    });
+    void launch(input).catch((error) => {
+      void this.dependencies.runtimeJobs.recordEvent({
+        jobId: input.runtimeJobId,
+        eventType: "execution.launch.timing",
+        workerId: input.workerId,
+        data: {
+          schemaVersion: "openclaw.runtime-execution-event-envelope.v1",
+          runtimeJobId: input.runtimeJobId,
+          sessionId: input.sessionId,
+          eventKind: "launch_timing_recorded",
+          extra: {
+            sourceEventType: "native_execution_launch_timing",
+            stage: "runtime_worker_dispatch_failed",
+            elapsedMs: 0,
+            executionClass: "native_runtime_job",
+            schedulerClass: "runtime_worker_supervisor",
+            agentId: input.agentProfile,
+            workerId: input.workerId,
+            queueName: input.queueName,
+            errorName: error instanceof Error ? error.name : "Error",
+            errorMessage:
+              error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+            rawToolLogStored: false,
+            workQueueLifecycleMutationAllowed: false,
+          },
+        },
+      });
+    });
+    return {
+      status: "scheduled",
+      workerId: input.workerId,
+      queueName: input.queueName,
+      reasonCodes: ["native_execution_session_launch_scheduled"],
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawLogsStored: false,
+      workQueueLifecycleMutated: false,
+    };
   }
 
   async submit(request: NativeExecutionSubmitRequest): Promise<NativeExecutionSubmitResult> {
@@ -1120,11 +2217,7 @@ export class NativeExecutionRpcService {
           )
         : [];
 
-    const workerReadiness = this.evaluateWorkerReadiness({
-      workflowId: compiled.workflowId,
-      jobType: compiled.jobType,
-    });
-    await recordSubmitDiagnostic("worker_readiness_checked", {
+    await recordSubmitDiagnostic("native_execution_dispatch_checked", {
       workflowSummaryCount: workflowSummaryIndex.summaries.length,
       workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
       conversationContextBytes: jsonBytes(context),
@@ -1132,54 +2225,55 @@ export class NativeExecutionRpcService {
       candidateCount: candidates.candidates.length,
       selectedModelRef: routed.metadata.modelCandidateId,
       providerRef: routed.metadata.providerRef ?? null,
-      reasonCodes: workerReadiness?.reasonCodes ?? ["worker_readiness_not_required"],
+      reasonCodes: ["native_execution_session_dispatch_supersedes_legacy_worker_readiness"],
     });
-    if (workerReadiness && !workerReadiness.accepted) {
-      await this.recordFrontDoorRoutingTelemetry({
-        record: buildFrontDoorRoutingTelemetryRecord({
-          routeDecisionId: `${requestId}:routing`,
-          promptHash,
-          promptSummary,
-          routed,
-          escalation,
-          validation,
-          clarification,
-          actionSemantics,
-          compiled,
-          contextVersion,
-          authoritySnapshotVersion,
-          authSessionVersion,
-          artifactRefs: ["worker_adapter_registry://execution-readiness"],
-        }),
-      });
+    await recordSubmitDiagnostic("before_native_execution_session_start", {
+      workflowSummaryCount: workflowSummaryIndex.summaries.length,
+      workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
+      conversationContextBytes: jsonBytes(context),
+      routerPayloadBytes: jsonBytes(routerRequest),
+      candidateCount: candidates.candidates.length,
+      selectedModelRef: routed.metadata.modelCandidateId,
+      providerRef: routed.metadata.providerRef ?? null,
+      reasonCodes: ["before_native_execution_session_start"],
+    });
+    const nativeRequest = buildNativeExecutionRequestFromFrontDoorCompiled(compiled);
+    const startExecutionSession = this.dependencies.startExecutionSession;
+    if (!startExecutionSession) {
       return submitResultWithDiagnostics({
-        statusCode: 409,
-        workflowId: compiled.workflowId,
-        jobType: compiled.jobType,
-        workerContractState: workerReadiness.contractState,
-        workerAdapterId: workerReadiness.workerAdapterId,
+        statusCode: 503,
         frontDoorRouterResult: routed,
         frontDoorEscalation: escalation,
         frontDoorValidation: validation,
         frontDoorClarification: clarification,
         frontDoorCompiledRequest: compiled,
-        frontDoorMultiIntentPlan: multiIntentPlan,
         frontDoorMemoryPolicy,
-        reasonCodes: workerReadiness.reasonCodes,
+        workflowId: compiled.workflowId,
+        jobType: NATIVE_EXECUTION_SESSION_JOB_TYPE,
+        reasonCodes: ["native_execution_start_session_not_configured"],
       });
     }
-    await recordSubmitDiagnostic("before_runtime_job_enqueue", {
-      workflowSummaryCount: workflowSummaryIndex.summaries.length,
-      workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
-      conversationContextBytes: jsonBytes(context),
-      routerPayloadBytes: jsonBytes(routerRequest),
-      candidateCount: candidates.candidates.length,
-      selectedModelRef: routed.metadata.modelCandidateId,
-      providerRef: routed.metadata.providerRef ?? null,
-      reasonCodes: ["before_runtime_job_enqueue"],
+    const started = await startExecutionSession({
+      runtimeJobs: this.dependencies.runtimeJobs,
+      request: nativeRequest,
+      runtime: {
+        jobId: requestId,
+        queueName: this.dependencies.queueName ?? NATIVE_EXECUTION_SESSION_QUEUE,
+        workItemId: request.workItemId ?? null,
+        idempotencyScope: `native-front-door:${compiled.workflowId}`,
+        idempotencyKey: requestId,
+        agentProfile: "execution-orchestrator",
+      },
     });
-    const job = await this.dependencies.runtimeJobs.enqueueJob(compiled.runtimeJobCreateRequest);
-    await recordSubmitDiagnostic("after_runtime_job_enqueue", {
+    const job = started.runtimeJob;
+    const launch = await this.scheduleNativeExecutionSessionLaunch({
+      runtimeJobId: started.runtimeJobId,
+      sessionId: started.sessionId,
+      agentProfile: started.agentProfile,
+      queueName: job.queueName ?? this.dependencies.queueName ?? NATIVE_EXECUTION_SESSION_QUEUE,
+      workerId: `native-execution-submit:${request.auth.actorId}`.slice(0, 120),
+    });
+    await recordSubmitDiagnostic("after_native_execution_session_start", {
       workflowSummaryCount: workflowSummaryIndex.summaries.length,
       workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
       conversationContextBytes: jsonBytes(context),
@@ -1187,7 +2281,11 @@ export class NativeExecutionRpcService {
       candidateCount: candidates.candidates.length,
       selectedModelRef: routed.metadata.modelCandidateId,
       providerRef: routed.metadata.providerRef ?? null,
-      reasonCodes: ["after_runtime_job_enqueue"],
+      reasonCodes: [
+        "after_native_execution_session_start",
+        `native_execution_session_${started.status}`,
+        ...launch.reasonCodes,
+      ],
     });
     if (this.dependencies.workQueue && request.workItemId?.trim()) {
       const existingTruth = await this.dependencies.workQueue.readWorkItemTruth(request.workItemId);
@@ -1202,7 +2300,8 @@ export class NativeExecutionRpcService {
             subjectWorkflowIds: compiled.subjectWorkflowIds,
             targetSubjectRefs: compiled.targetSubjectRefs,
             requestedCapabilities: compiled.requestedCapabilities,
-            jobType: compiled.jobType,
+            jobType: NATIVE_EXECUTION_SESSION_JOB_TYPE,
+            frontDoorWorkflowHint: compiled.workflowId,
             route: output.route,
             promptHash: compiled.promptHash,
             sourceRoute: request.sourceRoute ?? request.auth.sourceRoute ?? null,
@@ -1223,7 +2322,11 @@ export class NativeExecutionRpcService {
           subjectWorkflowIds: compiled.subjectWorkflowIds,
           targetSubjectRefs: compiled.targetSubjectRefs,
           requestedCapabilities: compiled.requestedCapabilities,
-          jobType: compiled.jobType,
+          jobType: NATIVE_EXECUTION_SESSION_JOB_TYPE,
+          frontDoorWorkflowHint: compiled.workflowId,
+          nativeExecutionSession: true,
+          sessionId: started.sessionId,
+          agentProfile: started.agentProfile,
           frontDoorNativeExecutionSubmit: true,
           sourceRoute: request.sourceRoute ?? request.auth.sourceRoute ?? null,
           workQueueLifecycleMutated: false,
@@ -1248,6 +2351,7 @@ export class NativeExecutionRpcService {
       actionSemantics,
       clarification,
       compiled,
+      nativeHandoff: buildNativeFrontDoorHandoffArtifact({ compiled, nativeRequest }),
       multiIntentPlan,
       childHandoffs,
       memoryPolicy: frontDoorMemoryPolicy,
@@ -1263,7 +2367,9 @@ export class NativeExecutionRpcService {
       reasonCodes: ["after_front_door_artifact_attachment"],
     });
     const finalReasonCodes = [
-      "native_submit_front_door_job_enqueued",
+      "native_submit_front_door_native_execution_session_started",
+      `native_execution_session_${started.status}`,
+      ...launch.reasonCodes,
       ...validation.reasonCodes,
       ...actionSemantics.reasonCodes,
     ];
@@ -1306,9 +2412,6 @@ export class NativeExecutionRpcService {
         secretsStored: false,
       },
     });
-    if (workerReadiness) {
-      await this.attachWorkerReadinessArtifact(job.jobId, workerReadiness);
-    }
     await this.recordFrontDoorRoutingTelemetry({
       runtimeJobId: job.jobId,
       record: buildFrontDoorRoutingTelemetryRecord({
@@ -1325,6 +2428,7 @@ export class NativeExecutionRpcService {
         authoritySnapshotVersion,
         authSessionVersion,
         artifactRefs: [
+          `runtime-job://${job.jobId}/execution/front-door/native-handoff`,
           `runtime-job://${job.jobId}/execution/front-door/router-result`,
           `runtime-job://${job.jobId}/execution/front-door/validation`,
           `runtime-job://${job.jobId}/execution/front-door/compiled-request`,
@@ -1341,7 +2445,11 @@ export class NativeExecutionRpcService {
         subjectWorkflowIds: compiled.subjectWorkflowIds,
         targetSubjectRefs: compiled.targetSubjectRefs,
         requestedCapabilities: compiled.requestedCapabilities,
-        jobType: compiled.jobType,
+        jobType: NATIVE_EXECUTION_SESSION_JOB_TYPE,
+        frontDoorWorkflowHint: compiled.workflowId,
+        nativeExecutionSession: true,
+        sessionId: started.sessionId,
+        agentProfile: started.agentProfile,
         promptHash: compiled.promptHash,
         sourceRoute: request.sourceRoute ?? request.auth.sourceRoute ?? null,
         rawPromptStored: false,
@@ -1354,10 +2462,11 @@ export class NativeExecutionRpcService {
       accepted: true,
       statusCode: 202,
       runtimeJobId: job.jobId,
+      sessionId: started.sessionId,
+      agentProfile: started.agentProfile,
+      nativeExecutionLaunch: launch,
       workflowId: compiled.workflowId,
-      jobType: compiled.jobType,
-      workerContractState: workerReadiness?.contractState ?? null,
-      workerAdapterId: workerReadiness?.workerAdapterId ?? null,
+      jobType: NATIVE_EXECUTION_SESSION_JOB_TYPE,
       frontDoorRouterResult: routed,
       frontDoorEscalation: escalation,
       frontDoorValidation: validation,
@@ -1384,6 +2493,7 @@ export class NativeExecutionRpcService {
     actionSemantics: ReturnType<typeof enforceActionSemantics>;
     clarification: ClarificationGateDecision;
     compiled: FrontDoorCompileResult;
+    nativeHandoff: JsonValue;
     multiIntentPlan: MultiIntentPlanCompileDecision | null;
     childHandoffs: unknown[];
     memoryPolicy?: PromptRouterMemoryPolicyDecision | null;
@@ -1403,6 +2513,11 @@ export class NativeExecutionRpcService {
         artifactType: "execution.front_door.validation",
         uri: `runtime-job://${input.runtimeJobId}/execution/front-door/validation`,
         metadata: input.validation as unknown as JsonValue,
+      },
+      {
+        artifactType: "execution.front_door.native_handoff",
+        uri: `runtime-job://${input.runtimeJobId}/execution/front-door/native-handoff`,
+        metadata: input.nativeHandoff,
       },
       {
         artifactType: "execution.front_door.action_semantics",
@@ -1453,40 +2568,6 @@ export class NativeExecutionRpcService {
     }
   }
 
-  private evaluateWorkerReadiness(input: {
-    workflowId: string;
-    jobType: string;
-  }): WorkflowWorkerExecutionReadiness | null {
-    if (!this.dependencies.workerAdapterRegistry) {
-      return null;
-    }
-    return evaluateWorkflowWorkerExecutionReadiness({
-      registry: this.dependencies.workerAdapterRegistry,
-      workflowId: input.workflowId,
-      jobType: input.jobType,
-      allowShadow: true,
-    });
-  }
-
-  private async attachWorkerReadinessArtifact(
-    runtimeJobId: string,
-    readiness: WorkflowWorkerExecutionReadiness,
-  ): Promise<void> {
-    await this.dependencies.runtimeJobs.attachArtifact({
-      jobId: runtimeJobId,
-      artifactType: "execution.worker_contract_state",
-      storageKind: "metadata",
-      uri: `runtime-job://${runtimeJobId}/execution/worker-contract-state`,
-      contentType: "application/json",
-      metadata: summarizeWorkflowWorkerExecutionReadiness(readiness),
-    });
-    await this.dependencies.runtimeJobs.recordEvent({
-      jobId: runtimeJobId,
-      eventType: "execution.worker_dispatch_pending",
-      data: summarizeWorkflowWorkerExecutionReadiness(readiness),
-    });
-  }
-
   private async recordFrontDoorRoutingTelemetry(input: {
     runtimeJobId?: string | null;
     record: RoutingTelemetryRecord;
@@ -1502,8 +2583,21 @@ export class NativeExecutionRpcService {
     await store.write(input.record);
   }
 
-  async status(runtimeJobId: string): Promise<{ runtimeJob: RuntimeJob | null }> {
-    return { runtimeJob: await this.dependencies.runtimeJobs.getJob(runtimeJobId) };
+  async status(runtimeJobId: string): Promise<JsonValue> {
+    const runtimeJob = await this.dependencies.runtimeJobs.getJob(runtimeJobId);
+    const events = runtimeJobId
+      ? await this.dependencies.runtimeJobs.listRecentEvents(runtimeJobId, 200)
+      : [];
+    return {
+      runtimeJob: compactNativeExecutionRuntimeJob(runtimeJob),
+      runtimeJobId,
+      runtimeJobState: runtimeJob?.state ?? null,
+      live: summarizeNativeExecutionLiveStatus({ job: runtimeJob, events }),
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+    };
   }
 
   async applyControl(input: {
@@ -1542,7 +2636,23 @@ export class NativeExecutionRpcService {
         runtimeJobId: input.runtimeJobId,
         decision,
       });
-      if (input.actionKind === "cancel") {
+      const nativeControlKind = nativeControlKindFromWorkQueueAction(input.actionKind);
+      if (nativeControlKind) {
+        await applyNativeExecutionControl({
+          runtimeJobs: this.dependencies.runtimeJobs,
+          runtimeJobId: input.runtimeJobId,
+          sessionId: nativeSessionIdFromRuntimeJob(runtimeJob),
+          controlKind: nativeControlKind,
+          reason:
+            stringValueFromRecord(input.metadata ?? null, "reason") ??
+            `work_queue_control:${input.actionId}`,
+          message: stringValueFromRecord(input.metadata ?? null, "message"),
+          redirectMessage:
+            stringValueFromRecord(input.metadata ?? null, "redirectMessage") ??
+            stringValueFromRecord(input.metadata ?? null, "redirect"),
+          actorId: input.auth.actorId,
+        });
+      } else if (input.actionKind === "cancel") {
         await this.dependencies.runtimeJobs.cancelJob(
           input.runtimeJobId,
           `work_queue_control_cancel:${input.actionId}`,
@@ -1707,6 +2817,9 @@ export class NativeExecutionRpcService {
       status: input.accepted ? "accepted" : "rejected",
       statusCode: input.accepted ? 202 : 400,
       runtimeJobId: null,
+      sessionId: null,
+      agentProfile: null,
+      nativeExecutionLaunch: null,
       routeDecision: null,
       validation: null,
       compiledRequest: null,
@@ -1722,8 +2835,39 @@ export class NativeExecutionRpcService {
       frontDoorSubmitDiagnosticsArtifactRef: null,
       workflowId: null,
       jobType: null,
-      workerContractState: null,
-      workerAdapterId: null,
+      reasonCodes: [],
+      rawPromptStored: false,
+      rawResponseStored: false,
+      workQueueLifecycleMutated: false,
+      ...input,
+    };
+  }
+
+  private startSessionResult(
+    input: Partial<NativeExecutionStartSessionResult> = {},
+  ): NativeExecutionStartSessionResult {
+    return {
+      artifactKind: "native_execution_start_session_result",
+      accepted: false,
+      status: input.accepted ? "accepted" : "rejected",
+      statusCode: input.accepted ? 202 : 400,
+      runtimeJobId: null,
+      sessionId: null,
+      agentProfile: null,
+      jobType: null,
+      queueName: null,
+      startStatus: null,
+      eventType: null,
+      launch: {
+        status: "not_configured",
+        workerId: null,
+        queueName: null,
+        reasonCodes: [],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawLogsStored: false,
+        workQueueLifecycleMutated: false,
+      },
       reasonCodes: [],
       rawPromptStored: false,
       rawResponseStored: false,

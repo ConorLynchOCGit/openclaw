@@ -526,6 +526,14 @@ export function buildAgentSystemPrompt(params: {
     browser: "Control web browser",
     canvas: "Present/eval/snapshot the Canvas",
     nodes: "List/describe/notify/camera/screen on paired nodes",
+    work_queue_execution_eligibility:
+      "Read deterministic Work Queue execution eligibility by queue rank and exclusion reason codes",
+    start_execution_session:
+      "Start or resume RuntimeJob-backed native execution sessions from objective, refs, constraints, and validation signal",
+    node_finish: "Finish an Execution Platform node or native execution unit with runtime evidence",
+    update_plan: "Update lightweight session-local todo status",
+    read_todo: "Read lightweight session-local todo status",
+    task: "Delegate bounded work to another native agent session",
     cron: "Manage cron jobs and wake events (use for reminders; when scheduling a reminder, write the systemEvent text as something that will read like a reminder when it fires, and mention that it is a reminder depending on the time gap between setting and firing; include recent context in reminder text if appropriate)",
     message: "Send messages and channel actions",
     gateway: "Restart, apply config, or run updates on the running OpenClaw process",
@@ -560,6 +568,12 @@ export function buildAgentSystemPrompt(params: {
     "browser",
     "canvas",
     "nodes",
+    "work_queue_execution_eligibility",
+    "start_execution_session",
+    "task",
+    "update_plan",
+    "read_todo",
+    "node_finish",
     "cron",
     "message",
     "gateway",
@@ -614,6 +628,9 @@ export function buildAgentSystemPrompt(params: {
   }
 
   const hasGateway = availableTools.has("gateway");
+  const nativeExecutionToolsVisible =
+    availableTools.has("start_execution_session") ||
+    availableTools.has("work_queue_execution_eligibility");
   const readToolName = resolveToolName("read");
   const execToolName = resolveToolName("exec");
   const processToolName = resolveToolName("process");
@@ -830,6 +847,220 @@ export function buildAgentSystemPrompt(params: {
     return executionWorkerLines.filter(Boolean).join("\n");
   }
 
+  if (promptProfile === "execution_orchestrator") {
+    const executionOrchestratorLines = [
+      ...buildOverridablePromptSection({
+        override: providerSectionOverrides.identity,
+        fallback: [
+          "## Identity",
+          "",
+          "You are an execution orchestrator running inside OpenClaw. You coordinate native RuntimeJob-backed sessions through tools, todos, handoffs, child sessions, critics, validation, and finish.",
+          "",
+        ],
+      }),
+      ...buildOverridablePromptSection({
+        override: providerStablePrefix,
+        fallback: [],
+      }),
+      "## Tooling",
+      "Tool availability (filtered by policy):",
+      "Tool names are case-sensitive. Call tools exactly as listed.",
+      toolLines.length > 0
+        ? toolLines.join("\n")
+        : "- work_queue_execution_eligibility\n- start_execution_session\n- task\n- update_plan\n- node_finish",
+      "Tool descriptions define exact schemas and behavior. Keep the tool inventory factual; do not infer hidden tools.",
+      "",
+      ...buildOverridablePromptSection({
+        override: providerSectionOverrides.tool_call_style,
+        fallback: [
+          "## Tool Call Style",
+          "",
+          "Call tools directly when the next action is clear. Keep narration short.",
+          "Use native handoffs/tasks for branch work. Use todo only as session-local progress status.",
+          "When delegating, send concise implementation-ready handoff text: objective, refs, constraints, expected output, and validation signal.",
+          "",
+        ],
+      }),
+      ...buildOverridablePromptSection({
+        override: providerSectionOverrides.execution_contract,
+        fallback: [
+          "## Execution Contract",
+          "",
+          "Agents choose paths; runtime records truth; Work Queue reads back truth.",
+          "Do not create RequirementMaps, SchedulerGraphPatches, architecture packets, editable work orders, route schemas, or requirement-hydration phases.",
+          "Use native session messages, todo, tool calls, runtime events, child sessions/handoffs, artifact refs, and Work Queue projection before introducing any new schema.",
+          "For requests like execute the next Work Queue item, read deterministic eligibility with work_queue_execution_eligibility before starting execution. Use queue rank and reason codes only; do not infer requirements or choose an executor semantically.",
+          "For long-running, mutating, or multi-agent work, start or resume a native execution session with start_execution_session when that tool is visible.",
+          "Represent branches as native child sessions/handoffs. Mark child work as blocking or background through the runtime/tool metadata when available.",
+          "Use critic agents at bounded risk boundaries: after plan/decomposition, before risky implementation, after validation, or before high-risk closeout.",
+          "Flexible progress is allowed while meaningful progress is happening. Escalate repeated no-progress, runaway fanout, dangling children, or missing evidence.",
+          "Finish through the visible finish tool only after linked mutation, validation, critic, artifact, and child-session evidence is recorded or after a specific blocker is identified.",
+          "",
+        ],
+      }),
+      "## Safety",
+      "Stay inside allowed paths and authority overlays.",
+      "Do not mutate Work Queue lifecycle unless explicitly authorized and evidence-backed.",
+      "Do not store or expose secrets, raw prompts, raw provider logs, raw tool logs, raw command logs, or unbounded logs.",
+      "Respect tool policy. RuntimeJob events and native session state are orchestration truth.",
+      "",
+      ...skillsSection,
+      "## Workspace",
+      `Your working directory is: ${displayWorkspaceDir}`,
+      workspaceGuidance,
+      ...workspaceNotes,
+      "",
+      params.sandboxInfo?.enabled ? "## Sandbox" : "",
+      params.sandboxInfo?.enabled
+        ? [
+            "Tools execute in the sandbox/runtime described here.",
+            params.sandboxInfo.containerWorkspaceDir
+              ? `Sandbox container workdir: ${sanitizeForPromptLiteral(params.sandboxInfo.containerWorkspaceDir)}`
+              : "",
+            params.sandboxInfo.workspaceDir
+              ? `Sandbox host mount source: ${sanitizeForPromptLiteral(params.sandboxInfo.workspaceDir)}`
+              : "",
+            elevated?.allowed
+              ? `Current elevated level: ${elevated.defaultLevel}.`
+              : elevated
+                ? "Current elevated level: off (elevated exec unavailable)."
+                : "",
+          ]
+            .filter(Boolean)
+            .join("\n")
+        : "",
+      params.sandboxInfo?.enabled ? "" : "",
+      "## Workspace Files (injected)",
+      "These user-editable files are loaded by OpenClaw and included below in Project Context.",
+      "",
+      ...buildProjectContextSection({
+        files: stableContextFiles,
+        heading: "# Project Context",
+        dynamic: false,
+      }),
+      SYSTEM_PROMPT_CACHE_BOUNDARY,
+      ...buildProjectContextSection({
+        files: dynamicContextFiles,
+        heading: stableContextFiles.length > 0 ? "# Dynamic Project Context" : "# Project Context",
+        dynamic: true,
+      }),
+      extraSystemPrompt ? "## Execution Work Order" : "",
+      extraSystemPrompt ? extraSystemPrompt : "",
+      extraSystemPrompt ? "" : "",
+      providerDynamicSuffix ? providerDynamicSuffix : "",
+      providerDynamicSuffix ? "" : "",
+      "## Runtime",
+      buildRuntimeLine(runtimeInfo, runtimeChannel, runtimeCapabilities, params.defaultThinkLevel),
+      `Reasoning: ${reasoningLevel} (hidden unless on/stream).`,
+    ];
+    return executionOrchestratorLines.filter(Boolean).join("\n");
+  }
+
+  if (promptProfile === "execution_critic") {
+    const executionCriticLines = [
+      ...buildOverridablePromptSection({
+        override: providerSectionOverrides.identity,
+        fallback: [
+          "## Identity",
+          "",
+          "You are an execution critic running inside OpenClaw. You review native execution plans, handoffs, edits, validation results, and closeout risk at bounded risk boundaries.",
+          "",
+        ],
+      }),
+      ...buildOverridablePromptSection({
+        override: providerStablePrefix,
+        fallback: [],
+      }),
+      "## Tooling",
+      "Tool availability (filtered by policy):",
+      "Tool names are case-sensitive. Call tools exactly as listed.",
+      toolLines.length > 0 ? toolLines.join("\n") : "- read\n- grep\n- lsp",
+      "Tool descriptions define exact schemas and behavior. Keep the tool inventory factual; do not infer hidden tools.",
+      "",
+      ...buildOverridablePromptSection({
+        override: providerSectionOverrides.tool_call_style,
+        fallback: [
+          "## Tool Call Style",
+          "",
+          "Call tools only when a concrete source, validation, or architecture fact is needed to make the critique actionable.",
+          "Do not perform broad context acquisition. Do not mutate files.",
+          "Keep critique bounded to the asked decision boundary.",
+          "",
+        ],
+      }),
+      ...buildOverridablePromptSection({
+        override: providerSectionOverrides.execution_contract,
+        fallback: [
+          "## Critic Contract",
+          "",
+          "First line must be exactly one of: ACCEPT, REVISE, or BLOCK.",
+          "Use ACCEPT when the current path is coherent enough to continue.",
+          "Use REVISE when a specific change would reduce risk, simplify architecture, or align with a remembered/local rule.",
+          "Use BLOCK only for a concrete safety, authority, validation, evidence, or architecture violation that should stop the next action.",
+          "Every objection must name a concrete risk, missing evidence, simpler design, or violated rule that changes the next action.",
+          "No abstract feedback. No generic best practices. No mandatory second-pass review unless a new concrete risk appears.",
+          "Prefer the smallest decisive critique that lets the orchestrator or worker act.",
+          "Do not own lifecycle, persistence, terminal state, Work Queue mutation, or implementation.",
+          "",
+        ],
+      }),
+      "## Safety",
+      "Stay inside allowed paths and authority overlays.",
+      "Do not store or expose secrets, raw prompts, raw provider logs, raw tool logs, raw command logs, or unbounded logs.",
+      "Respect tool policy. RuntimeJob events and native session state are orchestration truth.",
+      "",
+      ...skillsSection,
+      "## Workspace",
+      `Your working directory is: ${displayWorkspaceDir}`,
+      workspaceGuidance,
+      ...workspaceNotes,
+      "",
+      params.sandboxInfo?.enabled ? "## Sandbox" : "",
+      params.sandboxInfo?.enabled
+        ? [
+            "Tools execute in the sandbox/runtime described here.",
+            params.sandboxInfo.containerWorkspaceDir
+              ? `Sandbox container workdir: ${sanitizeForPromptLiteral(params.sandboxInfo.containerWorkspaceDir)}`
+              : "",
+            params.sandboxInfo.workspaceDir
+              ? `Sandbox host mount source: ${sanitizeForPromptLiteral(params.sandboxInfo.workspaceDir)}`
+              : "",
+            elevated?.allowed
+              ? `Current elevated level: ${elevated.defaultLevel}.`
+              : elevated
+                ? "Current elevated level: off (elevated exec unavailable)."
+                : "",
+          ]
+            .filter(Boolean)
+            .join("\n")
+        : "",
+      params.sandboxInfo?.enabled ? "" : "",
+      "## Workspace Files (injected)",
+      "These user-editable files are loaded by OpenClaw and included below in Project Context.",
+      "",
+      ...buildProjectContextSection({
+        files: stableContextFiles,
+        heading: "# Project Context",
+        dynamic: false,
+      }),
+      SYSTEM_PROMPT_CACHE_BOUNDARY,
+      ...buildProjectContextSection({
+        files: dynamicContextFiles,
+        heading: stableContextFiles.length > 0 ? "# Dynamic Project Context" : "# Project Context",
+        dynamic: true,
+      }),
+      extraSystemPrompt ? "## Critique Work Order" : "",
+      extraSystemPrompt ? extraSystemPrompt : "",
+      extraSystemPrompt ? "" : "",
+      providerDynamicSuffix ? providerDynamicSuffix : "",
+      providerDynamicSuffix ? "" : "",
+      "## Runtime",
+      buildRuntimeLine(runtimeInfo, runtimeChannel, runtimeCapabilities, params.defaultThinkLevel),
+      `Reasoning: ${reasoningLevel} (hidden unless on/stream).`,
+    ];
+    return executionCriticLines.filter(Boolean).join("\n");
+  }
+
   if (
     promptProfile === "execution_context_scout" ||
     promptProfile === "execution_validation_scout" ||
@@ -928,6 +1159,13 @@ export function buildAgentSystemPrompt(params: {
           '- session_status: show usage/time/model state and answer "what model are we using?"',
         ].join("\n"),
     "TOOLS.md does not control tool availability; it is user guidance for how to use external tools.",
+    ...(nativeExecutionToolsVisible
+      ? [
+          "Native execution routing: for long-running, mutating, or multi-agent OpenClaw work, prefer `start_execution_session` over legacy route/intake/scheduler flows when that tool is visible.",
+          "For requests like execute the next Work Queue item, call `work_queue_execution_eligibility` first when visible, then start execution from the selected item's objective, refs, constraints, and validation signal.",
+          "Do not create RequirementMaps, SchedulerGraphPatches, route schemas, or requirement-hydration phases for native execution.",
+        ]
+      : []),
     `For long waits, avoid rapid poll loops: use ${execToolName} with enough yieldMs or ${processToolName}(action=poll, timeout=<ms>).`,
     "If a task is more complex or takes longer, spawn a sub-agent. Completion is push-based: it will auto-announce when done.",
     ...(acpHarnessSpawnAllowed

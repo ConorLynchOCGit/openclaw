@@ -6,9 +6,9 @@ import {
   buildExecutionPlatformFeatureFlagRegistry,
   evaluateExecutionPlatformFlag,
   parseCloseoutCapsule,
-  ProductionWorkflowExecutionFactory,
   projectCloseoutCapsuleOpportunitySeedsToWorkQueue,
   runProtocolPreGate,
+  buildWorkQueueExecutionEligibilityReadModel,
 } from "../../../extensions/execution-platform/runtime-api.js";
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
 import { resolveThinkingDefault } from "../../agents/model-selection.js";
@@ -62,7 +62,6 @@ import { MediaOffloadError } from "../chat-attachments.js";
 import { stripEnvelopeFromMessage, stripEnvelopeFromMessages } from "../chat-sanitize.js";
 import { augmentChatHistoryWithCliSessionImports } from "../cli-session-history.js";
 import { isSuppressedControlReplyText } from "../control-reply-text.js";
-import { runGatewayAgentTeamRuntimeJobOnce } from "../execution-platform-agent-team-runner.js";
 import { getExecutionPlatformRuntime } from "../execution-platform-http.js";
 import { ADMIN_SCOPE } from "../method-scopes.js";
 import {
@@ -2220,22 +2219,6 @@ async function findLatestWaitingHumanDecision(input: {
   return null;
 }
 
-async function readWaitingHumanDecisionMetadata(input: {
-  runtimeJobs: Awaited<ReturnType<typeof getExecutionPlatformRuntime>>["runtimeJobs"];
-  runtimeJobId: string;
-}): Promise<Record<string, unknown> | null> {
-  const artifacts = await input.runtimeJobs.listArtifacts(input.runtimeJobId, {
-    limit: 500,
-    order: "desc",
-  });
-  return (
-    artifacts
-      .filter((artifact) => artifact.artifactType === "agent_team.human_scope_decision")
-      .map((artifact) => asChatRecord(artifact.metadata))
-      .find((metadata) => metadata?.waitingForOwnerPrompt === true) ?? null
-  );
-}
-
 async function tryResumeHumanOperatorDecisionFromChat(params: {
   runtime: Awaited<ReturnType<typeof getExecutionPlatformRuntime>>;
   context: GatewayRequestContext;
@@ -2316,24 +2299,36 @@ async function tryResumeHumanOperatorDecisionFromChat(params: {
     },
     reasonCodes: ["human_operator_decision_received_from_chat"],
   });
-  const runOnce = await runAgentTeamChatJobThroughWorkerSupervisor({
-    runtimeJobs: params.runtime.runtimeJobs,
-    runtimeWorkGraphs: params.runtime.runtimeWorkGraphs,
-    runtimeToolKernel: params.runtime.runtimeToolKernel,
-    workQueue: params.runtime.workQueue,
-    runtimeJobId: resolved.runtimeJobId,
+  await params.runtime.runtimeJobs.recordEvent({
+    jobId: resolved.runtimeJobId,
+    eventType: "execution.legacy_agent_team_resume_quarantined",
     workerId: `chat:${params.sessionKey}`,
+    data: {
+      currentPhase: "legacy_agent_team_resume_quarantined",
+      humanTaskId: resolved.humanTaskId,
+      decisionRef,
+      reasonCodes: [
+        "human_operator_decision_recorded",
+        "legacy_agent_team_synchronous_resume_retired",
+      ],
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+      rawCommandLogStored: false,
+      workQueueLifecycleMutated: false,
+    },
   });
   const appended = appendAssistantTranscriptMessage({
-    message: runOnce.completed
-      ? `Human decision received and runtime job resumed: ${resolved.runtimeJobId}.`
-      : `Human decision was recorded, but the resumed runtime job needs review: ${runOnce.reasonCodes.slice(0, 8).join(", ")}`,
+    message:
+      `Human decision received and recorded for legacy runtime job ${resolved.runtimeJobId}. ` +
+      "This old agent-team resume lane no longer executes synchronously from chat; migrate or resume through native execution control.",
     sessionId: params.sessionId,
     storePath: params.storePath,
     sessionFile: params.sessionFile,
     agentId: params.agentId,
     createIfMissing: true,
-    idempotencyKey: `${params.runId}:human-decision-resumed`,
+    idempotencyKey: `${params.runId}:human-decision-recorded-legacy-quarantined`,
   });
   broadcastChatFinal({
     context: params.context,
@@ -2341,39 +2336,7 @@ async function tryResumeHumanOperatorDecisionFromChat(params: {
     sessionKey: params.sessionKey,
     message: appended.message,
   });
-  return { handled: true, runtimeJobId: resolved.runtimeJobId, teamRunId: runOnce.teamRunId };
-}
-
-async function runAgentTeamChatJobThroughWorkerSupervisor(input: {
-  runtimeJobs: Awaited<ReturnType<typeof getExecutionPlatformRuntime>>["runtimeJobs"];
-  runtimeWorkGraphs: Awaited<ReturnType<typeof getExecutionPlatformRuntime>>["runtimeWorkGraphs"];
-  runtimeToolKernel: Awaited<ReturnType<typeof getExecutionPlatformRuntime>>["runtimeToolKernel"];
-  workQueue: Awaited<ReturnType<typeof getExecutionPlatformRuntime>>["workQueue"];
-  runtimeJobId: string;
-  workerId: string;
-}): Promise<{
-  completed: boolean;
-  failed: boolean;
-  status: string;
-  teamRunId: string | null;
-  reasonCodes: string[];
-}> {
-  const supervisorResult = await runGatewayAgentTeamRuntimeJobOnce({
-    runtimeJobs: input.runtimeJobs,
-    runtimeWorkGraphs: input.runtimeWorkGraphs,
-    runtimeToolKernel: input.runtimeToolKernel,
-    workQueue: input.workQueue,
-    runtimeJobId: input.runtimeJobId,
-    workerId: input.workerId,
-    queueName: "agent-team",
-  });
-  return {
-    completed: supervisorResult.completed,
-    failed: supervisorResult.failed,
-    status: supervisorResult.status,
-    teamRunId: supervisorResult.teamRunId,
-    reasonCodes: supervisorResult.reasonCodes,
-  };
+  return { handled: true, runtimeJobId: resolved.runtimeJobId, teamRunId: null };
 }
 
 async function tryRunExecutionWorkflowChatTurn(params: {
@@ -2475,26 +2438,18 @@ async function tryRunExecutionWorkflowChatTurn(params: {
     return { handled: true, runtimeJobId: null, teamRunId: null };
   }
 
-  const runOnce = await new ProductionWorkflowExecutionFactory({
-    runtimeJobs: runtime.runtimeJobs,
-    runtimeWorkGraphs: runtime.runtimeWorkGraphs,
-    runtimeToolKernel: runtime.runtimeToolKernel,
-    workQueue: runtime.workQueue,
-    agentTeamRuntimeRunOnce: (input) =>
-      runGatewayAgentTeamRuntimeJobOnce({
-        runtimeJobs: runtime.runtimeJobs,
-        runtimeWorkGraphs: runtime.runtimeWorkGraphs,
-        runtimeToolKernel: runtime.runtimeToolKernel,
-        workQueue: runtime.workQueue,
-        runtimeJobId: input.runtimeJobId,
-        workerId: input.workerId,
-        queueName: input.queueName ?? "agent-team",
-      }),
-  }).runOnce({
-    runtimeJobId: submit.runtimeJobId,
-    workerId: `chat:${params.sessionKey}`,
-    queueName: "agent-team",
-  });
+  const launch = submit.nativeExecutionLaunch;
+  const runOnce = {
+    completed: false,
+    failed: launch?.status === "not_configured",
+    status: launch?.status === "not_configured" ? "needs_review" : "scheduled",
+    teamRunId: submit.sessionId,
+    reasonCodes: [
+      ...(submit.reasonCodes ?? []),
+      ...(launch?.reasonCodes ?? []),
+      "front_door_submit_scheduled_native_execution_session",
+    ],
+  };
   const closeout = await runtime.nativeExecutionRpc.readCloseout(submit.runtimeJobId);
   const closeoutRecord =
     closeout && typeof closeout === "object" && !Array.isArray(closeout)
@@ -2515,53 +2470,14 @@ async function tryRunExecutionWorkflowChatTurn(params: {
     typeof closeoutRecord.closeoutState === "string" ? closeoutRecord.closeoutState : "unknown";
   const reasonCodes = [
     ...(submit.reasonCodes ?? []),
-    ...("reasonCodes" in runOnce && Array.isArray(runOnce.reasonCodes) ? runOnce.reasonCodes : []),
+    ...runOnce.reasonCodes,
     ...(runOnce.failed ? ["workflow_runner_failed"] : []),
   ];
-  const runOnceStatus =
-    "status" in runOnce && typeof runOnce.status === "string" ? runOnce.status : null;
-  if (runOnceStatus === "deferred" && reasonCodes.includes("human_operator_input_required")) {
-    const humanDecision = await readWaitingHumanDecisionMetadata({
-      runtimeJobs: runtime.runtimeJobs,
-      runtimeJobId: submit.runtimeJobId,
-    });
-    if (humanDecision) {
-      const message = buildHumanOperatorDecisionAssistantText({
-        workflowId: submit.workflowId,
-        runtimeJobId: submit.runtimeJobId,
-        metadata: humanDecision,
-      });
-      const appended = appendAssistantTranscriptMessage({
-        message,
-        sessionId: params.sessionId,
-        storePath: params.storePath,
-        sessionFile: params.sessionFile,
-        agentId: params.agentId,
-        createIfMissing: true,
-        idempotencyKey: `${params.runId}:execution-platform-human-decision`,
-      });
-      broadcastChatFinal({
-        context: params.context,
-        runId: params.runId,
-        sessionKey: params.sessionKey,
-        message: appended.message,
-      });
-      return {
-        handled: true,
-        runtimeJobId: submit.runtimeJobId,
-        teamRunId:
-          "teamRunId" in runOnce && typeof runOnce.teamRunId === "string"
-            ? runOnce.teamRunId
-            : null,
-      };
-    }
-  }
   const message = buildExecutionChatAssistantText({
     accepted: submit.accepted,
     workflowId: submit.workflowId,
     runtimeJobId: submit.runtimeJobId,
-    teamRunId:
-      "teamRunId" in runOnce && typeof runOnce.teamRunId === "string" ? runOnce.teamRunId : null,
+    teamRunId: runOnce.teamRunId,
     completed: runOnce.completed,
     failed: runOnce.failed,
     closeoutState,
@@ -2586,8 +2502,7 @@ async function tryRunExecutionWorkflowChatTurn(params: {
   return {
     handled: true,
     runtimeJobId: submit.runtimeJobId,
-    teamRunId:
-      "teamRunId" in runOnce && typeof runOnce.teamRunId === "string" ? runOnce.teamRunId : null,
+    teamRunId: runOnce.teamRunId,
   };
 }
 
@@ -3252,6 +3167,47 @@ export const chatHandlers: GatewayRequestHandlers = {
         replyOptions: {
           runId: clientRunId,
           abortSignal: abortController.signal,
+          nativeExecutionSession: {
+            enabled: true,
+            readWorkQueueEligibility: async (input) => {
+              const runtime = await getExecutionPlatformRuntime(cfg);
+              return buildWorkQueueExecutionEligibilityReadModel({
+                workQueue: runtime.workQueue,
+                runtimeJobs: runtime.runtimeJobs,
+                resultLimit: input.limit,
+              });
+            },
+            startExecutionSession: async (input) => {
+              const runtime = await getExecutionPlatformRuntime(cfg);
+              const result = await runtime.nativeExecutionRpc.startSession({
+                request: input,
+                auth: {
+                  authenticated: true,
+                  actorId: `chat:${sessionKey}`.slice(0, 120),
+                  role: "operator",
+                  sessionId: sessionKey,
+                  sourceRoute: "agent_handoff",
+                },
+                queueName: "native-execution",
+                idempotencyScope: "gateway-chat-native-execution",
+              });
+              if (!result.accepted || !result.runtimeJobId || !result.sessionId) {
+                throw new Error(
+                  `Native execution session was not accepted: ${result.reasonCodes.join(", ")}`,
+                );
+              }
+              return {
+                status: result.startStatus ?? result.status,
+                runtimeJobId: result.runtimeJobId,
+                sessionId: result.sessionId,
+                agentProfile: result.agentProfile ?? undefined,
+                eventType: result.eventType ?? undefined,
+                runStatus: result.launch.status,
+                runCompleted: false,
+                runReasonCodes: result.reasonCodes.slice(0, 12),
+              };
+            },
+          },
           images: parsedImages.length > 0 ? parsedImages : undefined,
           imageOrder: imageOrder.length > 0 ? imageOrder : undefined,
           onAgentRunStart: (runId) => {

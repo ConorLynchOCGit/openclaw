@@ -328,6 +328,22 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     includeInOpenClawGroup: true,
   },
   {
+    id: "start_execution_session",
+    label: "start_execution_session",
+    description: "Start or resume a RuntimeJob-backed native execution session",
+    sectionId: "agents",
+    profiles: [],
+    includeInOpenClawGroup: true,
+  },
+  {
+    id: "work_queue_execution_eligibility",
+    label: "work_queue_execution_eligibility",
+    description: "Read deterministic Work Queue execution eligibility",
+    sectionId: "agents",
+    profiles: [],
+    includeInOpenClawGroup: true,
+  },
+  {
     id: "resolve_openclaw_path",
     label: "resolve_openclaw_path",
     description: "Resolve canonical OpenClaw path ownership before file writes",

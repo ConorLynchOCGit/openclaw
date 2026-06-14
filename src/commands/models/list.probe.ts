@@ -1,7 +1,4 @@
-import crypto from "node:crypto";
-import fs from "node:fs/promises";
 import { resolveOpenClawAgentDir } from "../../agents/agent-paths.js";
-import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
 import {
   type AuthProfileCredential,
   type AuthProfileEligibilityReasonCode,
@@ -19,11 +16,10 @@ import {
   normalizeProviderId,
   parseModelRef,
 } from "../../agents/model-selection.js";
-import { resolveDefaultAgentWorkspaceDir } from "../../agents/workspace.js";
 import {
-  resolveSessionTranscriptPath,
-  resolveSessionTranscriptsDirForAgent,
-} from "../../config/sessions/paths.js";
+  completeWithPreparedSimpleCompletionModel,
+  prepareSimpleCompletionModel,
+} from "../../agents/simple-completion-runtime.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { coerceSecretRef, normalizeSecretInputString } from "../../config/types.secrets.js";
 import { type SecretRefResolveCache, resolveSecretRefString } from "../../secrets/resolve.js";
@@ -31,13 +27,6 @@ import { redactSecrets } from "../status-all/format.js";
 import { DEFAULT_PROVIDER, formatMs } from "./shared.js";
 
 const PROBE_PROMPT = "Reply with OK. Do not use tools.";
-
-let embeddedRunnerModulePromise: Promise<typeof import("../../agents/pi-embedded.js")> | undefined;
-
-function loadEmbeddedRunnerModule() {
-  embeddedRunnerModulePromise ??= import("../../agents/pi-embedded.js");
-  return embeddedRunnerModulePromise;
-}
 
 export type AuthProbeStatus =
   | "ok"
@@ -418,15 +407,12 @@ export async function buildProbeTargets(params: {
 
 async function probeTarget(params: {
   cfg: OpenClawConfig;
-  agentId: string;
   agentDir: string;
-  workspaceDir: string;
-  sessionDir: string;
   target: AuthProbeTarget;
   timeoutMs: number;
   maxTokens: number;
 }): Promise<AuthProbeResult> {
-  const { cfg, agentId, agentDir, workspaceDir, sessionDir, target, timeoutMs, maxTokens } = params;
+  const { cfg, agentDir, target, timeoutMs, maxTokens } = params;
   if (!target.model) {
     return {
       provider: target.provider,
@@ -442,10 +428,6 @@ async function probeTarget(params: {
   }
   const model = target.model;
 
-  const sessionId = `probe-${target.provider}-${crypto.randomUUID()}`;
-  const sessionFile = resolveSessionTranscriptPath(sessionId, agentId);
-  await fs.mkdir(sessionDir, { recursive: true });
-
   const start = Date.now();
   const buildResult = (status: AuthProbeResult["status"], error?: string): AuthProbeResult => ({
     provider: target.provider,
@@ -459,27 +441,40 @@ async function probeTarget(params: {
     latencyMs: Date.now() - start,
   });
   try {
-    const { runEmbeddedPiAgent } = await loadEmbeddedRunnerModule();
-    await runEmbeddedPiAgent({
-      sessionId,
-      sessionFile,
-      agentId,
-      workspaceDir,
-      agentDir,
-      config: cfg,
-      prompt: PROBE_PROMPT,
+    const prepared = await prepareSimpleCompletionModel({
+      cfg,
       provider: target.model.provider,
-      model: target.model.model,
-      authProfileId: target.profileId,
-      authProfileIdSource: target.profileId ? "user" : undefined,
-      timeoutMs,
-      runId: `probe-${crypto.randomUUID()}`,
-      lane: `auth-probe:${target.provider}:${target.profileId ?? target.source}`,
-      thinkLevel: "off",
-      reasoningLevel: "off",
-      verboseLevel: "off",
-      streamParams: { maxTokens },
+      modelId: target.model.model,
+      agentDir,
+      profileId: target.profileId,
+      allowMissingApiKeyModes: ["aws-sdk"],
     });
+    if ("error" in prepared) {
+      throw new Error(prepared.error);
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      await completeWithPreparedSimpleCompletionModel({
+        model: prepared.model,
+        auth: prepared.auth,
+        context: {
+          messages: [
+            {
+              role: "user",
+              content: PROBE_PROMPT,
+              timestamp: Date.now(),
+            },
+          ],
+        },
+        options: {
+          maxTokens,
+          signal: controller.signal,
+        },
+      });
+    } finally {
+      clearTimeout(timer);
+    }
     return buildResult("ok");
   } catch (err) {
     const described = describeFailoverError(err);
@@ -501,12 +496,7 @@ async function runTargetsWithConcurrency(params: {
   const { cfg, targets, timeoutMs, maxTokens, onProgress } = params;
   const concurrency = Math.max(1, Math.min(targets.length || 1, params.concurrency));
 
-  const agentId = resolveDefaultAgentId(cfg);
   const agentDir = resolveOpenClawAgentDir();
-  const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId) ?? resolveDefaultAgentWorkspaceDir();
-  const sessionDir = resolveSessionTranscriptsDirForAgent(agentId);
-
-  await fs.mkdir(workspaceDir, { recursive: true });
 
   let completed = 0;
   const results: Array<AuthProbeResult | undefined> = Array.from({ length: targets.length });
@@ -527,10 +517,7 @@ async function runTargetsWithConcurrency(params: {
       });
       const result = await probeTarget({
         cfg,
-        agentId,
         agentDir,
-        workspaceDir,
-        sessionDir,
         target,
         timeoutMs,
         maxTokens,

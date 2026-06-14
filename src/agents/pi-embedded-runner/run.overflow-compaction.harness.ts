@@ -67,6 +67,10 @@ export const mockedContextEngineCompact = mockedContextEngine.compact;
 export const mockedCompactDirect = mockedContextEngine.compact;
 export const mockedRunPostCompactionSideEffects = vi.fn(async () => {});
 export const mockedEnsureRuntimePluginsLoaded = vi.fn<(params?: unknown) => void>();
+export const mockedEnsureOpenClawModelsJson = vi.fn(async () => ({
+  agentDir: "/tmp/agent-dir",
+  wrote: false,
+}));
 export const mockedPrepareProviderRuntimeAuth = vi.fn(async () => undefined);
 export const mockedRunEmbeddedAttempt =
   vi.fn<(params: unknown) => Promise<EmbeddedRunAttemptResult>>();
@@ -222,6 +226,11 @@ export function resetRunOverflowCompactionHarnessMocks(): void {
   });
 
   mockedEnsureRuntimePluginsLoaded.mockReset();
+  mockedEnsureOpenClawModelsJson.mockReset();
+  mockedEnsureOpenClawModelsJson.mockResolvedValue({
+    agentDir: "/tmp/agent-dir",
+    wrote: false,
+  });
   mockedPrepareProviderRuntimeAuth.mockReset();
   mockedPrepareProviderRuntimeAuth.mockResolvedValue(undefined);
   mockedRunEmbeddedAttempt.mockReset();
@@ -420,8 +429,8 @@ export async function loadRunOverflowCompactionHarness(): Promise<{
     sanitizeUserFacingText: vi.fn((text: unknown) => (typeof text === "string" ? text : "")),
   }));
 
-  vi.doMock("./run/attempt.js", () => ({
-    runEmbeddedAttempt: mockedRunEmbeddedAttempt,
+  vi.doMock("../interaction-attempt-runtime/attempt.js", () => ({
+    runInteractionAttempt: mockedRunEmbeddedAttempt,
   }));
 
   vi.doMock("./tool-result-truncation.js", () => ({
@@ -460,7 +469,7 @@ export async function loadRunOverflowCompactionHarness(): Promise<{
   }));
 
   vi.doMock("../models-config.js", () => ({
-    ensureOpenClawModelsJson: vi.fn(async () => {}),
+    ensureOpenClawModelsJson: mockedEnsureOpenClawModelsJson,
   }));
 
   vi.doMock("../context-window-guard.js", () => ({

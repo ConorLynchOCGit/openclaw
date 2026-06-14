@@ -69,6 +69,13 @@ describe("agent_team.product_spec_planning workflow plugin", () => {
       directImplementationFirstMovePolicy: "simple_only",
       broadImplementationFirstMoveAllowed: false,
       degradedCloseoutSuccessAllowed: false,
+      nativeExecutableNodePolicy: {
+        requiresNodeLifecycleTransitionRunner: true,
+        requiresNodeExecutionSnapshot: true,
+        requiresRunNodeAgentSession: true,
+        requiresOpenclawResourceRead: true,
+        requiresNodeFinish: true,
+      },
     });
     expect(plugin.runtimeToolFamilies).toEqual(
       expect.arrayContaining(PRODUCT_SPEC_PLANNING_PLUGIN_RUNTIME_TOOL_FAMILIES),
@@ -121,6 +128,13 @@ describe("agent_team.product_spec_planning workflow plugin", () => {
       runtimeDerivedNodeEnvelopeRequired: true,
       firstNodeApprovalRequired: true,
       degradedCloseoutSuccessAllowed: false,
+      nativeExecutableNodePolicy: {
+        requiresNodeLifecycleTransitionRunner: true,
+        requiresNodeExecutionSnapshot: true,
+        requiresRunNodeAgentSession: true,
+        requiresOpenclawResourceRead: true,
+        requiresNodeFinish: true,
+      },
     });
   });
 
@@ -225,5 +239,72 @@ describe("agent_team.product_spec_planning workflow plugin", () => {
 
     expect(validation.valid).toBe(false);
     expect(validation.reasonCodes).toContain("workflow_plugin_scheduler_tool_kernel_required");
+  });
+
+  it("requires native executable-node lifecycle policy and rejects missing fields", () => {
+    const definition = requireCanonicalWorkflowDefinition("agent_team.product_spec_planning");
+    const plugin = buildProductSpecPlanningWorkflowPlugin({
+      definition,
+      executors: productSpecExecutors(),
+    });
+
+    expect(plugin.schedulerPolicy.nativeExecutableNodePolicy).toEqual({
+      requiresNodeLifecycleTransitionRunner: true,
+      requiresNodeExecutionSnapshot: true,
+      requiresRunNodeAgentSession: true,
+      requiresOpenclawResourceRead: true,
+      requiresNodeFinish: true,
+    });
+
+    const invalidPlugin = {
+      ...plugin,
+      schedulerPolicy: {
+        ...plugin.schedulerPolicy,
+        nativeExecutableNodePolicy: {
+          requiresNodeLifecycleTransitionRunner: false,
+          requiresNodeExecutionSnapshot: false,
+          requiresRunNodeAgentSession: false,
+          requiresOpenclawResourceRead: false,
+          requiresNodeFinish: false,
+        },
+      },
+    };
+
+    const validation = validateWorkflowPlugin({ plugin: invalidPlugin, definition });
+    expect(validation.valid).toBe(false);
+    expect(validation.reasonCodes).toContain(
+      "workflow_plugin_native_node_lifecycle_transition_runner_required",
+    );
+    expect(validation.reasonCodes).toContain(
+      "workflow_plugin_native_node_execution_snapshot_required",
+    );
+    expect(validation.reasonCodes).toContain(
+      "workflow_plugin_native_run_node_agent_session_required",
+    );
+    expect(validation.reasonCodes).toContain(
+      "workflow_plugin_native_openclaw_resource_read_required",
+    );
+    expect(validation.reasonCodes).toContain("workflow_plugin_native_node_finish_required");
+  });
+
+  it("rejects old pre-worker gates as required executable-node launch authority", () => {
+    const definition = requireCanonicalWorkflowDefinition("agent_team.product_spec_planning");
+    const plugin = buildProductSpecPlanningWorkflowPlugin({
+      definition,
+      executors: productSpecExecutors(),
+    });
+
+    expect(plugin.schedulerPolicy.freshContextSnapshotsRequiredForWorkerExecution).toBe(false);
+    expect(plugin.schedulerPolicy.broadImplementationFirstMoveAllowed).toBe(false);
+    for (const retiredFamily of [
+      "resource.demand",
+      "resource.ledger",
+      "resource.selection",
+      "domain.action_gate",
+      "node.resource_materialization",
+      "resource.scout",
+    ]) {
+      expect(plugin.runtimeToolFamilies).not.toContain(retiredFamily);
+    }
   });
 });

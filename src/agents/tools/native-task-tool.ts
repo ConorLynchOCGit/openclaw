@@ -16,9 +16,10 @@ import {
   loadAgentPackRegistryEntries,
   type AgentPackRegistryEntry,
 } from "../agent-pack-registry.js";
-import { resolveAgentConfig, resolveAgentProjectRootDir } from "../agent-scope.js";
+import { resolveAgentConfig } from "../agent-scope.js";
 import { resolveSourceBackedAgentBootstrapFilePaths } from "../bootstrap-files.js";
 import { waitForAgentRun, type AgentWaitResult } from "../run-wait.js";
+import { resolveRuntimeSourceRootDirForAgent } from "../runtime-workspace-locator.js";
 import type {
   NativeTaskChildBootstrapAdmission,
   NativeTaskChildStartFailureKind,
@@ -46,7 +47,7 @@ const NATIVE_TASK_CONTINUATION_PREFIX = "openclaw-native-task-continuation://";
 const NativeTaskToolSchema = Type.Object({
   agentId: Type.String({
     description:
-      "Required child agent id. Executable node sessions allow execution-context-scout or execution-validation-scout.",
+      "Required child agent id. Executable node sessions allow configured child agents such as execution-critic, execution-context-scout, or execution-validation-scout.",
   }),
   task: Type.Optional(
     Type.String({
@@ -467,7 +468,10 @@ function resolveRequiredChildSkillContext(input: {
   }
   try {
     const config = loadConfig();
-    const workspaceDir = resolveAgentProjectRootDir(config, input.childAgentId);
+    const workspaceDir = resolveRuntimeSourceRootDirForAgent({
+      config,
+      agentId: input.childAgentId,
+    });
     const requiredSkillsSnapshot = buildRequiredActiveSkillSnapshot(workspaceDir, {
       config,
       agentId: input.childAgentId,
@@ -525,7 +529,10 @@ export async function resolveRequiredChildBootstrapAdmissionSources(
       })) ??
       requiredCanonicalDocNames.map((docName) =>
         path.join(
-          resolveAgentProjectRootDir(config, normalizedChildAgentId),
+          resolveRuntimeSourceRootDirForAgent({
+            config,
+            agentId: normalizedChildAgentId,
+          }),
           "docs",
           "agents",
           normalizedChildAgentId,
@@ -874,6 +881,34 @@ function stripParentVisibleResultText<T extends NativeTaskForegroundResult>(
   return rest;
 }
 
+function criticDecisionFromResultText(
+  resultText: string | undefined,
+): "ACCEPT" | "REVISE" | "BLOCK" | null {
+  const firstLine = resultText
+    ?.split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  if (firstLine === "ACCEPT" || firstLine === "REVISE" || firstLine === "BLOCK") {
+    return firstLine;
+  }
+  return null;
+}
+
+function criticDecisionDetails(params: {
+  requestedAgentId: string;
+  resultText?: string;
+}): Record<string, unknown> {
+  if (params.requestedAgentId !== "execution-critic") {
+    return {};
+  }
+  const decision = criticDecisionFromResultText(params.resultText);
+  return {
+    criticDecision: decision,
+    criticDecisionValid: Boolean(decision),
+    criticDecisionExpectedFirstLine: "ACCEPT|REVISE|BLOCK",
+  };
+}
+
 function enforceParentVisibleChildResultBudget(
   result: NativeTaskForegroundResult,
   maxParentVisibleChars: number,
@@ -1129,6 +1164,7 @@ function createNativeTaskToolInternal(opts: NativeTaskToolInternalOptions): AnyA
     description: [
       "Launch an allowed child agent for bounded foreground work through native OpenClaw sessions.",
       `Allowed child agents: ${allowedText}.`,
+      "Use execution-critic for bounded architecture, safety, evidence, or closeout risk review. Critic output must begin with ACCEPT, REVISE, or BLOCK.",
       "Use execution-context-scout for open-ended source, caller, test, or architecture discovery.",
       "Use execution-validation-scout for validation command selection, execution, and failure diagnosis. Validation scouts prefer repo-native focused commands such as pnpm test:file <test-file>; do not ask them to perform raw tsc flag archaeology unless a repo command failed.",
       "Do not use task for a specific file path, a specific symbol/class lookup, or code search within one to three known files; use read, grep, or glob for that.",
@@ -1214,6 +1250,10 @@ function createNativeTaskToolInternal(opts: NativeTaskToolInternalOptions): AnyA
           requestedAgentId: agentId,
           childIdentityVerified: true,
           continuationUsed: true,
+          ...criticDecisionDetails({
+            requestedAgentId: agentId,
+            resultText: parentVisibleForegroundResult.resultText,
+          }),
         };
         return textResult(
           formatNativeTaskParentVisibleText({
@@ -1272,6 +1312,10 @@ function createNativeTaskToolInternal(opts: NativeTaskToolInternalOptions): AnyA
           requestedAgentId: agentId,
           childIdentityVerified: true,
           nativeChildSessionRuntime: true,
+          ...criticDecisionDetails({
+            requestedAgentId: agentId,
+            resultText: parentVisibleForegroundResult.resultText,
+          }),
         };
         return textResult(
           formatNativeTaskParentVisibleText({
@@ -1417,6 +1461,10 @@ function createNativeTaskToolInternal(opts: NativeTaskToolInternalOptions): AnyA
         sourceTool: "task",
         requestedAgentId: agentId,
         childIdentityVerified: true,
+        ...criticDecisionDetails({
+          requestedAgentId: agentId,
+          resultText: parentVisibleForegroundResult.resultText,
+        }),
       };
       return textResult(
         formatNativeTaskParentVisibleText({

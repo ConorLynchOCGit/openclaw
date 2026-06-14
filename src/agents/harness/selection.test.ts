@@ -14,7 +14,7 @@ const piRunAttempt = vi.fn(async () => createAttemptResult("pi"));
 vi.mock("./builtin-pi.js", () => ({
   createPiAgentHarness: (): AgentHarness => ({
     id: "pi",
-    label: "PI embedded agent",
+    label: "OpenClaw built-in interaction runtime",
     supports: () => ({ supported: true, priority: 0 }),
     runAttempt: piRunAttempt,
   }),
