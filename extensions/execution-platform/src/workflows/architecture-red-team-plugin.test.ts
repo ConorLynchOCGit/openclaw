@@ -4,8 +4,8 @@ import {
   buildArchitectureRedTeamWorkflowPlugin,
 } from "./architecture-red-team-plugin.ts";
 import { validateRuntimeCapabilityExecutorCoverage } from "./runtime-node-capability-registry.ts";
-import type { RuntimeWorkGraphNodeExecutor } from "./runtime-work-graph-scheduler.ts";
 import { requireCanonicalWorkflowDefinition } from "./workflow-definition-registry.ts";
+import type { RuntimeWorkGraphNodeExecutor } from "./workflow-node-execution-contracts.ts";
 import { validateWorkflowPlugin, workflowPluginResolutionFor } from "./workflow-plugin.ts";
 
 const executor: RuntimeWorkGraphNodeExecutor = {

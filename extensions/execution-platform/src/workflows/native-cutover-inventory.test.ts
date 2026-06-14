@@ -14,6 +14,9 @@ describe("native execution cutover inventory", () => {
     const gatewayHttp = readRepoFile("src/gateway/execution-platform-http.ts");
     const chat = readRepoFile("src/gateway/server-methods/chat.ts");
     const workflowIndex = readRepoFile("extensions/execution-platform/src/workflows/index.ts");
+    const codexBridgeIndex = readRepoFile(
+      "extensions/execution-platform/src/codex-bridge/index.ts",
+    );
 
     for (const source of [gatewayHttp, chat]) {
       expect(source).not.toContain("/api/execution-platform/queue-runner/run-once");
@@ -26,12 +29,33 @@ describe("native execution cutover inventory", () => {
     }
     expect(gatewayHttp).not.toContain("class ResidentNativeExecutionWorkerSupervisor");
     expect(gatewayHttp).not.toContain("runGatewayNativeExecutionSessionRuntimeJob");
+    expect(codexBridgeIndex).not.toContain("queued-bridge-runner");
+    expect(codexBridgeIndex).not.toContain("production-supervisor");
+    expect(codexBridgeIndex).not.toContain("always-on-supervisor-boundary");
     expect(workflowIndex).not.toContain("./node-agent-session.ts");
     expect(
       fs.existsSync(
         path.join(REPO_ROOT, "extensions/execution-platform/src/workflows/node-agent-session.ts"),
       ),
     ).toBe(false);
+    for (const relativePath of [
+      "extensions/execution-platform/src/codex-bridge/queued-bridge-runner.ts",
+      "extensions/execution-platform/src/codex-bridge/queued-bridge-runner-command.ts",
+      "extensions/execution-platform/src/codex-bridge/queued-bridge-runner-endpoint.ts",
+      "extensions/execution-platform/src/codex-bridge/production-supervisor.ts",
+      "extensions/execution-platform/src/codex-bridge/production-supervisor-design.ts",
+      "extensions/execution-platform/src/codex-bridge/always-on-supervisor-boundary.ts",
+      "extensions/execution-platform/src/codex-bridge/coding-team-runtime-job-runner.ts",
+      "extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts",
+      "extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.test.ts",
+      "extensions/execution-platform/src/codex-bridge/coding-team-runtime-adapter.ts",
+      "extensions/execution-platform/src/codex-bridge/coding-team-runtime-adapter.test.ts",
+      "scripts/execution-platform-run-queued-bridge-once.mjs",
+      "scripts/execution-platform-run-autonomy-90-production-pass.mjs",
+      "scripts/execution-platform-run-production-autonomy-hardening-pass.mjs",
+    ]) {
+      expect(fs.existsSync(path.join(REPO_ROOT, relativePath))).toBe(false);
+    }
     expect(
       fs.existsSync(
         path.join(
@@ -603,6 +627,9 @@ describe("native execution cutover inventory", () => {
     const nativeRunner = readRepoFile("src/gateway/native-execution-session-runtime-job.ts");
     const startService = readRepoFile("src/gateway/native-execution-start-service.ts");
     const agentRuntime = readRepoFile("src/agents/openclaw-agent-runtime.ts");
+    const nativeContracts = readRepoFile(
+      "extensions/execution-platform/src/workflows/native-agentic-orchestration.ts",
+    );
 
     expect(nativeRunner).toContain("input.agentRuntime.acceptNativeExecutionSession");
     expect(nativeRunner).toContain("commitAcceptedNativeExecutionJob");
@@ -619,6 +646,10 @@ describe("native execution cutover inventory", () => {
     expect(startService).not.toContain("commitAdmittedNativeExecutionJob");
     expect(startService).not.toContain("NativeExecutionAdmittedRuntimeSnapshot");
     expect(startService).not.toContain("native-execution-admission");
+    expect(nativeContracts).not.toContain("export async function startNativeExecutionSession");
+    expect(nativeContracts).not.toContain("createNativeExecutionSessionStartTool");
+    expect(nativeContracts).not.toContain("resumeRuntimeJobId");
+    expect(nativeContracts).not.toContain("resumeRequestId");
     expect(nativeRunner).not.toContain("native execution job has no committed admission snapshot");
     expect(agentRuntime).toContain("export class OpenClawAgentRuntime");
     expect(agentRuntime).toContain("static async build");

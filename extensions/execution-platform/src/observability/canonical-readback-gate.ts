@@ -9,7 +9,6 @@ export type CanonicalReadbackGateKind =
   | "discovery_brief_blocked"
   | "discovery_brief_payload_over_profile"
   | "graph_compile_invalid"
-  | "work_intent_compile"
   | "node_agent_session_ready"
   | "node_agent_session_escalation_required"
   | "discovery_brief_missing"
@@ -30,7 +29,7 @@ export type CanonicalReadbackGate = {
   state: "present" | "missing";
   gateKind: CanonicalReadbackGateKind;
   gateStatus: "ready" | "running" | "blocked" | "needs_review" | "terminal" | "missing";
-  confidence: "canonical" | "derived" | "stale_checkpoint_fallback";
+  confidence: "canonical" | "derived";
   sourceKind:
     | "terminal_outcome"
     | "frontier_root_cause"
@@ -38,7 +37,6 @@ export type CanonicalReadbackGate = {
     | "branch_scoped_frontier"
     | "scheduler_frontier"
     | "latest_run_state"
-    | "checkpoint_boundary"
     | "missing";
   sourceRefs: string[];
   graphId: string | null;
@@ -94,7 +92,6 @@ export type CanonicalReadbackGate = {
   failedEvidenceRefs: string[];
   validationPhase: string | null;
   validationPhaseCompatibility: string | null;
-  staleCheckpointKind: string | null;
   rawPromptStored: false;
   rawResponseStored: false;
   rawProviderLogStored: false;
@@ -113,7 +110,6 @@ type GateInput = {
   rootCause?: Record<string, unknown> | null;
   noProgress?: Record<string, unknown> | null;
   schedulerModelCallEnvelope?: Record<string, unknown> | null;
-  checkpointKind?: unknown;
   terminalStatus?: unknown;
   adapterTerminalStatus?: unknown;
 };
@@ -180,22 +176,6 @@ const BLOCKED_STATUSES = new Set(["blocked", "blocked_context", "needs_review", 
 const RUNNING_STATUSES = new Set(["running", "in_progress", "executing"]);
 const READY_STATUSES = new Set(["ready", "executable", "selected"]);
 
-const CHECKPOINT_GATE_KIND: Record<string, CanonicalReadbackGateKind> = {
-  prompt_submission: "prompt_submission",
-  front_door_routing: "front_door_routing",
-  mission_ledger: "mission_ledger",
-  requirement_map: "requirement_map",
-  work_intent_compile: "work_intent_compile",
-  node_agent_session_ready: "node_agent_session_ready",
-  node_agent_session_escalation_required: "node_agent_session_escalation_required",
-  split_child_contract: "split_child_contract",
-  before_worker_invocation: "node_agent_session_ready",
-  worker_execution: "worker_execution",
-  review_validation: "review_validation",
-  before_closeout: "closeout",
-  closeout: "closeout",
-};
-
 const CANONICAL_READBACK_GATE_KIND_VALUES = new Set<CanonicalReadbackGateKind>([
   "missing_runtime_state",
   "prompt_submission",
@@ -207,7 +187,6 @@ const CANONICAL_READBACK_GATE_KIND_VALUES = new Set<CanonicalReadbackGateKind>([
   "discovery_brief_blocked",
   "discovery_brief_payload_over_profile",
   "graph_compile_invalid",
-  "work_intent_compile",
   "node_agent_session_ready",
   "node_agent_session_escalation_required",
   "discovery_brief_missing",
@@ -227,10 +206,6 @@ function explicitCanonicalGateKind(value: unknown): CanonicalReadbackGateKind | 
   const normalized = bounded(value, 180);
   if (!normalized) {
     return null;
-  }
-  const mapped = CHECKPOINT_GATE_KIND[normalized];
-  if (mapped) {
-    return mapped;
   }
   return CANONICAL_READBACK_GATE_KIND_VALUES.has(normalized as CanonicalReadbackGateKind)
     ? (normalized as CanonicalReadbackGateKind)
@@ -588,7 +563,7 @@ function gateStatus(
   if (sourceKind === "frontier_root_cause" || sourceKind === "no_progress_signature") {
     return "needs_review";
   }
-  if (sourceKind === "scheduler_frontier" || sourceKind === "checkpoint_boundary") {
+  if (sourceKind === "scheduler_frontier") {
     return "blocked";
   }
   if (!branch) {
@@ -657,7 +632,6 @@ export function buildCanonicalReadbackGate(input: GateInput): CanonicalReadbackG
   const branches = branchRecords(input);
   const branch = selectOwnerBranch(branches);
   const terminalStatus = firstBounded(input.terminalStatus, input.adapterTerminalStatus);
-  const checkpointKind = bounded(input.checkpointKind, 220);
   const rootCauseMissingFields = boundedStrings(rootCause?.missingFields, 40);
   const rootCauseReasonCodes = boundedStrings(rootCause?.reasonCodes, 40);
   const schedulerMissingFields = boundedStrings(schedulerModelCallEnvelope?.missingFields, 20);
@@ -683,29 +657,19 @@ export function buildCanonicalReadbackGate(input: GateInput): CanonicalReadbackG
             ? "scheduler_frontier"
             : progressHasIntakeGate(progress)
               ? "latest_run_state"
-              : checkpointKind
-                ? "checkpoint_boundary"
-                : "missing";
+              : "missing";
   const confidence: CanonicalReadbackGate["confidence"] =
-    sourceKind === "checkpoint_boundary"
-      ? "stale_checkpoint_fallback"
-      : sourceKind === "latest_run_state"
-        ? "derived"
-        : sourceKind === "missing"
-          ? "derived"
-          : "canonical";
+    sourceKind === "latest_run_state" || sourceKind === "missing" ? "derived" : "canonical";
   const gateKind = terminalStatus
     ? terminalGateKind(terminalStatus)
-    : sourceKind === "checkpoint_boundary"
-      ? (CHECKPOINT_GATE_KIND[checkpointKind!] ?? "missing_runtime_state")
-      : sourceKind === "missing"
-        ? "missing_runtime_state"
-        : gateKindFromCanonicalState({
-            branch,
-            progress,
-            rootCause,
-            schedulerFrontier: input.schedulerFrontier ?? null,
-          });
+    : sourceKind === "missing"
+      ? "missing_runtime_state"
+      : gateKindFromCanonicalState({
+          branch,
+          progress,
+          rootCause,
+          schedulerFrontier: input.schedulerFrontier ?? null,
+        });
 
   return {
     artifactKind: "execution_platform.canonical_readback_gate",
@@ -933,7 +897,6 @@ export function buildCanonicalReadbackGate(input: GateInput): CanonicalReadbackG
         ...boundedStrings(noProgress?.blockerReasonCodes, 40),
         ...schedulerReasonCodes,
         ...boundedStrings(progress.reasonCodes, 40),
-        ...(confidence === "stale_checkpoint_fallback" ? ["stale_checkpoint_fallback"] : []),
       ]),
     ].slice(0, 60),
     nextLegalTransition: firstBounded(
@@ -958,7 +921,6 @@ export function buildCanonicalReadbackGate(input: GateInput): CanonicalReadbackG
       branch?.validationPhaseCompatibility,
       progress.validationPhaseCompatibility,
     ),
-    staleCheckpointKind: confidence === "stale_checkpoint_fallback" ? checkpointKind : null,
     rawPromptStored: false,
     rawResponseStored: false,
     rawProviderLogStored: false,

@@ -282,18 +282,6 @@ describe("latest run state", () => {
         expansionAdmissionNextTransition: "persist_admitted_page",
         expansionAdmissionPrerequisiteCritical: false,
         expansionAdmissionReasonCodes: ["expansion_accepted_paged"],
-        boundaryReplayCheckpointKind: "before_worker_invocation",
-        boundaryReplayCheckpointRefs: [
-          "runtime-job://job-1/boundary-replay/graph-1/before_worker_invocation/checkpoint-1",
-        ],
-        boundaryReplayGraphCheckpointRefs: [
-          "runtime-work-graph://checkpoint/boundary-replay-after-resource",
-        ],
-        replayStartPolicy: "allowed_from_checkpoint",
-        replaySafetyStatus: "safe_to_replay",
-        replayFreshnessStatus: "fresh",
-        replayContinuationMode: "run_node",
-        nextReplayBoundary: "before_worker_invocation",
         heapPhaseSnapshots: [
           {
             snapshotRef: "heap-phase://job-1/action-gate-blocked",
@@ -454,20 +442,7 @@ describe("latest run state", () => {
       rawProviderLogStored: false,
       hiddenReasoningStored: false,
     });
-    expect(state.boundaryReplay).toMatchObject({
-      state: "present",
-      latestCheckpointKind: "before_worker_invocation",
-      checkpointRefs: [
-        "runtime-job://job-1/boundary-replay/graph-1/before_worker_invocation/checkpoint-1",
-      ],
-      graphCheckpointRefs: ["runtime-work-graph://checkpoint/boundary-replay-after-resource"],
-      replayStartPolicy: "allowed_from_checkpoint",
-      replaySafetyStatus: "safe_to_replay",
-      replayFreshnessStatus: "fresh",
-      replayContinuationMode: "run_node",
-      currentReplayBoundary: "before_worker_invocation",
-      nextReplayBoundary: "before_worker_invocation",
-    });
+    expect(JSON.stringify(state)).not.toContain("boundaryReplay");
     expect(state.activeFrontier.branchStates).toMatchObject([
       {
         branchId: "branch-1",

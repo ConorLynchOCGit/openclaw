@@ -3,8 +3,8 @@ import { buildAgentTeamCodingWorkflowPlugin } from "./agent-team-coding-plugin.t
 import { buildArchitectureRedTeamWorkflowPlugin } from "./architecture-red-team-plugin.ts";
 import { buildProductSpecPlanningWorkflowPlugin } from "./product-spec-planning-plugin.ts";
 import type { RuntimeNodeCapabilityManifest } from "./runtime-node-capability-registry.ts";
-import type { RuntimeWorkGraphNodeExecutor } from "./runtime-work-graph-scheduler.ts";
 import type { WorkflowDefinition } from "./workflow-definition.ts";
+import type { RuntimeWorkGraphNodeExecutor } from "./workflow-node-execution-contracts.ts";
 import type { WorkflowPlugin } from "./workflow-plugin.ts";
 
 export type WorkflowPluginFactoryInput = {

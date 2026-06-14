@@ -1,12 +1,17 @@
 import type { JsonValue } from "../runtime-job-repository.ts";
 import type { RuntimeToolFamily } from "../runtime-tool-call/runtime-tool-types.ts";
-import type { RuntimeWorkGraphNodeExecutor } from "./runtime-work-graph-scheduler.ts";
+import type { RuntimeNodeCapabilityManifest } from "./runtime-node-capability-registry.ts";
 import type {
-  RuntimeWorkGraphRoleCoverageProfile,
-  RuntimeWorkGraphSchedulerOptions,
-} from "./runtime-work-graph-scheduler.ts";
+  SchedulerClosurePolicy,
+  SchedulerClosureRunMode,
+} from "./scheduler-graph-closure-policy.ts";
 import type { WorkflowDefinition } from "./workflow-definition.ts";
 import type {
+  RuntimeWorkGraphNodeExecutor,
+  RuntimeWorkGraphRoleCoverageProfile,
+} from "./workflow-node-execution-contracts.ts";
+import type {
+  WorkflowEntryNodePolicy,
   WorkflowResourceNeed,
   WorkflowPhase,
   WorkflowRoleClass,
@@ -29,7 +34,6 @@ export type WorkflowPluginNativeExecutableNodePolicy = {
 };
 
 export type WorkflowPluginSchedulerPolicy = {
-  requireCostAwareCapabilityPolicy: boolean;
   requireEvidenceClaimsForMissionLedger: boolean;
   requireSchedulerToolKernel: boolean;
   stagedGraphAcceptanceRequired: boolean;
@@ -50,20 +54,18 @@ export type WorkflowPluginSchedulerPolicy = {
   nativeExecutableNodePolicy: WorkflowPluginNativeExecutableNodePolicy;
 };
 
-export type WorkflowPluginSchedulerOptions = Pick<
-  RuntimeWorkGraphSchedulerOptions,
-  | "requireCostAwareCapabilityPolicy"
-  | "requireEvidenceClaimsForMissionLedger"
-  | "requireSchedulerToolKernel"
-  | "deferCloseoutUntilExecutableGraphComplete"
-  | "roleCoverageProfile"
-  | "capabilityRegistrySummary"
-  | "capabilityManifest"
-  | "schedulerClosurePolicy"
-  | "closureRunMode"
-  | "entryNodePolicy"
-  | "maxParallelNodeExecutions"
->;
+export type WorkflowPluginSchedulerOptions = {
+  requireEvidenceClaimsForMissionLedger?: boolean;
+  requireSchedulerToolKernel?: boolean;
+  deferCloseoutUntilExecutableGraphComplete?: boolean;
+  roleCoverageProfile?: RuntimeWorkGraphRoleCoverageProfile | null;
+  capabilityRegistrySummary?: JsonValue | null;
+  capabilityManifest?: RuntimeNodeCapabilityManifest;
+  schedulerClosurePolicy?: SchedulerClosurePolicy | null;
+  closureRunMode?: SchedulerClosureRunMode;
+  entryNodePolicy?: WorkflowEntryNodePolicy | null;
+  maxParallelNodeExecutions?: number;
+};
 
 export type WorkflowPlugin = {
   artifactKind: "workflow_plugin";

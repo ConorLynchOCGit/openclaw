@@ -14,10 +14,8 @@ import {
   RuntimeJobRepository,
 } from "../runtime-job-repository.ts";
 import { WorkQueueRepository } from "../work-queue/work-queue-repository.ts";
-import {
-  NATIVE_EXECUTION_SESSION_JOB_TYPE,
-  startNativeExecutionSession,
-} from "../workflows/native-agentic-orchestration.ts";
+import { NATIVE_EXECUTION_SESSION_JOB_TYPE } from "../workflows/native-agentic-orchestration.ts";
+import { startAcceptedNativeExecutionSessionForTest } from "../workflows/native-execution-test-fixtures.ts";
 import {
   NativeExecutionRpcService,
   type NativeExecutionRpcDependencies,
@@ -64,7 +62,7 @@ describe("native execution rpc", () => {
     dependencies: NativeExecutionRpcDependencies,
   ): NativeExecutionRpcService {
     return new NativeExecutionRpcService({
-      startExecutionSession: async (input) => startNativeExecutionSession(input),
+      startExecutionSession: async (input) => startAcceptedNativeExecutionSessionForTest(input),
       ...dependencies,
     });
   }
@@ -162,7 +160,7 @@ describe("native execution rpc", () => {
     try {
       await applyExecutionPlatformMigrations(db.sql);
       const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
-      const started = await startNativeExecutionSession({
+      const started = await startAcceptedNativeExecutionSessionForTest({
         runtimeJobs,
         request: {
           objective: "Execute native session control proof.",
@@ -220,7 +218,7 @@ describe("native execution rpc", () => {
       }> = [];
       const rpc = createNativeExecutionRpcServiceForTest({
         runtimeJobs,
-        startExecutionSession: async (input) => startNativeExecutionSession(input),
+        startExecutionSession: async (input) => startAcceptedNativeExecutionSessionForTest(input),
         launchNativeExecutionSession: async (input) => {
           launchCalls.push(input);
         },

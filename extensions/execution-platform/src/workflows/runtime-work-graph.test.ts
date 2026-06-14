@@ -102,8 +102,8 @@ describe("runtime work graph repository", () => {
       });
       const first = await graphs.addNode({
         graphId: "graph-repeat",
-        nodeId: "work-intent-1",
-        nodeKind: "work_intent",
+        nodeId: "orchestrator-plan-1",
+        nodeKind: "orchestrator_plan",
         assignedRole: "planning_orchestrator",
         nodeStatus: "succeeded",
       });
@@ -113,7 +113,7 @@ describe("runtime work graph repository", () => {
         nodeKind: "implementation",
         assignedRole: "implementation_engineer",
         nodeStatus: "succeeded",
-        inputHandoffRefs: ["runtime-work-graph://node/work-intent-1"],
+        inputHandoffRefs: ["runtime-work-graph://node/orchestrator-plan-1"],
       });
       await graphs.recordRoleInvocation({
         graphId: "graph-repeat",
@@ -387,8 +387,8 @@ describe("runtime work graph repository", () => {
       await expect(
         graphs.addNode({
           graphId: "graph-manifest-only-node-metadata",
-          nodeId: "work-intent-with-requirement-body",
-          nodeKind: "work_intent",
+          nodeId: "orchestrator-plan-with-requirement-body",
+          nodeKind: "orchestrator_plan",
           assignedRole: "planning_orchestrator",
           metadata: {
             sourceMaterialRequirementPacket: {

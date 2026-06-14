@@ -145,7 +145,7 @@ export function projectProofHarnessCanonicalGate(input: {
         blockerCode: "architecture_transition_topology_invalid",
         blockerSummary:
           "Retired graph-level resource scout/context supply/context synthesis topology cannot satisfy the proof harness.",
-        nextLegalTransition: "compile_work_intent_graph",
+        nextLegalTransition: "compile_scheduler_graph_patch",
         reasonCodes: topologyReasonCodes,
       })
     : staleCheckpointGateRejected && baseGate.sourceKind === "missing"
@@ -157,7 +157,6 @@ export function projectProofHarnessCanonicalGate(input: {
           blockerCode: "stale_checkpoint_gate_rejected",
           blockerSummary:
             "Checkpoint label is retired and no canonical node-local state was available.",
-          staleCheckpointKind: checkpointKind,
           reasonCodes: staleReasonCodes,
         })
       : withGateOverride(baseGate, {

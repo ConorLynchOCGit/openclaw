@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildAgentTeamCodingWorkflowPlugin } from "./agent-team-coding-plugin.ts";
-import type { RuntimeWorkGraphNodeExecutor } from "./runtime-work-graph-scheduler.ts";
 import { requireCanonicalWorkflowDefinition } from "./workflow-definition-registry.ts";
+import type { RuntimeWorkGraphNodeExecutor } from "./workflow-node-execution-contracts.ts";
 import { validateWorkflowPlugin, workflowPluginResolutionFor } from "./workflow-plugin.ts";
 
 const executor: RuntimeWorkGraphNodeExecutor = {

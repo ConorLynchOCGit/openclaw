@@ -74,7 +74,7 @@ export type RuntimeNodeCapability = {
   requiredLifecycleTools: string[];
   domainResourceKinds: SharedDomainResourceKind[];
   validLifecyclePhases: Array<
-    | "work_intent"
+    | "runtime_node"
     | "executable"
     | "running"
     | "completed"
@@ -90,7 +90,7 @@ export type RuntimeNodeCapability = {
   requiredValidationKinds: string[];
   requiredAuthorityScopes: string[];
   requiredEvidenceClaimKinds: string[];
-  canRunAsWorkIntent: boolean;
+  canRunAsRuntimeNode: boolean;
   canRunAsExecutable: boolean;
   defaultRepairTransition:
     | "node.agent_session.invoke"
@@ -216,7 +216,7 @@ export type ProviderCapabilityProfile = {
   requiredValidationKinds: string[];
   requiredAuthorityScopes: string[];
   requiredEvidenceClaimKinds: string[];
-  canRunAsWorkIntent: boolean;
+  canRunAsRuntimeNode: boolean;
   canRunAsExecutable: boolean;
   defaultRepairTransition: RuntimeNodeCapability["defaultRepairTransition"];
   defaultBlockedTransition: RuntimeNodeCapability["defaultBlockedTransition"];
@@ -331,7 +331,7 @@ type RuntimeNodeCapabilitySeed = Omit<
   | "requiredValidationKinds"
   | "requiredAuthorityScopes"
   | "requiredEvidenceClaimKinds"
-  | "canRunAsWorkIntent"
+  | "canRunAsRuntimeNode"
   | "canRunAsExecutable"
   | "defaultRepairTransition"
   | "defaultBlockedTransition"
@@ -389,7 +389,7 @@ function capability(input: RuntimeNodeCapabilitySeed): RuntimeNodeCapability {
     requiredValidationKinds: inferRequiredValidationKinds(input),
     requiredAuthorityScopes: input.authorityBoundaries,
     requiredEvidenceClaimKinds: inferEvidenceKinds(input),
-    canRunAsWorkIntent: input.roleClass !== "human",
+    canRunAsRuntimeNode: input.roleClass !== "human",
     canRunAsExecutable: !input.allowedAdapters.includes("contract_only"),
     defaultRepairTransition: inferDefaultRepairTransition(input),
     defaultBlockedTransition: inferDefaultBlockedTransition(input),
@@ -531,7 +531,7 @@ export function providerCapabilityProfileForCapability(
     requiredValidationKinds: capability.requiredValidationKinds,
     requiredAuthorityScopes: capability.requiredAuthorityScopes,
     requiredEvidenceClaimKinds: capability.requiredEvidenceClaimKinds,
-    canRunAsWorkIntent: capability.canRunAsWorkIntent,
+    canRunAsRuntimeNode: capability.canRunAsRuntimeNode,
     canRunAsExecutable: capability.canRunAsExecutable,
     defaultRepairTransition: capability.defaultRepairTransition,
     defaultBlockedTransition: capability.defaultBlockedTransition,
@@ -749,7 +749,7 @@ function inferValidLifecyclePhases(
 ): RuntimeNodeCapability["validLifecyclePhases"] {
   if (input.roleClass === "human") {
     return [
-      "work_intent",
+      "runtime_node",
       "executable",
       "running",
       "completed",
@@ -760,7 +760,7 @@ function inferValidLifecyclePhases(
   }
   if (input.roleClass === "orchestration") {
     return [
-      "work_intent",
+      "runtime_node",
       "executable",
       "running",
       "completed",
@@ -772,7 +772,7 @@ function inferValidLifecyclePhases(
   }
   if (input.roleClass === "implementation" || input.roleClass === "docs") {
     return [
-      "work_intent",
+      "runtime_node",
       "executable",
       "running",
       "completed",
@@ -783,7 +783,7 @@ function inferValidLifecyclePhases(
     ];
   }
   return [
-    "work_intent",
+    "runtime_node",
     "executable",
     "running",
     "completed",

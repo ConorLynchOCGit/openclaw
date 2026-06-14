@@ -7,9 +7,9 @@ import {
 } from "./product-spec-planning-plugin.ts";
 import { productSpecPlanningWorkflowContract } from "./product-spec-planning-workflow.ts";
 import { validateRuntimeCapabilityExecutorCoverage } from "./runtime-node-capability-registry.ts";
-import type { RuntimeWorkGraphNodeExecutor } from "./runtime-work-graph-scheduler.ts";
 import { RuntimeWorkflowGraphEngine } from "./runtime-workflow-graph-engine.ts";
 import { requireCanonicalWorkflowDefinition } from "./workflow-definition-registry.ts";
+import type { RuntimeWorkGraphNodeExecutor } from "./workflow-node-execution-contracts.ts";
 import { validateWorkflowPlugin, workflowPluginResolutionFor } from "./workflow-plugin.ts";
 
 const executor: RuntimeWorkGraphNodeExecutor = {
@@ -54,7 +54,6 @@ describe("agent_team.product_spec_planning workflow plugin", () => {
       productionEnabled: true,
     });
     expect(plugin.schedulerPolicy).toMatchObject({
-      requireCostAwareCapabilityPolicy: true,
       requireEvidenceClaimsForMissionLedger: true,
       requireSchedulerToolKernel: true,
       stagedGraphAcceptanceRequired: true,

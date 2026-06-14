@@ -2,7 +2,6 @@ import type { JsonValue, RuntimeJob } from "../runtime-job-repository.ts";
 import type { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel.ts";
 import type { RuntimeToolFamily } from "../runtime-tool-call/runtime-tool-types.ts";
 import type { RuntimeWorkGraphRepository } from "./runtime-work-graph-repository.ts";
-import type { RuntimeWorkGraphNodeExecutor } from "./runtime-work-graph-scheduler.ts";
 import {
   DEFAULT_WORKFLOW_DEFINITION_REGISTRY,
   type WorkflowDefinitionRegistry,
@@ -13,6 +12,7 @@ import {
   workflowDefinitionResolutionFor,
   type WorkflowDefinition,
 } from "./workflow-definition.ts";
+import type { RuntimeWorkGraphNodeExecutor } from "./workflow-node-execution-contracts.ts";
 import {
   DEFAULT_WORKFLOW_PLUGIN_REGISTRY,
   type WorkflowPluginRegistry,

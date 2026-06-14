@@ -2439,7 +2439,7 @@ async function tryRunExecutionWorkflowChatTurn(params: {
   }
 
   const launch = submit.nativeExecutionLaunch;
-  const runOnce = {
+  const nativeLaunchSummary = {
     completed: false,
     failed: launch?.status === "not_configured",
     status: launch?.status === "not_configured" ? "needs_review" : "scheduled",
@@ -2470,16 +2470,16 @@ async function tryRunExecutionWorkflowChatTurn(params: {
     typeof closeoutRecord.closeoutState === "string" ? closeoutRecord.closeoutState : "unknown";
   const reasonCodes = [
     ...(submit.reasonCodes ?? []),
-    ...runOnce.reasonCodes,
-    ...(runOnce.failed ? ["workflow_runner_failed"] : []),
+    ...nativeLaunchSummary.reasonCodes,
+    ...(nativeLaunchSummary.failed ? ["workflow_runner_failed"] : []),
   ];
   const message = buildExecutionChatAssistantText({
     accepted: submit.accepted,
     workflowId: submit.workflowId,
     runtimeJobId: submit.runtimeJobId,
-    teamRunId: runOnce.teamRunId,
-    completed: runOnce.completed,
-    failed: runOnce.failed,
+    teamRunId: nativeLaunchSummary.teamRunId,
+    completed: nativeLaunchSummary.completed,
+    failed: nativeLaunchSummary.failed,
     closeoutState,
     reasonCodes,
     closeout: closeoutRecord,
@@ -2502,7 +2502,7 @@ async function tryRunExecutionWorkflowChatTurn(params: {
   return {
     handled: true,
     runtimeJobId: submit.runtimeJobId,
-    teamRunId: runOnce.teamRunId,
+    teamRunId: nativeLaunchSummary.teamRunId,
   };
 }
 

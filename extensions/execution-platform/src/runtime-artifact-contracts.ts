@@ -239,13 +239,6 @@ const BODY_ARTIFACT_CONTRACTS: RuntimeArtifactContract[] = [
     legacyBodyKeys: ["workerEditReviewArtifact", "actionReviewArtifact", "reviewArtifact", "body"],
   }),
   payloadContract({
-    artifactType: "execution.generic_orchestration_runtime_result",
-    contractId: "runtime-artifact.generic-orchestration-runtime-result.v1",
-    domain: "scheduler",
-    bodySchemaRef: "GenericOrchestrationRuntimeResult",
-    legacyBodyKeys: ["runtimeResult", "schedulerSnapshot", "body"],
-  }),
-  payloadContract({
     artifactType: "execution_platform.mission_ledger_stability_diagnostic_run",
     contractId: "runtime-artifact.mission-ledger-stability-diagnostic-run.v1",
     domain: "diagnostic",

@@ -5,7 +5,6 @@ import type {
   DynamicCodingTeamToolTurnInput,
 } from "../codex-bridge/dynamic-coding-team-orchestrator.ts";
 import type { JsonValue, RuntimeJobRepository } from "../runtime-job-repository.ts";
-import type { BoundaryReplayCheckpointKind } from "./boundary-replay-checkpoints.ts";
 import {
   executeModelToolTurn,
   type ModelToolTurnParallelismPolicy,
@@ -59,15 +58,12 @@ type IntakeProgress = {
 };
 
 type BoundaryCheckpointInput = {
-  checkpointKind: BoundaryReplayCheckpointKind | "requirement_map";
+  checkpointKind: "requirement_map";
   acceptedArtifactRefs?: string[];
   upstreamArtifactRefs?: string[];
   currentCommitmentIds?: string[];
   openCommitmentIds?: string[];
   satisfiedCommitmentIds?: string[];
-  replayContinuationMode?: "continue_scheduler" | "repair_boundary" | "finalize_closeout";
-  replayStartPolicy?: "allowed_from_checkpoint" | "blocked_until_repair" | "diagnostic_only";
-  replaySafetyStatus?: "safe_to_replay" | "blocked" | "needs_review";
   reasonCodes?: string[];
 };
 
@@ -909,9 +905,6 @@ export class IntakeStageRunner {
       currentCommitmentIds: requirementMap.requirements
         .map((requirement) => requirement.requirementId)
         .slice(0, 80),
-      replayContinuationMode: "continue_scheduler",
-      replayStartPolicy: "allowed_from_checkpoint",
-      replaySafetyStatus: "safe_to_replay",
       reasonCodes: ["requirement_map_boundary_checkpoint_recorded"],
     });
     await this.options.attachProgress({
@@ -1440,13 +1433,7 @@ export class IntakeStageRunner {
       currentCommitmentIds: requirementMap.requirements
         .map((requirement) => requirement.requirementId)
         .slice(0, 80),
-      replayContinuationMode: "continue_scheduler",
-      replayStartPolicy: "allowed_from_checkpoint",
-      replaySafetyStatus: "safe_to_replay",
-      reasonCodes: [
-        "requirement_map_replay_boundary_checkpoint_recorded",
-        "checkpoint_replay_requirement_map_reused",
-      ],
+      reasonCodes: ["requirement_map_boundary_checkpoint_recorded"],
     });
     await this.options.attachProgress({
       stage: "checkpoint_replay",
@@ -1460,7 +1447,7 @@ export class IntakeStageRunner {
       currentObjective:
         "Resume proof from accepted RequirementMap and continue scheduler planning.",
       evidenceProducedRefs: [requirementMap.mapRef],
-      nextDecisionNeeded: "scheduler_work_intent_planning",
+      nextDecisionNeeded: "scheduler_graph_patch_planning",
       eli5Progress:
         "OpenClaw reused the accepted RequirementMap as the sole pre-scheduler intake product.",
       schedulerPhase: "requirement_map_ready",

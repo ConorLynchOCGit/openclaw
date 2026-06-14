@@ -24,8 +24,6 @@ import type {
   RuntimeJobRepository,
 } from "../runtime-job-repository.ts";
 import { ARCHITECTURE_RED_TEAM_GATE_ARTIFACT_TYPE } from "../workflows/architecture-red-team-gate.ts";
-import { GENERIC_ORCHESTRATION_RUNTIME_RESULT_ARTIFACT_TYPE } from "../workflows/generic-orchestration-runtime.ts";
-import { GENERIC_WORKFLOW_RUNNER_RETIREMENT_ARTIFACT_TYPE } from "../workflows/generic-workflow-runner-retirement-contract.ts";
 import { MISSION_CONTRACT_LEDGER_ARTIFACT_TYPE } from "../workflows/mission-contract-ledger.ts";
 import {
   latestWebResearchRuntimeEvidence,
@@ -1032,41 +1030,6 @@ export type WorkQueueExecutionReadModel = {
           rawPromptStored: false;
           rawResponseStored: false;
           rawLogsStored: false;
-        };
-        boundaryReplay: {
-          state: "present" | "missing";
-          latestCheckpointKind: string | null;
-          currentReplayBoundary: string | null;
-          nextReplayBoundary: string | null;
-          checkpointRefs: string[];
-          graphCheckpointRefs: string[];
-          planRefs: string[];
-          replayStartPolicy: string | null;
-          replaySafetyStatus: string | null;
-          replayFreshnessStatus: string | null;
-          replayContinuationMode: string | null;
-          exactContinuationAction: string | null;
-          exactContinuationMode: string | null;
-          registryVersion: string | null;
-          diagnosticOnly: boolean | null;
-          allowedNextTransitions: string[];
-          terminalBlockerClasses: string[];
-          readbackProjectionFields: string[];
-          latestAcceptedCheckpointRef: string | null;
-          latestAcceptedCheckpointKind: string | null;
-          missingCheckpointKinds: string[];
-          skippedUpstreamCheckpointKinds: string[];
-          resumeFromArtifactRefs: string[];
-          invalidReasonCodes: string[];
-          acceptedCheckpointRefs: string[];
-          staleCheckpointRefs: string[];
-          rejectedCheckpointRefs: string[];
-          latestSummary: string | null;
-          reasonCodes: string[];
-          rawPromptStored: false;
-          rawResponseStored: false;
-          rawProviderLogStored: false;
-          rawToolLogStored: false;
         };
         latestProgressEventRefs: string[];
         rawPromptStored: false;
@@ -2260,25 +2223,11 @@ function workflowProjection(
   const architectureRedTeamGateRecord = asRecord(architectureRedTeamGate?.metadata);
   const architectureProofDecision = asRecord(architectureRedTeamGateRecord?.proofReadinessDecision);
   const architectureFinalReview = asRecord(architectureRedTeamGateRecord?.finalReview);
-  const genericRunnerRetirement = latestArtifact(
-    artifacts,
-    GENERIC_WORKFLOW_RUNNER_RETIREMENT_ARTIFACT_TYPE,
-  );
-  const genericRunnerRetirementRecord = asRecord(genericRunnerRetirement?.metadata);
   const workflowEngineReadiness = latestArtifact(
     artifacts,
     "execution.runtime_workflow_graph_engine_readiness",
   );
   const workflowEngineRecord = asRecord(workflowEngineReadiness?.metadata);
-  const genericOrchestrationRuntime = latestArtifact(
-    artifacts,
-    GENERIC_ORCHESTRATION_RUNTIME_RESULT_ARTIFACT_TYPE,
-  );
-  const genericOrchestrationRuntimeMetadata = asRecord(genericOrchestrationRuntime?.metadata) ?? {};
-  const genericOrchestrationRuntimeRecord =
-    genericOrchestrationRuntimeMetadata.artifactKind === "runtime_job_artifact_payload_manifest"
-      ? (asRecord(genericOrchestrationRuntimeMetadata.extension) ?? {})
-      : genericOrchestrationRuntimeMetadata;
   const completionReview = latestArtifact(artifacts, WORKFLOW_COMPLETION_REVIEW_ARTIFACT_TYPE);
   const completionReviewRecord = asRecord(completionReview?.metadata);
   const completionReviewGate = latestArtifact(
@@ -2428,13 +2377,6 @@ function workflowProjection(
           ...stringArrayValue(workflowEngineRecord?.reasonCodes, 10),
         ]
       : [];
-  const genericOrchestrationRuntimeBlockers =
-    genericOrchestrationRuntime && genericOrchestrationRuntimeRecord?.status !== "succeeded"
-      ? [
-          "generic_orchestration_runtime_not_succeeded",
-          ...stringArrayValue(genericOrchestrationRuntimeRecord?.reasonCodes, 12),
-        ]
-      : [];
   const workflowPluginBlockers =
     workflowPlugin &&
     (workflowPluginRecord?.productionEnabled !== true ||
@@ -2451,12 +2393,6 @@ function workflowProjection(
           ...stringArrayValue(completionReviewGateRecord?.reasonCodes, 10),
         ]
       : [];
-  const genericRunnerRetirementBlockers = genericRunnerRetirement
-    ? [
-        "generic_workflow_runner_retired",
-        ...stringArrayValue(genericRunnerRetirementRecord?.reasonCodes, 12),
-      ]
-    : [];
   return {
     route: frontDoorRouting.route ?? stringValue(routeDecision?.route),
     workflowId,
@@ -2503,9 +2439,7 @@ function workflowProjection(
         ...workflowDefinitionBlockers,
         ...workflowPluginBlockers,
         ...workflowEngineBlockers,
-        ...genericOrchestrationRuntimeBlockers,
         ...completionReviewBlockers,
-        ...genericRunnerRetirementBlockers,
       ],
       30,
     ),
@@ -2558,27 +2492,6 @@ function workflowProjection(
                   workflowEvidenceProfileRecord?.deepCompletionReviewRequired === true,
                 ownerReadbackRequired:
                   workflowEvidenceProfileRecord?.ownerReadbackRequired === true,
-              }
-            : null,
-          genericWorkflowRunnerRetirement: genericRunnerRetirement
-            ? {
-                status: stringValue(genericRunnerRetirementRecord?.status),
-                workflowId: stringValue(genericRunnerRetirementRecord?.workflowId),
-                definitionId: stringValue(genericRunnerRetirementRecord?.definitionId),
-                definitionStatus: stringValue(genericRunnerRetirementRecord?.definitionStatus),
-                productionEnabled: genericRunnerRetirementRecord?.productionEnabled === true,
-                schedulerBacked: genericRunnerRetirementRecord?.schedulerBacked === true,
-                pluginRegistered: genericRunnerRetirementRecord?.pluginRegistered === true,
-                genericProductionSuccessAllowed:
-                  genericRunnerRetirementRecord?.genericProductionSuccessAllowed === true,
-                canonicalWorkflowEngineRequired:
-                  genericRunnerRetirementRecord?.canonicalWorkflowEngineRequired === true,
-                workflowQueuedRunnerRole: stringValue(
-                  genericRunnerRetirementRecord?.workflowQueuedRunnerRole,
-                ),
-                ownerSummary: stringValue(genericRunnerRetirementRecord?.ownerSummary),
-                reasonCodes: stringArrayValue(genericRunnerRetirementRecord?.reasonCodes, 20),
-                artifactRef: genericRunnerRetirement.uri,
               }
             : null,
           workflowDefinition: workflowDefinition
@@ -2697,22 +2610,6 @@ function workflowProjection(
                 ),
                 reasonCodes: stringArrayValue(workflowEngineRecord?.reasonCodes, 20),
                 artifactRef: workflowEngineReadiness.uri,
-              }
-            : null,
-          genericOrchestrationRuntime: genericOrchestrationRuntime
-            ? {
-                engineId: stringValue(genericOrchestrationRuntimeRecord?.engineId),
-                status: stringValue(genericOrchestrationRuntimeRecord?.status),
-                schedulerStatus: stringValue(genericOrchestrationRuntimeRecord?.schedulerStatus),
-                graphId: stringValue(genericOrchestrationRuntimeRecord?.graphId),
-                executedNodeIds: stringArrayValue(
-                  genericOrchestrationRuntimeRecord?.executedNodeIds,
-                  30,
-                ),
-                addedNodeIds: stringArrayValue(genericOrchestrationRuntimeRecord?.addedNodeIds, 30),
-                decisionRefs: stringArrayValue(genericOrchestrationRuntimeRecord?.decisionRefs, 30),
-                reasonCodes: stringArrayValue(genericOrchestrationRuntimeRecord?.reasonCodes, 30),
-                artifactRef: genericOrchestrationRuntime.uri,
               }
             : null,
           completionReview: completionReview

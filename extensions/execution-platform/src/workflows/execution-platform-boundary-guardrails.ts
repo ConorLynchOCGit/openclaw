@@ -577,13 +577,6 @@ function classifyCategory(path: string, reasonCodes: string[]): ExecutionPlatfor
     reasonCodes.push("classified_diagnostic_script");
     return "diagnostic_script";
   }
-  if (
-    path.includes("/workflows/boundary-replay-checkpoints") ||
-    path.includes("/workflows/boundary-replay-registry")
-  ) {
-    reasonCodes.push("classified_production_boundary_replay_service");
-    return "production_runtime";
-  }
   if (path.includes("/work-queue/")) {
     reasonCodes.push("classified_work_queue_readback");
     return "work_queue_readback";

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { ARCHITECTURE_RED_TEAM_WORKFLOW_PLUGIN_ID } from "./architecture-red-team-plugin.ts";
 import { PRODUCT_SPEC_PLANNING_WORKFLOW_PLUGIN_ID } from "./product-spec-planning-plugin.ts";
-import type { RuntimeWorkGraphNodeExecutor } from "./runtime-work-graph-scheduler.ts";
 import { requireCanonicalWorkflowDefinition } from "./workflow-definition-registry.ts";
+import type { RuntimeWorkGraphNodeExecutor } from "./workflow-node-execution-contracts.ts";
 import {
   DEFAULT_WORKFLOW_PLUGIN_REGISTRY,
   WorkflowPluginRegistry,

@@ -26,7 +26,6 @@ import {
   findRuntimeNodeCapability,
   type RuntimeNodeCapabilityManifest,
 } from "./runtime-node-capability-registry.ts";
-import type { RuntimeWorkGraphSchedulerSnapshotSummary } from "./runtime-work-graph-scheduler-contracts.ts";
 import { graphRef } from "./runtime-work-graph.ts";
 import type {
   SchedulerClosurePolicy,
@@ -37,6 +36,66 @@ import {
   type SchedulerGraphPatch,
   type SchedulerGraphAmendmentRequest,
 } from "./scheduler-graph-patch.ts";
+
+export type SchedulerStageSnapshotSummary = {
+  workflowId: string;
+  rootRuntimeJobId?: string | null;
+  graphStatus: string;
+  nodeSummaries: Array<{
+    nodeId: string;
+    nodeKind: string;
+    assignedRole: string;
+    nodeStatus: string;
+    capabilityId?: string | null;
+    metadataCapabilityId?: string | null;
+    executorKey?: string | null;
+    commitmentIdsAdvanced?: string[];
+    downstreamConsumer?: string | null;
+    inputHandoffRefs?: string[];
+    targetRefs?: string[];
+    sourceMaterialRequirementKinds?: string[];
+    sourceRequirementRef?: string | null;
+    executionIntent?: string | null;
+    evidenceMode?: string[];
+    contextQuestions?: string[];
+    resourceObjectiveFocusStatus?: string | null;
+    resourceObjectiveFocusRef?: string | null;
+    resourceObjectiveFocusLegalRefUniverseRef?: string | null;
+    resourceObjectiveFocusAllowedToolIds?: string[];
+    resourceObjectiveFocusRequiredFields?: string[];
+    resourceObjectiveFocusLegalHandles?: Array<{
+      handle: string;
+      kind: string;
+      ref: string;
+      boundedLabel: string;
+    }>;
+    sourceMaterialRequirementRefs?: string[];
+    contextSnapshotRefs?: string[];
+    acceptedSourceMaterialRefs?: string[];
+    missingSourceMaterialRequirementRefs?: string[];
+    missingResourceHandoffRefs?: string[];
+    failedResourceFulfillmentNodeIds?: string[];
+    pendingResourceFulfillmentNodeIds?: string[];
+    contextLimitationWaiverRefs?: string[];
+    noContextNeededRationale?: string | null;
+    outputArtifactRefs: string[];
+    lastStatusReasonCodes?: string[];
+    lastRepairClassificationRef?: string | null;
+    lastRepairFailureClass?: string | null;
+    lastRepairStrategy?: string | null;
+    lastRepairBoundary?: string | null;
+    highCapabilityEscalationRequired?: boolean;
+  }>;
+  edgeSummaries?: Array<{
+    edgeId: string;
+    fromNodeId: string | null;
+    toNodeId: string | null;
+    edgeKind: string;
+  }>;
+  edgeCount: number;
+  humanTaskCount: number;
+  latestCheckpointKinds: string[];
+};
 
 export type SchedulerRequirementInventory = {
   artifactKind: "scheduler_requirement_inventory";
@@ -243,7 +302,7 @@ export type SchedulerStageRunnerResult =
 export type SchedulerStageModelDecisionInput = {
   graphId: string;
   iteration: number;
-  snapshotSummary: RuntimeWorkGraphSchedulerSnapshotSummary;
+  snapshotSummary: SchedulerStageSnapshotSummary;
   requirementMapSummary?: RequirementMapSummary | null;
   requirementInventorySummary?: JsonValue | null;
   recentNodeResultSummaries?: JsonValue[];
@@ -346,7 +405,7 @@ export type SchedulerStageNativeToolCallResult = {
 export type SchedulerStageRunInput = {
   graphId: string;
   iteration: number;
-  snapshotSummary: RuntimeWorkGraphSchedulerSnapshotSummary;
+  snapshotSummary: SchedulerStageSnapshotSummary;
   requirementMap: RequirementMap | null;
   requirementMapSummary: RequirementMapSummary | null;
   requirementMapAccepted: boolean;
@@ -2584,7 +2643,7 @@ function schedulerNativePayload(input: {
   projection: SchedulerStageProjection;
   draft: SchedulerDraftState;
   repairAttempt: number;
-  snapshotSummary: RuntimeWorkGraphSchedulerSnapshotSummary;
+  snapshotSummary: SchedulerStageSnapshotSummary;
   requirementMapSummary: RequirementMapSummary | null;
   requirementInventorySummary: JsonValue | null;
   recentNodeResultSummaries: JsonValue[];

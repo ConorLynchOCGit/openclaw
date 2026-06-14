@@ -4,13 +4,13 @@ import {
   runtimeNodeCapabilityManifestForModel,
   type RuntimeNodeCapabilityManifest,
 } from "./runtime-node-capability-registry.ts";
-import {
-  CODING_TEAM_ROLE_COVERAGE_PROFILE,
-  type RuntimeWorkGraphNodeExecutor,
-} from "./runtime-work-graph-scheduler.ts";
 import { DEFAULT_CODING_SCHEDULER_CLOSURE_POLICY } from "./scheduler-graph-closure-policy.ts";
 import { requireCanonicalWorkflowDefinition } from "./workflow-definition-registry.ts";
 import type { WorkflowDefinition } from "./workflow-definition.ts";
+import {
+  CODING_TEAM_ROLE_COVERAGE_PROFILE,
+  type RuntimeWorkGraphNodeExecutor,
+} from "./workflow-node-execution-contracts.ts";
 import type { WorkflowPlugin } from "./workflow-plugin.ts";
 
 export const AGENT_TEAM_CODING_WORKFLOW_PLUGIN_ID = "workflow-plugin.agent_team.coding.v1";
@@ -105,7 +105,6 @@ export function buildAgentTeamCodingWorkflowPlugin(input: {
       "plugin_readback",
     ],
     schedulerPolicy: {
-      requireCostAwareCapabilityPolicy: true,
       requireEvidenceClaimsForMissionLedger: true,
       requireSchedulerToolKernel: input.requireSchedulerToolKernel ?? true,
       stagedGraphAcceptanceRequired: true,
@@ -132,7 +131,6 @@ export function buildAgentTeamCodingWorkflowPlugin(input: {
       },
     },
     schedulerOptions: {
-      requireCostAwareCapabilityPolicy: true,
       requireEvidenceClaimsForMissionLedger: true,
       requireSchedulerToolKernel: input.requireSchedulerToolKernel ?? true,
       deferCloseoutUntilExecutableGraphComplete: true,

@@ -117,7 +117,7 @@ describe("CodeIntelligenceService", () => {
       await writeFile(
         path.join(rootDir, "z-target.ts"),
         [
-          "export function targetScopedBoundaryReplaySymbol(): string {",
+          "export function targetScopedReadbackSymbol(): string {",
           '  return "target-scoped";',
           "}",
         ].join("\n"),
@@ -126,7 +126,7 @@ describe("CodeIntelligenceService", () => {
       const service = createCodeIntelligenceService({ rootDir, maxFiles: 1 });
 
       const symbols = await service.runTool("code.search_symbols", {
-        query: "targetScopedBoundaryReplaySymbol",
+        query: "targetScopedReadbackSymbol",
         filePaths: ["z-target.ts"],
       });
 
@@ -134,7 +134,7 @@ describe("CodeIntelligenceService", () => {
       expect(symbols.semanticMode).toBe("typescript_semantic");
       expect(symbols.backendId).toBe("typescript_language_service");
       expect(symbols.symbolRefs).toEqual(
-        expect.arrayContaining(["code-symbol://z-target.ts:1:targetScopedBoundaryReplaySymbol"]),
+        expect.arrayContaining(["code-symbol://z-target.ts:1:targetScopedReadbackSymbol"]),
       );
       expect(symbols.workspaceSnapshotRef).toMatch(/^code-intelligence-workspace:\/\//u);
     });

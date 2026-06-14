@@ -294,7 +294,6 @@ describe("SchedulerStageRunner graph patch path", () => {
         .filter((capabilityId): capabilityId is string => typeof capabilityId === "string")
         .toSorted((a, b) => a.localeCompare(b)),
     ).toEqual(["coding_closeout", "implementation_microtask", "reviewer", "validation_run"]);
-    expect(result.nodeSpecs.every((node) => node.nodeKind !== "work_intent")).toBe(true);
     expect(result.edgeSpecs.length).toBeGreaterThanOrEqual(3);
     const validationTail = result.nodeSpecs.find((node) => node.capabilityId === "validation_run");
     const reviewTail = result.nodeSpecs.find((node) => node.capabilityId === "reviewer");

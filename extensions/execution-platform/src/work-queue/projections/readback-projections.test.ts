@@ -269,14 +269,6 @@ describe("Work Queue readback projection modules", () => {
             rawToolLogStored: false,
             rawDbRowsStored: false,
           },
-          boundaryReplay: {
-            checkpointRefs: [
-              "runtime-job://job-projection/boundary-replay/before_worker_invocation/checkpoint-1",
-            ],
-            currentReplayBoundary: "before_worker_invocation",
-            nextReplayBoundary: "before_worker_invocation",
-            allowedNextTransitions: ["continue_from_checkpoint"],
-          },
         }),
         artifact(
           "execution_platform.node_agent_start_receipt",
@@ -586,12 +578,7 @@ describe("Work Queue readback projection modules", () => {
       rawResponseStored: false,
       rawProviderLogStored: false,
     });
-    expect(projection.boundaryReplay).toMatchObject({
-      state: "present",
-      currentReplayBoundary: "before_worker_invocation",
-      nextReplayBoundary: "before_worker_invocation",
-      exactContinuationAction: "Resume from before_worker_invocation.",
-    });
+    expect(JSON.stringify(projection)).not.toContain("boundaryReplay");
     expect(projection.latestRunState).toMatchObject({
       canonicalReadbackGate: {
         gateKind: "node_agent_session_ready",
@@ -695,7 +682,6 @@ describe("Work Queue readback projection modules", () => {
       providerDiagnosticRefs: ["provider-diagnostic://implementation-node-local/context"],
       schemaPath: "nodeAgentWorkerPrompt.sourceMaterial",
       nextLegalTransition: "start_node_agent_session",
-      staleCheckpointKind: null,
     });
     expect(projection.firstOpenGateKind).toBe("node_agent_session_ready");
     expect(projection.nodeLocalLifecycle).toMatchObject({
@@ -952,7 +938,6 @@ describe("Work Queue readback projection modules", () => {
       contractRef: "contract://implementation-drift",
       nodeLifecycleProjectionRef: "node-lifecycle-projection://implementation-drift",
       sourceMaterialRef: "source-material://implementation-drift",
-      staleCheckpointKind: null,
     });
     expect(projection.firstOpenGateKind).toBe("node_agent_session_ready");
   });

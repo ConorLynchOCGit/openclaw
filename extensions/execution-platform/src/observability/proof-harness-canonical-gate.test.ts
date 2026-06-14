@@ -33,7 +33,7 @@ describe("proof harness canonical gate projection", () => {
         gateStatus: "blocked",
         confidence: "canonical",
         blockerCode: "architecture_transition_topology_invalid",
-        nextLegalTransition: "compile_work_intent_graph",
+        nextLegalTransition: "compile_scheduler_graph_patch",
         rawPromptStored: false,
         rawProviderLogStored: false,
       },
@@ -70,7 +70,6 @@ describe("proof harness canonical gate projection", () => {
         gateKind: "node_agent_session_ready",
         confidence: "canonical",
         nodeId: "implementation-1",
-        staleCheckpointKind: null,
       },
     });
     expect(JSON.stringify(projection.gate)).not.toContain("requirement_map");
@@ -90,7 +89,6 @@ describe("proof harness canonical gate projection", () => {
         gateKind: "missing_runtime_state",
         gateStatus: "blocked",
         blockerCode: "stale_checkpoint_gate_rejected",
-        staleCheckpointKind: "after-context-synthesis",
       },
     });
   });

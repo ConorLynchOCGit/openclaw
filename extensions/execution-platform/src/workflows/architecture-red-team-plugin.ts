@@ -4,12 +4,12 @@ import {
   runtimeNodeCapabilityManifestForModel,
   type RuntimeNodeCapabilityManifest,
 } from "./runtime-node-capability-registry.ts";
+import { requireCanonicalWorkflowDefinition } from "./workflow-definition-registry.ts";
+import type { WorkflowDefinition } from "./workflow-definition.ts";
 import {
   ARCHITECTURE_RED_TEAM_ROLE_COVERAGE_PROFILE,
   type RuntimeWorkGraphNodeExecutor,
-} from "./runtime-work-graph-scheduler.ts";
-import { requireCanonicalWorkflowDefinition } from "./workflow-definition-registry.ts";
-import type { WorkflowDefinition } from "./workflow-definition.ts";
+} from "./workflow-node-execution-contracts.ts";
 import type { WorkflowPlugin } from "./workflow-plugin.ts";
 
 export const ARCHITECTURE_RED_TEAM_WORKFLOW_PLUGIN_ID =
@@ -102,7 +102,6 @@ export function buildArchitectureRedTeamWorkflowPlugin(input: {
       "model_authored_final_review",
     ],
     schedulerPolicy: {
-      requireCostAwareCapabilityPolicy: true,
       requireEvidenceClaimsForMissionLedger: true,
       requireSchedulerToolKernel: input.requireSchedulerToolKernel ?? true,
       stagedGraphAcceptanceRequired: true,
@@ -129,7 +128,6 @@ export function buildArchitectureRedTeamWorkflowPlugin(input: {
       },
     },
     schedulerOptions: {
-      requireCostAwareCapabilityPolicy: true,
       requireEvidenceClaimsForMissionLedger: true,
       requireSchedulerToolKernel: input.requireSchedulerToolKernel ?? true,
       roleCoverageProfile: ARCHITECTURE_RED_TEAM_ROLE_COVERAGE_PROFILE,

@@ -22,7 +22,7 @@ void test("targeted tsgo config uses files instead of forwarding file args besid
 void test("full-repo fallback strips explicit source file args to avoid TS5112", () => {
   assert.deepEqual(
     filterFullRepoFallbackArgs([
-      "extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.ts",
+      "extensions/execution-platform/src/workflows/scheduler-stage-runner.ts",
       "--pretty",
       "false",
       "README.md",
@@ -32,8 +32,8 @@ void test("full-repo fallback strips explicit source file args to avoid TS5112",
   assert.deepEqual(
     buildFastTsgoArgs({
       broadChange: true,
-      targets: ["extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.ts"],
-      userArgs: ["extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.ts"],
+      targets: ["extensions/execution-platform/src/workflows/scheduler-stage-runner.ts"],
+      userArgs: ["extensions/execution-platform/src/workflows/scheduler-stage-runner.ts"],
     }),
     [],
   );

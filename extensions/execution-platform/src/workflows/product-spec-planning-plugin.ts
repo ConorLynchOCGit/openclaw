@@ -4,12 +4,12 @@ import {
   runtimeNodeCapabilityManifestForModel,
   type RuntimeNodeCapabilityManifest,
 } from "./runtime-node-capability-registry.ts";
+import { requireCanonicalWorkflowDefinition } from "./workflow-definition-registry.ts";
+import type { WorkflowDefinition } from "./workflow-definition.ts";
 import {
   PRODUCT_SPEC_PLANNING_ROLE_COVERAGE_PROFILE,
   type RuntimeWorkGraphNodeExecutor,
-} from "./runtime-work-graph-scheduler.ts";
-import { requireCanonicalWorkflowDefinition } from "./workflow-definition-registry.ts";
-import type { WorkflowDefinition } from "./workflow-definition.ts";
+} from "./workflow-node-execution-contracts.ts";
 import type { WorkflowPlugin } from "./workflow-plugin.ts";
 
 export const PRODUCT_SPEC_PLANNING_WORKFLOW_PLUGIN_ID =
@@ -105,7 +105,6 @@ export function buildProductSpecPlanningWorkflowPlugin(input: {
       "plugin_readback",
     ],
     schedulerPolicy: {
-      requireCostAwareCapabilityPolicy: true,
       requireEvidenceClaimsForMissionLedger: true,
       requireSchedulerToolKernel: input.requireSchedulerToolKernel ?? true,
       stagedGraphAcceptanceRequired: true,
@@ -132,7 +131,6 @@ export function buildProductSpecPlanningWorkflowPlugin(input: {
       },
     },
     schedulerOptions: {
-      requireCostAwareCapabilityPolicy: true,
       requireEvidenceClaimsForMissionLedger: true,
       requireSchedulerToolKernel: input.requireSchedulerToolKernel ?? true,
       roleCoverageProfile: PRODUCT_SPEC_PLANNING_ROLE_COVERAGE_PROFILE,

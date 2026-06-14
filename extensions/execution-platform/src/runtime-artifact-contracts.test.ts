@@ -9,7 +9,6 @@ import {
 } from "./runtime-artifact-contracts.ts";
 
 const productionFilesThatWriteRuntimeArtifacts = [
-  "extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts",
   "extensions/execution-platform/src/codex-bridge/context-scout-node-executor.ts",
 ];
 
@@ -121,7 +120,6 @@ describe("runtime artifact contract registry", () => {
       "execution_platform.resource.scout.specialist_result",
       "execution_platform.node_resource_ledger",
       "execution_platform.node_resource_ledger.entry",
-      "execution_platform.work_intent.context_satisfaction_state",
       "execution_platform.resource_frontier_shard_real_model_proof",
       "execution_platform.implementation_context_packet",
       "execution_platform.resource_selection_packet",

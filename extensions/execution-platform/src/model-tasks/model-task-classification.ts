@@ -21,7 +21,6 @@ export const MODEL_CONTRACT_BOUNDARIES = [
   "router_front_door",
   "requirement_map_native_tool",
   "source_prompt_excerpt_interpretation",
-  "work_intent_global_compile",
   "scheduler_global_reasoning",
   "scheduler_capability_selection",
   "scheduler_field_repair",
@@ -567,14 +566,6 @@ const MODEL_CONTRACT_BOUNDARY_DEFINITIONS: Record<
     callSite: "source_prompt.excerpt_interpretation",
     allowedToolFamily: "source_prompt.excerpt_interpretation",
     allowedOutputContractId: "source_prompt_excerpt_interpretation",
-    allowedOutputContractVersion: "v1",
-  },
-  work_intent_global_compile: {
-    boundaryId: "work_intent_global_compile",
-    taskClass: "global_reasoning",
-    callSite: "work_intent.global_compile",
-    allowedToolFamily: "work_intent.compile",
-    allowedOutputContractId: "work_intent_dag_decision",
     allowedOutputContractVersion: "v1",
   },
   scheduler_global_reasoning: {

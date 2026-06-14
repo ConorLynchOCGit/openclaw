@@ -65,7 +65,7 @@ describe("architecture transition topology gate", () => {
   it("fails retired context synthesis default glue and scheduler graph scout dispatch", () => {
     const gate = evaluateArchitectureTransitionTopologyGate({
       graph: {
-        nodeKinds: ["work_intent", "context_synthesis"],
+        nodeKinds: ["orchestrator_plan", "context_synthesis"],
         edges: [],
       },
       schedulerProgress: [

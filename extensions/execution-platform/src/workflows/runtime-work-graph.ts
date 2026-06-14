@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import type { JsonValue } from "../runtime-job-repository.ts";
 
 export const TEAM_GRAPH_NODE_KINDS = [
-  "work_intent",
   "orchestrator_plan",
   "implementation",
   "validation",

@@ -299,31 +299,6 @@ export type LatestRunState = {
     prerequisiteCritical: boolean | null;
     reasonCodes: string[];
   };
-  boundaryReplay: {
-    state: "present" | "missing";
-    latestCheckpointKind: string | null;
-    checkpointRefs: string[];
-    graphCheckpointRefs: string[];
-    planRefs: string[];
-    replayStartPolicy: string | null;
-    replaySafetyStatus: string | null;
-    replayFreshnessStatus: string | null;
-    replayContinuationMode: string | null;
-    exactContinuationMode: string | null;
-    exactContinuationAction: string | null;
-    latestAcceptedCheckpointRef: string | null;
-    currentReplayBoundary: string | null;
-    nextReplayBoundary: string | null;
-    productionPathEquivalence: string | null;
-    boundaryEpoch: string | null;
-    currentChildEpoch: string | null;
-    supersededChildCount: number | null;
-    supersededChildNodeIds: string[];
-    proofClosureAllowed: boolean | null;
-    resumeFromArtifactRefs: string[];
-    invalidReasonCodes: string[];
-    reasonCodes: string[];
-  };
   canonicalReadbackGate: CanonicalReadbackGate;
   recommendedOperatorAction: string | null;
   rawPromptStored: false;
@@ -745,81 +720,6 @@ function buildActiveFrontier(input: {
   };
 }
 
-function buildBoundaryReplayState(
-  latest: Record<string, unknown>,
-): LatestRunState["boundaryReplay"] {
-  const artifactRefs = boundedStrings(latest.artifactRefs, 80);
-  const checkpointRefs = [
-    ...new Set(
-      [
-        ...artifactRefs.filter((ref) => ref.includes("/boundary-replay/")),
-        ...boundedStrings(latest.boundaryReplayCheckpointRefs, 40),
-        bounded(latest.boundaryReplayCheckpointRef, 700),
-        bounded(latest.checkpointRef, 700),
-      ].filter((ref): ref is string => Boolean(ref)),
-    ),
-  ].slice(0, 40);
-  const graphCheckpointRefs = [
-    ...new Set(
-      [
-        ...artifactRefs.filter((ref) => ref.startsWith("runtime-work-graph://checkpoint/")),
-        ...boundedStrings(latest.boundaryReplayGraphCheckpointRefs, 40),
-        bounded(latest.graphCheckpointRef, 700),
-      ].filter((ref): ref is string => Boolean(ref)),
-    ),
-  ].slice(0, 40);
-  const planRefs = [
-    ...new Set(
-      [
-        ...artifactRefs.filter((ref) => ref.includes("/boundary-replay-plan/")),
-        ...boundedStrings(latest.boundaryReplayPlanRefs, 20),
-        bounded(latest.planRef, 700),
-      ].filter((ref): ref is string => Boolean(ref)),
-    ),
-  ].slice(0, 20);
-  const currentPhase = bounded(latest.currentPhase, 260);
-  const latestCheckpointKind =
-    bounded(latest.boundaryReplayCheckpointKind, 220) ??
-    bounded(latest.checkpointKind, 220) ??
-    (currentPhase?.startsWith("boundary_replay_")
-      ? currentPhase.replace(/^boundary_replay_/u, "").slice(0, 220)
-      : null);
-  const state =
-    latestCheckpointKind ||
-    checkpointRefs.length > 0 ||
-    graphCheckpointRefs.length > 0 ||
-    planRefs.length > 0
-      ? "present"
-      : "missing";
-  return {
-    state,
-    latestCheckpointKind,
-    checkpointRefs,
-    graphCheckpointRefs,
-    planRefs,
-    replayStartPolicy: bounded(latest.replayStartPolicy, 160),
-    replaySafetyStatus: bounded(latest.replaySafetyStatus, 160),
-    replayFreshnessStatus: bounded(latest.replayFreshnessStatus, 160),
-    replayContinuationMode: bounded(latest.replayContinuationMode, 160),
-    exactContinuationMode: bounded(latest.exactContinuationMode, 160),
-    exactContinuationAction: bounded(latest.exactContinuationAction, 700),
-    latestAcceptedCheckpointRef: bounded(latest.latestAcceptedCheckpointRef, 700),
-    currentReplayBoundary: latestCheckpointKind,
-    nextReplayBoundary: bounded(latest.nextReplayBoundary, 220),
-    productionPathEquivalence: bounded(latest.productionPathEquivalence, 180),
-    boundaryEpoch: bounded(latest.boundaryEpoch, 220),
-    currentChildEpoch: bounded(latest.currentChildEpoch, 220),
-    supersededChildCount:
-      typeof latest.supersededChildCount === "number" ? latest.supersededChildCount : null,
-    supersededChildNodeIds: boundedStrings(latest.supersededChildNodeIds, 80),
-    proofClosureAllowed:
-      typeof latest.proofClosureAllowed === "boolean" ? latest.proofClosureAllowed : null,
-    resumeFromArtifactRefs: boundedStrings(latest.resumeFromArtifactRefs, 40),
-    invalidReasonCodes: boundedStrings(latest.invalidReasonCodes, 40),
-    reasonCodes: boundedStrings(latest.reasonCodes, 60),
-  };
-}
-
 function heapPhaseSnapshotFrom(value: unknown): HeapPhaseSnapshot | null {
   const snapshot = asRecord(value);
   if (!snapshot) {
@@ -979,7 +879,6 @@ export function buildLatestRunState(input: {
 }): LatestRunState {
   const latest = input.latestProgress ?? {};
   const job = input.runtimeJob ?? {};
-  const boundaryReplay = buildBoundaryReplayState(latest);
   const schedulerFrontier = asRecord(latest.schedulerFrontierState);
   const parallelFrontier = asRecord(latest.parallelFrontier);
   const rootCause = asRecord(latest.frontierRootCauseArtifact);
@@ -1000,7 +899,6 @@ export function buildLatestRunState(input: {
     rootCause,
     noProgress,
     schedulerModelCallEnvelope,
-    checkpointKind: boundaryReplay.latestCheckpointKind,
     terminalStatus: input.terminalStatus,
     adapterTerminalStatus: input.adapterTerminalStatus,
   });
@@ -1170,7 +1068,6 @@ export function buildLatestRunState(input: {
       prerequisiteCritical: booleanOrNull(latest.expansionAdmissionPrerequisiteCritical),
       reasonCodes: boundedStrings(latest.expansionAdmissionReasonCodes, 40),
     },
-    boundaryReplay,
     canonicalReadbackGate,
     recommendedOperatorAction: bounded(input.recommendedOperatorAction, 700),
     rawPromptStored: false,

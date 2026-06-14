@@ -2,11 +2,9 @@ import { describe, expect, it } from "vitest";
 import { applyExecutionPlatformMigrations } from "../db/migrations.ts";
 import { createExecutionPlatformPgMemTestDatabase } from "../db/pg-test.ts";
 import { RuntimeJobRepository } from "../runtime-job-repository.ts";
-import {
-  isRuntimeExecutionEventEnvelope,
-  startNativeExecutionSession,
-} from "./native-agentic-orchestration.ts";
+import { isRuntimeExecutionEventEnvelope } from "./native-agentic-orchestration.ts";
 import { applyNativeExecutionControl } from "./native-execution-control.ts";
+import { startAcceptedNativeExecutionSessionForTest } from "./native-execution-test-fixtures.ts";
 
 async function withRepository<T>(
   work: (input: { repository: RuntimeJobRepository }) => Promise<T>,
@@ -24,7 +22,7 @@ async function withRepository<T>(
 describe("native execution control", () => {
   it("records redirect and waiting-for-human as session-tree runtime events", async () => {
     await withRepository(async ({ repository }) => {
-      const started = await startNativeExecutionSession({
+      const started = await startAcceptedNativeExecutionSessionForTest({
         runtimeJobs: repository,
         request: {
           objective: "Run native orchestration.",
@@ -79,7 +77,7 @@ describe("native execution control", () => {
 
   it("cancels through the owning RuntimeJob and records a native control event", async () => {
     await withRepository(async ({ repository }) => {
-      const started = await startNativeExecutionSession({
+      const started = await startAcceptedNativeExecutionSessionForTest({
         runtimeJobs: repository,
         request: {
           objective: "Run native orchestration.",

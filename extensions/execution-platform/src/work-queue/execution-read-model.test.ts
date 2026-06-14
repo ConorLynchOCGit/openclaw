@@ -12,7 +12,7 @@ import { applyRuntimeWorkerSupervisorControl } from "../workers/runtime-worker-s
 import { createModelAuthoredCloseoutCapsuleFixture } from "../workers/test-closeout-capsule-fixture.ts";
 import { recordWorkerCloseoutCapsule } from "../workers/worker-closeout-capsule.ts";
 import { buildAgentTeamCodingWorkflowPlugin } from "../workflows/agent-team-coding-plugin.ts";
-import { startNativeExecutionSession } from "../workflows/native-agentic-orchestration.ts";
+import { startAcceptedNativeExecutionSessionForTest } from "../workflows/native-execution-test-fixtures.ts";
 import {
   SKILLIFIER_RUNTIME_JOB_TYPE,
   SKILLIFIER_WORKFLOW_ID,
@@ -57,7 +57,6 @@ import "./product-spec-planning-proof-review.test.ts";
 import "./product-spec-planning-commitment-review.test.ts";
 import "../workflows/product-spec-planning-plugin.test.ts";
 import "../workflows/runtime-node-capability-registry.test.ts";
-import "../workflows/runtime-work-graph-scheduler.test.ts";
 
 async function withRuntime<T>(
   work: (input: {
@@ -84,7 +83,7 @@ describe("Work Queue front-door routing projection", () => {
         itemType: "execution_workflow",
         title: "Native session tree readback",
       });
-      const started = await startNativeExecutionSession({
+      const started = await startAcceptedNativeExecutionSessionForTest({
         runtimeJobs,
         request: {
           objective: "Execute native agentic orchestration.",
@@ -662,37 +661,6 @@ describe("Work Queue front-door routing projection", () => {
           workQueueLifecycleMutated: false,
         },
       });
-      const genericRuntimeResult = {
-        artifactKind: "generic_orchestration_runtime_result",
-        engineId: "generic-orchestration-runtime-engine.v1",
-        workflowId: definition.workflowId,
-        runtimeJobId: runtimeJob.jobId,
-        status: "succeeded",
-        schedulerStatus: "succeeded",
-        graphId: "graph-1",
-        executedNodeIds: ["node-context", "node-implementation", "node-closeout"],
-        addedNodeIds: ["node-context", "node-implementation", "node-closeout"],
-        decisionRefs: ["runtime-tool://scheduler/decision-1"],
-        reasonCodes: ["generic_orchestration_runtime_scheduler_executed"],
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawProviderLogStored: false,
-        rawLogsStored: false,
-        workQueueLifecycleMutated: false,
-      };
-      await runtimeJobs.attachRuntimeArtifactByContract({
-        jobId: runtimeJob.jobId,
-        artifactType: "execution.generic_orchestration_runtime_result",
-        uri: "runtime-job://workflow-definition-readback-job/execution/generic-orchestration-runtime/result/agent_team.coding",
-        contentType: "application/json",
-        body: genericRuntimeResult,
-        boundedSummary: "Generic orchestration runtime succeeded for readback.",
-        targetNodeIds: ["node-context", "node-implementation", "node-closeout"],
-        resourcePacketKind: "generic_orchestration_runtime_result",
-        readinessStatus: "succeeded",
-        reasonCodes: ["generic_orchestration_runtime_scheduler_executed"],
-        metadata: genericRuntimeResult,
-      });
       await runtimeJobs.attachArtifact({
         jobId: runtimeJob.jobId,
         artifactType: WORKFLOW_COMPLETION_REVIEW_ARTIFACT_TYPE,
@@ -745,13 +713,6 @@ describe("Work Queue front-door routing projection", () => {
           missingExecutorKeys: [],
           missingPluginExecutorKeys: [],
           missingRuntimeToolFamilies: [],
-        },
-        genericOrchestrationRuntime: {
-          engineId: "generic-orchestration-runtime-engine.v1",
-          status: "succeeded",
-          schedulerStatus: "succeeded",
-          graphId: "graph-1",
-          executedNodeIds: ["node-context", "node-implementation", "node-closeout"],
         },
         completionReview: {
           outcome: "accepted",
@@ -3743,246 +3704,6 @@ it("surfaces active scheduler graph progress in owner progress readback", async 
       rawPromptStored: false,
       rawResponseStored: false,
       rawProviderLogStored: false,
-    });
-  });
-});
-
-it("surfaces boundary replay checkpoints and plans in owner graph progress readback", async () => {
-  await withRuntime(async ({ runtimeJobs, workQueue }) => {
-    const workItemId = "boundary-replay-readback-work-item";
-    const job = await runtimeJobs.enqueueJob({
-      jobId: "boundary-replay-readback-job",
-      jobType: "executor.agent_team",
-      queueName: "agent-team",
-      workItemId,
-      payload: { workflowId: "agent_team.coding", objectiveSummary: "Replay from context." },
-    });
-    await workQueue.createWorkItem({
-      workItemId,
-      itemType: "execution_workflow",
-      title: "Boundary replay readback",
-    });
-    await workQueue.createWorkRun({
-      workItemId,
-      executorKind: "runtime_job",
-      runtimeJobId: job.jobId,
-      runState: "running",
-      metadata: { workQueueLifecycleMutated: false },
-    });
-    await runtimeJobs.recordEvent({
-      jobId: job.jobId,
-      eventType: "agent_team.scheduler_progress",
-      data: {
-        stage: "boundary_replay_checkpoint",
-        currentPhase: "boundary_replay_context_scout",
-        artifactRefs: [
-          "runtime-job://boundary-replay-readback-job/boundary-replay/graph/context_scout/checkpoint-1",
-          "runtime-work-graph://checkpoint/boundary-replay-checkpoint-1",
-        ],
-        reasonCodes: ["boundary_replay_checkpoint_recorded", "boundary:context_scout"],
-        eli5Progress: "OpenClaw recorded a replay checkpoint for context scout.",
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawProviderLogStored: false,
-      },
-    });
-    await runtimeJobs.recordEvent({
-      jobId: job.jobId,
-      eventType: "execution.boundary_replay_checkpoint",
-      data: {
-        checkpointRef:
-          "runtime-job://boundary-replay-readback-job/boundary-replay/graph/context_scout/checkpoint-1",
-        graphCheckpointRef: "runtime-work-graph://checkpoint/boundary-replay-checkpoint-1",
-        checkpointKind: "context_scout",
-        registryVersion: "execution-platform.boundary-replay-registry.v1",
-        replayStartPolicy: "allowed_from_checkpoint",
-        replaySafetyStatus: "safe_to_replay",
-        replayFreshnessStatus: "fresh",
-        replayContinuationMode: "continue_scheduler",
-        reasonCodes: ["context_scout_boundary_checkpoint_recorded"],
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawProviderLogStored: false,
-      },
-    });
-    await runtimeJobs.recordEvent({
-      jobId: job.jobId,
-      eventType: "execution.boundary_replay_plan",
-      data: {
-        planRef:
-          "runtime-job://boundary-replay-readback-job/boundary-replay-plan/graph/context_scout/plan-1",
-        requestedStartBoundary: "context_scout",
-        status: "accepted",
-        registryVersion: "execution-platform.boundary-replay-registry.v1",
-        diagnosticOnly: false,
-        allowedNextTransitions: ["continue_scheduler", "repair_boundary"],
-        terminalBlockerClasses: ["identity_mismatch", "stale_checkpoint"],
-        readbackProjectionFields: ["boundaryKind", "checkpointRefs", "nextLegalTransition"],
-        latestAcceptedCheckpointKind: "context_scout",
-        missingCheckpointKinds: [],
-        latestAcceptedCheckpointRef:
-          "runtime-job://boundary-replay-readback-job/boundary-replay/graph/context_scout/checkpoint-1",
-        exactContinuationMode: "continue_scheduler",
-        exactContinuationAction:
-          "Continue production scheduler from context_scout through GenericOrchestrationRuntime.",
-        skippedUpstreamCheckpointKinds: [
-          "router_payload",
-          "mission_ledger",
-          "requirement_map",
-          "context_scout",
-        ],
-        resumeFromArtifactRefs: ["runtime-job://boundary-replay-readback-job/context-scout"],
-        invalidReasonCodes: [],
-        acceptedCheckpointRefs: [
-          "runtime-job://boundary-replay-readback-job/boundary-replay/graph/context_scout/checkpoint-1",
-        ],
-        staleCheckpointRefs: [],
-        rejectedCheckpointRefs: [],
-        reasonCodes: ["boundary_replay_plan_compiled"],
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawProviderLogStored: false,
-      },
-    });
-    const model = await buildWorkQueueExecutionReadModel({
-      workQueue,
-      runtimeJobs,
-      workItemId,
-    });
-
-    expect(
-      model.runtimeJobs[0]?.ownerProgressReadback.activeGraphProgress.boundaryReplay,
-    ).toMatchObject({
-      state: "present",
-      latestCheckpointKind: "context_scout",
-      currentReplayBoundary: "context_scout",
-      checkpointRefs: [
-        "runtime-job://boundary-replay-readback-job/boundary-replay/graph/context_scout/checkpoint-1",
-      ],
-      graphCheckpointRefs: ["runtime-work-graph://checkpoint/boundary-replay-checkpoint-1"],
-      planRefs: [
-        "runtime-job://boundary-replay-readback-job/boundary-replay-plan/graph/context_scout/plan-1",
-      ],
-      replayStartPolicy: "allowed_from_checkpoint",
-      replaySafetyStatus: "safe_to_replay",
-      replayFreshnessStatus: "fresh",
-      replayContinuationMode: "continue_scheduler",
-      exactContinuationMode: "continue_scheduler",
-      exactContinuationAction:
-        "Continue production scheduler from context_scout through GenericOrchestrationRuntime.",
-      registryVersion: "execution-platform.boundary-replay-registry.v1",
-      diagnosticOnly: false,
-      allowedNextTransitions: ["continue_scheduler", "repair_boundary"],
-      terminalBlockerClasses: ["identity_mismatch", "stale_checkpoint"],
-      readbackProjectionFields: ["boundaryKind", "checkpointRefs", "nextLegalTransition"],
-      latestAcceptedCheckpointRef:
-        "runtime-job://boundary-replay-readback-job/boundary-replay/graph/context_scout/checkpoint-1",
-      latestAcceptedCheckpointKind: "context_scout",
-      missingCheckpointKinds: [],
-      skippedUpstreamCheckpointKinds: [
-        "router_payload",
-        "mission_ledger",
-        "requirement_map",
-        "context_scout",
-      ],
-      resumeFromArtifactRefs: ["runtime-job://boundary-replay-readback-job/context-scout"],
-      invalidReasonCodes: [],
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-      rawToolLogStored: false,
-    });
-  });
-});
-
-it("projects boundary replay from compact latest-run-state when events are unavailable", async () => {
-  await withRuntime(async ({ runtimeJobs, workQueue }) => {
-    const workItemId = "boundary-replay-latest-state-work-item";
-    const job = await runtimeJobs.enqueueJob({
-      jobId: "boundary-replay-latest-state-job",
-      jobType: "executor.agent_team",
-      queueName: "agent-team",
-      workItemId,
-      payload: { workflowId: "agent_team.coding", objectiveSummary: "Replay after resources." },
-    });
-    await workQueue.createWorkItem({
-      workItemId,
-      itemType: "execution_workflow",
-      title: "Boundary replay latest-run-state readback",
-    });
-    await workQueue.createWorkRun({
-      workItemId,
-      executorKind: "runtime_job",
-      runtimeJobId: job.jobId,
-      runState: "running",
-      metadata: { workQueueLifecycleMutated: false },
-    });
-    await runtimeJobs.attachArtifact({
-      jobId: job.jobId,
-      artifactType: "execution_platform.latest_run_state",
-      storageKind: "metadata",
-      uri: "runtime-job://boundary-replay-latest-state-job/latest-run-state/current",
-      contentType: "application/json",
-      metadata: {
-        artifactKind: "execution_platform_latest_run_state",
-        schemaVersion: "execution-platform.latest-run-state.v1",
-        generatedAt: new Date().toISOString(),
-        runtimeJobId: job.jobId,
-        current: {
-          phase: "boundary_replay_before_worker_invocation",
-          graphId: "graph-latest",
-        },
-        boundaryReplay: {
-          state: "present",
-          latestCheckpointKind: "before_worker_invocation",
-          currentReplayBoundary: "before_worker_invocation",
-          nextReplayBoundary: "before_worker_invocation",
-          checkpointRefs: [
-            "runtime-job://boundary-replay-latest-state-job/boundary-replay/graph/before_worker_invocation/checkpoint-1",
-          ],
-          graphCheckpointRefs: ["runtime-work-graph://checkpoint/boundary-replay-after-resource"],
-          planRefs: [
-            "runtime-job://boundary-replay-latest-state-job/boundary-replay-plan/graph/before_worker_invocation/plan-1",
-          ],
-          replayStartPolicy: "allowed_from_checkpoint",
-          replaySafetyStatus: "safe_to_replay",
-          replayFreshnessStatus: "fresh",
-          replayContinuationMode: "run_node",
-          exactContinuationMode: "run_node",
-          exactContinuationAction:
-            "Resume production scheduler at before_worker_invocation and run the recorded ready node(s): implementation-node.",
-          latestAcceptedCheckpointRef:
-            "runtime-job://boundary-replay-latest-state-job/boundary-replay/graph/before_worker_invocation/checkpoint-1",
-          resumeFromArtifactRefs: ["runtime-job://boundary-replay-latest-state-job/node-packet"],
-          invalidReasonCodes: [],
-          reasonCodes: ["boundary_replay_requested_checkpoint_accepted"],
-        },
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawProviderLogStored: false,
-        rawToolLogStored: false,
-        rawDbRowsStored: false,
-      },
-    });
-
-    const model = await buildWorkQueueExecutionReadModel({
-      workQueue,
-      runtimeJobs,
-      workItemId,
-    });
-
-    expect(
-      model.runtimeJobs[0]?.ownerProgressReadback.activeGraphProgress.boundaryReplay,
-    ).toMatchObject({
-      state: "present",
-      latestCheckpointKind: "before_worker_invocation",
-      currentReplayBoundary: "before_worker_invocation",
-      nextReplayBoundary: "before_worker_invocation",
-      replayContinuationMode: "run_node",
-      exactContinuationMode: "run_node",
-      latestAcceptedCheckpointRef:
-        "runtime-job://boundary-replay-latest-state-job/boundary-replay/graph/before_worker_invocation/checkpoint-1",
-      resumeFromArtifactRefs: ["runtime-job://boundary-replay-latest-state-job/node-packet"],
     });
   });
 });

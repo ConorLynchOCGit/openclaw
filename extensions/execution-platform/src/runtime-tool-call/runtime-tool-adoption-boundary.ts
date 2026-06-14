@@ -436,7 +436,7 @@ export function buildRuntimeToolificationTruthRegistry(): RuntimeToolificationSu
         "worker.invoke",
       ],
       productionEntryRefs: [
-        "extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.ts",
+        "extensions/execution-platform/src/workflows/scheduler-stage-runner.ts",
         "extensions/execution-platform/src/workflows/scheduler-runtime-tools.ts",
       ],
       compatibilityEntryRefs: [],
@@ -468,7 +468,7 @@ export function buildRuntimeToolificationTruthRegistry(): RuntimeToolificationSu
       canonicalToolFamilies: ["scheduler.evaluate_node_result", "closeout.generate"],
       productionEntryRefs: [
         "extensions/execution-platform/src/workflows/mission-contract-ledger.ts",
-        "extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.ts",
+        "extensions/execution-platform/src/workflows/shared-execution-finish-service.ts",
       ],
       compatibilityEntryRefs: [],
       currentBoundary:
@@ -594,7 +594,6 @@ export function buildRuntimeToolificationTruthRegistry(): RuntimeToolificationSu
       ],
       productionEntryRefs: [
         "extensions/execution-platform/src/workflows/validation-qa-runtime-tools.ts",
-        "extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts",
         "extensions/execution-platform/src/work-queue/execution-read-model.ts",
         "src/gateway/execution-platform-http.ts",
       ],
@@ -670,7 +669,6 @@ export function buildRuntimeToolificationTruthRegistry(): RuntimeToolificationSu
       ],
       productionEntryRefs: [
         "extensions/execution-platform/src/codex-bridge/closeout-finalization-runtime-tools.ts",
-        "extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts",
         "extensions/execution-platform/src/work-queue/execution-read-model.ts",
         "src/gateway/execution-platform-http.ts",
       ],
@@ -749,7 +747,6 @@ export function buildRuntimeToolificationTruthRegistry(): RuntimeToolificationSu
         "extensions/execution-platform/src/workflows/workflow-definition-registry.ts",
         "extensions/execution-platform/src/workflows/runtime-workflow-graph-engine.ts",
         "extensions/execution-platform/src/workflows/workflow-completion-review.ts",
-        "extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts",
       ],
       compatibilityEntryRefs: [],
       currentBoundary:
@@ -792,13 +789,12 @@ export function buildRuntimeToolificationTruthRegistry(): RuntimeToolificationSu
         "extensions/execution-platform/src/workflows/workflow-plugin-registry.ts",
         "extensions/execution-platform/src/workflows/agent-team-coding-plugin.ts",
         "extensions/execution-platform/src/workflows/runtime-workflow-graph-engine.ts",
-        "extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts",
       ],
       compatibilityEntryRefs: [],
       currentBoundary:
         "agent_team.coding policy, executor keys, scheduler gates, and readback expectations are owned by a canonical workflow plugin consumed by the runtime graph engine.",
       targetBoundary:
-        "Coding-team execution remains plugin-backed until the DynamicAgentTeamGraphRunner host shim is removed in the generic runner retirement/plugin extraction follow-up.",
+        "Coding-team execution remains plugin-backed through the canonical runtime workflow graph engine.",
       nextQueueItemId: null,
       gates: {
         traceRequired: true,
@@ -845,46 +841,6 @@ export function buildRuntimeToolificationTruthRegistry(): RuntimeToolificationSu
       },
       evidenceRefs: [],
       blockerReasonCodes: ["product_spec_planning_live_ux_proof_pending"],
-    }),
-    surface({
-      surfaceId: "generic-workflow-runner-retirement",
-      title: "Generic Workflow Runner Production Retirement",
-      kind: "workflow",
-      ownerSystemArea: "execution-platform",
-      currentStatus: "production_primary",
-      targetStatus: "production_primary",
-      canonicalToolFamilies: [
-        "scheduler.decompose_graph",
-        "scheduler.select_next_node",
-        "worker.invoke",
-        "validation.run",
-        "work_queue.project_event",
-        "closeout.generate",
-      ],
-      productionEntryRefs: [
-        "extensions/execution-platform/src/workflows/runtime-workflow-graph-engine.ts",
-        "extensions/execution-platform/src/workflows/workflow-definition-registry.ts",
-        "extensions/execution-platform/src/workflows/workflow-plugin-registry.ts",
-        "extensions/execution-platform/src/work-queue/execution-read-model.ts",
-      ],
-      compatibilityEntryRefs: [],
-      currentBoundary:
-        "WorkflowQueuedRunner has been deleted; production workflows run through the canonical workflow runtime engine and workflow definitions/plugins.",
-      targetBoundary:
-        "No production workflow path can complete without workflow definition/plugin readiness, runtime tool traces, evidence profile, completion review, and model-authored closeout.",
-      nextQueueItemId: null,
-      gates: {
-        traceRequired: true,
-        workQueueReadbackRequired: true,
-        liveUxProofRequired: false,
-        compatibilityRetirementRequired: true,
-        closeoutRequired: true,
-      },
-      evidenceRefs: [
-        ".artifacts/execution-platform/generic-workflow-runner-retirement-summary.json",
-        ".artifacts/execution-platform/generic-workflow-runner-retirement-adoption-gate-proof.json",
-      ],
-      blockerReasonCodes: [],
     }),
     surface({
       surfaceId: "memory-retrieval-context-proactivity-toolification",
@@ -966,9 +922,9 @@ export const RUNTIME_TOOL_ADOPTION_BOUNDARY_LEGACY_ALIASES: RuntimeToolAdoptionB
       legacySurfaceId: "runtime-work-graph-node-execution",
       canonicalSurfaceId: "scheduler-toolification",
       currentBoundaryOverride:
-        "RuntimeWorkGraphScheduler wraps node execution and scheduler decisions through runtime tool traces.",
+        "Scheduler stage/tool modules expose traceable planning policy; native node execution now runs through RuntimeJob envelope effects.",
       targetBoundaryOverride:
-        "All scheduler node execution, progress, and evidence uses runtime tool traces.",
+        "All scheduler policy, progress, and evidence uses runtime tool traces without the deleted work-graph scheduler engine.",
     },
     {
       legacySurfaceId: "scheduler-decisions",

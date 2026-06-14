@@ -334,7 +334,7 @@ function defaultGateForExecutableNode(input: {
   node: TeamGraphNode;
   capability: ReturnType<typeof findRuntimeNodeCapability> | null;
 }): string {
-  if (input.node.nodeKind === "work_intent" || input.node.nodeKind === "human_task") {
+  if (input.node.nodeKind === "human_task") {
     return "no_local_lifecycle_transition";
   }
   if (HARD_TERMINAL_NODE_STATUSES.has(input.node.nodeStatus)) {

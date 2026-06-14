@@ -7,8 +7,8 @@ describe("canonical readback gate", () => {
       graphId: "product-spec-graph",
       terminalStatus: "needs_review",
       progress: {
-        nodeId: "product-spec-work-intent",
-        activeNodeKind: "work_intent",
+        nodeId: "product-spec-orchestrator-plan",
+        activeNodeKind: "orchestrator_plan",
         reasonCodes: [
           "node_resource_demand_required",
           "node_local_node_resource_demand_required_before_execution",
@@ -41,12 +41,12 @@ describe("canonical readback gate", () => {
     const gate = buildCanonicalReadbackGate({
       graphId: "product-spec-graph",
       progress: {
-        nodeId: "work-intent-scope",
-        activeNodeKind: "work_intent",
-        nodeLifecycleProjectionRef: "node-lifecycle-projection://work-intent-scope",
+        nodeId: "orchestrator-plan-scope",
+        activeNodeKind: "orchestrator_plan",
+        nodeLifecycleProjectionRef: "node-lifecycle-projection://orchestrator-plan-scope",
         nodeLifecycleProjectionGate: "resource_narrowing_required",
         nodeLifecycleProjectionStatus: "blocked",
-        nodeResourceDemandSessionRefs: ["node-resource-demand://work-intent-scope/session"],
+        nodeResourceDemandSessionRefs: ["node-resource-demand://orchestrator-plan-scope/session"],
         reasonCodes: ["resource_single_unit_over_profile"],
         nextDecisionNeeded: "select_resource_scope",
       },

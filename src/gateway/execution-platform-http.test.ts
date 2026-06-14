@@ -19,10 +19,8 @@ import { RuntimeToolRegistry } from "../../extensions/execution-platform/src/run
 import { RuntimeToolTraceRepository } from "../../extensions/execution-platform/src/runtime-tool-call/runtime-tool-trace-repository.ts";
 import { WorkQueueEventStore } from "../../extensions/execution-platform/src/work-queue/work-queue-event-store.ts";
 import { WorkQueueRepository } from "../../extensions/execution-platform/src/work-queue/work-queue-repository.ts";
-import {
-  NATIVE_EXECUTION_SESSION_JOB_TYPE,
-  startNativeExecutionSession,
-} from "../../extensions/execution-platform/src/workflows/native-agentic-orchestration.ts";
+import { NATIVE_EXECUTION_SESSION_JOB_TYPE } from "../../extensions/execution-platform/src/workflows/native-agentic-orchestration.ts";
+import { startAcceptedNativeExecutionSessionForTest } from "../../extensions/execution-platform/src/workflows/native-execution-test-fixtures.ts";
 import { RuntimeWorkGraphRepository } from "../../extensions/execution-platform/src/workflows/runtime-work-graph-repository.ts";
 import { registerSchedulerRuntimeTools } from "../../extensions/execution-platform/src/workflows/scheduler-runtime-tools.ts";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -256,7 +254,7 @@ describe("execution platform gateway HTTP routes", () => {
       runtimeJobs,
       workQueue,
       structuredRouterProvider: fixedFrontDoorProvider(codingWorkflowRoute()),
-      startExecutionSession: async (input) => startNativeExecutionSession(input),
+      startExecutionSession: async (input) => startAcceptedNativeExecutionSessionForTest(input),
     });
     const response = createResponse();
 
@@ -307,7 +305,7 @@ describe("execution platform gateway HTTP routes", () => {
       runtimeJobs,
       workQueue,
       structuredRouterProvider: fixedFrontDoorProvider(codingWorkflowRoute()),
-      startExecutionSession: async (input) => startNativeExecutionSession(input),
+      startExecutionSession: async (input) => startAcceptedNativeExecutionSessionForTest(input),
     });
     const response = createResponse();
     const req = jsonRequest("/api/execution-platform/execution/submit", {
@@ -409,7 +407,7 @@ describe("execution platform gateway HTTP routes", () => {
       runtimeJobs,
       workQueue,
       structuredRouterProvider: fixedFrontDoorProvider(codingWorkflowRoute()),
-      startExecutionSession: async (input) => startNativeExecutionSession(input),
+      startExecutionSession: async (input) => startAcceptedNativeExecutionSessionForTest(input),
     });
     const prompt = "Implement Product/Spec Planning.\n\nPreserve this final newline.\n";
     const response = createResponse();

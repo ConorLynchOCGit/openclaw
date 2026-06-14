@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyExecutionPlatformMigrations } from "../db/migrations.ts";
 import { createExecutionPlatformPgMemTestDatabase } from "../db/pg-test.ts";
-import { RuntimeWorkGraphRepository } from "../workflows/runtime-work-graph-repository.ts";
-import { RuntimeWorkGraphScheduler } from "../workflows/runtime-work-graph-scheduler.ts";
 import { RUNTIME_TOOL_ADOPTION_BOUNDARY_MAP } from "./runtime-tool-adoption-boundary.ts";
 import { RuntimeToolKernel } from "./runtime-tool-kernel.ts";
 import { buildRuntimeToolDefinition, RuntimeToolRegistry } from "./runtime-tool-registry.ts";
@@ -35,18 +33,6 @@ function diagnosticTool() {
     executorKey: "diagnostic.bounded_echo",
     schemaRef: "runtime-tool://diagnostic/bounded-echo/v1",
     authorityClass: "diagnostic",
-    enabled: true,
-  });
-}
-
-function nodeAgentSessionInvokeTool() {
-  return buildRuntimeToolDefinition({
-    toolId: "node.agent_session.invoke",
-    toolVersion: "v1",
-    toolFamily: "worker.invoke",
-    executorKey: "runtime-work-graph.node-executor",
-    schemaRef: "runtime-tool://node-agent-session/invoke/v1",
-    authorityClass: "bounded_runtime_write",
     enabled: true,
   });
 }
@@ -514,109 +500,5 @@ describe("RuntimeToolKernel", () => {
         }),
       ]),
     );
-  });
-
-  it("traces production native node-agent execution through the scheduler", async () => {
-    const database = await createExecutionPlatformPgMemTestDatabase();
-    try {
-      await applyExecutionPlatformMigrations(database.sql);
-      const traces = new RuntimeToolTraceRepository(database.sql);
-      const registry = new RuntimeToolRegistry();
-      registry.register(nodeAgentSessionInvokeTool());
-      const kernel = new RuntimeToolKernel({ registry, traces });
-      const graphs = new RuntimeWorkGraphRepository(database.sql);
-      await graphs.createGraph({
-        graphId: "graph-tool-trace",
-        workflowId: "agent_team.coding",
-        orchestratorModelRef: "openai-codex/gpt-5.5",
-      });
-      await graphs.addNode({
-        graphId: "graph-tool-trace",
-        nodeId: "implementation-1",
-        nodeKind: "implementation",
-        assignedRole: "implementation_engineer",
-        nodeStatus: "planned",
-        inputHandoffRefs: [],
-        outputArtifactRefs: [],
-        metadata: {
-          capabilityId: "implementation_microtask",
-          targetRefs: [
-            "extensions/execution-platform/src/runtime-tool-call/runtime-tool-call.test.ts",
-          ],
-          authorityScopeRefs: [
-            "extensions/execution-platform/src/runtime-tool-call/runtime-tool-call.test.ts",
-          ],
-          allowedFileRefs: [
-            "extensions/execution-platform/src/runtime-tool-call/runtime-tool-call.test.ts",
-          ],
-          commitmentIdsAdvanced: ["runtime-tool-trace"],
-          exactObjective:
-            "Execute a bounded implementation node through the native node agent session.",
-          expectedOutput: "Changed-file evidence for the implementation commitment.",
-          acceptanceCriteria: [
-            "Scheduler traces node.agent_session.invoke through RuntimeToolKernel.",
-          ],
-          evidenceMode: ["changed_file_evidence"],
-          sourcePromptExcerptRefs: ["source-prompt://runtime-tool-trace/body/0-500"],
-          rawPromptStored: false,
-          rawResponseStored: false,
-        },
-      });
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        runtimeToolKernel: kernel,
-        orchestrator: {
-          async callSchedulerTool() {
-            throw new Error(
-              "scheduler_native_tool_should_not_run_before_ready_implementation_node",
-            );
-          },
-        },
-        attachPayloadArtifact: async (artifact) => ({
-          artifactRef: artifact.uri,
-          reasonCodes: [`attached:${artifact.artifactType}`],
-        }),
-        nodeAgentSessionRunner: async ({ nodeExecutionSnapshot }) => ({
-          status: "succeeded",
-          outputArtifactRefs: ["artifact://implementation/summary"],
-          reasonCodes: [
-            "node_agent_session_invoked",
-            `node_execution_snapshot_ref:${nodeExecutionSnapshot.snapshotRef}`,
-          ],
-          metadata: {
-            nodeRunId: nodeExecutionSnapshot.nodeRunId,
-            nodeAgentId: nodeExecutionSnapshot.agentId,
-            nodeAgentSessionKey: nodeExecutionSnapshot.sessionKey,
-            rawPromptStored: false,
-            rawResponseStored: false,
-          },
-          rawPromptStored: false,
-          rawResponseStored: false,
-          rawProviderLogStored: false,
-          workQueueLifecycleMutated: false,
-        }),
-        executors: {
-          implementation: {
-            async execute() {
-              throw new Error("legacy_executor_should_not_run_for_native_node_agent_session");
-            },
-          },
-        },
-        progressCheckpointIterations: 1,
-      });
-
-      const result = await scheduler.run("graph-tool-trace");
-
-      expect(result.executedNodeIds).toEqual(["implementation-1"]);
-      const summary = await traces.summarize({ graphId: "graph-tool-trace" });
-      expect(summary).toMatchObject({
-        invocationCount: 1,
-        latestToolId: "node.agent_session.invoke",
-        latestStatus: "succeeded",
-      });
-      expect(summary.latestInvocation?.nodeId).toBe("implementation-1");
-    } finally {
-      await database.close();
-    }
   });
 });

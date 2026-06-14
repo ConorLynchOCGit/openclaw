@@ -89,7 +89,7 @@ function boundedCapability(capability: RuntimeNodeCapability): JsonObject {
     requiredAuthorityScopes: capability.requiredAuthorityScopes,
     requiredEvidenceClaimKinds: capability.requiredEvidenceClaimKinds,
     evidenceProducedKinds: capability.evidenceProducedKinds,
-    canRunAsWorkIntent: capability.canRunAsWorkIntent,
+    canRunAsRuntimeNode: capability.canRunAsRuntimeNode,
     canRunAsExecutable: capability.canRunAsExecutable,
     defaultRepairTransition: capability.defaultRepairTransition,
     defaultBlockedTransition: capability.defaultBlockedTransition,
@@ -359,7 +359,7 @@ export function compileCapabilityManifestRuntimeToolOutput(input: {
       requiredLifecycleTools: capability.requiredLifecycleTools,
       domainWorkerActionToolIds: capability.domainWorkerActionToolIds,
       validLifecyclePhases: capability.validLifecyclePhases,
-      canRunAsWorkIntent: capability.canRunAsWorkIntent,
+      canRunAsRuntimeNode: capability.canRunAsRuntimeNode,
       canRunAsExecutable: capability.canRunAsExecutable,
     },
   });

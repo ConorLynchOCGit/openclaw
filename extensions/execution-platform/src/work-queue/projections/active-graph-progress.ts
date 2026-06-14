@@ -5,7 +5,6 @@ import type {
   RuntimeJobArtifact,
   RuntimeJobEvent,
 } from "../../runtime-job-repository.ts";
-import { projectBoundaryReplayReadback } from "./boundary-replay-readback.ts";
 import { projectModelCallProgress } from "./model-usage-walltime.ts";
 import {
   asRecord,
@@ -186,66 +185,6 @@ export function activeGraphProgressReadback(
   const latestRunFrontier = asRecord(latestRunStateMetadata?.activeFrontier);
   const latestRunCanonicalReadbackGate = asRecord(latestRunStateMetadata?.canonicalReadbackGate);
   const latestRunGraphPatch = asRecord(latestRunStateMetadata?.graphPatch);
-  const latestRunBoundaryReplay = asRecord(latestRunStateMetadata?.boundaryReplay);
-  const boundaryCheckpointProgressEvents = progressEvents.filter((event) => {
-    const record = eventDataRecord(event);
-    return (
-      stringValue(record.stage) === "boundary_replay_checkpoint" ||
-      (stringValue(record.currentPhase) ?? "").startsWith("boundary_replay_")
-    );
-  });
-  const boundaryCheckpointEvents = events.filter(
-    (event) => event.eventType === "execution.boundary_replay_checkpoint",
-  );
-  const boundaryPlanEvents = events.filter(
-    (event) => event.eventType === "execution.boundary_replay_plan",
-  );
-  const latestBoundaryData = eventDataRecord(
-    boundaryCheckpointEvents.at(-1) ?? boundaryCheckpointProgressEvents.at(-1),
-  );
-  const latestBoundaryProgressData = eventDataRecord(boundaryCheckpointProgressEvents.at(-1));
-  const latestBoundaryPlanData = eventDataRecord(boundaryPlanEvents.at(-1));
-  const boundaryReplayCheckpointRefs = [
-    ...new Set(
-      [
-        ...boundaryCheckpointProgressEvents.flatMap((event) =>
-          stringArrayValue(eventDataRecord(event).artifactRefs, 20),
-        ),
-        ...boundaryCheckpointEvents
-          .map((event) => stringValue(eventDataRecord(event).checkpointRef))
-          .filter((ref): ref is string => Boolean(ref)),
-        ...stringArrayValue(latestRunBoundaryReplay?.checkpointRefs, 40),
-      ].filter((ref) => ref.includes("/boundary-replay/")),
-    ),
-  ].slice(0, 40);
-  const boundaryReplayGraphCheckpointRefs = [
-    ...new Set(
-      [
-        ...boundaryCheckpointProgressEvents.flatMap((event) =>
-          stringArrayValue(eventDataRecord(event).artifactRefs, 20),
-        ),
-        ...boundaryCheckpointEvents
-          .map((event) => stringValue(eventDataRecord(event).graphCheckpointRef))
-          .filter((ref): ref is string => Boolean(ref)),
-        ...stringArrayValue(latestRunBoundaryReplay?.graphCheckpointRefs, 40),
-      ].filter((ref) => ref.startsWith("runtime-work-graph://checkpoint/")),
-    ),
-  ].slice(0, 40);
-  const boundaryReplayPlanRefs = [
-    ...new Set([
-      ...boundaryPlanEvents
-        .map((event) => stringValue(eventDataRecord(event).planRef))
-        .filter((ref): ref is string => Boolean(ref)),
-      ...stringArrayValue(latestRunBoundaryReplay?.planRefs, 20),
-    ]),
-  ].slice(0, 20);
-  const latestBoundaryCheckpointKind =
-    stringValue(latestBoundaryData.checkpointKind) ??
-    stringValue(latestRunBoundaryReplay?.latestCheckpointKind) ??
-    (stringValue(latestBoundaryProgressData.currentPhase)?.startsWith("boundary_replay_")
-      ? (stringValue(latestBoundaryProgressData.currentPhase)?.replace(/^boundary_replay_/u, "") ??
-        null)
-      : null);
   const latestModelCallData = eventDataRecord(
     progressEvents.findLast((event) => {
       const record = eventDataRecord(event);
@@ -666,7 +605,6 @@ export function activeGraphProgressReadback(
     rootCause: projectedRootCauseData,
     noProgress: latestNoProgressData ?? latestRunNoProgress,
     schedulerModelCallEnvelope: latestSchedulerModelCallEnvelopeData,
-    checkpointKind: latestBoundaryCheckpointKind,
     terminalStatus:
       stringValue(latestRunProcess?.terminalStatus) ?? stringValue(data.finalizationState),
     adapterTerminalStatus: stringValue(latestRunProcess?.adapterTerminalStatus),
@@ -2059,16 +1997,6 @@ export function activeGraphProgressReadback(
       rawResponseStored: false,
       rawLogsStored: false,
     },
-    boundaryReplay: projectBoundaryReplayReadback({
-      checkpointRefs: boundaryReplayCheckpointRefs,
-      graphCheckpointRefs: boundaryReplayGraphCheckpointRefs,
-      latestBoundaryData,
-      latestBoundaryPlanData,
-      latestBoundaryProgressData,
-      latestCheckpointKind: latestBoundaryCheckpointKind,
-      latestRunBoundaryReplay,
-      planRefs: boundaryReplayPlanRefs,
-    }),
     latestProgressEventRefs: progressEvents
       .slice(-6)
       .map((event) => `runtime-event://${event.eventId}`),

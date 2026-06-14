@@ -2,10 +2,8 @@ import { describe, expect, it } from "vitest";
 import { applyExecutionPlatformMigrations } from "../db/migrations.ts";
 import { createExecutionPlatformPgMemTestDatabase } from "../db/pg-test.ts";
 import { RuntimeJobRepository } from "../runtime-job-repository.ts";
-import {
-  isRuntimeExecutionEventEnvelope,
-  startNativeExecutionSession,
-} from "./native-agentic-orchestration.ts";
+import { isRuntimeExecutionEventEnvelope } from "./native-agentic-orchestration.ts";
+import { startAcceptedNativeExecutionSessionForTest } from "./native-execution-test-fixtures.ts";
 import { finishSharedExecution } from "./shared-execution-finish-service.ts";
 
 async function withRepository<T>(
@@ -27,7 +25,7 @@ async function withRepository<T>(
 describe("shared execution finish service", () => {
   it("auto-attaches mutation, validation, artifact, and child-session evidence", async () => {
     await withRepository(async ({ repository }) => {
-      const started = await startNativeExecutionSession({
+      const started = await startAcceptedNativeExecutionSessionForTest({
         runtimeJobs: repository,
         request: {
           objective: "Finish with runtime evidence.",
@@ -117,7 +115,7 @@ describe("shared execution finish service", () => {
 
   it("rejects completed finish when required evidence or blocking children are missing", async () => {
     await withRepository(async ({ repository }) => {
-      const started = await startNativeExecutionSession({
+      const started = await startAcceptedNativeExecutionSessionForTest({
         runtimeJobs: repository,
         request: {
           objective: "Reject unsupported completion.",

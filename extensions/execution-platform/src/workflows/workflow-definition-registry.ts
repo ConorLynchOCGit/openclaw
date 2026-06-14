@@ -1,10 +1,5 @@
 import type { JsonValue } from "../runtime-job-repository.ts";
 import {
-  ARCHITECTURE_RED_TEAM_ROLE_COVERAGE_PROFILE,
-  CODING_TEAM_ROLE_COVERAGE_PROFILE,
-  PRODUCT_SPEC_PLANNING_ROLE_COVERAGE_PROFILE,
-} from "./runtime-work-graph-scheduler.ts";
-import {
   DEEP_COMPLETION_REVIEW_QUESTION,
   validateWorkflowDefinition,
   type WorkflowCompletionReviewPolicy,
@@ -12,6 +7,11 @@ import {
   type WorkflowDefinitionStatus,
 } from "./workflow-definition.ts";
 import { workflowEvidenceProfileForWorkflow } from "./workflow-evidence-profile.ts";
+import {
+  ARCHITECTURE_RED_TEAM_ROLE_COVERAGE_PROFILE,
+  CODING_TEAM_ROLE_COVERAGE_PROFILE,
+  PRODUCT_SPEC_PLANNING_ROLE_COVERAGE_PROFILE,
+} from "./workflow-node-execution-contracts.ts";
 import {
   type WorkflowResourceNeed,
   type WorkflowEntryNodePolicy,

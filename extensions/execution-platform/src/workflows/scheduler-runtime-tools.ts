@@ -1336,7 +1336,7 @@ export async function invokeSchedulerRuntimeTool(input: {
     nodeId: input.nodeId ?? null,
     roleRef: input.roleRef ?? null,
     modelRef: input.modelRef ?? null,
-    idempotencyScope: `runtime-work-graph-scheduler:${input.graphId}`,
+    idempotencyScope: `scheduler-runtime-tools:${input.graphId}`,
     idempotencyKey: input.idempotencyKey,
     inputRef: input.inputRef ?? null,
     inputHash: input.inputHash ?? null,

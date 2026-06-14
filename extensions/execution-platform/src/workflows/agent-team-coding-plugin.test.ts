@@ -5,8 +5,8 @@ import {
   AGENT_TEAM_CODING_WORKFLOW_PLUGIN_ID,
   buildAgentTeamCodingWorkflowPlugin,
 } from "./agent-team-coding-plugin.ts";
-import type { RuntimeWorkGraphNodeExecutor } from "./runtime-work-graph-scheduler.ts";
 import { requireCanonicalWorkflowDefinition } from "./workflow-definition-registry.ts";
+import type { RuntimeWorkGraphNodeExecutor } from "./workflow-node-execution-contracts.ts";
 
 const executor: RuntimeWorkGraphNodeExecutor = {
   execute: async () => ({
@@ -32,7 +32,6 @@ describe("agent_team.coding workflow plugin", () => {
     expect(plugin.workflowId).toBe("agent_team.coding");
     expect(plugin.definitionId).toBe(definition.definitionId);
     expect(plugin.schedulerPolicy).toMatchObject({
-      requireCostAwareCapabilityPolicy: true,
       requireEvidenceClaimsForMissionLedger: true,
       requireSchedulerToolKernel: true,
       stagedGraphAcceptanceRequired: true,

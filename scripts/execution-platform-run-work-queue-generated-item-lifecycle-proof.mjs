@@ -358,7 +358,6 @@ async function main() {
         "extensions/execution-platform/src/work-queue/generated-item-lifecycle.ts",
         "extensions/execution-platform/src/work-queue/work-queue-repository.ts",
         "extensions/execution-platform/src/runtime-middleware-live-pilot.ts",
-        "scripts/execution-platform-run-generic-workflow-runner-retirement-proof.mjs",
       ],
       artifactRefs: [
         preflight.ref,
