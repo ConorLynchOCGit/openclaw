@@ -177,6 +177,11 @@ describe("native execution cutover inventory", () => {
     expect(nativeRunner).toContain("needs_review_no_required_closeout");
     expect(nativeRunner).toContain("wait_on_blocking_child");
     expect(nativeRunner).toContain("child_session_started");
+    expect(core).toContain("void Promise.resolve(");
+    expect(core).toContain("completed OpenClaw turn from returning to the lifecycle reducer");
+    expect(interactionRuntime).toContain("runtimeJobEnvelopeOwnsPostTurnReduction");
+    expect(interactionRuntime).toContain("!runtimeJobEnvelopeOwnsPostTurnReduction");
+    expect(interactionRuntime).toContain("void markSuccessfulAuthProfileUse().catch");
     expect(preparedContext).toContain("export type AgentRuntimePreparedContext");
     expect(preparedContext).toContain('requestShape: "openclaw.agent-run-request.v1"');
     expect(preparedContext).toContain('adapter: "interaction_attempt_runtime"');

@@ -317,31 +317,40 @@ function boundedErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
 }
 
-async function emitRuntimeTurnEvent(
+function emitRuntimeTurnEvent(
   input: AgentRuntimeCoreRunInput,
   phase: "executor_entered" | "agent_core_starting" | "agent_core_completed" | "agent_core_failed",
   startedAt: number,
   extra: { errorName?: string; errorMessage?: string } = {},
-): Promise<void> {
+): void {
   if (!("turn" in input)) {
     return;
   }
   const request = input.turn.acceptedRun.runRequest;
-  await input.turn.envelope.onRuntimeEvent?.({
-    phase,
-    executionClass: input.turn.envelope.executionClass,
-    schedulerClass: "agent_runtime",
-    requestShape: "openclaw.agent-run-request.v1",
-    elapsedMs: Date.now() - startedAt,
-    sessionId: request.transcript.sessionId,
-    sessionKey: request.transcript.sessionKey ?? null,
-    agentId: request.agentId,
-    rawPromptStored: false,
-    rawResponseStored: false,
-    rawProviderLogStored: false,
-    rawToolLogStored: false,
-    workQueueLifecycleMutationAllowed: false,
-    ...extra,
+  const onRuntimeEvent = input.turn.envelope.onRuntimeEvent;
+  if (!onRuntimeEvent) {
+    return;
+  }
+  void Promise.resolve(
+    onRuntimeEvent({
+      phase,
+      executionClass: input.turn.envelope.executionClass,
+      schedulerClass: "agent_runtime",
+      requestShape: "openclaw.agent-run-request.v1",
+      elapsedMs: Date.now() - startedAt,
+      sessionId: request.transcript.sessionId,
+      sessionKey: request.transcript.sessionKey ?? null,
+      agentId: request.agentId,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+      workQueueLifecycleMutationAllowed: false,
+      ...extra,
+    }),
+  ).catch(() => {
+    // RuntimeJob envelope telemetry is diagnostic evidence. It must not keep a
+    // completed OpenClaw turn from returning to the lifecycle reducer.
   });
 }
 
@@ -764,9 +773,9 @@ export class DefaultAgentRuntimeCore implements AgentRuntimeCore {
       this.options.runInteractionRuntime ??
       this.options.runEmbeddedCore ??
       runDefaultInteractionRuntime;
-    await emitRuntimeTurnEvent(input, "executor_entered", startedAt);
+    emitRuntimeTurnEvent(input, "executor_entered", startedAt);
     throwIfAborted(view.request.abortSignal ?? view.runtime.abortSignal);
-    await emitRuntimeTurnEvent(input, "agent_core_starting", startedAt);
+    emitRuntimeTurnEvent(input, "agent_core_starting", startedAt);
     emitCorePhase(input, "prepare_run", "agent_runtime_core", {
       requestShape: "openclaw.agent-run-request.v1",
       agentId: view.request.agentId,
@@ -776,7 +785,7 @@ export class DefaultAgentRuntimeCore implements AgentRuntimeCore {
     try {
       prepared = await this.services.prepare(input);
     } catch (error) {
-      await emitRuntimeTurnEvent(input, "agent_core_failed", startedAt, {
+      emitRuntimeTurnEvent(input, "agent_core_failed", startedAt, {
         errorName: error instanceof Error ? error.name : "Error",
         errorMessage: boundedErrorMessage(error),
       });
@@ -845,7 +854,7 @@ export class DefaultAgentRuntimeCore implements AgentRuntimeCore {
         runtimeContext: prepared.runtimeContext,
       });
     } catch (error) {
-      await emitRuntimeTurnEvent(input, "agent_core_failed", startedAt, {
+      emitRuntimeTurnEvent(input, "agent_core_failed", startedAt, {
         errorName: error instanceof Error ? error.name : "Error",
         errorMessage: boundedErrorMessage(error),
       });
@@ -869,7 +878,7 @@ export class DefaultAgentRuntimeCore implements AgentRuntimeCore {
         stopReason: result.meta.stopReason ?? null,
       },
     );
-    await emitRuntimeTurnEvent(input, "agent_core_completed", startedAt);
+    emitRuntimeTurnEvent(input, "agent_core_completed", startedAt);
     return result;
   }
 }

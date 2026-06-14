@@ -1552,7 +1552,13 @@ async function runEmbeddedPiAgentWithExternalCliAuthSyncSuppressed(
         throw assistantFailoverOutcome.error;
       }
       const actualUsage = usageSnapshotFromNormalizedUsage(lastRunPromptUsage);
-      if (actualUsage && !promptError && !aborted && !timedOut) {
+      if (
+        actualUsage &&
+        !promptError &&
+        !aborted &&
+        !timedOut &&
+        !runtimeJobEnvelopeOwnsPostTurnReduction
+      ) {
         const actualUsageContextPressure = await runActualUsageContextPressure({
           runParams: params,
           attemptResult: attempt,
@@ -1969,17 +1975,29 @@ async function runEmbeddedPiAgentWithExternalCliAuthSyncSuppressed(
         `embedded run done: runId=${params.runId} sessionId=${params.sessionId} durationMs=${Date.now() - started} aborted=${aborted}`,
       );
       if (lastProfileId) {
-        await markAuthProfileGood({
-          store: authStore,
-          provider,
-          profileId: lastProfileId,
-          agentDir: params.agentDir,
-        });
-        await markAuthProfileUsed({
-          store: authStore,
-          profileId: lastProfileId,
-          agentDir: params.agentDir,
-        });
+        const successfulProfileId = lastProfileId;
+        const markSuccessfulAuthProfileUse = async () => {
+          await markAuthProfileGood({
+            store: authStore,
+            provider,
+            profileId: successfulProfileId,
+            agentDir: params.agentDir,
+          });
+          await markAuthProfileUsed({
+            store: authStore,
+            profileId: successfulProfileId,
+            agentDir: params.agentDir,
+          });
+        };
+        if (runtimeJobEnvelopeOwnsPostTurnReduction) {
+          void markSuccessfulAuthProfileUse().catch((error: unknown) => {
+            log.warn(
+              `runtime-job auth profile success bookkeeping failed after provider turn for ${params.sessionId}: ${formatErrorMessage(error)}`,
+            );
+          });
+        } else {
+          await markSuccessfulAuthProfileUse();
+        }
       }
       const replayInvalid = resolveReplayInvalidForAttempt(null);
       const livenessState = resolveRunLivenessState({
