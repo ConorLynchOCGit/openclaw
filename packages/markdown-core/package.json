@@ -34,6 +34,11 @@
       "import": "./dist/ir.mjs",
       "default": "./dist/ir.mjs"
     },
+    "./plan-record": {
+      "types": "./dist/plan-record.d.mts",
+      "import": "./dist/plan-record.mjs",
+      "default": "./dist/plan-record.mjs"
+    },
     "./render": {
       "types": "./dist/render.d.mts",
       "import": "./dist/render.mjs",

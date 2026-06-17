@@ -127,6 +127,9 @@ export const EXTENSION_PACKAGE_BOUNDARY_BASE_PATHS = {
     "../dist/plugin-sdk/packages/markdown-core/src/frontmatter.d.ts",
   ],
   "@openclaw/markdown-core/ir": ["../dist/plugin-sdk/packages/markdown-core/src/ir.d.ts"],
+  "@openclaw/markdown-core/plan-record": [
+    "../dist/plugin-sdk/packages/markdown-core/src/plan-record.d.ts",
+  ],
   "@openclaw/markdown-core/render": ["../dist/plugin-sdk/packages/markdown-core/src/render.d.ts"],
   "@openclaw/markdown-core/render-aware-chunking": [
     "../dist/plugin-sdk/packages/markdown-core/src/render-aware-chunking.d.ts",

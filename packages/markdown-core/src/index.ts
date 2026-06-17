@@ -3,6 +3,7 @@ export * from "./code-spans.js";
 export * from "./fences.js";
 export * from "./frontmatter.js";
 export * from "./ir.js";
+export * from "./plan-record.js";
 export * from "./render-aware-chunking.js";
 export * from "./render.js";
 export * from "./tables.js";
