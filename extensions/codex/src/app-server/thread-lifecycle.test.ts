@@ -266,23 +266,31 @@ describe("Codex app-server native code mode config", () => {
     const instructions = buildDeveloperInstructions(createAttemptParams({ provider: "openai" }), {
       dynamicTools: [
         {
+          type: "function",
           name: "message",
           description: "Send a message",
           inputSchema: { type: "object" },
         },
         {
-          name: "music_generate",
-          description: "Create music",
-          inputSchema: { type: "object" },
-          namespace: "openclaw",
-          deferLoading: true,
-        },
-        {
-          name: "image_generate",
-          description: "Create images",
-          inputSchema: { type: "object" },
-          namespace: "openclaw",
-          deferLoading: true,
+          type: "namespace",
+          name: "openclaw",
+          description: "",
+          tools: [
+            {
+              type: "function",
+              name: "music_generate",
+              description: "Create music",
+              inputSchema: { type: "object" },
+              deferLoading: true,
+            },
+            {
+              type: "function",
+              name: "image_generate",
+              description: "Create images",
+              inputSchema: { type: "object" },
+              deferLoading: true,
+            },
+          ],
         },
       ],
     });
@@ -303,11 +311,18 @@ describe("Codex app-server native code mode config", () => {
     const instructions = buildDeveloperInstructions(createAttemptParams({ provider: "openai" }), {
       dynamicTools: [
         {
-          name: "skill_workshop",
-          description: "Manage skill proposals",
-          inputSchema: { type: "object" },
-          namespace: "openclaw",
-          deferLoading: true,
+          type: "namespace",
+          name: "openclaw",
+          description: "",
+          tools: [
+            {
+              type: "function",
+              name: "skill_workshop",
+              description: "Manage skill proposals",
+              inputSchema: { type: "object" },
+              deferLoading: true,
+            },
+          ],
         },
       ],
     });
@@ -325,6 +340,7 @@ describe("Codex app-server native code mode config", () => {
     const instructions = buildDeveloperInstructions(createAttemptParams({ provider: "openai" }), {
       dynamicTools: [
         {
+          type: "function",
           name: "message",
           description: "Send a message",
           inputSchema: { type: "object" },
@@ -346,6 +362,7 @@ describe("Codex app-server native code mode config", () => {
     };
     const directFingerprint = codexDynamicToolsFingerprint([
       {
+        type: "function",
         name: "message",
         description: "Send a visible message",
         inputSchema,
@@ -353,11 +370,18 @@ describe("Codex app-server native code mode config", () => {
     ]);
     const searchableFingerprint = codexDynamicToolsFingerprint([
       {
-        name: "message",
-        description: "Load and send a visible message",
-        inputSchema,
-        namespace: "openclaw",
-        deferLoading: true,
+        type: "namespace",
+        name: "openclaw",
+        description: "",
+        tools: [
+          {
+            type: "function",
+            name: "message",
+            description: "Load and send a visible message",
+            inputSchema,
+            deferLoading: true,
+          },
+        ],
       },
     ]);
 

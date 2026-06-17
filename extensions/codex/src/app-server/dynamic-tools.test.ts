@@ -25,7 +25,7 @@ import {
   CODEX_OPENCLAW_DYNAMIC_TOOL_NAMESPACE,
   createCodexDynamicToolBridge,
 } from "./dynamic-tools.js";
-import type { JsonValue } from "./protocol.js";
+import type { CodexDynamicToolFunctionSpec, CodexDynamicToolSpec, JsonValue } from "./protocol.js";
 
 function createTool(overrides: Partial<AnyAgentTool>): AnyAgentTool {
   return {
@@ -113,6 +113,20 @@ function expectDynamicSpec(
   }
 }
 
+function flattenSpecsWithNamespace(
+  specs: readonly CodexDynamicToolSpec[],
+): Array<CodexDynamicToolFunctionSpec & { namespace?: string }> {
+  return specs.flatMap((spec) =>
+    spec.type === "namespace"
+      ? spec.tools.map((tool) => ({ ...tool, namespace: spec.name }))
+      : [spec],
+  );
+}
+
+function specNames(specs: readonly CodexDynamicToolSpec[]): string[] {
+  return flattenSpecsWithNamespace(specs).map((tool) => tool.name);
+}
+
 function expectNoNamespace(spec: unknown) {
   const record = requireRecord(spec, "tool spec");
   expect(record).not.toHaveProperty("namespace");
@@ -174,11 +188,12 @@ describe("createCodexDynamicToolBridge", () => {
       signal: new AbortController().signal,
     });
 
-    const webSearch = bridge.specs.find((tool) => tool.name === "web_search");
-    const message = bridge.specs.find((tool) => tool.name === "message");
-    const heartbeat = bridge.specs.find((tool) => tool.name === HEARTBEAT_RESPONSE_TOOL_NAME);
-    const sessionsSpawn = bridge.specs.find((tool) => tool.name === "sessions_spawn");
-    const sessionsYield = bridge.specs.find((tool) => tool.name === "sessions_yield");
+    const specs = flattenSpecsWithNamespace(bridge.specs);
+    const webSearch = specs.find((tool) => tool.name === "web_search");
+    const message = specs.find((tool) => tool.name === "message");
+    const heartbeat = specs.find((tool) => tool.name === HEARTBEAT_RESPONSE_TOOL_NAME);
+    const sessionsSpawn = specs.find((tool) => tool.name === "sessions_spawn");
+    const sessionsYield = specs.find((tool) => tool.name === "sessions_yield");
 
     expectDynamicSpec(webSearch, {
       name: "web_search",
@@ -210,14 +225,21 @@ describe("createCodexDynamicToolBridge", () => {
       directToolNames: ["message"],
     });
 
+    const specs = flattenSpecsWithNamespace(bridge.specs);
     expect(bridge.specs).toHaveLength(2);
-    expectDynamicSpec(bridge.specs[0], { name: "message" });
-    expectDynamicSpec(bridge.specs[1], {
-      name: "web_search",
-      namespace: CODEX_OPENCLAW_DYNAMIC_TOOL_NAMESPACE,
-      deferLoading: true,
-    });
-    expectNoNamespace(bridge.specs[0]);
+    expectDynamicSpec(
+      specs.find((tool) => tool.name === "message"),
+      { name: "message" },
+    );
+    expectDynamicSpec(
+      specs.find((tool) => tool.name === "web_search"),
+      {
+        name: "web_search",
+        namespace: CODEX_OPENCLAW_DYNAMIC_TOOL_NAMESPACE,
+        deferLoading: true,
+      },
+    );
+    expectNoNamespace(specs.find((tool) => tool.name === "message"));
   });
 
   it("can register a durable tool schema while denying execution for the current turn", async () => {
@@ -231,11 +253,8 @@ describe("createCodexDynamicToolBridge", () => {
       signal: new AbortController().signal,
     });
 
-    expect(bridge.availableSpecs.map((tool) => tool.name)).toEqual(["message"]);
-    expect(bridge.specs.map((tool) => tool.name)).toEqual([
-      "message",
-      HEARTBEAT_RESPONSE_TOOL_NAME,
-    ]);
+    expect(specNames(bridge.availableSpecs)).toEqual(["message"]);
+    expect(specNames(bridge.specs)).toEqual(["message", HEARTBEAT_RESPONSE_TOOL_NAME]);
 
     const result = await bridge.handleToolCall({
       threadId: "thread-1",
@@ -281,11 +300,11 @@ describe("createCodexDynamicToolBridge", () => {
       signal: new AbortController().signal,
     });
 
-    expect(bridge.availableSpecs[0]?.inputSchema).toEqual({
+    expect(flattenSpecsWithNamespace(bridge.availableSpecs)[0]?.inputSchema).toEqual({
       type: "object",
       properties: { current: { type: "string" } },
     });
-    expect(bridge.specs[0]?.inputSchema).toEqual({
+    expect(flattenSpecsWithNamespace(bridge.specs)[0]?.inputSchema).toEqual({
       type: "object",
       properties: { durable: { type: "string" } },
     });
@@ -321,8 +340,8 @@ describe("createCodexDynamicToolBridge", () => {
       unsubscribeDiagnostics();
     }
 
-    expect(bridge.availableSpecs.map((tool) => tool.name)).toEqual(["message"]);
-    expect(bridge.specs.map((tool) => tool.name)).toEqual(["message"]);
+    expect(specNames(bridge.availableSpecs)).toEqual(["message"]);
+    expect(specNames(bridge.specs)).toEqual(["message"]);
     expect(bridge.telemetry.quarantinedTools).toEqual([
       {
         tool: "fuzzplugin_move_angles",
@@ -419,8 +438,8 @@ describe("createCodexDynamicToolBridge", () => {
       signal: new AbortController().signal,
     });
 
-    expect(bridge.availableSpecs.map((tool) => tool.name)).toEqual(["message"]);
-    expect(bridge.specs.map((tool) => tool.name)).toEqual(["message"]);
+    expect(specNames(bridge.availableSpecs)).toEqual(["message"]);
+    expect(specNames(bridge.specs)).toEqual(["message"]);
     expect(bridge.telemetry.quarantinedTools).toEqual([
       {
         tool: "tool[0]",
@@ -478,8 +497,8 @@ describe("createCodexDynamicToolBridge", () => {
       signal: new AbortController().signal,
     });
 
-    expect(registeredBridge.availableSpecs.map((tool) => tool.name)).toEqual(["message"]);
-    expect(registeredBridge.specs.map((tool) => tool.name)).toEqual(["message"]);
+    expect(specNames(registeredBridge.availableSpecs)).toEqual(["message"]);
+    expect(specNames(registeredBridge.specs)).toEqual(["message"]);
   });
 
   it("can expose all dynamic tools directly for compatibility", () => {

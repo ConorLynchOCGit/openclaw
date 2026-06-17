@@ -213,6 +213,7 @@ import {
   readCodexDynamicToolCallParams,
 } from "./protocol-validators.js";
 import {
+  flattenCodexDynamicToolFunctions,
   isJsonObject,
   type CodexSandboxPolicy,
   type CodexTurnEnvironmentParams,
@@ -917,7 +918,9 @@ export async function runCodexAppServerAttempt(
       messages: historyMessages,
       tokenBudget: params.contextTokenBudget,
       availableTools: new Set(
-        toolBridge.availableSpecs.map((tool) => tool.name).filter(isNonEmptyString),
+        flattenCodexDynamicToolFunctions(toolBridge.availableSpecs)
+          .map((tool) => tool.name)
+          .filter(isNonEmptyString),
       ),
       citationsMode: params.config?.memory?.citations,
       modelId: params.modelId,
@@ -1382,7 +1385,7 @@ export async function runCodexAppServerAttempt(
     threadId: thread.threadId,
     authProfileId: startupAuthProfileId,
     workspaceDir: effectiveWorkspace,
-    toolCount: toolBridge.specs.length,
+    toolCount: flattenCodexDynamicToolFunctions(toolBridge.specs).length,
     codexNativeSurface: codexNativeSurfaceReport,
     codexWorkbenchCapability: codexNativeSurfaceReport.workbenchCapability,
   });

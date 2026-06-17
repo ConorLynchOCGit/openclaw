@@ -39,7 +39,13 @@ import {
 } from "./event-projector.js";
 import { buildCodexPluginAppCacheKey } from "./plugin-app-cache-key.js";
 import { buildCodexPluginThreadConfig } from "./plugin-thread-config.js";
-import type { CodexServerNotification, JsonObject } from "./protocol.js";
+import {
+  flattenCodexDynamicToolFunctions,
+  type CodexDynamicToolFunctionSpec,
+  type CodexDynamicToolSpec,
+  type CodexServerNotification,
+  type JsonObject,
+} from "./protocol.js";
 import {
   assistantMessage,
   createAppServerHarness,
@@ -175,6 +181,7 @@ function createMessageDynamicTool(
   actions: string[] = ["send"],
 ): Parameters<typeof startOrResumeThread>[0]["dynamicTools"][number] {
   return {
+    type: "function",
     name: "message",
     description,
     inputSchema: {
@@ -195,6 +202,7 @@ function createNamedDynamicTool(
   name: string,
 ): Parameters<typeof startOrResumeThread>[0]["dynamicTools"][number] {
   return {
+    type: "function",
     name,
     description: `${name} test tool`,
     inputSchema: {
@@ -407,6 +415,20 @@ function filterAllowedRuntimeToolNamesForTest(
 type RuntimeDynamicToolForTest = Parameters<
   typeof createCodexDynamicToolBridge
 >[0]["tools"][number];
+
+function flattenSpecsWithNamespace(
+  specs: readonly CodexDynamicToolSpec[],
+): Array<CodexDynamicToolFunctionSpec & { namespace?: string }> {
+  return specs.flatMap((spec) =>
+    spec.type === "namespace"
+      ? spec.tools.map((tool) => ({ ...tool, namespace: spec.name }))
+      : [spec],
+  );
+}
+
+function specNames(specs: readonly CodexDynamicToolSpec[]): string[] {
+  return flattenCodexDynamicToolFunctions(specs).map((tool) => tool.name);
+}
 
 function createRuntimeDynamicTool(name: string): RuntimeDynamicToolForTest {
   return {
@@ -902,11 +924,11 @@ describe("runCodexAppServerAttempt", () => {
     const startRequest = request.mock.calls.find(([method]) => method === "thread/start");
     const startParams = startRequest?.[1] as Record<string, unknown> | undefined;
     const startConfig = startParams?.config as Record<string, unknown> | undefined;
-    const startDynamicTools = startParams?.dynamicTools as Array<{ name: string }> | undefined;
+    const startDynamicTools = startParams?.dynamicTools as CodexDynamicToolSpec[] | undefined;
     expect(startConfig?.["features.code_mode"]).toBe(false);
     expect(startConfig?.["features.code_mode_only"]).toBe(false);
     expect(startParams?.environments).toEqual([]);
-    expect(startDynamicTools?.map((tool) => tool.name)).toEqual([
+    expect(specNames(startDynamicTools ?? [])).toEqual([
       "message",
       "sandbox_exec",
       "sandbox_process",
@@ -1027,7 +1049,7 @@ describe("runCodexAppServerAttempt", () => {
       const startParams = startRequest?.[1] as
         | {
             cwd?: string;
-            dynamicTools?: Array<{ name: string }>;
+            dynamicTools?: CodexDynamicToolSpec[];
             environments?: Array<{ environmentId?: string; cwd?: string }>;
             sandbox?: string;
             config?: {
@@ -1045,7 +1067,7 @@ describe("runCodexAppServerAttempt", () => {
       expect(startParams?.config?.["features.code_mode"]).toBe(true);
       expect(startParams?.config?.["features.code_mode_only"]).toBe(false);
       expect(startParams?.config?.["features.apply_patch_streaming_events"]).toBe(true);
-      expect(startParams?.dynamicTools?.map((tool) => tool.name)).toEqual(["message"]);
+      expect(specNames(startParams?.dynamicTools ?? [])).toEqual(["message"]);
       expect(startParams?.environments).toEqual([
         { environmentId: environmentAddParams?.environmentId, cwd: "/workspace" },
       ]);
@@ -1298,10 +1320,10 @@ describe("runCodexAppServerAttempt", () => {
     });
 
     const startRequest = request.mock.calls.find(([method]) => method === "thread/start");
-    const dynamicToolNames = (
-      (startRequest?.[1] as { dynamicTools?: Array<{ name: string }> } | undefined)?.dynamicTools ??
-      []
-    ).map((tool) => tool.name);
+    const dynamicToolNames = specNames(
+      (startRequest?.[1] as { dynamicTools?: CodexDynamicToolSpec[] } | undefined)?.dynamicTools ??
+        [],
+    );
 
     expect(dynamicToolNames).toContain("message");
     expect(dynamicToolNames).toContain("web_search");
@@ -2022,11 +2044,12 @@ describe("runCodexAppServerAttempt", () => {
       directToolNames: ["message"],
     });
 
-    const message = toolBridge.specs.find((tool) => tool.name === "message");
-    const webSearch = toolBridge.specs.find((tool) => tool.name === "web_search");
-    const heartbeat = toolBridge.specs.find((tool) => tool.name === "heartbeat_respond");
-    const sessionsSpawn = toolBridge.specs.find((tool) => tool.name === "sessions_spawn");
-    const sessionsYield = toolBridge.specs.find((tool) => tool.name === "sessions_yield");
+    const specs = flattenSpecsWithNamespace(toolBridge.specs);
+    const message = specs.find((tool) => tool.name === "message");
+    const webSearch = specs.find((tool) => tool.name === "web_search");
+    const heartbeat = specs.find((tool) => tool.name === "heartbeat_respond");
+    const sessionsSpawn = specs.find((tool) => tool.name === "sessions_spawn");
+    const sessionsYield = specs.find((tool) => tool.name === "sessions_yield");
 
     expect(message).not.toHaveProperty("namespace");
     expect(message).not.toHaveProperty("deferLoading");
@@ -2074,7 +2097,7 @@ describe("runCodexAppServerAttempt", () => {
     const normalInstructions = testing.buildDeveloperInstructions(createRunParams(), {
       dynamicTools: normalBridge.availableSpecs,
     });
-    const registeredToolNames = normalBridge.specs.map((tool) => tool.name);
+    const registeredToolNames = specNames(normalBridge.specs);
 
     expect(registeredToolNames).toContain("message");
     expect(registeredToolNames).toContain("heartbeat_respond");
@@ -2096,8 +2119,8 @@ describe("runCodexAppServerAttempt", () => {
       registeredTools,
     );
 
-    expect(heartbeatBridge.specs.map((tool) => tool.name)).toEqual(registeredToolNames);
-    expect(nextNormalBridge.specs.map((tool) => tool.name)).toEqual(registeredToolNames);
+    expect(specNames(heartbeatBridge.specs)).toEqual(registeredToolNames);
+    expect(specNames(nextNormalBridge.specs)).toEqual(registeredToolNames);
   });
 
   it("keeps the persistent dynamic schema stable across heartbeat-only turns", async () => {
@@ -2150,13 +2173,9 @@ describe("runCodexAppServerAttempt", () => {
       registeredTools,
     );
 
-    expect(heartbeatBridge.availableSpecs.map((tool) => tool.name)).toEqual(["heartbeat_respond"]);
-    expect(heartbeatBridge.specs.map((tool) => tool.name)).toEqual(
-      normalBridge.specs.map((tool) => tool.name),
-    );
-    expect(nextNormalBridge.specs.map((tool) => tool.name)).toEqual(
-      normalBridge.specs.map((tool) => tool.name),
-    );
+    expect(specNames(heartbeatBridge.availableSpecs)).toEqual(["heartbeat_respond"]);
+    expect(specNames(heartbeatBridge.specs)).toEqual(specNames(normalBridge.specs));
+    expect(specNames(nextNormalBridge.specs)).toEqual(specNames(normalBridge.specs));
   });
 
   it("disables Codex native tool surfaces when runtime toolsAllow is empty", async () => {
@@ -2195,7 +2214,7 @@ describe("runCodexAppServerAttempt", () => {
     const startRequest = request.mock.calls.find(([method]) => method === "thread/start");
     const startParams = startRequest?.[1] as
       | {
-          dynamicTools?: Array<{ name?: string }>;
+          dynamicTools?: CodexDynamicToolSpec[];
           environments?: unknown[];
           developerInstructions?: string;
           config?: {
