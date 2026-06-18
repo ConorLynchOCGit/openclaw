@@ -152,13 +152,9 @@ export function assertFreshExecutionPlanBinding(params: {
       )}, got ${sanitizeForLog(runtime)}.`,
     );
   }
-  if (
-    !executionPlanAllowsModel({
-      plan,
-      provider: params.provider,
-      model: params.model,
-    })
-  ) {
+  const provider = normalizeOptionalString(params.provider);
+  const model = normalizeOptionalString(params.model);
+  if ((provider || model) && !executionPlanAllowsModel({ plan, provider, model })) {
     throw new Error(
       `Fresh launch plan model drift before ${params.stage}: ${sanitizeForLog(
         params.provider ?? "",

@@ -2415,6 +2415,9 @@ export const agentHandlers: GatewayRequestHandlers = {
         sessionKey: resolvedSessionKey,
         inputProvenance,
       });
+      const executionContextMode =
+        request.bootstrapContextMode ??
+        (taskTrackingMode === "plugin_subagent" ? "lightweight" : undefined);
       const executionPlan = resolveExecutionPlan({
         cfg: cfgForAgent ?? cfg,
         runId,
@@ -2427,7 +2430,7 @@ export const agentHandlers: GatewayRequestHandlers = {
             }
           : { kind: "gateway" },
         launchMode: taskTrackingMode === "plugin_subagent" ? "fresh" : "resume",
-        ...(request.bootstrapContextMode ? { contextMode: request.bootstrapContextMode } : {}),
+        ...(executionContextMode ? { contextMode: executionContextMode } : {}),
         sessionModel: sessionEntry,
         ...(providerOverride ? { requestedProvider: providerOverride } : {}),
         ...(modelOverride ? { requestedModel: modelOverride } : {}),
@@ -2679,7 +2682,7 @@ export const agentHandlers: GatewayRequestHandlers = {
               modelRun: request.modelRun === true,
               promptMode: request.promptMode,
               extraSystemPrompt: request.extraSystemPrompt,
-              bootstrapContextMode: request.bootstrapContextMode,
+              bootstrapContextMode: executionContextMode,
               bootstrapContextRunKind: request.bootstrapContextRunKind,
               acpTurnSource: request.acpTurnSource,
               internalEvents: request.internalEvents,
