@@ -9,6 +9,7 @@ import type { ChannelOutboundTargetMode } from "../../channels/plugins/types.pub
 import type { PromptImageOrderEntry } from "../../media/prompt-image-order.js";
 import type { InputProvenance } from "../../sessions/input-provenance.js";
 import type { ExecElevatedDefaults } from "../bash-tools.exec-types.js";
+import type { AgentExecutionPlan } from "../execution-plan.js";
 import type { AgentStreamParams, ClientToolDefinition } from "./shared-types.js";
 
 /** Image content block for Claude API multimodal messages. */
@@ -119,6 +120,8 @@ export type AgentCommandOpts = {
   sessionEffects?: "visible" | "internal";
   /** Internal handoffs can write transcript turns without changing user-facing model/usage state. */
   preserveUserFacingSessionModelState?: boolean;
+  /** Trusted native launch plan selected before dispatch. */
+  launchExecutionPlan?: AgentExecutionPlan;
   /** Visible source replies must be sent through the message tool when set. */
   sourceReplyDeliveryMode?: SourceReplyDeliveryMode;
   /** Internal runs can omit the channel message tool entirely. */

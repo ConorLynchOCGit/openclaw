@@ -1205,6 +1205,15 @@ async function agentCommandInternal(
     );
     let provider = defaultProvider;
     let model = defaultModel;
+    const launchModelProvider = normalizeOptionalString(opts.launchExecutionPlan?.model.provider);
+    const launchModelModel = normalizeOptionalString(opts.launchExecutionPlan?.model.model);
+    const hasLaunchExecutionPlan = Boolean(launchModelProvider && launchModelModel);
+    const launchTargetAgentId = normalizeOptionalString(opts.launchExecutionPlan?.targetAgentId);
+    if (hasLaunchExecutionPlan && launchTargetAgentId && launchTargetAgentId !== sessionAgentId) {
+      throw new Error(
+        `Launch execution plan target "${launchTargetAgentId}" does not match session agent "${sessionAgentId}".`,
+      );
+    }
     const hasAllowlist = agentCfg?.models && Object.keys(agentCfg.models).length > 0;
     const hasStoredOverride = Boolean(
       sessionEntry?.modelOverride || sessionEntry?.providerOverride,
@@ -1225,6 +1234,9 @@ async function agentCommandInternal(
         ? normalizeExplicitOverrideInput(opts.model, "model")
         : undefined;
     const hasExplicitRunOverride = Boolean(explicitProviderOverride || explicitModelOverride);
+    if (hasLaunchExecutionPlan && hasExplicitRunOverride) {
+      throw new Error("Launch execution plan cannot be combined with provider/model overrides.");
+    }
     if (hasExplicitRunOverride && opts.allowModelOverride !== true) {
       throw new Error("Model override is not authorized for this caller.");
     }
@@ -1319,12 +1331,14 @@ async function agentCommandInternal(
       }
     }
 
-    const storedProviderOverride = hasLegacyAutoFallbackOverrideWithoutOrigin
-      ? undefined
-      : sessionEntry?.providerOverride?.trim();
-    let storedModelOverride = hasLegacyAutoFallbackOverrideWithoutOrigin
-      ? undefined
-      : sessionEntry?.modelOverride?.trim();
+    const storedProviderOverride =
+      hasLegacyAutoFallbackOverrideWithoutOrigin || hasLaunchExecutionPlan
+        ? undefined
+        : sessionEntry?.providerOverride?.trim();
+    let storedModelOverride =
+      hasLegacyAutoFallbackOverrideWithoutOrigin || hasLaunchExecutionPlan
+        ? undefined
+        : sessionEntry?.modelOverride?.trim();
     const currentRunModelChannel = [
       runContext.messageChannel,
       opts.replyChannel,
@@ -1336,7 +1350,7 @@ async function agentCommandInternal(
       ? (runContext.groupId ?? sessionEntry?.groupId ?? runContext.currentChannelId)
       : (sessionEntry?.groupId ?? runContext.groupId ?? runContext.currentChannelId);
     const channelModelOverride =
-      cfg.channels?.modelByChannel && !hasExplicitRunOverride
+      cfg.channels?.modelByChannel && !hasExplicitRunOverride && !hasLaunchExecutionPlan
         ? resolveChannelModelOverride({
             cfg,
             channel:
@@ -1361,7 +1375,19 @@ async function agentCommandInternal(
       : null;
     const primaryProvider = normalizedChannelOverride?.provider ?? defaultProvider;
     const primaryModel = normalizedChannelOverride?.model ?? defaultModel;
-    const hasEffectiveStoredOverride = Boolean(storedProviderOverride || storedModelOverride);
+    const hasEffectiveStoredOverride = Boolean(
+      !hasLaunchExecutionPlan && (storedProviderOverride || storedModelOverride),
+    );
+    if (hasLaunchExecutionPlan && launchModelProvider && launchModelModel) {
+      const launchRef = normalizeAgentCommandModelRef(
+        cfg,
+        launchModelProvider,
+        launchModelModel,
+        modelManifestContext,
+      );
+      provider = launchRef.provider;
+      model = launchRef.model;
+    }
     if (normalizedChannelOverride && !hasEffectiveStoredOverride) {
       provider = normalizedChannelOverride.provider;
       model = normalizedChannelOverride.model;
@@ -1380,14 +1406,15 @@ async function agentCommandInternal(
         model = normalizedStored.model;
       }
     }
-    const autoFallbackPrimaryProbe = !hasExplicitRunOverride
-      ? resolveAutoFallbackPrimaryProbe({
-          entry: sessionEntry,
-          sessionKey,
-          primaryProvider,
-          primaryModel,
-        })
-      : undefined;
+    const autoFallbackPrimaryProbe =
+      !hasExplicitRunOverride && !hasLaunchExecutionPlan
+        ? resolveAutoFallbackPrimaryProbe({
+            entry: sessionEntry,
+            sessionKey,
+            primaryProvider,
+            primaryModel,
+          })
+        : undefined;
     let autoFallbackPrimaryProbeSessionEntry: SessionEntry | undefined;
     if (autoFallbackPrimaryProbe && sessionEntry) {
       provider = autoFallbackPrimaryProbe.provider;

@@ -1314,7 +1314,7 @@ describe("gateway agent handler", () => {
     expect(capturedEntry?.pluginOwnerId).toBe("other-plugin");
   });
 
-  it("forwards provider and model overrides for admin-scoped callers", async () => {
+  it("resolves provider and model overrides into the launch execution plan for admin-scoped callers", async () => {
     primeMainAgentRun();
 
     await invokeAgent(
@@ -1337,8 +1337,19 @@ describe("gateway agent handler", () => {
     );
 
     expectRecordFields(await waitForAgentCommandCall(), {
-      provider: "anthropic",
-      model: "claude-haiku-4-5",
+      provider: undefined,
+      model: undefined,
+      launchExecutionPlan: expect.objectContaining({
+        launchMode: "resume",
+        model: {
+          provider: "anthropic",
+          model: "claude-haiku-4-5",
+        },
+        runtime: "openclaw",
+        requested: {
+          model: "anthropic/claude-haiku-4-5",
+        },
+      }),
     });
   });
 
@@ -1458,7 +1469,7 @@ describe("gateway agent handler", () => {
     });
   });
 
-  it("forwards provider and model overrides when internal override authorization is set", async () => {
+  it("resolves provider and model overrides into the launch execution plan when internal override authorization is set", async () => {
     primeMainAgentRun();
 
     await invokeAgent(
@@ -1484,8 +1495,19 @@ describe("gateway agent handler", () => {
     );
 
     expectRecordFields(await waitForAgentCommandCall(), {
-      provider: "anthropic",
-      model: "claude-haiku-4-5",
+      provider: undefined,
+      model: undefined,
+      launchExecutionPlan: expect.objectContaining({
+        launchMode: "resume",
+        model: {
+          provider: "anthropic",
+          model: "claude-haiku-4-5",
+        },
+        runtime: "openclaw",
+        requested: {
+          model: "anthropic/claude-haiku-4-5",
+        },
+      }),
     });
   });
 
@@ -3393,11 +3415,26 @@ describe("gateway agent handler", () => {
         model?: string;
         sessionKey?: string;
         bootstrapContextMode?: string;
+        launchExecutionPlan?: {
+          targetAgentId?: string;
+          launchMode?: string;
+          model?: { provider?: string; model?: string };
+          runtime?: string;
+        };
       }>();
       expect(call.sessionKey).toBe(childSessionKey);
       expect(call.agentId).toBe("memory-curator");
-      expect(call.provider).toBe("openrouter");
-      expect(call.model).toBe("anthropic/claude-haiku-4.5");
+      expect(call.provider).toBeUndefined();
+      expect(call.model).toBeUndefined();
+      expect(call.launchExecutionPlan).toMatchObject({
+        targetAgentId: "memory-curator",
+        launchMode: "fresh",
+        model: {
+          provider: "openrouter",
+          model: "anthropic/claude-haiku-4.5",
+        },
+        runtime: "openclaw",
+      });
       expect(call.bootstrapContextMode).toBe("lightweight");
 
       const run = requireValue(

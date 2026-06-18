@@ -245,7 +245,10 @@ vi.mock("../config/runtime-snapshot.js", () => ({
 }));
 
 vi.mock("../config/sessions.js", () => ({
-  resolveAgentIdFromSessionKey: () => "default",
+  resolveAgentIdFromSessionKey: (key?: string) => {
+    const match = key?.match(/^agent:([^:]+):/u);
+    return match?.[1] ?? "default";
+  },
   mergeSessionEntry: (a: unknown, b: unknown) => ({ ...(a as object), ...(b as object) }),
   updateSessionStore: vi.fn(
     async (_path: string, fn: (store: Record<string, unknown>) => unknown) => {
@@ -376,7 +379,7 @@ vi.mock("./agent-scope.js", () => ({
     state.hasLegacyAutoFallbackWithoutOriginMock(entry),
   hasSessionAutoModelFallbackProvenance: () => false,
   listAgentEntries: () => [],
-  listAgentIds: () => ["default"],
+  listAgentIds: () => ["default", "main", "memory-curator"],
   markAutoFallbackPrimaryProbe: vi.fn(),
   resolveAutoFallbackPrimaryProbe: (params: unknown) =>
     state.resolveAutoFallbackPrimaryProbeMock(params),
@@ -385,7 +388,13 @@ vi.mock("./agent-scope.js", () => ({
   resolveDefaultAgentId: () => "default",
   resolveEffectiveModelFallbacks: state.resolveEffectiveModelFallbacksMock,
   resolveSessionAgentIds: () => ({ defaultAgentId: "default", sessionAgentId: "default" }),
-  resolveSessionAgentId: () => "default",
+  resolveSessionAgentId: ({ sessionKey, agentId }: { sessionKey?: string; agentId?: string }) => {
+    if (agentId) {
+      return agentId;
+    }
+    const match = sessionKey?.match(/^agent:([^:]+):/u);
+    return match?.[1] ?? "default";
+  },
   resolveAgentSkillsFilter: () => undefined,
   resolveAgentWorkspaceDir: () => "/tmp/workspace",
 }));
@@ -642,9 +651,21 @@ vi.mock("./model-selection.js", () => {
       const [provider, ...modelParts] = (primary ?? "anthropic/claude").split("/");
       return { provider, model: modelParts.join("/") || "claude" };
     },
-    resolveDefaultModelForAgent: ({ cfg }: { cfg?: unknown }) => {
-      const raw = (cfg as { agents?: { defaults?: { model?: string | { primary?: string } } } })
-        ?.agents?.defaults?.model;
+    resolveDefaultModelForAgent: ({ cfg, agentId }: { cfg?: unknown; agentId?: string }) => {
+      const agents = (
+        cfg as
+          | {
+              agents?: {
+                defaults?: { model?: string | { primary?: string } };
+                list?: Array<{ id?: string; model?: string | { primary?: string } }>;
+              };
+            }
+          | undefined
+      )?.agents;
+      const agentModel = agentId
+        ? agents?.list?.find((entry) => entry.id === agentId)?.model
+        : undefined;
+      const raw = agentModel ?? agents?.defaults?.model;
       const primary = typeof raw === "string" ? raw : raw?.primary;
       const [provider, ...modelParts] = (primary ?? "anthropic/claude").split("/");
       return { provider, model: modelParts.join("/") || "claude" };
@@ -795,11 +816,13 @@ vi.mock("../acp/control-plane/manager.js", () => ({
 }));
 
 let agentCommand: typeof import("./agent-command.js").agentCommand;
+let agentCommandFromIngress: typeof import("./agent-command.js").agentCommandFromIngress;
 let agentCommandTesting: typeof import("./agent-command.js").testing;
 
 beforeAll(async () => {
   const mod = await import("./agent-command.js");
   agentCommand ??= mod.agentCommand;
+  agentCommandFromIngress ??= mod.agentCommandFromIngress;
   agentCommandTesting ??= mod.testing;
 });
 
@@ -1473,6 +1496,81 @@ describe("agentCommand – LiveSessionModelSwitchError retry", () => {
     const fallbackParams = mockCallArg(state.runWithModelFallbackMock) as FallbackRunnerParams;
     expect(fallbackParams.provider).toBe("anthropic");
     expect(fallbackParams.model).toBe("stored-model");
+  });
+
+  it("honors trusted launch execution plans ahead of stale stored and channel model state", async () => {
+    setupSingleAttemptFallback();
+    state.runtimeConfigMock = {
+      agents: {
+        defaults: {
+          model: "openai/gpt-5.5",
+          models: {
+            "openai/gpt-5.5": {},
+            "openai/channel-model": {},
+            "openrouter/anthropic/claude-haiku-4.5": {},
+          },
+        },
+        list: [
+          { id: "main", default: true },
+          {
+            id: "memory-curator",
+            model: {
+              primary: "openrouter/anthropic/claude-haiku-4.5",
+              fallbacks: [],
+            },
+          },
+        ],
+      },
+      channels: {
+        modelByChannel: {
+          discord: {
+            "channel-123": "openai/channel-model",
+          },
+        },
+      },
+    };
+    state.resolvedSessionKeyMock = "agent:memory-curator:subagent:gbrain-signal-route";
+    state.sessionEntryMock = {
+      sessionId: "session-1",
+      updatedAt: 1,
+      channel: "discord",
+      groupId: "channel-123",
+      providerOverride: "openai",
+      modelOverride: "gpt-5.5",
+      modelOverrideSource: "user",
+      skillsSnapshot: { prompt: "", skills: [], version: 0 },
+    };
+    state.runAgentAttemptMock.mockResolvedValue(
+      makeSuccessResult("openrouter", "anthropic/claude-haiku-4.5"),
+    );
+
+    await agentCommandFromIngress({
+      message: "capture memory signal",
+      to: "+1234567890",
+      agentId: "memory-curator",
+      sessionKey: "agent:memory-curator:subagent:gbrain-signal-route",
+      channel: "discord",
+      groupId: "channel-123",
+      allowModelOverride: false,
+      launchExecutionPlan: {
+        targetAgentId: "memory-curator",
+        launchMode: "fresh",
+        model: {
+          provider: "openrouter",
+          model: "anthropic/claude-haiku-4.5",
+        },
+        runtime: "openclaw",
+      },
+    });
+
+    const fallbackParams = mockCallArg(state.runWithModelFallbackMock) as FallbackRunnerParams;
+    expect(fallbackParams.provider).toBe("openrouter");
+    expect(fallbackParams.model).toBe("anthropic/claude-haiku-4.5");
+    expect(state.resolveChannelModelOverrideMock).not.toHaveBeenCalled();
+    expectRecordFields(mockCallArg(state.runAgentAttemptMock), {
+      providerOverride: "openrouter",
+      modelOverride: "anthropic/claude-haiku-4.5",
+    });
   });
 
   it("keeps explicit run model overrides ahead of channel model overrides", async () => {
