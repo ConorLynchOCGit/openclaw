@@ -421,8 +421,11 @@ export async function dispatchGatewayMethodInProcessRaw(
   });
   const scopedClient = mergeGatewayClientInternal(
     scope?.client,
-    pluginRuntimeOwnerId || options?.agentRunTracking
+    pluginRuntimeOwnerId ||
+      options?.agentRunTracking ||
+      options?.allowSyntheticModelOverride === true
       ? {
+          ...(options?.allowSyntheticModelOverride === true ? { allowModelOverride: true } : {}),
           ...(options?.agentRunTracking ? { agentRunTracking: options.agentRunTracking } : {}),
           ...(pluginRuntimeOwnerId ? { pluginRuntimeOwnerId } : {}),
         }
@@ -556,7 +559,7 @@ export function createGatewaySubagentRuntime(): PluginRuntime["subagent"] {
       const hasRequestScopeClient = Boolean(scope?.client);
       let allowOverride = hasRequestScopeClient && canClientUseModelOverride(scope?.client ?? null);
       let allowSyntheticModelOverride = false;
-      if (overrideRequested && !allowOverride && !hasRequestScopeClient) {
+      if (overrideRequested && !allowOverride) {
         const fallbackAuth = authorizeFallbackModelOverride({
           pluginId: scope?.pluginId,
           provider: params.provider,

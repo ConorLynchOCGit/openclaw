@@ -918,6 +918,53 @@ describe("loadGatewayPlugins", () => {
     expect(params.deliver).toBe(false);
   });
 
+  test("allows trusted plugin model overrides from non-admin request scopes", async () => {
+    const serverPlugins = serverPluginsModule;
+    const runtime = await createSubagentRuntime(serverPlugins, {
+      plugins: {
+        entries: {
+          "gbrain-context": {
+            subagent: {
+              allowModelOverride: true,
+              allowedModels: ["openrouter/anthropic/claude-haiku-4.5"],
+            },
+          },
+        },
+      },
+    });
+    const scope = {
+      context: createTestContext("request-scope-plugin-policy-overrides"),
+      client: {
+        connect: {
+          scopes: ["operator.write"],
+        },
+      } as GatewayRequestOptions["client"],
+      isWebchatConnect: () => false,
+    } satisfies PluginRuntimeGatewayRequestScope;
+
+    await gatewayRequestScopeModule.withPluginRuntimePluginIdScope("gbrain-context", () =>
+      gatewayRequestScopeModule.withPluginRuntimeGatewayRequestScope(scope, () =>
+        runtime.run({
+          sessionKey: "s-plugin-policy-override",
+          message: "use configured plugin policy override",
+          provider: "openrouter",
+          model: "anthropic/claude-haiku-4.5",
+          deliver: false,
+        }),
+      ),
+    );
+
+    const params = getRequiredLastDispatchedParams();
+    expect(params.sessionKey).toBe("s-plugin-policy-override");
+    expect(params.provider).toBe("openrouter");
+    expect(params.model).toBe("anthropic/claude-haiku-4.5");
+    expect(getLastDispatchedClientInternal()).toMatchObject({
+      allowModelOverride: true,
+      agentRunTracking: "plugin_subagent",
+      pluginRuntimeOwnerId: "gbrain-context",
+    });
+  });
+
   test("forwards caller-supplied idempotencyKey on subagent run", async () => {
     const serverPlugins = serverPluginsModule;
     const runtime = await createSubagentRuntime(serverPlugins);
