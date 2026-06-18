@@ -133,7 +133,26 @@ vi.mock("../../agents/agent-scope.js", () => ({
     cfg?.agents?.list?.find((agent) => agent.id === agentId)?.workspace ??
     cfg?.agents?.defaults?.workspace ??
     "/tmp/workspace",
-  resolveAgentEffectiveModelPrimary: () => undefined,
+  resolveAgentEffectiveModelPrimary: (
+    cfg: {
+      agents?: {
+        defaults?: { model?: string | { primary?: string } };
+        list?: Array<{ id?: string; model?: string | { primary?: string } }>;
+      };
+    },
+    agentId?: string,
+  ) => {
+    const raw =
+      cfg?.agents?.list?.find((agent) => agent.id === agentId)?.model ??
+      cfg?.agents?.defaults?.model;
+    if (typeof raw === "string") {
+      return raw.trim() || undefined;
+    }
+    if (raw && typeof raw === "object" && typeof raw.primary === "string") {
+      return raw.primary.trim() || undefined;
+    }
+    return undefined;
+  },
 }));
 
 vi.mock("../../infra/agent-events.js", () => ({
@@ -3268,6 +3287,142 @@ describe("gateway agent handler", () => {
       const retryTasks = listTaskRecords().filter((task) => task.runId === runId);
       expect(retryTasks).toHaveLength(1);
       expect(getSubagentRunByChildSessionKey(childSessionKey)?.createdAt).toBe(createdAt);
+    });
+  });
+
+  it("dispatches plugin subagent session-key routes with the resolved target agent and no model override", async () => {
+    await withTempDir({ prefix: "openclaw-gateway-plugin-subagent-model-route-" }, async (root) => {
+      process.env.OPENCLAW_STATE_DIR = root;
+      resetTaskRegistryForTests();
+      resetSubagentRegistryForTests({ persist: false });
+      const runId = "plugin-subagent-memory-curator-route";
+      const childSessionKey = "agent:memory-curator:subagent:gbrain-signal-route-proof";
+      const cfg = {
+        session: { mainKey: "main", scope: "per-sender" },
+        agents: {
+          defaults: {
+            model: { primary: "openai/gpt-5.5", fallbacks: [] },
+          },
+          list: [
+            { id: "main", default: true },
+            {
+              id: "memory-curator",
+              model: {
+                primary: "openrouter/anthropic/claude-haiku-4.5",
+                fallbacks: [],
+              },
+            },
+          ],
+        },
+      };
+      mocks.listAgentIds.mockReturnValue(["main", "memory-curator"]);
+      mocks.loadConfigReturn = cfg;
+      mocks.loadSessionEntry.mockReturnValue({
+        cfg,
+        storePath: "/tmp/sessions.json",
+        entry: {
+          sessionId: "plugin-subagent-memory-curator-session",
+          modelProvider: "openai",
+          model: "gpt-5.5",
+          updatedAt: Date.now(),
+        },
+        canonicalKey: childSessionKey,
+      });
+      mocks.updateSessionStore.mockImplementation(async (_path, updater) => {
+        const store: Record<string, unknown> = {
+          [childSessionKey]: {
+            sessionId: "plugin-subagent-memory-curator-session",
+            modelProvider: "openai",
+            model: "gpt-5.5",
+            updatedAt: Date.now(),
+          },
+        };
+        return await updater(store);
+      });
+      mocks.agentCommand.mockImplementation(
+        async (opts: {
+          onActiveModelSelected?: (ctx: { provider: string; model: string }) => void;
+          onRunFinalized?: (ctx: {
+            provider: string;
+            model: string;
+            status: "succeeded" | "failed" | "timed_out" | "cancelled";
+          }) => void;
+        }) => {
+          opts.onActiveModelSelected?.({
+            provider: "openrouter",
+            model: "anthropic/claude-haiku-4.5",
+          });
+          opts.onRunFinalized?.({
+            provider: "openrouter",
+            model: "anthropic/claude-haiku-4.5",
+            status: "succeeded",
+          });
+          return {
+            payloads: [{ text: "ok" }],
+            meta: { durationMs: 100 },
+          };
+        },
+      );
+      const baseClient = requireValue(backendGatewayClient(), "expected backend client");
+      const pluginClient: AgentHandlerArgs["client"] = {
+        connect: baseClient.connect,
+        internal: {
+          ...baseClient.internal,
+          agentRunTracking: "plugin_subagent",
+          pluginRuntimeOwnerId: "gbrain-context",
+          pluginRuntimeHookName: "message_received",
+        },
+      };
+
+      await invokeAgent(
+        {
+          message: "background GBrain memory capture",
+          sessionKey: childSessionKey,
+          idempotencyKey: runId,
+          bootstrapContextMode: "lightweight",
+        },
+        {
+          reqId: runId,
+          client: pluginClient,
+        },
+      );
+
+      const call = await waitForAgentCommandCall<{
+        agentId?: string;
+        provider?: string;
+        model?: string;
+        sessionKey?: string;
+        bootstrapContextMode?: string;
+      }>();
+      expect(call.sessionKey).toBe(childSessionKey);
+      expect(call.agentId).toBe("memory-curator");
+      expect(call.provider).toBe("openrouter");
+      expect(call.model).toBe("anthropic/claude-haiku-4.5");
+      expect(call.bootstrapContextMode).toBe("lightweight");
+
+      const run = requireValue(
+        getSubagentRunByChildSessionKey(childSessionKey),
+        "expected plugin subagent run",
+      );
+      expect(run.runId).toBe(runId);
+      expect(findTaskByRunId(runId)?.executionReceipt).toMatchObject({
+        phase: "finalized",
+        source: {
+          kind: "plugin",
+          id: "gbrain-context",
+          hook: "message_received",
+        },
+        targetAgentId: "memory-curator",
+        terminalStatus: "succeeded",
+        final: {
+          model: "openrouter/anthropic/claude-haiku-4.5",
+          runtime: "openclaw",
+          contextMode: "lightweight",
+        },
+        fallback: {
+          used: false,
+        },
+      });
     });
   });
 

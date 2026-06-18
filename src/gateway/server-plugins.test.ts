@@ -942,15 +942,17 @@ describe("loadGatewayPlugins", () => {
       isWebchatConnect: () => false,
     } satisfies PluginRuntimeGatewayRequestScope;
 
-    await gatewayRequestScopeModule.withPluginRuntimePluginIdScope("gbrain-context", () =>
-      gatewayRequestScopeModule.withPluginRuntimeGatewayRequestScope(scope, () =>
-        runtime.run({
-          sessionKey: "s-plugin-policy-override",
-          message: "use configured plugin policy override",
-          provider: "openrouter",
-          model: "anthropic/claude-haiku-4.5",
-          deliver: false,
-        }),
+    await gatewayRequestScopeModule.withPluginRuntimeGatewayRequestScope(scope, () =>
+      gatewayRequestScopeModule.withPluginRuntimePluginScope(
+        { pluginId: "gbrain-context", hookName: "message_received" },
+        () =>
+          runtime.run({
+            sessionKey: "s-plugin-policy-override",
+            message: "use configured plugin policy override",
+            provider: "openrouter",
+            model: "anthropic/claude-haiku-4.5",
+            deliver: false,
+          }),
       ),
     );
 
@@ -962,6 +964,7 @@ describe("loadGatewayPlugins", () => {
       allowModelOverride: true,
       agentRunTracking: "plugin_subagent",
       pluginRuntimeOwnerId: "gbrain-context",
+      pluginRuntimeHookName: "message_received",
     });
   });
 

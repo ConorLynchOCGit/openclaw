@@ -23,6 +23,7 @@ import {
   recordTaskRunProgressByRunId as recordTaskRunProgressByRunIdFromExecutor,
   setDetachedTaskDeliveryStatusByRunId as setDetachedTaskDeliveryStatusByRunIdFromExecutor,
   startTaskRunByRunId as startTaskRunByRunIdFromExecutor,
+  updateTaskExecutionReceiptByRunId as updateTaskExecutionReceiptByRunIdFromExecutor,
 } from "./task-executor.js";
 import type { TaskRecord } from "./task-registry.types.js";
 
@@ -38,6 +39,7 @@ const DEFAULT_DETACHED_TASK_LIFECYCLE_RUNTIME: DetachedTaskLifecycleRuntime = {
   startTaskRunByRunId: startTaskRunByRunIdFromExecutor,
   recordTaskRunProgressByRunId: recordTaskRunProgressByRunIdFromExecutor,
   finalizeTaskRunByRunId: finalizeTaskRunByRunIdFromExecutor,
+  updateTaskExecutionReceiptByRunId: updateTaskExecutionReceiptByRunIdFromExecutor,
   completeTaskRunByRunId: completeTaskRunByRunIdFromExecutor,
   failTaskRunByRunId: failTaskRunByRunIdFromExecutor,
   setDetachedTaskDeliveryStatusByRunId: setDetachedTaskDeliveryStatusByRunIdFromExecutor,
@@ -105,6 +107,17 @@ export function finalizeTaskRunByRunId(params: DetachedTaskFinalizeParams): Task
     ...params,
     status: params.status,
   });
+}
+
+export function updateTaskExecutionReceiptByRunId(
+  ...args: Parameters<
+    NonNullable<DetachedTaskLifecycleRuntime["updateTaskExecutionReceiptByRunId"]>
+  >
+): TaskRecord[] {
+  const runtime = getDetachedTaskLifecycleRuntime();
+  return runtime.updateTaskExecutionReceiptByRunId
+    ? runtime.updateTaskExecutionReceiptByRunId(...args)
+    : updateTaskExecutionReceiptByRunIdFromExecutor(...args);
 }
 
 export function completeTaskRunByRunId(

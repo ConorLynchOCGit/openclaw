@@ -1666,6 +1666,28 @@ async function agentCommandInternal(
     let result: AgentAttemptResult;
     let fallbackProvider = provider;
     let fallbackModel = model;
+    let runFinalized = false;
+    const notifyRunFinalized = (params: {
+      provider?: string;
+      model?: string;
+      status: "succeeded" | "failed" | "timed_out" | "cancelled";
+      fallbackReason?: string;
+    }) => {
+      if (runFinalized || !opts.onRunFinalized) {
+        return;
+      }
+      const finalProvider = normalizeOptionalString(params.provider) ?? provider;
+      const finalModel = normalizeOptionalString(params.model) ?? model;
+      runFinalized = true;
+      opts.onRunFinalized({
+        provider: finalProvider,
+        model: finalModel,
+        status: params.status,
+        ...(normalizeOptionalString(params.fallbackReason)
+          ? { fallbackReason: normalizeOptionalString(params.fallbackReason) }
+          : {}),
+      });
+    };
     const MAX_LIVE_SWITCH_RETRIES = 5;
     let liveSwitchRetries = 0;
     let autoFallbackPrimaryProbeInterruptedByLiveSwitch = false;
@@ -2154,6 +2176,16 @@ async function agentCommandInternal(
             }
           : deliveryParams,
       );
+      const finalProvider = result.meta.agentMeta?.provider ?? fallbackProvider;
+      const finalModel = result.meta.agentMeta?.model ?? fallbackModel;
+      const fallbackReason =
+        finalProvider !== provider || finalModel !== model ? "model_fallback" : undefined;
+      notifyRunFinalized({
+        provider: finalProvider,
+        model: finalModel,
+        status: result.meta.aborted === true ? "timed_out" : "succeeded",
+        fallbackReason,
+      });
 
       // Phase 2: Clear pending delivery payload after successful delivery.
       if (
@@ -2184,6 +2216,11 @@ async function agentCommandInternal(
       emitLifecycleEnd(result);
       return deliveryResult;
     } catch (error) {
+      notifyRunFinalized({
+        provider: fallbackProvider,
+        model: fallbackModel,
+        status: "failed",
+      });
       emitLifecyclePostTurnError(error);
       throw error;
     }

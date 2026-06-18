@@ -842,6 +842,7 @@ export interface TaskRuns {
   delivery_status: string;
   ended_at: number | null;
   error: string | null;
+  execution_receipt_json: string | null;
   label: string | null;
   last_event_at: number | null;
   notify_policy: string;

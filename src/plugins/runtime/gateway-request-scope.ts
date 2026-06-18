@@ -12,12 +12,14 @@ export type PluginRuntimeGatewayRequestScope = {
   isWebchatConnect: GatewayRequestOptions["isWebchatConnect"];
   pluginId?: string;
   pluginSource?: string;
+  hookName?: string;
   gatewayMethodDispatchAllowed?: boolean;
 };
 
 export type PluginRuntimePluginScope = {
   pluginId: string;
   pluginSource?: string;
+  hookName?: string;
 };
 
 const PLUGIN_RUNTIME_GATEWAY_REQUEST_SCOPE_KEY: unique symbol = Symbol.for(
@@ -56,6 +58,9 @@ export function withPluginRuntimePluginScope<T>(scope: PluginRuntimePluginScope,
     scoped.pluginSource = scope.pluginSource;
   } else {
     delete scoped.pluginSource;
+  }
+  if (scope.hookName !== undefined) {
+    scoped.hookName = scope.hookName;
   }
   return pluginRuntimeGatewayRequestScope.run(scoped, run);
 }

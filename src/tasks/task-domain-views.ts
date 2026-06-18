@@ -49,6 +49,7 @@ export function mapTaskRunView(task: TaskRecord): TaskRunView {
     ...(task.progressSummary ? { progressSummary: task.progressSummary } : {}),
     ...(task.terminalSummary ? { terminalSummary: task.terminalSummary } : {}),
     ...(task.terminalOutcome ? { terminalOutcome: task.terminalOutcome } : {}),
+    ...(task.executionReceipt ? { executionReceipt: task.executionReceipt } : {}),
   };
 }
 

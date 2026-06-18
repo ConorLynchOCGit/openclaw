@@ -20,6 +20,7 @@ import {
   finalizeTaskRunByRunId as finalizeTaskRunByRunIdInRegistry,
   recordTaskProgressByRunId,
   setTaskRunDeliveryStatusByRunId,
+  updateTaskExecutionReceiptByRunId as updateTaskExecutionReceiptByRunIdInRegistry,
 } from "./runtime-internal.js";
 import { getTaskFlowByIdForOwner } from "./task-flow-owner-access.js";
 import type { TaskFlowRecord } from "./task-flow-registry.types.js";
@@ -179,6 +180,7 @@ export function completeTaskRunByRunId(params: {
   progressSummary?: string | null;
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
+  executionReceipt?: TaskRecord["executionReceipt"];
 }) {
   return finalizeTaskRunByRunId({
     ...params,
@@ -188,6 +190,15 @@ export function completeTaskRunByRunId(params: {
 
 export function finalizeTaskRunByRunId(params: DetachedTaskFinalizeParams) {
   return finalizeTaskRunByRunIdInRegistry(params);
+}
+
+export function updateTaskExecutionReceiptByRunId(params: {
+  runId: string;
+  runtime?: TaskRuntime;
+  sessionKey?: string;
+  executionReceipt: TaskRecord["executionReceipt"];
+}) {
+  return updateTaskExecutionReceiptByRunIdInRegistry(params);
 }
 
 export function failTaskRunByRunId(params: {
@@ -200,6 +211,7 @@ export function failTaskRunByRunId(params: {
   error?: string;
   progressSummary?: string | null;
   terminalSummary?: string | null;
+  executionReceipt?: TaskRecord["executionReceipt"];
 }) {
   return finalizeTaskRunByRunId({
     ...params,

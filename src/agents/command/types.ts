@@ -139,6 +139,13 @@ export type AgentCommandOpts = {
   resultMetaOverrides?: AgentCommandResultMetaOverrides;
   /** Called when the actual run model is selected, including fallback retries. */
   onActiveModelSelected?: (ctx: { provider: string; model: string }) => void;
+  /** Called once the agent run reaches a terminal execution state. */
+  onRunFinalized?: (ctx: {
+    provider: string;
+    model: string;
+    status: "succeeded" | "failed" | "timed_out" | "cancelled";
+    fallbackReason?: string;
+  }) => void;
   /** Internal one-shot model probe mode: no tools, no workspace/chat prompt policy. */
   modelRun?: boolean;
   /** Internal prompt-mode override for trusted local/gateway callsites. */

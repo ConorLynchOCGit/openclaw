@@ -2,6 +2,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createResolvedAgentRunReceipt, finalizeAgentRunReceipt } from "../agents/run-receipt.js";
 import { resetConfigRuntimeState } from "../config/config.js";
 import { saveCronStore } from "../cron/store.js";
 import type { RuntimeEnv } from "../runtime.js";
@@ -22,8 +23,10 @@ import type { TaskRecord } from "../tasks/task-registry.types.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import type { OpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import {
+  tasksAdmitCommand,
   tasksAuditCommand,
   tasksCancelCommand,
+  tasksCheckCommand,
   tasksMaintenanceCommand,
   tasksShowCommand,
 } from "./tasks.js";
@@ -405,6 +408,229 @@ describe("tasks commands", () => {
         .join("\n");
       expect(joined).toContain(`taskId: ${task.taskId}`);
       expect(joined).toContain("startedAt: n/a");
+    });
+  });
+
+  it("checks the GBrain signal-detector route from a finalized task execution receipt", async () => {
+    await withTaskCommandStateDir(async () => {
+      const receipt = finalizeAgentRunReceipt(
+        createResolvedAgentRunReceipt({
+          source: {
+            kind: "plugin",
+            id: "gbrain-context",
+            hook: "message_received",
+          },
+          targetAgentId: "memory-curator",
+          resolvedProvider: "openrouter",
+          resolvedModel: "anthropic/claude-haiku-4.5",
+          runtime: "openclaw",
+          contextMode: "lightweight",
+        }),
+        {
+          finalProvider: "openrouter",
+          finalModel: "anthropic/claude-haiku-4.5",
+          runtime: "openclaw",
+          contextMode: "lightweight",
+          terminalStatus: "succeeded",
+        },
+      );
+      const task = createTaskRecord({
+        runtime: "subagent",
+        ownerKey: "agent:main:main",
+        scopeKind: "session",
+        runId: "run-gbrain-route-check",
+        status: "succeeded",
+        task: "GBrain signal detector",
+        executionReceipt: receipt,
+      });
+
+      const runtime = createRuntime();
+      await tasksCheckCommand(
+        { json: true, lookup: task.runId ?? task.taskId, check: "gbrain.signal_detector" },
+        runtime,
+      );
+
+      const payload = readFirstJsonLog(runtime) as {
+        passed: boolean;
+        admitted: boolean;
+        check: string;
+        taskId: string;
+        runId: string;
+        failures: unknown[];
+        receipt: { final: { model: string } };
+      };
+      expect(payload.passed).toBe(true);
+      expect(payload.admitted).toBe(true);
+      expect(payload.check).toBe("gbrain.signal_detector");
+      expect(payload.taskId).toBe(task.taskId);
+      expect(payload.runId).toBe("run-gbrain-route-check");
+      expect(payload.failures).toEqual([]);
+      expect(payload.receipt.final.model).toBe("openrouter/anthropic/claude-haiku-4.5");
+      expect(runtime.exit).not.toHaveBeenCalled();
+    });
+  });
+
+  it("keeps tasks admit as a compatibility alias for execution checks", async () => {
+    await withTaskCommandStateDir(async () => {
+      const receipt = finalizeAgentRunReceipt(
+        createResolvedAgentRunReceipt({
+          source: {
+            kind: "plugin",
+            id: "gbrain-context",
+            hook: "message_received",
+          },
+          targetAgentId: "memory-curator",
+          resolvedProvider: "openrouter",
+          resolvedModel: "anthropic/claude-haiku-4.5",
+          runtime: "openclaw",
+          contextMode: "lightweight",
+        }),
+        {
+          finalProvider: "openrouter",
+          finalModel: "anthropic/claude-haiku-4.5",
+          runtime: "openclaw",
+          contextMode: "lightweight",
+          terminalStatus: "succeeded",
+        },
+      );
+      const task = createTaskRecord({
+        runtime: "subagent",
+        ownerKey: "agent:main:main",
+        scopeKind: "session",
+        runId: "run-gbrain-route-admit",
+        status: "succeeded",
+        task: "GBrain signal detector",
+        executionReceipt: receipt,
+      });
+
+      const runtime = createRuntime();
+      await tasksAdmitCommand(
+        { json: true, lookup: task.runId ?? task.taskId, check: "gbrain.signal_detector" },
+        runtime,
+      );
+
+      const payload = readFirstJsonLog(runtime) as {
+        passed: boolean;
+        admitted: boolean;
+        check: string;
+        failures: unknown[];
+      };
+      expect(payload.passed).toBe(true);
+      expect(payload.admitted).toBe(true);
+      expect(payload.check).toBe("gbrain.signal_detector");
+      expect(payload.failures).toEqual([]);
+      expect(runtime.exit).not.toHaveBeenCalled();
+    });
+  });
+
+  it("normalizes provider-prefixed model strings before comparing route receipts", async () => {
+    await withTaskCommandStateDir(async () => {
+      const receipt = {
+        ...finalizeAgentRunReceipt(
+          createResolvedAgentRunReceipt({
+            source: {
+              kind: "plugin",
+              id: "gbrain-context",
+              hook: "message_received",
+            },
+            targetAgentId: "memory-curator",
+            resolvedProvider: "openrouter",
+            resolvedModel: "anthropic/claude-haiku-4.5",
+            runtime: "openclaw",
+            contextMode: "lightweight",
+          }),
+          {
+            finalProvider: "openrouter",
+            finalModel: "anthropic/claude-haiku-4.5",
+            runtime: "openclaw",
+            contextMode: "lightweight",
+            terminalStatus: "succeeded",
+          },
+        ),
+        final: {
+          provider: "openrouter",
+          model: "openrouter:anthropic/claude-haiku-4.5",
+          runtime: "openclaw",
+          contextMode: "lightweight",
+        },
+      };
+      const task = createTaskRecord({
+        runtime: "subagent",
+        ownerKey: "agent:main:main",
+        scopeKind: "session",
+        runId: "run-gbrain-route-normalized-model",
+        status: "succeeded",
+        task: "GBrain signal detector",
+        executionReceipt: receipt,
+      });
+
+      const runtime = createRuntime();
+      await tasksCheckCommand(
+        { json: true, lookup: task.runId ?? task.taskId, check: "gbrain.signal_detector" },
+        runtime,
+      );
+
+      const payload = readFirstJsonLog(runtime) as {
+        passed: boolean;
+        failures: unknown[];
+      };
+      expect(payload.passed).toBe(true);
+      expect(payload.failures).toEqual([]);
+      expect(runtime.exit).not.toHaveBeenCalled();
+    });
+  });
+
+  it("fails closed when task execution check has no finalized execution receipt", async () => {
+    await withTaskCommandStateDir(async () => {
+      const task = createTaskRecord({
+        runtime: "subagent",
+        ownerKey: "agent:main:main",
+        scopeKind: "session",
+        runId: "run-gbrain-route-no-receipt",
+        status: "succeeded",
+        task: "GBrain signal detector without receipt",
+      });
+
+      const runtime = createRuntime();
+      await tasksCheckCommand(
+        { json: true, lookup: task.taskId, check: "gbrain.signal_detector" },
+        runtime,
+      );
+
+      const payload = readFirstJsonLog(runtime) as {
+        passed: boolean;
+        admitted: boolean;
+        failures: Array<{ code: string }>;
+      };
+      expect(payload.passed).toBe(false);
+      expect(payload.admitted).toBe(false);
+      expect(payload.failures).toEqual([
+        expect.objectContaining({
+          code: "receipt_missing",
+        }),
+      ]);
+      expect(runtime.exit).toHaveBeenCalledWith(1);
+    });
+  });
+
+  it("fails closed for unknown task execution checks", async () => {
+    await withTaskCommandStateDir(async () => {
+      const runtime = createRuntime();
+      await tasksCheckCommand({ json: true, lookup: "run-123", check: "unknown" }, runtime);
+
+      const payload = readFirstJsonLog(runtime) as {
+        passed: boolean;
+        admitted: boolean;
+        failures: Array<{ code: string }>;
+      };
+      expect(payload.passed).toBe(false);
+      expect(payload.admitted).toBe(false);
+      expect(payload.failures).toEqual([
+        expect.objectContaining({
+          code: "unknown_check",
+        }),
+      ]);
+      expect(runtime.exit).toHaveBeenCalledWith(1);
     });
   });
 

@@ -1014,7 +1014,8 @@ CREATE TABLE IF NOT EXISTS task_runs (
   error TEXT,
   progress_summary TEXT,
   terminal_summary TEXT,
-  terminal_outcome TEXT
+  terminal_outcome TEXT,
+  execution_receipt_json TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_task_runs_run_id ON task_runs(run_id);

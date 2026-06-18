@@ -1,3 +1,4 @@
+import type { AgentRunReceipt } from "../agents/run-receipt.js";
 // Defines task registry records, statuses, delivery state, and parser helpers.
 import type { DeliveryContext } from "../utils/delivery-context.types.js";
 
@@ -140,6 +141,7 @@ export type TaskRecord = {
   progressSummary?: string;
   terminalSummary?: string;
   terminalOutcome?: TaskTerminalOutcome;
+  executionReceipt?: AgentRunReceipt;
 };
 
 export type TaskRegistrySnapshot = {

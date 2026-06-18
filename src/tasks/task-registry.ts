@@ -1700,6 +1700,7 @@ export function createTaskRecord(params: {
   progressSummary?: string | null;
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
+  executionReceipt?: TaskRecord["executionReceipt"];
 }): TaskRecord | null {
   ensureTaskRegistryReady();
   const requesterSessionKey = resolveTaskRequesterSessionKey(params);
@@ -1782,6 +1783,7 @@ export function createTaskRecord(params: {
       status,
       terminalOutcome: params.terminalOutcome,
     }),
+    executionReceipt: params.executionReceipt,
   });
   if (isTerminalTaskStatus(record.status) && typeof record.cleanupAfter !== "number") {
     record.cleanupAfter = resolveTaskCleanupAfter(record);
@@ -1827,6 +1829,7 @@ function updateTaskStateByRunId(params: {
   progressSummary?: string | null;
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
+  executionReceipt?: TaskRecord["executionReceipt"];
   eventSummary?: string | null;
 }) {
   ensureTaskRegistryReady();
@@ -1874,6 +1877,9 @@ function updateTaskStateByRunId(params: {
         status: nextStatus,
         terminalOutcome: params.terminalOutcome,
       });
+    }
+    if (params.executionReceipt !== undefined) {
+      patch.executionReceipt = params.executionReceipt;
     }
     const eventSummary =
       normalizeTaskSummary(params.eventSummary) ??
@@ -1978,6 +1984,7 @@ export function markTaskTerminalByRunId(params: {
   progressSummary?: string | null;
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
+  executionReceipt?: TaskRecord["executionReceipt"];
 }) {
   return finalizeTaskRunByRunId(params);
 }
@@ -1994,6 +2001,7 @@ export function finalizeTaskRunByRunId(params: {
   progressSummary?: string | null;
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
+  executionReceipt?: TaskRecord["executionReceipt"];
 }) {
   return updateTaskStateByRunId({
     runId: params.runId,
@@ -2007,6 +2015,21 @@ export function finalizeTaskRunByRunId(params: {
     progressSummary: params.progressSummary,
     terminalSummary: params.terminalSummary,
     terminalOutcome: params.terminalOutcome,
+    executionReceipt: params.executionReceipt,
+  });
+}
+
+export function updateTaskExecutionReceiptByRunId(params: {
+  runId: string;
+  runtime?: TaskRuntime;
+  sessionKey?: string;
+  executionReceipt: TaskRecord["executionReceipt"];
+}) {
+  return updateTaskStateByRunId({
+    runId: params.runId,
+    runtime: params.runtime,
+    sessionKey: params.sessionKey,
+    executionReceipt: params.executionReceipt,
   });
 }
 

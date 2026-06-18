@@ -157,6 +157,15 @@ export type LaneExecutionState =
   | "circuit_open"
   | "failed_handoff";
 
+export type SessionExecutionReceiptSummary = {
+  phase: "resolved" | "finalized";
+  terminalStatus?: string;
+  source?: string;
+  targetAgentId?: string;
+  finalModel?: string;
+  fallbackUsed?: boolean;
+};
+
 export interface QuotaSuspension {
   schemaVersion: 1;
   suspendedAt: number; // epoch ms
@@ -248,6 +257,10 @@ export type SessionEntry = {
   inheritedToolAllow?: string[];
   /** Plugin id that created this session through api.runtime.subagent. */
   pluginOwnerId?: string;
+  /** Pointer to latest native execution record; full receipt truth lives on the task/run. */
+  lastRunId?: string;
+  /** Compact display summary only; not authoritative execution receipt truth. */
+  lastExecutionReceiptSummary?: SessionExecutionReceiptSummary;
   systemSent?: boolean;
   abortedLastRun?: boolean;
   /** Durable guard state for automatic subagent orphan recovery. */

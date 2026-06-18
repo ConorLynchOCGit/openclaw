@@ -1,3 +1,4 @@
+import type { AgentRunReceipt } from "../../agents/run-receipt.js";
 // Task domain types define plugin task-flow payloads shared by runtime adapters.
 import type { JsonValue } from "../../tasks/task-flow-registry.types.js";
 import type {
@@ -49,6 +50,7 @@ export type TaskRunView = {
   progressSummary?: string;
   terminalSummary?: string;
   terminalOutcome?: TaskTerminalOutcome;
+  executionReceipt?: AgentRunReceipt;
 };
 
 /** Detailed task run view; currently equal to the summary view. */

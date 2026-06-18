@@ -93,6 +93,7 @@ import type {
   PluginHookResolveExecEnvContext,
   PluginHookResolveExecEnvEvent,
 } from "./hook-types.js";
+import { withPluginRuntimePluginScope } from "./runtime/gateway-request-scope.js";
 
 // Re-export types for consumers
 export type {
@@ -618,7 +619,9 @@ export function createHookRunner(
     const promises = hooks.map(async (hook) => {
       try {
         const promise = Promise.resolve(
-          (hook.handler as (event: unknown, ctx: unknown) => Promise<void> | void)(event, ctx),
+          withPluginRuntimePluginScope({ pluginId: hook.pluginId, hookName }, () =>
+            (hook.handler as (event: unknown, ctx: unknown) => Promise<void> | void)(event, ctx),
+          ),
         );
         const timeoutMs = getVoidHookTimeoutMs(hookName, hook);
         if (timeoutMs) {
@@ -656,7 +659,11 @@ export function createHookRunner(
     for (const hook of hooks) {
       try {
         const handler = hook.handler as (event: unknown, ctx: unknown) => Promise<TResult>;
-        const promise = Promise.resolve(handler(event, ctx));
+        const promise = Promise.resolve(
+          withPluginRuntimePluginScope({ pluginId: hook.pluginId, hookName }, () =>
+            handler(event, ctx),
+          ),
+        );
         const timeoutMs = getModifyingHookTimeoutMs(hookName, hook);
         const handlerResult = timeoutMs ? await withHookTimeout(promise, timeoutMs) : await promise;
 

@@ -28,6 +28,7 @@ export {
   setTaskRegistryDeliveryRuntimeForTests,
   setTaskCleanupAfterById,
   setTaskRunDeliveryStatusByRunId,
+  updateTaskExecutionReceiptByRunId,
   updateTaskNotifyPolicyById,
 } from "./task-registry.js";
 export type { TaskRecord } from "./task-registry.types.js";

@@ -685,6 +685,7 @@ function normalizeLegacyTaskRow(row: Record<string, unknown>): SqliteBindRow {
     progress_summary: legacyBindValue(row.progress_summary),
     terminal_summary: legacyBindValue(row.terminal_summary),
     terminal_outcome: legacyBindValue(row.terminal_outcome),
+    execution_receipt_json: legacyBindValue(row.execution_receipt_json),
   };
 }
 
@@ -775,6 +776,7 @@ function readLegacyTaskRows(sourcePath: string): SqliteBindRow[] {
       pickLegacyColumn(columns, "progress_summary"),
       pickLegacyColumn(columns, "terminal_summary"),
       pickLegacyColumn(columns, "terminal_outcome"),
+      pickLegacyColumn(columns, "execution_receipt_json"),
     ];
     return db
       .prepare(
@@ -853,13 +855,14 @@ function insertTaskRunRowSql(db: DatabaseSync, row: SqliteBindRow): void {
         task_id, runtime, task_kind, source_id, requester_session_key, owner_key, scope_kind,
         child_session_key, parent_flow_id, parent_task_id, agent_id, run_id, label, task, status,
         delivery_status, notify_policy, created_at, started_at, ended_at, last_event_at,
-        cleanup_after, error, progress_summary, terminal_summary, terminal_outcome
+        cleanup_after, error, progress_summary, terminal_summary, terminal_outcome,
+        execution_receipt_json
       ) VALUES (
         @task_id, @runtime, @task_kind, @source_id, @requester_session_key, @owner_key,
         @scope_kind, @child_session_key, @parent_flow_id, @parent_task_id, @agent_id, @run_id,
         @label, @task, @status, @delivery_status, @notify_policy, @created_at, @started_at,
         @ended_at, @last_event_at, @cleanup_after, @error, @progress_summary, @terminal_summary,
-        @terminal_outcome
+        @terminal_outcome, @execution_receipt_json
       )
     `,
   ).run(row);
@@ -948,6 +951,7 @@ async function migrateLegacyTaskRunsSidecar(params: {
           "progress_summary",
           "terminal_summary",
           "terminal_outcome",
+          "execution_receipt_json",
         ];
         for (const row of taskRows) {
           const existing = db

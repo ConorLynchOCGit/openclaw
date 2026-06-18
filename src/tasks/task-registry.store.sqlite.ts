@@ -1,6 +1,7 @@
 // Persists task registry records and events through the OpenClaw SQLite state database.
 import type { DatabaseSync } from "node:sqlite";
 import type { Insertable, Selectable } from "kysely";
+import { parseAgentRunReceiptJson } from "../agents/run-receipt.js";
 import { executeSqliteQuerySync, getNodeSqliteKysely } from "../infra/kysely-sync.js";
 import type { DB as OpenClawStateKyselyDatabase } from "../state/openclaw-state-db.generated.js";
 import {
@@ -35,6 +36,7 @@ type TaskRegistryRow = Selectable<TaskRunsTable> & {
   delivery_status: string;
   notify_policy: string;
   terminal_outcome: string | null;
+  execution_receipt_json: string | null;
 };
 
 type TaskDeliveryStateRow = Selectable<TaskDeliveryStateTable>;
@@ -72,6 +74,7 @@ const TASK_RUN_SELECT_COLUMNS = [
   "progress_summary",
   "terminal_summary",
   "terminal_outcome",
+  "execution_receipt_json",
 ] as const;
 
 let cachedDatabase: TaskRegistryDatabase | null = null;
@@ -94,6 +97,7 @@ function rowToTaskRecord(row: TaskRegistryRow): TaskRecord {
   const cleanupAfter = normalizeNumber(row.cleanup_after);
   const scopeKind = parseTaskScopeKind(row.scope_kind);
   const terminalOutcome = parseOptionalTaskTerminalOutcome(row.terminal_outcome);
+  const executionReceipt = parseAgentRunReceiptJson(row.execution_receipt_json);
   // System tasks intentionally have no requester session; ownerKey is the lookup anchor.
   const requesterSessionKey =
     scopeKind === "system" ? "" : row.requester_session_key?.trim() || row.owner_key;
@@ -124,6 +128,7 @@ function rowToTaskRecord(row: TaskRegistryRow): TaskRecord {
     ...(row.progress_summary ? { progressSummary: row.progress_summary } : {}),
     ...(row.terminal_summary ? { terminalSummary: row.terminal_summary } : {}),
     ...(terminalOutcome ? { terminalOutcome } : {}),
+    ...(executionReceipt ? { executionReceipt } : {}),
   };
 }
 
@@ -165,6 +170,7 @@ function bindTaskRecordBase(record: TaskRecord): Insertable<TaskRunsTable> {
     progress_summary: record.progressSummary ?? null,
     terminal_summary: record.terminalSummary ?? null,
     terminal_outcome: record.terminalOutcome ?? null,
+    execution_receipt_json: serializeJson(record.executionReceipt),
   };
 }
 
@@ -253,6 +259,7 @@ function upsertTaskRow(db: DatabaseSync, row: Insertable<TaskRunsTable>): void {
           progress_summary: (eb) => eb.ref("excluded.progress_summary"),
           terminal_summary: (eb) => eb.ref("excluded.terminal_summary"),
           terminal_outcome: (eb) => eb.ref("excluded.terminal_outcome"),
+          execution_receipt_json: (eb) => eb.ref("excluded.execution_receipt_json"),
         }),
       ),
   );

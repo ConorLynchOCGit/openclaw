@@ -252,11 +252,16 @@ function createSyntheticOperatorClient(params?: {
   allowModelOverride?: boolean;
   agentRunTracking?: "plugin_subagent";
   pluginRuntimeOwnerId?: string;
+  pluginRuntimeHookName?: string;
   scopes?: string[];
 }): GatewayRequestOptions["client"] {
   const pluginRuntimeOwnerId =
     typeof params?.pluginRuntimeOwnerId === "string" && params.pluginRuntimeOwnerId.trim()
       ? params.pluginRuntimeOwnerId.trim()
+      : undefined;
+  const pluginRuntimeHookName =
+    typeof params?.pluginRuntimeHookName === "string" && params.pluginRuntimeHookName.trim()
+      ? params.pluginRuntimeHookName.trim()
       : undefined;
   return {
     connect: {
@@ -276,6 +281,7 @@ function createSyntheticOperatorClient(params?: {
       ...(params?.agentRunTracking ? { agentRunTracking: params.agentRunTracking } : {}),
       ...(params?.scopes?.includes(APPROVALS_SCOPE) ? { approvalRuntime: true } : {}),
       ...(pluginRuntimeOwnerId ? { pluginRuntimeOwnerId } : {}),
+      ...(pluginRuntimeHookName ? { pluginRuntimeHookName } : {}),
     },
   };
 }
@@ -311,6 +317,7 @@ type DispatchGatewayMethodInProcessOptions = {
   disableSyntheticClient?: boolean;
   expectFinal?: boolean;
   forceSyntheticClient?: boolean;
+  pluginRuntimeHookName?: string;
   pluginRuntimeOwnerId?: string;
   requireScopedClient?: boolean;
   syntheticScopes?: string[];
@@ -413,21 +420,28 @@ export async function dispatchGatewayMethodInProcessRaw(
     typeof options?.pluginRuntimeOwnerId === "string" && options.pluginRuntimeOwnerId.trim()
       ? options.pluginRuntimeOwnerId.trim()
       : undefined;
+  const pluginRuntimeHookName =
+    typeof options?.pluginRuntimeHookName === "string" && options.pluginRuntimeHookName.trim()
+      ? options.pluginRuntimeHookName.trim()
+      : undefined;
   const syntheticClient = createSyntheticOperatorClient({
     allowModelOverride: options?.allowSyntheticModelOverride === true,
     agentRunTracking: options?.agentRunTracking,
     ...(pluginRuntimeOwnerId ? { pluginRuntimeOwnerId } : {}),
+    ...(pluginRuntimeHookName ? { pluginRuntimeHookName } : {}),
     scopes: options?.syntheticScopes,
   });
   const scopedClient = mergeGatewayClientInternal(
     scope?.client,
     pluginRuntimeOwnerId ||
+      pluginRuntimeHookName ||
       options?.agentRunTracking ||
       options?.allowSyntheticModelOverride === true
       ? {
           ...(options?.allowSyntheticModelOverride === true ? { allowModelOverride: true } : {}),
           ...(options?.agentRunTracking ? { agentRunTracking: options.agentRunTracking } : {}),
           ...(pluginRuntimeOwnerId ? { pluginRuntimeOwnerId } : {}),
+          ...(pluginRuntimeHookName ? { pluginRuntimeHookName } : {}),
         }
       : undefined,
   );
@@ -555,6 +569,10 @@ export function createGatewaySubagentRuntime(): PluginRuntime["subagent"] {
         typeof scope?.pluginId === "string" && scope.pluginId.trim()
           ? scope.pluginId.trim()
           : undefined;
+      const hookName =
+        typeof scope?.hookName === "string" && scope.hookName.trim()
+          ? scope.hookName.trim()
+          : undefined;
       const overrideRequested = Boolean(params.provider || params.model);
       const hasRequestScopeClient = Boolean(scope?.client);
       let allowOverride = hasRequestScopeClient && canClientUseModelOverride(scope?.client ?? null);
@@ -595,6 +613,7 @@ export function createGatewaySubagentRuntime(): PluginRuntime["subagent"] {
           allowSyntheticModelOverride,
           agentRunTracking: "plugin_subagent",
           ...(pluginId ? { pluginRuntimeOwnerId: pluginId } : {}),
+          ...(hookName ? { pluginRuntimeHookName: hookName } : {}),
         },
       );
       const runId = payload?.runId;

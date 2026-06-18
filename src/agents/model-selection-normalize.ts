@@ -137,3 +137,38 @@ export function parseModelRef(
   }
   return normalizeModelRef(providerRaw, model, options);
 }
+
+/**
+ * Normalize a model reference string for equality checks across surfaces.
+ *
+ * Most OpenClaw config and receipt paths use `provider/model`, while some
+ * provider-adapter surfaces report `provider:model`. Checks that compare
+ * factual receipts against expected model refs should compare this canonical
+ * key instead of raw strings.
+ */
+export function normalizeModelRefStringForComparison(
+  raw: string,
+  defaultProvider?: string,
+  options?: ParseModelRefOptions,
+): string {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const slash = trimmed.indexOf("/");
+  const colon = trimmed.indexOf(":");
+  const colonIsProviderSeparator = colon > 0 && (slash === -1 || colon < slash);
+  if (colonIsProviderSeparator) {
+    const provider = trimmed.slice(0, colon).trim();
+    const model = trimmed.slice(colon + 1).trim();
+    if (provider && model) {
+      const normalized = normalizeModelRef(provider, model, options);
+      return modelKey(normalized.provider, normalized.model);
+    }
+  }
+  const parsed = parseModelRef(trimmed, defaultProvider ?? "", options);
+  if (!parsed) {
+    return trimmed;
+  }
+  return modelKey(parsed.provider, parsed.model);
+}

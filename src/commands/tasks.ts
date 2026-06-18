@@ -19,6 +19,10 @@ import { loadCronJobsStoreSync, resolveCronJobsStorePath } from "../cron/store.j
 import type { RuntimeEnv } from "../runtime.js";
 import { parseAgentSessionKey } from "../sessions/session-key-utils.js";
 import { getTaskById, updateTaskNotifyPolicyById } from "../tasks/runtime-internal.js";
+import {
+  checkTaskExecutionReceipt,
+  parseTaskExecutionCheck,
+} from "../tasks/task-execution-admission.js";
 import { cancelDetachedTaskRunById } from "../tasks/task-executor.js";
 import { listTaskFlowAuditFindings } from "../tasks/task-flow-registry.audit.js";
 import {
@@ -497,6 +501,66 @@ export async function tasksShowCommand(
   for (const line of lines) {
     runtime.log(line);
   }
+}
+
+/** Checks a critical execution route by validating its persisted task receipt. */
+export async function tasksCheckCommand(
+  opts: { json?: boolean; check: string; lookup: string },
+  runtime: RuntimeEnv,
+) {
+  const check = parseTaskExecutionCheck(opts.check);
+  if (!check) {
+    const payload = {
+      passed: false,
+      admitted: false,
+      check: opts.check,
+      lookup: opts.lookup,
+      failures: [
+        {
+          code: "unknown_check",
+          detail: `unknown execution check: ${opts.check}`,
+        },
+      ],
+    };
+    if (opts.json) {
+      runtime.log(JSON.stringify(payload, null, 2));
+    } else {
+      runtime.error(`Unknown execution check: ${opts.check}`);
+    }
+    runtime.exit(1);
+    return;
+  }
+  const task = reconcileTaskLookupToken(opts.lookup);
+  const result = checkTaskExecutionReceipt({
+    check,
+    lookup: opts.lookup,
+    task,
+  });
+
+  if (opts.json) {
+    runtime.log(JSON.stringify(result, null, 2));
+  } else if (result.passed) {
+    runtime.log(
+      `Checked ${result.check} for ${result.taskId ?? opts.lookup} (${result.runId ?? "no run id"}).`,
+    );
+  } else {
+    runtime.error(`Execution check failed for ${opts.lookup}:`);
+    for (const failure of result.failures) {
+      runtime.error(`- ${failure.code}: ${failure.detail}`);
+    }
+  }
+
+  if (!result.passed) {
+    runtime.exit(1);
+  }
+}
+
+/** Deprecated compatibility alias for the older admission wording. */
+export async function tasksAdmitCommand(
+  opts: { json?: boolean; check: string; lookup: string },
+  runtime: RuntimeEnv,
+) {
+  await tasksCheckCommand(opts, runtime);
 }
 
 /** Updates a task's notification policy. */

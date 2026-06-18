@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AcpSessionStoreEntry } from "../acp/runtime/session-meta.js";
 import { startAcpSpawnParentStreamRelay } from "../agents/acp-spawn-parent-stream.js";
+import { createResolvedAgentRunReceipt, finalizeAgentRunReceipt } from "../agents/run-receipt.js";
 import { resetCronActiveJobsForTests } from "../cron/active-jobs.js";
 import {
   emitAgentEvent,
@@ -2029,6 +2030,70 @@ describe("task-registry", () => {
           taskId: task.taskId,
           runId: "run-restore",
           task: "Restore me",
+        });
+      },
+      { durableStore: true },
+    );
+  });
+
+  it("restores persisted task execution receipts from disk", async () => {
+    await withTaskRegistryTempDir(
+      async () => {
+        resetTaskRegistryForTests();
+        const receipt = finalizeAgentRunReceipt(
+          createResolvedAgentRunReceipt({
+            source: {
+              kind: "plugin",
+              id: "gbrain-context",
+              hook: "message_received",
+            },
+            targetAgentId: "memory-curator",
+            requestedProvider: "openrouter",
+            requestedModel: "anthropic/claude-haiku-4.5",
+            resolvedProvider: "openrouter",
+            resolvedModel: "anthropic/claude-haiku-4.5",
+            runtime: "openclaw",
+            contextMode: "lightweight",
+          }),
+          {
+            finalProvider: "openrouter",
+            finalModel: "anthropic/claude-haiku-4.5",
+            runtime: "openclaw",
+            contextMode: "lightweight",
+            terminalStatus: "succeeded",
+          },
+        );
+        const task = createTaskRecord({
+          runtime: "subagent",
+          ownerKey: "agent:main:main",
+          scopeKind: "session",
+          childSessionKey: "agent:main:subagent:memory-curator",
+          runId: "run-receipt-restore",
+          task: "Restore receipt",
+          status: "succeeded",
+          deliveryStatus: "pending",
+          executionReceipt: receipt,
+        });
+
+        resetTaskRegistryForTests({
+          persist: false,
+        });
+
+        const restored = resolveTaskForLookupToken(task.taskId);
+        expect(restored?.executionReceipt).toMatchObject({
+          phase: "finalized",
+          terminalStatus: "succeeded",
+          requested: {
+            model: "openrouter/anthropic/claude-haiku-4.5",
+          },
+          final: {
+            model: "openrouter/anthropic/claude-haiku-4.5",
+            runtime: "openclaw",
+            contextMode: "lightweight",
+          },
+          fallback: {
+            used: false,
+          },
         });
       },
       { durableStore: true },
