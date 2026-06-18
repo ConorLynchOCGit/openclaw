@@ -1770,6 +1770,158 @@ describe("embedded attempt harness pinning", () => {
     expectMockArgFields(runEmbeddedAgentMock, { agentHarnessId: undefined });
   });
 
+  it("fresh launch plans force the planned OpenClaw runtime over stale Codex session state", async () => {
+    const sessionEntry: SessionEntry = {
+      sessionId: "memory-curator-session",
+      updatedAt: Date.now(),
+      agentHarnessId: "codex",
+    };
+    runEmbeddedAgentMock.mockResolvedValueOnce({
+      meta: { durationMs: 1 },
+    } satisfies EmbeddedAgentRunResult);
+
+    await runAgentAttempt({
+      providerOverride: "openrouter",
+      originalProvider: "openrouter",
+      modelOverride: "anthropic/claude-haiku-4.5",
+      cfg: {
+        agents: {
+          defaults: {
+            model: { primary: "openai/gpt-5.5", fallbacks: ["openai/gpt-5.5"] },
+            models: {
+              "openai/gpt-5.5": { agentRuntime: { id: "codex" } },
+            },
+          },
+          list: [
+            {
+              id: "memory-curator",
+              model: { primary: "openrouter/anthropic/claude-haiku-4.5" },
+              models: {
+                "openrouter/anthropic/claude-haiku-4.5": {
+                  agentRuntime: { id: "openclaw" },
+                },
+              },
+            },
+          ],
+        },
+      } as OpenClawConfig,
+      sessionEntry,
+      sessionId: sessionEntry.sessionId,
+      sessionKey: "agent:memory-curator:subagent:gbrain-signal-route",
+      sessionAgentId: "memory-curator",
+      sessionFile: path.join(tmpDir, "session.jsonl"),
+      workspaceDir: tmpDir,
+      body: "capture memory",
+      isFallbackRetry: false,
+      resolvedThinkLevel: "medium",
+      timeoutMs: 1_000,
+      runId: "run-fresh-launch-plan-runtime",
+      opts: {
+        launchExecutionPlan: {
+          targetAgentId: "memory-curator",
+          launchMode: "fresh",
+          model: {
+            provider: "openrouter",
+            model: "anthropic/claude-haiku-4.5",
+          },
+          runtime: "openclaw",
+        },
+      } as Parameters<typeof runAgentAttempt>[0]["opts"],
+      runContext: {} as Parameters<typeof runAgentAttempt>[0]["runContext"],
+      spawnedBy: undefined,
+      messageChannel: undefined,
+      skillsSnapshot: undefined,
+      resolvedVerboseLevel: undefined,
+      agentDir: tmpDir,
+      onAgentEvent: vi.fn(),
+      authProfileProvider: "openrouter",
+      sessionHasHistory: true,
+    });
+
+    expectMockArgFields(runEmbeddedAgentMock, {
+      provider: "openrouter",
+      model: "anthropic/claude-haiku-4.5",
+      agentHarnessId: "openclaw",
+      agentHarnessRuntimeOverride: "openclaw",
+    });
+  });
+
+  it("fresh OpenAI launch plans can use OpenAI OAuth through OpenClaw without Codex harness fallback", async () => {
+    const sessionEntry: SessionEntry = {
+      sessionId: "planning-session",
+      updatedAt: Date.now(),
+      agentHarnessId: "codex",
+    };
+    runEmbeddedAgentMock.mockResolvedValueOnce({
+      meta: { durationMs: 1 },
+    } satisfies EmbeddedAgentRunResult);
+
+    await runAgentAttempt({
+      providerOverride: "openai",
+      originalProvider: "openai",
+      modelOverride: "gpt-5.5",
+      cfg: {
+        agents: {
+          defaults: {
+            model: { primary: "openai/gpt-5.5", fallbacks: [] },
+            models: {
+              "openai/gpt-5.5": { agentRuntime: { id: "codex" } },
+            },
+          },
+          list: [
+            {
+              id: "planning",
+              model: { primary: "openai/gpt-5.5", fallbacks: [] },
+              models: {
+                "openai/gpt-5.5": {
+                  agentRuntime: { id: "openclaw" },
+                },
+              },
+            },
+          ],
+        },
+      } as OpenClawConfig,
+      sessionEntry,
+      sessionId: sessionEntry.sessionId,
+      sessionKey: "agent:planning:subagent:route",
+      sessionAgentId: "planning",
+      sessionFile: path.join(tmpDir, "session.jsonl"),
+      workspaceDir: tmpDir,
+      body: "plan",
+      isFallbackRetry: false,
+      resolvedThinkLevel: "medium",
+      timeoutMs: 1_000,
+      runId: "run-openai-openclaw-launch-plan-runtime",
+      opts: {
+        launchExecutionPlan: {
+          targetAgentId: "planning",
+          launchMode: "fresh",
+          model: {
+            provider: "openai",
+            model: "gpt-5.5",
+          },
+          runtime: "openclaw",
+        },
+      } as Parameters<typeof runAgentAttempt>[0]["opts"],
+      runContext: {} as Parameters<typeof runAgentAttempt>[0]["runContext"],
+      spawnedBy: undefined,
+      messageChannel: undefined,
+      skillsSnapshot: undefined,
+      resolvedVerboseLevel: undefined,
+      agentDir: tmpDir,
+      onAgentEvent: vi.fn(),
+      authProfileProvider: "openai",
+      sessionHasHistory: true,
+    });
+
+    expectMockArgFields(runEmbeddedAgentMock, {
+      provider: "openai",
+      model: "gpt-5.5",
+      agentHarnessId: "openclaw",
+      agentHarnessRuntimeOverride: "openclaw",
+    });
+  });
+
   it("forwards runtime toolsAllow into embedded attempts", async () => {
     const sessionEntry: SessionEntry = {
       sessionId: "tools-allow-session",

@@ -31,6 +31,7 @@ import {
 import { buildWorkspaceSkillSnapshot } from "../../skills/loading/workspace.js";
 import { resolveUserPath } from "../../utils.js";
 import { resolveMessageChannel } from "../../utils/message-channel.js";
+import { isDefaultAgentRuntimeId } from "../agent-runtime-id.js";
 import { resolveAuthProfileOrder } from "../auth-profiles/order.js";
 import { ensureAuthProfileStore } from "../auth-profiles/store.js";
 import { resolveBootstrapWarningSignaturesSeen } from "../bootstrap-budget.js";
@@ -471,6 +472,14 @@ export function runAgentAttempt(params: {
   onUserMessagePersisted?: (message: Extract<AgentMessage, { role: "user" }>) => void;
 }) {
   const isRawModelRun = params.opts.modelRun === true || params.opts.promptMode === "none";
+  const launchExecutionRuntime =
+    params.opts.launchExecutionPlan?.launchMode === "fresh"
+      ? params.opts.launchExecutionPlan.runtime
+      : undefined;
+  const forcedLaunchRuntime =
+    launchExecutionRuntime && !isDefaultAgentRuntimeId(launchExecutionRuntime)
+      ? launchExecutionRuntime
+      : undefined;
   const claudeCliFallbackPrelude =
     !isRawModelRun &&
     params.isFallbackRetry &&
@@ -494,7 +503,7 @@ export function runAgentAttempt(params: {
   );
   const bootstrapPromptWarningSignature =
     bootstrapPromptWarningSignaturesSeen[bootstrapPromptWarningSignaturesSeen.length - 1];
-  const requestedAgentHarnessId = isRawModelRun ? "openclaw" : undefined;
+  const requestedAgentHarnessId = isRawModelRun ? "openclaw" : forcedLaunchRuntime;
   const cliExecutionProvider = isRawModelRun
     ? params.providerOverride
     : (resolveCliRuntimeExecutionProvider({
@@ -506,13 +515,15 @@ export function runAgentAttempt(params: {
       }) ?? params.providerOverride);
   const agentHarnessPolicy = isRawModelRun
     ? ({ runtime: "openclaw", runtimeSource: "model" } as const)
-    : resolveAvailableAgentHarnessPolicy({
-        provider: params.providerOverride,
-        modelId: params.modelOverride,
-        config: params.cfg,
-        agentId: params.sessionAgentId,
-        sessionKey: params.sessionKey ?? params.sessionId,
-      });
+    : forcedLaunchRuntime
+      ? ({ runtime: forcedLaunchRuntime, runtimeSource: "model" } as const)
+      : resolveAvailableAgentHarnessPolicy({
+          provider: params.providerOverride,
+          modelId: params.modelOverride,
+          config: params.cfg,
+          agentId: params.sessionAgentId,
+          sessionKey: params.sessionKey ?? params.sessionId,
+        });
   const harnessAuthSelection = resolveHarnessAuthProfileSelection({
     config: params.cfg,
     agentDir: params.agentDir,

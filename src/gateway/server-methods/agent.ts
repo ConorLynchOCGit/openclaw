@@ -2443,7 +2443,7 @@ export const agentHandlers: GatewayRequestHandlers = {
         ...(modelOverride ? { requestedModel: modelOverride } : {}),
         resolvedProvider: activeModelRef.provider,
         resolvedModel: activeModelRef.model,
-        runtime: "openclaw",
+        runtime: executionPlan.runtime,
         workspace: resolveAgentWorkspaceDir(cfgForAgent ?? cfg, activeSessionAgentId),
         ...(request.bootstrapContextMode ? { contextMode: request.bootstrapContextMode } : {}),
       });
@@ -2718,7 +2718,7 @@ export const agentHandlers: GatewayRequestHandlers = {
                 const finalizedRunReceipt = finalizeAgentRunReceipt(resolvedRunReceipt, {
                   finalProvider: provider,
                   finalModel: model,
-                  runtime: "openclaw",
+                  runtime: executionPlan.runtime,
                   terminalStatus: status,
                   ...(fallbackReason ? { fallbackReason } : {}),
                   ...(request.bootstrapContextMode

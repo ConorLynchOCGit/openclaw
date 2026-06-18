@@ -1731,17 +1731,24 @@ async function agentCommandInternal(
     for (;;) {
       try {
         const spawnedBy = normalizedSpawned.spawnedBy ?? sessionEntry?.spawnedBy;
-        const effectiveFallbacksOverride = resolveEffectiveModelFallbacks({
-          cfg,
-          agentId: sessionAgentId,
-          sessionKey,
-          hasSessionModelOverride:
-            hasExplicitRunOverride || Boolean(storedProviderOverride || storedModelOverride),
-          modelOverrideSource: hasExplicitRunOverride ? "user" : storedModelOverrideSource,
-          hasAutoFallbackProvenance: hasExplicitRunOverride
-            ? false
-            : hasStoredAutoFallbackProvenance,
-        });
+        const effectiveFallbacksOverride = hasLaunchExecutionPlan
+          ? resolveEffectiveModelFallbacks({
+              cfg,
+              agentId: sessionAgentId,
+              sessionKey,
+              hasSessionModelOverride: false,
+            })
+          : resolveEffectiveModelFallbacks({
+              cfg,
+              agentId: sessionAgentId,
+              sessionKey,
+              hasSessionModelOverride:
+                hasExplicitRunOverride || Boolean(storedProviderOverride || storedModelOverride),
+              modelOverrideSource: hasExplicitRunOverride ? "user" : storedModelOverrideSource,
+              hasAutoFallbackProvenance: hasExplicitRunOverride
+                ? false
+                : hasStoredAutoFallbackProvenance,
+            });
 
         let fallbackAttemptIndex = 0;
         attemptLifecycleState.currentTurnUserMessagePersisted = false;
@@ -1755,6 +1762,11 @@ async function agentCommandInternal(
           agentId: sessionAgentId,
           sessionId,
           sessionKey: sessionKey ?? sessionId,
+          ...(hasLaunchExecutionPlan
+            ? {
+                resolveAgentHarnessRuntimeOverride: () => opts.launchExecutionPlan?.runtime,
+              }
+            : {}),
           prepareAgentHarnessRuntime: async ({
             provider: providerValue,
             model: modelValue,

@@ -830,6 +830,8 @@ type FallbackRunnerParams = {
   provider: string;
   model: string;
   sessionId?: string;
+  fallbacksOverride?: string[];
+  resolveAgentHarnessRuntimeOverride?: (provider: string, model: string) => string | undefined;
   run: (provider: string, model: string) => Promise<unknown>;
   onFallbackStep?: (step: Record<string, unknown>) => void | Promise<void>;
   classifyResult?: (params: {
@@ -1503,11 +1505,17 @@ describe("agentCommand – LiveSessionModelSwitchError retry", () => {
     state.runtimeConfigMock = {
       agents: {
         defaults: {
-          model: "openai/gpt-5.5",
+          model: {
+            primary: "openai/gpt-5.5",
+            fallbacks: ["openai/gpt-5.5-mini"],
+          },
           models: {
             "openai/gpt-5.5": {},
+            "openai/gpt-5.5-mini": {},
             "openai/channel-model": {},
             "openrouter/anthropic/claude-haiku-4.5": {},
+            "openrouter/google/gemini-2.5-flash-lite": {},
+            "openrouter/google/gemini-2.0-flash-lite-001": {},
           },
         },
         list: [
@@ -1516,7 +1524,10 @@ describe("agentCommand – LiveSessionModelSwitchError retry", () => {
             id: "memory-curator",
             model: {
               primary: "openrouter/anthropic/claude-haiku-4.5",
-              fallbacks: [],
+              fallbacks: [
+                "openrouter/google/gemini-2.5-flash-lite",
+                "openrouter/google/gemini-2.0-flash-lite-001",
+              ],
             },
           },
         ],
@@ -1577,6 +1588,16 @@ describe("agentCommand – LiveSessionModelSwitchError retry", () => {
     const fallbackParams = mockCallArg(state.runWithModelFallbackMock) as FallbackRunnerParams;
     expect(fallbackParams.provider).toBe("openrouter");
     expect(fallbackParams.model).toBe("anthropic/claude-haiku-4.5");
+    expect(fallbackParams.fallbacksOverride).toEqual([
+      "openrouter/google/gemini-2.5-flash-lite",
+      "openrouter/google/gemini-2.0-flash-lite-001",
+    ]);
+    expect(
+      fallbackParams.resolveAgentHarnessRuntimeOverride?.(
+        "openrouter",
+        "google/gemini-2.5-flash-lite",
+      ),
+    ).toBe("openclaw");
     expect(state.resolveChannelModelOverrideMock).not.toHaveBeenCalled();
     expectRecordFields(mockCallArg(state.runAgentAttemptMock), {
       providerOverride: "openrouter",

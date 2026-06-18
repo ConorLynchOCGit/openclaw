@@ -14,11 +14,13 @@ export type AgentExecutionModelRef = {
   model: string;
 };
 
+export type AgentExecutionRuntime = "openclaw" | "codex";
+
 export type AgentExecutionPlan = {
   targetAgentId?: string;
   launchMode: AgentExecutionLaunchMode;
   model: AgentExecutionModelRef;
-  runtime: "openclaw";
+  runtime: AgentExecutionRuntime;
   requested?: {
     model?: string;
   };
