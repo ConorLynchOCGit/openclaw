@@ -1540,9 +1540,19 @@ describe("agentCommand – LiveSessionModelSwitchError retry", () => {
       modelOverrideSource: "user",
       skillsSnapshot: { prompt: "", skills: [], version: 0 },
     };
-    state.runAgentAttemptMock.mockResolvedValue(
-      makeSuccessResult("openrouter", "anthropic/claude-haiku-4.5"),
-    );
+    const staleMetaResult = makeSuccessResult(
+      "openrouter",
+      "anthropic/claude-haiku-4.5",
+    ) as ReturnType<typeof makeSuccessResult> & {
+      meta: Record<string, unknown> & { agentMeta: Record<string, unknown> };
+    };
+    staleMetaResult.meta.agentMeta = {
+      ...staleMetaResult.meta.agentMeta,
+      provider: "openai",
+      model: "gpt-5.5",
+    };
+    state.runAgentAttemptMock.mockResolvedValue(staleMetaResult);
+    const onRunFinalized = vi.fn();
 
     await agentCommandFromIngress({
       message: "capture memory signal",
@@ -1552,6 +1562,7 @@ describe("agentCommand – LiveSessionModelSwitchError retry", () => {
       channel: "discord",
       groupId: "channel-123",
       allowModelOverride: false,
+      onRunFinalized,
       launchExecutionPlan: {
         targetAgentId: "memory-curator",
         launchMode: "fresh",
@@ -1570,6 +1581,11 @@ describe("agentCommand – LiveSessionModelSwitchError retry", () => {
     expectRecordFields(mockCallArg(state.runAgentAttemptMock), {
       providerOverride: "openrouter",
       modelOverride: "anthropic/claude-haiku-4.5",
+    });
+    expectRecordFields(mockCallArg(onRunFinalized), {
+      provider: "openrouter",
+      model: "anthropic/claude-haiku-4.5",
+      status: "succeeded",
     });
   });
 
