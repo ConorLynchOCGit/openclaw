@@ -25,6 +25,7 @@ import type {
   ToolProgressDetailMode,
   ToolResultFormat,
 } from "../../embedded-agent-subscribe.shared-types.js";
+import type { AgentExecutionPlan } from "../../execution-plan.js";
 import type { AgentInternalEvent } from "../../internal-events.js";
 import type { AgentMessage } from "../../runtime/index.js";
 import type { SilentReplyPromptMode } from "../../system-prompt.types.js";
@@ -135,6 +136,8 @@ export type RunEmbeddedAgentParams = {
   agentHarnessId?: string;
   /** Explicit runtime override selected for this turn. Unlike agentHarnessId, this may force OpenClaw. */
   agentHarnessRuntimeOverride?: string;
+  /** Trusted launch contract selected before dispatch. Fresh runs must execute this plan or fail. */
+  launchExecutionPlan?: AgentExecutionPlan;
   authProfileId?: string;
   authProfileIdSource?: "auto" | "user";
   thinkLevel?: ThinkLevel;

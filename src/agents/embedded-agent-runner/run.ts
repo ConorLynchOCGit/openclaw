@@ -30,6 +30,7 @@ import {
   retireSessionMcpRuntime,
   retireSessionMcpRuntimeForSessionKey,
 } from "../agent-bundle-mcp-tools.js";
+import { isDefaultAgentRuntimeId } from "../agent-runtime-id.js";
 import {
   resolveAgentExecutionContract,
   resolveAgentDir,
@@ -220,6 +221,16 @@ const BEFORE_AGENT_FINALIZE_RETRY_PROMPT_PREFIX =
   "Before accepting the previous final answer, apply this revision request and produce the revised final answer. Do not repeat completed work or rerun tools unless the request explicitly requires it.";
 const MAX_BEFORE_AGENT_FINALIZE_REVISIONS = 3;
 type EmbeddedRunAttemptForRunner = Awaited<ReturnType<typeof runEmbeddedAttemptWithBackend>>;
+
+function resolveFreshLaunchRuntimeOverride(
+  launchExecutionPlan: RunEmbeddedAgentParams["launchExecutionPlan"],
+): string | undefined {
+  const runtime = launchExecutionPlan?.runtime;
+  if (launchExecutionPlan?.launchMode !== "fresh" || isDefaultAgentRuntimeId(runtime)) {
+    return undefined;
+  }
+  return runtime;
+}
 
 function isNoRealConversationCompactionNoop(params: {
   ok?: boolean;
@@ -500,6 +511,15 @@ export async function runEmbeddedAgent(
   paramsInput: RunEmbeddedAgentParams,
 ): Promise<EmbeddedAgentRunResult> {
   let params = paramsInput;
+  const freshLaunchRuntimeOverride = resolveFreshLaunchRuntimeOverride(params.launchExecutionPlan);
+  if (freshLaunchRuntimeOverride) {
+    params = {
+      ...params,
+      agentHarnessRuntimeOverride: freshLaunchRuntimeOverride,
+      agentHarnessId:
+        freshLaunchRuntimeOverride === "openclaw" ? "openclaw" : params.agentHarnessId,
+    };
+  }
   // Resolve sessionKey early so all downstream consumers (hooks, LCM, compaction)
   // receive a non-null key even when callers omit it. See #60552.
   const effectiveSessionKey = backfillSessionKey({
@@ -689,6 +709,8 @@ export async function runEmbeddedAgent(
         notifyExecutionPhase("runtime_plugins", { provider, model: modelId });
       }
 
+      const preHookProvider = provider;
+      const preHookModelId = modelId;
       const hookSelection = await resolveHookModelSelection({
         prompt: params.prompt,
         attachments: buildBeforeModelResolveAttachments(params.images),
@@ -699,6 +721,18 @@ export async function runEmbeddedAgent(
       });
       provider = hookSelection.provider;
       modelId = hookSelection.modelId;
+      if (
+        freshLaunchRuntimeOverride &&
+        (provider !== preHookProvider || modelId !== preHookModelId)
+      ) {
+        throw new Error(
+          `Fresh launch plan model changed by model-resolution hook: expected ${sanitizeForLog(
+            preHookProvider,
+          )}/${sanitizeForLog(preHookModelId)}, got ${sanitizeForLog(provider)}/${sanitizeForLog(
+            modelId,
+          )}.`,
+        );
+      }
       const beforeAgentStartResult = hookSelection.beforeAgentStartResult;
       startupStages.mark("hooks");
       await ensureSelectedAgentHarnessPlugin({
@@ -719,6 +753,15 @@ export async function runEmbeddedAgent(
         agentHarnessId: params.agentHarnessId,
         agentHarnessRuntimeOverride: params.agentHarnessRuntimeOverride,
       });
+      if (freshLaunchRuntimeOverride && agentHarness.id !== freshLaunchRuntimeOverride) {
+        throw new Error(
+          `Fresh launch plan runtime mismatch: expected ${sanitizeForLog(
+            freshLaunchRuntimeOverride,
+          )}, selected ${sanitizeForLog(agentHarness.id)} for ${sanitizeForLog(
+            provider,
+          )}/${sanitizeForLog(modelId)}.`,
+        );
+      }
       const pluginHarnessOwnsTransport = agentHarness.id !== "openclaw";
       const modelConfigProvider = provider;
       const selectedRuntimeProvider = resolveSelectedOpenAIRuntimeProvider({
@@ -1676,6 +1719,7 @@ export async function runEmbeddedAgent(
             // attempt too. Otherwise plugin-owned transports can skip OpenClaw auth
             // bootstrap but drift back to OpenClaw when the attempt is created.
             agentHarnessId: agentHarness.id,
+            agentHarnessRuntimeOverride: params.agentHarnessRuntimeOverride,
             ...(params.sessionKey
               ? {
                   agentHarnessTaskRuntimeScope: createAgentHarnessTaskRuntimeScope({
