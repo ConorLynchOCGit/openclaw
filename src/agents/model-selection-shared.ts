@@ -16,6 +16,7 @@ import { resolveConfiguredProviderFallback } from "./configured-provider-fallbac
 import { DEFAULT_PROVIDER } from "./defaults.js";
 import { findModelCatalogEntry } from "./model-catalog-lookup.js";
 import type { ModelCatalogEntry } from "./model-catalog.types.js";
+import { modelIdentityTransportSnapshot, type ModelIdentityKey } from "./model-identity.js";
 import { splitTrailingAuthProfile } from "./model-ref-profile.js";
 import {
   normalizeConfiguredProviderCatalogModelId,
@@ -1488,6 +1489,7 @@ export type ModelVisibilityPolicy = {
   hasConfiguredEntries: boolean;
   hasProviderWildcards: boolean;
   allowsKey: (key: string) => boolean;
+  allowsIdentity?: (identityKey: ModelIdentityKey) => boolean;
   allows: (ref: { provider: string; model: string }) => boolean;
   resolveSelection: (ref: { provider: string; model: string }) => ModelRef | null;
   visibleCatalog: (params: {
@@ -1549,6 +1551,10 @@ export function createModelVisibilityPolicyWithFallbacks(
     hasConfiguredEntries: visibility.hasEntries,
     hasProviderWildcards: visibility.providerWildcards.size > 0,
     allowsKey,
+    allowsIdentity: (identityKey) => {
+      const transport = modelIdentityTransportSnapshot(identityKey);
+      return allowsKey(modelKey(transport.provider, transport.model));
+    },
     allows: (ref) => allowsKey(modelKey(ref.provider, ref.model)),
     resolveSelection: (ref) =>
       resolveAllowedModelSelection({

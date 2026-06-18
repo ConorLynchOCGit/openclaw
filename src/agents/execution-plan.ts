@@ -3,8 +3,22 @@ import { normalizeOptionalString } from "@openclaw/normalization-core/string-coe
 import { sanitizeForLog } from "../../packages/terminal-core/src/ansi.js";
 import { resolveAgentModelFallbackValues } from "../config/model-input.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import {
+  admitAgentExecution,
+  admissionFallbackDisplayRefs,
+  admissionPrimaryTransport,
+  type AdmissionRuntimeId,
+  type RunAdmissionDecision,
+} from "./admission-kernel.js";
 import { resolveModelAgentRuntimeMetadata } from "./agent-runtime-metadata.js";
 import { resolveAgentConfig, resolveAgentWorkspaceDir } from "./agent-scope-config.js";
+import {
+  modelIdentityDisplayRef,
+  modelIdentityMatchesRef,
+  modelIdentityTransportSnapshot,
+  type ModelIdentityKey,
+  type ModelIdentityTransportSnapshot,
+} from "./model-identity.js";
 import {
   modelKey,
   normalizeStoredOverrideModel,
@@ -43,8 +57,15 @@ export type AgentExecutionPlan = {
   };
   workspace?: string;
   contextMode?: "full" | "lightweight";
+  admission: RunAdmissionDecision;
+  /**
+   * Compatibility projection from admission.model.primaryIdentityKey.
+   * Fresh planned runs must consume admission, not this projection.
+   */
   model: AgentExecutionModelRef;
+  /** Compatibility projection from admission.runtime.id. */
   runtime: AgentExecutionRuntime;
+  /** Compatibility projection from admission.model.fallbackIdentityKeys. */
   fallbacks: AgentExecutionModelRef[];
   requested?: {
     model?: string;
@@ -56,11 +77,15 @@ export type AgentExecutionPlan = {
 };
 
 export type FreshPlannedRunSelection = {
+  primaryIdentityKey: ModelIdentityKey;
+  fallbackIdentityKeys: ModelIdentityKey[];
   provider: string;
   model: string;
-  runtime: AgentExecutionRuntime;
+  runtime: AdmissionRuntimeId;
+  providerProfileKey: string;
   contextMode: "full" | "lightweight";
   fallbacksOverride: string[];
+  transportSnapshot: ModelIdentityTransportSnapshot;
   allowLiveSwitch: false;
   allowSessionOverrides: false;
   allowChannelOverrides: false;
@@ -74,9 +99,12 @@ export type AgentAttemptRecord = {
   targetAgentId?: string;
   startedAt: string;
   endedAt?: string;
+  modelIdentityKey?: ModelIdentityKey;
   provider: string;
   model: string;
   runtime: AgentExecutionRuntime;
+  providerProfileKey?: string;
+  transportSnapshot?: ModelIdentityTransportSnapshot;
   harness: string;
   contextMode?: "full" | "lightweight";
   status: "running" | "succeeded" | "failed" | "timed_out" | "cancelled";
@@ -112,12 +140,27 @@ export function resolveFreshPlannedRunSelection(
   if (!provider || !model) {
     throw new Error("Fresh launch plan missing model before planned run selection.");
   }
+  if (!plan.admission) {
+    throw new Error("Fresh launch plan missing admission before planned run selection.");
+  }
+  const transport = admissionPrimaryTransport(plan.admission);
+  if (transport.provider !== provider || transport.model !== model) {
+    throw new Error(
+      `Fresh launch plan model projection drift: admission=${sanitizeForLog(
+        modelIdentityDisplayRef(plan.admission.model.primaryIdentityKey),
+      )}, projection=${sanitizeForLog(provider)}/${sanitizeForLog(model)}.`,
+    );
+  }
   return {
+    primaryIdentityKey: plan.admission.model.primaryIdentityKey,
+    fallbackIdentityKeys: plan.admission.model.fallbackIdentityKeys,
     provider,
     model,
-    runtime: plan.runtime,
+    runtime: plan.admission.runtime.id,
+    providerProfileKey: plan.admission.runtime.providerProfileKey,
     contextMode: plan.contextMode ?? "lightweight",
-    fallbacksOverride: plan.fallbacks.map(formatExecutionModelRef),
+    fallbacksOverride: admissionFallbackDisplayRefs(plan.admission),
+    transportSnapshot: transport,
     allowLiveSwitch: false,
     allowSessionOverrides: false,
     allowChannelOverrides: false,
@@ -139,12 +182,17 @@ export function executionPlanAllowsModel(params: {
   if (!provider || !model) {
     return false;
   }
-  const candidate = modelKey(provider, model);
-  if (candidate === modelKey(params.plan.model.provider, params.plan.model.model)) {
+  if (
+    modelIdentityMatchesRef({
+      identityKey: params.plan.admission.model.primaryIdentityKey,
+      provider,
+      model,
+    })
+  ) {
     return true;
   }
-  return params.plan.fallbacks.some(
-    (fallback) => candidate === modelKey(fallback.provider, fallback.model),
+  return params.plan.admission.model.fallbackIdentityKeys.some((identityKey) =>
+    modelIdentityMatchesRef({ identityKey, provider, model }),
   );
 }
 
@@ -218,20 +266,19 @@ function normalizePlanRuntime(value: string | undefined): AgentExecutionRuntime 
   return value === "codex" ? "codex" : "openclaw";
 }
 
-function resolveModelEntryRuntime(params: {
+function resolveModelEntryRuntimeMetadata(params: {
   cfg: OpenClawConfig;
   targetAgentId?: string;
   model: AgentExecutionModelRef;
-}): AgentExecutionRuntime {
-  const runtime = params.targetAgentId
+}): ReturnType<typeof resolveModelAgentRuntimeMetadata> {
+  return params.targetAgentId
     ? resolveModelAgentRuntimeMetadata({
         cfg: params.cfg,
         agentId: params.targetAgentId,
         provider: params.model.provider,
         model: params.model.model,
-      }).id
-    : undefined;
-  return normalizePlanRuntime(runtime);
+      })
+    : { id: normalizePlanRuntime(undefined), source: "implicit" as const };
 }
 
 function resolvePlanFallbacks(params: {
@@ -318,11 +365,26 @@ export function resolveExecutionPlan(params: {
     defaultProvider: model.provider,
     allowPluginNormalization: params.allowPluginNormalization,
   });
-  const runtime = resolveModelEntryRuntime({
+  const runtimeMeta = resolveModelEntryRuntimeMetadata({
     cfg: params.cfg,
     targetAgentId,
     model,
   });
+  const admission = admitAgentExecution({
+    cfg: params.cfg,
+    targetAgentId,
+    primary: model,
+    fallbacks,
+    runtimeMeta,
+    enforceAgentModelAllowlist: launchMode === "fresh" && !overrideModel,
+    enforceExplicitRuntime: launchMode === "fresh",
+    allowPluginNormalization: params.allowPluginNormalization,
+  });
+  const primaryTransport = admissionPrimaryTransport(admission);
+  const fallbackTransports = admission.model.fallbackIdentityKeys.map(
+    modelIdentityTransportSnapshot,
+  );
+  const runtime = admission.runtime.id;
 
   return {
     runId: normalizeOptionalString(params.runId) ?? "",
@@ -331,9 +393,16 @@ export function resolveExecutionPlan(params: {
     source,
     ...(targetAgentId ? { workspace: resolveAgentWorkspaceDir(params.cfg, targetAgentId) } : {}),
     ...(contextMode ? { contextMode } : {}),
-    model,
+    admission,
+    model: {
+      provider: primaryTransport.provider,
+      model: primaryTransport.model,
+    },
     runtime,
-    fallbacks,
+    fallbacks: fallbackTransports.map((transport) => ({
+      provider: transport.provider,
+      model: transport.model,
+    })),
     ...(requested.providerOverride && requested.modelOverride
       ? { requested: { model: `${requested.providerOverride}/${requested.modelOverride}` } }
       : {}),

@@ -112,19 +112,62 @@ describe("resolveExecutionPlan", () => {
     });
 
     expect(resolveFreshPlannedRunSelection(plan)).toEqual({
+      primaryIdentityKey: "openrouter::anthropic/claude-haiku-4.5",
+      fallbackIdentityKeys: [
+        "openrouter::google/gemini-2.5-flash-lite",
+        "openrouter::google/gemini-2.0-flash-lite-001",
+      ],
       provider: "openrouter",
       model: "anthropic/claude-haiku-4.5",
       runtime: "openclaw",
+      providerProfileKey: "openrouter-native",
       contextMode: "lightweight",
       fallbacksOverride: [
         "openrouter/google/gemini-2.5-flash-lite",
         "openrouter/google/gemini-2.0-flash-lite-001",
       ],
+      transportSnapshot: {
+        provider: "openrouter",
+        model: "anthropic/claude-haiku-4.5",
+      },
       allowLiveSwitch: false,
       allowSessionOverrides: false,
       allowChannelOverrides: false,
       allowAutoFallbackProbe: false,
       allowDefaultSubstitution: false,
+    });
+  });
+
+  it("admits OpenRouter nested model ids through opaque model identity keys", () => {
+    const plan = resolveExecutionPlan({
+      cfg,
+      runId: "run-memory-curator-route",
+      targetAgentId: "memory-curator",
+      source: { kind: "plugin", id: "gbrain-context", hook: "message_received" },
+      launchMode: "fresh",
+      sessionModel: {
+        modelProvider: "openai",
+        model: "gpt-5.5",
+      },
+    });
+
+    expect(plan.admission).toMatchObject({
+      model: {
+        primaryIdentityKey: "openrouter::anthropic/claude-haiku-4.5",
+        fallbackIdentityKeys: [
+          "openrouter::google/gemini-2.5-flash-lite",
+          "openrouter::google/gemini-2.0-flash-lite-001",
+        ],
+      },
+      runtime: {
+        id: "openclaw",
+        providerProfileKey: "openrouter-native",
+      },
+      policyTraceId: "agent-model-policy",
+    });
+    expect(plan.model).toEqual({
+      provider: "openrouter",
+      model: "anthropic/claude-haiku-4.5",
     });
   });
 
@@ -263,9 +306,15 @@ describe("resolveExecutionPlan", () => {
         targetAgentId: "memory-curator",
         startedAt: "2026-06-18T00:00:00.000Z",
         endedAt: "2026-06-18T00:00:01.000Z",
+        modelIdentityKey: "openrouter::anthropic/claude-haiku-4.5",
         provider: "openrouter",
         model: "anthropic/claude-haiku-4.5",
         runtime: "openclaw",
+        providerProfileKey: "openrouter-native",
+        transportSnapshot: {
+          provider: "openrouter",
+          model: "anthropic/claude-haiku-4.5",
+        },
         harness: "openclaw",
         contextMode: "lightweight",
         status: "succeeded",
@@ -280,12 +329,24 @@ describe("resolveExecutionPlan", () => {
       targetAgentId: "memory-curator",
       resolved: {
         model: "openrouter/anthropic/claude-haiku-4.5",
+        modelIdentityKey: "openrouter::anthropic/claude-haiku-4.5",
         runtime: "openclaw",
+        providerProfileKey: "openrouter-native",
+        transportSnapshot: {
+          provider: "openrouter",
+          model: "anthropic/claude-haiku-4.5",
+        },
         contextMode: "lightweight",
       },
       final: {
         model: "openrouter/anthropic/claude-haiku-4.5",
+        modelIdentityKey: "openrouter::anthropic/claude-haiku-4.5",
         runtime: "openclaw",
+        providerProfileKey: "openrouter-native",
+        transportSnapshot: {
+          provider: "openrouter",
+          model: "anthropic/claude-haiku-4.5",
+        },
         contextMode: "lightweight",
       },
       fallback: { used: false },

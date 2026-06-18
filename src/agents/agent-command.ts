@@ -110,6 +110,11 @@ import { AGENT_LANE_SUBAGENT } from "./lanes.js";
 import { LiveSessionModelSwitchError } from "./live-model-switch.js";
 import { loadManifestModelCatalog } from "./model-catalog.js";
 import { runWithModelFallback } from "./model-fallback.js";
+import {
+  modelIdentityDisplayRef,
+  modelIdentityKeyFromProviderModel,
+  modelIdentityTransportSnapshot,
+} from "./model-identity.js";
 import { normalizeConfiguredProviderCatalogModelId } from "./model-ref-shared.js";
 import type { ModelManifestNormalizationContext } from "./model-selection-normalize.js";
 import {
@@ -1431,11 +1436,11 @@ async function agentCommandInternal(
       provider = launchRef.provider;
       model = launchRef.model;
     }
-    if (normalizedChannelOverride && !hasEffectiveStoredOverride) {
+    if (!freshPlannedSelection && normalizedChannelOverride && !hasEffectiveStoredOverride) {
       provider = normalizedChannelOverride.provider;
       model = normalizedChannelOverride.model;
     }
-    if (storedModelOverride) {
+    if (!freshPlannedSelection && storedModelOverride) {
       const candidateProvider = storedProviderOverride || defaultProvider;
       const normalizedStored = normalizeAgentCommandModelRef(
         cfg,
@@ -1450,7 +1455,7 @@ async function agentCommandInternal(
       }
     }
     const autoFallbackPrimaryProbe =
-      !hasExplicitRunOverride && !hasLaunchExecutionPlan
+      !freshPlannedSelection && !hasExplicitRunOverride && !hasLaunchExecutionPlan
         ? resolveAutoFallbackPrimaryProbe({
             entry: sessionEntry,
             sessionKey,
@@ -1466,7 +1471,7 @@ async function agentCommandInternal(
       clearAutoFallbackPrimaryProbeSelection(autoFallbackPrimaryProbeSessionEntry);
     }
     let providerForAuthProfileValidation = provider;
-    if (hasExplicitRunOverride) {
+    if (!freshPlannedSelection && hasExplicitRunOverride) {
       const explicitRef = explicitModelOverride
         ? explicitProviderOverride
           ? normalizeAgentCommandModelRef(
@@ -1497,12 +1502,6 @@ async function agentCommandInternal(
       model = explicitRef.model;
     }
     if (freshPlannedSelection) {
-      const plannedKey = modelKey(provider, model);
-      if (!visibilityPolicy.allowsKey(plannedKey)) {
-        throw new Error(
-          `Fresh launch plan model "${sanitizeForLog(plannedKey)}" is not allowed for agent "${sessionAgentId}".`,
-        );
-      }
       assertFreshExecutionPlanBinding({
         plan: opts.launchExecutionPlan,
         runId,
@@ -1803,14 +1802,19 @@ async function agentCommandInternal(
       const plan = opts.launchExecutionPlan;
       const finalProvider = normalizeOptionalString(params.provider) ?? fallbackProvider;
       const finalModel = normalizeOptionalString(params.model) ?? fallbackModel;
-      const planModel = plan?.model;
+      const finalModelIdentityKey = plan
+        ? modelIdentityKeyFromProviderModel(finalProvider, finalModel, {
+            allowPluginNormalization: pluginsEnabled,
+            ...modelManifestContext,
+          })
+        : undefined;
       const fallbackUsed =
         Boolean(normalizeOptionalString(params.fallbackReason)) ||
-        (planModel
-          ? planModel.provider !== finalProvider || planModel.model !== finalModel
+        (plan?.admission
+          ? finalModelIdentityKey !== plan.admission.model.primaryIdentityKey
           : provider !== finalProvider || model !== finalModel);
-      const fromModel = planModel
-        ? `${planModel.provider}/${planModel.model}`
+      const fromModel = plan?.admission
+        ? modelIdentityDisplayRef(plan.admission.model.primaryIdentityKey)
         : `${provider}/${model}`;
       const toModel = `${finalProvider}/${finalModel}`;
       return {
@@ -1819,12 +1823,24 @@ async function agentCommandInternal(
         ...(sessionAgentId ? { targetAgentId: sessionAgentId } : {}),
         startedAt: new Date(startedAt).toISOString(),
         endedAt: new Date().toISOString(),
+        ...(finalModelIdentityKey ? { modelIdentityKey: finalModelIdentityKey } : {}),
         provider: finalProvider,
         model: finalModel,
         runtime:
+          plan?.admission.runtime.id ??
           plan?.runtime ??
           (result?.meta.agentMeta?.agentHarnessId === "codex" ? "codex" : "openclaw"),
-        harness: result?.meta.agentMeta?.agentHarnessId ?? plan?.runtime ?? "openclaw",
+        ...(plan?.admission.runtime.providerProfileKey
+          ? { providerProfileKey: plan.admission.runtime.providerProfileKey }
+          : {}),
+        ...(finalModelIdentityKey
+          ? { transportSnapshot: modelIdentityTransportSnapshot(finalModelIdentityKey) }
+          : {}),
+        harness:
+          result?.meta.agentMeta?.agentHarnessId ??
+          plan?.admission.runtime.id ??
+          plan?.runtime ??
+          "openclaw",
         ...((plan?.contextMode ?? opts.bootstrapContextMode)
           ? { contextMode: plan?.contextMode ?? opts.bootstrapContextMode }
           : {}),
@@ -2087,6 +2103,13 @@ async function agentCommandInternal(
         emitLifecycleFinishing(result);
         break;
       } catch (err) {
+        if (err instanceof LiveSessionModelSwitchError && freshPlannedSelection) {
+          const requestedRef =
+            err.provider && err.model ? `${err.provider}/${err.model}` : "unknown";
+          throw new Error(
+            `Fresh launch plan rejected live model switch to "${sanitizeForLog(requestedRef)}". Fresh planned runs may only switch through RunPlan fallbacks.`,
+          );
+        }
         if (err instanceof LiveSessionModelSwitchError) {
           if (freshPlannedSelection) {
             if (!attemptLifecycleState.lifecycleEnded) {

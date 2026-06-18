@@ -7,6 +7,12 @@
  */
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { AgentAttemptRecord, AgentExecutionPlan } from "./execution-plan.js";
+import {
+  modelIdentityDisplayRef,
+  modelIdentityTransportSnapshot,
+  type ModelIdentityKey,
+  type ModelIdentityTransportSnapshot,
+} from "./model-identity.js";
 
 export type AgentRunReceiptPhase = "resolved" | "finalized";
 export type AgentRunReceiptTerminalStatus = "succeeded" | "failed" | "timed_out" | "cancelled";
@@ -29,7 +35,10 @@ export type AgentRunReceiptSource = {
 
 export type AgentRunReceiptRuntimeRef = {
   model: string;
+  modelIdentityKey?: ModelIdentityKey;
   runtime: "openclaw" | "codex" | "unknown";
+  providerProfileKey?: string;
+  transportSnapshot?: ModelIdentityTransportSnapshot;
   workspace?: string;
   contextMode?: string;
 };
@@ -78,7 +87,10 @@ export function createResolvedAgentRunReceipt(params: {
   requestedModel?: string;
   resolvedProvider?: string;
   resolvedModel: string;
+  resolvedModelIdentityKey?: ModelIdentityKey;
   runtime?: AgentRunReceiptRuntimeRef["runtime"];
+  providerProfileKey?: string;
+  transportSnapshot?: ModelIdentityTransportSnapshot;
   workspace?: string;
   contextMode?: string;
 }): AgentRunReceipt {
@@ -100,7 +112,14 @@ export function createResolvedAgentRunReceipt(params: {
     ...(requestedModel ? { requested: { model: requestedModel } } : {}),
     resolved: {
       model: resolvedModel,
+      ...(params.resolvedModelIdentityKey
+        ? { modelIdentityKey: params.resolvedModelIdentityKey }
+        : {}),
       runtime: params.runtime ?? "openclaw",
+      ...(normalizeOptionalString(params.providerProfileKey)
+        ? { providerProfileKey: normalizeOptionalString(params.providerProfileKey) }
+        : {}),
+      ...(params.transportSnapshot ? { transportSnapshot: params.transportSnapshot } : {}),
       ...(normalizeOptionalString(params.workspace)
         ? { workspace: normalizeOptionalString(params.workspace) }
         : {}),
@@ -115,12 +134,16 @@ export function createResolvedAgentRunReceipt(params: {
 }
 
 export function createResolvedAgentRunReceiptFromPlan(plan: AgentExecutionPlan): AgentRunReceipt {
+  const resolvedIdentityKey = plan.admission.model.primaryIdentityKey;
   return createResolvedAgentRunReceipt({
     source: plan.source,
     targetAgentId: plan.targetAgentId,
-    resolvedProvider: plan.model.provider,
-    resolvedModel: plan.model.model,
-    runtime: plan.runtime,
+    resolvedProvider: modelIdentityTransportSnapshot(resolvedIdentityKey).provider,
+    resolvedModel: modelIdentityDisplayRef(resolvedIdentityKey),
+    resolvedModelIdentityKey: resolvedIdentityKey,
+    runtime: plan.admission.runtime.id,
+    providerProfileKey: plan.admission.runtime.providerProfileKey,
+    transportSnapshot: modelIdentityTransportSnapshot(resolvedIdentityKey),
     workspace: plan.workspace,
     contextMode: plan.contextMode,
     ...(plan.requested?.model ? { requestedModel: plan.requested.model } : {}),
@@ -132,7 +155,10 @@ export function finalizeAgentRunReceipt(
   params: {
     finalProvider?: string;
     finalModel?: string;
+    finalModelIdentityKey?: ModelIdentityKey;
     runtime?: AgentRunReceiptRuntimeRef["runtime"];
+    providerProfileKey?: string;
+    transportSnapshot?: ModelIdentityTransportSnapshot;
     contextMode?: string;
     terminalStatus?: AgentRunReceiptTerminalStatus;
     fallbackReason?: string | null;
@@ -151,7 +177,18 @@ export function finalizeAgentRunReceipt(
     ...(params.terminalStatus ? { terminalStatus: params.terminalStatus } : {}),
     final: {
       model: finalModel,
+      ...(params.finalModelIdentityKey ? { modelIdentityKey: params.finalModelIdentityKey } : {}),
       runtime: params.runtime ?? receipt.resolved.runtime,
+      ...(normalizeOptionalString(params.providerProfileKey)
+        ? { providerProfileKey: normalizeOptionalString(params.providerProfileKey) }
+        : receipt.resolved.providerProfileKey
+          ? { providerProfileKey: receipt.resolved.providerProfileKey }
+          : {}),
+      ...(params.transportSnapshot
+        ? { transportSnapshot: params.transportSnapshot }
+        : receipt.resolved.transportSnapshot
+          ? { transportSnapshot: receipt.resolved.transportSnapshot }
+          : {}),
       ...(normalizeOptionalString(params.contextMode)
         ? { contextMode: normalizeOptionalString(params.contextMode) }
         : receipt.resolved.contextMode
@@ -172,7 +209,10 @@ export function finalizeAgentRunReceiptFromAttempt(
   return finalizeAgentRunReceipt(receipt, {
     finalProvider: attempt.provider,
     finalModel: attempt.model,
+    ...(attempt.modelIdentityKey ? { finalModelIdentityKey: attempt.modelIdentityKey } : {}),
     runtime: attempt.runtime,
+    ...(attempt.providerProfileKey ? { providerProfileKey: attempt.providerProfileKey } : {}),
+    ...(attempt.transportSnapshot ? { transportSnapshot: attempt.transportSnapshot } : {}),
     terminalStatus:
       attempt.status === "running" ? undefined : (attempt.status as AgentRunReceiptTerminalStatus),
     ...(attempt.contextMode ? { contextMode: attempt.contextMode } : {}),
@@ -196,9 +236,22 @@ function parseReceiptRuntimeRef(value: unknown): AgentRunReceiptRuntimeRef | und
   if (!model || (runtime !== "openclaw" && runtime !== "codex" && runtime !== "unknown")) {
     return undefined;
   }
+  const transportRecord = parseReceiptRecord(record?.transportSnapshot);
+  const transportProvider = normalizeOptionalString(transportRecord?.provider);
+  const transportModel = normalizeOptionalString(transportRecord?.model);
+  const transportSnapshot =
+    transportProvider && transportModel
+      ? { provider: transportProvider, model: transportModel }
+      : undefined;
+  const modelIdentityKey = normalizeOptionalString(record?.modelIdentityKey);
   return {
     model,
+    ...(modelIdentityKey ? { modelIdentityKey: modelIdentityKey as ModelIdentityKey } : {}),
     runtime,
+    ...(normalizeOptionalString(record?.providerProfileKey)
+      ? { providerProfileKey: normalizeOptionalString(record?.providerProfileKey) }
+      : {}),
+    ...(transportSnapshot ? { transportSnapshot } : {}),
     ...(normalizeOptionalString(record?.workspace)
       ? { workspace: normalizeOptionalString(record?.workspace) }
       : {}),

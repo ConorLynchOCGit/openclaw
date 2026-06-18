@@ -1593,6 +1593,21 @@ describe("agentCommand – LiveSessionModelSwitchError retry", () => {
           model: "anthropic/claude-haiku-4.5",
         },
         runtime: "openclaw",
+        contextMode: "lightweight",
+        admission: {
+          model: {
+            primaryIdentityKey: "openrouter::anthropic/claude-haiku-4.5",
+            fallbackIdentityKeys: [
+              "openrouter::google/gemini-2.5-flash-lite",
+              "openrouter::google/gemini-2.0-flash-lite-001",
+            ],
+          },
+          runtime: {
+            id: "openclaw",
+            providerProfileKey: "openrouter-native",
+          },
+          policyTraceId: "agent-model-policy",
+        },
         fallbacks: [
           {
             provider: "openrouter",
@@ -1643,6 +1658,15 @@ describe("agentCommand – LiveSessionModelSwitchError retry", () => {
       provider: "openrouter",
       model: "anthropic/claude-haiku-4.5",
       status: "succeeded",
+    });
+    const finalization = mockCallArg(onRunFinalized) as Record<string, unknown>;
+    expectRecordFields(finalization.attemptRecord, {
+      provider: "openrouter",
+      model: "anthropic/claude-haiku-4.5",
+      runtime: "openclaw",
+      providerProfileKey: "openrouter-native",
+      modelIdentityKey: "openrouter::anthropic/claude-haiku-4.5",
+      contextMode: "lightweight",
     });
   });
 
