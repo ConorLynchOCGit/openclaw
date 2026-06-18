@@ -87,6 +87,10 @@ describe("createGatewaySubagentRuntime.run subagent_ended tracking (#59164)", ()
     expect(result.runId).toBe("plugin-run-1");
     const request = lastGatewayRequest();
     expect(request.req.method).toBe("agent");
+    expect(
+      (request.req.params as { provider?: unknown; model?: unknown }).provider,
+    ).toBeUndefined();
+    expect((request.req.params as { provider?: unknown; model?: unknown }).model).toBeUndefined();
     expect(request.client?.internal?.agentRunTracking).toBe("plugin_subagent");
     expect(request.client?.internal?.pluginRuntimeOwnerId).toBeUndefined();
   });

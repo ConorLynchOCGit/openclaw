@@ -2654,9 +2654,8 @@ export const agentHandlers: GatewayRequestHandlers = {
               images,
               imageOrder,
               agentId: ingressAgentId,
-              provider:
-                taskTrackingMode === "plugin_subagent" ? activeModelRef.provider : providerOverride,
-              model: taskTrackingMode === "plugin_subagent" ? activeModelRef.model : modelOverride,
+              provider: providerOverride,
+              model: modelOverride,
               to: resolvedTo,
               sessionId: resolvedSessionId,
               sessionKey: resolvedSessionKey,
