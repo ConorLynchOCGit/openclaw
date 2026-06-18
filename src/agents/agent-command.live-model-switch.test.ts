@@ -48,6 +48,8 @@ const state = vi.hoisted(() => ({
   trajectoryFlushMock: vi.fn(async () => undefined),
   persistSessionEntryMock: vi.fn(async (..._args: unknown[]): Promise<unknown> => undefined),
   clearSessionAuthProfileOverrideMock: vi.fn(),
+  ensureSelectedAgentHarnessPluginMock: vi.fn(async () => undefined),
+  visibilityResolveSelectionMock: vi.fn(),
   isThinkingLevelSupportedMock: vi.fn((_args: unknown) => true),
   resolveSupportedThinkingLevelMock: vi.fn(({ level }: { level?: string }) => level),
   resolveThinkingDefaultMock: vi.fn((_args: unknown) => "low"),
@@ -172,7 +174,8 @@ vi.mock("./command/session.js", () => ({
 vi.mock("./command/types.js", () => ({}));
 
 vi.mock("./harness/runtime-plugin.js", () => ({
-  ensureSelectedAgentHarnessPlugin: vi.fn(async () => undefined),
+  ensureSelectedAgentHarnessPlugin: (...args: unknown[]) =>
+    state.ensureSelectedAgentHarnessPluginMock(...args),
 }));
 
 vi.mock("../acp/policy.js", () => ({
@@ -520,6 +523,7 @@ vi.mock("./model-selection.js", () => {
         allows: ({ provider, model }: { provider: string; model: string }) =>
           allowsKey(`${provider}/${model}`),
         resolveSelection: ({ provider, model }: { provider: string; model: string }) => {
+          state.visibilityResolveSelectionMock({ provider, model });
           const key = `${provider}/${model}`;
           if (allowsKey(key)) {
             return { provider, model };
@@ -721,6 +725,7 @@ vi.mock("./model-visibility-policy.js", () => ({
       allows: ({ provider, model }: { provider: string; model: string }) =>
         allowsKey(`${provider}/${model}`),
       resolveSelection: ({ provider, model }: { provider: string; model: string }) => {
+        state.visibilityResolveSelectionMock({ provider, model });
         const key = `${provider}/${model}`;
         if (allowsKey(key)) {
           return { provider, model };
@@ -1549,6 +1554,9 @@ describe("agentCommand – LiveSessionModelSwitchError retry", () => {
       providerOverride: "openai",
       modelOverride: "gpt-5.5",
       modelOverrideSource: "user",
+      agentRuntimeOverride: "codex",
+      authProfileOverride: "openai:codex-user",
+      authProfileOverrideSource: "user",
       skillsSnapshot: { prompt: "", skills: [], version: 0 },
     };
     const staleMetaResult = makeSuccessResult(
@@ -1606,17 +1614,31 @@ describe("agentCommand – LiveSessionModelSwitchError retry", () => {
       "openrouter/google/gemini-2.5-flash-lite",
       "openrouter/google/gemini-2.0-flash-lite-001",
     ]);
+    expect(state.visibilityResolveSelectionMock).not.toHaveBeenCalled();
+    expect(state.resolveEffectiveModelFallbacksMock).not.toHaveBeenCalled();
     expect(
       fallbackParams.resolveAgentHarnessRuntimeOverride?.(
         "openrouter",
         "google/gemini-2.5-flash-lite",
       ),
     ).toBe("openclaw");
+    expectRecordFields(mockCallArg(state.ensureSelectedAgentHarnessPluginMock), {
+      provider: "openrouter",
+      modelId: "anthropic/claude-haiku-4.5",
+      agentHarnessRuntimeOverride: "openclaw",
+    });
     expect(state.resolveChannelModelOverrideMock).not.toHaveBeenCalled();
-    expectRecordFields(mockCallArg(state.runAgentAttemptMock), {
+    const attemptArgs = mockCallArg(state.runAgentAttemptMock) as Record<string, unknown>;
+    expectRecordFields(attemptArgs, {
       providerOverride: "openrouter",
       modelOverride: "anthropic/claude-haiku-4.5",
+      authProfileProvider: "openrouter",
     });
+    const attemptSessionEntry = attemptArgs.sessionEntry as Record<string, unknown>;
+    expect(attemptSessionEntry.providerOverride).toBeUndefined();
+    expect(attemptSessionEntry.modelOverride).toBeUndefined();
+    expect(attemptSessionEntry.agentRuntimeOverride).toBeUndefined();
+    expect(attemptSessionEntry.authProfileOverride).toBeUndefined();
     expectRecordFields(mockCallArg(onRunFinalized), {
       provider: "openrouter",
       model: "anthropic/claude-haiku-4.5",

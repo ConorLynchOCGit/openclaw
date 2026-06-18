@@ -3,6 +3,7 @@ import {
   assertFreshExecutionPlanBinding,
   executionPlanAllowsModel,
   resolveExecutionPlan,
+  resolveFreshPlannedRunSelection,
 } from "./execution-plan.js";
 import {
   createResolvedAgentRunReceiptFromPlan,
@@ -78,6 +79,52 @@ describe("resolveExecutionPlan", () => {
         },
       ],
       policy: { overrideAuthorized: false, resumeAuthorized: false },
+    });
+  });
+
+  it("defaults fresh plugin launches to lightweight context mode", () => {
+    expect(
+      resolveExecutionPlan({
+        cfg,
+        runId: "run-memory-curator-route",
+        targetAgentId: "memory-curator",
+        source: { kind: "plugin", id: "gbrain-context", hook: "message_received" },
+        launchMode: "fresh",
+      }),
+    ).toMatchObject({
+      launchMode: "fresh",
+      source: { kind: "plugin", id: "gbrain-context", hook: "message_received" },
+      contextMode: "lightweight",
+    });
+  });
+
+  it("materializes fresh planned run selection from the RunPlan only", () => {
+    const plan = resolveExecutionPlan({
+      cfg,
+      runId: "run-memory-curator-route",
+      targetAgentId: "memory-curator",
+      source: { kind: "plugin", id: "gbrain-context", hook: "message_received" },
+      launchMode: "fresh",
+      sessionModel: {
+        modelProvider: "openai",
+        model: "gpt-5.5",
+      },
+    });
+
+    expect(resolveFreshPlannedRunSelection(plan)).toEqual({
+      provider: "openrouter",
+      model: "anthropic/claude-haiku-4.5",
+      runtime: "openclaw",
+      contextMode: "lightweight",
+      fallbacksOverride: [
+        "openrouter/google/gemini-2.5-flash-lite",
+        "openrouter/google/gemini-2.0-flash-lite-001",
+      ],
+      allowLiveSwitch: false,
+      allowSessionOverrides: false,
+      allowChannelOverrides: false,
+      allowAutoFallbackProbe: false,
+      allowDefaultSubstitution: false,
     });
   });
 

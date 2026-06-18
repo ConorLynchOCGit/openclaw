@@ -55,6 +55,19 @@ export type AgentExecutionPlan = {
   };
 };
 
+export type FreshPlannedRunSelection = {
+  provider: string;
+  model: string;
+  runtime: AgentExecutionRuntime;
+  contextMode: "full" | "lightweight";
+  fallbacksOverride: string[];
+  allowLiveSwitch: false;
+  allowSessionOverrides: false;
+  allowChannelOverrides: false;
+  allowAutoFallbackProbe: false;
+  allowDefaultSubstitution: false;
+};
+
 export type AgentAttemptRecord = {
   runId: string;
   attemptId: string;
@@ -79,6 +92,38 @@ export function isFreshExecutionPlan(
   plan: AgentExecutionPlan | undefined,
 ): plan is AgentExecutionPlan {
   return plan?.launchMode === "fresh";
+}
+
+export function formatExecutionModelRef(ref: AgentExecutionModelRef): string {
+  return ref.model.startsWith(`${ref.provider}/`) ? ref.model : `${ref.provider}/${ref.model}`;
+}
+
+export function resolveFreshPlannedRunSelection(
+  plan: AgentExecutionPlan | undefined,
+): FreshPlannedRunSelection | undefined {
+  if (!plan) {
+    return undefined;
+  }
+  if (!isFreshExecutionPlan(plan)) {
+    throw new Error("Fresh planned run selection requires a fresh launch plan.");
+  }
+  const provider = normalizeOptionalString(plan.model.provider);
+  const model = normalizeOptionalString(plan.model.model);
+  if (!provider || !model) {
+    throw new Error("Fresh launch plan missing model before planned run selection.");
+  }
+  return {
+    provider,
+    model,
+    runtime: plan.runtime,
+    contextMode: plan.contextMode ?? "lightweight",
+    fallbacksOverride: plan.fallbacks.map(formatExecutionModelRef),
+    allowLiveSwitch: false,
+    allowSessionOverrides: false,
+    allowChannelOverrides: false,
+    allowAutoFallbackProbe: false,
+    allowDefaultSubstitution: false,
+  };
 }
 
 export function executionPlanAllowsModel(params: {
@@ -238,6 +283,10 @@ export function resolveExecutionPlan(params: {
 }): AgentExecutionPlan {
   const launchMode = params.launchMode ?? "resume";
   const targetAgentId = normalizeOptionalString(params.targetAgentId);
+  const source = resolvePlanSource({ source: params.source });
+  const contextMode =
+    params.contextMode ??
+    (launchMode === "fresh" && source.kind === "plugin" ? "lightweight" : undefined);
   const targetDefault = resolveDefaultModelForAgent({
     cfg: params.cfg,
     agentId: targetAgentId,
@@ -279,9 +328,9 @@ export function resolveExecutionPlan(params: {
     runId: normalizeOptionalString(params.runId) ?? "",
     ...(targetAgentId ? { targetAgentId } : {}),
     launchMode,
-    source: resolvePlanSource({ source: params.source }),
+    source,
     ...(targetAgentId ? { workspace: resolveAgentWorkspaceDir(params.cfg, targetAgentId) } : {}),
-    ...(params.contextMode ? { contextMode: params.contextMode } : {}),
+    ...(contextMode ? { contextMode } : {}),
     model,
     runtime,
     fallbacks,

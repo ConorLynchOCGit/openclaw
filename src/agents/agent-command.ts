@@ -99,6 +99,7 @@ import {
   assertFreshExecutionPlanBinding,
   executionPlanAllowsModel,
   isFreshExecutionPlan,
+  resolveFreshPlannedRunSelection,
   type AgentAttemptRecord,
 } from "./execution-plan.js";
 import { resolveFastModeState } from "./fast-mode.js";
@@ -359,6 +360,7 @@ type OverrideFieldClearedByDelete =
   | "authProfileOverride"
   | "authProfileOverrideSource"
   | "authProfileOverrideCompactionCount"
+  | "agentRuntimeOverride"
   | "fallbackNoticeSelectedModel"
   | "fallbackNoticeActiveModel"
   | "fallbackNoticeReason"
@@ -373,6 +375,7 @@ const OVERRIDE_FIELDS_CLEARED_BY_DELETE: OverrideFieldClearedByDelete[] = [
   "authProfileOverride",
   "authProfileOverrideSource",
   "authProfileOverrideCompactionCount",
+  "agentRuntimeOverride",
   "fallbackNoticeSelectedModel",
   "fallbackNoticeActiveModel",
   "fallbackNoticeReason",
@@ -390,6 +393,19 @@ async function persistSessionEntry(
     ...params,
     clearedFields: OVERRIDE_FIELDS_CLEARED_BY_DELETE,
   });
+}
+
+function stripFreshPlannedRunSessionOverrides(
+  entry: SessionEntry | undefined,
+): SessionEntry | undefined {
+  if (!entry) {
+    return undefined;
+  }
+  const next: SessionEntry = { ...entry };
+  for (const field of OVERRIDE_FIELDS_CLEARED_BY_DELETE) {
+    delete next[field];
+  }
+  return next;
 }
 
 function clearPendingFinalDeliveryFields(entry: SessionEntry, updatedAt: number): SessionEntry {
@@ -1212,11 +1228,14 @@ async function agentCommandInternal(
       configuredDefaultRef.model,
       modelManifestContext,
     );
-    let provider = defaultProvider;
-    let model = defaultModel;
     const launchModelProvider = normalizeOptionalString(opts.launchExecutionPlan?.model.provider);
     const launchModelModel = normalizeOptionalString(opts.launchExecutionPlan?.model.model);
     const hasLaunchExecutionPlan = Boolean(launchModelProvider && launchModelModel);
+    const freshPlannedSelection = isFreshExecutionPlan(opts.launchExecutionPlan)
+      ? resolveFreshPlannedRunSelection(opts.launchExecutionPlan)
+      : undefined;
+    let provider = freshPlannedSelection?.provider ?? defaultProvider;
+    let model = freshPlannedSelection?.model ?? defaultModel;
     const launchTargetAgentId = normalizeOptionalString(opts.launchExecutionPlan?.targetAgentId);
     assertFreshExecutionPlanBinding({
       plan: opts.launchExecutionPlan,
@@ -1293,6 +1312,7 @@ async function agentCommandInternal(
       sessionStore &&
       sessionKey &&
       hasStoredOverride &&
+      !freshPlannedSelection &&
       !suppressVisibleSessionEffects
     ) {
       const entry = sessionEntry;
@@ -1398,7 +1418,10 @@ async function agentCommandInternal(
     const hasEffectiveStoredOverride = Boolean(
       !hasLaunchExecutionPlan && (storedProviderOverride || storedModelOverride),
     );
-    if (hasLaunchExecutionPlan && launchModelProvider && launchModelModel) {
+    if (freshPlannedSelection) {
+      provider = freshPlannedSelection.provider;
+      model = freshPlannedSelection.model;
+    } else if (hasLaunchExecutionPlan && launchModelProvider && launchModelModel) {
       const launchRef = normalizeAgentCommandModelRef(
         cfg,
         launchModelProvider,
@@ -1473,26 +1496,44 @@ async function agentCommandInternal(
       provider = explicitRef.provider;
       model = explicitRef.model;
     }
-    const allowedInitialSelection = visibilityPolicy.resolveSelection({
-      provider,
-      model,
-    });
-    if (!allowedInitialSelection) {
-      throw new Error(
-        `Configured default model "${modelKey(provider, model)}" is not allowed by agents.defaults.models, and no allowed model is available.`,
-      );
-    }
-    provider = allowedInitialSelection.provider;
-    model = allowedInitialSelection.model;
-    if (
-      isFreshExecutionPlan(opts.launchExecutionPlan) &&
-      !executionPlanAllowsModel({ plan: opts.launchExecutionPlan, provider, model })
-    ) {
-      throw new Error(
-        `Fresh launch plan model drift before attempt selection: ${sanitizeForLog(provider)}/${sanitizeForLog(
-          model,
-        )} is not in RunPlan.`,
-      );
+    if (freshPlannedSelection) {
+      const plannedKey = modelKey(provider, model);
+      if (!visibilityPolicy.allowsKey(plannedKey)) {
+        throw new Error(
+          `Fresh launch plan model "${sanitizeForLog(plannedKey)}" is not allowed for agent "${sessionAgentId}".`,
+        );
+      }
+      assertFreshExecutionPlanBinding({
+        plan: opts.launchExecutionPlan,
+        runId,
+        agentId: sessionAgentId,
+        provider,
+        model,
+        runtime: freshPlannedSelection.runtime,
+        stage: "attempt selection",
+      });
+    } else {
+      const allowedInitialSelection = visibilityPolicy.resolveSelection({
+        provider,
+        model,
+      });
+      if (!allowedInitialSelection) {
+        throw new Error(
+          `Configured default model "${modelKey(provider, model)}" is not allowed by agents.defaults.models, and no allowed model is available.`,
+        );
+      }
+      provider = allowedInitialSelection.provider;
+      model = allowedInitialSelection.model;
+      if (
+        isFreshExecutionPlan(opts.launchExecutionPlan) &&
+        !executionPlanAllowsModel({ plan: opts.launchExecutionPlan, provider, model })
+      ) {
+        throw new Error(
+          `Fresh launch plan model drift before attempt selection: ${sanitizeForLog(provider)}/${sanitizeForLog(
+            model,
+          )} is not in RunPlan.`,
+        );
+      }
     }
     providerForAuthProfileValidation = provider;
 
@@ -1502,11 +1543,16 @@ async function agentCommandInternal(
       modelId: model,
       agentId: sessionAgentId,
       sessionKey,
+      ...(freshPlannedSelection
+        ? { agentHarnessRuntimeOverride: freshPlannedSelection.runtime }
+        : {}),
       workspaceDir,
     });
 
-    let sessionEntryForAttempt = autoFallbackPrimaryProbeSessionEntry ?? sessionEntry;
-    if (sessionEntryForAttempt) {
+    let sessionEntryForAttempt = freshPlannedSelection
+      ? stripFreshPlannedRunSessionOverrides(sessionEntry)
+      : (autoFallbackPrimaryProbeSessionEntry ?? sessionEntry);
+    if (sessionEntryForAttempt && !freshPlannedSelection) {
       const authProfileId = sessionEntryForAttempt.authProfileOverride;
       if (authProfileId) {
         const entry = sessionEntryForAttempt;
@@ -1808,24 +1854,26 @@ async function agentCommandInternal(
     for (;;) {
       try {
         const spawnedBy = normalizedSpawned.spawnedBy ?? sessionEntry?.spawnedBy;
-        const effectiveFallbacksOverride = hasLaunchExecutionPlan
-          ? resolveEffectiveModelFallbacks({
-              cfg,
-              agentId: sessionAgentId,
-              sessionKey,
-              hasSessionModelOverride: false,
-            })
-          : resolveEffectiveModelFallbacks({
-              cfg,
-              agentId: sessionAgentId,
-              sessionKey,
-              hasSessionModelOverride:
-                hasExplicitRunOverride || Boolean(storedProviderOverride || storedModelOverride),
-              modelOverrideSource: hasExplicitRunOverride ? "user" : storedModelOverrideSource,
-              hasAutoFallbackProvenance: hasExplicitRunOverride
-                ? false
-                : hasStoredAutoFallbackProvenance,
-            });
+        const effectiveFallbacksOverride = freshPlannedSelection
+          ? freshPlannedSelection.fallbacksOverride
+          : hasLaunchExecutionPlan
+            ? resolveEffectiveModelFallbacks({
+                cfg,
+                agentId: sessionAgentId,
+                sessionKey,
+                hasSessionModelOverride: false,
+              })
+            : resolveEffectiveModelFallbacks({
+                cfg,
+                agentId: sessionAgentId,
+                sessionKey,
+                hasSessionModelOverride:
+                  hasExplicitRunOverride || Boolean(storedProviderOverride || storedModelOverride),
+                modelOverrideSource: hasExplicitRunOverride ? "user" : storedModelOverrideSource,
+                hasAutoFallbackProvenance: hasExplicitRunOverride
+                  ? false
+                  : hasStoredAutoFallbackProvenance,
+              });
 
         let fallbackAttemptIndex = 0;
         attemptLifecycleState.currentTurnUserMessagePersisted = false;
@@ -1839,11 +1887,15 @@ async function agentCommandInternal(
           agentId: sessionAgentId,
           sessionId,
           sessionKey: sessionKey ?? sessionId,
-          ...(hasLaunchExecutionPlan
+          ...(freshPlannedSelection
             ? {
-                resolveAgentHarnessRuntimeOverride: () => opts.launchExecutionPlan?.runtime,
+                resolveAgentHarnessRuntimeOverride: () => freshPlannedSelection.runtime,
               }
-            : {}),
+            : hasLaunchExecutionPlan
+              ? {
+                  resolveAgentHarnessRuntimeOverride: () => opts.launchExecutionPlan?.runtime,
+                }
+              : {}),
           prepareAgentHarnessRuntime: async ({
             provider: providerValue,
             model: modelValue,
@@ -2036,6 +2088,25 @@ async function agentCommandInternal(
         break;
       } catch (err) {
         if (err instanceof LiveSessionModelSwitchError) {
+          if (freshPlannedSelection) {
+            if (!attemptLifecycleState.lifecycleEnded) {
+              emitAgentEvent({
+                runId,
+                stream: "lifecycle",
+                data: {
+                  phase: "error",
+                  startedAt,
+                  endedAt: Date.now(),
+                  error: "Agent run failed",
+                },
+              });
+            }
+            await fallbackTrajectoryRecorder?.flush();
+            throw new Error(
+              `Live model switch rejected for fresh planned run: ${sanitizeForLog(err.provider)}/${sanitizeForLog(err.model)}`,
+              { cause: err },
+            );
+          }
           liveSwitchRetries++;
           if (liveSwitchRetries > MAX_LIVE_SWITCH_RETRIES) {
             log.error(
