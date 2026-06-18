@@ -6,12 +6,23 @@
  * payloads.
  */
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import type { AgentAttemptRecord, AgentExecutionPlan } from "./execution-plan.js";
 
 export type AgentRunReceiptPhase = "resolved" | "finalized";
 export type AgentRunReceiptTerminalStatus = "succeeded" | "failed" | "timed_out" | "cancelled";
 
 export type AgentRunReceiptSource = {
-  kind: "chat" | "gateway" | "plugin" | "subagent" | "taskflow" | "lobster" | "codex" | "unknown";
+  kind:
+    | "chat"
+    | "gateway"
+    | "plugin"
+    | "subagent"
+    | "taskflow"
+    | "lobster"
+    | "codex"
+    | "user"
+    | "cron"
+    | "unknown";
   id?: string;
   hook?: string;
 };
@@ -103,6 +114,19 @@ export function createResolvedAgentRunReceipt(params: {
   };
 }
 
+export function createResolvedAgentRunReceiptFromPlan(plan: AgentExecutionPlan): AgentRunReceipt {
+  return createResolvedAgentRunReceipt({
+    source: plan.source,
+    targetAgentId: plan.targetAgentId,
+    resolvedProvider: plan.model.provider,
+    resolvedModel: plan.model.model,
+    runtime: plan.runtime,
+    workspace: plan.workspace,
+    contextMode: plan.contextMode,
+    ...(plan.requested?.model ? { requestedModel: plan.requested.model } : {}),
+  });
+}
+
 export function finalizeAgentRunReceipt(
   receipt: AgentRunReceipt,
   params: {
@@ -139,6 +163,23 @@ export function finalizeAgentRunReceipt(
       ...(fallbackUsed ? { reason: fallbackReason ?? "final_model_differs_from_resolved" } : {}),
     },
   };
+}
+
+export function finalizeAgentRunReceiptFromAttempt(
+  receipt: AgentRunReceipt,
+  attempt: AgentAttemptRecord,
+): AgentRunReceipt {
+  return finalizeAgentRunReceipt(receipt, {
+    finalProvider: attempt.provider,
+    finalModel: attempt.model,
+    runtime: attempt.runtime,
+    terminalStatus:
+      attempt.status === "running" ? undefined : (attempt.status as AgentRunReceiptTerminalStatus),
+    ...(attempt.contextMode ? { contextMode: attempt.contextMode } : {}),
+    ...(attempt.fallback.used
+      ? { fallbackReason: attempt.fallback.reason ?? "model_fallback" }
+      : {}),
+  });
 }
 
 function parseReceiptRecord(value: unknown): Record<string, unknown> | undefined {
@@ -224,6 +265,8 @@ export function parseAgentRunReceiptJson(
     sourceKind !== "taskflow" &&
     sourceKind !== "lobster" &&
     sourceKind !== "codex" &&
+    sourceKind !== "user" &&
+    sourceKind !== "cron" &&
     sourceKind !== "unknown"
   ) {
     return undefined;

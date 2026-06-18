@@ -9,7 +9,7 @@ import type { ChannelOutboundTargetMode } from "../../channels/plugins/types.pub
 import type { PromptImageOrderEntry } from "../../media/prompt-image-order.js";
 import type { InputProvenance } from "../../sessions/input-provenance.js";
 import type { ExecElevatedDefaults } from "../bash-tools.exec-types.js";
-import type { AgentExecutionPlan } from "../execution-plan.js";
+import type { AgentAttemptRecord, AgentExecutionPlan } from "../execution-plan.js";
 import type { AgentStreamParams, ClientToolDefinition } from "./shared-types.js";
 
 /** Image content block for Claude API multimodal messages. */
@@ -148,6 +148,7 @@ export type AgentCommandOpts = {
     model: string;
     status: "succeeded" | "failed" | "timed_out" | "cancelled";
     fallbackReason?: string;
+    attemptRecord?: AgentAttemptRecord;
   }) => void;
   /** Internal one-shot model probe mode: no tools, no workspace/chat prompt policy. */
   modelRun?: boolean;

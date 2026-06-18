@@ -70,6 +70,7 @@ import {
   pickFallbackThinkingLevel,
 } from "../embedded-agent-helpers.js";
 import { isStrictAgenticExecutionContractActive } from "../execution-contract.js";
+import { assertFreshExecutionPlanBinding } from "../execution-plan.js";
 import {
   coerceToFailoverError,
   describeFailoverError,
@@ -520,6 +521,14 @@ export async function runEmbeddedAgent(
         freshLaunchRuntimeOverride === "openclaw" ? "openclaw" : params.agentHarnessId,
     };
   }
+  assertFreshExecutionPlanBinding({
+    plan: params.launchExecutionPlan,
+    runId: params.runId,
+    agentId: params.agentId,
+    provider: params.provider,
+    model: params.model,
+    stage: "embedded runner entry",
+  });
   // Resolve sessionKey early so all downstream consumers (hooks, LCM, compaction)
   // receive a non-null key even when callers omit it. See #60552.
   const effectiveSessionKey = backfillSessionKey({
@@ -721,6 +730,14 @@ export async function runEmbeddedAgent(
       });
       provider = hookSelection.provider;
       modelId = hookSelection.modelId;
+      assertFreshExecutionPlanBinding({
+        plan: params.launchExecutionPlan,
+        runId: params.runId,
+        agentId: params.agentId,
+        provider,
+        model: modelId,
+        stage: "model-resolution hooks",
+      });
       if (
         freshLaunchRuntimeOverride &&
         (provider !== preHookProvider || modelId !== preHookModelId)
@@ -1715,6 +1732,7 @@ export async function runEmbeddedAgent(
             disableTools: params.disableTools,
             provider,
             modelId,
+            launchExecutionPlan: params.launchExecutionPlan,
             // Use the harness selected before model/auth setup for the actual
             // attempt too. Otherwise plugin-owned transports can skip OpenClaw auth
             // bootstrap but drift back to OpenClaw when the attempt is created.
@@ -3036,11 +3054,14 @@ export async function runEmbeddedAgent(
             lastRunPromptUsage,
             lastTurnTotal,
           });
-          const reportedModelRef = resolveReportedModelRef({
-            provider,
-            model: model.id,
-            assistant: sessionLastAssistant,
-          });
+          const reportedModelRef =
+            params.launchExecutionPlan?.launchMode === "fresh"
+              ? { provider, model: model.id }
+              : resolveReportedModelRef({
+                  provider,
+                  model: model.id,
+                  assistant: sessionLastAssistant,
+                });
           const agentMeta: EmbeddedAgentMeta = {
             sessionId: sessionIdUsed,
             sessionFile: sessionFileUsed,

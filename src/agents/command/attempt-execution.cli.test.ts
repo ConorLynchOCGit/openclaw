@@ -1818,13 +1818,26 @@ describe("embedded attempt harness pinning", () => {
       runId: "run-fresh-launch-plan-runtime",
       opts: {
         launchExecutionPlan: {
+          runId: "run-fresh-launch-plan-runtime",
           targetAgentId: "memory-curator",
           launchMode: "fresh",
+          source: { kind: "plugin", id: "gbrain-context", hook: "message_received" },
           model: {
             provider: "openrouter",
             model: "anthropic/claude-haiku-4.5",
           },
           runtime: "openclaw",
+          fallbacks: [
+            {
+              provider: "openrouter",
+              model: "google/gemini-2.5-flash-lite",
+            },
+            {
+              provider: "openrouter",
+              model: "google/gemini-2.0-flash-lite-001",
+            },
+          ],
+          policy: { overrideAuthorized: false, resumeAuthorized: false },
         },
       } as Parameters<typeof runAgentAttempt>[0]["opts"],
       runContext: {} as Parameters<typeof runAgentAttempt>[0]["runContext"],
@@ -1894,13 +1907,17 @@ describe("embedded attempt harness pinning", () => {
       runId: "run-openai-openclaw-launch-plan-runtime",
       opts: {
         launchExecutionPlan: {
+          runId: "run-openai-openclaw-launch-plan-runtime",
           targetAgentId: "planning",
           launchMode: "fresh",
+          source: { kind: "gateway" },
           model: {
             provider: "openai",
             model: "gpt-5.5",
           },
           runtime: "openclaw",
+          fallbacks: [],
+          policy: { overrideAuthorized: false, resumeAuthorized: false },
         },
       } as Parameters<typeof runAgentAttempt>[0]["opts"],
       runContext: {} as Parameters<typeof runAgentAttempt>[0]["runContext"],

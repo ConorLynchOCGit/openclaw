@@ -1569,19 +1569,33 @@ describe("agentCommand – LiveSessionModelSwitchError retry", () => {
       message: "capture memory signal",
       to: "+1234567890",
       agentId: "memory-curator",
+      runId: "run-memory-curator-fresh-route",
       sessionKey: "agent:memory-curator:subagent:gbrain-signal-route",
       channel: "discord",
       groupId: "channel-123",
       allowModelOverride: false,
       onRunFinalized,
       launchExecutionPlan: {
+        runId: "run-memory-curator-fresh-route",
         targetAgentId: "memory-curator",
         launchMode: "fresh",
+        source: { kind: "plugin", id: "gbrain-context", hook: "message_received" },
         model: {
           provider: "openrouter",
           model: "anthropic/claude-haiku-4.5",
         },
         runtime: "openclaw",
+        fallbacks: [
+          {
+            provider: "openrouter",
+            model: "google/gemini-2.5-flash-lite",
+          },
+          {
+            provider: "openrouter",
+            model: "google/gemini-2.0-flash-lite-001",
+          },
+        ],
+        policy: { overrideAuthorized: false, resumeAuthorized: false },
       },
     });
 

@@ -151,6 +151,7 @@ import {
 } from "../../embedded-agent-helpers.js";
 import { countActiveToolExecutions } from "../../embedded-agent-subscribe.handlers.tools.js";
 import { subscribeEmbeddedAgentSession } from "../../embedded-agent-subscribe.js";
+import { assertFreshExecutionPlanBinding } from "../../execution-plan.js";
 import { isTimeoutError } from "../../failover-error.js";
 import { runAgentEndSideEffects } from "../../harness/agent-end-side-effects.js";
 import { runAgentHarnessBeforeAgentFinalizeHook } from "../../harness/lifecycle-hook-helpers.js";
@@ -791,6 +792,15 @@ function collectAttemptExplicitToolAllowlistSources(params: {
 export async function runEmbeddedAttempt(
   params: EmbeddedRunAttemptParams,
 ): Promise<EmbeddedRunAttemptResult> {
+  assertFreshExecutionPlanBinding({
+    plan: params.launchExecutionPlan,
+    runId: params.runId,
+    agentId: params.agentId,
+    provider: params.provider,
+    model: params.modelId,
+    runtime: params.agentHarnessId,
+    stage: "embedded attempt entry",
+  });
   const resolvedWorkspace = resolveUserPath(params.workspaceDir);
   const runAbortController = new AbortController();
   configureEmbeddedAttemptHttpRuntime({ timeoutMs: params.timeoutMs });
@@ -3207,11 +3217,14 @@ export async function runEmbeddedAttempt(
               activeSession.messages.slice(),
               toolSearchTargetTranscriptProjections,
             );
-            const reportedModelRef = resolveReportedModelRef({
-              provider: params.provider,
-              model: params.modelId,
-              assistant: lastAssistant,
-            });
+            const reportedModelRef =
+              params.launchExecutionPlan?.launchMode === "fresh"
+                ? { provider: params.provider, model: params.modelId }
+                : resolveReportedModelRef({
+                    provider: params.provider,
+                    model: params.modelId,
+                    assistant: lastAssistant,
+                  });
             const maxRevisionAttempts = params.maxBeforeAgentFinalizeRevisions ?? 0;
             if (
               maxRevisionAttempts > 0 &&

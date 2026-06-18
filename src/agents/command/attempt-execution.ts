@@ -38,6 +38,7 @@ import { resolveBootstrapWarningSignaturesSeen } from "../bootstrap-budget.js";
 import { runCliAgent } from "../cli-runner.js";
 import { getCliSessionBinding } from "../cli-session.js";
 import { runEmbeddedAgent, type EmbeddedAgentRunResult } from "../embedded-agent.js";
+import { assertFreshExecutionPlanBinding } from "../execution-plan.js";
 import { FailoverError } from "../failover-error.js";
 import { runAgentHarnessBeforeMessageWriteHook } from "../harness/hook-helpers.js";
 import { resolveAvailableAgentHarnessPolicy } from "../harness/selection.js";
@@ -472,6 +473,14 @@ export function runAgentAttempt(params: {
   onUserMessagePersisted?: (message: Extract<AgentMessage, { role: "user" }>) => void;
 }) {
   const isRawModelRun = params.opts.modelRun === true || params.opts.promptMode === "none";
+  assertFreshExecutionPlanBinding({
+    plan: params.opts.launchExecutionPlan,
+    runId: params.runId,
+    agentId: params.sessionAgentId,
+    provider: params.providerOverride,
+    model: params.modelOverride,
+    stage: "agent attempt dispatch",
+  });
   const launchExecutionRuntime =
     params.opts.launchExecutionPlan?.launchMode === "fresh"
       ? params.opts.launchExecutionPlan.runtime
@@ -560,6 +569,14 @@ export function runAgentAttempt(params: {
     authProfileId,
     config: params.cfg,
     workspaceDir: params.workspaceDir,
+  });
+  assertFreshExecutionPlanBinding({
+    plan: params.opts.launchExecutionPlan,
+    runId: params.runId,
+    agentId: params.sessionAgentId,
+    provider: embeddedAgentProvider,
+    model: params.modelOverride,
+    stage: "embedded session creation",
   });
   const embeddedAgentHarnessOverride =
     requestedAgentHarnessId ??

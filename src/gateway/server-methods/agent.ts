@@ -24,11 +24,7 @@ import {
   validateAgentWaitParams,
 } from "../../../packages/gateway-protocol/src/index.js";
 import { readAcpSessionMeta } from "../../acp/runtime/session-meta.js";
-import {
-  listAgentIds,
-  resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
-} from "../../agents/agent-scope.js";
+import { listAgentIds, resolveDefaultAgentId } from "../../agents/agent-scope.js";
 import { resolveTrustedGroupId } from "../../agents/agent-tools.policy.js";
 import {
   consumeExecApprovalFollowupRuntimeHandoff,
@@ -37,7 +33,7 @@ import {
 } from "../../agents/bash-tools.exec-approval-followup-state.js";
 import { clearAllCliSessions } from "../../agents/cli-session.js";
 import type { AgentCommandOpts } from "../../agents/command/types.js";
-import { resolveExecutionPlan } from "../../agents/execution-plan.js";
+import { resolveExecutionPlan, type AgentExecutionPlan } from "../../agents/execution-plan.js";
 import { isTimeoutError } from "../../agents/failover-error.js";
 import {
   resolveAgentAvatar,
@@ -47,8 +43,9 @@ import { AGENT_INTERNAL_EVENT_TYPE_TASK_COMPLETION } from "../../agents/internal
 import type { AgentInternalEvent } from "../../agents/internal-events.js";
 import { resolveProviderIdForAuth } from "../../agents/provider-auth-aliases.js";
 import {
-  createResolvedAgentRunReceipt,
+  createResolvedAgentRunReceiptFromPlan,
   finalizeAgentRunReceipt,
+  finalizeAgentRunReceiptFromAttempt,
   type AgentRunReceipt,
 } from "../../agents/run-receipt.js";
 import {
@@ -934,7 +931,9 @@ function deleteGatewayDedupeEntries(params: {
 }
 
 function dispatchAgentRunFromGateway(params: {
-  ingressOpts: Parameters<typeof agentCommandFromIngress>[0];
+  ingressOpts: Parameters<typeof agentCommandFromIngress>[0] & {
+    launchExecutionPlan: AgentExecutionPlan;
+  };
   runId: string;
   dedupeKeys: readonly string[];
   /**
@@ -2418,8 +2417,17 @@ export const agentHandlers: GatewayRequestHandlers = {
       });
       const executionPlan = resolveExecutionPlan({
         cfg: cfgForAgent ?? cfg,
+        runId,
         targetAgentId: activeSessionAgentId,
+        source: pluginRuntimeOwnerId
+          ? {
+              kind: "plugin",
+              id: pluginRuntimeOwnerId,
+              ...(pluginRuntimeHookName ? { hook: pluginRuntimeHookName } : {}),
+            }
+          : { kind: "gateway" },
         launchMode: taskTrackingMode === "plugin_subagent" ? "fresh" : "resume",
+        ...(request.bootstrapContextMode ? { contextMode: request.bootstrapContextMode } : {}),
         sessionModel: sessionEntry,
         ...(providerOverride ? { requestedProvider: providerOverride } : {}),
         ...(modelOverride ? { requestedModel: modelOverride } : {}),
@@ -2430,23 +2438,7 @@ export const agentHandlers: GatewayRequestHandlers = {
         taskTrackingMode === "plugin_subagent"
           ? activeModelRef.provider
           : (providerOverride ?? activeModelRef.provider);
-      const resolvedRunReceipt = createResolvedAgentRunReceipt({
-        source: pluginRuntimeOwnerId
-          ? {
-              kind: "plugin",
-              id: pluginRuntimeOwnerId,
-              ...(pluginRuntimeHookName ? { hook: pluginRuntimeHookName } : {}),
-            }
-          : { kind: "gateway" },
-        targetAgentId: activeSessionAgentId,
-        ...(providerOverride ? { requestedProvider: providerOverride } : {}),
-        ...(modelOverride ? { requestedModel: modelOverride } : {}),
-        resolvedProvider: activeModelRef.provider,
-        resolvedModel: activeModelRef.model,
-        runtime: executionPlan.runtime,
-        workspace: resolveAgentWorkspaceDir(cfgForAgent ?? cfg, activeSessionAgentId),
-        ...(request.bootstrapContextMode ? { contextMode: request.bootstrapContextMode } : {}),
-      });
+      const resolvedRunReceipt = createResolvedAgentRunReceiptFromPlan(executionPlan);
       const activeAuthProvider = resolveProviderIdForAuth(activeModelProvider, {
         config: cfgForAgent ?? cfg,
       });
@@ -2714,17 +2706,19 @@ export const agentHandlers: GatewayRequestHandlers = {
                   }),
                 });
               },
-              onRunFinalized: ({ provider, model, status, fallbackReason }) => {
-                const finalizedRunReceipt = finalizeAgentRunReceipt(resolvedRunReceipt, {
-                  finalProvider: provider,
-                  finalModel: model,
-                  runtime: executionPlan.runtime,
-                  terminalStatus: status,
-                  ...(fallbackReason ? { fallbackReason } : {}),
-                  ...(request.bootstrapContextMode
-                    ? { contextMode: request.bootstrapContextMode }
-                    : {}),
-                });
+              onRunFinalized: ({ provider, model, status, fallbackReason, attemptRecord }) => {
+                const finalizedRunReceipt = attemptRecord
+                  ? finalizeAgentRunReceiptFromAttempt(resolvedRunReceipt, attemptRecord)
+                  : finalizeAgentRunReceipt(resolvedRunReceipt, {
+                      finalProvider: provider,
+                      finalModel: model,
+                      runtime: executionPlan.runtime,
+                      terminalStatus: status,
+                      ...(fallbackReason ? { fallbackReason } : {}),
+                      ...(request.bootstrapContextMode
+                        ? { contextMode: request.bootstrapContextMode }
+                        : {}),
+                    });
                 persistRunReceipt(finalizedRunReceipt);
               },
               // Internal-only: allow workspace override for spawned subagent runs.

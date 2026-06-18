@@ -95,6 +95,12 @@ import { resolveSession } from "./command/session.js";
 import type { AgentCommandIngressOpts, AgentCommandOpts } from "./command/types.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "./defaults.js";
 import { classifyEmbeddedAgentRunResultForModelFallback } from "./embedded-agent-runner/result-fallback-classifier.js";
+import {
+  assertFreshExecutionPlanBinding,
+  executionPlanAllowsModel,
+  isFreshExecutionPlan,
+  type AgentAttemptRecord,
+} from "./execution-plan.js";
 import { resolveFastModeState } from "./fast-mode.js";
 import { ensureSelectedAgentHarnessPlugin } from "./harness/runtime-plugin.js";
 import { resolveAvailableAgentHarnessPolicy } from "./harness/selection.js";
@@ -751,6 +757,9 @@ async function prepareAgentCommandExecution(opts: AgentCommandOpts, runtime: Run
     skipOptionalBootstrapFiles: agentCfg?.skipOptionalBootstrapFiles,
   });
   const runId = opts.runId?.trim() || sessionId;
+  if (sessionKey && isSubagentSessionKey(sessionKey) && !opts.launchExecutionPlan) {
+    throw new Error("Subagent child runs require a native launchExecutionPlan.");
+  }
   const { getAcpSessionManager } = await loadAcpManagerRuntime();
   const acpManager = getAcpSessionManager();
   const acpResolution = sessionKey
@@ -1209,7 +1218,18 @@ async function agentCommandInternal(
     const launchModelModel = normalizeOptionalString(opts.launchExecutionPlan?.model.model);
     const hasLaunchExecutionPlan = Boolean(launchModelProvider && launchModelModel);
     const launchTargetAgentId = normalizeOptionalString(opts.launchExecutionPlan?.targetAgentId);
-    if (hasLaunchExecutionPlan && launchTargetAgentId && launchTargetAgentId !== sessionAgentId) {
+    assertFreshExecutionPlanBinding({
+      plan: opts.launchExecutionPlan,
+      runId,
+      agentId: sessionAgentId,
+      stage: "model selection",
+    });
+    if (
+      !isFreshExecutionPlan(opts.launchExecutionPlan) &&
+      hasLaunchExecutionPlan &&
+      launchTargetAgentId &&
+      launchTargetAgentId !== sessionAgentId
+    ) {
       throw new Error(
         `Launch execution plan target "${launchTargetAgentId}" does not match session agent "${sessionAgentId}".`,
       );
@@ -1464,6 +1484,16 @@ async function agentCommandInternal(
     }
     provider = allowedInitialSelection.provider;
     model = allowedInitialSelection.model;
+    if (
+      isFreshExecutionPlan(opts.launchExecutionPlan) &&
+      !executionPlanAllowsModel({ plan: opts.launchExecutionPlan, provider, model })
+    ) {
+      throw new Error(
+        `Fresh launch plan model drift before attempt selection: ${sanitizeForLog(provider)}/${sanitizeForLog(
+          model,
+        )} is not in RunPlan.`,
+      );
+    }
     providerForAuthProfileValidation = provider;
 
     await ensureSelectedAgentHarnessPlugin({
@@ -1690,15 +1720,17 @@ async function agentCommandInternal(
       opts.replyChannel ?? opts.channel,
     );
 
-    let result: AgentAttemptResult;
+    let result: AgentAttemptResult | undefined;
     let fallbackProvider = provider;
     let fallbackModel = model;
+    let fallbackAttemptCount = 0;
     let runFinalized = false;
     const notifyRunFinalized = (params: {
       provider?: string;
       model?: string;
       status: "succeeded" | "failed" | "timed_out" | "cancelled";
       fallbackReason?: string;
+      attemptRecord?: AgentAttemptRecord;
     }) => {
       if (runFinalized || !opts.onRunFinalized) {
         return;
@@ -1713,7 +1745,52 @@ async function agentCommandInternal(
         ...(normalizeOptionalString(params.fallbackReason)
           ? { fallbackReason: normalizeOptionalString(params.fallbackReason) }
           : {}),
+        ...(params.attemptRecord ? { attemptRecord: params.attemptRecord } : {}),
       });
+    };
+    const buildAttemptRecord = (params: {
+      provider: string;
+      model: string;
+      status: "succeeded" | "failed" | "timed_out" | "cancelled";
+      fallbackReason?: string;
+    }): AgentAttemptRecord => {
+      const plan = opts.launchExecutionPlan;
+      const finalProvider = normalizeOptionalString(params.provider) ?? fallbackProvider;
+      const finalModel = normalizeOptionalString(params.model) ?? fallbackModel;
+      const planModel = plan?.model;
+      const fallbackUsed =
+        Boolean(normalizeOptionalString(params.fallbackReason)) ||
+        (planModel
+          ? planModel.provider !== finalProvider || planModel.model !== finalModel
+          : provider !== finalProvider || model !== finalModel);
+      const fromModel = planModel
+        ? `${planModel.provider}/${planModel.model}`
+        : `${provider}/${model}`;
+      const toModel = `${finalProvider}/${finalModel}`;
+      return {
+        runId,
+        attemptId: `${runId}:attempt:${Math.max(1, fallbackAttemptCount + 1)}`,
+        ...(sessionAgentId ? { targetAgentId: sessionAgentId } : {}),
+        startedAt: new Date(startedAt).toISOString(),
+        endedAt: new Date().toISOString(),
+        provider: finalProvider,
+        model: finalModel,
+        runtime:
+          plan?.runtime ??
+          (result?.meta.agentMeta?.agentHarnessId === "codex" ? "codex" : "openclaw"),
+        harness: result?.meta.agentMeta?.agentHarnessId ?? plan?.runtime ?? "openclaw",
+        ...((plan?.contextMode ?? opts.bootstrapContextMode)
+          ? { contextMode: plan?.contextMode ?? opts.bootstrapContextMode }
+          : {}),
+        status: params.status,
+        fallback: {
+          used: fallbackUsed,
+          ...(fallbackUsed ? { from: fromModel, to: toModel } : {}),
+          ...(fallbackUsed && normalizeOptionalString(params.fallbackReason)
+            ? { reason: normalizeOptionalString(params.fallbackReason) }
+            : {}),
+        },
+      };
     };
     const MAX_LIVE_SWITCH_RETRIES = 5;
     let liveSwitchRetries = 0;
@@ -1794,6 +1871,20 @@ async function agentCommandInternal(
             }),
           abortSignal: opts.abortSignal,
           run: async (providerOverride, modelOverride, runOptions) => {
+            if (
+              isFreshExecutionPlan(opts.launchExecutionPlan) &&
+              !executionPlanAllowsModel({
+                plan: opts.launchExecutionPlan,
+                provider: providerOverride,
+                model: modelOverride,
+              })
+            ) {
+              throw new Error(
+                `Fresh launch plan model drift before attempt run: ${sanitizeForLog(
+                  providerOverride,
+                )}/${sanitizeForLog(modelOverride)} is not in RunPlan.`,
+              );
+            }
             const isAutoFallbackPrimaryProbeCandidate =
               autoFallbackPrimaryProbe &&
               providerOverride === autoFallbackPrimaryProbe.provider &&
@@ -1870,6 +1961,7 @@ async function agentCommandInternal(
         result = fallbackResult.result;
         fallbackProvider = fallbackResult.provider;
         fallbackModel = fallbackResult.model;
+        fallbackAttemptCount = fallbackResult.attempts.length;
         if (hasLaunchExecutionPlan && result.meta.agentMeta) {
           result = {
             ...result,
@@ -2047,6 +2139,9 @@ async function agentCommandInternal(
     }
     try {
       await fallbackTrajectoryRecorder?.flush();
+      if (!result) {
+        throw new Error("Agent run did not produce an attempt result.");
+      }
 
       const rotatedSessionFile = result.meta.agentMeta?.sessionFile;
       const effectiveSessionId = rotatedSessionFile
@@ -2237,6 +2332,12 @@ async function agentCommandInternal(
         model: finalModel,
         status: result.meta.aborted === true ? "timed_out" : "succeeded",
         fallbackReason,
+        attemptRecord: buildAttemptRecord({
+          provider: finalProvider,
+          model: finalModel,
+          status: result.meta.aborted === true ? "timed_out" : "succeeded",
+          ...(fallbackReason ? { fallbackReason } : {}),
+        }),
       });
 
       // Phase 2: Clear pending delivery payload after successful delivery.
@@ -2272,6 +2373,11 @@ async function agentCommandInternal(
         provider: fallbackProvider,
         model: fallbackModel,
         status: "failed",
+        attemptRecord: buildAttemptRecord({
+          provider: fallbackProvider,
+          model: fallbackModel,
+          status: "failed",
+        }),
       });
       emitLifecyclePostTurnError(error);
       throw error;
