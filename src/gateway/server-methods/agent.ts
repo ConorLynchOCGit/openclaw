@@ -2415,6 +2415,14 @@ export const agentHandlers: GatewayRequestHandlers = {
         sessionKey: resolvedSessionKey,
         inputProvenance,
       });
+      const targetAgentRun =
+        Boolean(agentId) ||
+        (resolvedSessionKey ? classifySessionKeyShape(resolvedSessionKey) === "agent" : false);
+      const explicitResumeRun = Boolean(requestedSessionId);
+      const launchMode =
+        taskTrackingMode === "plugin_subagent" || (targetAgentRun && !explicitResumeRun)
+          ? "fresh"
+          : "resume";
       const executionContextMode =
         request.bootstrapContextMode ??
         (taskTrackingMode === "plugin_subagent" ? "lightweight" : undefined);
@@ -2429,7 +2437,7 @@ export const agentHandlers: GatewayRequestHandlers = {
               ...(pluginRuntimeHookName ? { hook: pluginRuntimeHookName } : {}),
             }
           : { kind: "gateway" },
-        launchMode: taskTrackingMode === "plugin_subagent" ? "fresh" : "resume",
+        launchMode,
         ...(executionContextMode ? { contextMode: executionContextMode } : {}),
         sessionModel: sessionEntry,
         ...(providerOverride ? { requestedProvider: providerOverride } : {}),
