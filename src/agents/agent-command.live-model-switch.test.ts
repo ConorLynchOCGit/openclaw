@@ -1670,6 +1670,180 @@ describe("agentCommand – LiveSessionModelSwitchError retry", () => {
     });
   });
 
+  it("synthesizes RunPlan for direct configured target agents before legacy session/default routing", async () => {
+    setupSingleAttemptFallback();
+    state.runtimeConfigMock = {
+      agents: {
+        defaults: {
+          model: { primary: "openai/gpt-5.5", fallbacks: [] },
+          models: {
+            "openai/gpt-5.5": { agentRuntime: { id: "codex" } },
+          },
+        },
+        list: [
+          {
+            id: "memory-curator",
+            model: {
+              primary: "openrouter/anthropic/claude-haiku-4.5",
+              fallbacks: [
+                "openrouter/google/gemini-2.5-flash-lite",
+                "openrouter/google/gemini-2.0-flash-lite-001",
+              ],
+            },
+            models: {
+              "openrouter/anthropic/claude-haiku-4.5": {
+                agentRuntime: { id: "openclaw" },
+              },
+              "openrouter/google/gemini-2.5-flash-lite": {
+                agentRuntime: { id: "openclaw" },
+              },
+              "openrouter/google/gemini-2.0-flash-lite-001": {
+                agentRuntime: { id: "openclaw" },
+              },
+            },
+          },
+        ],
+      },
+    };
+    state.resolvedSessionKeyMock = "agent:memory-curator:phase0b-direct-runplan";
+    state.sessionEntryMock = {
+      sessionId: "session-1",
+      updatedAt: 1,
+      providerOverride: "openai",
+      modelOverride: "gpt-5.5",
+      modelOverrideSource: "user",
+      agentRuntimeOverride: "codex",
+      authProfileOverride: "openai:default",
+      authProfileOverrideSource: "user",
+      modelProvider: "openai",
+      model: "gpt-5.5",
+      skillsSnapshot: { prompt: "", skills: [], version: 0 },
+    };
+    state.runAgentAttemptMock.mockResolvedValue(
+      makeSuccessResult("openrouter", "anthropic/claude-haiku-4.5"),
+    );
+
+    await agentCommand({
+      message: "materialize memory safely",
+      agentId: "memory-curator",
+      sessionKey: "agent:memory-curator:phase0b-direct-runplan",
+      runId: "run-direct-memory-curator",
+    });
+
+    const fallbackParams = mockCallArg(state.runWithModelFallbackMock) as FallbackRunnerParams;
+    expect(fallbackParams.provider).toBe("openrouter");
+    expect(fallbackParams.model).toBe("anthropic/claude-haiku-4.5");
+    expect(fallbackParams.fallbacksOverride).toEqual([
+      "openrouter/google/gemini-2.5-flash-lite",
+      "openrouter/google/gemini-2.0-flash-lite-001",
+    ]);
+    expect(
+      fallbackParams.resolveAgentHarnessRuntimeOverride?.(
+        "openrouter",
+        "anthropic/claude-haiku-4.5",
+      ),
+    ).toBe("openclaw");
+    expect(state.visibilityResolveSelectionMock).not.toHaveBeenCalled();
+    expect(state.resolveChannelModelOverrideMock).not.toHaveBeenCalled();
+    expect(state.resolveEffectiveModelFallbacksMock).not.toHaveBeenCalled();
+    expectRecordFields(mockCallArg(state.ensureSelectedAgentHarnessPluginMock), {
+      provider: "openrouter",
+      modelId: "anthropic/claude-haiku-4.5",
+      agentHarnessRuntimeOverride: "openclaw",
+    });
+    const attemptArgs = mockCallArg(state.runAgentAttemptMock) as Record<string, unknown>;
+    expectRecordFields(attemptArgs, {
+      providerOverride: "openrouter",
+      modelOverride: "anthropic/claude-haiku-4.5",
+      authProfileProvider: "openrouter",
+    });
+    const attemptOpts = requireRecord(attemptArgs.opts, "attempt opts");
+    expectRecordFields(attemptOpts.launchExecutionPlan, {
+      launchMode: "fresh",
+      targetAgentId: "memory-curator",
+      runtime: "openclaw",
+      model: {
+        provider: "openrouter",
+        model: "anthropic/claude-haiku-4.5",
+      },
+    });
+    const attemptSessionEntry = attemptArgs.sessionEntry as Record<string, unknown>;
+    expect(attemptSessionEntry.providerOverride).toBeUndefined();
+    expect(attemptSessionEntry.modelOverride).toBeUndefined();
+    expect(attemptSessionEntry.agentRuntimeOverride).toBeUndefined();
+    expect(attemptSessionEntry.authProfileOverride).toBeUndefined();
+  });
+
+  it("allows direct Codex runs only when the target agent explicitly declares Codex runtime", async () => {
+    setupSingleAttemptFallback();
+    state.runtimeConfigMock = {
+      agents: {
+        defaults: {
+          model: { primary: "openai/gpt-5.5", fallbacks: [] },
+          models: {
+            "openai/gpt-5.5": { agentRuntime: { id: "codex" } },
+          },
+        },
+        list: [
+          {
+            id: "coding",
+            model: { primary: "openai/gpt-5.5", fallbacks: [] },
+            models: {
+              "openai/gpt-5.5": {
+                agentRuntime: { id: "codex" },
+              },
+            },
+          },
+        ],
+      },
+    };
+    state.resolvedSessionKeyMock = "agent:coding:phase0b-codex-eligible";
+    state.runAgentAttemptMock.mockResolvedValue(makeSuccessResult("openai", "gpt-5.5"));
+
+    await agentCommand({
+      message: "run coding",
+      agentId: "coding",
+      sessionKey: "agent:coding:phase0b-codex-eligible",
+      runId: "run-direct-coding",
+    });
+
+    const fallbackParams = mockCallArg(state.runWithModelFallbackMock) as FallbackRunnerParams;
+    expect(fallbackParams.provider).toBe("openai");
+    expect(fallbackParams.model).toBe("gpt-5.5");
+    expect(fallbackParams.resolveAgentHarnessRuntimeOverride?.("openai", "gpt-5.5")).toBe("codex");
+    expectRecordFields(mockCallArg(state.ensureSelectedAgentHarnessPluginMock), {
+      provider: "openai",
+      modelId: "gpt-5.5",
+      agentHarnessRuntimeOverride: "codex",
+    });
+  });
+
+  it("rejects direct fresh Codex inheritance when the target agent has no explicit Codex model", async () => {
+    state.runtimeConfigMock = {
+      agents: {
+        defaults: {
+          model: { primary: "openai/gpt-5.5", fallbacks: [] },
+          models: {
+            "openai/gpt-5.5": { agentRuntime: { id: "codex" } },
+          },
+        },
+        list: [{ id: "researcher" }],
+      },
+    };
+    state.resolvedSessionKeyMock = "agent:researcher:phase0b-no-codex-inheritance";
+
+    await expect(
+      agentCommand({
+        message: "research",
+        agentId: "researcher",
+        sessionKey: "agent:researcher:phase0b-no-codex-inheritance",
+        runId: "run-direct-researcher",
+      }),
+    ).rejects.toThrow("Codex runtime is not admitted");
+    expect(state.runWithModelFallbackMock).not.toHaveBeenCalled();
+    expect(state.runAgentAttemptMock).not.toHaveBeenCalled();
+  });
+
   it("keeps explicit run model overrides ahead of channel model overrides", async () => {
     setupSingleAttemptFallback();
     state.runtimeConfigMock = {

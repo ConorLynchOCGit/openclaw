@@ -138,12 +138,28 @@ function assertAgentModelAdmission(
 }
 
 function assertRuntimeAdmission(params: {
+  cfg: OpenClawConfig;
   runtimeMeta: RuntimeMetadata;
   targetAgentId?: string;
   primaryIdentityKey: ModelIdentityKey;
   enforceExplicitRuntime?: boolean;
 }): AdmissionRuntimeId {
   const runtime = normalizeAdmissionRuntime(params.runtimeMeta.id);
+  if (
+    params.enforceExplicitRuntime !== false &&
+    runtime === "codex" &&
+    !agentExplicitlyAdmitsCodexRuntime({
+      cfg: params.cfg,
+      targetAgentId: params.targetAgentId,
+      primaryIdentityKey: params.primaryIdentityKey,
+    })
+  ) {
+    throw new Error(
+      `Codex runtime is not admitted for fresh agent launch "${params.targetAgentId ?? "unknown"}" with model "${modelIdentityDisplayRef(
+        params.primaryIdentityKey,
+      )}". Configure agent-specific agentRuntime explicitly for Codex-runtime agents.`,
+    );
+  }
   if (
     params.enforceExplicitRuntime !== false &&
     runtime === "codex" &&
@@ -156,6 +172,39 @@ function assertRuntimeAdmission(params: {
     );
   }
   return runtime;
+}
+
+function agentExplicitlyAdmitsCodexRuntime(params: {
+  cfg: OpenClawConfig;
+  targetAgentId?: string;
+  primaryIdentityKey: ModelIdentityKey;
+}): boolean {
+  const agentModels = resolveAgentEntryModels({
+    cfg: params.cfg,
+    targetAgentId: params.targetAgentId,
+  });
+  if (!agentModels || Object.keys(agentModels).length === 0) {
+    return false;
+  }
+  for (const [raw, entry] of Object.entries(agentModels)) {
+    if (
+      !configuredModelAllowsIdentity({
+        raw,
+        identityKey: params.primaryIdentityKey,
+        defaultProvider: modelIdentityTransportSnapshot(params.primaryIdentityKey).provider,
+      })
+    ) {
+      continue;
+    }
+    const runtime =
+      entry && typeof entry === "object" && !Array.isArray(entry)
+        ? (entry as { agentRuntime?: { id?: unknown } }).agentRuntime?.id
+        : undefined;
+    if (typeof runtime === "string" && runtime.trim().toLowerCase() === "codex") {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function admitAgentExecution(
@@ -182,6 +231,7 @@ export function admitAgentExecution(
     });
   }
   const runtime = assertRuntimeAdmission({
+    cfg: params.cfg,
     runtimeMeta: params.runtimeMeta,
     targetAgentId: params.targetAgentId,
     primaryIdentityKey: primaryIdentity.identityKey,

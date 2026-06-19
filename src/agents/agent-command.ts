@@ -99,8 +99,10 @@ import {
   assertFreshExecutionPlanBinding,
   executionPlanAllowsModel,
   isFreshExecutionPlan,
+  resolveExecutionPlan,
   resolveFreshPlannedRunSelection,
   type AgentAttemptRecord,
+  type AgentExecutionPlan,
 } from "./execution-plan.js";
 import { resolveFastModeState } from "./fast-mode.js";
 import { ensureSelectedAgentHarnessPlugin } from "./harness/runtime-plugin.js";
@@ -587,6 +589,70 @@ function createAgentCommandSessionWorkingCopy(params: {
     result.sessionStore[params.sessionKey] = result.sessionEntry;
   }
   return result;
+}
+
+function resolveDirectTargetAgentId(params: {
+  opts: AgentCommandOpts;
+  sessionKey?: string;
+}): string | undefined {
+  const explicitAgentId = normalizeOptionalString(params.opts.agentId);
+  if (explicitAgentId) {
+    return normalizeAgentId(explicitAgentId);
+  }
+  if (!params.sessionKey || classifySessionKeyShape(params.sessionKey) !== "agent") {
+    return undefined;
+  }
+  return resolveAgentIdFromSessionKey(params.sessionKey);
+}
+
+function resolveImplicitDirectAgentLaunchPlan(params: {
+  cfg: OpenClawConfig;
+  opts: AgentCommandOpts;
+  runId: string;
+  sessionKey?: string;
+  sessionEntry?: SessionEntry;
+  pluginsEnabled: boolean;
+  modelManifestContext: ModelManifestNormalizationContext;
+}): AgentExecutionPlan | undefined {
+  if (params.opts.launchExecutionPlan || params.opts.modelRun === true) {
+    return undefined;
+  }
+  const targetAgentId = resolveDirectTargetAgentId({
+    opts: params.opts,
+    sessionKey: params.sessionKey,
+  });
+  if (!targetAgentId) {
+    return undefined;
+  }
+  const hasConfiguredTargetAgent =
+    Array.isArray(params.cfg.agents?.list) &&
+    params.cfg.agents.list.some((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return false;
+      }
+      const rawId = (entry as { id?: unknown }).id;
+      return typeof rawId === "string" && normalizeAgentId(rawId) === targetAgentId;
+    });
+  if (!hasConfiguredTargetAgent) {
+    return undefined;
+  }
+  return resolveExecutionPlan({
+    cfg: params.cfg,
+    runId: params.runId,
+    targetAgentId,
+    source: { kind: "user", id: "agent-command" },
+    launchMode: params.opts.sessionId ? "resume" : "fresh",
+    contextMode: params.opts.bootstrapContextMode,
+    sessionModel: {
+      modelProvider: params.sessionEntry?.modelProvider,
+      model: params.sessionEntry?.model,
+    },
+    requestedProvider: params.opts.provider,
+    requestedModel: params.opts.model,
+    allowRequestOverride: params.opts.allowModelOverride === true,
+    allowPluginNormalization: params.pluginsEnabled,
+    ...params.modelManifestContext,
+  });
 }
 
 function resolveExplicitAgentCommandSessionKey(params: {
@@ -1233,23 +1299,36 @@ async function agentCommandInternal(
       configuredDefaultRef.model,
       modelManifestContext,
     );
-    const launchModelProvider = normalizeOptionalString(opts.launchExecutionPlan?.model.provider);
-    const launchModelModel = normalizeOptionalString(opts.launchExecutionPlan?.model.model);
+    const launchExecutionPlan =
+      opts.launchExecutionPlan ??
+      resolveImplicitDirectAgentLaunchPlan({
+        cfg,
+        opts,
+        runId,
+        sessionKey,
+        sessionEntry,
+        pluginsEnabled,
+        modelManifestContext,
+      });
+    const effectiveOpts =
+      launchExecutionPlan === opts.launchExecutionPlan ? opts : { ...opts, launchExecutionPlan };
+    const launchModelProvider = normalizeOptionalString(launchExecutionPlan?.model.provider);
+    const launchModelModel = normalizeOptionalString(launchExecutionPlan?.model.model);
     const hasLaunchExecutionPlan = Boolean(launchModelProvider && launchModelModel);
-    const freshPlannedSelection = isFreshExecutionPlan(opts.launchExecutionPlan)
-      ? resolveFreshPlannedRunSelection(opts.launchExecutionPlan)
+    const freshPlannedSelection = isFreshExecutionPlan(launchExecutionPlan)
+      ? resolveFreshPlannedRunSelection(launchExecutionPlan)
       : undefined;
     let provider = freshPlannedSelection?.provider ?? defaultProvider;
     let model = freshPlannedSelection?.model ?? defaultModel;
-    const launchTargetAgentId = normalizeOptionalString(opts.launchExecutionPlan?.targetAgentId);
+    const launchTargetAgentId = normalizeOptionalString(launchExecutionPlan?.targetAgentId);
     assertFreshExecutionPlanBinding({
-      plan: opts.launchExecutionPlan,
+      plan: launchExecutionPlan,
       runId,
       agentId: sessionAgentId,
       stage: "model selection",
     });
     if (
-      !isFreshExecutionPlan(opts.launchExecutionPlan) &&
+      !isFreshExecutionPlan(launchExecutionPlan) &&
       hasLaunchExecutionPlan &&
       launchTargetAgentId &&
       launchTargetAgentId !== sessionAgentId
@@ -1269,16 +1348,19 @@ async function agentCommandInternal(
       hasStoredOverride && hasSessionAutoModelFallbackProvenance(sessionEntry);
     const hasLegacyAutoFallbackOverrideWithoutOrigin =
       hasStoredOverride && hasLegacyAutoFallbackWithoutOrigin(sessionEntry);
+    const modelOverridesConsumedByImplicitPlan = Boolean(
+      launchExecutionPlan && !opts.launchExecutionPlan && (opts.provider || opts.model),
+    );
     const explicitProviderOverride =
-      typeof opts.provider === "string"
+      !modelOverridesConsumedByImplicitPlan && typeof opts.provider === "string"
         ? normalizeExplicitOverrideInput(opts.provider, "provider")
         : undefined;
     const explicitModelOverride =
-      typeof opts.model === "string"
+      !modelOverridesConsumedByImplicitPlan && typeof opts.model === "string"
         ? normalizeExplicitOverrideInput(opts.model, "model")
         : undefined;
     const hasExplicitRunOverride = Boolean(explicitProviderOverride || explicitModelOverride);
-    if (hasLaunchExecutionPlan && hasExplicitRunOverride) {
+    if (opts.launchExecutionPlan && hasExplicitRunOverride) {
       throw new Error("Launch execution plan cannot be combined with provider/model overrides.");
     }
     if (hasExplicitRunOverride && opts.allowModelOverride !== true) {
@@ -1503,7 +1585,7 @@ async function agentCommandInternal(
     }
     if (freshPlannedSelection) {
       assertFreshExecutionPlanBinding({
-        plan: opts.launchExecutionPlan,
+        plan: launchExecutionPlan,
         runId,
         agentId: sessionAgentId,
         provider,
@@ -1524,8 +1606,8 @@ async function agentCommandInternal(
       provider = allowedInitialSelection.provider;
       model = allowedInitialSelection.model;
       if (
-        isFreshExecutionPlan(opts.launchExecutionPlan) &&
-        !executionPlanAllowsModel({ plan: opts.launchExecutionPlan, provider, model })
+        isFreshExecutionPlan(launchExecutionPlan) &&
+        !executionPlanAllowsModel({ plan: launchExecutionPlan, provider, model })
       ) {
         throw new Error(
           `Fresh launch plan model drift before attempt selection: ${sanitizeForLog(provider)}/${sanitizeForLog(
@@ -1799,7 +1881,7 @@ async function agentCommandInternal(
       status: "succeeded" | "failed" | "timed_out" | "cancelled";
       fallbackReason?: string;
     }): AgentAttemptRecord => {
-      const plan = opts.launchExecutionPlan;
+      const plan = launchExecutionPlan;
       const finalProvider = normalizeOptionalString(params.provider) ?? fallbackProvider;
       const finalModel = normalizeOptionalString(params.model) ?? fallbackModel;
       const finalModelIdentityKey = plan
@@ -1909,7 +1991,7 @@ async function agentCommandInternal(
               }
             : hasLaunchExecutionPlan
               ? {
-                  resolveAgentHarnessRuntimeOverride: () => opts.launchExecutionPlan?.runtime,
+                  resolveAgentHarnessRuntimeOverride: () => launchExecutionPlan?.runtime,
                 }
               : {}),
           prepareAgentHarnessRuntime: async ({
@@ -1940,9 +2022,9 @@ async function agentCommandInternal(
           abortSignal: opts.abortSignal,
           run: async (providerOverride, modelOverride, runOptions) => {
             if (
-              isFreshExecutionPlan(opts.launchExecutionPlan) &&
+              isFreshExecutionPlan(launchExecutionPlan) &&
               !executionPlanAllowsModel({
-                plan: opts.launchExecutionPlan,
+                plan: launchExecutionPlan,
                 provider: providerOverride,
                 model: modelOverride,
               })
@@ -1971,7 +2053,7 @@ async function agentCommandInternal(
             }
             const isFallbackRetry = fallbackAttemptIndex > 0;
             fallbackAttemptIndex += 1;
-            opts.onActiveModelSelected?.({
+            effectiveOpts.onActiveModelSelected?.({
               provider: providerOverride,
               model: modelOverride,
             });
@@ -2001,7 +2083,7 @@ async function agentCommandInternal(
               timeoutMs,
               runTimeoutOverrideMs,
               runId,
-              opts,
+              opts: effectiveOpts,
               runContext,
               spawnedBy,
               messageChannel,
@@ -2018,7 +2100,7 @@ async function agentCommandInternal(
                 !isNewSession ||
                 (await attemptExecutionRuntime.sessionFileHasContent(attemptSessionFile)),
               suppressPromptPersistenceOnRetry:
-                opts.suppressPromptPersistence === true ||
+                effectiveOpts.suppressPromptPersistence === true ||
                 (isFallbackRetry && attemptLifecycleState.currentTurnUserMessagePersisted),
               onUserMessagePersisted: attemptLifecycleCallbacks.onUserMessagePersisted,
               onAgentEvent: attemptLifecycleCallbacks.onAgentEvent,
