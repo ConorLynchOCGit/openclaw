@@ -12,6 +12,7 @@ export type ChecksRunCommandOptions = {
   submitTimeoutMs?: number;
   laneTimeoutMs?: number;
   pollIntervalMs?: number;
+  concurrency?: number;
 };
 
 function parseAgents(value: string | undefined): string[] | undefined {
@@ -63,6 +64,7 @@ export async function checksRunCommand(
       submitTimeoutMs: opts.submitTimeoutMs,
       laneTimeoutMs: opts.laneTimeoutMs,
       pollIntervalMs: opts.pollIntervalMs,
+      concurrency: opts.concurrency,
     },
     timeoutMs: opts.timeoutMs ?? 300_000,
   });

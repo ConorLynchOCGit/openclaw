@@ -74,14 +74,22 @@ async function runSessionsListCli(opts: SessionsListCliOptions): Promise<void> {
   );
 }
 
-function parseTimeoutMs(timeout: unknown): number | null | undefined {
-  const parsed = parsePositiveIntOrUndefined(timeout);
-  if (timeout !== undefined && parsed === undefined) {
-    defaultRuntime.error("--timeout must be a positive integer (milliseconds)");
+function parsePositiveIntOption(
+  option: string,
+  value: unknown,
+  expectation: string,
+): number | null | undefined {
+  const parsed = parsePositiveIntOrUndefined(value);
+  if (value !== undefined && parsed === undefined) {
+    defaultRuntime.error(`${option} must be ${expectation}`);
     defaultRuntime.exit(1);
     return null;
   }
   return parsed;
+}
+
+function parseTimeoutMs(timeout: unknown): number | null | undefined {
+  return parsePositiveIntOption("--timeout", timeout, "a positive integer (milliseconds)");
 }
 
 function parseTasksAuditLimit(limit: unknown): number | null | undefined {
@@ -604,17 +612,36 @@ export function registerStatusHealthSessionsCommands(program: Command) {
     .option("--submit-timeout <ms>", "Per-lane chat.send timeout in milliseconds")
     .option("--lane-timeout <ms>", "Per-lane child task timeout in milliseconds")
     .option("--poll-interval <ms>", "Child task polling interval in milliseconds")
+    .option("--concurrency <count>", "Maximum check lanes to run at once")
     .action(async (check, opts, command) => {
       const parentOpts = command.parent?.opts() as { json?: boolean } | undefined;
       const timeoutMs = parseTimeoutMs(opts.timeout);
-      const submitTimeoutMs = parseTimeoutMs(opts.submitTimeout);
-      const laneTimeoutMs = parseTimeoutMs(opts.laneTimeout);
-      const pollIntervalMs = parseTimeoutMs(opts.pollInterval);
+      const submitTimeoutMs = parsePositiveIntOption(
+        "--submit-timeout",
+        opts.submitTimeout,
+        "a positive integer (milliseconds)",
+      );
+      const laneTimeoutMs = parsePositiveIntOption(
+        "--lane-timeout",
+        opts.laneTimeout,
+        "a positive integer (milliseconds)",
+      );
+      const pollIntervalMs = parsePositiveIntOption(
+        "--poll-interval",
+        opts.pollInterval,
+        "a positive integer (milliseconds)",
+      );
+      const concurrency = parsePositiveIntOption(
+        "--concurrency",
+        opts.concurrency,
+        "a positive integer",
+      );
       if (
         timeoutMs === null ||
         submitTimeoutMs === null ||
         laneTimeoutMs === null ||
-        pollIntervalMs === null
+        pollIntervalMs === null ||
+        concurrency === null
       ) {
         return;
       }
@@ -630,6 +657,7 @@ export function registerStatusHealthSessionsCommands(program: Command) {
             submitTimeoutMs,
             laneTimeoutMs,
             pollIntervalMs,
+            concurrency,
           },
           defaultRuntime,
         );

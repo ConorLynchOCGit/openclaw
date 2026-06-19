@@ -560,6 +560,8 @@ describe("registerStatusHealthSessionsCommands", () => {
       "60000",
       "--poll-interval",
       "2000",
+      "--concurrency",
+      "2",
       "--json",
     ]);
 
@@ -571,6 +573,7 @@ describe("registerStatusHealthSessionsCommands", () => {
       submitTimeoutMs: 15000,
       laneTimeoutMs: 60000,
       pollIntervalMs: 2000,
+      concurrency: 2,
       json: true,
     });
   });

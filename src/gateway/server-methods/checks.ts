@@ -106,6 +106,7 @@ export const checksHandlers: GatewayRequestHandlers = {
         submitTimeoutMs: positiveNumber(params.submitTimeoutMs),
         laneTimeoutMs: positiveNumber(params.laneTimeoutMs),
         pollIntervalMs: positiveNumber(params.pollIntervalMs),
+        concurrency: positiveNumber(params.concurrency),
       },
     );
     respond(true, result);

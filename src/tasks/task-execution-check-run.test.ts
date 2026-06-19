@@ -60,23 +60,28 @@ function makeDeps(params: {
 }): RunGBrainSignalDetectorCoverageCheckDeps {
   const nowValues = params.nowValues ?? [1, 2, 3, 4, 5, 6, 7, 8];
   let nowIndex = 0;
-  let lastSubmittedMarker = "check-run-main";
+  const submittedMarkers = new Set<string>();
   return {
     makeId: () => "check-run",
     now: () => nowValues[Math.min(nowIndex++, nowValues.length - 1)] ?? 1,
     sleep: vi.fn(async () => {}),
     submitChat: vi.fn(async ({ idempotencyKey }) => {
-      lastSubmittedMarker = idempotencyKey;
+      submittedMarkers.add(idempotencyKey);
       return {
         runId: idempotencyKey,
         status: "started",
       };
     }),
     listTasks: vi.fn(async () => {
-      return (
-        params.tasksForMarker?.(lastSubmittedMarker) ?? [
-          makeTask({ marker: lastSubmittedMarker, taskId: "task-main", lane: "main" }),
-        ]
+      return Array.from(submittedMarkers).flatMap(
+        (marker) =>
+          params.tasksForMarker?.(marker) ?? [
+            makeTask({
+              marker,
+              taskId: `task-${marker}`,
+              lane: marker.split("-").at(-1) ?? marker,
+            }),
+          ],
       );
     }),
   };
@@ -97,8 +102,8 @@ describe("task execution CheckRun", () => {
     expect(result.steps[0]).toMatchObject({
       lane: "main",
       status: "passed",
-      taskId: "task-main",
-      runId: "run-task-main",
+      taskId: "task-check-run-main",
+      runId: "run-task-check-run-main",
       result: { passed: true, admitted: true },
     });
   });
@@ -128,6 +133,60 @@ describe("task execution CheckRun", () => {
     ]);
     expect(result.steps[0]?.taskId).toBe("task-main");
     expect(result.steps[1]?.failures[0]?.code).toBe("timeout");
+  });
+
+  it("runs lanes through the native bounded concurrency fixture", async () => {
+    const resolvers = new Map<string, () => void>();
+    const submitted: string[] = [];
+    const deps = makeDeps({});
+    deps.submitChat = vi.fn(async ({ idempotencyKey }) => {
+      submitted.push(idempotencyKey);
+      await new Promise<void>((resolve) => {
+        resolvers.set(idempotencyKey, resolve);
+      });
+      return { runId: idempotencyKey, status: "started" };
+    });
+    deps.listTasks = vi.fn(async () =>
+      submitted.map((marker) =>
+        makeTask({ marker, taskId: `task-${marker}`, lane: marker.split("-").at(-1) ?? marker }),
+      ),
+    );
+
+    const flushMicrotasks = async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    };
+    const waitForSubmittedCount = async (count: number) => {
+      for (let index = 0; index < 20; index += 1) {
+        if (submitted.length >= count) {
+          return;
+        }
+        await flushMicrotasks();
+      }
+      throw new Error(`expected ${count} submitted lanes, got ${submitted.length}`);
+    };
+    const resultPromise = runGBrainSignalDetectorCoverageCheck(deps, {
+      agents: ["main", "planning", "coding"],
+      checkRunId: "check-run",
+      concurrency: 2,
+      laneTimeoutMs: 20,
+      pollIntervalMs: 1,
+    });
+
+    await flushMicrotasks();
+    expect(submitted).toEqual(["check-run-main", "check-run-planning"]);
+
+    resolvers.get("check-run-main")?.();
+    await waitForSubmittedCount(3);
+    expect(submitted).toEqual(["check-run-main", "check-run-planning", "check-run-coding"]);
+
+    resolvers.get("check-run-planning")?.();
+    resolvers.get("check-run-coding")?.();
+
+    const result = await resultPromise;
+    expect(result.status).toBe("passed");
+    expect(result.concurrency).toBe(2);
+    expect(result.steps.map((step) => step.lane)).toEqual(["main", "planning", "coding"]);
   });
 
   it("fails one lane when the receipt model is wrong", async () => {

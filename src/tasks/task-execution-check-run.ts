@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { runTasksWithConcurrency } from "../utils/run-with-concurrency.js";
 import {
   checkTaskExecutionReceipt,
   type TaskExecutionCheckResult,
@@ -58,6 +59,7 @@ export type GBrainSignalCoverageCheckRun = {
   startedAt: string;
   endedAt: string;
   agents: string[];
+  concurrency: number;
   passedCount: number;
   failedCount: number;
   steps: GBrainSignalCoverageCheckStep[];
@@ -81,11 +83,14 @@ export type RunGBrainSignalDetectorCoverageCheckOptions = {
   submitTimeoutMs?: number;
   laneTimeoutMs?: number;
   pollIntervalMs?: number;
+  concurrency?: number;
 };
 
 const DEFAULT_SUBMIT_TIMEOUT_MS = 15_000;
 const DEFAULT_LANE_TIMEOUT_MS = 60_000;
 const DEFAULT_POLL_INTERVAL_MS = 2_000;
+const DEFAULT_CHECK_RUN_CONCURRENCY = 3;
+const DEFAULT_MAX_CONCURRENCY = 8;
 
 const TERMINAL_STATUSES = new Set<TaskStatus>([
   "succeeded",
@@ -116,6 +121,16 @@ function normalizeAgents(agents: string[] | undefined): string[] {
     normalized.push(agent);
   }
   return normalized;
+}
+
+function normalizeConcurrency(value: number | undefined, total: number): number {
+  if (total <= 0) {
+    return 1;
+  }
+  const parsed = Number.isFinite(value) ? Math.floor(value ?? 0) : 0;
+  const requested =
+    parsed > 0 ? Math.min(parsed, DEFAULT_MAX_CONCURRENCY) : DEFAULT_CHECK_RUN_CONCURRENCY;
+  return Math.max(1, Math.min(total, requested));
 }
 
 function timeoutFailure(label: string, timeoutMs: number): CheckStepFailure {
@@ -284,20 +299,26 @@ export async function runGBrainSignalDetectorCoverageCheck(
   const submitTimeoutMs = opts.submitTimeoutMs ?? DEFAULT_SUBMIT_TIMEOUT_MS;
   const laneTimeoutMs = opts.laneTimeoutMs ?? DEFAULT_LANE_TIMEOUT_MS;
   const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
-  const steps: GBrainSignalCoverageCheckStep[] = [];
+  const concurrency = normalizeConcurrency(opts.concurrency, agents.length);
 
-  for (const lane of agents) {
-    steps.push(
-      await runCoverageStep({
-        checkRunId,
-        lane,
-        deps,
-        submitTimeoutMs,
-        laneTimeoutMs,
-        pollIntervalMs,
-      }),
-    );
-  }
+  const stepResult = await runTasksWithConcurrency({
+    tasks: agents.map(
+      (lane) => async () =>
+        runCoverageStep({
+          checkRunId,
+          lane,
+          deps,
+          submitTimeoutMs,
+          laneTimeoutMs,
+          pollIntervalMs,
+        }),
+    ),
+    limit: concurrency,
+    errorMode: "continue",
+  });
+  const steps = stepResult.results.filter((step): step is GBrainSignalCoverageCheckStep =>
+    Boolean(step),
+  );
 
   const passedCount = steps.filter((step) => step.status === "passed").length;
   const failedCount = steps.length - passedCount;
@@ -308,6 +329,7 @@ export async function runGBrainSignalDetectorCoverageCheck(
     startedAt: iso(startedAtMs),
     endedAt: iso(now()),
     agents,
+    concurrency,
     passedCount,
     failedCount,
     steps,
