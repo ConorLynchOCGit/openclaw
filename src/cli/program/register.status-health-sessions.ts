@@ -29,6 +29,7 @@ function createModuleLoader<T>(load: () => Promise<T>): () => Promise<T> {
 
 const loadCommitmentsCommands = createModuleLoader(() => import("../../commands/commitments.js"));
 const loadTasksCommands = createModuleLoader(() => import("../../commands/tasks.js"));
+const loadChecksCommands = createModuleLoader(() => import("../../commands/checks.js"));
 const loadFlowsCommands = createModuleLoader(() => import("../../commands/flows.js"));
 
 function addSessionsListOptions(command: Command): Command {
@@ -584,6 +585,51 @@ export function registerStatusHealthSessionsCommands(program: Command) {
             lookup,
             check: String(opts.check ?? "gbrain.signal_detector"),
             json: Boolean(opts.json || parentOpts?.json),
+          },
+          defaultRuntime,
+        );
+      });
+    });
+
+  const checksCmd = program.command("checks").description("Run native execution and route checks");
+
+  checksCmd
+    .command("run")
+    .description("Run a native execution check")
+    .argument("<check>", "Check name, for example gbrain.signal_detector.coverage")
+    .option("--json", "Output as JSON", false)
+    .option("--agents <ids>", "Comma-separated agent lanes to check")
+    .option("--check-run-id <id>", "Stable check run id")
+    .option("--timeout <ms>", "Gateway request timeout in milliseconds")
+    .option("--submit-timeout <ms>", "Per-lane chat.send timeout in milliseconds")
+    .option("--lane-timeout <ms>", "Per-lane child task timeout in milliseconds")
+    .option("--poll-interval <ms>", "Child task polling interval in milliseconds")
+    .action(async (check, opts, command) => {
+      const parentOpts = command.parent?.opts() as { json?: boolean } | undefined;
+      const timeoutMs = parseTimeoutMs(opts.timeout);
+      const submitTimeoutMs = parseTimeoutMs(opts.submitTimeout);
+      const laneTimeoutMs = parseTimeoutMs(opts.laneTimeout);
+      const pollIntervalMs = parseTimeoutMs(opts.pollInterval);
+      if (
+        timeoutMs === null ||
+        submitTimeoutMs === null ||
+        laneTimeoutMs === null ||
+        pollIntervalMs === null
+      ) {
+        return;
+      }
+      await runCommandWithRuntime(defaultRuntime, async () => {
+        const { checksRunCommand } = await loadChecksCommands();
+        await checksRunCommand(
+          {
+            check: String(check),
+            agents: opts.agents as string | undefined,
+            checkRunId: opts.checkRunId as string | undefined,
+            json: Boolean(opts.json || parentOpts?.json),
+            timeoutMs,
+            submitTimeoutMs,
+            laneTimeoutMs,
+            pollIntervalMs,
           },
           defaultRuntime,
         );

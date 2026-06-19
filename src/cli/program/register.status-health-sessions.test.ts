@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   tasksShowCommand: vi.fn(),
   tasksNotifyCommand: vi.fn(),
   tasksCancelCommand: vi.fn(),
+  checksRunCommand: vi.fn(),
   flowsListCommand: vi.fn(),
   flowsShowCommand: vi.fn(),
   flowsCancelCommand: vi.fn(),
@@ -47,6 +48,7 @@ const tasksMaintenanceCommand = mocks.tasksMaintenanceCommand;
 const tasksShowCommand = mocks.tasksShowCommand;
 const tasksNotifyCommand = mocks.tasksNotifyCommand;
 const tasksCancelCommand = mocks.tasksCancelCommand;
+const checksRunCommand = mocks.checksRunCommand;
 const flowsListCommand = mocks.flowsListCommand;
 const flowsShowCommand = mocks.flowsShowCommand;
 const flowsCancelCommand = mocks.flowsCancelCommand;
@@ -119,6 +121,10 @@ vi.mock("../../commands/tasks.js", () => ({
   tasksCancelCommand: mocks.tasksCancelCommand,
 }));
 
+vi.mock("../../commands/checks.js", () => ({
+  checksRunCommand: mocks.checksRunCommand,
+}));
+
 vi.mock("../../commands/flows.js", () => ({
   flowsListCommand: mocks.flowsListCommand,
   flowsShowCommand: mocks.flowsShowCommand,
@@ -159,6 +165,7 @@ describe("registerStatusHealthSessionsCommands", () => {
     tasksShowCommand.mockResolvedValue(undefined);
     tasksNotifyCommand.mockResolvedValue(undefined);
     tasksCancelCommand.mockResolvedValue(undefined);
+    checksRunCommand.mockResolvedValue(undefined);
     flowsListCommand.mockResolvedValue(undefined);
     flowsShowCommand.mockResolvedValue(undefined);
     flowsCancelCommand.mockResolvedValue(undefined);
@@ -533,6 +540,38 @@ describe("registerStatusHealthSessionsCommands", () => {
 
     expectCommandOptions(tasksCancelCommand, {
       lookup: "run-123",
+    });
+  });
+
+  it("runs checks run with check, lanes, timing, and JSON forwarding", async () => {
+    await runCli([
+      "checks",
+      "run",
+      "gbrain.signal_detector.coverage",
+      "--agents",
+      "main,coding",
+      "--check-run-id",
+      "check-run-123",
+      "--timeout",
+      "300000",
+      "--submit-timeout",
+      "15000",
+      "--lane-timeout",
+      "60000",
+      "--poll-interval",
+      "2000",
+      "--json",
+    ]);
+
+    expectCommandOptions(checksRunCommand, {
+      check: "gbrain.signal_detector.coverage",
+      agents: "main,coding",
+      checkRunId: "check-run-123",
+      timeoutMs: 300000,
+      submitTimeoutMs: 15000,
+      laneTimeoutMs: 60000,
+      pollIntervalMs: 2000,
+      json: true,
     });
   });
 

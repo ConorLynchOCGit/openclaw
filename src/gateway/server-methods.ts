@@ -73,6 +73,10 @@ const loadChannelsHandlers = lazyHandlerModule(
   () => import("./server-methods/channels.js"),
   (module) => module.channelsHandlers,
 );
+const loadChecksHandlers = lazyHandlerModule(
+  () => import("./server-methods/checks.js"),
+  (module) => module.checksHandlers,
+);
 const loadChatHandlers = lazyHandlerModule(
   () => import("./server-methods/chat.js"),
   (module) => module.chatHandlers,
@@ -410,6 +414,10 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...createLazyCoreHandlers({
     methods: ["tasks.list", "tasks.get", "tasks.cancel"],
     loadHandlers: loadTasksHandlers,
+  }),
+  ...createLazyCoreHandlers({
+    methods: ["checks.run"],
+    loadHandlers: loadChecksHandlers,
   }),
   ...createLazyCoreHandlers({
     methods: ["tools.catalog"],
