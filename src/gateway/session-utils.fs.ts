@@ -1836,3 +1836,37 @@ export function readSessionPreviewItemsFromTranscript(
 
   return [];
 }
+
+export function readLastAssistantTextFromTranscript(
+  sessionId: string,
+  storePath: string | undefined,
+  sessionFile: string | undefined,
+  agentId: string | undefined,
+  maxChars = 12_000,
+): string | null {
+  const candidates = resolveSessionTranscriptCandidates(sessionId, storePath, sessionFile, agentId);
+  const filePath = candidates.find((p) => fs.existsSync(p));
+  if (!filePath) {
+    return null;
+  }
+
+  const boundedChars = Math.max(20, Math.min(maxChars, 50_000));
+  for (const readSize of PREVIEW_READ_SIZES) {
+    const messages = readRecentMessagesFromTranscript(filePath, 50, readSize);
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+      if (normalizeLowercaseStringOrEmpty(message?.role) !== "assistant") {
+        continue;
+      }
+      const text = extractPreviewText(message);
+      if (text) {
+        return truncatePreviewText(text.trim(), boundedChars);
+      }
+    }
+    if (messages.length > 0 || readSize === PREVIEW_READ_SIZES[PREVIEW_READ_SIZES.length - 1]) {
+      return null;
+    }
+  }
+
+  return null;
+}

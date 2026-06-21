@@ -127,6 +127,7 @@ export const SessionsDescribeParamsSchema = Type.Object(
     key: NonEmptyString,
     includeDerivedTitles: Type.Optional(Type.Boolean()),
     includeLastMessage: Type.Optional(Type.Boolean()),
+    includeFinalAssistant: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );

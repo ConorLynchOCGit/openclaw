@@ -1730,21 +1730,25 @@ public struct SessionsDescribeParams: Codable, Sendable {
     public let key: String
     public let includederivedtitles: Bool?
     public let includelastmessage: Bool?
+    public let includefinalassistant: Bool?
 
     public init(
         key: String,
         includederivedtitles: Bool?,
-        includelastmessage: Bool?)
+        includelastmessage: Bool?,
+        includefinalassistant: Bool?)
     {
         self.key = key
         self.includederivedtitles = includederivedtitles
         self.includelastmessage = includelastmessage
+        self.includefinalassistant = includefinalassistant
     }
 
     private enum CodingKeys: String, CodingKey {
         case key
         case includederivedtitles = "includeDerivedTitles"
         case includelastmessage = "includeLastMessage"
+        case includefinalassistant = "includeFinalAssistant"
     }
 }
 
@@ -2523,6 +2527,9 @@ public struct TaskSummary: Codable, Sendable {
     public let endedat: AnyCodable?
     public let progresssummary: String?
     public let terminalsummary: String?
+    public let executionreceipt: [String: AnyCodable]?
+    public let childresult: [String: AnyCodable]?
+    public let childruns: [String: AnyCodable]?
     public let error: String?
 
     public init(
@@ -2546,6 +2553,9 @@ public struct TaskSummary: Codable, Sendable {
         endedat: AnyCodable?,
         progresssummary: String?,
         terminalsummary: String?,
+        executionreceipt: [String: AnyCodable]?,
+        childresult: [String: AnyCodable]?,
+        childruns: [String: AnyCodable]?,
         error: String?)
     {
         self.id = id
@@ -2568,6 +2578,9 @@ public struct TaskSummary: Codable, Sendable {
         self.endedat = endedat
         self.progresssummary = progresssummary
         self.terminalsummary = terminalsummary
+        self.executionreceipt = executionreceipt
+        self.childresult = childresult
+        self.childruns = childruns
         self.error = error
     }
 
@@ -2592,6 +2605,9 @@ public struct TaskSummary: Codable, Sendable {
         case endedat = "endedAt"
         case progresssummary = "progressSummary"
         case terminalsummary = "terminalSummary"
+        case executionreceipt = "executionReceipt"
+        case childresult = "childResult"
+        case childruns = "childRuns"
         case error
     }
 }

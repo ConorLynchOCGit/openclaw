@@ -737,6 +737,7 @@ function tryFinalizeTrackedAgentTask(params: {
   runId: string;
   status: GatewayAgentTaskTerminalStatus;
   error?: string;
+  progressSummary?: string;
   terminalSummary?: string;
   log: Pick<GatewayRequestContext["logGateway"], "warn">;
 }): void {
@@ -747,6 +748,7 @@ function tryFinalizeTrackedAgentTask(params: {
       status: params.status,
       endedAt: Date.now(),
       ...(params.error !== undefined ? { error: params.error } : {}),
+      ...(params.progressSummary !== undefined ? { progressSummary: params.progressSummary } : {}),
       ...(params.terminalSummary !== undefined ? { terminalSummary: params.terminalSummary } : {}),
     });
   } catch (err) {
@@ -754,6 +756,67 @@ function tryFinalizeTrackedAgentTask(params: {
     // Still surface the swallowed error so non-transient finalize failures stay observable.
     params.log.warn(`failed to finalize tracked agent task ${params.runId}: ${formatForLog(err)}`);
   }
+}
+
+const TRACKED_AGENT_TASK_SUMMARY_MAX_CHARS = 1_000;
+
+function trimTaskSummaryText(value: unknown): string | undefined {
+  const text = normalizeOptionalString(value);
+  if (!text) {
+    return undefined;
+  }
+  if (text.length <= TRACKED_AGENT_TASK_SUMMARY_MAX_CHARS) {
+    return text;
+  }
+  return `${text.slice(0, TRACKED_AGENT_TASK_SUMMARY_MAX_CHARS - 1).trimEnd()}…`;
+}
+
+function readResultRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function readAcceptedSessionSpawnCount(result: unknown): number {
+  const record = readResultRecord(result);
+  const acceptedSessionSpawns = record?.acceptedSessionSpawns;
+  return Array.isArray(acceptedSessionSpawns)
+    ? acceptedSessionSpawns.filter(
+        (spawn) => readResultRecord(spawn)?.runId && readResultRecord(spawn)?.childSessionKey,
+      ).length
+    : 0;
+}
+
+function readTrackedAgentFinalAssistantText(result: unknown): string | undefined {
+  const record = readResultRecord(result);
+  const meta = readResultRecord(record?.meta);
+  return trimTaskSummaryText(meta?.finalAssistantVisibleText);
+}
+
+function resolveTrackedAgentTaskCompletionProjection(result: unknown): {
+  progressSummary?: string;
+  terminalSummary: string;
+} {
+  const record = readResultRecord(result);
+  const meta = readResultRecord(record?.meta);
+  const acceptedChildCount = readAcceptedSessionSpawnCount(result);
+  if (meta?.yielded === true) {
+    const childText =
+      acceptedChildCount === 1 ? "1 child completion" : `${acceptedChildCount} child completions`;
+    const summary =
+      acceptedChildCount > 0
+        ? `yielded waiting for ${childText}`
+        : "yielded waiting for continuation";
+    return {
+      progressSummary: summary,
+      terminalSummary: summary,
+    };
+  }
+  const finalAssistantText = readTrackedAgentFinalAssistantText(result);
+  return {
+    ...(finalAssistantText ? { progressSummary: finalAssistantText } : {}),
+    terminalSummary: "completed",
+  };
 }
 
 function resolveAgentDedupeKeys(params: {
@@ -981,11 +1044,13 @@ function dispatchAgentRunFromGateway(params: {
     .then((result) => {
       const aborted = result?.meta?.aborted === true;
       const timeoutAttribution = readAgentRunTimeoutAttribution(result?.meta);
+      const completionProjection = resolveTrackedAgentTaskCompletionProjection(result);
       if (taskTracked) {
         tryFinalizeTrackedAgentTask({
           runId: params.runId,
           status: aborted ? "timed_out" : "succeeded",
-          terminalSummary: aborted ? "aborted" : "completed",
+          progressSummary: aborted ? undefined : completionProjection.progressSummary,
+          terminalSummary: aborted ? "aborted" : completionProjection.terminalSummary,
           log: params.context.logGateway,
         });
       }

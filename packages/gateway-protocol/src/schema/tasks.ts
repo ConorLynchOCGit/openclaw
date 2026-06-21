@@ -20,6 +20,41 @@ export const TaskLedgerStatusSchema = Type.Union([
 
 const TimestampSchema = Type.Union([Type.String(), Type.Integer({ minimum: 0 })]);
 
+const TaskChildResultProjectionSchema = Type.Object(
+  {
+    childSessionKey: NonEmptyString,
+    runId: Type.Optional(NonEmptyString),
+    status: Type.Optional(Type.String()),
+    resultTextPreview: Type.Optional(Type.String()),
+    resultTextTruncated: Type.Optional(Type.Boolean()),
+    capturedAt: Type.Optional(TimestampSchema),
+    artifactsListParams: Type.Optional(
+      Type.Object(
+        {
+          sessionKey: NonEmptyString,
+          runId: Type.Optional(NonEmptyString),
+          agentId: Type.Optional(NonEmptyString),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+  },
+  { additionalProperties: false },
+);
+
+const TaskChildRunsProjectionSchema = Type.Object(
+  {
+    total: Type.Integer({ minimum: 0 }),
+    running: Type.Integer({ minimum: 0 }),
+    completed: Type.Integer({ minimum: 0 }),
+    failed: Type.Integer({ minimum: 0 }),
+    pendingCompletion: Type.Integer({ minimum: 0 }),
+    children: Type.Array(TaskChildResultProjectionSchema),
+    childrenTruncated: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false },
+);
+
 /** Public task summary returned by task list/get/cancel responses. */
 export const TaskSummarySchema = Type.Object(
   {
@@ -43,6 +78,9 @@ export const TaskSummarySchema = Type.Object(
     endedAt: Type.Optional(TimestampSchema),
     progressSummary: Type.Optional(Type.String()),
     terminalSummary: Type.Optional(Type.String()),
+    executionReceipt: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+    childResult: Type.Optional(TaskChildResultProjectionSchema),
+    childRuns: Type.Optional(TaskChildRunsProjectionSchema),
     error: Type.Optional(Type.String()),
   },
   { additionalProperties: false },

@@ -28,6 +28,7 @@ import {
   readSessionTitleFieldsFromTranscript,
   readSessionTitleFieldsFromTranscriptAsync,
   readSessionPreviewItemsFromTranscript,
+  readLastAssistantTextFromTranscript,
   resolveSessionTranscriptCandidates,
 } from "./session-utils.fs.js";
 
@@ -1473,6 +1474,38 @@ describe("readSessionPreviewItemsFromTranscript", () => {
     const result = readPreview(sessionId, 1, 120);
 
     expect(result).toHaveLength(0);
+  });
+
+  test("returns bounded final assistant text without exposing user tail text", () => {
+    const sessionId = "preview-final-assistant";
+    const lines = [
+      JSON.stringify({ message: { role: "user", content: "Initial user request" } }),
+      JSON.stringify({ message: { role: "assistant", content: "Earlier assistant answer" } }),
+      JSON.stringify({ message: { role: "user", content: "Follow-up user text after answer" } }),
+      JSON.stringify({
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: "internal commentary",
+              textSignature: JSON.stringify({ v: 1, id: "msg_commentary", phase: "commentary" }),
+            },
+            {
+              type: "text",
+              text: "Final proof answer with implementation slices.",
+              textSignature: JSON.stringify({ v: 1, id: "msg_final", phase: "final_answer" }),
+            },
+          ],
+        },
+      }),
+      JSON.stringify({ message: { role: "user", content: "Trailing user text" } }),
+    ];
+    writeTranscriptLines(sessionId, lines);
+
+    expect(readLastAssistantTextFromTranscript(sessionId, storePath, undefined, undefined)).toBe(
+      "Final proof answer with implementation slices.",
+    );
   });
 });
 

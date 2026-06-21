@@ -98,6 +98,7 @@ import {
   resolveStoredSessionKeyForAgentStore,
 } from "./session-store-key.js";
 import {
+  readLastAssistantTextFromTranscript,
   readRecentSessionUsageFromTranscript,
   readSessionTitleFieldsFromTranscriptAsync,
   readSessionTitleFieldsFromTranscript,
@@ -116,6 +117,7 @@ export {
   attachOpenClawTranscriptMeta,
   capArrayByJsonBytes,
   readFirstUserMessageFromTranscript,
+  readLastAssistantTextFromTranscript,
   readLatestSessionUsageFromTranscriptAsync,
   readLatestRecentSessionUsageFromTranscriptAsync,
   readRecentSessionUsageFromTranscriptAsync,
@@ -1929,6 +1931,7 @@ export function buildGatewaySessionRow(params: {
   now?: number;
   includeDerivedTitles?: boolean;
   includeLastMessage?: boolean;
+  includeFinalAssistant?: boolean;
   transcriptUsageMaxBytes?: number;
   storeChildSessionsByKey?: Map<string, string[]>;
   rowContext?: SessionListRowContext;
@@ -2174,7 +2177,11 @@ export function buildGatewaySessionRow(params: {
 
   let derivedTitle: string | undefined;
   let lastMessagePreview: string | undefined;
-  if (entry?.sessionId && (params.includeDerivedTitles || params.includeLastMessage)) {
+  let finalAssistantText: string | undefined;
+  if (
+    entry?.sessionId &&
+    (params.includeDerivedTitles || params.includeLastMessage || params.includeFinalAssistant)
+  ) {
     const fields = readSessionTitleFieldsFromTranscript(
       entry.sessionId,
       storePath,
@@ -2186,6 +2193,15 @@ export function buildGatewaySessionRow(params: {
     }
     if (params.includeLastMessage && fields.lastMessagePreview) {
       lastMessagePreview = fields.lastMessagePreview;
+    }
+    if (params.includeFinalAssistant) {
+      finalAssistantText =
+        readLastAssistantTextFromTranscript(
+          entry.sessionId,
+          storePath,
+          entry.sessionFile,
+          sessionAgentId,
+        ) ?? undefined;
     }
   }
 
@@ -2218,6 +2234,7 @@ export function buildGatewaySessionRow(params: {
     displayName,
     derivedTitle,
     lastMessagePreview,
+    finalAssistantText,
     channel,
     subject,
     groupChannel,

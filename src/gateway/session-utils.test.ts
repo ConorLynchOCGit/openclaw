@@ -791,6 +791,45 @@ describe("gateway session utils", () => {
     expect(row.displayName).toBe("Alice");
   });
 
+  test("buildGatewaySessionRow can project final assistant text when requested", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-session-final-assistant-"));
+    try {
+      const cfg = { agents: { list: [{ id: "main", default: true }] } } as OpenClawConfig;
+      const sessionId = "11111111-1111-4111-8111-111111111111";
+      const transcriptPath = path.join(tmpDir, `${sessionId}.jsonl`);
+      fs.writeFileSync(
+        transcriptPath,
+        [
+          JSON.stringify({ message: { role: "user", content: "Plan request" } }),
+          JSON.stringify({
+            message: {
+              role: "assistant",
+              content: "Final plan answer",
+            },
+          }),
+        ].join("\n"),
+        "utf-8",
+      );
+      const entry = {
+        sessionId,
+        sessionFile: transcriptPath,
+        updatedAt: 10,
+      } as SessionEntry;
+      const row = buildGatewaySessionRow({
+        cfg,
+        storePath: path.join(tmpDir, "sessions.json"),
+        store: { "agent:main:main": entry },
+        key: "agent:main:main",
+        entry,
+        includeFinalAssistant: true,
+      });
+
+      expect(row.finalAssistantText).toBe("Final plan answer");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   test("resolveSessionStoreKey maps main aliases to default agent main", () => {
     const cfg = {
       session: { mainKey: "work" },

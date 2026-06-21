@@ -51,6 +51,7 @@ export type GatewaySessionRow = {
   displayName?: string;
   derivedTitle?: string;
   lastMessagePreview?: string;
+  finalAssistantText?: string;
   channel?: string;
   subject?: string;
   groupChannel?: string;

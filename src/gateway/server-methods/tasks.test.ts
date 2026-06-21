@@ -6,6 +6,14 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  createResolvedAgentRunReceipt,
+  finalizeAgentRunReceipt,
+} from "../../agents/run-receipt.js";
+import {
+  addSubagentRunForTests,
+  resetSubagentRegistryForTests,
+} from "../../agents/subagent-registry.js";
+import {
   createTaskRecord as createTaskRecordOrNull,
   markTaskTerminalById,
   recordTaskProgressByRunId,
@@ -37,10 +45,12 @@ beforeEach(async () => {
   stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-gateway-tasks-"));
   process.env.OPENCLAW_STATE_DIR = stateDir;
   resetTaskRegistryForTests();
+  resetSubagentRegistryForTests({ persist: false });
 });
 
 afterEach(async () => {
   resetTaskRegistryForTests();
+  resetSubagentRegistryForTests({ persist: false });
   if (ORIGINAL_STATE_DIR === undefined) {
     delete process.env.OPENCLAW_STATE_DIR;
   } else {
@@ -152,6 +162,222 @@ describe("tasks gateway handlers", () => {
 
     expect(payload?.task?.status).toBe("completed");
     expect(payload?.task?.title).toBe("Done task");
+  });
+
+  it("exposes persisted execution receipts through the native task summary", async () => {
+    const receipt = finalizeAgentRunReceipt(
+      createResolvedAgentRunReceipt({
+        source: {
+          kind: "plugin",
+          id: "gbrain-context",
+          hook: "message_received",
+        },
+        targetAgentId: "memory-curator",
+        resolvedProvider: "openrouter",
+        resolvedModel: "anthropic/claude-haiku-4.5",
+        runtime: "openclaw",
+        contextMode: "lightweight",
+      }),
+      {
+        finalProvider: "openrouter",
+        finalModel: "anthropic/claude-haiku-4.5",
+        runtime: "openclaw",
+        contextMode: "lightweight",
+        terminalStatus: "succeeded",
+      },
+    );
+    const task = createTaskRecord({
+      runtime: "subagent",
+      taskKind: "gbrain-signal-capture",
+      requesterSessionKey: "agent:main:main",
+      ownerKey: "agent:main:main",
+      scopeKind: "session",
+      childSessionKey: "agent:memory-curator:subagent:signal",
+      agentId: "memory-curator",
+      runId: "run-receipt-native-readback",
+      task: "Capture GBrain signal",
+      status: "succeeded",
+      deliveryStatus: "not_applicable",
+      executionReceipt: receipt,
+    });
+
+    const { payload } = await getTaskPayload(task.taskId);
+
+    expect(payload?.task?.executionReceipt).toMatchObject({
+      phase: "finalized",
+      source: {
+        kind: "plugin",
+        id: "gbrain-context",
+        hook: "message_received",
+      },
+      targetAgentId: "memory-curator",
+      terminalStatus: "succeeded",
+      final: {
+        model: "openrouter/anthropic/claude-haiku-4.5",
+        runtime: "openclaw",
+        contextMode: "lightweight",
+      },
+      fallback: {
+        used: false,
+      },
+    });
+  });
+
+  it("projects child result refs and bounded frozen completion previews", async () => {
+    addSubagentRunForTests({
+      runId: "run-child-result",
+      childSessionKey: "agent:researcher:subagent:child-result",
+      requesterSessionKey: "agent:planning:main",
+      requesterDisplayKey: "planning",
+      task: "Research source gaps",
+      cleanup: "keep",
+      createdAt: 100,
+      startedAt: 100,
+      endedAt: 200,
+      outcome: { status: "ok" },
+      completion: {
+        required: true,
+        resultText: "Child found three concrete routing gaps.",
+        capturedAt: 210,
+      },
+      delivery: { status: "delivered" },
+    });
+    const task = createTaskRecord({
+      runtime: "subagent",
+      taskKind: "research-child",
+      requesterSessionKey: "agent:planning:main",
+      ownerKey: "agent:planning:main",
+      scopeKind: "session",
+      childSessionKey: "agent:researcher:subagent:child-result",
+      agentId: "researcher",
+      runId: "run-child-result",
+      task: "Research source gaps",
+      status: "succeeded",
+      deliveryStatus: "not_applicable",
+    });
+
+    const { payload } = await getTaskPayload(task.taskId);
+
+    expect(payload?.task?.childResult).toMatchObject({
+      childSessionKey: "agent:researcher:subagent:child-result",
+      runId: "run-child-result",
+      status: "ok",
+      resultTextPreview: "Child found three concrete routing gaps.",
+      capturedAt: 210,
+      artifactsListParams: {
+        sessionKey: "agent:researcher:subagent:child-result",
+        runId: "run-child-result",
+        agentId: "researcher",
+      },
+    });
+  });
+
+  it("projects descendant child-run state for parent orchestration tasks", async () => {
+    addSubagentRunForTests({
+      runId: "run-child-a",
+      childSessionKey: "agent:planning:main:subagent:researcher-a",
+      requesterSessionKey: "agent:planning:main",
+      requesterDisplayKey: "planning",
+      task: "Research local gaps",
+      cleanup: "keep",
+      createdAt: 120,
+      startedAt: 120,
+      endedAt: 220,
+      outcome: { status: "ok" },
+      expectsCompletionMessage: true,
+      completion: {
+        required: true,
+        resultText: "Researcher A found a routing gap.",
+        capturedAt: 225,
+      },
+      delivery: { status: "delivered" },
+    });
+    addSubagentRunForTests({
+      runId: "run-child-b",
+      childSessionKey: "agent:planning:main:subagent:reviewer-b",
+      requesterSessionKey: "agent:planning:main",
+      requesterDisplayKey: "planning",
+      task: "Review plan",
+      cleanup: "keep",
+      createdAt: 130,
+      startedAt: 130,
+      endedAt: 230,
+      outcome: { status: "ok" },
+      expectsCompletionMessage: true,
+      completion: {
+        required: true,
+        resultText: "Reviewer B found a proof-finality risk.",
+        capturedAt: 235,
+      },
+      delivery: { status: "pending" },
+    });
+    addSubagentRunForTests({
+      runId: "run-stale-child",
+      childSessionKey: "agent:planning:main:subagent:stale",
+      requesterSessionKey: "agent:planning:main",
+      requesterDisplayKey: "planning",
+      task: "Old child",
+      cleanup: "keep",
+      createdAt: 50,
+      endedAt: 60,
+      outcome: { status: "ok" },
+      expectsCompletionMessage: true,
+      completion: {
+        required: true,
+        resultText: "stale child should not appear",
+      },
+      delivery: { status: "delivered" },
+    });
+    const task = createTaskRecord({
+      runtime: "cli",
+      taskKind: "planning-activation",
+      requesterSessionKey: "agent:planning:main",
+      ownerKey: "agent:planning:main",
+      scopeKind: "session",
+      childSessionKey: "agent:planning:main",
+      agentId: "planning",
+      runId: "run-parent-planning",
+      task: "Improve research/planning layer",
+      status: "running",
+      deliveryStatus: "not_applicable",
+      createdAt: 100,
+      startedAt: 110,
+    });
+
+    const { payload } = await getTaskPayload(task.taskId);
+
+    expect(payload?.task?.childRuns).toMatchObject({
+      total: 2,
+      running: 0,
+      completed: 2,
+      failed: 0,
+      pendingCompletion: 1,
+      children: [
+        {
+          childSessionKey: "agent:planning:main:subagent:researcher-a",
+          runId: "run-child-a",
+          status: "ok",
+          resultTextPreview: "Researcher A found a routing gap.",
+          artifactsListParams: {
+            sessionKey: "agent:planning:main:subagent:researcher-a",
+            runId: "run-child-a",
+            agentId: "planning",
+          },
+        },
+        {
+          childSessionKey: "agent:planning:main:subagent:reviewer-b",
+          runId: "run-child-b",
+          status: "ok",
+          resultTextPreview: "Reviewer B found a proof-finality risk.",
+          artifactsListParams: {
+            sessionKey: "agent:planning:main:subagent:reviewer-b",
+            runId: "run-child-b",
+            agentId: "planning",
+          },
+        },
+      ],
+    });
+    expect(JSON.stringify(payload?.task?.childRuns)).not.toContain("stale child should not appear");
   });
 
   it("sanitizes task text before exposing SDK summaries", async () => {

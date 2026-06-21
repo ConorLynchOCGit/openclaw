@@ -47,6 +47,42 @@ const mocks = vi.hoisted(() => ({
   resolveExplicitAgentSessionKey: vi.fn(),
   listAgentIds: vi.fn(() => ["main"]),
   loadConfigReturn: {} as Record<string, unknown>,
+  withOpenClawRuntimeDefaults: (cfg: Record<string, unknown> = {}) => {
+    const agents =
+      cfg.agents && typeof cfg.agents === "object" && !Array.isArray(cfg.agents)
+        ? (cfg.agents as Record<string, unknown>)
+        : {};
+    const defaults =
+      agents.defaults && typeof agents.defaults === "object" && !Array.isArray(agents.defaults)
+        ? (agents.defaults as Record<string, unknown>)
+        : {};
+    const models =
+      defaults.models && typeof defaults.models === "object" && !Array.isArray(defaults.models)
+        ? (defaults.models as Record<string, unknown>)
+        : {};
+    const gptRuntime =
+      models["openai/gpt-5.5"] &&
+      typeof models["openai/gpt-5.5"] === "object" &&
+      !Array.isArray(models["openai/gpt-5.5"])
+        ? (models["openai/gpt-5.5"] as Record<string, unknown>)
+        : {};
+    return {
+      ...cfg,
+      agents: {
+        ...agents,
+        defaults: {
+          ...defaults,
+          models: {
+            ...models,
+            "openai/gpt-5.5": {
+              agentRuntime: { id: "openclaw" },
+              ...gptRuntime,
+            },
+          },
+        },
+      },
+    };
+  },
   loadVoiceWakeRoutingConfig: vi.fn(),
   resolveVoiceWakeRouteByTrigger: vi.fn(),
   resolveSendPolicy: vi.fn((_args?: { entry?: { sendPolicy?: string } }) => "allow"),
@@ -100,11 +136,17 @@ vi.mock("../../config/config.js", async () => {
     await vi.importActual<typeof import("../../config/config.js")>("../../config/config.js");
   return {
     ...actual,
-    getRuntimeConfig: () => mocks.loadConfigReturn,
+    getRuntimeConfig: () => mocks.withOpenClawRuntimeDefaults(mocks.loadConfigReturn),
   };
 });
 
 vi.mock("../../agents/agent-scope.js", () => ({
+  listAgentEntries: (cfg?: { agents?: { list?: Array<Record<string, unknown> | null> } }) =>
+    Array.isArray(cfg?.agents?.list)
+      ? cfg.agents.list.filter((entry): entry is Record<string, unknown> =>
+          Boolean(entry && typeof entry === "object"),
+        )
+      : [],
   listAgentIds: mocks.listAgentIds,
   resolveDefaultAgentId: (cfg?: {
     agents?: { list?: Array<{ id?: string; default?: boolean }> };
@@ -118,6 +160,25 @@ vi.mock("../../agents/agent-scope.js", () => ({
   }) => {
     const m = /^agent:([^:]+):/.exec((sessionKey ?? "").trim());
     return m?.[1] ?? "main";
+  },
+  resolveSessionAgentIds: ({
+    sessionKey,
+    config,
+    agentId,
+  }: {
+    sessionKey?: string | null;
+    config?: { agents?: { list?: Array<{ id?: string; default?: boolean }> } };
+    agentId?: string | null;
+  }) => {
+    const defaultAgentId =
+      config?.agents?.list?.find((agent) => agent.default)?.id ??
+      config?.agents?.list?.[0]?.id ??
+      "main";
+    const m = /^agent:([^:]+):/.exec((sessionKey ?? "").trim());
+    return {
+      defaultAgentId,
+      sessionAgentId: agentId ?? m?.[1] ?? defaultAgentId,
+    };
   },
   resolveAgentConfig: (cfg: { agents?: { list?: Array<{ id?: string }> } }, agentId: string) =>
     cfg.agents?.list?.find((agent) => agent.id === agentId),
@@ -218,7 +279,7 @@ const makeContext = (): GatewayRequestContext =>
     logGateway: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     broadcastToConnIds: vi.fn(),
     getSessionEventSubscriberConnIds: () => new Set(),
-    getRuntimeConfig: () => mocks.loadConfigReturn,
+    getRuntimeConfig: () => mocks.withOpenClawRuntimeDefaults(mocks.loadConfigReturn),
   }) as unknown as GatewayRequestContext;
 
 type AgentHandlerArgs = Parameters<typeof agentHandlers.agent>[0];
@@ -334,7 +395,7 @@ async function waitForAcceptedRunDispatch(respond: ReturnType<typeof vi.fn>) {
 
 function mockMainSessionEntry(entry: Record<string, unknown>, cfg: Record<string, unknown> = {}) {
   mocks.loadSessionEntry.mockReturnValue({
-    cfg,
+    cfg: mocks.withOpenClawRuntimeDefaults(cfg),
     storePath: "/tmp/sessions.json",
     entry: {
       sessionId: "existing-session-id",
@@ -3201,10 +3262,10 @@ describe("gateway agent handler", () => {
       resetSubagentRegistryForTests({ persist: false });
       const runId = "plugin-subagent-task-run";
       const childSessionKey = "agent:work:subagent:plugin-helper";
-      const cfg = {
+      const cfg = mocks.withOpenClawRuntimeDefaults({
         session: { mainKey: "main", scope: "per-sender" },
         agents: { list: [{ id: "main", default: true }, { id: "work" }] },
-      };
+      });
       mocks.listAgentIds.mockReturnValue(["main", "work"]);
       mocks.loadConfigReturn = cfg;
       mocks.loadSessionEntry.mockReturnValue({
@@ -4658,6 +4719,49 @@ describe("gateway agent handler", () => {
         childSessionKey: "agent:main:main",
         status: "succeeded",
         terminalSummary: "completed",
+      });
+    });
+  });
+
+  it("records yielded child-orchestration summaries on tracked gateway agent tasks", async () => {
+    await withTempDir({ prefix: "openclaw-gateway-agent-yield-task-" }, async (root) => {
+      process.env.OPENCLAW_STATE_DIR = root;
+      resetTaskRegistryForTests();
+      primeMainAgentRun();
+      mocks.agentCommand.mockResolvedValueOnce({
+        payloads: [{ text: "NO_REPLY" }],
+        acceptedSessionSpawns: [
+          {
+            runId: "run-research-child",
+            childSessionKey: "agent:main:main:subagent:research",
+          },
+          {
+            runId: "run-review-child",
+            childSessionKey: "agent:main:main:subagent:review",
+          },
+        ],
+        meta: {
+          durationMs: 100,
+          yielded: true,
+          finalAssistantVisibleText: "",
+        },
+      });
+
+      await invokeAgent(
+        {
+          message: "spawn research and review children, then yield",
+          sessionKey: "agent:main:main",
+          idempotencyKey: "task-registry-yielded-children",
+        },
+        { reqId: "task-registry-yielded-children" },
+      );
+
+      expectRecordFields(findTaskByRunId("task-registry-yielded-children"), {
+        runtime: "cli",
+        childSessionKey: "agent:main:main",
+        status: "succeeded",
+        progressSummary: "yielded waiting for 2 child completions",
+        terminalSummary: "yielded waiting for 2 child completions",
       });
     });
   });
