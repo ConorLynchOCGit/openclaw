@@ -19,6 +19,11 @@ import { loadSessionStore, resolveSessionTotalTokens } from "../config/sessions.
 import type { SessionEntry } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { resolveStoredSessionKeyForAgentStore } from "../gateway/session-store-key.js";
+import {
+  buildGatewaySessionRow,
+  resolveGatewaySessionStoreTargetWithStore,
+  type GatewaySessionRow,
+} from "../gateway/session-utils.js";
 import { info } from "../globals.js";
 import { parseStrictPositiveInteger } from "../infra/parse-finite-number.js";
 import { parseAgentSessionKey } from "../routing/session-key.js";
@@ -27,6 +32,11 @@ import { classifySessionKind, type SessionKind } from "../sessions/classify-sess
 import { isAcpSessionKey } from "../sessions/session-key-utils.js";
 import { createLazyImportLoader } from "../shared/lazy-promise.js";
 import { resolveAgentRuntimeLabel } from "../status/agent-runtime-label.js";
+import {
+  COMPACT_RESULT_PROJECTION_SCHEMA,
+  compactProjectionText,
+  type CompactResultProjection,
+} from "./compact-result-projection.js";
 import { resolveSessionStoreTargetsOrExit } from "./session-store-targets.js";
 import {
   resolveSessionDisplayModelRef,
@@ -67,6 +77,94 @@ const TOP_N_SELECTION_LIMIT = 200;
 const contextLookupRuntimeLoader = createLazyImportLoader(() => import("../agents/context.js"));
 
 const formatKTokens = (value: number) => `${(value / 1000).toFixed(value >= 10_000 ? 0 : 1)}k`;
+
+function findSessionStoreMatch(
+  store: Record<string, SessionEntry>,
+  keys: readonly string[],
+): { key: string; entry: SessionEntry } | undefined {
+  let freshest: { key: string; entry: SessionEntry } | undefined;
+  const candidates = new Set(keys.filter((key) => key.trim()));
+  for (const key of keys) {
+    const lower = key.toLowerCase();
+    for (const storeKey of Object.keys(store)) {
+      if (storeKey.toLowerCase() === lower) {
+        candidates.add(storeKey);
+      }
+    }
+  }
+  for (const key of candidates) {
+    const entry = store[key];
+    if (!entry) {
+      continue;
+    }
+    if (!freshest || (entry.updatedAt ?? 0) > (freshest.entry.updatedAt ?? 0)) {
+      freshest = { key, entry };
+    }
+  }
+  return freshest;
+}
+
+function buildSessionCompactResultProjection(params: {
+  lookup: string;
+  row: GatewaySessionRow;
+  agentId: string;
+}): CompactResultProjection {
+  return {
+    schema: COMPACT_RESULT_PROJECTION_SCHEMA,
+    source: "session",
+    lookup: params.lookup,
+    status: params.row.status,
+    ...(params.row.status && params.row.status !== "running"
+      ? { terminalOutcome: params.row.status === "done" ? "succeeded" : params.row.status }
+      : {}),
+    agentId: params.agentId,
+    sessionKey: params.row.key,
+    ...(params.row.label ? { label: params.row.label } : {}),
+    ...(typeof params.row.startedAt === "number" ? { startedAt: params.row.startedAt } : {}),
+    ...(typeof params.row.endedAt === "number" ? { endedAt: params.row.endedAt } : {}),
+    ...(typeof params.row.updatedAt === "number" ? { lastEventAt: params.row.updatedAt } : {}),
+    ...(params.row.finalAssistantText
+      ? { finalAssistantText: compactProjectionText(params.row.finalAssistantText, 12_000) }
+      : {}),
+    resultArtifactRefs: [],
+    childResultRefs: (params.row.childSessions ?? []).map((sessionKey) => ({ sessionKey })),
+    projectionWarnings: [],
+  };
+}
+
+function resolveSessionShowTarget(params: {
+  cfg: OpenClawConfig;
+  sessionKey: string;
+  store?: string;
+  agent?: string;
+}): {
+  agentId: string;
+  storePath: string;
+  store: Record<string, SessionEntry>;
+  storeKeys: string[];
+} {
+  if (params.store) {
+    const store = loadSessionStore(params.store, { skipCache: true });
+    const parsedAgentId = parseAgentSessionKey(params.sessionKey)?.agentId;
+    return {
+      agentId: params.agent ?? parsedAgentId ?? "main",
+      storePath: params.store,
+      store,
+      storeKeys: [params.sessionKey],
+    };
+  }
+  const target = resolveGatewaySessionStoreTargetWithStore({
+    cfg: params.cfg,
+    key: params.sessionKey,
+    agentId: params.agent,
+  });
+  return {
+    agentId: target.agentId,
+    storePath: target.storePath,
+    store: target.store,
+    storeKeys: target.storeKeys,
+  };
+}
 
 /**
  * Inline ACP model overlay — catalog #20.
@@ -306,6 +404,97 @@ function resolveDisplayRuntimePolicySessionKey(params: {
   return runtimePolicySessionKey && runtimePolicySessionKey !== key
     ? runtimePolicySessionKey
     : undefined;
+}
+
+/** Shows one stored conversation session with optional compact result projection. */
+export async function sessionsShowCommand(
+  opts: {
+    sessionKey: string;
+    json?: boolean;
+    compact?: boolean;
+    store?: string;
+    agent?: string;
+  },
+  runtime: RuntimeEnv,
+) {
+  const cfg = getRuntimeConfig();
+  const target = resolveSessionShowTarget({
+    cfg,
+    sessionKey: opts.sessionKey,
+    store: opts.store,
+    agent: opts.agent,
+  });
+  const match = findSessionStoreMatch(target.store, target.storeKeys);
+  if (!match) {
+    runtime.error(`Session not found: ${opts.sessionKey}`);
+    runtime.exit(1);
+    return;
+  }
+
+  const row = buildGatewaySessionRow({
+    cfg,
+    storePath: target.storePath,
+    store: target.store,
+    key: match.key,
+    entry: match.entry,
+    agentId: target.agentId,
+    includeDerivedTitles: true,
+    includeLastMessage: true,
+    includeFinalAssistant: true,
+  });
+
+  if (opts.compact) {
+    const projection = buildSessionCompactResultProjection({
+      lookup: opts.sessionKey,
+      row,
+      agentId: target.agentId,
+    });
+    if (opts.json) {
+      writeRuntimeJson(runtime, projection);
+      return;
+    }
+    const lines = [
+      "Compact session result:",
+      `sessionKey: ${projection.sessionKey ?? "n/a"}`,
+      `agentId: ${projection.agentId ?? "n/a"}`,
+      `status: ${projection.status ?? "n/a"}`,
+      `result: ${projection.terminalOutcome ?? "n/a"}`,
+      `finalAssistantText: ${projection.finalAssistantText ?? "n/a"}`,
+      `childResultRefs: ${projection.childResultRefs.length}`,
+      `resultArtifactRefs: ${projection.resultArtifactRefs.length}`,
+    ];
+    for (const line of lines) {
+      runtime.log(line);
+    }
+    return;
+  }
+
+  if (opts.json) {
+    writeRuntimeJson(runtime, {
+      path: target.storePath,
+      agentId: target.agentId,
+      session: row,
+    });
+    return;
+  }
+
+  const lines = [
+    "Session:",
+    `key: ${row.key}`,
+    `agentId: ${target.agentId}`,
+    `kind: ${row.kind}`,
+    `status: ${row.status ?? "n/a"}`,
+    `model: ${row.modelProvider ?? "n/a"}/${row.model ?? "n/a"}`,
+    `runtime: ${row.agentRuntime?.id ?? "n/a"}`,
+    `updatedAt: ${row.updatedAt ? new Date(row.updatedAt).toISOString() : "n/a"}`,
+    `startedAt: ${row.startedAt ? new Date(row.startedAt).toISOString() : "n/a"}`,
+    `endedAt: ${row.endedAt ? new Date(row.endedAt).toISOString() : "n/a"}`,
+    `childSessions: ${(row.childSessions ?? []).length}`,
+    ...(row.finalAssistantText ? [`finalAssistantText: ${row.finalAssistantText}`] : []),
+  ];
+  for (const line of lines) {
+    runtime.log(line);
+  }
 }
 
 /** Lists sessions across selected stores with optional JSON output. */

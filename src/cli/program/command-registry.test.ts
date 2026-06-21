@@ -41,8 +41,6 @@ vi.mock("./register.status-health-sessions.js", () => ({
     program.command("commitments");
     const tasks = program.command("tasks");
     tasks.command("show");
-    const checks = program.command("checks");
-    checks.command("run");
   },
 }));
 
@@ -174,13 +172,12 @@ describe("command-registry", () => {
     expect(names).toContain("sessions");
     expect(names).toContain("commitments");
     expect(names).toContain("tasks");
-    expect(names).toContain("checks");
   });
 
   it("can eagerly register the status/session command group repeatedly for completion", async () => {
     const program = createProgram();
 
-    for (const name of ["status", "health", "sessions", "commitments", "tasks", "checks"]) {
+    for (const name of ["status", "health", "sessions", "commitments", "tasks"]) {
       await expect(registerCoreCliByName(program, testProgramContext, name)).resolves.toBe(true);
     }
 
@@ -189,7 +186,6 @@ describe("command-registry", () => {
       names.reduce((count, name) => count + (name === target ? 1 : 0), 0);
     expect(countName("commitments")).toBe(1);
     expect(countName("tasks")).toBe(1);
-    expect(countName("checks")).toBe(1);
   });
 
   it("replaces placeholders when loading a grouped entry by secondary command name", async () => {

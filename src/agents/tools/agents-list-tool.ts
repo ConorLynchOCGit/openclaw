@@ -40,7 +40,8 @@ export function createAgentsListTool(opts?: {
   return {
     label: "Agents",
     name: "agents_list",
-    description: 'List agent ids allowed for `sessions_spawn runtime="subagent"`.',
+    description:
+      'List agent ids allowed for `sessions_spawn runtime="subagent"`. Use before sessions_spawn when agentId is required or the best child role is ambiguous.',
     parameters: AgentsListToolSchema,
     execute: async () => {
       const cfg = getRuntimeConfig();

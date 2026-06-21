@@ -297,7 +297,90 @@ describe("task-executor", () => {
       expect(task?.status).toBe("failed");
       expect(task?.progressSummary).toBe("Collecting results");
       expect(task?.error).toBe("tool failed");
+      expect(task?.executionError).toBe("tool failed");
       expect(task?.deliveryStatus).toBe("failed");
+      expect(task?.deliveryError).toBe("delivery failed");
+    });
+  });
+
+  it("clears current delivery failure after a successful delivery retry", async () => {
+    await withTaskExecutorStateDir(async () => {
+      const created = createRunningTaskRun({
+        runtime: "subagent",
+        ownerKey: "agent:planning:parent",
+        scopeKind: "session",
+        childSessionKey: "agent:researcher:subagent:child",
+        runId: "run-delivery-retry",
+        task: "Return child evidence",
+        startedAt: 10,
+      });
+
+      completeTaskRunByRunId({
+        runId: "run-delivery-retry",
+        endedAt: 40,
+        lastEventAt: 40,
+        progressSummary: "Child evidence ready",
+        terminalOutcome: "succeeded",
+      });
+
+      setDetachedTaskDeliveryStatusByRunId({
+        runId: "run-delivery-retry",
+        deliveryStatus: "failed",
+        error: "completion agent did not produce a visible reply",
+      });
+
+      const failedDeliveryTask = getTaskById(created.taskId);
+      expect(failedDeliveryTask?.status).toBe("succeeded");
+      expect(failedDeliveryTask?.deliveryStatus).toBe("failed");
+      expect(failedDeliveryTask?.deliveryError).toBe(
+        "completion agent did not produce a visible reply",
+      );
+      expect(failedDeliveryTask?.error).toBe("completion agent did not produce a visible reply");
+
+      setDetachedTaskDeliveryStatusByRunId({
+        runId: "run-delivery-retry",
+        deliveryStatus: "delivered",
+      });
+
+      const deliveredTask = getTaskById(created.taskId);
+      expect(deliveredTask?.status).toBe("succeeded");
+      expect(deliveredTask?.terminalOutcome).toBe("succeeded");
+      expect(deliveredTask?.deliveryStatus).toBe("delivered");
+      expect(deliveredTask?.deliveryError).toBeUndefined();
+      expect(deliveredTask?.error).toBeUndefined();
+    });
+  });
+
+  it("keeps execution failure visible when delivery later succeeds", async () => {
+    await withTaskExecutorStateDir(async () => {
+      const created = createRunningTaskRun({
+        runtime: "subagent",
+        ownerKey: "agent:planning:parent",
+        scopeKind: "session",
+        childSessionKey: "agent:researcher:subagent:child",
+        runId: "run-delivered-execution-failure",
+        task: "Return child evidence",
+        startedAt: 10,
+      });
+
+      failTaskRunByRunId({
+        runId: "run-delivered-execution-failure",
+        endedAt: 40,
+        lastEventAt: 40,
+        error: "child execution failed",
+      });
+
+      setDetachedTaskDeliveryStatusByRunId({
+        runId: "run-delivered-execution-failure",
+        deliveryStatus: "delivered",
+      });
+
+      const task = getTaskById(created.taskId);
+      expect(task?.status).toBe("failed");
+      expect(task?.deliveryStatus).toBe("delivered");
+      expect(task?.deliveryError).toBeUndefined();
+      expect(task?.executionError).toBe("child execution failed");
+      expect(task?.error).toBe("child execution failed");
     });
   });
 

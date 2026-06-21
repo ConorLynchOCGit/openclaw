@@ -137,6 +137,10 @@ export type TaskRecord = {
   endedAt?: number;
   lastEventAt?: number;
   cleanupAfter?: number;
+  executionError?: string;
+  deliveryError?: string;
+  finalityError?: string;
+  projectionWarning?: string;
   error?: string;
   progressSummary?: string;
   terminalSummary?: string;

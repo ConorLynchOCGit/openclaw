@@ -176,7 +176,12 @@ function createSessionsSpawnToolSchema(params: {
     runtime: optionalStringEnum(
       params.acpAvailable ? SESSIONS_SPAWN_RUNTIMES : (["subagent"] as const),
     ),
-    agentId: Type.Optional(Type.String()),
+    agentId: Type.Optional(
+      Type.String({
+        description:
+          'Target OpenClaw agent id for runtime="subagent". Required when policy requires explicit agent targeting; call agents_list first if unsure.',
+      }),
+    ),
     model: Type.Optional(Type.String()),
     thinking: Type.Optional(Type.String()),
     cwd: Type.Optional(Type.String()),

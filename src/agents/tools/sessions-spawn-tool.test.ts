@@ -324,8 +324,12 @@ describe("sessions_spawn tool", () => {
     expect(spawnArgs.thread).toBe(true);
     expect(spawnArgs.mode).toBe("session");
     expect(spawnArgs.cleanup).toBe("keep");
+    expect(spawnArgs).not.toHaveProperty("dependencyRole");
+    expect(spawnArgs).not.toHaveProperty("purpose");
+    expect(spawnArgs).not.toHaveProperty("expectedArtifactType");
     const spawnContext = mockCallArg(hoisted.spawnSubagentDirectMock, 0, 1, "spawnSubagentDirect");
     expect(spawnContext.agentSessionKey).toBe("agent:main:main");
+    expect(spawnContext).not.toHaveProperty("parentRunId");
     expect(hoisted.spawnAcpDirectMock).not.toHaveBeenCalled();
   });
 

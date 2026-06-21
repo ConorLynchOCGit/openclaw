@@ -389,6 +389,37 @@ export function createSubagentRegistryLifecycleController(params: {
     }
   };
 
+  const safeCreditDeliveredRequiredCompletion = (entry: SubagentRunRecord) => {
+    if (entry.expectsCompletionMessage !== true || entry.outcome?.status !== "ok") {
+      return;
+    }
+    const completion = ensureCompletionState(entry);
+    const terminalResult = resolveRequiredCompletionTerminalResult(completion.resultText);
+    // Do not clear a real result-quality blocker. This only removes stale
+    // delivery-failure blockers after native delivery was later credited.
+    if (terminalResult.terminalOutcome === "blocked") {
+      return;
+    }
+    try {
+      completeTaskRunByRunId({
+        runId: entry.runId,
+        runtime: "subagent",
+        sessionKey: entry.childSessionKey,
+        endedAt: entry.endedAt ?? Date.now(),
+        lastEventAt: Date.now(),
+        progressSummary: completion.resultText ?? undefined,
+        terminalSummary: terminalResult.terminalSummary ?? null,
+        terminalOutcome: terminalResult.terminalOutcome ?? "succeeded",
+      });
+    } catch (err) {
+      params.warn("failed to credit delivered subagent completion", {
+        error: buildSafeLifecycleErrorMeta(err),
+        runId: maskRunId(entry.runId),
+        childSessionKey: maskSessionKey(entry.childSessionKey),
+      });
+    }
+  };
+
   const freezeRunResultAtCompletion = async (
     entry: SubagentRunRecord,
     outcome: SubagentRunOutcome,
@@ -851,6 +882,9 @@ export function createSubagentRegistryLifecycleController(params: {
           childSessionKey: entry.childSessionKey,
           deliveryStatus: "delivered",
         });
+      }
+      if (shouldCreditDelivery) {
+        safeCreditDeliveredRequiredCompletion(entry);
       }
       finalDelivery.lastError = undefined;
       finalDelivery.lastDropReason = undefined;

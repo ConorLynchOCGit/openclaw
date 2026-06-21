@@ -334,7 +334,7 @@ describe("buildAgentSystemPrompt", () => {
     );
     expect(prompt).toContain("Larger work: use `sessions_spawn`; completion is push-based.");
     expect(prompt).toContain("Do not poll `subagents list` / `sessions_list` in a loop");
-    expect(prompt).not.toContain("use `sessions_yield` when waiting");
+    expect(prompt).not.toContain("use `sessions_yield` instead of a visible interim answer");
     expect(prompt).toContain(
       "First-class tool exists: use it; do not ask user to run equivalent CLI/slash command.",
     );
@@ -350,8 +350,8 @@ describe("buildAgentSystemPrompt", () => {
       toolNames: ["sessions_spawn", "sessions_yield", "subagents"],
     });
 
-    expect(withoutYield).not.toContain("use `sessions_yield` when waiting");
-    expect(withYield).toContain("use `sessions_yield` when waiting");
+    expect(withoutYield).not.toContain("use `sessions_yield` instead of a visible interim answer");
+    expect(withYield).toContain("use `sessions_yield` instead of a visible interim answer");
   });
 
   it("lists available tools when provided", () => {
@@ -876,6 +876,10 @@ describe("buildAgentSystemPrompt", () => {
       workspaceDir: "/tmp/openclaw",
       toolNames: ["sessions_spawn", "subagents"],
     });
+    const orchestrationAgentsPrompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      toolNames: ["sessions_spawn", "subagents", "agents_list"],
+    });
     const orchestrationWaitPrompt = buildAgentSystemPrompt({
       workspaceDir: "/tmp/openclaw",
       toolNames: ["sessions_spawn", "sessions_yield", "subagents"],
@@ -893,7 +897,12 @@ describe("buildAgentSystemPrompt", () => {
     expect(orchestrationPrompt).toContain(
       '- Sub-agent orchestration → use `sessions_spawn(...)` to start delegated work; include a clear objective/output/write-scope/verification brief and `taskName` when a stable handle helps; omit `context` for isolated children, set `context:"fork"` only when the child needs the current transcript; use `subagents(action=list)` only for on-demand status/debugging visibility.',
     );
-    expect(orchestrationWaitPrompt).toContain("use `sessions_yield` to wait for completion events");
+    expect(orchestrationAgentsPrompt).toContain(
+      "call `agents_list` first when the child role/agentId is ambiguous or required",
+    );
+    expect(orchestrationWaitPrompt).toContain(
+      "use `sessions_yield` instead of a visible interim answer when waiting for child output",
+    );
   });
 
   it("adds stronger sub-agent delegation guidance in prefer mode", () => {
@@ -903,7 +912,7 @@ describe("buildAgentSystemPrompt", () => {
     });
     const preferPrompt = buildAgentSystemPrompt({
       workspaceDir: "/tmp/openclaw",
-      toolNames: ["sessions_spawn", "subagents"],
+      toolNames: ["sessions_spawn", "subagents", "agents_list", "sessions_yield"],
       subagentDelegationMode: "prefer",
     });
 
@@ -915,7 +924,13 @@ describe("buildAgentSystemPrompt", () => {
       "Anything requiring more work than a direct reply should go through `sessions_spawn`",
     );
     expect(preferPrompt).toContain("objective, expected output, relevant files/inputs");
+    expect(preferPrompt).toContain(
+      "If the child role matters or `sessions_spawn` requires `agentId`, call `agents_list` first",
+    );
     expect(preferPrompt).toContain("keep it lowercase with underscores or hyphens");
+    expect(preferPrompt).toContain(
+      "call `sessions_yield` instead of sending a visible interim status",
+    );
     expect(preferPrompt).toContain("Treat child outputs as reports/evidence");
     expect(preferPrompt).toContain(
       "Use `subagents(action=list)` only when explicitly asked for sub-agent status",
@@ -1374,15 +1389,19 @@ describe("buildSubagentSystemPrompt", () => {
       "After spawning children, do NOT call sessions_list, sessions_history, exec sleep, or any polling tool.",
     );
     expect(prompt).toContain(
-      "If required completions have not arrived yet and `sessions_yield` is available",
+      "If a child result is needed before final synthesis and `sessions_yield` is available",
     );
     expect(prompt).toContain("If it is not available, do not invent polling loops");
     expect(prompt).toContain("expected output, relevant files/inputs, write scope");
+    expect(prompt).toContain("Track expected child session keys and why each child was spawned.");
+    expect(prompt).toContain("Do not force every task through a fixed route or static DAG");
+    expect(prompt).not.toContain("dependencyRole");
+    expect(prompt).not.toContain("required_for_synthesis");
     expect(prompt).toContain(
-      "Track expected child session keys and only send your final answer after completion events for ALL expected children arrive.",
+      "If a child completion event arrives AFTER you already sent a substantive final user-facing answer, reply ONLY with NO_REPLY.",
     );
     expect(prompt).toContain(
-      "If a child completion event arrives AFTER you already sent your final answer, reply ONLY with NO_REPLY.",
+      "A previous NO_REPLY, silent response, tool-only spawn turn, or wait/yield turn is not a final user-facing answer.",
     );
     expect(prompt).toContain("Avoid polling loops");
     expect(prompt).toContain("spawned by the main agent");

@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   statusCommand: vi.fn(),
   healthCommand: vi.fn(),
   sessionsCommand: vi.fn(),
+  sessionsShowCommand: vi.fn(),
   sessionsCleanupCommand: vi.fn(),
   sessionsTailCommand: vi.fn(),
   exportTrajectoryCommand: vi.fn(),
@@ -20,7 +21,6 @@ const mocks = vi.hoisted(() => ({
   tasksShowCommand: vi.fn(),
   tasksNotifyCommand: vi.fn(),
   tasksCancelCommand: vi.fn(),
-  checksRunCommand: vi.fn(),
   flowsListCommand: vi.fn(),
   flowsShowCommand: vi.fn(),
   flowsCancelCommand: vi.fn(),
@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => ({
 const statusCommand = mocks.statusCommand;
 const healthCommand = mocks.healthCommand;
 const sessionsCommand = mocks.sessionsCommand;
+const sessionsShowCommand = mocks.sessionsShowCommand;
 const sessionsCleanupCommand = mocks.sessionsCleanupCommand;
 const sessionsTailCommand = mocks.sessionsTailCommand;
 const exportTrajectoryCommand = mocks.exportTrajectoryCommand;
@@ -48,7 +49,6 @@ const tasksMaintenanceCommand = mocks.tasksMaintenanceCommand;
 const tasksShowCommand = mocks.tasksShowCommand;
 const tasksNotifyCommand = mocks.tasksNotifyCommand;
 const tasksCancelCommand = mocks.tasksCancelCommand;
-const checksRunCommand = mocks.checksRunCommand;
 const flowsListCommand = mocks.flowsListCommand;
 const flowsShowCommand = mocks.flowsShowCommand;
 const flowsCancelCommand = mocks.flowsCancelCommand;
@@ -91,6 +91,7 @@ vi.mock("../../commands/health.js", () => ({
 
 vi.mock("../../commands/sessions.js", () => ({
   sessionsCommand: mocks.sessionsCommand,
+  sessionsShowCommand: mocks.sessionsShowCommand,
 }));
 
 vi.mock("../../commands/sessions-cleanup.js", () => ({
@@ -121,10 +122,6 @@ vi.mock("../../commands/tasks.js", () => ({
   tasksCancelCommand: mocks.tasksCancelCommand,
 }));
 
-vi.mock("../../commands/checks.js", () => ({
-  checksRunCommand: mocks.checksRunCommand,
-}));
-
 vi.mock("../../commands/flows.js", () => ({
   flowsListCommand: mocks.flowsListCommand,
   flowsShowCommand: mocks.flowsShowCommand,
@@ -152,6 +149,7 @@ describe("registerStatusHealthSessionsCommands", () => {
     statusCommand.mockResolvedValue(undefined);
     healthCommand.mockResolvedValue(undefined);
     sessionsCommand.mockResolvedValue(undefined);
+    sessionsShowCommand.mockResolvedValue(undefined);
     sessionsCleanupCommand.mockResolvedValue(undefined);
     sessionsTailCommand.mockResolvedValue(undefined);
     exportTrajectoryCommand.mockResolvedValue(undefined);
@@ -165,7 +163,6 @@ describe("registerStatusHealthSessionsCommands", () => {
     tasksShowCommand.mockResolvedValue(undefined);
     tasksNotifyCommand.mockResolvedValue(undefined);
     tasksCancelCommand.mockResolvedValue(undefined);
-    checksRunCommand.mockResolvedValue(undefined);
     flowsListCommand.mockResolvedValue(undefined);
     flowsShowCommand.mockResolvedValue(undefined);
     flowsCancelCommand.mockResolvedValue(undefined);
@@ -332,6 +329,28 @@ describe("registerStatusHealthSessionsCommands", () => {
     });
   });
 
+  it("runs sessions show with compact result forwarding", async () => {
+    await runCli([
+      "sessions",
+      "--json",
+      "--store",
+      "/tmp/sessions.json",
+      "--agent",
+      "planning",
+      "show",
+      "agent:planning:main",
+      "--compact",
+    ]);
+
+    expectCommandOptions(sessionsShowCommand, {
+      sessionKey: "agent:planning:main",
+      json: true,
+      compact: true,
+      store: "/tmp/sessions.json",
+      agent: "planning",
+    });
+  });
+
   it("runs sessions cleanup subcommand with forwarded options", async () => {
     await runCli([
       "sessions",
@@ -443,11 +462,12 @@ describe("registerStatusHealthSessionsCommands", () => {
   });
 
   it("runs tasks show subcommand with lookup forwarding", async () => {
-    await runCli(["tasks", "show", "run-123", "--json"]);
+    await runCli(["tasks", "show", "run-123", "--json", "--compact"]);
 
     expectCommandOptions(tasksShowCommand, {
       lookup: "run-123",
       json: true,
+      compact: true,
     });
   });
 
@@ -540,41 +560,6 @@ describe("registerStatusHealthSessionsCommands", () => {
 
     expectCommandOptions(tasksCancelCommand, {
       lookup: "run-123",
-    });
-  });
-
-  it("runs checks run with check, lanes, timing, and JSON forwarding", async () => {
-    await runCli([
-      "checks",
-      "run",
-      "gbrain.signal_detector.coverage",
-      "--agents",
-      "main,coding",
-      "--check-run-id",
-      "check-run-123",
-      "--timeout",
-      "300000",
-      "--submit-timeout",
-      "15000",
-      "--lane-timeout",
-      "60000",
-      "--poll-interval",
-      "2000",
-      "--concurrency",
-      "2",
-      "--json",
-    ]);
-
-    expectCommandOptions(checksRunCommand, {
-      check: "gbrain.signal_detector.coverage",
-      agents: "main,coding",
-      checkRunId: "check-run-123",
-      timeoutMs: 300000,
-      submitTimeoutMs: 15000,
-      laneTimeoutMs: 60000,
-      pollIntervalMs: 2000,
-      concurrency: 2,
-      json: true,
     });
   });
 

@@ -1,5 +1,6 @@
 // Sessions command tests cover listing, details, filtering, and transcript display behavior.
 import fs from "node:fs";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   makeRuntime,
@@ -15,7 +16,7 @@ process.env.FORCE_COLOR = "0";
 
 mockSessionsConfig();
 
-import { sessionsCommand, testing } from "./sessions.js";
+import { sessionsCommand, sessionsShowCommand, testing } from "./sessions.js";
 
 describe("sessionsCommand", () => {
   beforeEach(() => {
@@ -202,6 +203,80 @@ describe("sessionsCommand", () => {
     const main = payload.sessions?.find((row) => row.key === "main");
     expect(main?.totalTokens).toBe(2000);
     expect(main?.totalTokensFresh).toBe(false);
+  });
+
+  it("emits compact session result projections with final assistant text", async () => {
+    const sessionId = "11111111-1111-4111-8111-111111111111";
+    const store = writeStore(
+      {
+        "agent:planning:main": {
+          sessionId,
+          updatedAt: Date.now() - 60_000,
+          status: "done",
+          endedAt: Date.now() - 30_000,
+          modelProvider: "openai",
+          model: "gpt-5.5",
+        },
+        "agent:researcher:subagent:child": {
+          sessionId: "22222222-2222-4222-8222-222222222222",
+          parentSessionKey: "agent:planning:main",
+          spawnedBy: "agent:planning:main",
+          updatedAt: Date.now() - 45_000,
+          status: "done",
+        },
+      },
+      "sessions-show-compact",
+    );
+    const transcript = path.join(path.dirname(store), `${sessionId}.jsonl`);
+    fs.writeFileSync(
+      transcript,
+      [
+        JSON.stringify({
+          message: {
+            role: "user",
+            content: "Improve the planning layer.",
+          },
+        }),
+        JSON.stringify({
+          message: {
+            role: "assistant",
+            content: "Final recursive planning improvement synthesized.",
+          },
+        }),
+      ].join("\n"),
+    );
+
+    const { runtime, logs } = makeRuntime();
+    try {
+      await sessionsShowCommand(
+        {
+          store,
+          sessionKey: "agent:planning:main",
+          json: true,
+          compact: true,
+          agent: "planning",
+        },
+        runtime,
+      );
+    } finally {
+      fs.rmSync(store, { force: true });
+      fs.rmSync(transcript, { force: true });
+    }
+
+    const payload = JSON.parse(logs[0] ?? "{}") as {
+      schema?: string;
+      source?: string;
+      sessionKey?: string;
+      finalAssistantText?: string;
+      childResultRefs?: Array<{ sessionKey?: string }>;
+    };
+    expect(payload.schema).toBe("openclaw.compact-result.v1");
+    expect(payload.source).toBe("session");
+    expect(payload.sessionKey).toBe("agent:planning:main");
+    expect(payload.finalAssistantText).toBe("Final recursive planning improvement synthesized.");
+    expect(payload.childResultRefs).toContainEqual({
+      sessionKey: "agent:researcher:subagent:child",
+    });
   });
 
   it("applies --active filtering in JSON output", async () => {

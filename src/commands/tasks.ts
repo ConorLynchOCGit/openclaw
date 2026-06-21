@@ -50,6 +50,12 @@ import {
 import { summarizeTaskRecords } from "../tasks/task-registry.summary.js";
 import type { TaskNotifyPolicy, TaskRecord } from "../tasks/task-registry.types.js";
 import {
+  COMPACT_RESULT_PROJECTION_SCHEMA,
+  compactProjectionText,
+  type CompactResultChildRef,
+  type CompactResultProjection,
+} from "./compact-result-projection.js";
+import {
   buildTaskSystemAuditFindings,
   type TaskSystemAuditCode,
   type TaskSystemAuditFinding,
@@ -331,6 +337,95 @@ function formatTaskListSummary(tasks: TaskRecord[]) {
   return `${summary.byStatus.queued} queued · ${summary.byStatus.running} running · ${summary.failures} issues`;
 }
 
+function pushIfPresent(values: string[], value: string | undefined) {
+  const normalized = normalizeOptionalString(value);
+  if (normalized) {
+    values.push(normalized);
+  }
+}
+
+function toCompactChildResultRef(task: TaskRecord): CompactResultChildRef {
+  return {
+    taskId: task.taskId,
+    ...(task.runId ? { runId: task.runId } : {}),
+    ...(task.childSessionKey ? { sessionKey: task.childSessionKey } : {}),
+    ...(task.agentId ? { agentId: task.agentId } : {}),
+    status: task.status,
+    ...(task.terminalOutcome ? { terminalOutcome: task.terminalOutcome } : {}),
+    ...(task.progressSummary
+      ? { progressSummary: compactProjectionText(task.progressSummary) }
+      : {}),
+    ...(task.terminalSummary
+      ? { terminalSummary: compactProjectionText(task.terminalSummary) }
+      : {}),
+  };
+}
+
+function findRelatedChildResultRefs(
+  task: TaskRecord,
+  tasks: TaskRecord[],
+): CompactResultChildRef[] {
+  const related = new Map<string, CompactResultChildRef>();
+  for (const candidate of tasks) {
+    if (candidate.taskId === task.taskId) {
+      continue;
+    }
+    const sameRun = Boolean(task.runId && candidate.runId === task.runId);
+    const sameChildSession = Boolean(
+      task.childSessionKey && candidate.childSessionKey === task.childSessionKey,
+    );
+    const childOfTask = candidate.parentTaskId === task.taskId;
+    if (!sameRun && !sameChildSession && !childOfTask) {
+      continue;
+    }
+    related.set(candidate.taskId, toCompactChildResultRef(candidate));
+  }
+  return [...related.values()];
+}
+
+export function buildTaskCompactResultProjection(params: {
+  task: TaskRecord;
+  lookup?: string;
+  tasks?: TaskRecord[];
+}): CompactResultProjection {
+  const { task } = params;
+  const projectionWarnings: string[] = [];
+  pushIfPresent(projectionWarnings, task.projectionWarning);
+  pushIfPresent(
+    projectionWarnings,
+    task.error && task.error !== task.executionError ? task.error : undefined,
+  );
+
+  return {
+    schema: COMPACT_RESULT_PROJECTION_SCHEMA,
+    source: "task",
+    ...(params.lookup ? { lookup: params.lookup } : {}),
+    taskId: task.taskId,
+    ...(task.runId ? { runId: task.runId } : {}),
+    status: task.status,
+    ...(task.terminalOutcome ? { terminalOutcome: task.terminalOutcome } : {}),
+    deliveryStatus: task.deliveryStatus,
+    ...(task.agentId ? { agentId: task.agentId } : {}),
+    sessionKey: task.ownerKey,
+    ...(task.childSessionKey ? { childSessionKey: task.childSessionKey } : {}),
+    ...(task.parentTaskId ? { parentTaskId: task.parentTaskId } : {}),
+    ...(task.label ? { label: task.label } : {}),
+    ...(typeof task.startedAt === "number" ? { startedAt: task.startedAt } : {}),
+    ...(typeof task.endedAt === "number" ? { endedAt: task.endedAt } : {}),
+    ...(typeof task.lastEventAt === "number" ? { lastEventAt: task.lastEventAt } : {}),
+    ...(task.progressSummary
+      ? { progressSummary: compactProjectionText(task.progressSummary) }
+      : {}),
+    ...(task.terminalSummary
+      ? { terminalSummary: compactProjectionText(task.terminalSummary) }
+      : {}),
+    resultArtifactRefs: [],
+    childResultRefs: findRelatedChildResultRefs(task, params.tasks ?? reconcileInspectableTasks()),
+    ...(task.executionReceipt ? { receipt: task.executionReceipt } : {}),
+    projectionWarnings,
+  };
+}
+
 function formatAgeMs(ageMs: number | undefined): string {
   if (typeof ageMs !== "number" || ageMs < 1000) {
     return "fresh";
@@ -458,13 +553,42 @@ export async function tasksListCommand(
 
 /** Shows one task record by id or lookup token. */
 export async function tasksShowCommand(
-  opts: { json?: boolean; lookup: string },
+  opts: { json?: boolean; lookup: string; compact?: boolean },
   runtime: RuntimeEnv,
 ) {
   const task = reconcileTaskLookupToken(opts.lookup);
   if (!task) {
     runtime.error(formatTaskLookupMiss(opts.lookup));
     runtime.exit(1);
+    return;
+  }
+
+  if (opts.compact) {
+    const projection = buildTaskCompactResultProjection({ task, lookup: opts.lookup });
+    if (opts.json) {
+      runtime.log(JSON.stringify(projection, null, 2));
+      return;
+    }
+    const lines = [
+      "Compact task result:",
+      `taskId: ${projection.taskId}`,
+      `runId: ${projection.runId ?? "n/a"}`,
+      `status: ${projection.status ?? "n/a"}`,
+      `result: ${projection.terminalOutcome ?? "n/a"}`,
+      `delivery: ${projection.deliveryStatus ?? "n/a"}`,
+      `sessionKey: ${projection.sessionKey ?? "n/a"}`,
+      `childSessionKey: ${projection.childSessionKey ?? "n/a"}`,
+      `progressSummary: ${projection.progressSummary ?? "n/a"}`,
+      `terminalSummary: ${projection.terminalSummary ?? "n/a"}`,
+      `childResultRefs: ${projection.childResultRefs.length}`,
+      `resultArtifactRefs: ${projection.resultArtifactRefs.length}`,
+      ...(projection.projectionWarnings.length > 0
+        ? [`projectionWarnings: ${projection.projectionWarnings.join("; ")}`]
+        : []),
+    ];
+    for (const line of lines) {
+      runtime.log(line);
+    }
     return;
   }
 

@@ -53,6 +53,7 @@ export function describeSessionsSpawnTool(options?: {
     "Subagents inherit parent workspace.",
     "Native subagents get task in first visible `[Subagent Task]` message.",
     'Native only: `context="fork"` only when child needs current transcript; else omit or `isolated`.',
+    "Set `agentId` when policy requires an explicit target or when the child role matters; use `agents_list` first if unsure.",
     "Use for fresh child-session work.",
   ];
   if (options?.acpAvailable === false) {

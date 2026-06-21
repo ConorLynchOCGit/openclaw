@@ -2,7 +2,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createResolvedAgentRunReceipt, finalizeAgentRunReceipt } from "../agents/run-receipt.js";
+import {
+  createResolvedAgentRunReceipt,
+  finalizeAgentRunReceipt,
+  type AgentRunReceipt,
+} from "../agents/run-receipt.js";
 import { resetConfigRuntimeState } from "../config/config.js";
 import { saveCronStore } from "../cron/store.js";
 import type { RuntimeEnv } from "../runtime.js";
@@ -411,6 +415,60 @@ describe("tasks commands", () => {
     });
   });
 
+  it("emits compact task result projections without raw task prompts", async () => {
+    await withTaskCommandStateDir(async () => {
+      const parent = createTaskRecord({
+        runtime: "cli",
+        ownerKey: "agent:planning:main",
+        scopeKind: "session",
+        runId: "run-compact-result",
+        status: "succeeded",
+        terminalOutcome: "succeeded",
+        task: "RAW OPERATOR PROMPT SHOULD NOT APPEAR",
+        progressSummary: "Parent synthesized the child finding.",
+        childSessionKey: "agent:researcher:subagent:child",
+      });
+      const child = createTaskRecord({
+        runtime: "cli",
+        ownerKey: "agent:researcher:subagent:child",
+        scopeKind: "session",
+        runId: "run-compact-result",
+        parentTaskId: parent.taskId,
+        status: "succeeded",
+        terminalOutcome: "succeeded",
+        task: "RAW CHILD PROMPT SHOULD NOT APPEAR",
+        progressSummary: "Child found the material planning gap.",
+        childSessionKey: "agent:researcher:subagent:child",
+      });
+
+      const runtime = createRuntime();
+      await tasksShowCommand({ json: true, lookup: parent.taskId, compact: true }, runtime);
+
+      const payload = readFirstJsonLog(runtime) as {
+        schema?: string;
+        task?: string;
+        taskId?: string;
+        runId?: string;
+        progressSummary?: string;
+        childResultRefs?: Array<{ taskId?: string; progressSummary?: string }>;
+      };
+
+      expect(payload.schema).toBe("openclaw.compact-result.v1");
+      expect(payload.task).toBeUndefined();
+      expect(JSON.stringify(payload)).not.toContain("RAW OPERATOR PROMPT SHOULD NOT APPEAR");
+      expect(JSON.stringify(payload)).not.toContain("RAW CHILD PROMPT SHOULD NOT APPEAR");
+      expect(payload.taskId).toBe(parent.taskId);
+      expect(payload.runId).toBe("run-compact-result");
+      expect(payload.progressSummary).toBe("Parent synthesized the child finding.");
+      expect(payload.childResultRefs).toContainEqual(
+        expect.objectContaining({
+          taskId: child.taskId,
+          progressSummary: "Child found the material planning gap.",
+        }),
+      );
+    });
+  });
+
   it("checks the GBrain signal-detector route from a finalized task execution receipt", async () => {
     await withTaskCommandStateDir(async () => {
       const receipt = finalizeAgentRunReceipt(
@@ -525,7 +583,7 @@ describe("tasks commands", () => {
 
   it("normalizes provider-prefixed model strings before comparing route receipts", async () => {
     await withTaskCommandStateDir(async () => {
-      const receipt = {
+      const receipt: AgentRunReceipt = {
         ...finalizeAgentRunReceipt(
           createResolvedAgentRunReceipt({
             source: {
@@ -548,7 +606,6 @@ describe("tasks commands", () => {
           },
         ),
         final: {
-          provider: "openrouter",
           model: "openrouter:anthropic/claude-haiku-4.5",
           runtime: "openclaw",
           contextMode: "lightweight",

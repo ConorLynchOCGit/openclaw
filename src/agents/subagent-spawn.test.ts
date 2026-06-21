@@ -247,6 +247,7 @@ describe("spawnSubagentDirect seam flow", () => {
     expect(registerInput.model).toBe("openai/gpt-5.4");
     expect(registerInput.workspaceDir).toBe("/tmp/requester-workspace");
     expect(registerInput.expectsCompletionMessage).toBe(true);
+    expect(registerInput).not.toHaveProperty("dependency");
     expect(registerInput.spawnMode).toBe("run");
     expect(hoisted.emitSessionLifecycleEventMock).toHaveBeenCalledWith({
       sessionKey: childSessionKey,

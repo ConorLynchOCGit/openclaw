@@ -29,8 +29,8 @@ function createModuleLoader<T>(load: () => Promise<T>): () => Promise<T> {
 
 const loadCommitmentsCommands = createModuleLoader(() => import("../../commands/commitments.js"));
 const loadTasksCommands = createModuleLoader(() => import("../../commands/tasks.js"));
-const loadChecksCommands = createModuleLoader(() => import("../../commands/checks.js"));
 const loadFlowsCommands = createModuleLoader(() => import("../../commands/flows.js"));
+const loadSessionsCommands = createModuleLoader(() => import("../../commands/sessions.js"));
 
 function addSessionsListOptions(command: Command): Command {
   return command
@@ -60,7 +60,7 @@ function mergeSessionsListOptions(
 
 async function runSessionsListCli(opts: SessionsListCliOptions): Promise<void> {
   setVerbose(Boolean(opts.verbose));
-  const { sessionsCommand } = await import("../../commands/sessions.js");
+  const { sessionsCommand } = await loadSessionsCommands();
   await sessionsCommand(
     {
       json: Boolean(opts.json),
@@ -226,6 +226,31 @@ export function registerStatusHealthSessionsCommands(program: Command) {
     const parentOpts = command.parent?.opts() as SessionsListCliOptions | undefined;
     await runSessionsListCli(mergeSessionsListOptions(opts as SessionsListCliOptions, parentOpts));
   });
+
+  sessionsCmd
+    .command("show")
+    .description("Show one stored conversation session")
+    .argument("<session-key>", "Session key")
+    .option("--json", "Output JSON", false)
+    .option("--compact", "Output compact result projection", false)
+    .option("--store <path>", "Path to session store (default: resolved from config)")
+    .option("--agent <id>", "Agent id to inspect (default: resolved from session key)")
+    .action(async (sessionKey, opts, command) => {
+      const parentOpts = command.parent?.opts() as SessionsListCliOptions | undefined;
+      await runCommandWithRuntime(defaultRuntime, async () => {
+        const { sessionsShowCommand } = await loadSessionsCommands();
+        await sessionsShowCommand(
+          {
+            sessionKey: String(sessionKey),
+            json: Boolean(opts.json || parentOpts?.json),
+            compact: Boolean(opts.compact),
+            store: opts.store ?? parentOpts?.store,
+            agent: opts.agent ?? parentOpts?.agent,
+          },
+          defaultRuntime,
+        );
+      });
+    });
 
   sessionsCmd
     .command("cleanup")
@@ -599,76 +624,12 @@ export function registerStatusHealthSessionsCommands(program: Command) {
       });
     });
 
-  const checksCmd = program.command("checks").description("Run native execution and route checks");
-
-  checksCmd
-    .command("run")
-    .description("Run a native execution check")
-    .argument("<check>", "Check name, for example gbrain.signal_detector.coverage")
-    .option("--json", "Output as JSON", false)
-    .option("--agents <ids>", "Comma-separated agent lanes to check")
-    .option("--check-run-id <id>", "Stable check run id")
-    .option("--timeout <ms>", "Gateway request timeout in milliseconds")
-    .option("--submit-timeout <ms>", "Per-lane chat.send timeout in milliseconds")
-    .option("--lane-timeout <ms>", "Per-lane child task timeout in milliseconds")
-    .option("--poll-interval <ms>", "Child task polling interval in milliseconds")
-    .option("--concurrency <count>", "Maximum check lanes to run at once")
-    .action(async (check, opts, command) => {
-      const parentOpts = command.parent?.opts() as { json?: boolean } | undefined;
-      const timeoutMs = parseTimeoutMs(opts.timeout);
-      const submitTimeoutMs = parsePositiveIntOption(
-        "--submit-timeout",
-        opts.submitTimeout,
-        "a positive integer (milliseconds)",
-      );
-      const laneTimeoutMs = parsePositiveIntOption(
-        "--lane-timeout",
-        opts.laneTimeout,
-        "a positive integer (milliseconds)",
-      );
-      const pollIntervalMs = parsePositiveIntOption(
-        "--poll-interval",
-        opts.pollInterval,
-        "a positive integer (milliseconds)",
-      );
-      const concurrency = parsePositiveIntOption(
-        "--concurrency",
-        opts.concurrency,
-        "a positive integer",
-      );
-      if (
-        timeoutMs === null ||
-        submitTimeoutMs === null ||
-        laneTimeoutMs === null ||
-        pollIntervalMs === null ||
-        concurrency === null
-      ) {
-        return;
-      }
-      await runCommandWithRuntime(defaultRuntime, async () => {
-        const { checksRunCommand } = await loadChecksCommands();
-        await checksRunCommand(
-          {
-            check: String(check),
-            agents: opts.agents as string | undefined,
-            checkRunId: opts.checkRunId as string | undefined,
-            json: Boolean(opts.json || parentOpts?.json),
-            timeoutMs,
-            submitTimeoutMs,
-            laneTimeoutMs,
-            pollIntervalMs,
-            concurrency,
-          },
-          defaultRuntime,
-        );
-      });
-    });
-
   tasksCmd
     .command("show")
     .description("Show one background task by task id, run id, or session key")
     .argument("<lookup>", "Task id, run id, or session key")
     .option("--json", "Output as JSON", false)
+    .option("--compact", "Output compact result projection", false)
     .action(async (lookup, opts, command) => {
       const parentOpts = command.parent?.opts() as { json?: boolean } | undefined;
       await runCommandWithRuntime(defaultRuntime, async () => {
@@ -677,6 +638,7 @@ export function registerStatusHealthSessionsCommands(program: Command) {
           {
             lookup,
             json: Boolean(opts.json || parentOpts?.json),
+            compact: Boolean(opts.compact),
           },
           defaultRuntime,
         );

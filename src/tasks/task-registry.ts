@@ -194,6 +194,71 @@ function cloneTaskRecord(record: TaskRecord): TaskRecord {
   return { ...record };
 }
 
+function normalizeOptionalTaskError(value: string | undefined): string | undefined {
+  return normalizeOptionalString(value);
+}
+
+function isTerminalExecutionFailureStatus(status: TaskStatus): boolean {
+  return (
+    status === "failed" || status === "timed_out" || status === "cancelled" || status === "lost"
+  );
+}
+
+function deriveTaskProjectionError(
+  task: Pick<
+    TaskRecord,
+    "executionError" | "deliveryError" | "finalityError" | "projectionWarning"
+  >,
+): string | undefined {
+  return (
+    normalizeOptionalTaskError(task.executionError) ??
+    normalizeOptionalTaskError(task.deliveryError) ??
+    normalizeOptionalTaskError(task.finalityError) ??
+    normalizeOptionalTaskError(task.projectionWarning)
+  );
+}
+
+function normalizeTaskProjection(task: TaskRecord): TaskRecord {
+  const normalized = normalizeTaskTimestamps(task);
+  const next: TaskRecord = { ...normalized };
+
+  const legacyError = normalizeOptionalTaskError(next.error);
+  next.executionError = normalizeOptionalTaskError(next.executionError);
+  next.deliveryError = normalizeOptionalTaskError(next.deliveryError);
+  next.finalityError = normalizeOptionalTaskError(next.finalityError);
+  next.projectionWarning = normalizeOptionalTaskError(next.projectionWarning);
+
+  if (next.deliveryStatus === "delivered") {
+    next.deliveryError = undefined;
+  }
+
+  if (
+    !next.executionError &&
+    !next.deliveryError &&
+    !next.finalityError &&
+    !next.projectionWarning &&
+    legacyError
+  ) {
+    if (isTerminalExecutionFailureStatus(next.status)) {
+      next.executionError = legacyError;
+    } else if (next.deliveryStatus === "failed") {
+      next.deliveryError = legacyError;
+    } else if (next.terminalOutcome === "blocked") {
+      next.finalityError = legacyError;
+    } else if (next.deliveryStatus !== "delivered") {
+      next.projectionWarning = legacyError;
+    }
+  }
+
+  const projectionError = deriveTaskProjectionError(next);
+  if (projectionError) {
+    next.error = projectionError;
+  } else {
+    next.error = undefined;
+  }
+  return next;
+}
+
 function normalizeTaskTimestamps(task: TaskRecord): TaskRecord {
   // Detached runtimes can report lifecycle times captured before the registry
   // inserted or restored the row; keep createdAt as the visible lifecycle floor.
@@ -1119,7 +1184,7 @@ function restoreTaskRegistryOnce() {
       return;
     }
     for (const [taskId, task] of restored.tasks.entries()) {
-      tasks.set(taskId, normalizeTaskTimestamps(task));
+      tasks.set(taskId, normalizeTaskProjection(task));
     }
     for (const [taskId, state] of restored.deliveryStates.entries()) {
       taskDeliveryStates.set(taskId, state);
@@ -1153,7 +1218,7 @@ function updateTask(taskId: string, patch: Partial<TaskRecord>): TaskRecord | nu
   if (!current) {
     return null;
   }
-  const next = normalizeTaskTimestamps({ ...current, ...patch });
+  const next = normalizeTaskProjection({ ...current, ...patch });
   if (isTerminalTaskStatus(next.status) && typeof next.cleanupAfter !== "number") {
     next.cleanupAfter = resolveTaskCleanupAfter({
       ...next,
@@ -1755,7 +1820,7 @@ export function createTaskRecord(params: {
     scopeKind,
   });
   const lastEventAt = params.lastEventAt ?? params.startedAt ?? now;
-  const record: TaskRecord = normalizeTaskTimestamps({
+  const record: TaskRecord = normalizeTaskProjection({
     taskId,
     runtime: params.runtime,
     taskKind: normalizeOptionalString(params.taskKind),
@@ -1864,7 +1929,14 @@ function updateTaskStateByRunId(params: {
       patch.lastEventAt = params.lastEventAt;
     }
     if (params.error !== undefined) {
-      patch.error = params.error;
+      patch.executionError = params.error;
+    }
+    if (params.status) {
+      if (nextStatus === "succeeded") {
+        patch.executionError = undefined;
+      } else if (isTerminalExecutionFailureStatus(nextStatus)) {
+        patch.executionError = params.error ?? current.executionError ?? current.error;
+      }
     }
     if (params.progressSummary !== undefined) {
       patch.progressSummary = normalizeTaskSummary(params.progressSummary);
@@ -1873,10 +1945,20 @@ function updateTaskStateByRunId(params: {
       patch.terminalSummary = normalizeTaskSummary(params.terminalSummary);
     }
     if (params.terminalOutcome !== undefined) {
-      patch.terminalOutcome = resolveTaskTerminalOutcome({
+      const terminalOutcome = resolveTaskTerminalOutcome({
         status: nextStatus,
         terminalOutcome: params.terminalOutcome,
       });
+      patch.terminalOutcome = terminalOutcome;
+      if (terminalOutcome === "blocked") {
+        patch.finalityError =
+          normalizeTaskSummary(params.terminalSummary) ??
+          current.finalityError ??
+          current.error ??
+          "task finality blocked";
+      } else {
+        patch.finalityError = undefined;
+      }
     }
     if (params.executionReceipt !== undefined) {
       patch.executionReceipt = params.executionReceipt;
@@ -1922,8 +2004,12 @@ function updateTaskDeliveryByRunId(params: {
   const patch: Partial<TaskRecord> = {
     deliveryStatus: params.deliveryStatus,
   };
-  if (params.error !== undefined) {
-    patch.error = params.error;
+  if (params.deliveryStatus === "delivered" || params.deliveryStatus === "not_applicable") {
+    patch.deliveryError = undefined;
+  } else if (params.deliveryStatus === "failed") {
+    patch.deliveryError = params.error ?? "delivery failed";
+  } else if (params.error !== undefined) {
+    patch.deliveryError = params.error;
   }
   return updateTasksByRunId({
     runId: params.runId,

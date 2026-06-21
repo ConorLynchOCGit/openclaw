@@ -730,6 +730,10 @@ function ensureAdditiveStateColumns(db: DatabaseSync): void {
   ensureColumn(db, "cron_run_logs", "entry_json TEXT NOT NULL DEFAULT '{}'");
   ensureColumn(db, "cron_run_logs", "created_at INTEGER NOT NULL DEFAULT 0");
   ensureColumn(db, "task_runs", "execution_receipt_json TEXT");
+  ensureColumn(db, "task_runs", "execution_error TEXT");
+  ensureColumn(db, "task_runs", "delivery_error TEXT");
+  ensureColumn(db, "task_runs", "finality_error TEXT");
+  ensureColumn(db, "task_runs", "projection_warning TEXT");
   backfillCronRunLogEntryJson(db);
   ensureColumn(db, "cron_jobs", "description TEXT");
   ensureColumn(db, "cron_jobs", "name TEXT NOT NULL DEFAULT ''");

@@ -782,6 +782,17 @@ describe("subagent announce formatting", () => {
     expect(call?.params?.sessionKey).toBe("agent:main:main");
     expectInputProvenance(call?.params, "agent:main:subagent:test");
     expect(msg).toContain("final answer: 2");
+    expect(msg).toContain(
+      "Review/verify the result above and use it toward the original task if it is needed.",
+    );
+    expect(msg).toContain("synthesize it into the final truthful user-facing answer");
+    expect(msg).toContain(
+      `Reply ONLY: ${SILENT_REPLY_TOKEN} if you already sent a substantive final user-facing answer before this completion event arrived.`,
+    );
+    expect(msg).toContain(
+      `A previous ${SILENT_REPLY_TOKEN}, silent response, tool-only spawn turn, or wait/yield turn is not a final user-facing answer.`,
+    );
+    expect(msg).not.toContain("when no user-facing update is needed");
     expect(msg).not.toContain("✅ Subagent");
   });
 

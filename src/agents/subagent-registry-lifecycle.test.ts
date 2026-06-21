@@ -1185,6 +1185,72 @@ describe("subagent registry lifecycle hardening", () => {
     expect(persist).toHaveBeenCalled();
   });
 
+  it("credits required completion after a later successful delivery retry", async () => {
+    const persist = vi.fn();
+    const entry = createRunEntry({
+      endedAt: 4_000,
+      endedReason: SUBAGENT_ENDED_REASON_COMPLETE,
+      expectsCompletionMessage: true,
+      completion: { required: true, resultText: "Final evidence synthesis is ready." },
+      delivery: {
+        status: "suspended",
+        lastError: "completion agent did not produce a visible reply",
+        payload: {
+          requesterSessionKey: "agent:main:main",
+          requesterDisplayKey: "main",
+          childSessionKey: "agent:main:subagent:child",
+          childRunId: "run-1",
+          task: "finish the task",
+          endedAt: 4_000,
+          outcome: { status: "ok" },
+          expectsCompletionMessage: true,
+          frozenResultText: "Final evidence synthesis is ready.",
+        },
+      },
+      outcome: { status: "ok" },
+      retainAttachmentsOnKeep: true,
+    });
+    const runSubagentAnnounceFlow = vi.fn(
+      async (announceParams: {
+        onDeliveryResult?: (delivery: SubagentAnnounceDeliveryResult) => void;
+      }) => {
+        announceParams.onDeliveryResult?.({
+          delivered: true,
+          path: "direct",
+          deliveredAt: 12_500,
+        });
+        return true;
+      },
+    );
+
+    const controller = createLifecycleController({
+      entry,
+      persist,
+      runSubagentAnnounceFlow,
+    });
+
+    expect(controller.startSubagentAnnounceCleanupFlow(entry.runId, entry)).toBe(true);
+
+    await vi.waitFor(() => expect(hasDeliveredTaskStatusUpdate(entry.runId)).toBe(true));
+    expect(entry.delivery?.status).toBe("delivered");
+    expect(entry.delivery?.lastError).toBeUndefined();
+    expect(entry.delivery?.suspendedAt).toBeUndefined();
+    expect(entry.delivery?.suspendedReason).toBeUndefined();
+    expectFields(
+      findCallArg(
+        taskExecutorMocks.completeTaskRunByRunId,
+        (arg) => arg.terminalOutcome === "succeeded",
+      ),
+      {
+        runId: entry.runId,
+        runtime: "subagent",
+        sessionKey: entry.childSessionKey,
+        progressSummary: "Final evidence synthesis is ready.",
+        terminalOutcome: "succeeded",
+      },
+    );
+  });
+
   it("credits only current-run requester delivery mirrors before retrying NO_REPLY", async () => {
     const entry = await runNoReplyMirrorScenario({ timestamp: 12_345 });
 
@@ -1200,6 +1266,20 @@ describe("subagent registry lifecycle hardening", () => {
     expect(entry.delivery?.payload).toBeUndefined();
     expect(entry.delivery?.attemptCount).toBeUndefined();
     expect(hasDeliveredTaskStatusUpdate(entry.runId)).toBe(true);
+    expectFields(
+      findCallArg(
+        taskExecutorMocks.completeTaskRunByRunId,
+        (arg) => arg.runId === entry.runId && arg.terminalOutcome === "succeeded",
+      ),
+      {
+        runId: entry.runId,
+        runtime: "subagent",
+        sessionKey: entry.childSessionKey,
+        terminalOutcome: "succeeded",
+        terminalSummary: null,
+        progressSummary: "final completion reply",
+      },
+    );
     expect(helperMocks.logAnnounceGiveUp).not.toHaveBeenCalled();
 
     vi.clearAllMocks();

@@ -530,6 +530,14 @@ export function createOpenClawCodingTools(options?: {
   toolSearchCatalogRef?: ToolSearchCatalogRef;
   /** Limits which tool families are materialized before the shared policy pipeline runs. */
   toolConstructionPlan?: OpenClawCodingToolConstructionPlan;
+  /**
+   * Mutable run-local projection of the final effective tool surface for
+   * child-session inheritance. The embedded runner updates this again after
+   * late bundled MCP/LSP and tool-search projection, so sessions_spawn reads
+   * the same effective surface the provider sees instead of an early core-tool
+   * snapshot.
+   */
+  effectiveToolAllowlistRef?: string[];
   /** Trusted sender identity bit for command/channel-action auth; does not filter model tools. */
   senderIsOwner?: boolean;
   /** Auth profiles already loaded for this run; used for prompt-time tool availability. */
@@ -908,7 +916,7 @@ export function createOpenClawCodingTools(options?: {
   const inheritedToolDenylist = [...pluginToolDenylist];
   // Passed by reference to sessions_spawn and populated after the final policy
   // pass so child sessions inherit the actual parent tool surface.
-  const inheritedToolAllowlist: string[] = [];
+  const inheritedToolAllowlist = options?.effectiveToolAllowlistRef ?? [];
   const shouldInheritEffectiveToolAllowlist = [
     profilePolicy,
     providerProfilePolicy,
