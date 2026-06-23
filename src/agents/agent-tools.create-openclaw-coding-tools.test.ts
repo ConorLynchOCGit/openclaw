@@ -505,6 +505,9 @@ describe("createOpenClawCodingTools", () => {
 
     expect(createOpenClawToolsMock).not.toHaveBeenCalled();
     expect(names.has("read")).toBe(true);
+    expect(names.has("find")).toBe(true);
+    expect(names.has("grep")).toBe(true);
+    expect(names.has("ls")).toBe(true);
     expect(names.has("write")).toBe(true);
     expect(names.has("edit")).toBe(true);
     expect(names.has("exec")).toBe(false);

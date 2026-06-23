@@ -1189,7 +1189,7 @@ describe("subagent registry lifecycle hardening", () => {
     expect(persist).toHaveBeenCalled();
   });
 
-  it("credits required completion after a later successful delivery retry", async () => {
+  it("does not complete required task truth after a later delivery-status retry", async () => {
     const persist = vi.fn();
     const entry = createRunEntry({
       endedAt: 4_000,
@@ -1240,22 +1240,15 @@ describe("subagent registry lifecycle hardening", () => {
     expect(entry.delivery?.lastError).toBeUndefined();
     expect(entry.delivery?.suspendedAt).toBeUndefined();
     expect(entry.delivery?.suspendedReason).toBeUndefined();
-    expectFields(
-      findCallArg(
-        taskExecutorMocks.completeTaskRunByRunId,
-        (arg) => arg.terminalOutcome === "succeeded",
-      ),
-      {
-        runId: entry.runId,
-        runtime: "subagent",
-        sessionKey: entry.childSessionKey,
-        progressSummary: "Final evidence synthesis is ready.",
-        terminalOutcome: "succeeded",
-      },
-    );
+    expect(
+      taskExecutorMocks.completeTaskRunByRunId.mock.calls.some(([arg]) => {
+        const record = arg as { runId?: unknown; terminalOutcome?: unknown } | undefined;
+        return record?.runId === entry.runId && record.terminalOutcome === "succeeded";
+      }),
+    ).toBe(false);
   });
 
-  it("credits only current-run requester delivery mirrors before retrying NO_REPLY", async () => {
+  it("uses current-run requester delivery mirrors only as delivery projection", async () => {
     const entry = await runNoReplyMirrorScenario({ timestamp: 12_345 });
 
     await vi.waitFor(() => expect(entry.cleanupCompletedAt).toBeTypeOf("number"));
@@ -1270,20 +1263,12 @@ describe("subagent registry lifecycle hardening", () => {
     expect(entry.delivery?.payload).toBeUndefined();
     expect(entry.delivery?.attemptCount).toBeUndefined();
     expect(hasDeliveredTaskStatusUpdate(entry.runId)).toBe(true);
-    expectFields(
-      findCallArg(
-        taskExecutorMocks.completeTaskRunByRunId,
-        (arg) => arg.runId === entry.runId && arg.terminalOutcome === "succeeded",
-      ),
-      {
-        runId: entry.runId,
-        runtime: "subagent",
-        sessionKey: entry.childSessionKey,
-        terminalOutcome: "succeeded",
-        terminalSummary: null,
-        progressSummary: "final completion reply",
-      },
-    );
+    expect(
+      taskExecutorMocks.completeTaskRunByRunId.mock.calls.some(([arg]) => {
+        const record = arg as { runId?: unknown; terminalOutcome?: unknown } | undefined;
+        return record?.runId === entry.runId && record.terminalOutcome === "succeeded";
+      }),
+    ).toBe(false);
     expect(helperMocks.logAnnounceGiveUp).not.toHaveBeenCalled();
 
     vi.clearAllMocks();

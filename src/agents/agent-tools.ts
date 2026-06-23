@@ -79,7 +79,7 @@ import type { SandboxContext } from "./sandbox.js";
 import { SANDBOX_AGENT_WORKSPACE_MOUNT } from "./sandbox/constants.js";
 import { resolveReadOnlyWorkspaceSkillMounts } from "./sandbox/workspace-mounts.js";
 import { resolveSenderToolPolicy } from "./sender-tool-policy.js";
-import { createCodingTools, createReadTool } from "./sessions/index.js";
+import { createCodingTools, createReadOnlyTools, createReadTool } from "./sessions/index.js";
 import {
   isSubagentEnvelopeSession,
   resolveSubagentCapabilityStore,
@@ -755,7 +755,14 @@ export function createOpenClawCodingTools(options?: {
 
   const base: AnyAgentTool[] = [];
   if (includeBaseCodingTools) {
-    for (const tool of createCodingTools(codingRoot) as unknown as AnyAgentTool[]) {
+    const baseToolCandidates = new Map<string, AnyAgentTool>();
+    for (const tool of [
+      ...(createCodingTools(codingRoot) as unknown as AnyAgentTool[]),
+      ...(createReadOnlyTools(codingRoot) as unknown as AnyAgentTool[]),
+    ]) {
+      baseToolCandidates.set(tool.name, tool);
+    }
+    for (const tool of baseToolCandidates.values()) {
       if (tool.name === "read") {
         if (sandboxRoot) {
           const sandboxed = createSandboxedReadTool({

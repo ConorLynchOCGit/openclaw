@@ -275,6 +275,20 @@ describe("resolveEmbeddedAttemptToolConstructionPlan", () => {
         includePluginTools: false,
       },
     });
+    expectConstructionPlan(
+      resolveEmbeddedAttemptToolConstructionPlan({ toolsAllow: ["find", "grep", "ls"] }),
+      {
+        constructTools: true,
+        includeCoreTools: true,
+        coding: {
+          includeBaseCodingTools: true,
+          includeShellTools: false,
+          includeChannelTools: false,
+          includeOpenClawTools: false,
+          includePluginTools: false,
+        },
+      },
+    );
     expectConstructionPlan(resolveEmbeddedAttemptToolConstructionPlan({ toolsAllow: ["exec"] }), {
       coding: {
         includeBaseCodingTools: false,

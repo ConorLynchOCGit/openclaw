@@ -1495,7 +1495,7 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
       result: { payloads: [], meta: { toolSummary: { calls: 1 } } },
     },
   ])(
-    "credits session-only child handoff when the in-process agent returns $name",
+    "does not credit session-only child handoff when the in-process agent returns $name",
     async ({ result: agentResult }) => {
       const dispatchGatewayMethodInProcess = createInProcessGatewayMock({
         result: agentResult,
@@ -1521,7 +1521,7 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
       });
 
       expectRecordFields(result, {
-        delivered: true,
+        delivered: false,
         path: "direct",
       });
       expectInProcessAgentParams(dispatchGatewayMethodInProcess, {
@@ -1533,7 +1533,7 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
     },
   );
 
-  it("credits a parent sessions_yield turn as child handoff acknowledged pending synthesis", async () => {
+  it("does not credit a parent sessions_yield turn as child handoff delivery", async () => {
     const dispatchGatewayMethodInProcess = createInProcessGatewayMock({
       result: {
         payloads: [],
@@ -1575,7 +1575,7 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
     });
 
     expectRecordFields(result, {
-      delivered: true,
+      delivered: false,
       path: "direct",
     });
     expectInProcessAgentParams(dispatchGatewayMethodInProcess, {
@@ -1893,7 +1893,7 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
     expect(sendMessage).not.toHaveBeenCalled();
   });
 
-  it("does not turn requester-agent channel delivery failure into child handoff failure", async () => {
+  it("requires parent-visible child handoff when requester-agent channel delivery fails", async () => {
     const callGateway = createGatewayMock({
       result: {
         payloads: [{ text: "Tests passed and the PR is ready for review." }],
@@ -1928,7 +1928,7 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
     });
 
     expectRecordFields(result, {
-      delivered: true,
+      delivered: false,
       path: "direct",
     });
     expect(sendMessage).not.toHaveBeenCalled();
@@ -4486,7 +4486,7 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
     });
   });
 
-  it("credits configured channel child handoff even when parent skips required message tool", async () => {
+  it("does not credit configured channel child handoff when parent skips required message tool", async () => {
     const callGateway = createGatewayMock({
       result: {
         payloads: [{ text: "The subagent is done." }],
@@ -4519,7 +4519,7 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
     });
 
     expectRecordFields(result, {
-      delivered: true,
+      delivered: false,
       path: "direct",
     });
   });
