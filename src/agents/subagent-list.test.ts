@@ -109,7 +109,7 @@ describe("buildSubagentList", () => {
     expect(list.active[0]?.line).toContain("review_subagents: Review worker");
   });
 
-  it("projects final child answers and result pointers without bloating list lines", () => {
+  it("does not project final child answers or result pointers into list rows", () => {
     const now = Date.now();
     const resultText = `## Bottom Line
 
@@ -166,17 +166,10 @@ The child found the important evidence.
       taskMaxChars: 110,
     });
 
-    expect(list.recent[0]?.completion).toMatchObject({
-      status: "complete",
-      resultText,
-      fullResultRef: "openclaw-session:agent:main:subagent:result-projection",
-      resultArtifactRefs: ["artifact:child-final-answer", "artifact:source-ledger"],
-      deliveryStatus: "delivered",
-      delivered: true,
-    });
-    expect(list.recent[0]?.completion?.resultPreview).toContain("The child found");
+    expect("completion" in (list.recent[0] ?? {})).toBe(false);
     expect(list.recent[0]?.line).not.toContain("Evidence That Matters");
     expect(list.recent[0]?.line).not.toContain("source-item:child-1");
+    expect(list.recent[0]?.line).not.toContain("artifact:child-final-answer");
   });
 
   it("keeps ended orchestrators active while descendants remain pending", () => {

@@ -25,20 +25,20 @@ describe("sessions_spawn: cron isolated session note suppression", () => {
     ).toBe(SUBAGENT_SPAWN_ACCEPTED_NOTE);
   });
 
-  it("keeps regular run guidance push-based without recommending sessions_yield", () => {
+  it("keeps regular run guidance push-based without finality workflow law", () => {
     // Run-mode children announce completion asynchronously, not through polling.
     expect(SUBAGENT_SPAWN_ACCEPTED_NOTE).toContain("Auto-announce is push-based");
-    expect(SUBAGENT_SPAWN_ACCEPTED_NOTE).toContain("Continue independent work");
+    expect(SUBAGENT_SPAWN_ACCEPTED_NOTE).toContain("continue useful independent work");
     expect(SUBAGENT_SPAWN_ACCEPTED_NOTE).toContain(
-      "Track expected child session keys and why each child was spawned",
+      "Do not poll sessions_list, sessions_history, exec sleep, or any polling loop",
     );
+    expect(SUBAGENT_SPAWN_ACCEPTED_NOTE).toContain("use sessions_yield");
     expect(SUBAGENT_SPAWN_ACCEPTED_NOTE).toContain(
-      "If your final answer depends on child output, wait/yield for its runtime completion event",
+      "Treat completion events as context for your task",
     );
-    expect(SUBAGENT_SPAWN_ACCEPTED_NOTE).toContain(
-      "A previous NO_REPLY, silent response, tool-only spawn turn, or wait/yield turn is not a final user-facing answer.",
-    );
-    expect(SUBAGENT_SPAWN_ACCEPTED_NOTE).not.toContain("sessions_yield");
+    expect(SUBAGENT_SPAWN_ACCEPTED_NOTE).not.toContain("Track expected child session keys");
+    expect(SUBAGENT_SPAWN_ACCEPTED_NOTE).not.toContain("final answer depends");
+    expect(SUBAGENT_SPAWN_ACCEPTED_NOTE).not.toContain("NO_REPLY");
   });
 
   it("preserves ACCEPTED_NOTE for non-canonical cron-like keys", () => {

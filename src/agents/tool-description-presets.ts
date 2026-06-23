@@ -55,7 +55,7 @@ export function describeSessionsSpawnTool(options?: {
     "Native subagents get task in first visible `[Subagent Task]` message.",
     'Native only: `context="fork"` only when child needs current transcript; else omit or `isolated`.',
     "Set `agentId` when policy requires an explicit target or when the child role matters; use `agents_list` first if unsure.",
-    "For planning/research child work, ask for a normal final answer with bottom line, what the parent should read first, bounded high-signal evidence/context, contradictions/caveats, what the parent should verify, and full result/source refs.",
+    "For planning/research child work, ask for useful evidence/context, caveats, and source/result refs.",
     "Use for fresh child-session work.",
   ];
   if (options?.acpAvailable === false) {

@@ -1,6 +1,6 @@
+import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 // Task gateway methods expose detached task list/get/cancel operations with
 // bounded public summaries over the runtime task registry.
-import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import {
   ErrorCodes,
   errorShape,
@@ -11,11 +11,6 @@ import {
   validateTasksGetParams,
   validateTasksListParams,
 } from "../../../packages/gateway-protocol/src/index.js";
-import {
-  getLatestSubagentRunByChildSessionKey,
-  listDescendantRunsForRequester,
-} from "../../agents/subagent-registry-read.js";
-import type { SubagentRunRecord } from "../../agents/subagent-registry.types.js";
 import { parseAgentSessionKey } from "../../routing/session-key.js";
 import { cancelDetachedTaskRunById } from "../../tasks/detached-task-runtime.js";
 import { getTaskById, listTaskRecords } from "../../tasks/runtime-internal.js";
@@ -29,8 +24,6 @@ import type { GatewayRequestHandlers } from "./types.js";
 
 const DEFAULT_TASKS_LIST_LIMIT = 100;
 const MAX_TASKS_LIST_LIMIT = 500;
-const CHILD_RESULT_PREVIEW_MAX_CHARS = 4_000;
-const CHILD_RUN_PROJECTION_LIMIT = 20;
 
 type TaskLedgerStatus = TaskSummary["status"];
 
@@ -76,8 +69,6 @@ function mapTaskSummary(task: TaskRecord): TaskSummary {
   const progressSummary = sanitizeOptionalTaskText(task.progressSummary);
   const terminalSummary = sanitizeOptionalTaskText(task.terminalSummary, { errorContext: true });
   const error = sanitizeOptionalTaskText(task.error, { errorContext: true });
-  const childResult = buildChildResultProjection(task);
-  const childRuns = buildChildRunsProjection(task);
   return {
     id: task.taskId,
     taskId: task.taskId,
@@ -100,133 +91,7 @@ function mapTaskSummary(task: TaskRecord): TaskSummary {
     ...(progressSummary ? { progressSummary } : {}),
     ...(terminalSummary ? { terminalSummary } : {}),
     ...(task.executionReceipt ? { executionReceipt: task.executionReceipt } : {}),
-    ...(childResult ? { childResult } : {}),
-    ...(childRuns ? { childRuns } : {}),
     ...(error ? { error } : {}),
-  };
-}
-
-function truncateChildResultText(value: string): { text: string; truncated: boolean } {
-  const trimmed = value.trim();
-  if (trimmed.length <= CHILD_RESULT_PREVIEW_MAX_CHARS) {
-    return { text: trimmed, truncated: false };
-  }
-  return {
-    text: `${trimmed.slice(0, CHILD_RESULT_PREVIEW_MAX_CHARS - 1).trimEnd()}…`,
-    truncated: true,
-  };
-}
-
-function buildChildResultProjection(task: TaskRecord): TaskSummary["childResult"] | undefined {
-  const childSessionKey = normalizeOptionalString(task.childSessionKey);
-  if (!childSessionKey) {
-    return undefined;
-  }
-  const run = getLatestSubagentRunByChildSessionKey(childSessionKey);
-  return buildChildRunProjection({
-    task,
-    childSessionKey,
-    run,
-  });
-}
-
-function buildChildRunProjection(params: {
-  task: TaskRecord;
-  childSessionKey: string;
-  run?: SubagentRunRecord | null;
-}): NonNullable<TaskSummary["childResult"]> {
-  const { task, childSessionKey, run } = params;
-  const runId = normalizeOptionalString(run?.runId) ?? normalizeOptionalString(task.runId);
-  const resultText =
-    normalizeOptionalString(run?.completion?.resultText) ??
-    normalizeOptionalString(run?.completion?.fallbackResultText);
-  const resultPreview = resultText ? truncateChildResultText(resultText) : undefined;
-  const agentId =
-    normalizeOptionalString(task.agentId) ??
-    normalizeOptionalString(parseAgentSessionKey(childSessionKey)?.agentId);
-  return {
-    childSessionKey,
-    ...(runId ? { runId } : {}),
-    ...(run?.outcome?.status ? { status: run.outcome.status } : {}),
-    ...(resultPreview ? { resultTextPreview: resultPreview.text } : {}),
-    ...(resultPreview?.truncated ? { resultTextTruncated: true } : {}),
-    ...(typeof run?.completion?.capturedAt === "number"
-      ? { capturedAt: run.completion.capturedAt }
-      : {}),
-    artifactsListParams: {
-      sessionKey: childSessionKey,
-      ...(runId ? { runId } : {}),
-      ...(agentId ? { agentId } : {}),
-    },
-  };
-}
-
-function taskRunCreatedWithinTaskWindow(task: TaskRecord, run: SubagentRunRecord): boolean {
-  const taskStartedAt = task.startedAt ?? task.createdAt;
-  if (run.createdAt < taskStartedAt) {
-    return false;
-  }
-  if (typeof task.endedAt === "number" && run.createdAt > task.endedAt) {
-    return false;
-  }
-  return true;
-}
-
-function isRunPendingCompletion(run: SubagentRunRecord): boolean {
-  if (run.expectsCompletionMessage !== true) {
-    return false;
-  }
-  const deliveryStatus = run.delivery?.status;
-  return deliveryStatus !== "delivered" && deliveryStatus !== "not_required";
-}
-
-function buildChildRunsProjection(task: TaskRecord): TaskSummary["childRuns"] | undefined {
-  const requesterSessionKey = normalizeOptionalString(
-    task.childSessionKey ?? task.requesterSessionKey,
-  );
-  if (!requesterSessionKey) {
-    return undefined;
-  }
-  const childRuns = listDescendantRunsForRequester(requesterSessionKey)
-    .filter((run) => run.requesterSessionKey === requesterSessionKey)
-    .filter((run) => taskRunCreatedWithinTaskWindow(task, run))
-    .sort((a, b) => a.createdAt - b.createdAt);
-  if (childRuns.length === 0) {
-    return undefined;
-  }
-
-  let running = 0;
-  let completed = 0;
-  let failed = 0;
-  let pendingCompletion = 0;
-  for (const run of childRuns) {
-    if (typeof run.endedAt !== "number") {
-      running += 1;
-    } else if (run.outcome?.status === "ok") {
-      completed += 1;
-    } else {
-      failed += 1;
-    }
-    if (isRunPendingCompletion(run)) {
-      pendingCompletion += 1;
-    }
-  }
-
-  const children = childRuns.slice(0, CHILD_RUN_PROJECTION_LIMIT).map((run) =>
-    buildChildRunProjection({
-      task,
-      childSessionKey: run.childSessionKey,
-      run,
-    }),
-  );
-  return {
-    total: childRuns.length,
-    running,
-    completed,
-    failed,
-    pendingCompletion,
-    children,
-    ...(childRuns.length > children.length ? { childrenTruncated: true } : {}),
   };
 }
 

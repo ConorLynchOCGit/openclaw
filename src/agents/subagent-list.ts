@@ -51,18 +51,6 @@ type SubagentListItem = {
   totalTokens?: number;
   startedAt?: number;
   endedAt?: number;
-  completion?: SubagentListCompletion;
-};
-
-type SubagentListCompletion = {
-  status: "complete" | "partial" | "failed" | "degraded";
-  resultText?: string;
-  resultPreview?: string;
-  fullResultRef?: string;
-  resultArtifactRefs?: string[];
-  deliveryStatus?: string;
-  delivered?: boolean;
-  capturedAt?: number;
 };
 
 type BuiltSubagentList = {
@@ -195,104 +183,6 @@ function resolveRunStatus(entry: SubagentRunRecord, options?: { pendingDescendan
   return status;
 }
 
-function normalizeOptionalText(value?: string | null) {
-  const text = value?.trim();
-  return text ? text : undefined;
-}
-
-function normalizeOptionalString(value?: string) {
-  const text = value?.trim();
-  return text ? text : undefined;
-}
-
-function dedupeStrings(values: Array<string | undefined>) {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const value of values) {
-    const text = normalizeOptionalString(value);
-    if (!text || seen.has(text)) {
-      continue;
-    }
-    seen.add(text);
-    out.push(text);
-  }
-  return out;
-}
-
-function resolveCompletionResultText(entry: SubagentRunRecord) {
-  return (
-    normalizeOptionalText(entry.completion?.resultText) ??
-    normalizeOptionalText(entry.completion?.fallbackResultText) ??
-    normalizeOptionalText(entry.delivery?.payload?.frozenResultText) ??
-    normalizeOptionalText(entry.delivery?.payload?.fallbackFrozenResultText)
-  );
-}
-
-function resolveCompletionCapturedAt(entry: SubagentRunRecord) {
-  return entry.completion?.capturedAt ?? entry.completion?.fallbackCapturedAt;
-}
-
-function resolveCompletionFullResultRef(entry: SubagentRunRecord) {
-  return (
-    normalizeOptionalString(entry.completion?.fullResultRef) ??
-    normalizeOptionalString(entry.delivery?.payload?.fullResultRef)
-  );
-}
-
-function resolveCompletionArtifactRefs(entry: SubagentRunRecord) {
-  return dedupeStrings([
-    ...(entry.completion?.resultArtifactRefs ?? []),
-    ...(entry.delivery?.payload?.resultArtifactRefs ?? []),
-  ]);
-}
-
-function resolveCompletionStatus(entry: SubagentRunRecord, resultText?: string) {
-  const outcomeStatus = entry.outcome?.status;
-  if (outcomeStatus === "ok") {
-    return "complete" as const;
-  }
-  if (outcomeStatus === "error") {
-    return resultText ? ("partial" as const) : ("failed" as const);
-  }
-  if (outcomeStatus === "timeout") {
-    return resultText ? ("partial" as const) : ("degraded" as const);
-  }
-  return resultText ? ("partial" as const) : ("degraded" as const);
-}
-
-function buildCompletionView(entry: SubagentRunRecord): SubagentListCompletion | undefined {
-  const resultText = resolveCompletionResultText(entry);
-  const fullResultRef = resolveCompletionFullResultRef(entry);
-  const resultArtifactRefs = resolveCompletionArtifactRefs(entry);
-  const deliveryStatus = entry.delivery?.status;
-  const hasCompletionSignal =
-    Boolean(resultText) ||
-    Boolean(fullResultRef) ||
-    resultArtifactRefs.length > 0 ||
-    Boolean(entry.completion) ||
-    Boolean(deliveryStatus) ||
-    hasSubagentRunEnded(entry);
-  if (!hasCompletionSignal) {
-    return undefined;
-  }
-  const capturedAt = resolveCompletionCapturedAt(entry);
-  const view: SubagentListCompletion = {
-    status: resolveCompletionStatus(entry, resultText),
-    ...(resultText
-      ? {
-          resultText,
-          resultPreview: truncateLine(resultText.replace(/\s+/g, " "), 240),
-        }
-      : {}),
-    ...(fullResultRef ? { fullResultRef } : {}),
-    ...(resultArtifactRefs.length > 0 ? { resultArtifactRefs } : {}),
-    ...(deliveryStatus ? { deliveryStatus } : {}),
-    ...(deliveryStatus === "delivered" ? { delivered: true } : {}),
-    ...(capturedAt ? { capturedAt } : {}),
-  };
-  return view;
-}
-
 function resolveModelRef(entry?: SessionEntry, fallbackModel?: string) {
   return resolveModelDisplayRef({
     runtimeProvider: entry?.modelProvider,
@@ -373,7 +263,6 @@ export function buildSubagentList(params: {
       pendingDescendants,
     });
     const childSessions = childSessionsByController.get(entry.childSessionKey) ?? [];
-    const completion = buildCompletionView(entry);
     const runtime = formatDurationCompact(runtimeMs) ?? "n/a";
     const label = truncateLine(resolveSubagentLabel(entry), 48);
     const task = truncateLine(entry.task.trim(), params.taskMaxChars ?? 72);
@@ -393,7 +282,6 @@ export function buildSubagentList(params: {
       runtime,
       runtimeMs,
       ...(childSessions.length > 0 ? { childSessions } : {}),
-      ...(completion ? { completion } : {}),
       model: resolveModelRef(sessionEntry, entry.model),
       totalTokens,
       startedAt: getSubagentSessionStartedAt(entry),

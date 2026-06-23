@@ -19,10 +19,6 @@ import { loadCronJobsStoreSync, resolveCronJobsStorePath } from "../cron/store.j
 import type { RuntimeEnv } from "../runtime.js";
 import { parseAgentSessionKey } from "../sessions/session-key-utils.js";
 import { getTaskById, updateTaskNotifyPolicyById } from "../tasks/runtime-internal.js";
-import {
-  checkTaskExecutionReceipt,
-  parseTaskExecutionCheck,
-} from "../tasks/task-execution-admission.js";
 import { cancelDetachedTaskRunById } from "../tasks/task-executor.js";
 import { listTaskFlowAuditFindings } from "../tasks/task-flow-registry.audit.js";
 import {
@@ -49,12 +45,6 @@ import {
 } from "../tasks/task-registry.reconcile.js";
 import { summarizeTaskRecords } from "../tasks/task-registry.summary.js";
 import type { TaskNotifyPolicy, TaskRecord } from "../tasks/task-registry.types.js";
-import {
-  COMPACT_RESULT_PROJECTION_SCHEMA,
-  compactProjectionText,
-  type CompactResultChildRef,
-  type CompactResultProjection,
-} from "./compact-result-projection.js";
 import {
   buildTaskSystemAuditFindings,
   type TaskSystemAuditCode,
@@ -337,114 +327,6 @@ function formatTaskListSummary(tasks: TaskRecord[]) {
   return `${summary.byStatus.queued} queued · ${summary.byStatus.running} running · ${summary.failures} issues`;
 }
 
-function pushIfPresent(values: string[], value: string | undefined) {
-  const normalized = normalizeOptionalString(value);
-  if (normalized) {
-    values.push(normalized);
-  }
-}
-
-function buildTaskResultArtifactRefs(task: TaskRecord): string[] {
-  const refs: string[] = [];
-  const sessionKey =
-    normalizeOptionalString(task.childSessionKey) ?? normalizeOptionalString(task.ownerKey);
-  if (sessionKey) {
-    refs.push(`openclaw-session:${sessionKey}`);
-  }
-  const runId = normalizeOptionalString(task.runId);
-  if (runId) {
-    refs.push(`openclaw-run:${runId}`);
-  }
-  return refs;
-}
-
-function toCompactChildResultRef(task: TaskRecord): CompactResultChildRef {
-  const resultArtifactRefs = buildTaskResultArtifactRefs(task);
-  return {
-    taskId: task.taskId,
-    ...(task.runId ? { runId: task.runId } : {}),
-    ...(task.childSessionKey ? { sessionKey: task.childSessionKey } : {}),
-    ...(resultArtifactRefs[0] ? { fullResultRef: resultArtifactRefs[0] } : {}),
-    ...(resultArtifactRefs.length > 0 ? { resultArtifactRefs } : {}),
-    ...(task.agentId ? { agentId: task.agentId } : {}),
-    status: task.status,
-    ...(task.terminalOutcome ? { terminalOutcome: task.terminalOutcome } : {}),
-    ...(task.progressSummary
-      ? { progressSummary: compactProjectionText(task.progressSummary) }
-      : {}),
-    ...(task.terminalSummary
-      ? { terminalSummary: compactProjectionText(task.terminalSummary) }
-      : {}),
-  };
-}
-
-function findRelatedChildResultRefs(
-  task: TaskRecord,
-  tasks: TaskRecord[],
-): CompactResultChildRef[] {
-  const related = new Map<string, CompactResultChildRef>();
-  for (const candidate of tasks) {
-    if (candidate.taskId === task.taskId) {
-      continue;
-    }
-    const sameRun = Boolean(task.runId && candidate.runId === task.runId);
-    const sameChildSession = Boolean(
-      task.childSessionKey && candidate.childSessionKey === task.childSessionKey,
-    );
-    const childOfTask = candidate.parentTaskId === task.taskId;
-    if (!sameRun && !sameChildSession && !childOfTask) {
-      continue;
-    }
-    related.set(candidate.taskId, toCompactChildResultRef(candidate));
-  }
-  return [...related.values()];
-}
-
-export function buildTaskCompactResultProjection(params: {
-  task: TaskRecord;
-  lookup?: string;
-  tasks?: TaskRecord[];
-}): CompactResultProjection {
-  const { task } = params;
-  const resultArtifactRefs = buildTaskResultArtifactRefs(task);
-  const projectionWarnings: string[] = [];
-  pushIfPresent(projectionWarnings, task.projectionWarning);
-  pushIfPresent(
-    projectionWarnings,
-    task.error && task.error !== task.executionError ? task.error : undefined,
-  );
-
-  return {
-    schema: COMPACT_RESULT_PROJECTION_SCHEMA,
-    source: "task",
-    ...(params.lookup ? { lookup: params.lookup } : {}),
-    taskId: task.taskId,
-    ...(task.runId ? { runId: task.runId } : {}),
-    status: task.status,
-    ...(task.terminalOutcome ? { terminalOutcome: task.terminalOutcome } : {}),
-    deliveryStatus: task.deliveryStatus,
-    ...(task.agentId ? { agentId: task.agentId } : {}),
-    sessionKey: task.ownerKey,
-    ...(task.childSessionKey ? { childSessionKey: task.childSessionKey } : {}),
-    ...(task.parentTaskId ? { parentTaskId: task.parentTaskId } : {}),
-    ...(task.label ? { label: task.label } : {}),
-    ...(typeof task.startedAt === "number" ? { startedAt: task.startedAt } : {}),
-    ...(typeof task.endedAt === "number" ? { endedAt: task.endedAt } : {}),
-    ...(typeof task.lastEventAt === "number" ? { lastEventAt: task.lastEventAt } : {}),
-    ...(task.progressSummary
-      ? { progressSummary: compactProjectionText(task.progressSummary) }
-      : {}),
-    ...(task.terminalSummary
-      ? { terminalSummary: compactProjectionText(task.terminalSummary) }
-      : {}),
-    ...(resultArtifactRefs[0] ? { fullResultRef: resultArtifactRefs[0] } : {}),
-    resultArtifactRefs,
-    childResultRefs: findRelatedChildResultRefs(task, params.tasks ?? reconcileInspectableTasks()),
-    ...(task.executionReceipt ? { receipt: task.executionReceipt } : {}),
-    projectionWarnings,
-  };
-}
-
 function formatAgeMs(ageMs: number | undefined): string {
   if (typeof ageMs !== "number" || ageMs < 1000) {
     return "fresh";
@@ -572,43 +454,13 @@ export async function tasksListCommand(
 
 /** Shows one task record by id or lookup token. */
 export async function tasksShowCommand(
-  opts: { json?: boolean; lookup: string; compact?: boolean },
+  opts: { json?: boolean; lookup: string },
   runtime: RuntimeEnv,
 ) {
   const task = reconcileTaskLookupToken(opts.lookup);
   if (!task) {
     runtime.error(formatTaskLookupMiss(opts.lookup));
     runtime.exit(1);
-    return;
-  }
-
-  if (opts.compact) {
-    const projection = buildTaskCompactResultProjection({ task, lookup: opts.lookup });
-    if (opts.json) {
-      runtime.log(JSON.stringify(projection, null, 2));
-      return;
-    }
-    const lines = [
-      "Compact task result:",
-      `taskId: ${projection.taskId}`,
-      `runId: ${projection.runId ?? "n/a"}`,
-      `status: ${projection.status ?? "n/a"}`,
-      `result: ${projection.terminalOutcome ?? "n/a"}`,
-      `delivery: ${projection.deliveryStatus ?? "n/a"}`,
-      `sessionKey: ${projection.sessionKey ?? "n/a"}`,
-      `childSessionKey: ${projection.childSessionKey ?? "n/a"}`,
-      `fullResultRef: ${projection.fullResultRef ?? "n/a"}`,
-      `progressSummary: ${projection.progressSummary ?? "n/a"}`,
-      `terminalSummary: ${projection.terminalSummary ?? "n/a"}`,
-      `childResultRefs: ${projection.childResultRefs.length}`,
-      `resultArtifactRefs: ${projection.resultArtifactRefs.length}`,
-      ...(projection.projectionWarnings.length > 0
-        ? [`projectionWarnings: ${projection.projectionWarnings.join("; ")}`]
-        : []),
-    ];
-    for (const line of lines) {
-      runtime.log(line);
-    }
     return;
   }
 
@@ -645,66 +497,6 @@ export async function tasksShowCommand(
   for (const line of lines) {
     runtime.log(line);
   }
-}
-
-/** Checks a critical execution route by validating its persisted task receipt. */
-export async function tasksCheckCommand(
-  opts: { json?: boolean; check: string; lookup: string },
-  runtime: RuntimeEnv,
-) {
-  const check = parseTaskExecutionCheck(opts.check);
-  if (!check) {
-    const payload = {
-      passed: false,
-      admitted: false,
-      check: opts.check,
-      lookup: opts.lookup,
-      failures: [
-        {
-          code: "unknown_check",
-          detail: `unknown execution check: ${opts.check}`,
-        },
-      ],
-    };
-    if (opts.json) {
-      runtime.log(JSON.stringify(payload, null, 2));
-    } else {
-      runtime.error(`Unknown execution check: ${opts.check}`);
-    }
-    runtime.exit(1);
-    return;
-  }
-  const task = reconcileTaskLookupToken(opts.lookup);
-  const result = checkTaskExecutionReceipt({
-    check,
-    lookup: opts.lookup,
-    task,
-  });
-
-  if (opts.json) {
-    runtime.log(JSON.stringify(result, null, 2));
-  } else if (result.passed) {
-    runtime.log(
-      `Checked ${result.check} for ${result.taskId ?? opts.lookup} (${result.runId ?? "no run id"}).`,
-    );
-  } else {
-    runtime.error(`Execution check failed for ${opts.lookup}:`);
-    for (const failure of result.failures) {
-      runtime.error(`- ${failure.code}: ${failure.detail}`);
-    }
-  }
-
-  if (!result.passed) {
-    runtime.exit(1);
-  }
-}
-
-/** Deprecated compatibility alias for the older admission wording. */
-export async function tasksAdmitCommand(
-  opts: { json?: boolean; check: string; lookup: string },
-  runtime: RuntimeEnv,
-) {
-  await tasksCheckCommand(opts, runtime);
 }
 
 /** Updates a task's notification policy. */

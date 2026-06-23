@@ -22,7 +22,6 @@ import { resolveStoredSessionKeyForAgentStore } from "../gateway/session-store-k
 import {
   buildGatewaySessionRow,
   resolveGatewaySessionStoreTargetWithStore,
-  type GatewaySessionRow,
 } from "../gateway/session-utils.js";
 import { info } from "../globals.js";
 import { parseStrictPositiveInteger } from "../infra/parse-finite-number.js";
@@ -32,11 +31,6 @@ import { classifySessionKind, type SessionKind } from "../sessions/classify-sess
 import { isAcpSessionKey } from "../sessions/session-key-utils.js";
 import { createLazyImportLoader } from "../shared/lazy-promise.js";
 import { resolveAgentRuntimeLabel } from "../status/agent-runtime-label.js";
-import {
-  COMPACT_RESULT_PROJECTION_SCHEMA,
-  compactProjectionText,
-  type CompactResultProjection,
-} from "./compact-result-projection.js";
 import { resolveSessionStoreTargetsOrExit } from "./session-store-targets.js";
 import {
   resolveSessionDisplayModelRef,
@@ -102,34 +96,6 @@ function findSessionStoreMatch(
     }
   }
   return freshest;
-}
-
-function buildSessionCompactResultProjection(params: {
-  lookup: string;
-  row: GatewaySessionRow;
-  agentId: string;
-}): CompactResultProjection {
-  return {
-    schema: COMPACT_RESULT_PROJECTION_SCHEMA,
-    source: "session",
-    lookup: params.lookup,
-    status: params.row.status,
-    ...(params.row.status && params.row.status !== "running"
-      ? { terminalOutcome: params.row.status === "done" ? "succeeded" : params.row.status }
-      : {}),
-    agentId: params.agentId,
-    sessionKey: params.row.key,
-    ...(params.row.label ? { label: params.row.label } : {}),
-    ...(typeof params.row.startedAt === "number" ? { startedAt: params.row.startedAt } : {}),
-    ...(typeof params.row.endedAt === "number" ? { endedAt: params.row.endedAt } : {}),
-    ...(typeof params.row.updatedAt === "number" ? { lastEventAt: params.row.updatedAt } : {}),
-    ...(params.row.finalAssistantText
-      ? { finalAssistantText: compactProjectionText(params.row.finalAssistantText, 12_000) }
-      : {}),
-    resultArtifactRefs: [],
-    childResultRefs: (params.row.childSessions ?? []).map((sessionKey) => ({ sessionKey })),
-    projectionWarnings: [],
-  };
 }
 
 function resolveSessionShowTarget(params: {
@@ -406,12 +372,11 @@ function resolveDisplayRuntimePolicySessionKey(params: {
     : undefined;
 }
 
-/** Shows one stored conversation session with optional compact result projection. */
+/** Shows one stored conversation session. */
 export async function sessionsShowCommand(
   opts: {
     sessionKey: string;
     json?: boolean;
-    compact?: boolean;
     store?: string;
     agent?: string;
   },
@@ -442,32 +407,6 @@ export async function sessionsShowCommand(
     includeLastMessage: true,
     includeFinalAssistant: true,
   });
-
-  if (opts.compact) {
-    const projection = buildSessionCompactResultProjection({
-      lookup: opts.sessionKey,
-      row,
-      agentId: target.agentId,
-    });
-    if (opts.json) {
-      writeRuntimeJson(runtime, projection);
-      return;
-    }
-    const lines = [
-      "Compact session result:",
-      `sessionKey: ${projection.sessionKey ?? "n/a"}`,
-      `agentId: ${projection.agentId ?? "n/a"}`,
-      `status: ${projection.status ?? "n/a"}`,
-      `result: ${projection.terminalOutcome ?? "n/a"}`,
-      `finalAssistantText: ${projection.finalAssistantText ?? "n/a"}`,
-      `childResultRefs: ${projection.childResultRefs.length}`,
-      `resultArtifactRefs: ${projection.resultArtifactRefs.length}`,
-    ];
-    for (const line of lines) {
-      runtime.log(line);
-    }
-    return;
-  }
 
   if (opts.json) {
     writeRuntimeJson(runtime, {

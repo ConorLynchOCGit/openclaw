@@ -205,7 +205,7 @@ describe("sessionsCommand", () => {
     expect(main?.totalTokensFresh).toBe(false);
   });
 
-  it("emits compact session result projections with final assistant text", async () => {
+  it("shows final assistant text and child session pointers in native JSON readback", async () => {
     const sessionId = "11111111-1111-4111-8111-111111111111";
     const store = writeStore(
       {
@@ -253,7 +253,6 @@ describe("sessionsCommand", () => {
           store,
           sessionKey: "agent:planning:main",
           json: true,
-          compact: true,
           agent: "planning",
         },
         runtime,
@@ -264,19 +263,19 @@ describe("sessionsCommand", () => {
     }
 
     const payload = JSON.parse(logs[0] ?? "{}") as {
-      schema?: string;
-      source?: string;
-      sessionKey?: string;
-      finalAssistantText?: string;
-      childResultRefs?: Array<{ sessionKey?: string }>;
+      agentId?: string;
+      session?: {
+        key?: string;
+        finalAssistantText?: string;
+        childSessions?: string[];
+      };
     };
-    expect(payload.schema).toBe("openclaw.compact-result.v1");
-    expect(payload.source).toBe("session");
-    expect(payload.sessionKey).toBe("agent:planning:main");
-    expect(payload.finalAssistantText).toBe("Final recursive planning improvement synthesized.");
-    expect(payload.childResultRefs).toContainEqual({
-      sessionKey: "agent:researcher:subagent:child",
-    });
+    expect(payload.agentId).toBe("planning");
+    expect(payload.session?.key).toBe("agent:planning:main");
+    expect(payload.session?.finalAssistantText).toBe(
+      "Final recursive planning improvement synthesized.",
+    );
+    expect(payload.session?.childSessions).toContain("agent:researcher:subagent:child");
   });
 
   it("applies --active filtering in JSON output", async () => {

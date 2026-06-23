@@ -2528,8 +2528,6 @@ public struct TaskSummary: Codable, Sendable {
     public let progresssummary: String?
     public let terminalsummary: String?
     public let executionreceipt: [String: AnyCodable]?
-    public let childresult: [String: AnyCodable]?
-    public let childruns: [String: AnyCodable]?
     public let error: String?
 
     public init(
@@ -2554,8 +2552,6 @@ public struct TaskSummary: Codable, Sendable {
         progresssummary: String?,
         terminalsummary: String?,
         executionreceipt: [String: AnyCodable]?,
-        childresult: [String: AnyCodable]?,
-        childruns: [String: AnyCodable]?,
         error: String?)
     {
         self.id = id
@@ -2579,8 +2575,6 @@ public struct TaskSummary: Codable, Sendable {
         self.progresssummary = progresssummary
         self.terminalsummary = terminalsummary
         self.executionreceipt = executionreceipt
-        self.childresult = childresult
-        self.childruns = childruns
         self.error = error
     }
 
@@ -2606,8 +2600,6 @@ public struct TaskSummary: Codable, Sendable {
         case progresssummary = "progressSummary"
         case terminalsummary = "terminalSummary"
         case executionreceipt = "executionReceipt"
-        case childresult = "childResult"
-        case childruns = "childRuns"
         case error
     }
 }

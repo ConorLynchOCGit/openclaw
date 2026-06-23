@@ -20,7 +20,7 @@ export function createSessionsYieldTool(opts?: {
     label: "Yield",
     name: "sessions_yield",
     description:
-      "End current turn without a visible interim answer. Use after spawning subagents when your final answer depends on child output; results arrive as the next runtime message.",
+      "End current turn without a visible interim answer and let spawned subagent completion events resume it.",
     parameters: SessionsYieldToolSchema,
     execute: async (_toolCallId, args) => {
       const params = args as Record<string, unknown>;

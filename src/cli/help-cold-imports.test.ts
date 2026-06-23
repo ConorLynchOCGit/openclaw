@@ -114,7 +114,6 @@ vi.mock("../commands/tasks.js", () => {
   loaded.mark("tasks-command");
   return {
     tasksAuditCommand: vi.fn(async () => {}),
-    tasksAdmitCommand: vi.fn(async () => {}),
     tasksCancelCommand: vi.fn(async () => {}),
     tasksListCommand: vi.fn(async () => {}),
     tasksMaintenanceCommand: vi.fn(async () => {}),

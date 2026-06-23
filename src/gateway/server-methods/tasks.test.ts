@@ -223,7 +223,7 @@ describe("tasks gateway handlers", () => {
     });
   });
 
-  it("projects child result refs and bounded frozen completion previews", async () => {
+  it("keeps child task summaries as pointers instead of child result projections", async () => {
     addSubagentRunForTests({
       runId: "run-child-result",
       childSessionKey: "agent:researcher:subagent:child-result",
@@ -258,21 +258,16 @@ describe("tasks gateway handlers", () => {
 
     const { payload } = await getTaskPayload(task.taskId);
 
-    expect(payload?.task?.childResult).toMatchObject({
+    expect(payload?.task).toMatchObject({
       childSessionKey: "agent:researcher:subagent:child-result",
       runId: "run-child-result",
-      status: "ok",
-      resultTextPreview: "Child found three concrete routing gaps.",
-      capturedAt: 210,
-      artifactsListParams: {
-        sessionKey: "agent:researcher:subagent:child-result",
-        runId: "run-child-result",
-        agentId: "researcher",
-      },
+      agentId: "researcher",
     });
+    expect(payload?.task?.childResult).toBeUndefined();
+    expect(JSON.stringify(payload?.task)).not.toContain("Child found three concrete routing gaps.");
   });
 
-  it("projects descendant child-run state for parent orchestration tasks", async () => {
+  it("does not project descendant child-run state into parent task summaries", async () => {
     addSubagentRunForTests({
       runId: "run-child-a",
       childSessionKey: "agent:planning:main:subagent:researcher-a",
@@ -345,38 +340,15 @@ describe("tasks gateway handlers", () => {
 
     const { payload } = await getTaskPayload(task.taskId);
 
-    expect(payload?.task?.childRuns).toMatchObject({
-      total: 2,
-      running: 0,
-      completed: 2,
-      failed: 0,
-      pendingCompletion: 1,
-      children: [
-        {
-          childSessionKey: "agent:planning:main:subagent:researcher-a",
-          runId: "run-child-a",
-          status: "ok",
-          resultTextPreview: "Researcher A found a routing gap.",
-          artifactsListParams: {
-            sessionKey: "agent:planning:main:subagent:researcher-a",
-            runId: "run-child-a",
-            agentId: "planning",
-          },
-        },
-        {
-          childSessionKey: "agent:planning:main:subagent:reviewer-b",
-          runId: "run-child-b",
-          status: "ok",
-          resultTextPreview: "Reviewer B found a proof-finality risk.",
-          artifactsListParams: {
-            sessionKey: "agent:planning:main:subagent:reviewer-b",
-            runId: "run-child-b",
-            agentId: "planning",
-          },
-        },
-      ],
+    expect(payload?.task).toMatchObject({
+      childSessionKey: "agent:planning:main",
+      runId: "run-parent-planning",
+      agentId: "planning",
     });
-    expect(JSON.stringify(payload?.task?.childRuns)).not.toContain("stale child should not appear");
+    expect(payload?.task?.childRuns).toBeUndefined();
+    expect(JSON.stringify(payload?.task)).not.toContain("Researcher A found a routing gap.");
+    expect(JSON.stringify(payload?.task)).not.toContain("Reviewer B found a proof-finality risk.");
+    expect(JSON.stringify(payload?.task)).not.toContain("stale child should not appear");
   });
 
   it("sanitizes task text before exposing SDK summaries", async () => {

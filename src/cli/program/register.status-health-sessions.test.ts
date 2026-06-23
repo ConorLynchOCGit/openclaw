@@ -14,8 +14,6 @@ const mocks = vi.hoisted(() => ({
   commitmentsListCommand: vi.fn(),
   commitmentsDismissCommand: vi.fn(),
   tasksListCommand: vi.fn(),
-  tasksCheckCommand: vi.fn(),
-  tasksAdmitCommand: vi.fn(),
   tasksAuditCommand: vi.fn(),
   tasksMaintenanceCommand: vi.fn(),
   tasksShowCommand: vi.fn(),
@@ -42,8 +40,6 @@ const exportTrajectoryCommand = mocks.exportTrajectoryCommand;
 const commitmentsListCommand = mocks.commitmentsListCommand;
 const commitmentsDismissCommand = mocks.commitmentsDismissCommand;
 const tasksListCommand = mocks.tasksListCommand;
-const tasksCheckCommand = mocks.tasksCheckCommand;
-const tasksAdmitCommand = mocks.tasksAdmitCommand;
 const tasksAuditCommand = mocks.tasksAuditCommand;
 const tasksMaintenanceCommand = mocks.tasksMaintenanceCommand;
 const tasksShowCommand = mocks.tasksShowCommand;
@@ -113,8 +109,6 @@ vi.mock("../../commands/commitments.js", () => ({
 
 vi.mock("../../commands/tasks.js", () => ({
   tasksListCommand: mocks.tasksListCommand,
-  tasksCheckCommand: mocks.tasksCheckCommand,
-  tasksAdmitCommand: mocks.tasksAdmitCommand,
   tasksAuditCommand: mocks.tasksAuditCommand,
   tasksMaintenanceCommand: mocks.tasksMaintenanceCommand,
   tasksShowCommand: mocks.tasksShowCommand,
@@ -156,8 +150,6 @@ describe("registerStatusHealthSessionsCommands", () => {
     commitmentsListCommand.mockResolvedValue(undefined);
     commitmentsDismissCommand.mockResolvedValue(undefined);
     tasksListCommand.mockResolvedValue(undefined);
-    tasksCheckCommand.mockResolvedValue(undefined);
-    tasksAdmitCommand.mockResolvedValue(undefined);
     tasksAuditCommand.mockResolvedValue(undefined);
     tasksMaintenanceCommand.mockResolvedValue(undefined);
     tasksShowCommand.mockResolvedValue(undefined);
@@ -329,7 +321,7 @@ describe("registerStatusHealthSessionsCommands", () => {
     });
   });
 
-  it("runs sessions show with compact result forwarding", async () => {
+  it("runs sessions show with JSON/store/agent forwarding", async () => {
     await runCli([
       "sessions",
       "--json",
@@ -339,13 +331,11 @@ describe("registerStatusHealthSessionsCommands", () => {
       "planning",
       "show",
       "agent:planning:main",
-      "--compact",
     ]);
 
     expectCommandOptions(sessionsShowCommand, {
       sessionKey: "agent:planning:main",
       json: true,
-      compact: true,
       store: "/tmp/sessions.json",
       agent: "planning",
     });
@@ -462,31 +452,10 @@ describe("registerStatusHealthSessionsCommands", () => {
   });
 
   it("runs tasks show subcommand with lookup forwarding", async () => {
-    await runCli(["tasks", "show", "run-123", "--json", "--compact"]);
+    await runCli(["tasks", "show", "run-123", "--json"]);
 
     expectCommandOptions(tasksShowCommand, {
       lookup: "run-123",
-      json: true,
-      compact: true,
-    });
-  });
-
-  it("runs tasks check subcommand with lookup, check, and JSON forwarding", async () => {
-    await runCli(["tasks", "--json", "check", "run-123", "--check", "gbrain.signal_detector"]);
-
-    expectCommandOptions(tasksCheckCommand, {
-      lookup: "run-123",
-      check: "gbrain.signal_detector",
-      json: true,
-    });
-  });
-
-  it("runs deprecated tasks admit subcommand with lookup, check, and JSON forwarding", async () => {
-    await runCli(["tasks", "--json", "admit", "run-123", "--check", "gbrain.signal_detector"]);
-
-    expectCommandOptions(tasksAdmitCommand, {
-      lookup: "run-123",
-      check: "gbrain.signal_detector",
       json: true,
     });
   });

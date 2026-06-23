@@ -232,7 +232,6 @@ export function registerStatusHealthSessionsCommands(program: Command) {
     .description("Show one stored conversation session")
     .argument("<session-key>", "Session key")
     .option("--json", "Output JSON", false)
-    .option("--compact", "Output compact result projection", false)
     .option("--store <path>", "Path to session store (default: resolved from config)")
     .option("--agent <id>", "Agent id to inspect (default: resolved from session key)")
     .action(async (sessionKey, opts, command) => {
@@ -243,7 +242,6 @@ export function registerStatusHealthSessionsCommands(program: Command) {
           {
             sessionKey: String(sessionKey),
             json: Boolean(opts.json || parentOpts?.json),
-            compact: Boolean(opts.compact),
             store: opts.store ?? parentOpts?.store,
             agent: opts.agent ?? parentOpts?.agent,
           },
@@ -583,53 +581,10 @@ export function registerStatusHealthSessionsCommands(program: Command) {
     });
 
   tasksCmd
-    .command("check")
-    .description("Validate a critical task execution receipt")
-    .argument("<lookup>", "Task id, run id, or session key")
-    .option("--check <name>", "Execution check name", "gbrain.signal_detector")
-    .option("--json", "Output as JSON", false)
-    .action(async (lookup, opts, command) => {
-      const parentOpts = command.parent?.opts() as { json?: boolean } | undefined;
-      await runCommandWithRuntime(defaultRuntime, async () => {
-        const { tasksCheckCommand } = await loadTasksCommands();
-        await tasksCheckCommand(
-          {
-            lookup,
-            check: String(opts.check ?? "gbrain.signal_detector"),
-            json: Boolean(opts.json || parentOpts?.json),
-          },
-          defaultRuntime,
-        );
-      });
-    });
-
-  tasksCmd
-    .command("admit")
-    .description("Deprecated alias for tasks check")
-    .argument("<lookup>", "Task id, run id, or session key")
-    .option("--check <name>", "Execution check name", "gbrain.signal_detector")
-    .option("--json", "Output as JSON", false)
-    .action(async (lookup, opts, command) => {
-      const parentOpts = command.parent?.opts() as { json?: boolean } | undefined;
-      await runCommandWithRuntime(defaultRuntime, async () => {
-        const { tasksAdmitCommand } = await loadTasksCommands();
-        await tasksAdmitCommand(
-          {
-            lookup,
-            check: String(opts.check ?? "gbrain.signal_detector"),
-            json: Boolean(opts.json || parentOpts?.json),
-          },
-          defaultRuntime,
-        );
-      });
-    });
-
-  tasksCmd
     .command("show")
     .description("Show one background task by task id, run id, or session key")
     .argument("<lookup>", "Task id, run id, or session key")
     .option("--json", "Output as JSON", false)
-    .option("--compact", "Output compact result projection", false)
     .action(async (lookup, opts, command) => {
       const parentOpts = command.parent?.opts() as { json?: boolean } | undefined;
       await runCommandWithRuntime(defaultRuntime, async () => {
@@ -638,7 +593,6 @@ export function registerStatusHealthSessionsCommands(program: Command) {
           {
             lookup,
             json: Boolean(opts.json || parentOpts?.json),
-            compact: Boolean(opts.compact),
           },
           defaultRuntime,
         );
