@@ -1,4 +1,5 @@
 // Commander registration for gateway status, health, diagnostics, discovery, and run commands.
+import fs from "node:fs/promises";
 import type { Command } from "commander";
 import { formatDocsLink } from "../../../packages/terminal-core/src/links.js";
 import { colorize, isRich, theme } from "../../../packages/terminal-core/src/theme.js";
@@ -101,6 +102,49 @@ function gatewayCallOpts(cmd: Command): Command {
 async function callGatewayCli(method: string, opts: GatewayRpcOpts, params?: unknown) {
   const mod = await import("./call.js");
   return mod.callGatewayCli(method, opts, params);
+}
+
+async function readStdinTextForGatewayParams() {
+  if (process.stdin.isTTY) {
+    throw new Error("Cannot read Gateway params from stdin when stdin is a TTY.");
+  }
+  let text = "";
+  process.stdin.setEncoding("utf8");
+  for await (const chunk of process.stdin) {
+    text += String(chunk);
+  }
+  return text;
+}
+
+async function readGatewayCallParamsRaw(opts: { params?: string; paramsFile?: string }) {
+  const inlineParams = typeof opts.params === "string" ? opts.params : undefined;
+  const paramsFile = typeof opts.paramsFile === "string" ? opts.paramsFile.trim() : undefined;
+  if (inlineParams !== undefined && paramsFile !== undefined) {
+    throw new Error("Use either --params or --params-file, not both.");
+  }
+  if (paramsFile !== undefined) {
+    if (!paramsFile) {
+      throw new Error("--params-file must not be empty.");
+    }
+    return paramsFile === "-"
+      ? await readStdinTextForGatewayParams()
+      : await fs.readFile(paramsFile, "utf8");
+  }
+  if (inlineParams === "-") {
+    return await readStdinTextForGatewayParams();
+  }
+  return inlineParams ?? "{}";
+}
+
+async function resolveGatewayCallParams(opts: { params?: string; paramsFile?: string }) {
+  const raw = await readGatewayCallParamsRaw(opts);
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    const source = opts.paramsFile ? `--params-file ${opts.paramsFile}` : "--params";
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new Error(`Invalid Gateway call params JSON from ${source}: ${detail}`);
+  }
 }
 
 async function runGatewayCommand(
@@ -484,11 +528,12 @@ export function registerGatewayCli(program: Command) {
       .command("call")
       .description("Call a Gateway method")
       .argument("<method>", "Method name (health/status/system-presence/cron.*)")
-      .option("--params <json>", "JSON object string for params", "{}")
+      .option("--params <json>", 'JSON object string for params, or "-" to read from stdin')
+      .option("--params-file <path>", 'Read JSON params from a file, or "-" to read from stdin')
       .action(async (method, opts, command) => {
         await runGatewayCommand(async () => {
           const rpcOpts = resolveGatewayRpcOptions(opts, command);
-          const params = JSON.parse(String(opts.params ?? "{}"));
+          const params = await resolveGatewayCallParams(opts);
           const result = await callGatewayCli(method, rpcOpts, params);
           if (rpcOpts.json) {
             defaultRuntime.writeJson(result);

@@ -23,7 +23,8 @@ export function describeSessionsListTool(): string {
 export function describeSessionsHistoryTool(): string {
   return [
     "Fetch sanitized history for visible session.",
-    "Use before replying, debugging, resuming; supports limits/tool messages.",
+    "Use for bounded recovery/readback after a terminal child event, timeout/cancel partial output, compaction/resume, operator audit, or result-ref verification.",
+    "Do not poll active children with sessions_history; native completion delivery is the normal handoff.",
   ].join(" ");
 }
 
@@ -54,6 +55,7 @@ export function describeSessionsSpawnTool(options?: {
     "Native subagents get task in first visible `[Subagent Task]` message.",
     'Native only: `context="fork"` only when child needs current transcript; else omit or `isolated`.',
     "Set `agentId` when policy requires an explicit target or when the child role matters; use `agents_list` first if unsure.",
+    "For planning/research child work, ask for a normal final answer with bottom line, what the parent should read first, bounded high-signal evidence/context, contradictions/caveats, what the parent should verify, and full result/source refs.",
     "Use for fresh child-session work.",
   ];
   if (options?.acpAvailable === false) {

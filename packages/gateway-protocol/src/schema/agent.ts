@@ -39,7 +39,10 @@ export const AgentInternalEventSchema = Type.Object(
     type: Type.Literal(AGENT_INTERNAL_EVENT_TYPE_TASK_COMPLETION),
     source: Type.String({ enum: [...AGENT_INTERNAL_EVENT_SOURCES] }),
     childSessionKey: Type.String(),
+    childRunId: Type.Optional(Type.String()),
     childSessionId: Type.Optional(Type.String()),
+    fullResultRef: Type.Optional(Type.String()),
+    resultArtifactRefs: Type.Optional(Type.Array(Type.String())),
     announceType: Type.String(),
     taskLabel: Type.String(),
     status: Type.String({ enum: [...AGENT_INTERNAL_EVENT_STATUSES] }),
@@ -49,6 +52,7 @@ export const AgentInternalEventSchema = Type.Object(
     mediaUrls: Type.Optional(Type.Array(Type.String())),
     statsLine: Type.Optional(Type.String()),
     replyInstruction: Type.String(),
+    extensions: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
   },
   { additionalProperties: false },
 );

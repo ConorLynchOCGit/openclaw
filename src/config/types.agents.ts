@@ -85,6 +85,10 @@ export type AgentConfig = {
   description?: string;
   workspace?: string;
   agentDir?: string;
+  /** Optional workspace-relative directory containing this agent's canonical runtime prompt files. */
+  contractPack?: string;
+  /** Optional list of bootstrap basenames under contractPack to inject for this agent. */
+  runtimePromptFiles?: string[];
   model?: AgentModelConfig;
   /**
    * @deprecated Legacy raw config accepted only by doctor/migration repair.

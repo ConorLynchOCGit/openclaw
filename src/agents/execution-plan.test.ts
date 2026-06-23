@@ -5,6 +5,7 @@ import {
   resolveExecutionPlan,
   resolveFreshPlannedRunSelection,
 } from "./execution-plan.js";
+import { modelIdentityKeyFromProviderModel } from "./model-identity.js";
 import {
   createResolvedAgentRunReceiptFromPlan,
   finalizeAgentRunReceiptFromAttempt,
@@ -112,10 +113,13 @@ describe("resolveExecutionPlan", () => {
     });
 
     expect(resolveFreshPlannedRunSelection(plan)).toEqual({
-      primaryIdentityKey: "openrouter::anthropic/claude-haiku-4.5",
+      primaryIdentityKey: modelIdentityKeyFromProviderModel(
+        "openrouter",
+        "anthropic/claude-haiku-4.5",
+      ),
       fallbackIdentityKeys: [
-        "openrouter::google/gemini-2.5-flash-lite",
-        "openrouter::google/gemini-2.0-flash-lite-001",
+        modelIdentityKeyFromProviderModel("openrouter", "google/gemini-2.5-flash-lite"),
+        modelIdentityKeyFromProviderModel("openrouter", "google/gemini-2.0-flash-lite-001"),
       ],
       provider: "openrouter",
       model: "anthropic/claude-haiku-4.5",
@@ -153,10 +157,13 @@ describe("resolveExecutionPlan", () => {
 
     expect(plan.admission).toMatchObject({
       model: {
-        primaryIdentityKey: "openrouter::anthropic/claude-haiku-4.5",
+        primaryIdentityKey: modelIdentityKeyFromProviderModel(
+          "openrouter",
+          "anthropic/claude-haiku-4.5",
+        ),
         fallbackIdentityKeys: [
-          "openrouter::google/gemini-2.5-flash-lite",
-          "openrouter::google/gemini-2.0-flash-lite-001",
+          modelIdentityKeyFromProviderModel("openrouter", "google/gemini-2.5-flash-lite"),
+          modelIdentityKeyFromProviderModel("openrouter", "google/gemini-2.0-flash-lite-001"),
         ],
       },
       runtime: {
@@ -306,7 +313,10 @@ describe("resolveExecutionPlan", () => {
         targetAgentId: "memory-curator",
         startedAt: "2026-06-18T00:00:00.000Z",
         endedAt: "2026-06-18T00:00:01.000Z",
-        modelIdentityKey: "openrouter::anthropic/claude-haiku-4.5",
+        modelIdentityKey: modelIdentityKeyFromProviderModel(
+          "openrouter",
+          "anthropic/claude-haiku-4.5",
+        ),
         provider: "openrouter",
         model: "anthropic/claude-haiku-4.5",
         runtime: "openclaw",
@@ -329,7 +339,10 @@ describe("resolveExecutionPlan", () => {
       targetAgentId: "memory-curator",
       resolved: {
         model: "openrouter/anthropic/claude-haiku-4.5",
-        modelIdentityKey: "openrouter::anthropic/claude-haiku-4.5",
+        modelIdentityKey: modelIdentityKeyFromProviderModel(
+          "openrouter",
+          "anthropic/claude-haiku-4.5",
+        ),
         runtime: "openclaw",
         providerProfileKey: "openrouter-native",
         transportSnapshot: {
@@ -340,7 +353,10 @@ describe("resolveExecutionPlan", () => {
       },
       final: {
         model: "openrouter/anthropic/claude-haiku-4.5",
-        modelIdentityKey: "openrouter::anthropic/claude-haiku-4.5",
+        modelIdentityKey: modelIdentityKeyFromProviderModel(
+          "openrouter",
+          "anthropic/claude-haiku-4.5",
+        ),
         runtime: "openclaw",
         providerProfileKey: "openrouter-native",
         transportSnapshot: {

@@ -95,4 +95,100 @@ describe("bootstrap-extra-files hook", () => {
     await handler(event);
     expect(context.bootstrapFiles.map((f) => f.name).toSorted()).toEqual(["AGENTS.md", "TOOLS.md"]);
   });
+
+  it("appends agent-scoped bootstrap files only for the matching agent", async () => {
+    const tempDir = await makeTempWorkspace("openclaw-bootstrap-extra-agent-");
+    await fs.mkdir(path.join(tempDir, "docs", "agents", "planning"), { recursive: true });
+    await fs.mkdir(path.join(tempDir, "docs", "agents", "reviewer"), { recursive: true });
+    await fs.writeFile(
+      path.join(tempDir, "docs", "agents", "planning", "AGENTS.md"),
+      "planning agents",
+      "utf-8",
+    );
+    await fs.writeFile(
+      path.join(tempDir, "docs", "agents", "reviewer", "AGENTS.md"),
+      "reviewer agents",
+      "utf-8",
+    );
+
+    const cfg: OpenClawConfig = {
+      hooks: {
+        internal: {
+          entries: {
+            "bootstrap-extra-files": {
+              enabled: true,
+              agentPaths: {
+                planning: ["docs/agents/planning/AGENTS.md"],
+                reviewer: ["docs/agents/reviewer/AGENTS.md"],
+              },
+            },
+          },
+        },
+      },
+    };
+    const context = await createBootstrapContext({
+      workspaceDir: tempDir,
+      cfg,
+      sessionKey: "agent:planning:main",
+      rootFiles: [{ name: "AGENTS.md", content: "root agents" }],
+    });
+    context.agentId = "planning";
+
+    const event = createHookEvent("agent", "bootstrap", "agent:planning:main", context);
+    await handler(event);
+
+    const relativePaths = context.bootstrapFiles.map((f) => path.relative(tempDir, f.path));
+    expect(relativePaths).toContain(path.join("docs", "agents", "planning", "AGENTS.md"));
+    expect(relativePaths).not.toContain(path.join("docs", "agents", "reviewer", "AGENTS.md"));
+  });
+
+  it("appends runtime prompt files from the target agent contract pack", async () => {
+    const tempDir = await makeTempWorkspace("openclaw-bootstrap-extra-contract-pack-");
+    await fs.mkdir(path.join(tempDir, "docs", "agents", "planning"), { recursive: true });
+    await fs.writeFile(
+      path.join(tempDir, "docs", "agents", "planning", "AGENTS.md"),
+      "planning agents",
+      "utf-8",
+    );
+    await fs.writeFile(
+      path.join(tempDir, "docs", "agents", "planning", "TOOLS.md"),
+      "planning tools",
+      "utf-8",
+    );
+
+    const cfg: OpenClawConfig = {
+      hooks: {
+        internal: {
+          entries: {
+            "bootstrap-extra-files": {
+              enabled: true,
+            },
+          },
+        },
+      },
+      agents: {
+        list: [
+          {
+            id: "planning",
+            contractPack: "docs/agents/planning",
+            runtimePromptFiles: ["AGENTS.md", "TOOLS.md"],
+          },
+        ],
+      },
+    };
+    const context = await createBootstrapContext({
+      workspaceDir: tempDir,
+      cfg,
+      sessionKey: "agent:planning:main",
+      rootFiles: [{ name: "AGENTS.md", content: "root agents" }],
+    });
+    context.agentId = "planning";
+
+    const event = createHookEvent("agent", "bootstrap", "agent:planning:main", context);
+    await handler(event);
+
+    const relativePaths = context.bootstrapFiles.map((f) => path.relative(tempDir, f.path));
+    expect(relativePaths).toContain(path.join("docs", "agents", "planning", "AGENTS.md"));
+    expect(relativePaths).toContain(path.join("docs", "agents", "planning", "TOOLS.md"));
+  });
 });

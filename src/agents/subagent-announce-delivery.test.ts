@@ -1495,7 +1495,7 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
       result: { payloads: [], meta: { toolSummary: { calls: 1 } } },
     },
   ])(
-    "fails session-only completion handoff when the in-process agent returns $name",
+    "credits session-only child handoff when the in-process agent returns $name",
     async ({ result: agentResult }) => {
       const dispatchGatewayMethodInProcess = createInProcessGatewayMock({
         result: agentResult,
@@ -1521,10 +1521,8 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
       });
 
       expectRecordFields(result, {
-        delivered: false,
+        delivered: true,
         path: "direct",
-        reason: "visible_reply_missing",
-        error: "completion agent did not produce a visible reply",
       });
       expectInProcessAgentParams(dispatchGatewayMethodInProcess, {
         deliver: false,
@@ -1534,6 +1532,57 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
       });
     },
   );
+
+  it("credits a parent sessions_yield turn as child handoff acknowledged pending synthesis", async () => {
+    const dispatchGatewayMethodInProcess = createInProcessGatewayMock({
+      result: {
+        payloads: [],
+        meta: { yielded: true },
+      },
+    });
+    testing.setDepsForTest({
+      dispatchGatewayMethodInProcess,
+      getRequesterSessionActivity: () => ({
+        sessionId: "requester-session-local",
+        isActive: false,
+      }),
+      getRuntimeConfig: () => ({}) as never,
+    });
+
+    const result = await deliverSubagentAnnouncement({
+      requesterSessionKey: "agent:planning:local-session",
+      targetRequesterSessionKey: "agent:planning:local-session",
+      triggerMessage: "researcher child completed",
+      steerMessage: "researcher child completed",
+      requesterIsSubagent: false,
+      expectsCompletionMessage: true,
+      bestEffortDeliver: true,
+      directIdempotencyKey: "announce-local-yielded",
+      internalEvents: [
+        {
+          type: "task_completion",
+          source: "subagent",
+          childSessionKey: "agent:researcher:subagent:child",
+          childSessionId: "child-session-id",
+          announceType: "subagent task",
+          taskLabel: "researcher evidence bundle",
+          status: "ok",
+          statusLabel: "completed successfully",
+          result: "Research evidence bundle is ready.",
+          replyInstruction: "Inspect the result and synthesize when enough evidence is available.",
+        },
+      ],
+    });
+
+    expectRecordFields(result, {
+      delivered: true,
+      path: "direct",
+    });
+    expectInProcessAgentParams(dispatchGatewayMethodInProcess, {
+      deliver: false,
+      bestEffortDeliver: true,
+    });
+  });
 
   it("accepts session-only completion handoff when the in-process agent intentionally replies NO_REPLY", async () => {
     const dispatchGatewayMethodInProcess = createInProcessGatewayMock({
@@ -1844,7 +1893,7 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
     expect(sendMessage).not.toHaveBeenCalled();
   });
 
-  it("reports requester-agent delivery failure even when output stayed visible", async () => {
+  it("does not turn requester-agent channel delivery failure into child handoff failure", async () => {
     const callGateway = createGatewayMock({
       result: {
         payloads: [{ text: "Tests passed and the PR is ready for review." }],
@@ -1879,9 +1928,8 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
     });
 
     expectRecordFields(result, {
-      delivered: false,
+      delivered: true,
       path: "direct",
-      error: "Slack send failed: channel not found",
     });
     expect(sendMessage).not.toHaveBeenCalled();
   });
@@ -4438,7 +4486,7 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
     });
   });
 
-  it("fails configured channel subagent completions when parent skips required message tool", async () => {
+  it("credits configured channel child handoff even when parent skips required message tool", async () => {
     const callGateway = createGatewayMock({
       result: {
         payloads: [{ text: "The subagent is done." }],
@@ -4471,10 +4519,8 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
     });
 
     expectRecordFields(result, {
-      delivered: false,
+      delivered: true,
       path: "direct",
-      reason: "message_tool_delivery_missing",
-      error: "completion agent did not use the message tool for message-tool-only delivery",
     });
   });
 

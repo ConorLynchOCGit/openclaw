@@ -228,8 +228,21 @@ function normalizeTaskProjection(task: TaskRecord): TaskRecord {
   next.finalityError = normalizeOptionalTaskError(next.finalityError);
   next.projectionWarning = normalizeOptionalTaskError(next.projectionWarning);
 
+  if (next.executionError === undefined) {
+    delete next.executionError;
+  }
+  if (next.deliveryError === undefined) {
+    delete next.deliveryError;
+  }
+  if (next.finalityError === undefined) {
+    delete next.finalityError;
+  }
+  if (next.projectionWarning === undefined) {
+    delete next.projectionWarning;
+  }
+
   if (next.deliveryStatus === "delivered") {
-    next.deliveryError = undefined;
+    delete next.deliveryError;
   }
 
   if (
@@ -254,7 +267,7 @@ function normalizeTaskProjection(task: TaskRecord): TaskRecord {
   if (projectionError) {
     next.error = projectionError;
   } else {
-    next.error = undefined;
+    delete next.error;
   }
   return next;
 }

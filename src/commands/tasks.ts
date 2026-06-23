@@ -344,11 +344,28 @@ function pushIfPresent(values: string[], value: string | undefined) {
   }
 }
 
+function buildTaskResultArtifactRefs(task: TaskRecord): string[] {
+  const refs: string[] = [];
+  const sessionKey =
+    normalizeOptionalString(task.childSessionKey) ?? normalizeOptionalString(task.ownerKey);
+  if (sessionKey) {
+    refs.push(`openclaw-session:${sessionKey}`);
+  }
+  const runId = normalizeOptionalString(task.runId);
+  if (runId) {
+    refs.push(`openclaw-run:${runId}`);
+  }
+  return refs;
+}
+
 function toCompactChildResultRef(task: TaskRecord): CompactResultChildRef {
+  const resultArtifactRefs = buildTaskResultArtifactRefs(task);
   return {
     taskId: task.taskId,
     ...(task.runId ? { runId: task.runId } : {}),
     ...(task.childSessionKey ? { sessionKey: task.childSessionKey } : {}),
+    ...(resultArtifactRefs[0] ? { fullResultRef: resultArtifactRefs[0] } : {}),
+    ...(resultArtifactRefs.length > 0 ? { resultArtifactRefs } : {}),
     ...(task.agentId ? { agentId: task.agentId } : {}),
     status: task.status,
     ...(task.terminalOutcome ? { terminalOutcome: task.terminalOutcome } : {}),
@@ -389,6 +406,7 @@ export function buildTaskCompactResultProjection(params: {
   tasks?: TaskRecord[];
 }): CompactResultProjection {
   const { task } = params;
+  const resultArtifactRefs = buildTaskResultArtifactRefs(task);
   const projectionWarnings: string[] = [];
   pushIfPresent(projectionWarnings, task.projectionWarning);
   pushIfPresent(
@@ -419,7 +437,8 @@ export function buildTaskCompactResultProjection(params: {
     ...(task.terminalSummary
       ? { terminalSummary: compactProjectionText(task.terminalSummary) }
       : {}),
-    resultArtifactRefs: [],
+    ...(resultArtifactRefs[0] ? { fullResultRef: resultArtifactRefs[0] } : {}),
+    resultArtifactRefs,
     childResultRefs: findRelatedChildResultRefs(task, params.tasks ?? reconcileInspectableTasks()),
     ...(task.executionReceipt ? { receipt: task.executionReceipt } : {}),
     projectionWarnings,
@@ -578,6 +597,7 @@ export async function tasksShowCommand(
       `delivery: ${projection.deliveryStatus ?? "n/a"}`,
       `sessionKey: ${projection.sessionKey ?? "n/a"}`,
       `childSessionKey: ${projection.childSessionKey ?? "n/a"}`,
+      `fullResultRef: ${projection.fullResultRef ?? "n/a"}`,
       `progressSummary: ${projection.progressSummary ?? "n/a"}`,
       `terminalSummary: ${projection.terminalSummary ?? "n/a"}`,
       `childResultRefs: ${projection.childResultRefs.length}`,

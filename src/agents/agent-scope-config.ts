@@ -19,6 +19,8 @@ export type ResolvedAgentConfig = {
   name?: string;
   workspace?: string;
   agentDir?: string;
+  contractPack?: string;
+  runtimePromptFiles?: string[];
   model?: AgentEntry["model"];
   thinkingDefault?: AgentEntry["thinkingDefault"];
   verboseDefault?: AgentDefaultsConfig["verboseDefault"];
@@ -123,6 +125,12 @@ export function resolveAgentConfig(
     name: readStringValue(entry.name),
     workspace: readStringValue(entry.workspace),
     agentDir: readStringValue(entry.agentDir),
+    contractPack: readStringValue(entry.contractPack),
+    runtimePromptFiles: Array.isArray(entry.runtimePromptFiles)
+      ? entry.runtimePromptFiles
+          .map((value) => readStringValue(value))
+          .filter((value): value is string => Boolean(value))
+      : undefined,
     model:
       typeof entry.model === "string" || (entry.model && typeof entry.model === "object")
         ? entry.model

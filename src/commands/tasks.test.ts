@@ -449,8 +449,15 @@ describe("tasks commands", () => {
         task?: string;
         taskId?: string;
         runId?: string;
+        fullResultRef?: string;
+        resultArtifactRefs?: string[];
         progressSummary?: string;
-        childResultRefs?: Array<{ taskId?: string; progressSummary?: string }>;
+        childResultRefs?: Array<{
+          taskId?: string;
+          progressSummary?: string;
+          fullResultRef?: string;
+          resultArtifactRefs?: string[];
+        }>;
       };
 
       expect(payload.schema).toBe("openclaw.compact-result.v1");
@@ -459,11 +466,21 @@ describe("tasks commands", () => {
       expect(JSON.stringify(payload)).not.toContain("RAW CHILD PROMPT SHOULD NOT APPEAR");
       expect(payload.taskId).toBe(parent.taskId);
       expect(payload.runId).toBe("run-compact-result");
+      expect(payload.fullResultRef).toBe("openclaw-session:agent:researcher:subagent:child");
+      expect(payload.resultArtifactRefs).toEqual([
+        "openclaw-session:agent:researcher:subagent:child",
+        "openclaw-run:run-compact-result",
+      ]);
       expect(payload.progressSummary).toBe("Parent synthesized the child finding.");
       expect(payload.childResultRefs).toContainEqual(
         expect.objectContaining({
           taskId: child.taskId,
           progressSummary: "Child found the material planning gap.",
+          fullResultRef: "openclaw-session:agent:researcher:subagent:child",
+          resultArtifactRefs: [
+            "openclaw-session:agent:researcher:subagent:child",
+            "openclaw-run:run-compact-result",
+          ],
         }),
       );
     });

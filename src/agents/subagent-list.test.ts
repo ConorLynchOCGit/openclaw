@@ -109,6 +109,76 @@ describe("buildSubagentList", () => {
     expect(list.active[0]?.line).toContain("review_subagents: Review worker");
   });
 
+  it("projects final child answers and result pointers without bloating list lines", () => {
+    const now = Date.now();
+    const resultText = `## Bottom Line
+
+The child found the important evidence.
+
+## Evidence That Matters
+- Claim: The planner must inspect child refs.
+  Evidence excerpt: Native completion payloads already carry result refs.
+  Ref: source-item:child-1
+  Why it matters: The parent should not rely on a progress summary.
+  Confidence: high`;
+    const run = {
+      runId: "run-result-projection",
+      childSessionKey: "agent:main:subagent:result-projection",
+      requesterSessionKey: "agent:main:main",
+      requesterDisplayKey: "main",
+      task: "research evidence-bearing child results",
+      cleanup: "keep",
+      createdAt: now - 20_000,
+      startedAt: now - 20_000,
+      endedAt: now - 5_000,
+      outcome: { status: "ok" },
+      completion: {
+        required: true,
+        resultText,
+        capturedAt: now - 4_000,
+        fullResultRef: "openclaw-session:agent:main:subagent:result-projection",
+        resultArtifactRefs: ["artifact:child-final-answer"],
+      },
+      delivery: {
+        status: "delivered",
+        payload: {
+          requesterSessionKey: "agent:main:main",
+          requesterDisplayKey: "main",
+          childSessionKey: "agent:main:subagent:result-projection",
+          childRunId: "run-result-projection",
+          task: "research evidence-bearing child results",
+          frozenResultText: resultText,
+          fullResultRef: "openclaw-session:agent:main:subagent:result-projection",
+          resultArtifactRefs: ["artifact:child-final-answer", "artifact:source-ledger"],
+        },
+      },
+    } satisfies SubagentRunRecord;
+    addSubagentRunForTests(run);
+    const cfg = {
+      commands: { text: true },
+      channels: { whatsapp: { allowFrom: ["*"] } },
+    } as OpenClawConfig;
+
+    const list = buildSubagentList({
+      cfg,
+      runs: [run],
+      recentMinutes: 30,
+      taskMaxChars: 110,
+    });
+
+    expect(list.recent[0]?.completion).toMatchObject({
+      status: "complete",
+      resultText,
+      fullResultRef: "openclaw-session:agent:main:subagent:result-projection",
+      resultArtifactRefs: ["artifact:child-final-answer", "artifact:source-ledger"],
+      deliveryStatus: "delivered",
+      delivered: true,
+    });
+    expect(list.recent[0]?.completion?.resultPreview).toContain("The child found");
+    expect(list.recent[0]?.line).not.toContain("Evidence That Matters");
+    expect(list.recent[0]?.line).not.toContain("source-item:child-1");
+  });
+
   it("keeps ended orchestrators active while descendants remain pending", () => {
     // Parent orchestrators can finish their own turn before child workers do;
     // list output should keep them active until descendants settle.

@@ -470,6 +470,55 @@ describe("subagent registry seam flow", () => {
     });
   });
 
+  it("keeps explicit run timeout active while native liveness says the child is working", async () => {
+    const startedAt = Date.now();
+    let waitAttempts = 0;
+    mocks.callGateway.mockImplementation(async (request: { method?: string }) => {
+      if (request.method === "agent.wait") {
+        waitAttempts += 1;
+        return {
+          status: "timeout",
+          livenessState: "working",
+          providerStarted: true,
+        };
+      }
+      return {};
+    });
+    mocks.loadSessionStore.mockReturnValue({
+      "agent:main:subagent:child": {
+        sessionId: "sess-child",
+        updatedAt: startedAt,
+        status: "running",
+      },
+    });
+
+    mod.registerSubagentRun({
+      runId: "run-explicit-timeout-working",
+      childSessionKey: "agent:main:subagent:child",
+      requesterSessionKey: "agent:main:main",
+      requesterDisplayKey: "main",
+      task: "keep active while working",
+      cleanup: "keep",
+      runTimeoutSeconds: 1,
+    });
+
+    await waitForFast(() => {
+      expect(waitAttempts).toBeGreaterThanOrEqual(1);
+    });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await waitForFast(() => {
+      expect(waitAttempts).toBeGreaterThanOrEqual(2);
+    });
+
+    const activeRun = mod
+      .listSubagentRunsForRequester("agent:main:main")
+      .find((entry) => entry.runId === "run-explicit-timeout-working");
+    expect(activeRun?.startedAt).toBe(startedAt);
+    expect(activeRun?.endedAt).toBeUndefined();
+    expect(activeRun?.outcome).toBeUndefined();
+    expect(mocks.runSubagentAnnounceFlow).not.toHaveBeenCalled();
+  });
+
   it("keeps explicit run timeout terminal when late lifecycle success arrives", async () => {
     const startedAt = Date.now();
     mocks.callGateway.mockImplementation(async (request: { method?: string }) => {

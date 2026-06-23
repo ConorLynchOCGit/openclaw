@@ -23,6 +23,8 @@ export type PendingFinalDeliveryPayload = {
   spawnMode?: SpawnSubagentMode;
   frozenResultText?: string | null;
   fallbackFrozenResultText?: string | null;
+  fullResultRef?: string;
+  resultArtifactRefs?: string[];
   wakeOnDescendantSettle?: boolean;
 };
 
@@ -42,6 +44,8 @@ export type SubagentCompletionState = {
   capturedAt?: number;
   fallbackResultText?: string | null;
   fallbackCapturedAt?: number;
+  fullResultRef?: string;
+  resultArtifactRefs?: string[];
 };
 
 export type SubagentCompletionDeliveryState = {

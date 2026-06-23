@@ -236,6 +236,10 @@ export const FIELD_HELP: Record<string, string> = {
     "Optional allowlist of skills for this agent. If omitted, the agent inherits agents.defaults.skills when set; otherwise skills stay unrestricted. Set [] for no skills. An explicit list fully replaces inherited defaults instead of merging with them.",
   "agents.list[].skills":
     "Optional allowlist of skills for this agent. If omitted, the agent inherits agents.defaults.skills when set; otherwise skills stay unrestricted. Set [] for no skills. An explicit list fully replaces inherited defaults instead of merging with them.",
+  "agents.list[].contractPack":
+    "Optional workspace-relative directory containing this agent's canonical runtime prompt files. Bundled bootstrap-extra-files can inject this pack during agent bootstrap when runtimePromptFiles is set.",
+  "agents.list[].runtimePromptFiles":
+    "Optional list of bootstrap file basenames under contractPack to inject for this agent, such as AGENTS.md, TOOLS.md, IDENTITY.md, SOUL.md, or USER.md. This keeps per-agent prompt furnishing on agents.list instead of duplicating hook-local path maps.",
   agents:
     "Agent runtime configuration root covering defaults and explicit agent entries used for routing and execution context. Keep this section explicit so model/tool behavior stays predictable across multi-agent workflows.",
   "agents.defaults":

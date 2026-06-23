@@ -669,8 +669,14 @@ function hasGatewayAgentCompletionSideEffectEvidence(response: unknown): boolean
     hasMessagingToolDeliveryEvidence(result) ||
     (Array.isArray(result.acceptedSessionSpawns) &&
       hasAcceptedSessionSpawn(result.acceptedSessionSpawns)) ||
+    result.meta?.yielded === true ||
     hasPositiveDeliveryCount(result.successfulCronAdds)
   );
+}
+
+function hasGatewayAgentYieldEvidence(response: unknown): boolean {
+  const result = getGatewayAgentResult(response);
+  return result?.meta?.yielded === true;
 }
 
 function hasIntentionalSilentGatewayAgentPayload(response: unknown): boolean {
@@ -1543,6 +1549,33 @@ async function sendSubagentAnnounceDirectly(params: {
         path: "direct",
         reason: "generated_media_missing",
         error: "completion agent did not deliver generated media",
+      };
+    }
+    if (
+      params.expectsCompletionMessage &&
+      isSubagentCompletion &&
+      hasGatewayAgentYieldEvidence(directAnnounceResponse) &&
+      !hasFailedSubagentNoOutputCompletion(params.internalEvents)
+    ) {
+      return {
+        delivered: true,
+        path: "direct",
+      };
+    }
+    if (
+      params.expectsCompletionMessage &&
+      isSubagentCompletion &&
+      !hasFailedSubagentNoOutputCompletion(params.internalEvents) &&
+      !subagentDirectMessageCompletionRequiresMessageTool &&
+      !(
+        directDeliveryFailure &&
+        deliveryTarget.deliver &&
+        isDirectMessageDeliveryTarget(deliveryTarget, canonicalRequesterSessionKey)
+      )
+    ) {
+      return {
+        delivered: true,
+        path: "direct",
       };
     }
     if (directDeliveryFailure) {

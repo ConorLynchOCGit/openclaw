@@ -43,6 +43,22 @@ export const ANNOUNCE_COMPLETION_HARD_EXPIRY_MS = 30 * 60_000;
 
 const FROZEN_RESULT_TEXT_MAX_BYTES = 100 * 1024;
 
+/** Stable native refs for reading a child result without embedding full output. */
+export function buildSubagentResultRefs(
+  entry: Pick<SubagentRunRecord, "childSessionKey" | "runId">,
+): string[] {
+  const refs: string[] = [];
+  const childSessionKey = entry.childSessionKey?.trim();
+  if (childSessionKey) {
+    refs.push(`openclaw-session:${childSessionKey}`);
+  }
+  const runId = entry.runId?.trim();
+  if (runId) {
+    refs.push(`openclaw-run:${runId}`);
+  }
+  return refs;
+}
+
 /** Why a registry run can no longer be matched to a live child session. */
 type SubagentRunOrphanReason = "missing-session-entry" | "missing-session-id" | "stale-unended-run";
 

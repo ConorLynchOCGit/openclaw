@@ -6,6 +6,8 @@ export type CompactResultChildRef = {
   taskId?: string;
   runId?: string;
   sessionKey?: string;
+  fullResultRef?: string;
+  resultArtifactRefs?: string[];
   agentId?: string;
   status?: string;
   terminalOutcome?: string;
@@ -33,6 +35,7 @@ export type CompactResultProjection = {
   progressSummary?: string;
   terminalSummary?: string;
   finalAssistantText?: string;
+  fullResultRef?: string;
   resultArtifactRefs: string[];
   childResultRefs: CompactResultChildRef[];
   receipt?: unknown;

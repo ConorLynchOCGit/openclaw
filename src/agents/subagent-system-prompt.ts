@@ -63,6 +63,7 @@ export function buildSubagentSystemPrompt(params: {
     "- What you accomplished or found",
     `- Any relevant details the ${parentLabel} should know`,
     "- Keep it concise but informative",
+    "- For research, planning, review, source-intelligence, or codebase-exploration work: include a bottom line, what the parent should read first, bounded high-signal evidence/context, contradictions or caveats, what the parent should verify, and source/result refs. Your final answer should be a discovery map the parent can reason from, not a substitute for the parent's synthesis.",
     "",
     "## What You DON'T Do",
     `- NO user conversations (that's ${parentLabel}'s job)`,

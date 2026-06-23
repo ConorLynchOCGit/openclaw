@@ -36,6 +36,7 @@ export type AgentDeliveryEvidence = {
     toolSummary?: {
       calls?: unknown;
     };
+    yielded?: unknown;
   };
 };
 
@@ -205,6 +206,7 @@ export function hasOutboundDeliveryEvidence(result: AgentDeliveryEvidence): bool
     (Array.isArray(result.acceptedSessionSpawns) &&
       hasAcceptedSessionSpawn(result.acceptedSessionSpawns)) ||
     hasPositiveNumber(result.successfulCronAdds) ||
+    result.meta?.yielded === true ||
     hasPositiveNumber(result.meta?.toolSummary?.calls)
   );
 }

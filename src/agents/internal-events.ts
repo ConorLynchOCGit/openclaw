@@ -23,7 +23,10 @@ type AgentTaskCompletionInternalEvent = {
   type: typeof AGENT_INTERNAL_EVENT_TYPE_TASK_COMPLETION;
   source: AgentInternalEventSource;
   childSessionKey: string;
+  childRunId?: string;
   childSessionId?: string;
+  fullResultRef?: string;
+  resultArtifactRefs?: string[];
   announceType: string;
   taskLabel: string;
   status: AgentInternalEventStatus;
@@ -63,6 +66,9 @@ function formatChildResultDataBlock(value: string): string {
 
 function formatTaskCompletionEvent(event: AgentTaskCompletionInternalEvent): string {
   const sessionKey = sanitizeSingleLineField(event.childSessionKey, "unknown");
+  const childRunId = event.childRunId
+    ? sanitizeSingleLineField(event.childRunId, "unknown")
+    : undefined;
   const sessionId = sanitizeSingleLineField(event.childSessionId ?? "unknown", "unknown");
   const announceType = sanitizeSingleLineField(event.announceType, "unknown");
   const taskLabel = sanitizeSingleLineField(event.taskLabel, "unnamed task");
@@ -73,6 +79,7 @@ function formatTaskCompletionEvent(event: AgentTaskCompletionInternalEvent): str
     "[Internal task completion event]",
     `source: ${event.source}`,
     `session_key: ${sessionKey}`,
+    ...(childRunId ? [`run_id: ${childRunId}`] : []),
     `session_id: ${sessionId}`,
     `type: ${announceType}`,
     `task: ${taskLabel}`,
@@ -80,6 +87,15 @@ function formatTaskCompletionEvent(event: AgentTaskCompletionInternalEvent): str
     "",
     result,
   ];
+  const refs = [
+    event.fullResultRef,
+    ...(Array.isArray(event.resultArtifactRefs) ? event.resultArtifactRefs : []),
+  ]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+  if (refs.length > 0) {
+    lines.push("", "Full result refs:", ...[...new Set(refs)].map((ref) => `- ${ref}`));
+  }
   if (attachmentLines.length > 0) {
     lines.push("", ...attachmentLines);
   }
@@ -92,6 +108,9 @@ function formatTaskCompletionEvent(event: AgentTaskCompletionInternalEvent): str
 
 function formatTaskCompletionEventForPlainPrompt(event: AgentTaskCompletionInternalEvent): string {
   const sessionKey = sanitizeSingleLineField(event.childSessionKey, "unknown");
+  const childRunId = event.childRunId
+    ? sanitizeSingleLineField(event.childRunId, "unknown")
+    : undefined;
   const sessionId = sanitizeSingleLineField(event.childSessionId ?? "unknown", "unknown");
   const announceType = sanitizeSingleLineField(event.announceType, "unknown");
   const taskLabel = sanitizeSingleLineField(event.taskLabel, "unnamed task");
@@ -103,6 +122,7 @@ function formatTaskCompletionEventForPlainPrompt(event: AgentTaskCompletionInter
     "",
     `source: ${event.source}`,
     `session_key: ${sessionKey}`,
+    ...(childRunId ? [`run_id: ${childRunId}`] : []),
     `session_id: ${sessionId}`,
     `type: ${announceType}`,
     `task: ${taskLabel}`,
@@ -110,6 +130,15 @@ function formatTaskCompletionEventForPlainPrompt(event: AgentTaskCompletionInter
     "",
     result,
   ];
+  const refs = [
+    event.fullResultRef,
+    ...(Array.isArray(event.resultArtifactRefs) ? event.resultArtifactRefs : []),
+  ]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+  if (refs.length > 0) {
+    lines.push("", "Full result refs:", ...[...new Set(refs)].map((ref) => `- ${ref}`));
+  }
   if (attachmentLines.length > 0) {
     lines.push("", ...attachmentLines);
   }

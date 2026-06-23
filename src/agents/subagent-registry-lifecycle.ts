@@ -49,6 +49,7 @@ import { shouldUpdateRunOutcome } from "./subagent-registry-completion.js";
 import {
   ANNOUNCE_COMPLETION_HARD_EXPIRY_MS,
   ANNOUNCE_EXPIRY_MS,
+  buildSubagentResultRefs,
   capFrozenResultText,
   logAnnounceGiveUp,
   MAX_ANNOUNCE_RETRY_COUNT,
@@ -425,6 +426,9 @@ export function createSubagentRegistryLifecycleController(params: {
     outcome: SubagentRunOutcome,
   ): Promise<boolean> => {
     const completion = ensureCompletionState(entry);
+    const resultArtifactRefs = buildSubagentResultRefs(entry);
+    completion.resultArtifactRefs = resultArtifactRefs;
+    completion.fullResultRef = resultArtifactRefs[0];
     if (completion.resultText !== undefined) {
       return false;
     }
@@ -570,6 +574,14 @@ export function createSubagentRegistryLifecycleController(params: {
       frozenResultText: entry.delivery?.payload?.frozenResultText ?? entry.completion?.resultText,
       fallbackFrozenResultText:
         entry.delivery?.payload?.fallbackFrozenResultText ?? entry.completion?.fallbackResultText,
+      fullResultRef:
+        entry.delivery?.payload?.fullResultRef ??
+        entry.completion?.fullResultRef ??
+        buildSubagentResultRefs(entry)[0],
+      resultArtifactRefs:
+        entry.delivery?.payload?.resultArtifactRefs ??
+        entry.completion?.resultArtifactRefs ??
+        buildSubagentResultRefs(entry),
       wakeOnDescendantSettle:
         entry.delivery?.payload?.wakeOnDescendantSettle ?? entry.wakeOnDescendantSettle,
     };
@@ -604,6 +616,8 @@ export function createSubagentRegistryLifecycleController(params: {
       outcome: entry.outcome,
       frozenResultText: entry.completion?.resultText,
       fallbackFrozenResultText: entry.completion?.fallbackResultText,
+      fullResultRef: entry.completion?.fullResultRef ?? buildSubagentResultRefs(entry)[0],
+      resultArtifactRefs: entry.completion?.resultArtifactRefs ?? buildSubagentResultRefs(entry),
     };
     return true;
   };
@@ -1092,6 +1106,8 @@ export function createSubagentRegistryLifecycleController(params: {
         endedAt: pendingPayload.endedAt,
         label: pendingPayload.label,
         outcome: pendingPayload.outcome,
+        fullResultRef: pendingPayload.fullResultRef,
+        resultArtifactRefs: pendingPayload.resultArtifactRefs,
         spawnMode: pendingPayload.spawnMode,
         expectsCompletionMessage: pendingPayload.expectsCompletionMessage,
         wakeOnDescendantSettle: pendingPayload.wakeOnDescendantSettle === true,

@@ -8,7 +8,10 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { callGateway } from "../gateway/call.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
-import { createRunningTaskRun } from "../tasks/detached-task-runtime.js";
+import {
+  createRunningTaskRun,
+  recordTaskRunProgressByRunId,
+} from "../tasks/detached-task-runtime.js";
 import { normalizeDeliveryContext } from "../utils/delivery-context.shared.js";
 import type { DeliveryContext } from "../utils/delivery-context.types.js";
 import { buildAgentRunTerminalOutcomeFromWaitResult } from "./agent-run-terminal-outcome.js";
@@ -92,6 +95,10 @@ function resolveWaitTimeoutMsForRun(
     return normalizedWaitTimeoutMs;
   }
   return Math.max(1, Math.min(normalizedWaitTimeoutMs, deadlineMs - now));
+}
+
+function isProgressLivenessState(value: unknown): boolean {
+  return value === "working" || value === "paused";
 }
 
 export function markSubagentRunPausedAfterYield(params: {
@@ -317,6 +324,7 @@ export function createSubagentRunManager(params: {
           typeof wait.endedAt === "number" ||
           typeof wait.stopReason === "string" ||
           typeof wait.livenessState === "string";
+        const waitStillMakingProgress = isProgressLivenessState(wait.livenessState);
         const now = Date.now();
         if (observedStartedAt !== undefined && entry.startedAt !== observedStartedAt) {
           entry.startedAt = observedStartedAt;
@@ -326,8 +334,9 @@ export function createSubagentRunManager(params: {
           params.persist();
         }
         // A plain agent.wait timeout has no terminal snapshot. For explicit
-        // subagent run timeouts, the stored run deadline is the completion
-        // contract so parent sessions are woken instead of retrying forever.
+        // subagent run timeouts, only terminal/non-progress liveness should end
+        // the child. A child that is still working or paused has made native
+        // progress and should remain addressable as still_running.
         const hardRunTimeoutEndedAt = resolveHardRunTimeoutEndedAt(entry, now, observedStartedAt);
         const completion = params.resolveSubagentSessionCompletion({
           childSessionKey: entry.childSessionKey,
@@ -358,6 +367,21 @@ export function createSubagentRunManager(params: {
             startedAt: completionStartedAt,
           };
           await params.completeSubagentRun(completionForRetry);
+          return;
+        }
+        if (waitStillMakingProgress) {
+          recordTaskRunProgressByRunId({
+            runId,
+            runtime: "subagent",
+            sessionKey: entry.childSessionKey,
+            lastEventAt: now,
+            progressSummary: `Child is still ${wait.livenessState}; keeping run active.`,
+            eventSummary: `Still ${wait.livenessState}.`,
+          });
+          scheduleWaitRetry(
+            entry,
+            `subagent wait timed out while child is ${wait.livenessState}; keeping run active`,
+          );
           return;
         }
         if (isTerminalWaitTimeout || hardRunTimeoutEndedAt !== undefined) {
@@ -694,6 +718,7 @@ export function createSubagentRunManager(params: {
           registerParams.expectsCompletionMessage === false ? "not_applicable" : "pending",
         startedAt: now,
         lastEventAt: now,
+        progressSummary: "Child started.",
       });
       if (!task) {
         log.warn("Failed to persist background task for subagent run", {

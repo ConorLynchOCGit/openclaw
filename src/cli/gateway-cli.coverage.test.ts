@@ -133,6 +133,38 @@ function firstMockArg(mock: { mock: { calls: ReadonlyArray<ReadonlyArray<unknown
   return call[0];
 }
 
+function withPipedStdin(input: string) {
+  const stdin = process.stdin as NodeJS.ReadStream & { isTTY?: boolean };
+  const previousIsTTYDescriptor = Object.getOwnPropertyDescriptor(stdin, "isTTY");
+  const previousAsyncIteratorDescriptor = Object.getOwnPropertyDescriptor(
+    stdin,
+    Symbol.asyncIterator,
+  );
+  Object.defineProperty(stdin, "isTTY", {
+    configurable: true,
+    enumerable: true,
+    get: () => false,
+  });
+  Object.defineProperty(stdin, Symbol.asyncIterator, {
+    configurable: true,
+    async *value() {
+      yield input;
+    },
+  });
+  return () => {
+    if (previousAsyncIteratorDescriptor) {
+      Object.defineProperty(stdin, Symbol.asyncIterator, previousAsyncIteratorDescriptor);
+    } else {
+      Reflect.deleteProperty(stdin, Symbol.asyncIterator);
+    }
+    if (previousIsTTYDescriptor) {
+      Object.defineProperty(stdin, "isTTY", previousIsTTYDescriptor);
+    } else {
+      Reflect.deleteProperty(stdin, "isTTY");
+    }
+  };
+}
+
 describe("gateway-cli coverage", () => {
   beforeEach(() => {
     gatewayProgram = createGatewayProgram();
@@ -156,7 +188,104 @@ describe("gateway-cli coverage", () => {
     await runGatewayCommand(["gateway", "call", "health", "--params", '{"x":1}', "--json"]);
 
     expect(callGateway).toHaveBeenCalledTimes(1);
+    const gatewayCall = firstMockArg(callGateway) as { method?: string; params?: unknown };
+    expect(gatewayCall?.method).toBe("health");
+    expect(gatewayCall?.params).toEqual({ x: 1 });
     expect(runtimeLogs.join("\n")).toContain('"ok": true');
+  });
+
+  it("reads gateway call params from a file", async () => {
+    callGateway.mockClear();
+    const paramsPath = path.join(os.tmpdir(), `openclaw-gateway-call-${process.pid}.json`);
+    fs.writeFileSync(
+      paramsPath,
+      JSON.stringify({ sessionKey: "agent:planning:test", message: "hi" }),
+    );
+    try {
+      await runGatewayCommand([
+        "gateway",
+        "call",
+        "chat.send",
+        "--params-file",
+        paramsPath,
+        "--json",
+      ]);
+    } finally {
+      fs.rmSync(paramsPath, { force: true });
+    }
+
+    expect(callGateway).toHaveBeenCalledTimes(1);
+    const gatewayCall = firstMockArg(callGateway) as { method?: string; params?: unknown };
+    expect(gatewayCall?.method).toBe("chat.send");
+    expect(gatewayCall?.params).toEqual({ sessionKey: "agent:planning:test", message: "hi" });
+  });
+
+  it("reads gateway call params from stdin", async () => {
+    callGateway.mockClear();
+    const restoreStdin = withPipedStdin(JSON.stringify({ sessionKey: "agent:planning:stdin" }));
+    try {
+      await runGatewayCommand(["gateway", "call", "chat.send", "--params", "-", "--json"]);
+    } finally {
+      restoreStdin();
+    }
+
+    expect(callGateway).toHaveBeenCalledTimes(1);
+    const gatewayCall = firstMockArg(callGateway) as { method?: string; params?: unknown };
+    expect(gatewayCall?.method).toBe("chat.send");
+    expect(gatewayCall?.params).toEqual({ sessionKey: "agent:planning:stdin" });
+  });
+
+  it("rejects invalid gateway call stdin JSON before calling Gateway", async () => {
+    callGateway.mockClear();
+    const restoreStdin = withPipedStdin("{nope");
+    try {
+      await expectGatewayExit(["gateway", "call", "chat.send", "--params-file", "-"]);
+    } finally {
+      restoreStdin();
+    }
+
+    expect(callGateway).not.toHaveBeenCalled();
+    expect(runtimeErrors.join("\n")).toContain(
+      "Invalid Gateway call params JSON from --params-file -",
+    );
+  });
+
+  it("rejects conflicting gateway call params sources before calling Gateway", async () => {
+    callGateway.mockClear();
+    const paramsPath = path.join(os.tmpdir(), `openclaw-gateway-call-conflict-${process.pid}.json`);
+    fs.writeFileSync(paramsPath, "{}");
+    try {
+      await expectGatewayExit([
+        "gateway",
+        "call",
+        "health",
+        "--params",
+        "{}",
+        "--params-file",
+        paramsPath,
+      ]);
+    } finally {
+      fs.rmSync(paramsPath, { force: true });
+    }
+
+    expect(callGateway).not.toHaveBeenCalled();
+    expect(runtimeErrors.join("\n")).toContain("Use either --params or --params-file");
+  });
+
+  it("rejects invalid gateway call params file JSON before calling Gateway", async () => {
+    callGateway.mockClear();
+    const paramsPath = path.join(os.tmpdir(), `openclaw-gateway-call-invalid-${process.pid}.json`);
+    fs.writeFileSync(paramsPath, "{nope");
+    try {
+      await expectGatewayExit(["gateway", "call", "status", "--params-file", paramsPath]);
+    } finally {
+      fs.rmSync(paramsPath, { force: true });
+    }
+
+    expect(callGateway).not.toHaveBeenCalled();
+    expect(runtimeErrors.join("\n")).toContain(
+      "Invalid Gateway call params JSON from --params-file",
+    );
   });
 
   it("rejects invalid gateway call timeout before calling Gateway", async () => {

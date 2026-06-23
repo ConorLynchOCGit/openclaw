@@ -93,7 +93,7 @@ function buildAnnounceReplyInstruction(params: {
     return `Convert this completion into a concise internal orchestration update for your parent agent in your own words. Keep this internal context private (don't mention system/log/stats/session details or announce type). If this result is duplicate or no update is needed, reply ONLY: ${SILENT_REPLY_TOKEN}.`;
   }
   if (params.expectsCompletionMessage) {
-    return `A completed ${params.announceType} is ready for parent review. Review/verify the result above and use it toward the original task if it is needed. If this result is necessary before you can answer, synthesize it into the final truthful user-facing answer; otherwise continue dynamically without treating it as a fixed workflow step. Keep this internal context private (don't mention system/log/stats/session details or announce type). Reply ONLY: ${SILENT_REPLY_TOKEN} if you already sent a substantive final user-facing answer before this completion event arrived. A previous ${SILENT_REPLY_TOKEN}, silent response, tool-only spawn turn, or wait/yield turn is not a final user-facing answer.`;
+    return `A completed ${params.announceType} is ready for parent review. Treat the child result as a discovery map, not as the final context model: inspect the high-impact refs/context it names when they could change the answer, decide what to accept/downgrade/reject, and synthesize from your own evidence model. If this result is necessary before you can answer, synthesize it into the final truthful user-facing answer; otherwise continue dynamically without treating it as a fixed workflow step. Keep this internal context private (don't mention system/log/stats/session details or announce type). Reply ONLY: ${SILENT_REPLY_TOKEN} if you already sent a substantive final user-facing answer before this completion event arrived. A previous ${SILENT_REPLY_TOKEN}, silent response, tool-only spawn turn, or wait/yield turn is not a final user-facing answer.`;
   }
   return `A completed ${params.announceType} is ready for parent review. Review/verify the result above before deciding whether the original task is done. If additional action is required, continue the task or record a follow-up; otherwise send a truthful user-facing update. Keep this internal context private (don't mention system/log/stats/session details or announce type), and do not copy the internal event text verbatim. Reply ONLY: ${SILENT_REPLY_TOKEN} if this exact result was already delivered to the user in this same turn.`;
 }
@@ -250,6 +250,8 @@ export async function runSubagentAnnounceFlow(params: {
   endedAt?: number;
   label?: string;
   outcome?: SubagentRunOutcome;
+  fullResultRef?: string;
+  resultArtifactRefs?: string[];
   announceType?: SubagentAnnounceType;
   expectsCompletionMessage?: boolean;
   spawnMode?: SpawnSubagentMode;
@@ -523,7 +525,10 @@ export async function runSubagentAnnounceFlow(params: {
         type: "task_completion",
         source: announceType === "cron job" ? "cron" : "subagent",
         childSessionKey: params.childSessionKey,
+        childRunId: params.childRunId,
         childSessionId: announceSessionId,
+        fullResultRef: params.fullResultRef,
+        resultArtifactRefs: params.resultArtifactRefs,
         announceType,
         taskLabel,
         status: outcome.status,

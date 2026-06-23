@@ -12,7 +12,10 @@ type AgentInternalEvent = {
   type: "task_completion";
   source: string;
   childSessionKey: string;
+  childRunId?: string;
   childSessionId: string;
+  fullResultRef?: string;
+  resultArtifactRefs?: string[];
   announceType: string;
   taskLabel: string;
   status: "ok" | "error";
@@ -21,6 +24,7 @@ type AgentInternalEvent = {
   attachments?: unknown[];
   mediaUrls?: string[];
   replyInstruction?: string;
+  extensions?: Record<string, unknown>;
 };
 
 /** Builds the smallest valid agent request that embeds one internal event. */
@@ -38,7 +42,10 @@ const musicCompletionEvent: AgentInternalEvent = {
   type: "task_completion",
   source: "music_generation",
   childSessionKey: "music_generate:task-123",
+  childRunId: "run-music-generate-123",
   childSessionId: "task-123",
+  fullResultRef: "openclaw-session:music_generate:task-123",
+  resultArtifactRefs: ["openclaw-run:run-music-generate-123"],
   announceType: "music generation task",
   taskLabel: "OpenClaw release anthem",
   status: "ok",
@@ -54,6 +61,9 @@ const musicCompletionEvent: AgentInternalEvent = {
   ],
   mediaUrls: ["/tmp/openclaw/generated-release-anthem.mp3"],
   replyInstruction: "Deliver the generated music.",
+  extensions: {
+    deliveryAttempt: 1,
+  },
 };
 
 describe("AgentParamsSchema", () => {
@@ -70,6 +80,21 @@ describe("AgentParamsSchema", () => {
     } as AgentInternalEvent);
 
     expect(Value.Check(AgentParamsSchema, params)).toBe(false);
+  });
+
+  it("accepts versioned child completion metadata on internal events", () => {
+    const params = makeAgentParamsWithInternalEvent({
+      ...musicCompletionEvent,
+      childRunId: "run-child-proof",
+      fullResultRef: "openclaw-session:agent:planning:subagent:x",
+      resultArtifactRefs: ["openclaw-run:run-child-proof"],
+      extensions: {
+        compactSummaryVersion: 1,
+        childOutputSurface: "completion.resultText",
+      },
+    });
+
+    expect(Value.Check(AgentParamsSchema, params)).toBe(true);
   });
 
   it("rejects malformed generated attachment entries on internal events", () => {

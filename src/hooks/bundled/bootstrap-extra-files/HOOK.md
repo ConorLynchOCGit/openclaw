@@ -42,11 +42,68 @@ workspace root.
 }
 ```
 
+For per-agent contract packs, prefer putting the owned prompt pack directly on
+the agent entry. The hook will read `agents.list[].contractPack` and
+`agents.list[].runtimePromptFiles` during bootstrap:
+
+```json
+{
+  "agents": {
+    "list": [
+      {
+        "id": "planning",
+        "contractPack": "docs/agents/planning",
+        "runtimePromptFiles": ["AGENTS.md", "TOOLS.md", "IDENTITY.md", "SOUL.md", "USER.md"]
+      },
+      {
+        "id": "reviewer",
+        "contractPack": "docs/agents/reviewer",
+        "runtimePromptFiles": ["AGENTS.md", "TOOLS.md"]
+      }
+    ]
+  },
+  "hooks": {
+    "internal": {
+      "entries": {
+        "bootstrap-extra-files": {
+          "enabled": true
+        }
+      }
+    }
+  }
+}
+```
+
+Legacy agent-scoped extra files can still be configured on the hook when a
+workspace cannot put prompt-pack ownership on the agent entry:
+
+```json
+{
+  "hooks": {
+    "internal": {
+      "entries": {
+        "bootstrap-extra-files": {
+          "enabled": true,
+          "agentPaths": {
+            "planning": ["docs/agents/planning/AGENTS.md", "docs/agents/planning/TOOLS.md"],
+            "reviewer": ["docs/agents/reviewer/AGENTS.md", "docs/agents/reviewer/TOOLS.md"]
+          }
+        }
+      }
+    }
+  }
+}
+```
+
 ## Options
 
 - `paths` (string[]): preferred list of glob/path patterns.
 - `patterns` (string[]): alias of `paths`.
 - `files` (string[]): alias of `paths`.
+- `agentPaths` / `agentPatterns` / `agentFiles` (object): map of
+  `agentId -> string[]` patterns to append only for that agent. Prefer
+  `agents.list[].contractPack` + `agents.list[].runtimePromptFiles` for new
+  per-agent prompt packs.
 
 All paths are resolved from the workspace and must stay inside it (including realpath checks).
 Only recognized bootstrap basenames are loaded (`AGENTS.md`, `SOUL.md`, `TOOLS.md`,

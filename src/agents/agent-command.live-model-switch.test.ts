@@ -3,6 +3,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import type { SessionEntry } from "../config/sessions.js";
 import { INTERNAL_RUNTIME_CONTEXT_BEGIN, INTERNAL_RUNTIME_CONTEXT_END } from "./internal-events.js";
 import { LiveSessionModelSwitchError } from "./live-model-switch-error.js";
+import { modelIdentityKeyFromProviderModel } from "./model-identity.js";
 
 const state = vi.hoisted(() => ({
   defaultRuntimeConfig: {
@@ -48,7 +49,7 @@ const state = vi.hoisted(() => ({
   trajectoryFlushMock: vi.fn(async () => undefined),
   persistSessionEntryMock: vi.fn(async (..._args: unknown[]): Promise<unknown> => undefined),
   clearSessionAuthProfileOverrideMock: vi.fn(),
-  ensureSelectedAgentHarnessPluginMock: vi.fn(async () => undefined),
+  ensureSelectedAgentHarnessPluginMock: vi.fn(async (_params?: unknown) => undefined),
   visibilityResolveSelectionMock: vi.fn(),
   isThinkingLevelSupportedMock: vi.fn((_args: unknown) => true),
   resolveSupportedThinkingLevelMock: vi.fn(({ level }: { level?: string }) => level),
@@ -175,7 +176,7 @@ vi.mock("./command/types.js", () => ({}));
 
 vi.mock("./harness/runtime-plugin.js", () => ({
   ensureSelectedAgentHarnessPlugin: (...args: unknown[]) =>
-    state.ensureSelectedAgentHarnessPluginMock(...args),
+    state.ensureSelectedAgentHarnessPluginMock(args[0]),
 }));
 
 vi.mock("../acp/policy.js", () => ({
@@ -1596,10 +1597,13 @@ describe("agentCommand – LiveSessionModelSwitchError retry", () => {
         contextMode: "lightweight",
         admission: {
           model: {
-            primaryIdentityKey: "openrouter::anthropic/claude-haiku-4.5",
+            primaryIdentityKey: modelIdentityKeyFromProviderModel(
+              "openrouter",
+              "anthropic/claude-haiku-4.5",
+            ),
             fallbackIdentityKeys: [
-              "openrouter::google/gemini-2.5-flash-lite",
-              "openrouter::google/gemini-2.0-flash-lite-001",
+              modelIdentityKeyFromProviderModel("openrouter", "google/gemini-2.5-flash-lite"),
+              modelIdentityKeyFromProviderModel("openrouter", "google/gemini-2.0-flash-lite-001"),
             ],
           },
           runtime: {

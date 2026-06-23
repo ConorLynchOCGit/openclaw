@@ -1,9 +1,12 @@
+import path from "node:path";
 // Bootstrap extra files hook injects configured extra files into startup context.
 import { normalizeTrimmedStringList } from "@openclaw/normalization-core/string-normalization";
+import { resolveAgentConfig } from "../../../agents/agent-scope-config.js";
 import {
   filterBootstrapFilesForSession,
   loadExtraBootstrapFilesWithDiagnostics,
 } from "../../../agents/workspace.js";
+import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import { createSubsystemLogger } from "../../../logging/subsystem.js";
 import { resolveHookConfig } from "../../config.js";
 import { isAgentBootstrapEvent, type HookHandler } from "../../hooks.js";
@@ -12,7 +15,7 @@ const HOOK_KEY = "bootstrap-extra-files";
 const log = createSubsystemLogger("bootstrap-extra-files");
 
 /** Resolve legacy and current config keys for extra bootstrap file patterns. */
-function resolveExtraBootstrapPatterns(hookConfig: Record<string, unknown>): string[] {
+function resolveGlobalExtraBootstrapPatterns(hookConfig: Record<string, unknown>): string[] {
   const fromPaths = normalizeTrimmedStringList(hookConfig.paths);
   if (fromPaths.length > 0) {
     return fromPaths;
@@ -22,6 +25,71 @@ function resolveExtraBootstrapPatterns(hookConfig: Record<string, unknown>): str
     return fromPatterns;
   }
   return normalizeTrimmedStringList(hookConfig.files);
+}
+
+function readAgentPatternMap(raw: unknown): Record<string, unknown> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return undefined;
+  }
+  return raw as Record<string, unknown>;
+}
+
+function resolveAgentExtraBootstrapPatterns(
+  hookConfig: Record<string, unknown>,
+  agentId?: string,
+): string[] {
+  const normalizedAgentId = typeof agentId === "string" ? agentId.trim() : "";
+  if (!normalizedAgentId) {
+    return [];
+  }
+  const maps = [
+    readAgentPatternMap(hookConfig.agentPaths),
+    readAgentPatternMap(hookConfig.agentPatterns),
+    readAgentPatternMap(hookConfig.agentFiles),
+  ];
+  for (const map of maps) {
+    if (!map) {
+      continue;
+    }
+    const direct = normalizeTrimmedStringList(map[normalizedAgentId]);
+    if (direct.length > 0) {
+      return direct;
+    }
+  }
+  return [];
+}
+
+function resolveAgentContractBootstrapPatterns(
+  config?: OpenClawConfig,
+  agentId?: string,
+): string[] {
+  const normalizedAgentId = typeof agentId === "string" ? agentId.trim() : "";
+  if (!config || !normalizedAgentId) {
+    return [];
+  }
+  const agentConfig = resolveAgentConfig(config, normalizedAgentId);
+  const contractPack =
+    typeof agentConfig?.contractPack === "string" ? agentConfig.contractPack : "";
+  if (!contractPack) {
+    return [];
+  }
+  const runtimePromptFiles = normalizeTrimmedStringList(agentConfig?.runtimePromptFiles);
+  if (runtimePromptFiles.length === 0) {
+    return [];
+  }
+  return runtimePromptFiles.map((file) => path.posix.join(contractPack.replace(/\\/g, "/"), file));
+}
+
+function resolveExtraBootstrapPatterns(
+  hookConfig: Record<string, unknown>,
+  config?: OpenClawConfig,
+  agentId?: string,
+): string[] {
+  return [
+    ...resolveGlobalExtraBootstrapPatterns(hookConfig),
+    ...resolveAgentExtraBootstrapPatterns(hookConfig, agentId),
+    ...resolveAgentContractBootstrapPatterns(config, agentId),
+  ];
 }
 
 /** Agent-bootstrap hook that appends configured extra files to the session bootstrap set. */
@@ -36,7 +104,11 @@ const bootstrapExtraFilesHook: HookHandler = async (event) => {
     return;
   }
 
-  const patterns = resolveExtraBootstrapPatterns(hookConfig as Record<string, unknown>);
+  const patterns = resolveExtraBootstrapPatterns(
+    hookConfig as Record<string, unknown>,
+    context.cfg,
+    context.agentId,
+  );
   if (patterns.length === 0) {
     return;
   }

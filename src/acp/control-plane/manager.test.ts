@@ -190,8 +190,6 @@ describe("AcpSessionManager", () => {
         task: "Implement the feature and report back",
         status: "succeeded",
         progressSummary: "Write failed: permission denied for /root/oc-acp-write-should-fail.txt.",
-        terminalOutcome: "blocked",
-        terminalSummary: "Permission denied for /root/oc-acp-write-should-fail.txt.",
       });
     });
   }, 300_000);

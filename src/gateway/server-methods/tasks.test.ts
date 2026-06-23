@@ -340,7 +340,6 @@ describe("tasks gateway handlers", () => {
       task: "Improve research/planning layer",
       status: "running",
       deliveryStatus: "not_applicable",
-      createdAt: 100,
       startedAt: 110,
     });
 

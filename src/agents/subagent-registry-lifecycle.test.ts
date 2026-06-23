@@ -93,6 +93,10 @@ vi.mock("./subagent-registry-helpers.js", () => ({
   ANNOUNCE_EXPIRY_MS: 5 * 60_000,
   MAX_ANNOUNCE_RETRY_COUNT: 3,
   MIN_ANNOUNCE_RETRY_DELAY_MS: 1_000,
+  buildSubagentResultRefs: (entry: SubagentRunRecord) => [
+    `openclaw-session:${entry.childSessionKey}`,
+    `openclaw-run:${entry.runId}`,
+  ],
   capFrozenResultText: (text: string) => text.trim(),
   logAnnounceGiveUp: helperMocks.logAnnounceGiveUp,
   persistSubagentSessionTiming: helperMocks.persistSubagentSessionTiming,

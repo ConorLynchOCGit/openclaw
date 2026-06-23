@@ -23,6 +23,21 @@ describe("classifyEmbeddedAgentRunResultForModelFallback", () => {
     ).toBeNull();
   });
 
+  it("does not fallback when a parent yielded while waiting for child completions", () => {
+    // sessions_yield is an intentional orchestration handoff. Retrying on another
+    // model would duplicate child-completion processing instead of improving output.
+    expect(
+      classifyEmbeddedAgentRunResultForModelFallback({
+        provider: "mock-openai",
+        model: "gpt-5.5",
+        result: {
+          payloads: [],
+          meta: { durationMs: 1, yielded: true },
+        },
+      }),
+    ).toBeNull();
+  });
+
   it("classifies provider business-denial error payloads as fallback-worthy", () => {
     const result = classifyEmbeddedAgentRunResultForModelFallback({
       provider: "zai",

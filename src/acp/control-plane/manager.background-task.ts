@@ -7,7 +7,6 @@ import {
   failTaskRunByRunId,
   startTaskRunByRunId,
 } from "../../tasks/detached-task-runtime.js";
-import { resolveRequiredCompletionTerminalResult } from "../../tasks/task-completion-contract.js";
 import type { DeliveryContext } from "../../utils/delivery-context.js";
 import { AcpRuntimeError } from "../runtime/errors.js";
 import type { AcpSessionManagerDeps } from "./manager.types.js";
@@ -57,39 +56,18 @@ export function resolveBackgroundTaskFailureStatus(error: AcpRuntimeError): "fai
   return /\btimed out\b/i.test(error.message) ? "timed_out" : "failed";
 }
 
-/** Infers blocked terminal outcomes from final progress text when the child turn reports one. */
+/**
+ * Do not infer terminal outcomes from progress text.
+ *
+ * Progress summaries are UI chrome and operator readback, not execution truth.
+ * Runtime failures, explicit cancellation/timeout, and delivery/finality
+ * records own terminal state.
+ */
 export function resolveBackgroundTaskTerminalResult(progressSummary: string): {
   terminalOutcome?: "blocked";
   terminalSummary?: string;
 } {
-  const requiredCompletionResult = resolveRequiredCompletionTerminalResult(progressSummary);
-  if (requiredCompletionResult.terminalOutcome) {
-    return requiredCompletionResult;
-  }
-  const normalized = normalizeText(progressSummary)?.replace(/\s+/g, " ").trim();
-  if (!normalized) {
-    return {};
-  }
-  const permissionDeniedMatch = normalized.match(
-    /\b(?:write failed:\s*)?permission denied(?: for (?<path>\S+))?\.?/i,
-  );
-  if (permissionDeniedMatch) {
-    const path = normalizeText(permissionDeniedMatch.groups?.path)?.replace(/[.,;:!?]+$/, "");
-    return {
-      terminalOutcome: "blocked",
-      terminalSummary: path ? `Permission denied for ${path}.` : "Permission denied.",
-    };
-  }
-  if (
-    /\bneed a writable session\b/i.test(normalized) ||
-    /\bfilesystem authorization\b/i.test(normalized) ||
-    /`?apply_patch`?/i.test(normalized)
-  ) {
-    return {
-      terminalOutcome: "blocked",
-      terminalSummary: "Writable session or apply_patch authorization required.",
-    };
-  }
+  void progressSummary;
   return {};
 }
 

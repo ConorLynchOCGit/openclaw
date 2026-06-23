@@ -309,6 +309,31 @@ describe("buildChildCompletionFindings", () => {
     expect(findings).not.toContain("(no output)");
   });
 
+  it("includes full child result refs for parent synthesis and recovery", () => {
+    const findings = buildChildCompletionFindings([
+      {
+        runId: "run-child",
+        childSessionKey: "agent:main:subagent:child",
+        task: "child task",
+        createdAt: 1,
+        completion: {
+          resultText: "child evidence summary",
+          fullResultRef: "openclaw-session:agent:main:subagent:child",
+          resultArtifactRefs: [
+            "openclaw-session:agent:main:subagent:child",
+            "openclaw-run:run-child",
+          ],
+        },
+        outcome: { status: "ok" },
+      },
+    ]);
+
+    expect(findings).toContain("child evidence summary");
+    expect(findings).toContain("Full result refs:");
+    expect(findings).toContain("- openclaw-session:agent:main:subagent:child");
+    expect(findings).toContain("- openclaw-run:run-child");
+  });
+
   it("numbers findings contiguously after skipped silent completions", () => {
     const findings = buildChildCompletionFindings([
       {

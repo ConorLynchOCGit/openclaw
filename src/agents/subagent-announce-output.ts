@@ -340,6 +340,7 @@ function formatChildResultData(resultText?: string | null): string {
 }
 
 type ChildCompletionRow = {
+  runId?: string;
   childSessionKey: string;
   task: string;
   label?: string;
@@ -349,11 +350,15 @@ type ChildCompletionRow = {
   completion?: {
     resultText?: string | null;
     fallbackResultText?: string | null;
+    fullResultRef?: string;
+    resultArtifactRefs?: string[];
   };
   delivery?: {
     payload?: {
       frozenResultText?: string | null;
       fallbackFrozenResultText?: string | null;
+      fullResultRef?: string;
+      resultArtifactRefs?: string[];
     };
   };
   outcome?: SubagentRunOutcome;
@@ -368,6 +373,20 @@ function selectChildCompletionResultText(child: ChildCompletionRow): string | un
     child.frozenResultText ??
     undefined
   )?.trim();
+}
+
+function buildChildCompletionRefs(child: ChildCompletionRow): string[] {
+  const refs = [
+    child.completion?.fullResultRef,
+    child.delivery?.payload?.fullResultRef,
+    ...(child.completion?.resultArtifactRefs ?? []),
+    ...(child.delivery?.payload?.resultArtifactRefs ?? []),
+    child.childSessionKey.trim() ? `openclaw-session:${child.childSessionKey.trim()}` : undefined,
+    child.runId?.trim() ? `openclaw-run:${child.runId.trim()}` : undefined,
+  ]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+  return [...new Set(refs)];
 }
 
 export function buildChildCompletionFindings(
@@ -399,10 +418,14 @@ export function buildChildCompletionFindings(
       child.childSessionKey.trim() ||
       `child ${index + 1}`;
     const displayIndex = sections.length + 1;
+    const refs = buildChildCompletionRefs(child);
     sections.push(
-      [`${displayIndex}. ${title}`, `status: ${outcome}`, formatChildResultData(resultText)].join(
-        "\n",
-      ),
+      [
+        `${displayIndex}. ${title}`,
+        `status: ${outcome}`,
+        formatChildResultData(resultText),
+        ...(refs.length > 0 ? ["Full result refs:", ...refs.map((ref) => `- ${ref}`)] : []),
+      ].join("\n"),
     );
   }
 
@@ -415,6 +438,7 @@ export function buildChildCompletionFindings(
 
 export function dedupeLatestChildCompletionRows(
   children: Array<{
+    runId?: string;
     childSessionKey: string;
     task: string;
     label?: string;
@@ -424,11 +448,15 @@ export function dedupeLatestChildCompletionRows(
     completion?: {
       resultText?: string | null;
       fallbackResultText?: string | null;
+      fullResultRef?: string;
+      resultArtifactRefs?: string[];
     };
     delivery?: {
       payload?: {
         frozenResultText?: string | null;
         fallbackFrozenResultText?: string | null;
+        fullResultRef?: string;
+        resultArtifactRefs?: string[];
       };
     };
     outcome?: SubagentRunOutcome;
@@ -457,11 +485,15 @@ export function filterCurrentDirectChildCompletionRows(
     completion?: {
       resultText?: string | null;
       fallbackResultText?: string | null;
+      fullResultRef?: string;
+      resultArtifactRefs?: string[];
     };
     delivery?: {
       payload?: {
         frozenResultText?: string | null;
         fallbackFrozenResultText?: string | null;
+        fullResultRef?: string;
+        resultArtifactRefs?: string[];
       };
     };
     outcome?: SubagentRunOutcome;

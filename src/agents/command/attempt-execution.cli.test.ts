@@ -10,6 +10,7 @@ import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { saveAuthProfileStore } from "../auth-profiles/store.js";
 import type { EmbeddedAgentRunResult } from "../embedded-agent.js";
 import { FailoverError } from "../failover-error.js";
+import { modelIdentityKeyFromProviderModel } from "../model-identity.js";
 import { persistCliTurnTranscript, runAgentAttempt } from "./attempt-execution.js";
 import { resolveClaudeCliProjectDirForWorkspace } from "./claude-cli-project-dir.js";
 
@@ -1837,6 +1838,20 @@ describe("embedded attempt harness pinning", () => {
               model: "google/gemini-2.0-flash-lite-001",
             },
           ],
+          admission: {
+            model: {
+              primaryIdentityKey: modelIdentityKeyFromProviderModel(
+                "openrouter",
+                "anthropic/claude-haiku-4.5",
+              ),
+              fallbackIdentityKeys: [
+                modelIdentityKeyFromProviderModel("openrouter", "google/gemini-2.5-flash-lite"),
+                modelIdentityKeyFromProviderModel("openrouter", "google/gemini-2.0-flash-lite-001"),
+              ],
+            },
+            runtime: { id: "openclaw", providerProfileKey: "openrouter-native" },
+            policyTraceId: "agent-model-policy",
+          },
           policy: { overrideAuthorized: false, resumeAuthorized: false },
         },
       } as Parameters<typeof runAgentAttempt>[0]["opts"],
@@ -1906,6 +1921,7 @@ describe("embedded attempt harness pinning", () => {
       timeoutMs: 1_000,
       runId: "run-openai-openclaw-launch-plan-runtime",
       opts: {
+        message: "plan",
         launchExecutionPlan: {
           runId: "run-openai-openclaw-launch-plan-runtime",
           targetAgentId: "planning",
@@ -1917,6 +1933,14 @@ describe("embedded attempt harness pinning", () => {
           },
           runtime: "openclaw",
           fallbacks: [],
+          admission: {
+            model: {
+              primaryIdentityKey: modelIdentityKeyFromProviderModel("openai", "gpt-5.5"),
+              fallbackIdentityKeys: [],
+            },
+            runtime: { id: "openclaw", providerProfileKey: "openai-native" },
+            policyTraceId: "agent-model-policy",
+          },
           policy: { overrideAuthorized: false, resumeAuthorized: false },
         },
       } as Parameters<typeof runAgentAttempt>[0]["opts"],
