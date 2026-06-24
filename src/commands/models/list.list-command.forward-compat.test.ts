@@ -295,7 +295,7 @@ function installModelsListCommandForwardCompatMocks() {
   }));
 
   vi.doMock("../../agents/auth-profiles/store.js", () => ({
-    loadAuthProfileStoreWithoutExternalProfiles: mocks.ensureAuthProfileStore,
+    ensureAuthProfileStore: mocks.ensureAuthProfileStore,
   }));
 
   vi.doMock("../../agents/agent-scope.js", () => ({
@@ -434,7 +434,10 @@ describe("modelsListCommand forward-compat", () => {
       await modelsListCommand({ json: true, agent: "codebase-researcher" }, runtime as never);
 
       expect(mocks.resolveAgentDir).toHaveBeenCalledWith(scopedConfig, "codebase-researcher");
-      expect(mocks.ensureAuthProfileStore).toHaveBeenCalledWith("/tmp/codebase-researcher-agent");
+      expect(mocks.ensureAuthProfileStore).toHaveBeenCalledWith("/tmp/codebase-researcher-agent", {
+        readOnly: true,
+        syncExternalCli: false,
+      });
       const [resolvedEntriesConfig] = mocks.resolveConfiguredEntries.mock.calls[0] ?? [];
       expect(resolvedEntriesConfig).toMatchObject({
         agents: {

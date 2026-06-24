@@ -3,13 +3,6 @@ import path from "node:path";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { colorize, theme } from "../../../packages/terminal-core/src/theme.js";
 import {
-  resolveAgentDir,
-  resolveAgentExplicitModelPrimary,
-  resolveAgentModelFallbacksOverride,
-  resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
-} from "../../agents/agent-scope.js";
-import {
   buildAuthHealthSummary,
   DEFAULT_OAUTH_WARN_MS,
   formatRemainingShort,
@@ -44,7 +37,6 @@ import {
   openAIProviderUsesCodexRuntimeByDefault,
 } from "../../agents/openai-routing.js";
 import { resolveProviderIdForAuth } from "../../agents/provider-auth-aliases.js";
-import { resolveDefaultAgentWorkspaceDir } from "../../agents/workspace.js";
 import { createConfigIO } from "../../config/config.js";
 import {
   resolveAgentModelFallbackValues,
@@ -69,17 +61,13 @@ import { resolveRuntimeSyntheticAuthProviderRefs } from "../../plugins/synthetic
 import { type RuntimeEnv, writeRuntimeJson } from "../../runtime.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import { resolveUserPath, shortenHomePath } from "../../utils.js";
+import { resolveModelsCommandAgentScope } from "./agent-scope.js";
 import { resolveProviderAuthOverview } from "./list.auth-overview.js";
 import { isRich } from "./list.format.js";
 import type { AuthProbeSummary } from "./list.probe.js";
 import type { ProviderAuthOverview } from "./list.types.js";
 import { loadModelsConfig } from "./load-config.js";
-import {
-  DEFAULT_MODEL,
-  DEFAULT_PROVIDER,
-  ensureFlagCompatibility,
-  resolveKnownAgentId,
-} from "./shared.js";
+import { DEFAULT_MODEL, DEFAULT_PROVIDER, ensureFlagCompatibility } from "./shared.js";
 
 type ProviderUsageRuntime = typeof import("../../infra/provider-usage.js");
 type ProgressRuntime = typeof import("../../cli/progress.js");
@@ -264,60 +252,27 @@ export async function modelsStatusCommand(
   }
   const configPath = createConfigIO().configPath;
   const cfg = await loadModelsConfig({ commandName: "models status", runtime });
-  const agentId = resolveKnownAgentId({ cfg, rawAgentId: opts.agent });
-  const workspaceAgentId = agentId ?? resolveDefaultAgentId(cfg);
-  const agentDir = agentId
-    ? resolveAgentDir(cfg, agentId)
-    : (resolveEnvAgentDirOverride() ?? resolveAgentDir(cfg, workspaceAgentId));
-  const workspaceDir =
-    resolveAgentWorkspaceDir(cfg, workspaceAgentId) ?? resolveDefaultAgentWorkspaceDir();
-  const agentModelPrimary = agentId ? resolveAgentExplicitModelPrimary(cfg, agentId) : undefined;
-  const agentFallbacksOverride = agentId
-    ? resolveAgentModelFallbacksOverride(cfg, agentId)
-    : undefined;
-  const agentEntry = agentId
-    ? cfg.agents?.list?.find((entry) => entry.id?.trim() === agentId)
-    : undefined;
-  const effectiveModelMap =
-    agentId && agentEntry?.models
-      ? {
-          ...(cfg.agents?.defaults?.models ?? {}),
-          ...agentEntry.models,
-        }
-      : (cfg.agents?.defaults?.models ?? {});
-  const shouldApplyAgentStatusScope =
-    Boolean(agentId && agentEntry?.models) ||
-    Boolean(agentModelPrimary && agentModelPrimary.length > 0);
-  const resolvedConfig = shouldApplyAgentStatusScope
-    ? {
-        ...cfg,
-        agents: {
-          ...cfg.agents,
-          defaults: {
-            ...cfg.agents?.defaults,
-            ...(agentModelPrimary && agentModelPrimary.length > 0
-              ? {
-                  model: {
-                    ...(typeof cfg.agents?.defaults?.model === "object"
-                      ? cfg.agents.defaults.model
-                      : {}),
-                    primary: agentModelPrimary,
-                  },
-                }
-              : {}),
-            models: effectiveModelMap,
-          },
-        },
-      }
-    : cfg;
+  const scope = resolveModelsCommandAgentScope({
+    cfg,
+    rawAgentId: opts.agent,
+    defaultAgentDirOverride: resolveEnvAgentDirOverride(),
+  });
+  const agentId = scope.explicitAgentId;
+  const workspaceAgentId = scope.agentId;
+  const agentDir = scope.agentDir;
+  const workspaceDir = scope.workspaceDir;
+  const agentModelPrimary = scope.agentModelPrimary;
+  const agentFallbacksOverride = scope.agentFallbacksOverride;
+  const effectiveModelMap = scope.effectiveModelMap;
+  const resolvedConfig = scope.scopedConfig;
   const metadataSnapshot = loadManifestMetadataSnapshot({
-    config: cfg,
+    config: resolvedConfig,
     workspaceDir,
     env: process.env,
   });
   const cleanupPluginMetadataSnapshot = installCommandPluginMetadataSnapshot({
     snapshot: metadataSnapshot,
-    config: cfg,
+    config: resolvedConfig,
     workspaceDir,
     env: process.env,
   });

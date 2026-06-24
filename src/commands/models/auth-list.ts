@@ -1,6 +1,5 @@
 /** Command helpers for listing saved model auth profiles. */
 import { timestampMsToIsoString } from "@openclaw/normalization-core/number-coercion";
-import { resolveAgentDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
 import {
   ensureAuthProfileStore,
   externalCliDiscoveryForProviderAuth,
@@ -13,8 +12,8 @@ import {
 import { resolveProviderIdForAuth } from "../../agents/provider-auth-aliases.js";
 import { type RuntimeEnv, writeRuntimeJson } from "../../runtime.js";
 import { shortenHomePath } from "../../utils.js";
+import { resolveModelsCommandAgentScope } from "./agent-scope.js";
 import { loadModelsConfig } from "./load-config.js";
-import { resolveKnownAgentId } from "./shared.js";
 
 type AuthProfileSummary = {
   id: string;
@@ -46,18 +45,6 @@ function resolveProviderFilter(rawProvider: string | undefined): {
     externalCliProvider: provider,
     matches: (profile) => profile.provider === provider,
   };
-}
-
-function resolveTargetAgent(
-  cfg: Awaited<ReturnType<typeof loadModelsConfig>>,
-  raw?: string,
-): {
-  agentId: string;
-  agentDir: string;
-} {
-  const agentId = resolveKnownAgentId({ cfg, rawAgentId: raw }) ?? resolveDefaultAgentId(cfg);
-  const agentDir = resolveAgentDir(cfg, agentId);
-  return { agentId, agentDir };
 }
 
 function formatTimestamp(value: number | undefined): string | undefined {
@@ -115,7 +102,10 @@ export async function modelsAuthListCommand(
   runtime: RuntimeEnv,
 ) {
   const cfg = await loadModelsConfig({ commandName: "models auth list", runtime });
-  const { agentId, agentDir } = resolveTargetAgent(cfg, opts.agent);
+  const { agentId, agentDir } = resolveModelsCommandAgentScope({
+    cfg,
+    rawAgentId: opts.agent,
+  });
   const providerFilter = resolveProviderFilter(opts.provider);
   const store = ensureAuthProfileStore(
     agentDir,

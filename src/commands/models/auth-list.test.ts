@@ -15,7 +15,14 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../../agents/agent-scope.js", () => ({
   resolveAgentDir: (_cfg: OpenClawConfig, agentId: string) => `/tmp/openclaw/agents/${agentId}`,
+  resolveAgentExplicitModelPrimary: () => undefined,
+  resolveAgentModelFallbacksOverride: () => undefined,
+  resolveAgentWorkspaceDir: () => undefined,
   resolveDefaultAgentId: () => "main",
+}));
+
+vi.mock("../../agents/workspace.js", () => ({
+  resolveDefaultAgentWorkspaceDir: () => "/tmp/openclaw/workspace",
 }));
 
 vi.mock("../../agents/auth-profiles.js", () => ({
