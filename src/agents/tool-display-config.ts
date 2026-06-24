@@ -374,6 +374,11 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
       title: "Sub-agent",
       detailKeys: ["label", "task", "agentId", "model", "thinking", "runTimeoutSeconds", "cleanup"],
     },
+    task: {
+      emoji: "🧑‍🔧",
+      title: "Task",
+      detailKeys: ["agentId", "taskName", "label", "context"],
+    },
     subagents: {
       emoji: "🤖",
       title: "Subagents",

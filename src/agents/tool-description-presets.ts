@@ -6,6 +6,7 @@ export const CRON_TOOL_DISPLAY_SUMMARY = "Schedule reminders, cron, wake events.
 export const SESSIONS_LIST_TOOL_DISPLAY_SUMMARY = "List visible sessions; filters/previews.";
 export const SESSIONS_HISTORY_TOOL_DISPLAY_SUMMARY = "Read sanitized session history.";
 export const SESSIONS_SEND_TOOL_DISPLAY_SUMMARY = "Message session or configured agent.";
+export const TASK_TOOL_DISPLAY_SUMMARY = "Run foreground subagent task.";
 export const SESSIONS_SPAWN_TOOL_DISPLAY_SUMMARY = "Spawn subagent or ACP session.";
 export const SESSIONS_SPAWN_SUBAGENT_TOOL_DISPLAY_SUMMARY = "Spawn subagent session.";
 export const SESSION_STATUS_TOOL_DISPLAY_SUMMARY = "Show session status/model/usage.";
@@ -34,6 +35,16 @@ export function describeSessionsSendTool(): string {
     "Send message to visible session by sessionKey/label, or configured agent by agentId; sessionKey wins when redundant label metadata is present.",
     "Thread-scoped chats rejected; target parent channel session.",
     "Creates missing configured-agent main session; waits for reply when available.",
+  ].join(" ");
+}
+
+/** Describes the task tool for model-facing instructions. */
+export function describeTaskTool(): string {
+  return [
+    "Run one target OpenClaw subagent as a foreground child task and return its final result here.",
+    "Use when you own final synthesis and need source-scout, review, or bounded specialist decision material.",
+    "For independent lanes, call task multiple times in the same assistant turn so they can run in parallel.",
+    "Do not call sessions_yield after task; task returns the child result as the tool result.",
   ].join(" ");
 }
 

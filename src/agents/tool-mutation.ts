@@ -17,6 +17,7 @@ const MUTATING_TOOL_NAMES = new Set([
   "bash",
   "process",
   "message",
+  "task",
   "sessions_spawn",
   "sessions_send",
   "cron",

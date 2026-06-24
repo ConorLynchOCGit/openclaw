@@ -37,6 +37,7 @@ const OPENCLAW_TOOL_FACTORY_NAMES = new Set([
   "sessions_history",
   "sessions_list",
   "sessions_send",
+  "task",
   "sessions_spawn",
   "sessions_yield",
   "skill_workshop",
