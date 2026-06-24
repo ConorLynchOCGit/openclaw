@@ -264,6 +264,17 @@ describe("external cli oauth resolution", () => {
           imported,
         }),
       ).toBe(true);
+      expect(
+        shouldBootstrapFromExternalCliCredential({
+          existing: undefined,
+          imported: makeOAuthCredential({
+            provider: "openai",
+            access: "expired-cli-access",
+            refresh: "refreshable-cli-refresh",
+            expires: Date.now() - 60_000,
+          }),
+        }),
+      ).toBe(true);
     });
 
     it("refuses external oauth usage across different known identities", () => {
@@ -328,6 +339,32 @@ describe("external cli oauth resolution", () => {
         provider: "openai",
         access: "codex-cli-access",
         refresh: "codex-cli-refresh",
+        accountId: "acct-codex",
+      },
+    );
+  });
+
+  it("bootstraps refresh-capable Codex CLI credentials even when the access token is expired", () => {
+    mocks.readCodexCliCredentialsCached.mockReturnValue(
+      makeOAuthCredential({
+        provider: "openai",
+        access: "expired-codex-cli-access",
+        refresh: "refreshable-codex-cli-refresh",
+        expires: Date.now() - 60_000,
+        accountId: "acct-codex",
+      }),
+    );
+
+    const profiles = resolveExternalCliAuthProfiles(makeStore(), {
+      providerIds: ["openai"],
+    });
+
+    expectCredentialFields(
+      expectSingleProfileCredential(profiles, OPENAI_CODEX_DEFAULT_PROFILE_ID),
+      {
+        provider: "openai",
+        access: "expired-codex-cli-access",
+        refresh: "refreshable-codex-cli-refresh",
         accountId: "acct-codex",
       },
     );

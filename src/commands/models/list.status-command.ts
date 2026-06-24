@@ -15,14 +15,16 @@ import {
   formatRemainingShort,
 } from "../../agents/auth-health.js";
 import { evaluateStoredCredentialEligibility } from "../../agents/auth-profiles/credential-state.js";
+import { externalCliDiscoveryForConfigStatus } from "../../agents/auth-profiles/external-cli-discovery.js";
 import {
   resolveAuthProfileEligibility,
   resolveAuthProfileOrder,
 } from "../../agents/auth-profiles/order.js";
 import { resolveAuthStorePathForDisplay } from "../../agents/auth-profiles/paths.js";
-import { ensureAuthProfileStoreWithoutExternalProfiles as ensureAuthProfileStore } from "../../agents/auth-profiles/store.js";
+import { ensureAuthProfileStore } from "../../agents/auth-profiles/store.js";
 import type { AuthProfileCredential } from "../../agents/auth-profiles/types.js";
 import { resolveProfileUnusableUntilForDisplay } from "../../agents/auth-profiles/usage.js";
+import { resolveAgentHarnessPolicy } from "../../agents/harness/policy.js";
 import {
   listProviderEnvAuthLookupKeys,
   resolveProviderEnvAuthLookupMaps,
@@ -273,24 +275,41 @@ export async function modelsStatusCommand(
   const agentFallbacksOverride = agentId
     ? resolveAgentModelFallbacksOverride(cfg, agentId)
     : undefined;
-  const resolvedConfig =
-    agentModelPrimary && agentModelPrimary.length > 0
+  const agentEntry = agentId
+    ? cfg.agents?.list?.find((entry) => entry.id?.trim() === agentId)
+    : undefined;
+  const effectiveModelMap =
+    agentId && agentEntry?.models
       ? {
-          ...cfg,
-          agents: {
-            ...cfg.agents,
-            defaults: {
-              ...cfg.agents?.defaults,
-              model: {
-                ...(typeof cfg.agents?.defaults?.model === "object"
-                  ? cfg.agents.defaults.model
-                  : {}),
-                primary: agentModelPrimary,
-              },
-            },
-          },
+          ...(cfg.agents?.defaults?.models ?? {}),
+          ...agentEntry.models,
         }
-      : cfg;
+      : (cfg.agents?.defaults?.models ?? {});
+  const shouldApplyAgentStatusScope =
+    Boolean(agentId && agentEntry?.models) ||
+    Boolean(agentModelPrimary && agentModelPrimary.length > 0);
+  const resolvedConfig = shouldApplyAgentStatusScope
+    ? {
+        ...cfg,
+        agents: {
+          ...cfg.agents,
+          defaults: {
+            ...cfg.agents?.defaults,
+            ...(agentModelPrimary && agentModelPrimary.length > 0
+              ? {
+                  model: {
+                    ...(typeof cfg.agents?.defaults?.model === "object"
+                      ? cfg.agents.defaults.model
+                      : {}),
+                    primary: agentModelPrimary,
+                  },
+                }
+              : {}),
+            models: effectiveModelMap,
+          },
+        },
+      }
+    : cfg;
   const metadataSnapshot = loadManifestMetadataSnapshot({
     config: cfg,
     workspaceDir,
@@ -318,18 +337,21 @@ export async function modelsStatusCommand(
     const fallbacks = agentFallbacksOverride ?? defaultsFallbacks;
     const imageModel = resolveAgentModelPrimaryValue(cfg.agents?.defaults?.imageModel) ?? "";
     const imageFallbacks = resolveAgentModelFallbackValues(cfg.agents?.defaults?.imageModel);
-    const aliases = Object.entries(cfg.agents?.defaults?.models ?? {}).reduce<
-      Record<string, string>
-    >((acc, [key, entry]) => {
-      const alias = normalizeOptionalString(entry?.alias);
-      if (alias) {
-        acc[alias] = key;
-      }
-      return acc;
-    }, {});
-    const allowed = Object.keys(cfg.agents?.defaults?.models ?? {});
+    const aliases = Object.entries(effectiveModelMap).reduce<Record<string, string>>(
+      (acc, [key, entry]) => {
+        const alias = normalizeOptionalString(entry?.alias);
+        if (alias) {
+          acc[alias] = key;
+        }
+        return acc;
+      },
+      {},
+    );
+    const allowed = Object.keys(effectiveModelMap);
 
-    const store = ensureAuthProfileStore(agentDir);
+    const store = ensureAuthProfileStore(agentDir, {
+      externalCli: externalCliDiscoveryForConfigStatus({ cfg }),
+    });
     const modelsPath = path.join(agentDir, "models.json");
 
     const providersFromStore = new Set(
@@ -343,7 +365,7 @@ export async function modelsStatusCommand(
         .filter(Boolean),
     );
     const aliasIndex = buildModelAliasIndex({
-      cfg,
+      cfg: resolvedConfig,
       defaultProvider: DEFAULT_PROVIDER,
       ...DISPLAY_MODEL_PARSE_OPTIONS,
     });
@@ -353,7 +375,7 @@ export async function modelsStatusCommand(
         return undefined;
       }
       return resolveModelRefFromString({
-        cfg,
+        cfg: resolvedConfig,
         raw: modelRef,
         defaultProvider: DEFAULT_PROVIDER,
         aliasIndex,
@@ -361,12 +383,25 @@ export async function modelsStatusCommand(
       })?.ref;
     };
     const providersFromModels = new Set<string>();
-    const providerUses: Array<{ provider: string; allowCodexRuntimeFallback: boolean }> = [];
+    const providerUses: Array<{
+      provider: string;
+      modelId: string;
+      runtime: string;
+      allowCodexRuntimeFallback: boolean;
+    }> = [];
     const addProviderUse = (raw: string | undefined, allowCodexRuntimeFallback: boolean) => {
       const ref = resolveStatusModelRef(raw);
       if (ref?.provider) {
+        const normalizedProvider = normalizeProviderId(ref.provider);
         providerUses.push({
-          provider: normalizeProviderId(ref.provider),
+          provider: normalizedProvider,
+          modelId: ref.model,
+          runtime: resolveAgentHarnessPolicy({
+            provider: normalizedProvider,
+            modelId: ref.model,
+            config: cfg,
+            agentId: workspaceAgentId,
+          }).runtime,
           allowCodexRuntimeFallback,
         });
       }
@@ -436,6 +471,7 @@ export async function modelsStatusCommand(
     const codexRuntimeAuthUsages = providerUses.filter(
       (usage) =>
         usage.allowCodexRuntimeFallback &&
+        usage.runtime === "codex" &&
         openAIProviderUsesCodexRuntimeByDefault({ provider: usage.provider, config: cfg }),
     );
     if (codexRuntimeAuthUsages.length > 0) {
@@ -713,7 +749,7 @@ export async function modelsStatusCommand(
     };
     const hasUsableAuthForProviderInUse = (
       provider: string,
-      options: { allowCodexRuntimeFallback: boolean },
+      options: { allowCodexRuntimeFallback: boolean; runtime?: string },
     ): boolean => {
       if (hasUsableProviderAuth(provider)) {
         return true;
@@ -722,6 +758,7 @@ export async function modelsStatusCommand(
         return false;
       }
       return (
+        options.runtime === "codex" &&
         openAIProviderUsesCodexRuntimeByDefault({ provider, config: cfg }) &&
         hasUsableProviderAuth(OPENAI_PROVIDER_ID, { includeLegacyOpenAICodex: true })
       );
@@ -754,6 +791,7 @@ export async function modelsStatusCommand(
             (usage) =>
               !hasUsableAuthForProviderInUse(usage.provider, {
                 allowCodexRuntimeFallback: usage.allowCodexRuntimeFallback,
+                runtime: usage.runtime,
               }),
           )
           .map((usage) => usage.provider),
@@ -895,6 +933,7 @@ export async function modelsStatusCommand(
         providersInUse.add(resolveProviderAuthHealthId(usage.provider));
         if (
           usage.allowCodexRuntimeFallback &&
+          usage.runtime === "codex" &&
           openAIProviderUsesCodexRuntimeByDefault({ provider: usage.provider, config: cfg }) &&
           hasUsableProviderAuth(OPENAI_PROVIDER_ID, { includeLegacyOpenAICodex: true })
         ) {

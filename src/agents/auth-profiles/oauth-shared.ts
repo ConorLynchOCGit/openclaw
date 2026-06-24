@@ -74,6 +74,17 @@ export function hasUsableOAuthCredential(
   return hasUsableStoredOAuthCredential(credential, { now });
 }
 
+/** Returns true when an OAuth credential has enough material to refresh at runtime. */
+export function hasRefreshableOAuthCredential(credential: OAuthCredential | undefined): boolean {
+  return (
+    credential?.type === "oauth" &&
+    typeof credential.access === "string" &&
+    credential.access.trim().length > 0 &&
+    typeof credential.refresh === "string" &&
+    credential.refresh.trim().length > 0
+  );
+}
+
 /** Normalizes account identity tokens for equality checks. */
 export function normalizeAuthIdentityToken(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
@@ -185,7 +196,9 @@ export function shouldBootstrapFromExternalCliCredential(params: {
   if (hasUsableOAuthCredential(params.existing, now)) {
     return false;
   }
-  return hasUsableOAuthCredential(params.imported, now);
+  return (
+    hasUsableOAuthCredential(params.imported, now) || hasRefreshableOAuthCredential(params.imported)
+  );
 }
 
 /** Overlays runtime external OAuth profiles on a cloned store. */

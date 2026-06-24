@@ -152,15 +152,19 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("../../agents/agent-scope.js", () => ({
-  resolveAgentDir: mocks.resolveAgentDir,
-  resolveAgentWorkspaceDir: mocks.resolveAgentWorkspaceDir,
-  resolveDefaultAgentId: mocks.resolveDefaultAgentId,
-  resolveAgentExplicitModelPrimary: mocks.resolveAgentExplicitModelPrimary,
-  resolveAgentEffectiveModelPrimary: mocks.resolveAgentEffectiveModelPrimary,
-  resolveAgentModelFallbacksOverride: mocks.resolveAgentModelFallbacksOverride,
-  listAgentIds: mocks.listAgentIds,
-}));
+vi.mock("../../agents/agent-scope.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../agents/agent-scope.js")>();
+  return {
+    ...actual,
+    resolveAgentDir: mocks.resolveAgentDir,
+    resolveAgentWorkspaceDir: mocks.resolveAgentWorkspaceDir,
+    resolveDefaultAgentId: mocks.resolveDefaultAgentId,
+    resolveAgentExplicitModelPrimary: mocks.resolveAgentExplicitModelPrimary,
+    resolveAgentEffectiveModelPrimary: mocks.resolveAgentEffectiveModelPrimary,
+    resolveAgentModelFallbacksOverride: mocks.resolveAgentModelFallbacksOverride,
+    listAgentIds: mocks.listAgentIds,
+  };
+});
 vi.mock("../../agents/workspace.js", () => ({
   resolveDefaultAgentWorkspaceDir: vi.fn().mockReturnValue("/tmp/openclaw-agent/workspace"),
 }));
@@ -436,12 +440,18 @@ describe("modelsStatusCommand auth overview", () => {
   it("honors OPENCLAW_AGENT_DIR when no --agent override is provided", async () => {
     const localRuntime = createRuntime();
     mocks.resolveAgentDir.mockClear();
+    mocks.ensureAuthProfileStore.mockClear();
     await withEnvAsync({ OPENCLAW_AGENT_DIR: "/tmp/openclaw-isolated-agent" }, async () => {
       await modelsStatusCommand({ json: true }, localRuntime as never);
     });
 
     expect(mocks.resolveAgentDir).not.toHaveBeenCalled();
-    expect(mocks.ensureAuthProfileStore).toHaveBeenCalledWith("/tmp/openclaw-isolated-agent");
+    expect(mocks.ensureAuthProfileStore).toHaveBeenLastCalledWith(
+      "/tmp/openclaw-isolated-agent",
+      expect.objectContaining({
+        externalCli: expect.objectContaining({ mode: "scoped" }),
+      }),
+    );
     const payload = parseFirstJsonLog(localRuntime);
     expect(payload.agentDir).toBe("/tmp/openclaw-isolated-agent");
     expect(payload.auth.storePath).toBe("/tmp/openclaw-isolated-agent/auth-profiles.json");
@@ -450,6 +460,7 @@ describe("modelsStatusCommand auth overview", () => {
   it("honors deprecated PI_CODING_AGENT_DIR when OPENCLAW_AGENT_DIR is unset", async () => {
     const localRuntime = createRuntime();
     mocks.resolveAgentDir.mockClear();
+    mocks.ensureAuthProfileStore.mockClear();
     await withEnvAsync(
       {
         OPENCLAW_AGENT_DIR: undefined,
@@ -461,7 +472,12 @@ describe("modelsStatusCommand auth overview", () => {
     );
 
     expect(mocks.resolveAgentDir).not.toHaveBeenCalled();
-    expect(mocks.ensureAuthProfileStore).toHaveBeenCalledWith("/tmp/openclaw-legacy-agent");
+    expect(mocks.ensureAuthProfileStore).toHaveBeenLastCalledWith(
+      "/tmp/openclaw-legacy-agent",
+      expect.objectContaining({
+        externalCli: expect.objectContaining({ mode: "scoped" }),
+      }),
+    );
     const payload = parseFirstJsonLog(localRuntime);
     expect(payload.agentDir).toBe("/tmp/openclaw-legacy-agent");
   });
@@ -543,6 +559,77 @@ describe("modelsStatusCommand auth overview", () => {
         mocks.resolveEnvApiKey.mockImplementation(defaultResolveEnvApiKeyImpl);
       } else {
         mocks.resolveEnvApiKey.mockImplementation(() => null);
+      }
+    }
+  });
+
+  it("uses selected agent model runtime when defaults map the same OpenAI model to Codex", async () => {
+    const localRuntime = createRuntime();
+    const originalLoadConfig = mocks.loadConfig.getMockImplementation();
+    const originalListAgentIds = mocks.listAgentIds.getMockImplementation();
+    const originalPrimary = mocks.resolveAgentExplicitModelPrimary.getMockImplementation();
+    const originalEffectivePrimary =
+      mocks.resolveAgentEffectiveModelPrimary.getMockImplementation();
+    mocks.listAgentIds.mockReturnValue(["main", "planning"]);
+    mocks.resolveAgentExplicitModelPrimary.mockReturnValue("openai/gpt-5.5");
+    mocks.resolveAgentEffectiveModelPrimary.mockReturnValue("openai/gpt-5.5");
+    mocks.loadConfig.mockReturnValue({
+      agents: {
+        defaults: {
+          model: { primary: "openai/gpt-5.5", fallbacks: [] },
+          models: {
+            "openai/gpt-5.5": {
+              agentRuntime: { id: "codex" },
+            },
+          },
+        },
+        list: [
+          {
+            id: "planning",
+            model: "openai/gpt-5.5",
+            models: {
+              "openai/gpt-5.5": {
+                alias: "gpt-planning",
+                agentRuntime: { id: "openclaw" },
+              },
+            },
+          },
+        ],
+      },
+      models: { providers: {} },
+      env: { shellEnv: { enabled: true } },
+    });
+
+    try {
+      await modelsStatusCommand(
+        { json: true, check: true, agent: "planning" },
+        localRuntime as never,
+      );
+      const payload = parseFirstJsonLog(localRuntime);
+      expect(payload.resolvedDefault).toBe("openai/gpt-5.5");
+      expect(payload.auth.runtimeAuthRoutes).toStrictEqual([]);
+      expect(payload.auth.missingProvidersInUse).toStrictEqual([]);
+      expect(payload.allowed).toContain("openai/gpt-5.5");
+      expect(payload.aliases).toEqual({ "gpt-planning": "openai/gpt-5.5" });
+      expect(localRuntime.exit).not.toHaveBeenCalledWith(1);
+    } finally {
+      if (originalLoadConfig) {
+        mocks.loadConfig.mockImplementation(originalLoadConfig);
+      }
+      if (originalListAgentIds) {
+        mocks.listAgentIds.mockImplementation(originalListAgentIds);
+      } else {
+        mocks.listAgentIds.mockReturnValue(["main", "jeremiah"]);
+      }
+      if (originalPrimary) {
+        mocks.resolveAgentExplicitModelPrimary.mockImplementation(originalPrimary);
+      } else {
+        mocks.resolveAgentExplicitModelPrimary.mockReturnValue(undefined);
+      }
+      if (originalEffectivePrimary) {
+        mocks.resolveAgentEffectiveModelPrimary.mockImplementation(originalEffectivePrimary);
+      } else {
+        mocks.resolveAgentEffectiveModelPrimary.mockReturnValue(undefined);
       }
     }
   });
