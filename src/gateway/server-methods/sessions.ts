@@ -1230,7 +1230,6 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       entry,
       includeDerivedTitles: p.includeDerivedTitles,
       includeLastMessage: p.includeLastMessage,
-      includeFinalAssistant: p.includeFinalAssistant,
       transcriptUsageMaxBytes: 64 * 1024,
     });
     respond(true, { session: row }, undefined);

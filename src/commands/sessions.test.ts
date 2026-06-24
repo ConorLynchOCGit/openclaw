@@ -266,15 +266,11 @@ describe("sessionsCommand", () => {
       agentId?: string;
       session?: {
         key?: string;
-        finalAssistantText?: string;
         childSessions?: string[];
       };
     };
     expect(payload.agentId).toBe("planning");
     expect(payload.session?.key).toBe("agent:planning:main");
-    expect(payload.session?.finalAssistantText).toBe(
-      "Final recursive planning improvement synthesized.",
-    );
     expect(payload.session?.childSessions).toContain("agent:researcher:subagent:child");
   });
 

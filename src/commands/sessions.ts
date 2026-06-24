@@ -405,7 +405,6 @@ export async function sessionsShowCommand(
     agentId: target.agentId,
     includeDerivedTitles: true,
     includeLastMessage: true,
-    includeFinalAssistant: true,
   });
 
   if (opts.json) {
@@ -429,7 +428,6 @@ export async function sessionsShowCommand(
     `startedAt: ${row.startedAt ? new Date(row.startedAt).toISOString() : "n/a"}`,
     `endedAt: ${row.endedAt ? new Date(row.endedAt).toISOString() : "n/a"}`,
     `childSessions: ${(row.childSessions ?? []).length}`,
-    ...(row.finalAssistantText ? [`finalAssistantText: ${row.finalAssistantText}`] : []),
   ];
   for (const line of lines) {
     runtime.log(line);

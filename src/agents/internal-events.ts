@@ -5,6 +5,7 @@
  */
 import {
   formatGeneratedAttachmentLines,
+  mediaUrlsFromGeneratedAttachments,
   type AgentGeneratedAttachment,
 } from "./generated-attachments.js";
 import {
@@ -23,10 +24,7 @@ type AgentTaskCompletionInternalEvent = {
   type: typeof AGENT_INTERNAL_EVENT_TYPE_TASK_COMPLETION;
   source: AgentInternalEventSource;
   childSessionKey: string;
-  childRunId?: string;
   childSessionId?: string;
-  fullResultRef?: string;
-  resultArtifactRefs?: string[];
   announceType: string;
   taskLabel: string;
   status: AgentInternalEventStatus;
@@ -37,6 +35,8 @@ type AgentTaskCompletionInternalEvent = {
   statsLine?: string;
   replyInstruction: string;
 };
+
+type TaskCompletionPromptMode = "plain" | "protected";
 
 /** Internal event variants that can be rendered into agent prompt context. */
 export type AgentInternalEvent = AgentTaskCompletionInternalEvent;
@@ -55,6 +55,16 @@ function sanitizeMultilineField(value: string, fallback: string): string {
   return sanitized || fallback;
 }
 
+function sanitizeMediaDirectiveValue(value: string): string | null {
+  let singleLine = "";
+  for (const char of escapeInternalRuntimeContextDelimiters(value).replace(/\r?\n/g, " ")) {
+    const code = char.charCodeAt(0);
+    singleLine += code < 32 || code === 127 ? " " : char;
+  }
+  const sanitized = singleLine.trim();
+  return sanitized || null;
+}
+
 function formatChildResultDataBlock(value: string): string {
   return (
     wrapPromptDataBlock({
@@ -64,88 +74,63 @@ function formatChildResultDataBlock(value: string): string {
   );
 }
 
-function formatTaskCompletionEvent(event: AgentTaskCompletionInternalEvent): string {
-  const sessionKey = sanitizeSingleLineField(event.childSessionKey, "unknown");
-  const childRunId = event.childRunId
-    ? sanitizeSingleLineField(event.childRunId, "unknown")
-    : undefined;
-  const sessionId = sanitizeSingleLineField(event.childSessionId ?? "unknown", "unknown");
-  const announceType = sanitizeSingleLineField(event.announceType, "unknown");
-  const taskLabel = sanitizeSingleLineField(event.taskLabel, "unnamed task");
-  const statusLabel = sanitizeSingleLineField(event.statusLabel, event.status);
-  const result = formatChildResultDataBlock(event.result);
-  const attachmentLines = formatGeneratedAttachmentLines(event.attachments);
-  const lines = [
-    "[Internal task completion event]",
-    `source: ${event.source}`,
-    `session_key: ${sessionKey}`,
-    ...(childRunId ? [`run_id: ${childRunId}`] : []),
-    `session_id: ${sessionId}`,
-    `type: ${announceType}`,
-    `task: ${taskLabel}`,
-    `status: ${statusLabel}`,
-    "",
-    result,
-  ];
-  const refs = [
-    event.fullResultRef,
-    ...(Array.isArray(event.resultArtifactRefs) ? event.resultArtifactRefs : []),
-  ]
-    .map((value) => value?.trim())
-    .filter((value): value is string => Boolean(value));
-  if (refs.length > 0) {
-    lines.push("", "Full result refs:", ...[...new Set(refs)].map((ref) => `- ${ref}`));
+function formatGeneratedMediaDirectiveLines(event: AgentTaskCompletionInternalEvent): string[] {
+  const mediaUrls = Array.from(
+    new Set(
+      [...(event.mediaUrls ?? []), ...mediaUrlsFromGeneratedAttachments(event.attachments)]
+        .map(sanitizeMediaDirectiveValue)
+        .filter((value): value is string => value !== null),
+    ),
+  );
+  if (mediaUrls.length === 0) {
+    return [];
   }
-  if (attachmentLines.length > 0) {
-    lines.push("", ...attachmentLines);
-  }
-  if (event.statsLine?.trim()) {
-    lines.push("", sanitizeMultilineField(event.statsLine, ""));
-  }
-  lines.push("", "Action:", sanitizeMultilineField(event.replyInstruction, ""));
-  return lines.join("\n");
+  return ["Generated media:", ...mediaUrls.map((mediaUrl) => `MEDIA:${mediaUrl}`)];
 }
 
-function formatTaskCompletionEventForPlainPrompt(event: AgentTaskCompletionInternalEvent): string {
+function formatTaskCompletionEvent(
+  event: AgentTaskCompletionInternalEvent,
+  mode: TaskCompletionPromptMode,
+): string {
   const sessionKey = sanitizeSingleLineField(event.childSessionKey, "unknown");
-  const childRunId = event.childRunId
-    ? sanitizeSingleLineField(event.childRunId, "unknown")
-    : undefined;
   const sessionId = sanitizeSingleLineField(event.childSessionId ?? "unknown", "unknown");
   const announceType = sanitizeSingleLineField(event.announceType, "unknown");
   const taskLabel = sanitizeSingleLineField(event.taskLabel, "unnamed task");
   const statusLabel = sanitizeSingleLineField(event.statusLabel, event.status);
   const result = formatChildResultDataBlock(event.result);
   const attachmentLines = formatGeneratedAttachmentLines(event.attachments);
-  const lines = [
-    "A background task completed. Use this result to reply to the user in your normal assistant voice.",
-    "",
+  const mediaDirectiveLines = formatGeneratedMediaDirectiveLines(event);
+  const lines =
+    mode === "protected"
+      ? ["[Internal task completion event]"]
+      : [
+          "A background task completed. Use this result to reply to the user in your normal assistant voice.",
+          "",
+        ];
+  lines.push(
     `source: ${event.source}`,
     `session_key: ${sessionKey}`,
-    ...(childRunId ? [`run_id: ${childRunId}`] : []),
     `session_id: ${sessionId}`,
     `type: ${announceType}`,
     `task: ${taskLabel}`,
     `status: ${statusLabel}`,
     "",
     result,
-  ];
-  const refs = [
-    event.fullResultRef,
-    ...(Array.isArray(event.resultArtifactRefs) ? event.resultArtifactRefs : []),
-  ]
-    .map((value) => value?.trim())
-    .filter((value): value is string => Boolean(value));
-  if (refs.length > 0) {
-    lines.push("", "Full result refs:", ...[...new Set(refs)].map((ref) => `- ${ref}`));
-  }
+  );
   if (attachmentLines.length > 0) {
     lines.push("", ...attachmentLines);
+  }
+  if (mediaDirectiveLines.length > 0) {
+    lines.push("", ...mediaDirectiveLines);
   }
   if (event.statsLine?.trim()) {
     lines.push("", sanitizeMultilineField(event.statsLine, ""));
   }
-  lines.push("", "Instruction:", sanitizeMultilineField(event.replyInstruction, ""));
+  lines.push(
+    "",
+    mode === "protected" ? "Action:" : "Instruction:",
+    sanitizeMultilineField(event.replyInstruction, ""),
+  );
   return lines.join("\n");
 }
 
@@ -157,7 +142,7 @@ export function formatAgentInternalEventsForPrompt(events?: AgentInternalEvent[]
   const blocks = events
     .map((event) => {
       if (event.type === "task_completion") {
-        return formatTaskCompletionEvent(event);
+        return formatTaskCompletionEvent(event, "protected");
       }
       return "";
     })
@@ -183,7 +168,7 @@ export function formatAgentInternalEventsForPlainPrompt(events?: AgentInternalEv
   return events
     .map((event) => {
       if (event.type === "task_completion") {
-        return formatTaskCompletionEventForPlainPrompt(event);
+        return formatTaskCompletionEvent(event, "plain");
       }
       return "";
     })
