@@ -417,6 +417,19 @@ describe("modelsListCommand forward-compat", () => {
         resolvedConfig: scopedConfig,
         diagnostics: [],
       });
+      mocks.ensureAuthProfileStore.mockReturnValueOnce({
+        version: 1,
+        profiles: {
+          "openai:default": {
+            type: "oauth",
+            provider: "openai",
+            access: "expired-access",
+            refresh: "refreshable-token",
+            expires: Date.now() - 60_000,
+          },
+        },
+        order: {},
+      });
       mocks.resolveAgentDir.mockReturnValueOnce("/tmp/codebase-researcher-agent");
       mocks.resolveAgentExplicitModelPrimary.mockReturnValueOnce("openai/gpt-5.5-mini");
       mocks.resolveConfiguredEntries.mockReturnValueOnce({
@@ -434,10 +447,16 @@ describe("modelsListCommand forward-compat", () => {
       await modelsListCommand({ json: true, agent: "codebase-researcher" }, runtime as never);
 
       expect(mocks.resolveAgentDir).toHaveBeenCalledWith(scopedConfig, "codebase-researcher");
-      expect(mocks.ensureAuthProfileStore).toHaveBeenCalledWith("/tmp/codebase-researcher-agent", {
-        readOnly: true,
-        syncExternalCli: false,
-      });
+      expect(mocks.ensureAuthProfileStore).toHaveBeenCalledWith(
+        "/tmp/codebase-researcher-agent",
+        expect.objectContaining({
+          externalCli: expect.objectContaining({
+            mode: "scoped",
+            providerIds: ["openai"],
+          }),
+          readOnly: true,
+        }),
+      );
       const [resolvedEntriesConfig] = mocks.resolveConfiguredEntries.mock.calls[0] ?? [];
       expect(resolvedEntriesConfig).toMatchObject({
         agents: {
@@ -450,7 +469,9 @@ describe("modelsListCommand forward-compat", () => {
           },
         },
       });
-      expectRowKeys(lastPrintedRows<{ key: string }>(), ["openai/gpt-5.5-mini"]);
+      const rows = lastPrintedRows<{ key: string; available: boolean }>();
+      expectRowKeys(rows, ["openai/gpt-5.5-mini"]);
+      expectRowFields(rows, "openai/gpt-5.5-mini", { available: true });
     });
 
     it("returns manifest catalog rows for provider filters without --all", async () => {

@@ -1,5 +1,6 @@
 /** Implementation of `openclaw models list`. */
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
+import { externalCliDiscoveryForConfigStatus } from "../../agents/auth-profiles/external-cli-discovery.js";
 import { parseModelRef } from "../../agents/model-selection.js";
 import type { ModelRegistry } from "../../llm/model-registry.js";
 import type { Model } from "../../llm/types.js";
@@ -84,8 +85,8 @@ export async function modelsListCommand(
   });
   const scope = resolveModelsCommandAgentScope({ cfg, rawAgentId: opts.agent });
   const authStore = ensureAuthProfileStore(scope.agentDir, {
+    externalCli: externalCliDiscoveryForConfigStatus({ cfg: scope.scopedConfig }),
     readOnly: true,
-    syncExternalCli: false,
   });
   const metadataSnapshot = loadManifestMetadataSnapshot({
     config: scope.scopedConfig,
