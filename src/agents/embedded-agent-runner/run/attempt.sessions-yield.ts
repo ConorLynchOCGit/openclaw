@@ -48,8 +48,8 @@ export async function waitForSessionsYieldAbortSettle(params: {
   }
 }
 
-// Return a synthetic parked response so agent runtime unwinds without another provider call.
-export function createYieldParkedResponse(model: {
+// Return a synthetic aborted response so agent runtime unwinds without a real provider call.
+export function createYieldAbortedResponse(model: {
   api?: string;
   provider?: string;
   id?: string;
@@ -58,7 +58,7 @@ export function createYieldParkedResponse(model: {
   result: () => Promise<{
     role: "assistant";
     content: Array<{ type: "text"; text: string }>;
-    stopReason: "end_turn";
+    stopReason: "aborted";
     api: string;
     provider: string;
     model: string;
@@ -82,7 +82,7 @@ export function createYieldParkedResponse(model: {
   const message = {
     role: "assistant" as const,
     content: [{ type: "text" as const, text: "" }],
-    stopReason: "end_turn" as const,
+    stopReason: "aborted" as const,
     api: model.api ?? "",
     provider: model.provider ?? "",
     model: model.id ?? "",
@@ -149,34 +149,7 @@ export async function persistSessionsYieldContextMessage(
   );
 }
 
-function isEmptyYieldAssistantArtifact(message: unknown): boolean {
-  if (!message || typeof message !== "object") {
-    return false;
-  }
-  const candidate = message as {
-    role?: unknown;
-    stopReason?: unknown;
-    content?: unknown;
-  };
-  if (candidate.role !== "assistant") {
-    return false;
-  }
-  if (candidate.stopReason !== "aborted" && candidate.stopReason !== "end_turn") {
-    return false;
-  }
-  if (!Array.isArray(candidate.content)) {
-    return true;
-  }
-  return candidate.content.every((part) => {
-    if (!part || typeof part !== "object") {
-      return true;
-    }
-    const text = (part as { text?: unknown }).text;
-    return typeof text !== "string" || text.trim().length === 0;
-  });
-}
-
-// Remove the synthetic yield interrupt + empty parked assistant entry from the live transcript.
+// Remove the synthetic yield interrupt + aborted assistant entry from the live transcript.
 export function stripSessionsYieldArtifacts(activeSession: {
   messages: AgentMessage[];
   agent: { state: { messages: AgentMessage[] } };
@@ -187,7 +160,7 @@ export function stripSessionsYieldArtifacts(activeSession: {
     const last = strippedMessages.at(-1) as
       | AgentMessage
       | { role?: string; customType?: string; stopReason?: string };
-    if (isEmptyYieldAssistantArtifact(last)) {
+    if (last?.role === "assistant" && "stopReason" in last && last.stopReason === "aborted") {
       strippedMessages.pop();
       continue;
     }

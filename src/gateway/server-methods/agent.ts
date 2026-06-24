@@ -113,7 +113,6 @@ import {
 import {
   createRunningTaskRun,
   finalizeTaskRunByRunId,
-  recordTaskRunProgressByRunId,
   updateTaskExecutionReceiptByRunId,
 } from "../../tasks/detached-task-runtime.js";
 import type { TaskStatus } from "../../tasks/task-registry.types.js";
@@ -759,67 +758,6 @@ function tryFinalizeTrackedAgentTask(params: {
   }
 }
 
-const TRACKED_AGENT_TASK_SUMMARY_MAX_CHARS = 1_000;
-
-function trimTaskSummaryText(value: unknown): string | undefined {
-  const text = normalizeOptionalString(value);
-  if (!text) {
-    return undefined;
-  }
-  if (text.length <= TRACKED_AGENT_TASK_SUMMARY_MAX_CHARS) {
-    return text;
-  }
-  return `${text.slice(0, TRACKED_AGENT_TASK_SUMMARY_MAX_CHARS - 1).trimEnd()}…`;
-}
-
-function readResultRecord(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-function readAcceptedSessionSpawnCount(result: unknown): number {
-  const record = readResultRecord(result);
-  const acceptedSessionSpawns = record?.acceptedSessionSpawns;
-  return Array.isArray(acceptedSessionSpawns)
-    ? acceptedSessionSpawns.filter(
-        (spawn) => readResultRecord(spawn)?.runId && readResultRecord(spawn)?.childSessionKey,
-      ).length
-    : 0;
-}
-
-function readTrackedAgentFinalAssistantText(result: unknown): string | undefined {
-  const record = readResultRecord(result);
-  const meta = readResultRecord(record?.meta);
-  return trimTaskSummaryText(meta?.finalAssistantVisibleText);
-}
-
-function resolveTrackedAgentTaskCompletionProjection(result: unknown): {
-  progressSummary?: string;
-  terminalSummary: string;
-} {
-  const record = readResultRecord(result);
-  const meta = readResultRecord(record?.meta);
-  const acceptedChildCount = readAcceptedSessionSpawnCount(result);
-  if (meta?.yielded === true) {
-    const childText =
-      acceptedChildCount === 1 ? "1 child completion" : `${acceptedChildCount} child completions`;
-    const summary =
-      acceptedChildCount > 0
-        ? `yielded waiting for ${childText}`
-        : "yielded waiting for continuation";
-    return {
-      progressSummary: summary,
-      terminalSummary: summary,
-    };
-  }
-  const finalAssistantText = readTrackedAgentFinalAssistantText(result);
-  return {
-    ...(finalAssistantText ? { progressSummary: finalAssistantText } : {}),
-    terminalSummary: "completed",
-  };
-}
-
 function resolveAgentDedupeKeys(params: {
   idempotencyKey: string;
   execApprovalFollowupApprovalId?: string;
@@ -1044,39 +982,19 @@ function dispatchAgentRunFromGateway(params: {
   void agentCommandFromIngress(params.ingressOpts, defaultRuntime, params.context.deps)
     .then((result) => {
       const aborted = result?.meta?.aborted === true;
-      const yielded = result?.meta?.yielded === true;
       const timeoutAttribution = readAgentRunTimeoutAttribution(result?.meta);
-      const completionProjection = resolveTrackedAgentTaskCompletionProjection(result);
       if (taskTracked) {
-        if (yielded && !aborted) {
-          recordTaskRunProgressByRunId({
-            runId: params.runId,
-            runtime: "cli",
-            sessionKey: params.ingressOpts.sessionKey,
-            lastEventAt: Date.now(),
-            progressSummary: completionProjection.progressSummary,
-            eventSummary: completionProjection.progressSummary,
-          });
-        } else {
-          tryFinalizeTrackedAgentTask({
-            runId: params.runId,
-            status: aborted ? "timed_out" : "succeeded",
-            progressSummary: aborted ? undefined : completionProjection.progressSummary,
-            terminalSummary: aborted ? "aborted" : completionProjection.terminalSummary,
-            log: params.context.logGateway,
-          });
-        }
+        tryFinalizeTrackedAgentTask({
+          runId: params.runId,
+          status: aborted ? "timed_out" : "succeeded",
+          terminalSummary: aborted ? "aborted" : "completed",
+          log: params.context.logGateway,
+        });
       }
-      const payloadStatus = aborted
-        ? ("timeout" as const)
-        : yielded
-          ? ("accepted" as const)
-          : ("ok" as const);
       const payload = {
         runId: params.runId,
-        status: payloadStatus,
-        summary: aborted ? "aborted" : yielded ? "yielded" : "completed",
-        ...(yielded ? { yielded: true } : {}),
+        status: aborted ? ("timeout" as const) : ("ok" as const),
+        summary: aborted ? "aborted" : "completed",
         ...(aborted ? { stopReason: result?.meta?.stopReason ?? "rpc" } : {}),
         ...(aborted && timeoutAttribution.timeoutPhase
           ? { timeoutPhase: timeoutAttribution.timeoutPhase }

@@ -4723,49 +4723,6 @@ describe("gateway agent handler", () => {
     });
   });
 
-  it("keeps yielded child-orchestration tasks running with progress summaries", async () => {
-    await withTempDir({ prefix: "openclaw-gateway-agent-yield-task-" }, async (root) => {
-      process.env.OPENCLAW_STATE_DIR = root;
-      resetTaskRegistryForTests();
-      primeMainAgentRun();
-      mocks.agentCommand.mockResolvedValueOnce({
-        payloads: [{ text: "NO_REPLY" }],
-        acceptedSessionSpawns: [
-          {
-            runId: "run-research-child",
-            childSessionKey: "agent:main:main:subagent:research",
-          },
-          {
-            runId: "run-review-child",
-            childSessionKey: "agent:main:main:subagent:review",
-          },
-        ],
-        meta: {
-          durationMs: 100,
-          yielded: true,
-          finalAssistantVisibleText: "",
-        },
-      });
-
-      await invokeAgent(
-        {
-          message: "spawn research and review children, then yield",
-          sessionKey: "agent:main:main",
-          idempotencyKey: "task-registry-yielded-children",
-        },
-        { reqId: "task-registry-yielded-children" },
-      );
-
-      expectRecordFields(findTaskByRunId("task-registry-yielded-children"), {
-        runtime: "cli",
-        childSessionKey: "agent:main:main",
-        status: "running",
-        progressSummary: "yielded waiting for 2 child completions",
-      });
-      expect(findTaskByRunId("task-registry-yielded-children")?.terminalSummary).toBeUndefined();
-    });
-  });
-
   it("logs a swallowed finalize error without blocking the background run", async () => {
     await withTempDir({ prefix: "openclaw-gateway-agent-finalize-throw-" }, async (root) => {
       process.env.OPENCLAW_STATE_DIR = root;

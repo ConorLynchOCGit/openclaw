@@ -131,37 +131,6 @@ describe("session lifecycle state", () => {
     });
   });
 
-  it("keeps yielded lifecycle end events non-terminal for parent sessions waiting on children", () => {
-    expect(
-      deriveGatewaySessionLifecycleSnapshot({
-        session: {
-          updatedAt: 1_000,
-          status: "running",
-          startedAt: 1_200,
-          runtimeMs: 250,
-          abortedLastRun: false,
-        },
-        event: {
-          ts: 2_000,
-          data: {
-            phase: "end",
-            startedAt: 1_200,
-            endedAt: 1_900,
-            yielded: true,
-            livenessState: "paused",
-          },
-        },
-      }),
-    ).toEqual({
-      updatedAt: 1_900,
-      status: "running",
-      startedAt: 1_200,
-      endedAt: undefined,
-      runtimeMs: 250,
-      abortedLastRun: false,
-    });
-  });
-
   it("maps aborted stop reasons to killed", () => {
     expectPersistedLifecyclePatch({
       entry: { startedAt: 1_100 },

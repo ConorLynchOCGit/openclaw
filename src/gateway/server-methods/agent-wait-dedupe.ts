@@ -162,9 +162,6 @@ function readTerminalSnapshotFromDedupeEntry(entry: DedupeEntry): AgentWaitTermi
   const stopReason = asString(payload?.stopReason) ?? asString(resultMeta?.stopReason);
   const livenessState = asString(payload?.livenessState) ?? asString(resultMeta?.livenessState);
   const yielded = payload?.yielded === true || resultMeta?.yielded === true;
-  if (yielded) {
-    return null;
-  }
   const timeoutPhase = payload?.timeoutPhase ?? resultMeta?.timeoutPhase;
   const providerStarted = payload?.providerStarted ?? resultMeta?.providerStarted;
   const errorMessage =

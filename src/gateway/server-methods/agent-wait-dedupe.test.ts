@@ -175,7 +175,7 @@ describe("agent wait dedupe helper", () => {
     expect(testing.getWaiterCount(runId)).toBe(0);
   });
 
-  it("does not treat structured yield metadata as a terminal agent result", () => {
+  it("preserves structured yield metadata from terminal agent results", () => {
     const dedupe = new Map();
     const runId = "run-yielded";
 
@@ -189,7 +189,17 @@ describe("agent wait dedupe helper", () => {
       }),
     });
 
-    expectNoTerminalSnapshot(dedupe, runId);
+    expectTerminalSnapshot(
+      dedupe,
+      runId,
+      okSnapshot({
+        startedAt: 100,
+        endedAt: 200,
+        stopReason: "end_turn",
+        livenessState: "paused",
+        yielded: true,
+      }),
+    );
   });
 
   it("preserves timeout attribution from terminal agent result metadata", () => {

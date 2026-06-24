@@ -1,7 +1,7 @@
 /**
  * sessions_yield built-in tool.
  *
- * Parks the current turn after subagent spawning so completion events can resume the session later.
+ * Ends the current turn after subagent spawning so completion events can resume the session later.
  */
 import { Type } from "typebox";
 import type { AnyAgentTool } from "./common.js";
@@ -19,8 +19,7 @@ export function createSessionsYieldTool(opts?: {
   return {
     label: "Yield",
     name: "sessions_yield",
-    description:
-      "Park the current turn without a visible interim answer and let spawned subagent completion events resume it. Use again after partial child results when more evidence is still needed.",
+    description: "End current turn. Use after spawning subagents; results arrive as next message.",
     parameters: SessionsYieldToolSchema,
     execute: async (_toolCallId, args) => {
       const params = args as Record<string, unknown>;

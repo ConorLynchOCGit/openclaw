@@ -390,7 +390,7 @@ import {
   installPromptSubmissionLockRelease,
 } from "./attempt.session-lock.js";
 import {
-  createYieldParkedResponse,
+  createYieldAbortedResponse,
   persistSessionsYieldContextMessage,
   queueSessionsYieldInterruptMessage,
   stripSessionsYieldArtifacts,
@@ -2803,7 +2803,7 @@ export async function runEmbeddedAttempt(
       activeSession.agent.streamFn = (model, context, options) => {
         const signal = runAbortController.signal as AbortSignal & { reason?: unknown };
         if (yieldDetected && signal.aborted && signal.reason === "sessions_yield") {
-          return createYieldParkedResponse(model) as unknown as Awaited<
+          return createYieldAbortedResponse(model) as unknown as Awaited<
             ReturnType<typeof innerStreamFn>
           >;
         }
