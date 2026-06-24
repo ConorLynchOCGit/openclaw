@@ -191,9 +191,12 @@ describe("route-args", () => {
         "--local",
         "--json",
         "--plain",
+        "--agent",
+        "codebase-researcher",
       ]),
     ).toEqual({
       provider: "openai",
+      agent: "codebase-researcher",
       all: true,
       local: true,
       json: true,

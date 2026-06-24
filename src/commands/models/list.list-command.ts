@@ -47,6 +47,7 @@ function loadSourcePlanModule(): Promise<SourcePlanModule> {
 export async function modelsListCommand(
   opts: {
     all?: boolean;
+    agent?: string;
     local?: boolean;
     provider?: string;
     json?: boolean;
@@ -75,7 +76,13 @@ export async function modelsListCommand(
   }
   const [
     { loadAuthProfileStoreWithoutExternalProfiles },
-    { resolveAgentWorkspaceDir, resolveDefaultAgentDir, resolveDefaultAgentId },
+    {
+      resolveAgentDir,
+      resolveAgentExplicitModelPrimary,
+      resolveAgentModelFallbacksOverride,
+      resolveAgentWorkspaceDir,
+      resolveDefaultAgentId,
+    },
     { resolveDefaultAgentWorkspaceDir },
   ] = await Promise.all([
     import("../../agents/auth-profiles/store.js"),
@@ -86,23 +93,58 @@ export async function modelsListCommand(
     commandName: "models list",
     runtime,
   });
-  const agentDir = resolveDefaultAgentDir(cfg);
+  const { resolveKnownAgentId } = await import("./shared.js");
+  const explicitAgentId = resolveKnownAgentId({ cfg, rawAgentId: opts.agent });
+  const agentId = explicitAgentId ?? resolveDefaultAgentId(cfg);
+  const agentDir = resolveAgentDir(cfg, agentId);
   const authStore = loadAuthProfileStoreWithoutExternalProfiles(agentDir);
-  const workspaceDir =
-    resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg)) ?? resolveDefaultAgentWorkspaceDir();
+  const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId) ?? resolveDefaultAgentWorkspaceDir();
+  const agentModelPrimary = explicitAgentId
+    ? resolveAgentExplicitModelPrimary(cfg, explicitAgentId)
+    : undefined;
+  const agentFallbacksOverride = explicitAgentId
+    ? resolveAgentModelFallbacksOverride(cfg, explicitAgentId)
+    : undefined;
+  const agentEntry = explicitAgentId
+    ? cfg.agents?.list?.find((entry) => entry.id?.trim() === explicitAgentId)
+    : undefined;
+  const shouldApplyAgentListScope =
+    Boolean(agentModelPrimary && agentModelPrimary.length > 0) ||
+    Boolean(agentFallbacksOverride) ||
+    Boolean(agentEntry?.models);
+  const scopedCfg = shouldApplyAgentListScope
+    ? {
+        ...cfg,
+        agents: {
+          ...cfg.agents,
+          defaults: {
+            ...cfg.agents?.defaults,
+            model: {
+              ...(typeof cfg.agents?.defaults?.model === "object" ? cfg.agents.defaults.model : {}),
+              ...(agentModelPrimary ? { primary: agentModelPrimary } : {}),
+              ...(agentFallbacksOverride ? { fallbacks: agentFallbacksOverride } : {}),
+            },
+            models: {
+              ...(cfg.agents?.defaults?.models ?? {}),
+              ...(agentEntry?.models ?? {}),
+            },
+          },
+        },
+      }
+    : cfg;
   const metadataSnapshot = loadManifestMetadataSnapshot({
-    config: cfg,
+    config: scopedCfg,
     workspaceDir,
     env: process.env,
   });
   const providerFilter = parsedProviderFilter
     ? canonicalizeModelCatalogProviderAlias(parsedProviderFilter, {
-        cfg,
+        cfg: scopedCfg,
         metadataSnapshot,
       })
     : undefined;
   const authIndex = createModelListAuthIndex({
-    cfg,
+    cfg: scopedCfg,
     authStore,
     workspaceDir,
     metadataSnapshot,
@@ -113,7 +155,7 @@ export async function modelsListCommand(
   let discoveredKeys = new Set<string>();
   let availableKeys: Set<string> | undefined;
   let availabilityErrorMessage: string | undefined;
-  const { entries } = resolveConfiguredEntries(cfg, metadataSnapshot);
+  const { entries } = resolveConfiguredEntries(scopedCfg, metadataSnapshot);
   const configuredByKey = new Map(entries.map((entry) => [entry.key, entry]));
   const enableSourcePlanCascade = Boolean(opts.all) || Boolean(providerFilter);
   // Full/provider-filtered lists may need runtime, manifest, and registry rows.
@@ -124,7 +166,7 @@ export async function modelsListCommand(
         all: opts.all,
         enableCascade: enableSourcePlanCascade,
         providerFilter,
-        cfg,
+        cfg: scopedCfg,
         metadataSnapshot,
       })
     : undefined;
@@ -134,7 +176,7 @@ export async function modelsListCommand(
     loadAvailability?: boolean;
   }) => {
     const { loadListModelRegistry } = await loadRegistryLoadModule();
-    const loaded = await loadListModelRegistry(cfg, {
+    const loaded = await loadListModelRegistry(scopedCfg, {
       providerFilter,
       normalizeModels: optsLocal?.normalizeModels ?? Boolean(providerFilter),
       loadAvailability: optsLocal?.loadAvailability,
@@ -151,7 +193,7 @@ export async function modelsListCommand(
       await loadRegistryState();
     } else if (!opts.all && opts.local) {
       const { loadConfiguredListModelRegistry } = await loadRegistryLoadModule();
-      const loaded = loadConfiguredListModelRegistry(cfg, entries, {
+      const loaded = loadConfiguredListModelRegistry(scopedCfg, entries, {
         providerFilter,
         workspaceDir,
       });
@@ -165,7 +207,7 @@ export async function modelsListCommand(
     return;
   }
   const buildRowContext = (skipRuntimeModelSuppression: boolean) => ({
-    cfg,
+    cfg: scopedCfg,
     agentDir,
     authIndex,
     availableKeys,

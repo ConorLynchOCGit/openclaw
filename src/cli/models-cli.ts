@@ -53,14 +53,16 @@ export function registerModelsCli(program: Command) {
     .command("list")
     .description("List models (configured by default)")
     .option("--all", "Show full model catalog", false)
+    .option("--agent <id>", "Agent id to inspect (overrides OPENCLAW_AGENT_DIR)")
     .option("--local", "Filter to local models", false)
     .option("--provider <id>", "Filter by provider id")
     .option("--json", "Output JSON", false)
     .option("--plain", "Plain line output", false)
-    .action(async (opts) => {
-      await withModelsRuntime(async ({ defaultRuntime }) => {
+    .action(async (opts, command) => {
+      await withModelsRuntime(async ({ defaultRuntime, resolveModelAgentOption }) => {
+        const agent = resolveModelAgentOption(command, opts);
         const { modelsListCommand } = await import("../commands/models/list.list-command.js");
-        await modelsListCommand(opts, defaultRuntime);
+        await modelsListCommand({ ...opts, agent }, defaultRuntime);
       });
     });
 

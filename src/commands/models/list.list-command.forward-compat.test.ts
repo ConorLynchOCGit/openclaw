@@ -87,6 +87,9 @@ const mocks = vi.hoisted(() => {
     loadModelsConfigWithSource: vi.fn(),
     ensureOpenClawModelsJson: vi.fn(),
     ensureAuthProfileStore: vi.fn(),
+    resolveAgentDir: vi.fn(),
+    resolveAgentExplicitModelPrimary: vi.fn(),
+    resolveAgentModelFallbacksOverride: vi.fn(),
     resolveDefaultAgentDir: vi.fn(),
     loadModelRegistry: vi.fn(),
     loadModelCatalog: vi.fn(),
@@ -113,6 +116,9 @@ function resetMocks() {
   });
   mocks.ensureOpenClawModelsJson.mockResolvedValue({ wrote: false });
   mocks.ensureAuthProfileStore.mockReturnValue({ version: 1, profiles: {}, order: {} });
+  mocks.resolveAgentDir.mockReturnValue("/tmp/openclaw-agent");
+  mocks.resolveAgentExplicitModelPrimary.mockReturnValue(undefined);
+  mocks.resolveAgentModelFallbacksOverride.mockReturnValue(undefined);
   mocks.resolveDefaultAgentDir.mockReturnValue("/tmp/openclaw-agent");
   mocks.loadModelRegistry.mockResolvedValue({
     models: [],
@@ -294,6 +300,10 @@ function installModelsListCommandForwardCompatMocks() {
 
   vi.doMock("../../agents/agent-scope.js", () => ({
     listAgentEntries: vi.fn(() => []),
+    listAgentIds: vi.fn(() => ["main", "codebase-researcher"]),
+    resolveAgentDir: mocks.resolveAgentDir,
+    resolveAgentExplicitModelPrimary: mocks.resolveAgentExplicitModelPrimary,
+    resolveAgentModelFallbacksOverride: mocks.resolveAgentModelFallbacksOverride,
     resolveAgentWorkspaceDir: vi.fn(() => "/tmp/openclaw-workspace"),
     resolveDefaultAgentDir: mocks.resolveDefaultAgentDir,
     resolveDefaultAgentId: vi.fn(() => "main"),
@@ -381,6 +391,65 @@ beforeEach(() => {
 
 describe("modelsListCommand forward-compat", () => {
   describe("configured rows", () => {
+    it("scopes configured rows and auth store to the requested agent", async () => {
+      const scopedConfig = {
+        agents: {
+          defaults: {
+            model: { primary: "openai/gpt-5.5" },
+            models: {
+              "openai/gpt-5.5": {},
+            },
+          },
+          list: [
+            {
+              id: "codebase-researcher",
+              model: { primary: "openai/gpt-5.5-mini" },
+              models: {
+                "openai/gpt-5.5-mini": {},
+              },
+            },
+          ],
+        },
+        models: { providers: {} },
+      };
+      mocks.loadModelsConfigWithSource.mockResolvedValueOnce({
+        sourceConfig: scopedConfig,
+        resolvedConfig: scopedConfig,
+        diagnostics: [],
+      });
+      mocks.resolveAgentDir.mockReturnValueOnce("/tmp/codebase-researcher-agent");
+      mocks.resolveAgentExplicitModelPrimary.mockReturnValueOnce("openai/gpt-5.5-mini");
+      mocks.resolveConfiguredEntries.mockReturnValueOnce({
+        entries: [
+          {
+            key: "openai/gpt-5.5-mini",
+            ref: { provider: "openai", model: "gpt-5.5-mini" },
+            tags: new Set(["default", "configured"]),
+            aliases: [],
+          },
+        ],
+      });
+      const runtime = createRuntime();
+
+      await modelsListCommand({ json: true, agent: "codebase-researcher" }, runtime as never);
+
+      expect(mocks.resolveAgentDir).toHaveBeenCalledWith(scopedConfig, "codebase-researcher");
+      expect(mocks.ensureAuthProfileStore).toHaveBeenCalledWith("/tmp/codebase-researcher-agent");
+      const [resolvedEntriesConfig] = mocks.resolveConfiguredEntries.mock.calls[0] ?? [];
+      expect(resolvedEntriesConfig).toMatchObject({
+        agents: {
+          defaults: {
+            model: { primary: "openai/gpt-5.5-mini" },
+            models: {
+              "openai/gpt-5.5": {},
+              "openai/gpt-5.5-mini": {},
+            },
+          },
+        },
+      });
+      expectRowKeys(lastPrintedRows<{ key: string }>(), ["openai/gpt-5.5-mini"]);
+    });
+
     it("returns manifest catalog rows for provider filters without --all", async () => {
       mocks.resolveConfiguredEntries.mockReturnValueOnce({ entries: [] });
       mocks.loadStaticManifestCatalogRowsForList.mockReturnValueOnce([

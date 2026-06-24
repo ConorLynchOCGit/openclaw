@@ -214,8 +214,13 @@ export function parseModelsListRouteArgs(argv: string[]) {
   if (!provider.ok) {
     return null;
   }
+  const agent = parseOptionalFlagValue(argv, "--agent");
+  if (!agent.ok) {
+    return null;
+  }
   return {
     provider: provider.value,
+    agent: agent.value,
     all: hasFlag(argv, "--all"),
     local: hasFlag(argv, "--local"),
     json: hasFlag(argv, "--json"),

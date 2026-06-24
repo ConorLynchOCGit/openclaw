@@ -88,6 +88,7 @@ describe("models cli", () => {
     modelsSetCommand.mockClear();
     modelsSetImageCommand.mockClear();
     modelsStatusCommand.mockClear();
+    mocks.noopAsync.mockClear();
   });
 
   function createProgram() {
@@ -152,6 +153,14 @@ describe("models cli", () => {
   ])("passes --agent to models status ($label)", async ({ args }) => {
     await runModelsCommand(args);
     expectCommandOptions(modelsStatusCommand, { agent: "poe" });
+  });
+
+  it.each([
+    { label: "list flag", args: ["models", "list", "--agent", "poe"] },
+    { label: "parent flag", args: ["models", "--agent", "poe", "list"] },
+  ])("passes --agent to models list ($label)", async ({ args }) => {
+    await runModelsCommand(args);
+    expectCommandOptions(mocks.noopAsync, { agent: "poe" });
   });
 
   it.each([
