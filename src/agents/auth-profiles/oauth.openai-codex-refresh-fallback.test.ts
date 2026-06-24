@@ -10,6 +10,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { resetFileLockStateForTest } from "../../infra/file-lock.js";
 import { closeOpenClawAgentDatabasesForTest } from "../../state/openclaw-agent-db.js";
 import { captureEnv } from "../../test-utils/env.js";
+import { testing as externalAuthTesting } from "./external-auth.js";
 import {
   OAUTH_AGENT_ENV_KEYS,
   createExpiredOauthStore,
@@ -165,6 +166,7 @@ describe("resolveApiKeyForProfile openai refresh fallback", () => {
     formatProviderAuthProfileApiKeyWithPluginMock.mockReturnValue(undefined);
     buildProviderAuthDoctorHintWithPluginMock.mockReset();
     buildProviderAuthDoctorHintWithPluginMock.mockResolvedValue(undefined);
+    externalAuthTesting.resetResolveExternalAuthProfilesForTest();
     clearRuntimeAuthProfileStoreSnapshots();
     const caseRoot = path.join(tempRoot, `case-${++caseIndex}`);
     agentDir = path.join(caseRoot, "agents", "main", "agent");
@@ -175,6 +177,7 @@ describe("resolveApiKeyForProfile openai refresh fallback", () => {
 
   afterEach(async () => {
     resetFileLockStateForTest();
+    externalAuthTesting.resetResolveExternalAuthProfilesForTest();
     clearRuntimeAuthProfileStoreSnapshots();
     closeOpenClawAgentDatabasesForTest();
     envSnapshot.restore();
@@ -921,6 +924,63 @@ describe("resolveApiKeyForProfile openai refresh fallback", () => {
     expectPersistedOpenAICodexProfile(persisted.profiles[profileId], {
       access: "retried-access-token",
       refresh: "retried-refresh-token",
+    });
+  });
+
+  it("refreshes a runtime-only external OpenAI profile when the local agent store is empty", async () => {
+    const profileId = "openai:default";
+    externalAuthTesting.setResolveExternalAuthProfilesForTest(() => [
+      {
+        profileId,
+        persistence: "runtime-only",
+        credential: {
+          type: "oauth",
+          provider: "openai",
+          access: "runtime-expired-access-token",
+          refresh: "runtime-refresh-token",
+          expires: Date.now() - 60_000,
+          accountId: "acct-runtime",
+        },
+      },
+    ]);
+    refreshProviderOAuthCredentialWithPluginMock.mockImplementationOnce(
+      async (params?: { context?: unknown }) => {
+        const context = requireOAuthContext(params?.context);
+        expect(context.access).toBe("runtime-expired-access-token");
+        expect(context.refresh).toBe("runtime-refresh-token");
+        expect(context.accountId).toBe("acct-runtime");
+        return {
+          type: "oauth",
+          provider: "openai",
+          access: "runtime-rotated-access-token",
+          refresh: "runtime-rotated-refresh-token",
+          expires: Date.now() + 86_400_000,
+          accountId: "acct-runtime",
+        };
+      },
+    );
+
+    const store = ensureAuthProfileStore(agentDir);
+    expect(store.runtimeExternalProfileIds).toContain(profileId);
+    expect(await readPersistedStore(agentDir)).toEqual({ version: 1, profiles: {} });
+
+    await expect(
+      resolveApiKeyForProfile({
+        store,
+        profileId,
+        agentDir,
+      }),
+    ).resolves.toEqual({
+      apiKey: "runtime-rotated-access-token",
+      provider: "openai",
+      email: undefined,
+    });
+
+    const persisted = await readPersistedStore(agentDir);
+    expectPersistedOpenAICodexProfile(persisted.profiles[profileId], {
+      access: "runtime-rotated-access-token",
+      refresh: "runtime-rotated-refresh-token",
+      accountId: "acct-runtime",
     });
   });
 

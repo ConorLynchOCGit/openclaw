@@ -428,6 +428,7 @@ export function createOAuthManager(adapter: OAuthManagerAdapter) {
     profileId: string;
     expected: OAuthCredential | OAuthCredential[];
     credential: OAuthCredential;
+    runtimeExternalCredential?: OAuthCredential;
   }): Promise<boolean> {
     let saved = false;
     const result = await updateAuthProfileStoreWithLock({
@@ -437,18 +438,31 @@ export function createOAuthManager(adapter: OAuthManagerAdapter) {
         const expectedCredentials = Array.isArray(params.expected)
           ? params.expected
           : [params.expected];
-        if (
-          existing?.type !== "oauth" ||
-          !expectedCredentials.some((expected) => areOAuthCredentialsEquivalent(existing, expected))
-        ) {
+        const expectedMatchesExisting =
+          existing?.type === "oauth" &&
+          expectedCredentials.some((expected) => areOAuthCredentialsEquivalent(existing, expected));
+        const runtimeCredential = params.runtimeExternalCredential;
+        const canInsertFromRuntimeExternal =
+          !existing &&
+          runtimeCredential?.type === "oauth" &&
+          expectedCredentials.some((expected) =>
+            areOAuthCredentialsEquivalent(runtimeCredential, expected),
+          );
+        if (!expectedMatchesExisting && !canInsertFromRuntimeExternal) {
           log.debug("skipped OAuth credential write because stored profile changed", {
             profileId: params.profileId,
           });
           return false;
         }
+        const identityBase =
+          existing?.type === "oauth"
+            ? existing
+            : runtimeCredential?.type === "oauth"
+              ? runtimeCredential
+              : undefined;
         if (
-          !isSafeToAdoptBootstrapOAuthIdentity(existing, params.credential) ||
-          !shouldReplaceStoredOAuthCredential(existing, params.credential)
+          !isSafeToAdoptBootstrapOAuthIdentity(identityBase, params.credential) ||
+          !shouldReplaceStoredOAuthCredential(identityBase, params.credential)
         ) {
           log.debug("skipped OAuth credential write because stored profile changed", {
             profileId: params.profileId,
@@ -468,6 +482,8 @@ export function createOAuthManager(adapter: OAuthManagerAdapter) {
     provider: string;
     agentDir?: string;
     cfg?: OpenClawConfig;
+    credential: OAuthCredential;
+    runtimeExternalCredential?: OAuthCredential;
     forceRefresh?: boolean;
     attemptedCredentials?: OAuthCredential[];
   }): Promise<ResolvedOAuthAccess | null> {
@@ -478,10 +494,18 @@ export function createOAuthManager(adapter: OAuthManagerAdapter) {
     try {
       return await withFileLock(globalRefreshLockPath, OAUTH_REFRESH_LOCK_OPTIONS, async () => {
         const store = loadStoredOAuthRefreshStore(ownerAgentDir);
-        const cred = store.profiles[params.profileId];
-        if (!cred || cred.type !== "oauth") {
+        if (params.credential.provider !== params.provider) {
           return null;
         }
+        const storedCredential = store.profiles[params.profileId];
+        if (
+          storedCredential !== undefined &&
+          (storedCredential.type !== "oauth" || storedCredential.provider !== params.provider)
+        ) {
+          return null;
+        }
+        const cred = storedCredential?.type === "oauth" ? storedCredential : params.credential;
+        const insertFromRuntimeExternal = storedCredential === undefined;
         let credentialToRefresh = cred;
 
         if (!params.forceRefresh && hasUsableOAuthCredential(cred)) {
@@ -566,6 +590,9 @@ export function createOAuthManager(adapter: OAuthManagerAdapter) {
                 profileId: params.profileId,
                 expected: cred,
                 credential: externallyManaged,
+                runtimeExternalCredential: insertFromRuntimeExternal
+                  ? params.runtimeExternalCredential
+                  : undefined,
               });
             }
             credentialToRefresh = externallyManaged;
@@ -611,6 +638,9 @@ export function createOAuthManager(adapter: OAuthManagerAdapter) {
               ? credentialToRefresh
               : [credentialToRefresh, cred],
           credential: refreshedCredentials,
+          runtimeExternalCredential: insertFromRuntimeExternal
+            ? params.runtimeExternalCredential
+            : undefined,
         });
         if (!persisted) {
           throw new Error("Failed to persist refreshed OAuth credential");
@@ -649,6 +679,8 @@ export function createOAuthManager(adapter: OAuthManagerAdapter) {
     provider: string;
     agentDir?: string;
     cfg?: OpenClawConfig;
+    credential: OAuthCredential;
+    runtimeExternalCredential?: OAuthCredential;
     forceRefresh?: boolean;
     attemptedCredentials?: OAuthCredential[];
   }): Promise<ResolvedOAuthAccess | null> {
@@ -690,6 +722,13 @@ export function createOAuthManager(adapter: OAuthManagerAdapter) {
       credential: adoptedCredential,
       readBootstrapCredential: adapter.readBootstrapCredential,
     });
+    const storeCredential = params.store.profiles[params.profileId];
+    const runtimeExternalCredential =
+      params.store.runtimeExternalProfileIds?.includes(params.profileId) === true &&
+      storeCredential?.type === "oauth" &&
+      areOAuthCredentialsEquivalent(storeCredential, effectiveCredential)
+        ? effectiveCredential
+        : undefined;
     const attemptedCredentials: OAuthCredential[] = [];
 
     if (!params.forceRefresh && hasUsableOAuthCredential(effectiveCredential)) {
@@ -708,6 +747,8 @@ export function createOAuthManager(adapter: OAuthManagerAdapter) {
         provider: params.credential.provider,
         agentDir: params.agentDir,
         cfg: params.cfg,
+        credential: effectiveCredential,
+        runtimeExternalCredential,
         forceRefresh: params.forceRefresh,
         attemptedCredentials,
       });
@@ -760,6 +801,8 @@ export function createOAuthManager(adapter: OAuthManagerAdapter) {
             provider: params.credential.provider,
             agentDir: params.agentDir,
             cfg: params.cfg,
+            credential: refreshed,
+            runtimeExternalCredential,
             forceRefresh: params.forceRefresh,
             attemptedCredentials,
           });
