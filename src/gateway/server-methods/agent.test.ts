@@ -4723,7 +4723,7 @@ describe("gateway agent handler", () => {
     });
   });
 
-  it("records yielded child-orchestration summaries on tracked gateway agent tasks", async () => {
+  it("keeps yielded child-orchestration tasks running with progress summaries", async () => {
     await withTempDir({ prefix: "openclaw-gateway-agent-yield-task-" }, async (root) => {
       process.env.OPENCLAW_STATE_DIR = root;
       resetTaskRegistryForTests();
@@ -4759,10 +4759,10 @@ describe("gateway agent handler", () => {
       expectRecordFields(findTaskByRunId("task-registry-yielded-children"), {
         runtime: "cli",
         childSessionKey: "agent:main:main",
-        status: "succeeded",
+        status: "running",
         progressSummary: "yielded waiting for 2 child completions",
-        terminalSummary: "yielded waiting for 2 child completions",
       });
+      expect(findTaskByRunId("task-registry-yielded-children")?.terminalSummary).toBeUndefined();
     });
   });
 

@@ -22,6 +22,7 @@ type LifecycleEventLike = Pick<AgentEventPayload, "ts" | "sessionId"> & {
     livenessState?: unknown;
     timeoutPhase?: unknown;
     providerStarted?: unknown;
+    yielded?: unknown;
   };
 };
 
@@ -148,6 +149,16 @@ export function deriveGatewaySessionLifecycleSnapshot(params: {
   const startedAt = resolveLifecycleStartedAt(existing?.startedAt, params.event);
   const endedAt = resolveLifecycleEndedAt(params.event);
   const updatedAt = endedAt ?? existing?.updatedAt;
+  if (params.event.data?.yielded === true) {
+    return {
+      updatedAt,
+      status: "running",
+      startedAt,
+      endedAt: undefined,
+      runtimeMs: existing?.runtimeMs,
+      abortedLastRun: false,
+    };
+  }
   return {
     updatedAt,
     status: resolveTerminalStatus(params.event),

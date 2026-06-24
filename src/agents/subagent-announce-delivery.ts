@@ -3,6 +3,7 @@
  *
  * Routes completion payloads through gateway/channel/session paths and records delivery evidence.
  */
+import path from "node:path";
 import { clampTimerTimeoutMs } from "@openclaw/normalization-core/number-coercion";
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
 import {
@@ -14,6 +15,9 @@ import { isSilentReplyPayloadText, SILENT_REPLY_TOKEN } from "../auto-reply/toke
 import { getLoadedChannelPluginForRead } from "../channels/plugins/registry-loaded-read.js";
 import type { ChannelId } from "../channels/plugins/types.public.js";
 import { routeFromConversationRef, routeToDeliveryFields } from "../channels/route-projection.js";
+import { resolveAndPersistSessionFile } from "../config/sessions/session-file.js";
+import { resolveSessionStoreEntry, updateSessionStoreEntry } from "../config/sessions/store.js";
+import { appendSessionTranscriptMessage } from "../config/sessions/transcript-append.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { isOutboundDeliveryError } from "../infra/outbound/deliver-types.js";
 import type { ConversationRef } from "../infra/outbound/session-binding-service.js";
@@ -27,6 +31,7 @@ import {
 } from "../sessions/input-provenance.js";
 import { deriveSessionChatTypeFromKey } from "../sessions/session-chat-type-shared.js";
 import { isCronRunSessionKey, isCronSessionKey } from "../sessions/session-key-utils.js";
+import { emitSessionTranscriptUpdate } from "../sessions/transcript-events.js";
 import { isNonTerminalAgentRunStatus } from "../shared/agent-run-status.js";
 import { mergeDeliveryContext, normalizeDeliveryContext } from "../utils/delivery-context.js";
 import {
@@ -48,7 +53,10 @@ import {
 import type { EmbeddedAgentQueueMessageOptions } from "./embedded-agent-runner/run-state.js";
 import type { EmbeddedAgentQueueMessageOutcome } from "./embedded-agent-runner/runs.js";
 import { mediaUrlsFromGeneratedAttachments } from "./generated-attachments.js";
-import type { AgentInternalEvent } from "./internal-events.js";
+import {
+  formatAgentInternalEventsForPlainPrompt,
+  type AgentInternalEvent,
+} from "./internal-events.js";
 import { isSessionWriteLockAcquireError } from "./session-write-lock-error.js";
 import {
   callGateway,
@@ -79,6 +87,20 @@ import { resolveRequesterStoreKey } from "./subagent-requester-store-key.js";
 import type { SpawnSubagentMode } from "./subagent-spawn.types.js";
 
 const DEFAULT_SUBAGENT_ANNOUNCE_TIMEOUT_MS = 120_000;
+const SUBAGENT_COMPLETION_CUSTOM_TYPE = "openclaw.subagent_completion";
+type CompletionSink = "none" | "parent_session" | "external_delivery";
+
+type ChildCompletionTranscriptAppendResult =
+  | {
+      ok: true;
+      sessionFile: string;
+      messageId: string;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
 type SubagentAnnounceDeliveryDeps = {
   dispatchGatewayMethodInProcess: typeof dispatchGatewayMethodInProcess;
   getRuntimeConfig: typeof getRuntimeConfig;
@@ -87,6 +109,11 @@ type SubagentAnnounceDeliveryDeps = {
     isActive: boolean;
   };
   isRequesterSessionAbandoned: (requesterSessionKey: string, sessionId?: string) => boolean;
+  appendChildCompletionToRequesterSession: (params: {
+    requesterSessionKey: string;
+    internalEvents?: readonly AgentInternalEvent[];
+    idempotencyKey: string;
+  }) => Promise<ChildCompletionTranscriptAppendResult>;
   queueEmbeddedAgentMessageWithOutcome: (
     sessionId: string,
     text: string,
@@ -109,6 +136,7 @@ const defaultSubagentAnnounceDeliveryDeps: SubagentAnnounceDeliveryDeps = {
   },
   isRequesterSessionAbandoned: (requesterSessionKey, sessionId) =>
     isEmbeddedRunAbandoned({ sessionKey: requesterSessionKey, sessionId }),
+  appendChildCompletionToRequesterSession: appendChildCompletionToRequesterSessionTranscript,
   queueEmbeddedAgentMessageWithOutcome: queueEmbeddedAgentMessageWithOutcomeAsync,
   sendMessage,
 };
@@ -593,6 +621,116 @@ export function loadSessionEntryByKey(sessionKey: string) {
   const storePath = resolveStorePath(cfg.session?.store, { agentId });
   const store = loadSessionStore(storePath);
   return store[sessionKey];
+}
+
+function summarizeChildCompletionEvents(events: readonly AgentInternalEvent[] | undefined) {
+  const primary = events?.[0];
+  return {
+    count: events?.length ?? 0,
+    source: primary?.source,
+    childSessionKey: primary?.childSessionKey,
+    childRunId: primary?.childRunId,
+    childSessionId: primary?.childSessionId,
+    status: primary?.status,
+    taskLabel: primary?.taskLabel,
+    fullResultRef: primary?.fullResultRef,
+    resultArtifactRefs: primary?.resultArtifactRefs,
+  };
+}
+
+function resolveCompletionSink(params: {
+  expectsCompletionMessage: boolean;
+  isSubagentCompletion: boolean;
+  shouldDeliverAgentFinal: boolean;
+  requiresMessageToolDelivery: boolean;
+}): CompletionSink {
+  if (!params.expectsCompletionMessage) {
+    return "none";
+  }
+  if (
+    params.isSubagentCompletion &&
+    !params.shouldDeliverAgentFinal &&
+    !params.requiresMessageToolDelivery
+  ) {
+    return "parent_session";
+  }
+  return "external_delivery";
+}
+
+async function appendChildCompletionToRequesterSessionTranscript(params: {
+  requesterSessionKey: string;
+  internalEvents?: readonly AgentInternalEvent[];
+  idempotencyKey: string;
+}): Promise<ChildCompletionTranscriptAppendResult> {
+  try {
+    const { cfg, entry, canonicalKey } = loadRequesterSessionEntry(params.requesterSessionKey);
+    if (!entry?.sessionId) {
+      return {
+        ok: false,
+        error: `unknown requester session: ${params.requesterSessionKey}`,
+      };
+    }
+    const agentId = resolveAgentIdFromSessionKey(canonicalKey);
+    const storePath = resolveStorePath(cfg.session?.store, { agentId });
+    const store = loadSessionStore(storePath);
+    const resolved = resolveSessionStoreEntry({ store, sessionKey: canonicalKey });
+    const sessionEntry = resolved.existing ?? entry;
+    const { sessionFile } = await resolveAndPersistSessionFile({
+      sessionId: entry.sessionId,
+      sessionKey: resolved.normalizedKey,
+      sessionStore: store,
+      storePath,
+      sessionEntry,
+      agentId,
+      sessionsDir: path.dirname(storePath),
+    });
+    const now = Date.now();
+    const content =
+      formatAgentInternalEventsForPlainPrompt(params.internalEvents as AgentInternalEvent[]) ||
+      "A child subagent completed. Continue using the child result now available in this session.";
+    const appended = await appendSessionTranscriptMessage({
+      transcriptPath: sessionFile,
+      idempotencyLookup: "scan",
+      now,
+      config: cfg,
+      message: {
+        role: "custom",
+        customType: SUBAGENT_COMPLETION_CUSTOM_TYPE,
+        content,
+        display: true,
+        timestamp: now,
+        idempotencyKey: params.idempotencyKey,
+        details: summarizeChildCompletionEvents(params.internalEvents),
+      },
+    });
+    await updateSessionStoreEntry({
+      storePath,
+      sessionKey: resolved.normalizedKey,
+      update: (current) =>
+        current.sessionId === entry.sessionId
+          ? {
+              updatedAt: now,
+            }
+          : null,
+    });
+    emitSessionTranscriptUpdate({
+      sessionFile,
+      sessionKey: resolved.normalizedKey,
+      agentId,
+      message: appended.message,
+      messageId: appended.messageId,
+    });
+    return {
+      ok: true,
+      sessionFile,
+      messageId: appended.messageId,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: summarizeDeliveryError(err),
+    };
+  }
 }
 
 async function maybeSteerSubagentAnnounce(params: {
@@ -1333,6 +1471,28 @@ async function sendSubagentAnnounceDirectly(params: {
       ? "message_tool_only"
       : undefined;
     const shouldDeliverAgentFinal = deliveryTarget.deliver && !requiresMessageToolDelivery;
+    const completionSink = resolveCompletionSink({
+      expectsCompletionMessage: params.expectsCompletionMessage,
+      isSubagentCompletion,
+      shouldDeliverAgentFinal,
+      requiresMessageToolDelivery,
+    });
+    const isParentSessionCompletionHandoff = completionSink === "parent_session";
+    if (isParentSessionCompletionHandoff) {
+      const appendResult =
+        await subagentAnnounceDeliveryDeps.appendChildCompletionToRequesterSession({
+          requesterSessionKey: canonicalRequesterSessionKey,
+          internalEvents: params.internalEvents,
+          idempotencyKey: `subagent-completion:${params.directIdempotencyKey}`,
+        });
+      if (!appendResult.ok) {
+        return {
+          delivered: false,
+          path: "direct",
+          error: appendResult.error,
+        };
+      }
+    }
     const requesterQueueSettings = resolveQueueSettings({
       cfg,
       channel:
@@ -1450,7 +1610,7 @@ async function sendSubagentAnnounceDirectly(params: {
         run: async () =>
           await runAnnounceAgentCall({
             agentParams: directAgentParams,
-            expectFinal: true,
+            expectFinal: completionSink !== "parent_session",
             timeoutMs: announceTimeoutMs,
           }),
       });
@@ -1496,16 +1656,22 @@ async function sendSubagentAnnounceDirectly(params: {
     if (directAnnounceStillPending) {
       if (
         params.expectsCompletionMessage &&
-        expectedMediaUrls.length === 0 &&
-        !requiresMessageToolDelivery
+        isSubagentCompletion &&
+        completionSink !== "parent_session" &&
+        (shouldDeliverAgentFinal || requiresMessageToolDelivery)
       ) {
         return {
           delivered: false,
           path: "direct",
-          reason: "completion_handoff_pending",
-          error: "completion agent handoff is still pending",
+          error: "completion delivery is still pending",
         };
       }
+      return {
+        delivered: true,
+        path: "direct",
+      };
+    }
+    if (isParentSessionCompletionHandoff) {
       return {
         delivered: true,
         path: "direct",

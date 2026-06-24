@@ -113,6 +113,7 @@ import {
 import {
   createRunningTaskRun,
   finalizeTaskRunByRunId,
+  recordTaskRunProgressByRunId,
   updateTaskExecutionReceiptByRunId,
 } from "../../tasks/detached-task-runtime.js";
 import type { TaskStatus } from "../../tasks/task-registry.types.js";
@@ -1043,21 +1044,39 @@ function dispatchAgentRunFromGateway(params: {
   void agentCommandFromIngress(params.ingressOpts, defaultRuntime, params.context.deps)
     .then((result) => {
       const aborted = result?.meta?.aborted === true;
+      const yielded = result?.meta?.yielded === true;
       const timeoutAttribution = readAgentRunTimeoutAttribution(result?.meta);
       const completionProjection = resolveTrackedAgentTaskCompletionProjection(result);
       if (taskTracked) {
-        tryFinalizeTrackedAgentTask({
-          runId: params.runId,
-          status: aborted ? "timed_out" : "succeeded",
-          progressSummary: aborted ? undefined : completionProjection.progressSummary,
-          terminalSummary: aborted ? "aborted" : completionProjection.terminalSummary,
-          log: params.context.logGateway,
-        });
+        if (yielded && !aborted) {
+          recordTaskRunProgressByRunId({
+            runId: params.runId,
+            runtime: "cli",
+            sessionKey: params.ingressOpts.sessionKey,
+            lastEventAt: Date.now(),
+            progressSummary: completionProjection.progressSummary,
+            eventSummary: completionProjection.progressSummary,
+          });
+        } else {
+          tryFinalizeTrackedAgentTask({
+            runId: params.runId,
+            status: aborted ? "timed_out" : "succeeded",
+            progressSummary: aborted ? undefined : completionProjection.progressSummary,
+            terminalSummary: aborted ? "aborted" : completionProjection.terminalSummary,
+            log: params.context.logGateway,
+          });
+        }
       }
+      const payloadStatus = aborted
+        ? ("timeout" as const)
+        : yielded
+          ? ("accepted" as const)
+          : ("ok" as const);
       const payload = {
         runId: params.runId,
-        status: aborted ? ("timeout" as const) : ("ok" as const),
-        summary: aborted ? "aborted" : "completed",
+        status: payloadStatus,
+        summary: aborted ? "aborted" : yielded ? "yielded" : "completed",
+        ...(yielded ? { yielded: true } : {}),
         ...(aborted ? { stopReason: result?.meta?.stopReason ?? "rpc" } : {}),
         ...(aborted && timeoutAttribution.timeoutPhase
           ? { timeoutPhase: timeoutAttribution.timeoutPhase }

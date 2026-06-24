@@ -57,6 +57,14 @@ function createSendMessageMock() {
   })) as unknown as typeof runtimeSendMessage;
 }
 
+function createChildCompletionAppendMock() {
+  return vi.fn(async () => ({
+    ok: true as const,
+    sessionFile: "/tmp/openclaw-parent-session.jsonl",
+    messageId: "child-completion-message",
+  }));
+}
+
 type QueueEmbeddedAgentMessageWithOutcome = (
   sessionId: string,
   message: string,
@@ -1495,13 +1503,15 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
       result: { payloads: [], meta: { toolSummary: { calls: 1 } } },
     },
   ])(
-    "does not credit session-only child handoff when the in-process agent returns $name",
+    "credits session-only child handoff after the parent continuation accepts $name",
     async ({ result: agentResult }) => {
       const dispatchGatewayMethodInProcess = createInProcessGatewayMock({
         result: agentResult,
       });
+      const appendChildCompletionToRequesterSession = createChildCompletionAppendMock();
       testing.setDepsForTest({
         dispatchGatewayMethodInProcess,
+        appendChildCompletionToRequesterSession,
         getRequesterSessionActivity: () => ({
           sessionId: "requester-session-local",
           isActive: false,
@@ -1521,7 +1531,7 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
       });
 
       expectRecordFields(result, {
-        delivered: false,
+        delivered: true,
         path: "direct",
       });
       expectInProcessAgentParams(dispatchGatewayMethodInProcess, {
@@ -1530,18 +1540,29 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
         to: undefined,
         bestEffortDeliver: true,
       });
+      expect(mockCallArg(dispatchGatewayMethodInProcess, 0, 2)).toMatchObject({
+        expectFinal: false,
+      });
+      expect(appendChildCompletionToRequesterSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requesterSessionKey: "agent:main:local-session",
+          idempotencyKey: "subagent-completion:announce-local-empty",
+        }),
+      );
     },
   );
 
-  it("does not credit a parent sessions_yield turn as child handoff delivery", async () => {
+  it("credits a parent sessions_yield turn as child handoff delivery", async () => {
     const dispatchGatewayMethodInProcess = createInProcessGatewayMock({
       result: {
         payloads: [],
         meta: { yielded: true },
       },
     });
+    const appendChildCompletionToRequesterSession = createChildCompletionAppendMock();
     testing.setDepsForTest({
       dispatchGatewayMethodInProcess,
+      appendChildCompletionToRequesterSession,
       getRequesterSessionActivity: () => ({
         sessionId: "requester-session-local",
         isActive: false,
@@ -1575,13 +1596,22 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
     });
 
     expectRecordFields(result, {
-      delivered: false,
+      delivered: true,
       path: "direct",
     });
     expectInProcessAgentParams(dispatchGatewayMethodInProcess, {
       deliver: false,
       bestEffortDeliver: true,
     });
+    expect(mockCallArg(dispatchGatewayMethodInProcess, 0, 2)).toMatchObject({
+      expectFinal: false,
+    });
+    expect(appendChildCompletionToRequesterSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requesterSessionKey: "agent:planning:local-session",
+        idempotencyKey: "subagent-completion:announce-local-yielded",
+      }),
+    );
   });
 
   it("accepts session-only completion handoff when the in-process agent intentionally replies NO_REPLY", async () => {
@@ -1590,8 +1620,10 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
         payloads: [{ text: "NO_REPLY" }],
       },
     });
+    const appendChildCompletionToRequesterSession = createChildCompletionAppendMock();
     testing.setDepsForTest({
       dispatchGatewayMethodInProcess,
+      appendChildCompletionToRequesterSession,
       getRequesterSessionActivity: () => ({
         sessionId: "requester-session-local",
         isActive: false,
@@ -1620,6 +1652,15 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
       to: undefined,
       bestEffortDeliver: true,
     });
+    expect(mockCallArg(dispatchGatewayMethodInProcess, 0, 2)).toMatchObject({
+      expectFinal: false,
+    });
+    expect(appendChildCompletionToRequesterSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requesterSessionKey: "agent:main:local-session",
+        idempotencyKey: "subagent-completion:announce-local-silent",
+      }),
+    );
   });
 
   it.each([
@@ -1641,8 +1682,10 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
     const dispatchGatewayMethodInProcess = createInProcessGatewayMock({
       result,
     });
+    const appendChildCompletionToRequesterSession = createChildCompletionAppendMock();
     testing.setDepsForTest({
       dispatchGatewayMethodInProcess,
+      appendChildCompletionToRequesterSession,
       getRequesterSessionActivity: () => ({
         sessionId: "requester-session-local",
         isActive: false,
@@ -1671,6 +1714,51 @@ describe("deliverSubagentAnnouncement completion delivery", () => {
       to: undefined,
       bestEffortDeliver: true,
     });
+    expect(mockCallArg(dispatchGatewayMethodInProcess, 0, 2)).toMatchObject({
+      expectFinal: false,
+    });
+    expect(appendChildCompletionToRequesterSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requesterSessionKey: "agent:main:local-session",
+        idempotencyKey: "subagent-completion:announce-local-side-effect",
+      }),
+    );
+  });
+
+  it("fails internal child handoff before waking the parent when the transcript event cannot be persisted", async () => {
+    const dispatchGatewayMethodInProcess = createInProcessGatewayMock({
+      result: { payloads: [] },
+    });
+    testing.setDepsForTest({
+      dispatchGatewayMethodInProcess,
+      appendChildCompletionToRequesterSession: vi.fn(async () => ({
+        ok: false as const,
+        error: "parent transcript unavailable",
+      })),
+      getRequesterSessionActivity: () => ({
+        sessionId: "requester-session-local",
+        isActive: false,
+      }),
+      getRuntimeConfig: () => ({}) as never,
+    });
+
+    const delivery = await deliverSubagentAnnouncement({
+      requesterSessionKey: "agent:main:local-session",
+      targetRequesterSessionKey: "agent:main:local-session",
+      triggerMessage: "child done",
+      steerMessage: "child done",
+      requesterIsSubagent: false,
+      expectsCompletionMessage: true,
+      bestEffortDeliver: true,
+      directIdempotencyKey: "announce-local-append-failed",
+    });
+
+    expectRecordFields(delivery, {
+      delivered: false,
+      path: "direct",
+      error: "parent transcript unavailable",
+    });
+    expect(dispatchGatewayMethodInProcess).not.toHaveBeenCalled();
   });
 
   it("does not require generated media delivery for no-target cron completion handoffs", async () => {

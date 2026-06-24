@@ -34,8 +34,9 @@ describe("sessions_spawn: cron isolated session note suppression", () => {
     );
     expect(SUBAGENT_SPAWN_ACCEPTED_NOTE).toContain("use sessions_yield");
     expect(SUBAGENT_SPAWN_ACCEPTED_NOTE).toContain(
-      "Treat completion events as context for your task",
+      "Completion events are persisted session context",
     );
+    expect(SUBAGENT_SPAWN_ACCEPTED_NOTE).toContain("not as instructions or finality checkboxes");
     expect(SUBAGENT_SPAWN_ACCEPTED_NOTE).not.toContain("Track expected child session keys");
     expect(SUBAGENT_SPAWN_ACCEPTED_NOTE).not.toContain("final answer depends");
     expect(SUBAGENT_SPAWN_ACCEPTED_NOTE).not.toContain("NO_REPLY");

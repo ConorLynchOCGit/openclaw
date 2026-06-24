@@ -7,7 +7,6 @@
 type SubagentDeliveryPath = "steered" | "direct" | "none";
 /** Stable reasons an announcement delivery can fail without throwing. */
 export type SubagentAnnounceDeliveryFailureReason =
-  | "completion_handoff_pending"
   | "generated_media_missing"
   | "message_tool_delivery_missing"
   | "requester_abandoned"
@@ -109,8 +108,9 @@ export async function runSubagentAnnounceDispatch(params: {
     return withPhases(primaryDirect);
   }
 
-  // Completion handoff prefers direct delivery first so the completion agent's
-  // final visible message wins before falling back to steering.
+  // Completion handoff prefers the native requester-session continuation first.
+  // For session-only handoff, accepting the continuation is enough; external
+  // delivery checks stay in the direct delivery implementation.
   const primaryDirect = await params.direct();
   appendPhase("direct-primary", primaryDirect);
   if (primaryDirect.delivered || primaryDirect.terminal) {

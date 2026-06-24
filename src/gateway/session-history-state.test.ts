@@ -509,6 +509,38 @@ describe("SessionHistorySseState", () => {
     expect(snapshot.rawTranscriptSeq).toBe(2);
   });
 
+  test("keeps visible child-completion custom messages in projected history", () => {
+    const snapshot = buildSessionHistorySnapshot({
+      rawMessages: [
+        {
+          role: "custom",
+          customType: "openclaw.subagent_completion",
+          content: "Child researcher result: bounded evidence packet with refs.",
+          display: true,
+          details: {
+            childSessionKey: "agent:researcher:subagent:child",
+            childRunId: "run-child",
+            status: "ok",
+          },
+          __openclaw: { seq: 1 },
+        },
+        assistantTextMessage("visible answer", 2),
+      ],
+    });
+
+    expect(snapshot.history.messages).toHaveLength(2);
+    expect(snapshot.history.messages[0]).toMatchObject({
+      role: "custom",
+      customType: "openclaw.subagent_completion",
+      content: "Child researcher result: bounded evidence packet with refs.",
+      display: true,
+    });
+    expect(snapshot.history.messages[1]).toMatchObject({
+      role: "assistant",
+      content: [{ type: "text", text: "visible answer" }],
+    });
+  });
+
   test("drops subagent announce inter-session user messages from projected history", () => {
     const snapshot = buildSessionHistorySnapshot({
       rawMessages: [

@@ -288,7 +288,7 @@ describe("buildAgentSystemPrompt", () => {
     });
 
     expect(prompt).toContain("Runtime-generated completion events may provide child output.");
-    expect(prompt).toContain("Treat them as task context");
+    expect(prompt).toContain("Treat them as persisted session context and evidence for your task");
     expect(prompt).toContain("use NO_REPLY only when no user-facing update is needed");
   });
 
@@ -1393,7 +1393,7 @@ describe("buildSubagentSystemPrompt", () => {
     expect(prompt).toContain(
       "If you want runtime-resumed child output and `sessions_yield` is available",
     );
-    expect(prompt).toContain("If it is not available, do not invent polling loops");
+    expect(prompt).toContain("If `sessions_yield` is not available, do not invent polling loops");
     expect(prompt).toContain("useful output shape, relevant files/inputs, write scope");
     expect(prompt).not.toContain(
       "Track expected child session keys and why each child was spawned.",

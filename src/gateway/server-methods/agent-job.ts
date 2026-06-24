@@ -258,6 +258,12 @@ function ensureAgentRunListener() {
     if (phase !== "end" && phase !== "error") {
       return;
     }
+    if (phase === "end" && evt.data?.yielded === true) {
+      agentRunStarts.delete(evt.runId);
+      clearPendingAgentRunError(evt.runId);
+      clearPendingAgentRunTimeout(evt.runId);
+      return;
+    }
     const snapshot = createSnapshotFromLifecycleEvent({
       runId: evt.runId,
       phase,
