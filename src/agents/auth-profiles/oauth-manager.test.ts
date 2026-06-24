@@ -561,6 +561,97 @@ describe("createOAuthManager", () => {
     });
   });
 
+  it("uses fallback credentials when an expired OAuth refresh returns no credentials", async () => {
+    await withOAuthTempRoot("oauth-manager-null-refresh-fallback-", async (tempRoot) => {
+      const agentDir = path.join(tempRoot, "agents", "sub", "agent");
+      await fs.mkdir(agentDir, { recursive: true });
+      const profileId = "openai:oauth";
+      const credential = createCredential({
+        access: "expired-local-access",
+        refresh: "expired-local-refresh",
+        expires: Date.now() - 60_000,
+        accountId: "acct-shared",
+      });
+      const fallbackCredential = createCredential({
+        access: "fresh-fallback-access",
+        refresh: "fresh-fallback-refresh",
+        expires: Date.now() + 10 * 60_000,
+        accountId: "acct-shared",
+      });
+      saveAuthProfileStore(
+        {
+          version: 1,
+          profiles: {
+            [profileId]: credential,
+          },
+        },
+        agentDir,
+        { filterExternalAuthProfiles: false },
+      );
+      const refreshCredential = vi.fn(async () => null);
+      const manager = createOAuthManager({
+        buildApiKey: async (_provider, value) => value.access,
+        refreshCredential,
+        readBootstrapCredential: () => null,
+        readFallbackCredential: () => fallbackCredential,
+        isRefreshTokenReusedError: () => false,
+      });
+
+      const result = await manager.resolveOAuthAccess({
+        store: ensureAuthProfileStore(agentDir),
+        profileId,
+        credential,
+        agentDir,
+      });
+
+      expect(result?.apiKey).toBe("fresh-fallback-access");
+      expect(result?.credential).toMatchObject({
+        access: "fresh-fallback-access",
+        accountId: "acct-shared",
+      });
+      expect(refreshCredential).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("reports refresh failure instead of missing credentials when an expired OAuth refresh returns no credentials", async () => {
+    await withOAuthTempRoot("oauth-manager-null-refresh-error-", async (tempRoot) => {
+      const agentDir = path.join(tempRoot, "agents", "sub", "agent");
+      await fs.mkdir(agentDir, { recursive: true });
+      const profileId = "openai:oauth";
+      const credential = createCredential({
+        access: "expired-local-access",
+        refresh: "expired-local-refresh",
+        expires: Date.now() - 60_000,
+      });
+      saveAuthProfileStore(
+        {
+          version: 1,
+          profiles: {
+            [profileId]: credential,
+          },
+        },
+        agentDir,
+        { filterExternalAuthProfiles: false },
+      );
+      const manager = createOAuthManager({
+        buildApiKey: async (_provider, value) => value.access,
+        refreshCredential: vi.fn(async () => null),
+        readBootstrapCredential: () => null,
+        readFallbackCredential: () => null,
+        isRefreshTokenReusedError: () => false,
+      });
+
+      await expect(
+        manager.resolveOAuthAccess({
+          store: ensureAuthProfileStore(agentDir),
+          profileId,
+          credential,
+          agentDir,
+        }),
+      ).rejects.toThrow(/OAuth token refresh failed/);
+    });
+  });
+
   it("redacts the external oauth credential attempted during refresh failures", async () => {
     await withOAuthTempRoot("oauth-manager-refresh-redact-", async (tempRoot) => {
       const agentDir = path.join(tempRoot, "agents", "sub", "agent");

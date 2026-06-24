@@ -600,7 +600,7 @@ export function createOAuthManager(adapter: OAuthManagerAdapter) {
           },
         );
         if (!refreshedCredentials) {
-          return null;
+          throw new Error("OAuth refresh returned no credentials");
         }
         store.profiles[params.profileId] = refreshedCredentials;
         const persisted = await saveOAuthCredentialWithStoreLock({

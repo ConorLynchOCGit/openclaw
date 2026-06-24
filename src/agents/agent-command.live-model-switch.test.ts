@@ -383,7 +383,13 @@ vi.mock("./agent-scope.js", () => ({
     state.hasLegacyAutoFallbackWithoutOriginMock(entry),
   hasSessionAutoModelFallbackProvenance: () => false,
   listAgentEntries: () => [],
-  listAgentIds: () => ["default", "main", "memory-curator"],
+  listAgentIds: (cfg?: { agents?: { list?: Array<{ id?: unknown }> } }) => {
+    const configured =
+      cfg?.agents?.list
+        ?.map((entry) => (typeof entry?.id === "string" ? entry.id : undefined))
+        .filter((id): id is string => Boolean(id)) ?? [];
+    return configured.length > 0 ? ["default", "main", ...configured] : ["default", "main"];
+  },
   markAutoFallbackPrimaryProbe: vi.fn(),
   resolveAutoFallbackPrimaryProbe: (params: unknown) =>
     state.resolveAutoFallbackPrimaryProbeMock(params),
@@ -617,6 +623,16 @@ vi.mock("./model-selection.js", () => {
       return { byAlias, byKey };
     },
     modelKey: (p: string, m: string) => `${p}/${m}`,
+    normalizeStoredOverrideModel: ({
+      providerOverride,
+      modelOverride,
+    }: {
+      providerOverride?: string;
+      modelOverride?: string;
+    }) => ({
+      provider: providerOverride ? normalizeProviderId(providerOverride) : undefined,
+      model: modelOverride?.trim() || undefined,
+    }),
     normalizeModelRef: (p: string, m: string) => ({ provider: normalizeProviderId(p), model: m }),
     normalizeProviderId,
     normalizeProviderIdForAuth: normalizeProviderId,

@@ -412,11 +412,11 @@ describe("models.list", () => {
     );
   });
 
-  it("does not mark catalog rows available from expired OAuth profiles", async () => {
+  it("marks catalog rows available from refreshable OAuth profiles", async () => {
     await withOpenClawTestState(
       {
         layout: "state-only",
-        prefix: "openclaw-models-list-expired-profile-",
+        prefix: "openclaw-models-list-refreshable-profile-",
         agentEnv: "main",
       },
       async (state) => {
@@ -438,7 +438,55 @@ describe("models.list", () => {
           loadGatewayModelCatalog: vi.fn(() =>
             Promise.resolve([{ id: "demo-model", name: "Demo Model", provider: "demo-provider" }]),
           ),
-          reqId: "req-models-list-expired-profile",
+          reqId: "req-models-list-refreshable-profile",
+        });
+        await request;
+
+        expect(respond).toHaveBeenCalledWith(
+          true,
+          {
+            models: [
+              {
+                id: "demo-model",
+                name: "Demo Model",
+                provider: "demo-provider",
+                available: true,
+              },
+            ],
+          },
+          undefined,
+        );
+      },
+    );
+  });
+
+  it("does not mark catalog rows available from expired OAuth profiles without refresh material", async () => {
+    await withOpenClawTestState(
+      {
+        layout: "state-only",
+        prefix: "openclaw-models-list-expired-no-refresh-profile-",
+        agentEnv: "main",
+      },
+      async (state) => {
+        await state.writeAuthProfiles({
+          version: 1,
+          profiles: {
+            "demo-provider:expired": {
+              type: "oauth",
+              provider: "demo-provider",
+              access: "expired-access",
+              refresh: "",
+              expires: Date.now() - 60_000,
+            },
+          },
+        });
+
+        const { request, respond } = requestModelsList({
+          view: "all",
+          loadGatewayModelCatalog: vi.fn(() =>
+            Promise.resolve([{ id: "demo-model", name: "Demo Model", provider: "demo-provider" }]),
+          ),
+          reqId: "req-models-list-expired-no-refresh-profile",
         });
         await request;
 

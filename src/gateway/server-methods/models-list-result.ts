@@ -13,6 +13,7 @@ import {
   type AuthProfileCredential,
   type AuthProfileStore,
 } from "../../agents/auth-profiles.js";
+import { hasRefreshableOAuthCredential } from "../../agents/auth-profiles/oauth-shared.js";
 import { DEFAULT_PROVIDER } from "../../agents/defaults.js";
 import { NON_ENV_SECRETREF_MARKER } from "../../agents/model-auth-markers.js";
 import { hasRuntimeAvailableProviderAuth } from "../../agents/model-auth.js";
@@ -136,6 +137,9 @@ function profileHasReadOnlyAvailableAuth(params: {
       return params.credential.expires === undefined || params.credential.expires > params.now;
     }
     return hasSecretRef(params.credential.tokenRef) ? undefined : false;
+  }
+  if (hasRefreshableOAuthCredential(params.credential)) {
+    return true;
   }
   return (
     hasLiteralSecret(params.credential.access) &&
