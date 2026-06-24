@@ -573,7 +573,12 @@ export async function modelsStatusCommand(
       }
       const health = authProfileHealthById.get(profileId);
       if (health) {
-        return health.status === "ok" || health.status === "expiring" || health.status === "static";
+        return (
+          health.status === "ok" ||
+          health.status === "expiring" ||
+          health.status === "refreshable" ||
+          health.status === "static"
+        );
       }
       return evaluateStoredCredentialEligibility({ credential }).eligible;
     };

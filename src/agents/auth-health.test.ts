@@ -93,7 +93,7 @@ describe("buildAuthHealthSummary", () => {
           refresh: "refresh",
           expires: now + 10_000,
         },
-        "anthropic:expired": {
+        "anthropic:refreshable": {
           type: "oauth" as const,
           provider: "anthropic",
           access: "access",
@@ -117,14 +117,14 @@ describe("buildAuthHealthSummary", () => {
 
     expect(statuses["anthropic:ok"]).toBe("ok");
     expect(statuses["anthropic:expiring"]).toBe("expiring");
-    expect(statuses["anthropic:expired"]).toBe("expired");
+    expect(statuses["anthropic:refreshable"]).toBe("refreshable");
     expect(statuses["anthropic:api"]).toBe("static");
 
     const provider = summary.providers.find((entry) => entry.provider === "anthropic");
-    expect(provider?.status).toBe("expired");
+    expect(provider?.status).toBe("refreshable");
     expect(
-      provider?.profiles.find((profile) => profile.profileId === "anthropic:expired")?.status,
-    ).toBe("expired");
+      provider?.profiles.find((profile) => profile.profileId === "anthropic:refreshable")?.status,
+    ).toBe("refreshable");
   });
 
   it("reports unresolved legacy Codex OAuth sidecars as missing auth", () => {
@@ -242,7 +242,7 @@ describe("buildAuthHealthSummary", () => {
     });
 
     expect(profileStatuses(summary)).toEqual({
-      "openai:default": "expired",
+      "openai:default": "refreshable",
       "openai:named": "ok",
     });
     const provider = summary.providers.find((entry) => entry.provider === "openai");
@@ -347,7 +347,7 @@ describe("buildAuthHealthSummary", () => {
     expect(profile?.expiresAt).toBe(now + DEFAULT_OAUTH_WARN_MS + 60_000);
   });
 
-  it("does not let fresh .codex state override expired canonical health", () => {
+  it("does not let fresh .codex state override refreshable canonical health", () => {
     vi.spyOn(Date, "now").mockReturnValue(now);
     mockFreshCodexCliCredentials();
     const store = buildOpenAiCodexOAuthStore({
@@ -363,7 +363,7 @@ describe("buildAuthHealthSummary", () => {
     });
 
     const statuses = profileStatuses(summary);
-    expect(statuses["openai:default"]).toBe("expired");
+    expect(statuses["openai:default"]).toBe("refreshable");
   });
 
   it("keeps healthy local oauth over fresher imported Codex CLI credentials in health status", () => {

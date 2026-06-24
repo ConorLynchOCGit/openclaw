@@ -634,6 +634,129 @@ describe("modelsStatusCommand auth overview", () => {
     }
   });
 
+  it("accepts refreshable OAuth for selected OpenAI OpenClaw-runtime agents", async () => {
+    const localRuntime = createRuntime();
+    const originalLoadConfig = mocks.loadConfig.getMockImplementation();
+    const originalListAgentIds = mocks.listAgentIds.getMockImplementation();
+    const originalPrimary = mocks.resolveAgentExplicitModelPrimary.getMockImplementation();
+    const originalEffectivePrimary =
+      mocks.resolveAgentEffectiveModelPrimary.getMockImplementation();
+    const originalProfiles = { ...mocks.store.profiles };
+    const originalEnvImpl = mocks.resolveEnvApiKey.getMockImplementation();
+    const originalHealthImpl = buildAuthHealthSummaryMock.getMockImplementation();
+    mocks.listAgentIds.mockReturnValue(["main", "planning"]);
+    mocks.resolveAgentExplicitModelPrimary.mockReturnValue("openai/gpt-5.5");
+    mocks.resolveAgentEffectiveModelPrimary.mockReturnValue("openai/gpt-5.5");
+    mocks.loadConfig.mockReturnValue({
+      agents: {
+        defaults: {
+          model: { primary: "openai/gpt-5.5", fallbacks: [] },
+          models: {
+            "openai/gpt-5.5": {
+              agentRuntime: { id: "codex" },
+            },
+          },
+        },
+        list: [
+          {
+            id: "planning",
+            model: "openai/gpt-5.5",
+            models: {
+              "openai/gpt-5.5": {
+                alias: "gpt-planning",
+                agentRuntime: { id: "openclaw" },
+              },
+            },
+          },
+        ],
+      },
+      models: { providers: {} },
+      env: { shellEnv: { enabled: false } },
+    });
+    mocks.store.profiles = {
+      "openai:default": {
+        type: "oauth",
+        provider: "openai",
+        access: "expired-access",
+        refresh: "refreshable-refresh",
+        expires: Date.now() - 60_000,
+      },
+    };
+    mocks.resolveEnvApiKey.mockImplementation(() => null);
+    buildAuthHealthSummaryMock.mockReturnValue({
+      now: Date.now(),
+      warnAfterMs: 86_400_000,
+      profiles: [
+        {
+          profileId: "openai:default",
+          provider: "openai",
+          type: "oauth",
+          status: "refreshable",
+          reasonCode: "expired",
+          expiresAt: Date.now() - 60_000,
+          remainingMs: -60_000,
+          source: "store",
+          label: "openai:default",
+        },
+      ],
+      providers: [
+        {
+          provider: "openai",
+          status: "refreshable",
+          expiresAt: Date.now() - 60_000,
+          remainingMs: -60_000,
+          profiles: [],
+        },
+      ],
+    });
+
+    try {
+      await modelsStatusCommand(
+        { json: true, check: true, agent: "planning" },
+        localRuntime as never,
+      );
+      const payload = parseFirstJsonLog(localRuntime);
+      expect(payload.resolvedDefault).toBe("openai/gpt-5.5");
+      expect(payload.auth.runtimeAuthRoutes).toStrictEqual([]);
+      expect(payload.auth.missingProvidersInUse).toStrictEqual([]);
+      expect(requireProfile(payload.auth.oauth.profiles, "openai:default").status).toBe(
+        "refreshable",
+      );
+      expect(requireProvider(payload.auth.oauth.providers, "openai").status).toBe("refreshable");
+      expect(localRuntime.exit).not.toHaveBeenCalledWith(1);
+    } finally {
+      mocks.store.profiles = originalProfiles;
+      if (originalLoadConfig) {
+        mocks.loadConfig.mockImplementation(originalLoadConfig);
+      }
+      if (originalListAgentIds) {
+        mocks.listAgentIds.mockImplementation(originalListAgentIds);
+      } else {
+        mocks.listAgentIds.mockReturnValue(["main", "jeremiah"]);
+      }
+      if (originalPrimary) {
+        mocks.resolveAgentExplicitModelPrimary.mockImplementation(originalPrimary);
+      } else {
+        mocks.resolveAgentExplicitModelPrimary.mockReturnValue(undefined);
+      }
+      if (originalEffectivePrimary) {
+        mocks.resolveAgentEffectiveModelPrimary.mockImplementation(originalEffectivePrimary);
+      } else {
+        mocks.resolveAgentEffectiveModelPrimary.mockReturnValue(undefined);
+      }
+      if (originalEnvImpl) {
+        mocks.resolveEnvApiKey.mockImplementation(originalEnvImpl);
+      } else if (defaultResolveEnvApiKeyImpl) {
+        mocks.resolveEnvApiKey.mockImplementation(defaultResolveEnvApiKeyImpl);
+      } else {
+        mocks.resolveEnvApiKey.mockImplementation(() => null);
+      }
+      if (originalHealthImpl) {
+        buildAuthHealthSummaryMock.mockImplementation(originalHealthImpl);
+      }
+    }
+  });
+
   it("keeps delegated OAuth marker display separate from runtime route usability", async () => {
     const localRuntime = createRuntime();
     const originalLoadConfig = mocks.loadConfig.getMockImplementation();

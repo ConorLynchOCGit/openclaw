@@ -18,13 +18,20 @@ import {
 } from "./auth-profiles/credential-state.js";
 import { resolveAuthProfileDisplayLabel } from "./auth-profiles/display.js";
 import { resolveEffectiveOAuthCredential } from "./auth-profiles/effective-oauth.js";
+import { hasRefreshableOAuthCredential } from "./auth-profiles/oauth-shared.js";
 import { resolveAuthProfileOrder } from "./auth-profiles/order.js";
 import type { AuthProfileCredential, AuthProfileStore } from "./auth-profiles/types.js";
 import { resolveProviderIdForAuth } from "./provider-auth-aliases.js";
 
 type AuthProfileSource = "store";
 
-export type AuthProfileHealthStatus = "ok" | "expiring" | "expired" | "missing" | "static";
+export type AuthProfileHealthStatus =
+  | "ok"
+  | "expiring"
+  | "refreshable"
+  | "expired"
+  | "missing"
+  | "static";
 
 type AuthProfileHealth = {
   profileId: string;
@@ -38,7 +45,13 @@ type AuthProfileHealth = {
   label: string;
 };
 
-export type AuthProviderHealthStatus = "ok" | "expiring" | "expired" | "missing" | "static";
+export type AuthProviderHealthStatus =
+  | "ok"
+  | "expiring"
+  | "refreshable"
+  | "expired"
+  | "missing"
+  | "static";
 
 export type AuthProviderHealth = {
   provider: string;
@@ -247,11 +260,16 @@ function buildProfileHealth(params: {
     expiresAt,
     remainingMs,
   } = resolveOAuthStatus(effectiveCredential.expires, now, oauthWarnAfterMs);
+  const status =
+    rawStatus === "expired" && hasRefreshableOAuthCredential(effectiveCredential)
+      ? "refreshable"
+      : rawStatus;
   return {
     profileId,
     provider,
     type: "oauth",
-    status: rawStatus,
+    status,
+    reasonCode: status === "refreshable" ? "expired" : undefined,
     expiresAt,
     remainingMs,
     source,
@@ -377,6 +395,7 @@ export function buildAuthHealthSummary(params: {
     let hasExpirableProfile = false;
     let hasExpired = false;
     let hasMissing = false;
+    let hasRefreshable = false;
     let hasExpiring = false;
     let earliestExpiry: number | undefined;
     for (const profile of effectiveProfiles) {
@@ -398,6 +417,8 @@ export function buildAuthHealthSummary(params: {
         hasExpired = true;
       } else if (profile.status === "missing") {
         hasMissing = true;
+      } else if (profile.status === "refreshable") {
+        hasRefreshable = true;
       } else if (profile.status === "expiring") {
         hasExpiring = true;
       }
@@ -417,6 +438,8 @@ export function buildAuthHealthSummary(params: {
       provider.status = "expired";
     } else if (hasMissing) {
       provider.status = "missing";
+    } else if (hasRefreshable) {
+      provider.status = "refreshable";
     } else if (hasExpiring) {
       provider.status = "expiring";
     } else {
