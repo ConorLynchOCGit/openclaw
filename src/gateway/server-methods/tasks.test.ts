@@ -6,10 +6,6 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  createResolvedAgentRunReceipt,
-  finalizeAgentRunReceipt,
-} from "../../agents/run-receipt.js";
-import {
   addSubagentRunForTests,
   resetSubagentRegistryForTests,
 } from "../../agents/subagent-registry.js";
@@ -162,65 +158,6 @@ describe("tasks gateway handlers", () => {
 
     expect(payload?.task?.status).toBe("completed");
     expect(payload?.task?.title).toBe("Done task");
-  });
-
-  it("exposes persisted execution receipts through the native task summary", async () => {
-    const receipt = finalizeAgentRunReceipt(
-      createResolvedAgentRunReceipt({
-        source: {
-          kind: "plugin",
-          id: "gbrain-context",
-          hook: "message_received",
-        },
-        targetAgentId: "memory-curator",
-        resolvedProvider: "openrouter",
-        resolvedModel: "anthropic/claude-haiku-4.5",
-        runtime: "openclaw",
-        contextMode: "lightweight",
-      }),
-      {
-        finalProvider: "openrouter",
-        finalModel: "anthropic/claude-haiku-4.5",
-        runtime: "openclaw",
-        contextMode: "lightweight",
-        terminalStatus: "succeeded",
-      },
-    );
-    const task = createTaskRecord({
-      runtime: "subagent",
-      taskKind: "gbrain-signal-capture",
-      requesterSessionKey: "agent:main:main",
-      ownerKey: "agent:main:main",
-      scopeKind: "session",
-      childSessionKey: "agent:memory-curator:subagent:signal",
-      agentId: "memory-curator",
-      runId: "run-receipt-native-readback",
-      task: "Capture GBrain signal",
-      status: "succeeded",
-      deliveryStatus: "not_applicable",
-      executionReceipt: receipt,
-    });
-
-    const { payload } = await getTaskPayload(task.taskId);
-
-    expect(payload?.task?.executionReceipt).toMatchObject({
-      phase: "finalized",
-      source: {
-        kind: "plugin",
-        id: "gbrain-context",
-        hook: "message_received",
-      },
-      targetAgentId: "memory-curator",
-      terminalStatus: "succeeded",
-      final: {
-        model: "openrouter/anthropic/claude-haiku-4.5",
-        runtime: "openclaw",
-        contextMode: "lightweight",
-      },
-      fallback: {
-        used: false,
-      },
-    });
   });
 
   it("keeps child task summaries as pointers instead of child result projections", async () => {

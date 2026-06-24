@@ -58,6 +58,7 @@ type FinalEffectiveToolPolicyParams = {
   senderE164?: string | null;
   warn: (message: string) => void;
   toolPolicyAuditLogLevel?: "info" | "debug";
+  freshPlannedRun?: boolean;
 };
 
 export function applyFinalEffectiveToolPolicy(
@@ -140,6 +141,7 @@ export function applyFinalEffectiveToolPolicy(
     params.sessionKey,
     {
       store: subagentStore,
+      includeInheritedAllow: params.freshPlannedRun !== true,
     },
   );
   // Suppress unavailable-core-tool warnings on every step of this pass.

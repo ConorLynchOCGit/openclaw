@@ -4,10 +4,11 @@
  * Searches files with ripgrep/local operations, optional context, and bounded output rendering.
  */
 import { spawn } from "node:child_process";
-import { readFileSync, statSync } from "node:fs";
+import { lstatSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { Text } from "@earendil-works/pi-tui";
+import { minimatch } from "minimatch";
 import { Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
 import type { AgentTool } from "../../runtime/index.js";
@@ -53,6 +54,7 @@ const grepSchema = Type.Object({
 });
 export type { GrepToolDetails, GrepToolInput } from "./tool-contracts.js";
 const DEFAULT_LIMIT = 100;
+const DEFAULT_IGNORE_NAMES = new Set([".git", "node_modules"]);
 
 /**
  * Pluggable operations for the grep tool.
@@ -69,6 +71,213 @@ const defaultGrepOperations: GrepOperations = {
   isDirectory: (p) => statSync(p).isDirectory(),
   readFile: (p) => readFileSync(p, "utf-8"),
 };
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function toPosixPath(value: string): string {
+  return value.split(path.sep).join("/");
+}
+
+function localSearchFiles(params: {
+  searchPath: string;
+  isDirectory: boolean;
+  glob?: string;
+  limit: number;
+}): string[] {
+  if (!params.isDirectory) {
+    return [params.searchPath];
+  }
+  const results: string[] = [];
+  const stack: string[] = [params.searchPath];
+  while (stack.length > 0 && results.length < params.limit) {
+    const current = stack.pop();
+    if (!current) {
+      continue;
+    }
+    let entries;
+    try {
+      entries = readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (results.length >= params.limit) {
+        break;
+      }
+      if (DEFAULT_IGNORE_NAMES.has(entry.name)) {
+        continue;
+      }
+      const absolute = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(absolute);
+        continue;
+      }
+      if (!entry.isFile() && !entry.isSymbolicLink()) {
+        continue;
+      }
+      if (entry.isSymbolicLink()) {
+        try {
+          if (!lstatSync(absolute).isSymbolicLink()) {
+            continue;
+          }
+        } catch {
+          continue;
+        }
+      }
+      if (params.glob) {
+        const relative = toPosixPath(path.relative(params.searchPath, absolute));
+        const normalizedGlob = toPosixPath(params.glob);
+        if (
+          !minimatch(relative, normalizedGlob, { dot: true }) &&
+          !minimatch(path.basename(relative), normalizedGlob, { dot: true }) &&
+          !minimatch(
+            relative,
+            normalizedGlob.startsWith("**/") ? normalizedGlob : `**/${normalizedGlob}`,
+            {
+              dot: true,
+            },
+          )
+        ) {
+          continue;
+        }
+      }
+      results.push(absolute);
+    }
+  }
+  results.sort((a, b) => a.localeCompare(b));
+  return results;
+}
+
+async function runLocalGrepFallback(params: {
+  pattern: string;
+  searchPath: string;
+  isDirectory: boolean;
+  glob?: string;
+  ignoreCase?: boolean;
+  literal?: boolean;
+  contextValue: number;
+  effectiveLimit: number;
+  ops: GrepOperations;
+}): Promise<{
+  content: Array<{ type: "text"; text: string }>;
+  details: GrepToolDetails | undefined;
+}> {
+  let expression: RegExp;
+  try {
+    expression = new RegExp(
+      params.literal ? escapeRegExp(params.pattern) : params.pattern,
+      params.ignoreCase ? "i" : undefined,
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`Invalid search pattern: ${message}`);
+  }
+
+  const formatPath = (filePath: string): string => {
+    if (params.isDirectory) {
+      const relative = path.relative(params.searchPath, filePath);
+      if (relative && !relative.startsWith("..")) {
+        return toPosixPath(relative);
+      }
+    }
+    return path.basename(filePath);
+  };
+
+  const files = localSearchFiles({
+    searchPath: params.searchPath,
+    isDirectory: params.isDirectory,
+    glob: params.glob,
+    limit: Math.max(params.effectiveLimit * 20, params.effectiveLimit),
+  });
+  let matchCount = 0;
+  let matchLimitReached = false;
+  let linesTruncated = false;
+  const outputLines: string[] = [];
+
+  for (const filePath of files) {
+    if (matchCount >= params.effectiveLimit) {
+      matchLimitReached = true;
+      break;
+    }
+    let lines: string[];
+    try {
+      const content = await params.ops.readFile(filePath);
+      if (content.includes("\u0000")) {
+        continue;
+      }
+      lines = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+    } catch {
+      continue;
+    }
+    for (let index = 0; index < lines.length; index++) {
+      if (matchCount >= params.effectiveLimit) {
+        matchLimitReached = true;
+        break;
+      }
+      const lineNumber = index + 1;
+      if (!expression.test(lines[index] ?? "")) {
+        continue;
+      }
+      matchCount++;
+      const start =
+        params.contextValue > 0 ? Math.max(1, lineNumber - params.contextValue) : lineNumber;
+      const end =
+        params.contextValue > 0
+          ? Math.min(lines.length, lineNumber + params.contextValue)
+          : lineNumber;
+      for (let current = start; current <= end; current++) {
+        const lineText = lines[current - 1] ?? "";
+        const sanitized = lineText.replace(/\r/g, "");
+        const { text: truncatedText, wasTruncated } = truncateLine(sanitized);
+        if (wasTruncated) {
+          linesTruncated = true;
+        }
+        const separator = current === lineNumber ? ":" : "-";
+        outputLines.push(
+          `${formatPath(filePath)}${separator}${current}${separator === ":" ? ":" : "-"} ${truncatedText}`,
+        );
+      }
+    }
+  }
+
+  if (matchCount === 0) {
+    return {
+      content: [{ type: "text", text: "No matches found" }],
+      details: undefined,
+    };
+  }
+
+  const rawOutput = outputLines.join("\n");
+  const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
+  let output = truncation.content;
+  const details: GrepToolDetails = {};
+  const notices: string[] = [];
+  if (matchLimitReached) {
+    notices.push(
+      `${params.effectiveLimit} matches limit reached. Use limit=${params.effectiveLimit * 2} for more, or refine pattern`,
+    );
+    details.matchLimitReached = params.effectiveLimit;
+  }
+  if (truncation.truncated) {
+    notices.push(`${formatSize(DEFAULT_MAX_BYTES)} limit reached`);
+    details.truncation = truncation;
+  }
+  if (linesTruncated) {
+    notices.push(
+      `Some lines truncated to ${GREP_MAX_LINE_LENGTH} chars. Use read tool to see full lines`,
+    );
+    details.linesTruncated = true;
+  }
+  if (notices.length > 0) {
+    output += `\n\n[${notices.join(". ")}]`;
+  }
+  return {
+    content: [{ type: "text", text: output }],
+    details: Object.keys(details).length > 0 ? details : undefined,
+  };
+}
 
 export interface GrepToolOptions {
   /** Custom operations for grep. Default: local filesystem plus ripgrep */
@@ -192,14 +401,6 @@ export function createGrepToolDefinition(
 
         void (async () => {
           try {
-            const rgPath = await ensureTool("rg", true);
-            if (!rgPath) {
-              settle(() =>
-                reject(new Error("ripgrep (rg) is not available and could not be downloaded")),
-              );
-              return;
-            }
-
             const searchPath = resolveToCwd(searchDir || ".", cwd);
             const ops = customOps ?? defaultGrepOperations;
             let isDirectory: boolean;
@@ -212,6 +413,22 @@ export function createGrepToolDefinition(
 
             const contextValue = context && context > 0 ? context : 0;
             const effectiveLimit = normalizePositiveLimit(limit, DEFAULT_LIMIT);
+            const rgPath = await ensureTool("rg", true);
+            if (!rgPath) {
+              const fallbackResult = await runLocalGrepFallback({
+                pattern,
+                searchPath,
+                isDirectory,
+                glob,
+                ignoreCase,
+                literal,
+                contextValue,
+                effectiveLimit,
+                ops,
+              });
+              settle(() => resolve(fallbackResult));
+              return;
+            }
             const formatPath = (filePath: string): string => {
               if (isDirectory) {
                 const relative = path.relative(searchPath, filePath);

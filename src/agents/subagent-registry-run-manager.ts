@@ -16,7 +16,6 @@ import { normalizeDeliveryContext } from "../utils/delivery-context.shared.js";
 import type { DeliveryContext } from "../utils/delivery-context.types.js";
 import { buildAgentRunTerminalOutcomeFromWaitResult } from "./agent-run-terminal-outcome.js";
 import { removeInternalSessionEffectsTranscript } from "./internal-session-effects.js";
-import type { AgentRunReceipt } from "./run-receipt.js";
 import { isRecoverableAgentWaitError, waitForAgentRun } from "./run-wait.js";
 import type { ensureRuntimePluginsLoaded as ensureRuntimePluginsLoadedFn } from "./runtime-plugins.js";
 import { type SubagentRunOutcome, withSubagentOutcomeTiming } from "./subagent-announce-output.js";
@@ -158,7 +157,6 @@ export type RegisterSubagentRunParams = {
   cleanup: "delete" | "keep";
   label?: string;
   model?: string;
-  executionReceipt?: AgentRunReceipt;
   agentDir?: string;
   workspaceDir?: string;
   runTimeoutSeconds?: number;
@@ -713,7 +711,6 @@ export function createSubagentRunManager(params: {
         runId,
         label: registerParams.label,
         task: registerParams.task,
-        executionReceipt: registerParams.executionReceipt,
         deliveryStatus:
           registerParams.expectsCompletionMessage === false ? "not_applicable" : "pending",
         startedAt: now,

@@ -1,7 +1,6 @@
 // Persists task registry records and events through the OpenClaw SQLite state database.
 import type { DatabaseSync } from "node:sqlite";
 import type { Insertable, Selectable } from "kysely";
-import { parseAgentRunReceiptJson } from "../agents/run-receipt.js";
 import { executeSqliteQuerySync, getNodeSqliteKysely } from "../infra/kysely-sync.js";
 import type { DB as OpenClawStateKyselyDatabase } from "../state/openclaw-state-db.generated.js";
 import {
@@ -29,15 +28,35 @@ type TaskRegistryStoreDatabase = Pick<
   "task_delivery_state" | "task_runs"
 >;
 
-type TaskRegistryRow = Selectable<TaskRunsTable> & {
-  runtime: string;
-  scope_kind: string;
-  status: string;
-  delivery_status: string;
-  notify_policy: string;
-  terminal_outcome: string | null;
-  execution_receipt_json: string | null;
-};
+type TaskRegistryRow = Pick<
+  Selectable<TaskRunsTable>,
+  | "task_id"
+  | "runtime"
+  | "task_kind"
+  | "source_id"
+  | "requester_session_key"
+  | "owner_key"
+  | "scope_kind"
+  | "child_session_key"
+  | "parent_flow_id"
+  | "parent_task_id"
+  | "agent_id"
+  | "run_id"
+  | "label"
+  | "task"
+  | "status"
+  | "delivery_status"
+  | "notify_policy"
+  | "created_at"
+  | "started_at"
+  | "ended_at"
+  | "last_event_at"
+  | "cleanup_after"
+  | "error"
+  | "progress_summary"
+  | "terminal_summary"
+  | "terminal_outcome"
+>;
 
 type TaskDeliveryStateRow = Selectable<TaskDeliveryStateTable>;
 
@@ -70,15 +89,10 @@ const TASK_RUN_SELECT_COLUMNS = [
   "ended_at",
   "last_event_at",
   "cleanup_after",
-  "execution_error",
-  "delivery_error",
-  "finality_error",
-  "projection_warning",
   "error",
   "progress_summary",
   "terminal_summary",
   "terminal_outcome",
-  "execution_receipt_json",
 ] as const;
 
 let cachedDatabase: TaskRegistryDatabase | null = null;
@@ -101,7 +115,6 @@ function rowToTaskRecord(row: TaskRegistryRow): TaskRecord {
   const cleanupAfter = normalizeNumber(row.cleanup_after);
   const scopeKind = parseTaskScopeKind(row.scope_kind);
   const terminalOutcome = parseOptionalTaskTerminalOutcome(row.terminal_outcome);
-  const executionReceipt = parseAgentRunReceiptJson(row.execution_receipt_json);
   // System tasks intentionally have no requester session; ownerKey is the lookup anchor.
   const requesterSessionKey =
     scopeKind === "system" ? "" : row.requester_session_key?.trim() || row.owner_key;
@@ -128,15 +141,10 @@ function rowToTaskRecord(row: TaskRegistryRow): TaskRecord {
     ...(endedAt != null ? { endedAt } : {}),
     ...(lastEventAt != null ? { lastEventAt } : {}),
     ...(cleanupAfter != null ? { cleanupAfter } : {}),
-    ...(row.execution_error ? { executionError: row.execution_error } : {}),
-    ...(row.delivery_error ? { deliveryError: row.delivery_error } : {}),
-    ...(row.finality_error ? { finalityError: row.finality_error } : {}),
-    ...(row.projection_warning ? { projectionWarning: row.projection_warning } : {}),
     ...(row.error ? { error: row.error } : {}),
     ...(row.progress_summary ? { progressSummary: row.progress_summary } : {}),
     ...(row.terminal_summary ? { terminalSummary: row.terminal_summary } : {}),
     ...(terminalOutcome ? { terminalOutcome } : {}),
-    ...(executionReceipt ? { executionReceipt } : {}),
   };
 }
 
@@ -174,15 +182,10 @@ function bindTaskRecordBase(record: TaskRecord): Insertable<TaskRunsTable> {
     ended_at: record.endedAt ?? null,
     last_event_at: record.lastEventAt ?? null,
     cleanup_after: record.cleanupAfter ?? null,
-    execution_error: record.executionError ?? null,
-    delivery_error: record.deliveryError ?? null,
-    finality_error: record.finalityError ?? null,
-    projection_warning: record.projectionWarning ?? null,
     error: record.error ?? null,
     progress_summary: record.progressSummary ?? null,
     terminal_summary: record.terminalSummary ?? null,
     terminal_outcome: record.terminalOutcome ?? null,
-    execution_receipt_json: serializeJson(record.executionReceipt),
   };
 }
 
@@ -267,15 +270,10 @@ function upsertTaskRow(db: DatabaseSync, row: Insertable<TaskRunsTable>): void {
           ended_at: (eb) => eb.ref("excluded.ended_at"),
           last_event_at: (eb) => eb.ref("excluded.last_event_at"),
           cleanup_after: (eb) => eb.ref("excluded.cleanup_after"),
-          execution_error: (eb) => eb.ref("excluded.execution_error"),
-          delivery_error: (eb) => eb.ref("excluded.delivery_error"),
-          finality_error: (eb) => eb.ref("excluded.finality_error"),
-          projection_warning: (eb) => eb.ref("excluded.projection_warning"),
           error: (eb) => eb.ref("excluded.error"),
           progress_summary: (eb) => eb.ref("excluded.progress_summary"),
           terminal_summary: (eb) => eb.ref("excluded.terminal_summary"),
           terminal_outcome: (eb) => eb.ref("excluded.terminal_outcome"),
-          execution_receipt_json: (eb) => eb.ref("excluded.execution_receipt_json"),
         }),
       ),
   );

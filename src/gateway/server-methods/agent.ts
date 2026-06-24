@@ -43,12 +43,6 @@ import { AGENT_INTERNAL_EVENT_TYPE_TASK_COMPLETION } from "../../agents/internal
 import type { AgentInternalEvent } from "../../agents/internal-events.js";
 import { resolveProviderIdForAuth } from "../../agents/provider-auth-aliases.js";
 import {
-  createResolvedAgentRunReceiptFromPlan,
-  finalizeAgentRunReceipt,
-  finalizeAgentRunReceiptFromAttempt,
-  type AgentRunReceipt,
-} from "../../agents/run-receipt.js";
-import {
   normalizeAgentRunTimeoutPhase,
   normalizeProviderStarted,
 } from "../../agents/run-timeout-attribution.js";
@@ -110,11 +104,7 @@ import {
   parseRawSessionConversationRef,
   parseThreadSessionSuffix,
 } from "../../sessions/session-key-utils.js";
-import {
-  createRunningTaskRun,
-  finalizeTaskRunByRunId,
-  updateTaskExecutionReceiptByRunId,
-} from "../../tasks/detached-task-runtime.js";
+import { createRunningTaskRun, finalizeTaskRunByRunId } from "../../tasks/detached-task-runtime.js";
 import type { TaskStatus } from "../../tasks/task-registry.types.js";
 import {
   mergeDeliveryContext,
@@ -659,7 +649,6 @@ async function registerPluginSubagentRunFromGateway(params: {
   task: string;
   requesterOrigin?: DeliveryContext;
   pluginId?: string;
-  executionReceipt?: AgentRunReceipt;
 }): Promise<void> {
   const childSessionKey = params.childSessionKey.trim();
   if (!childSessionKey) {
@@ -680,52 +669,8 @@ async function registerPluginSubagentRunFromGateway(params: {
     task: params.task,
     cleanup: "keep",
     ...(params.pluginId ? { label: `plugin:${params.pluginId}` } : {}),
-    ...(params.executionReceipt ? { executionReceipt: params.executionReceipt } : {}),
     expectsCompletionMessage: false,
     spawnMode: "run",
-  });
-}
-
-async function persistAgentRunReceiptToSession(params: {
-  runId: string;
-  storePath?: string;
-  sessionKey?: string;
-  runReceipt: AgentRunReceipt;
-}): Promise<void> {
-  if (!params.storePath || !params.sessionKey) {
-    return;
-  }
-  await updateSessionStore(params.storePath, (store) => {
-    const sessionKey = params.sessionKey ?? "";
-    const current = store[sessionKey];
-    if (!current) {
-      return false;
-    }
-    current.lastRunId = params.runId;
-    current.lastExecutionReceiptSummary = {
-      phase: params.runReceipt.phase,
-      ...(params.runReceipt.terminalStatus
-        ? { terminalStatus: params.runReceipt.terminalStatus }
-        : {}),
-      source: params.runReceipt.source.id ?? params.runReceipt.source.kind,
-      ...(params.runReceipt.targetAgentId
-        ? { targetAgentId: params.runReceipt.targetAgentId }
-        : {}),
-      finalModel: params.runReceipt.final?.model ?? params.runReceipt.resolved.model,
-      fallbackUsed: params.runReceipt.fallback.used,
-    };
-    return true;
-  });
-}
-
-async function persistAgentRunReceiptToPluginSubagentRun(params: {
-  runId: string;
-  runReceipt: AgentRunReceipt;
-}): Promise<void> {
-  updateTaskExecutionReceiptByRunId({
-    runId: params.runId,
-    runtime: "subagent",
-    executionReceipt: params.runReceipt,
   });
 }
 
@@ -2451,7 +2396,6 @@ export const agentHandlers: GatewayRequestHandlers = {
         taskTrackingMode === "plugin_subagent"
           ? activeModelRef.provider
           : (providerOverride ?? activeModelRef.provider);
-      const resolvedRunReceipt = createResolvedAgentRunReceiptFromPlan(executionPlan);
       const activeAuthProvider = resolveProviderIdForAuth(activeModelProvider, {
         config: cfgForAgent ?? cfg,
       });
@@ -2482,31 +2426,6 @@ export const agentHandlers: GatewayRequestHandlers = {
       }
 
       const resolvedThreadId = explicitThreadId ?? deliveryPlan.resolvedThreadId;
-      const persistRunReceipt = (runReceipt: AgentRunReceipt) => {
-        if (resolvedSessionKey) {
-          void persistAgentRunReceiptToSession({
-            runId,
-            storePath: resolvedSessionStorePath,
-            sessionKey: resolvedSessionKey,
-            runReceipt,
-          }).catch((err) => {
-            context.logGateway.warn(
-              `failed to persist agent run receipt to session ${resolvedSessionKey}: ${formatForLog(err)}`,
-            );
-          });
-        }
-        if (taskTrackingMode === "plugin_subagent") {
-          void persistAgentRunReceiptToPluginSubagentRun({
-            runId,
-            runReceipt,
-          }).catch((err) => {
-            context.logGateway.warn(
-              `failed to persist plugin subagent run receipt ${runId}: ${formatForLog(err)}`,
-            );
-          });
-        }
-      };
-      persistRunReceipt(resolvedRunReceipt);
       let dispatchTaskTrackingMode: Exclude<GatewayAgentTaskTrackingMode, "plugin_subagent"> =
         taskTrackingMode === "cli" ? "cli" : "none";
       if (taskTrackingMode === "plugin_subagent" && resolvedSessionKey) {
@@ -2523,7 +2442,6 @@ export const agentHandlers: GatewayRequestHandlers = {
               threadId: resolvedThreadId,
             }),
             pluginId: pluginRuntimeOwnerId,
-            executionReceipt: resolvedRunReceipt,
           });
         } catch (err) {
           context.logGateway.warn(
@@ -2718,21 +2636,6 @@ export const agentHandlers: GatewayRequestHandlers = {
                     config: cfgForAgent ?? cfg,
                   }),
                 });
-              },
-              onRunFinalized: ({ provider, model, status, fallbackReason, attemptRecord }) => {
-                const finalizedRunReceipt = attemptRecord
-                  ? finalizeAgentRunReceiptFromAttempt(resolvedRunReceipt, attemptRecord)
-                  : finalizeAgentRunReceipt(resolvedRunReceipt, {
-                      finalProvider: provider,
-                      finalModel: model,
-                      runtime: executionPlan.runtime,
-                      terminalStatus: status,
-                      ...(fallbackReason ? { fallbackReason } : {}),
-                      ...(request.bootstrapContextMode
-                        ? { contextMode: request.bootstrapContextMode }
-                        : {}),
-                    });
-                persistRunReceipt(finalizedRunReceipt);
               },
               // Internal-only: allow workspace override for spawned subagent runs.
               workspaceDir: resolveIngressWorkspaceOverrideForSpawnedRun({

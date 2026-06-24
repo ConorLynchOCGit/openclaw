@@ -1,4 +1,3 @@
-import type { AgentRunReceipt } from "../agents/run-receipt.js";
 // Defines the detached task runtime contract and spawn options.
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type {
@@ -30,7 +29,6 @@ export type DetachedTaskCreateParams = {
   preferMetadata?: boolean;
   notifyPolicy?: TaskNotifyPolicy;
   deliveryStatus?: TaskDeliveryStatus;
-  executionReceipt?: AgentRunReceipt;
 };
 
 export type DetachedRunningTaskCreateParams = DetachedTaskCreateParams & {
@@ -67,7 +65,6 @@ export type DetachedTaskCompleteParams = {
   progressSummary?: string | null;
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
-  executionReceipt?: AgentRunReceipt;
 };
 
 export type DetachedTaskFailParams = {
@@ -80,7 +77,6 @@ export type DetachedTaskFailParams = {
   error?: string;
   progressSummary?: string | null;
   terminalSummary?: string | null;
-  executionReceipt?: AgentRunReceipt;
 };
 
 export type DetachedTaskFinalizeParams = {
@@ -94,14 +90,6 @@ export type DetachedTaskFinalizeParams = {
   progressSummary?: string | null;
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
-  executionReceipt?: AgentRunReceipt;
-};
-
-export type DetachedTaskExecutionReceiptParams = {
-  runId: string;
-  runtime?: TaskRuntime;
-  sessionKey?: string;
-  executionReceipt: AgentRunReceipt;
 };
 
 export type DetachedTaskDeliveryStatusParams = {
@@ -142,7 +130,6 @@ export type DetachedTaskLifecycleRuntime = {
   startTaskRunByRunId: (params: DetachedTaskStartParams) => TaskRecord[];
   recordTaskRunProgressByRunId: (params: DetachedTaskProgressParams) => TaskRecord[];
   finalizeTaskRunByRunId?: (params: DetachedTaskFinalizeParams) => TaskRecord[];
-  updateTaskExecutionReceiptByRunId?: (params: DetachedTaskExecutionReceiptParams) => TaskRecord[];
   completeTaskRunByRunId: (params: DetachedTaskCompleteParams) => TaskRecord[];
   failTaskRunByRunId: (params: DetachedTaskFailParams) => TaskRecord[];
   setDetachedTaskDeliveryStatusByRunId: (params: DetachedTaskDeliveryStatusParams) => TaskRecord[];

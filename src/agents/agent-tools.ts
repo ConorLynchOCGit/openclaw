@@ -491,6 +491,12 @@ export function createOpenClawCodingTools(options?: {
   memberRoleIds?: string[];
   /** Parent session key for subagent group policy inheritance. */
   spawnedBy?: string | null;
+  /**
+   * Fresh RunPlan-bound child runs resolve positive tool capability from the
+   * target agent. Parent/session inherited allowlists are ignored, while
+   * inherited denies still flow downward as security constraints.
+   */
+  freshPlannedRun?: boolean;
   senderId?: string | null;
   senderName?: string | null;
   senderUsername?: string | null;
@@ -671,6 +677,7 @@ export function createOpenClawCodingTools(options?: {
     options?.sessionKey,
     {
       store: subagentStore,
+      includeInheritedAllow: options?.freshPlannedRun !== true,
     },
   );
   const globalPolicyWithToolSearchControls = mergeToolSearchControlAllowlist(globalPolicy);

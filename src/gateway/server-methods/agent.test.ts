@@ -3503,24 +3503,7 @@ describe("gateway agent handler", () => {
         "expected plugin subagent run",
       );
       expect(run.runId).toBe(runId);
-      expect(findTaskByRunId(runId)?.executionReceipt).toMatchObject({
-        phase: "finalized",
-        source: {
-          kind: "plugin",
-          id: "gbrain-context",
-          hook: "message_received",
-        },
-        targetAgentId: "memory-curator",
-        terminalStatus: "succeeded",
-        final: {
-          model: "openrouter/anthropic/claude-haiku-4.5",
-          runtime: "openclaw",
-          contextMode: "lightweight",
-        },
-        fallback: {
-          used: false,
-        },
-      });
+      expect(findTaskByRunId(runId)?.status).toBe("succeeded");
     });
   });
 

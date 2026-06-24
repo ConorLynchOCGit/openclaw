@@ -531,6 +531,43 @@ describe("resolveSubagentToolPolicy depth awareness", () => {
     expect(isToolAllowedByPolicyName("read", policy)).toBe(false);
   });
 
+  it("can resolve ACP inherited policy as deny-only for fresh planned child runs", () => {
+    const storePath = path.join(
+      os.tmpdir(),
+      `openclaw-acp-inherited-deny-only-${Date.now()}-${Math.random().toString(16).slice(2)}.json`,
+    );
+    fs.mkdirSync(path.dirname(storePath), { recursive: true });
+    fs.writeFileSync(
+      storePath,
+      JSON.stringify(
+        {
+          "agent:main:acp:limited": {
+            sessionId: "limited-acp-session",
+            updatedAt: Date.now(),
+            inheritedToolAllow: ["custom_plugin_tool"],
+            inheritedToolDeny: ["custom_denied_tool"],
+          },
+        },
+        null,
+        2,
+      ),
+      "utf-8",
+    );
+    const cfg = {
+      ...baseCfg,
+      session: {
+        store: storePath,
+      },
+    } as unknown as OpenClawConfig;
+
+    const policy = resolveInheritedToolPolicyForSession(cfg, "agent:main:acp:limited", {
+      includeInheritedAllow: false,
+    });
+
+    expect(isToolAllowedByPolicyName("custom_plugin_tool", policy)).toBe(true);
+    expect(isToolAllowedByPolicyName("custom_denied_tool", policy)).toBe(false);
+  });
+
   it("defaults to leaf behavior when no depth is provided", () => {
     const policy = resolveSubagentToolPolicy(baseCfg);
     // Default depth=1, maxSpawnDepth=2 → orchestrator

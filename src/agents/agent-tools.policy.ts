@@ -160,10 +160,13 @@ export function resolveInheritedToolPolicyForSession(
   sessionKey: string | undefined | null,
   opts?: {
     store?: SessionCapabilityStore;
+    includeInheritedAllow?: boolean;
   },
 ): SandboxToolPolicy | undefined {
   const inheritedToolAllow =
-    typeof sessionKey === "string" && isAcpSessionKey(sessionKey)
+    opts?.includeInheritedAllow !== false &&
+    typeof sessionKey === "string" &&
+    isAcpSessionKey(sessionKey)
       ? resolveStoredSubagentInheritedToolAllowlist(sessionKey, {
           cfg,
           store: opts?.store,

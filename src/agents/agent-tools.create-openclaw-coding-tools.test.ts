@@ -695,6 +695,46 @@ describe("createOpenClawCodingTools", () => {
     expect(opts.inheritedToolAllowlist).toEqual([]);
   });
 
+  it("ignores inherited positive allowlists for fresh planned child tool visibility", async () => {
+    const agentId = `fresh-planned-child-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const sessionKey = `agent:${agentId}:acp:limited`;
+    const storeTemplate = path.join(
+      os.tmpdir(),
+      `openclaw-session-store-${agentId}-{agentId}.json`,
+    );
+    await writeSessionStore(storeTemplate, agentId, {
+      [sessionKey]: {
+        sessionId: "limited-session",
+        updatedAt: Date.now(),
+        spawnDepth: 1,
+        subagentRole: "orchestrator",
+        subagentControlScope: "children",
+        inheritedToolAllow: ["read"],
+      },
+    });
+
+    const tools = createOpenClawCodingTools({
+      sessionKey,
+      agentId: "codebase-researcher",
+      freshPlannedRun: true,
+      config: {
+        session: {
+          store: storeTemplate,
+        },
+        agents: {
+          list: [
+            {
+              id: "codebase-researcher",
+              tools: { allow: ["read", "grep", "find", "ls"] },
+            },
+          ],
+        },
+      } as OpenClawConfig,
+    });
+
+    expect(toolNameList(tools)).toEqual(expect.arrayContaining(["read", "grep", "find", "ls"]));
+  });
+
   it("does not pass the parent effective allow-list-restricted tool surface to spawned sessions", () => {
     const createOpenClawToolsMock = vi.mocked(createOpenClawTools);
     createOpenClawToolsMock.mockClear();

@@ -1,7 +1,10 @@
 // Coverage for aggregate timeout handling while waiting on compaction retry.
 import { MAX_TIMER_TIMEOUT_MS } from "@openclaw/normalization-core/number-coercion";
 import { describe, expect, it, vi } from "vitest";
-import { waitForCompactionRetryWithAggregateTimeout } from "./compaction-retry-aggregate-timeout.js";
+import {
+  hasActiveCompactionRetryWork,
+  waitForCompactionRetryWithAggregateTimeout,
+} from "./compaction-retry-aggregate-timeout.js";
 
 type AggregateTimeoutParams = Parameters<typeof waitForCompactionRetryWithAggregateTimeout>[0];
 type TimeoutCallback = NonNullable<AggregateTimeoutParams["onTimeout"]>;
@@ -42,7 +45,7 @@ function buildAggregateTimeoutParams(
     waitForCompactionRetry: overrides.waitForCompactionRetry,
     abortable: overrides.abortable ?? (async (promise) => await promise),
     aggregateTimeoutMs: overrides.aggregateTimeoutMs ?? 60_000,
-    isCompactionStillInFlight: overrides.isCompactionStillInFlight,
+    isCompactionRetryStillActive: overrides.isCompactionRetryStillActive,
     onTimeout,
   };
 }
@@ -79,7 +82,7 @@ describe("waitForCompactionRetryWithAggregateTimeout", () => {
       );
       const params = buildAggregateTimeoutParams({
         waitForCompactionRetry,
-        isCompactionStillInFlight: () => compactionInFlight,
+        isCompactionRetryStillActive: () => compactionInFlight,
       });
 
       const resultPromise = waitForCompactionRetryWithAggregateTimeout(params);
@@ -101,7 +104,7 @@ describe("waitForCompactionRetryWithAggregateTimeout", () => {
       }, 90_000);
       const params = buildAggregateTimeoutParams({
         waitForCompactionRetry,
-        isCompactionStillInFlight: () => compactionInFlight,
+        isCompactionRetryStillActive: () => compactionInFlight,
       });
 
       const resultPromise = waitForCompactionRetryWithAggregateTimeout(params);
@@ -111,6 +114,37 @@ describe("waitForCompactionRetryWithAggregateTimeout", () => {
 
       expect(result.timedOut).toBe(true);
       expectClearedTimeoutState(params.onTimeout, true);
+    });
+  });
+
+  it("keeps waiting while post-compaction retry is still streaming", async () => {
+    await withFakeTimers(async () => {
+      let retryStreaming = true;
+      const waitForCompactionRetry = vi.fn(
+        async () =>
+          await new Promise<void>((resolve) => {
+            setTimeout(() => {
+              retryStreaming = false;
+              resolve();
+            }, 170_000);
+          }),
+      );
+      const params = buildAggregateTimeoutParams({
+        waitForCompactionRetry,
+        isCompactionRetryStillActive: () =>
+          hasActiveCompactionRetryWork({
+            isCompactionInFlight: false,
+            isSessionStreaming: retryStreaming,
+          }),
+      });
+
+      const resultPromise = waitForCompactionRetryWithAggregateTimeout(params);
+
+      await vi.advanceTimersByTimeAsync(170_000);
+      const result = await resultPromise;
+
+      expect(result.timedOut).toBe(false);
+      expectClearedTimeoutState(params.onTimeout, false);
     });
   });
 

@@ -194,84 +194,6 @@ function cloneTaskRecord(record: TaskRecord): TaskRecord {
   return { ...record };
 }
 
-function normalizeOptionalTaskError(value: string | undefined): string | undefined {
-  return normalizeOptionalString(value);
-}
-
-function isTerminalExecutionFailureStatus(status: TaskStatus): boolean {
-  return (
-    status === "failed" || status === "timed_out" || status === "cancelled" || status === "lost"
-  );
-}
-
-function deriveTaskProjectionError(
-  task: Pick<
-    TaskRecord,
-    "executionError" | "deliveryError" | "finalityError" | "projectionWarning"
-  >,
-): string | undefined {
-  return (
-    normalizeOptionalTaskError(task.executionError) ??
-    normalizeOptionalTaskError(task.deliveryError) ??
-    normalizeOptionalTaskError(task.finalityError) ??
-    normalizeOptionalTaskError(task.projectionWarning)
-  );
-}
-
-function normalizeTaskProjection(task: TaskRecord): TaskRecord {
-  const normalized = normalizeTaskTimestamps(task);
-  const next: TaskRecord = { ...normalized };
-
-  const legacyError = normalizeOptionalTaskError(next.error);
-  next.executionError = normalizeOptionalTaskError(next.executionError);
-  next.deliveryError = normalizeOptionalTaskError(next.deliveryError);
-  next.finalityError = normalizeOptionalTaskError(next.finalityError);
-  next.projectionWarning = normalizeOptionalTaskError(next.projectionWarning);
-
-  if (next.executionError === undefined) {
-    delete next.executionError;
-  }
-  if (next.deliveryError === undefined) {
-    delete next.deliveryError;
-  }
-  if (next.finalityError === undefined) {
-    delete next.finalityError;
-  }
-  if (next.projectionWarning === undefined) {
-    delete next.projectionWarning;
-  }
-
-  if (next.deliveryStatus === "delivered") {
-    delete next.deliveryError;
-  }
-
-  if (
-    !next.executionError &&
-    !next.deliveryError &&
-    !next.finalityError &&
-    !next.projectionWarning &&
-    legacyError
-  ) {
-    if (isTerminalExecutionFailureStatus(next.status)) {
-      next.executionError = legacyError;
-    } else if (next.deliveryStatus === "failed") {
-      next.deliveryError = legacyError;
-    } else if (next.terminalOutcome === "blocked") {
-      next.finalityError = legacyError;
-    } else if (next.deliveryStatus !== "delivered") {
-      next.projectionWarning = legacyError;
-    }
-  }
-
-  const projectionError = deriveTaskProjectionError(next);
-  if (projectionError) {
-    next.error = projectionError;
-  } else {
-    delete next.error;
-  }
-  return next;
-}
-
 function normalizeTaskTimestamps(task: TaskRecord): TaskRecord {
   // Detached runtimes can report lifecycle times captured before the registry
   // inserted or restored the row; keep createdAt as the visible lifecycle floor.
@@ -1197,7 +1119,7 @@ function restoreTaskRegistryOnce() {
       return;
     }
     for (const [taskId, task] of restored.tasks.entries()) {
-      tasks.set(taskId, normalizeTaskProjection(task));
+      tasks.set(taskId, normalizeTaskTimestamps(task));
     }
     for (const [taskId, state] of restored.deliveryStates.entries()) {
       taskDeliveryStates.set(taskId, state);
@@ -1231,7 +1153,7 @@ function updateTask(taskId: string, patch: Partial<TaskRecord>): TaskRecord | nu
   if (!current) {
     return null;
   }
-  const next = normalizeTaskProjection({ ...current, ...patch });
+  const next = normalizeTaskTimestamps({ ...current, ...patch });
   if (isTerminalTaskStatus(next.status) && typeof next.cleanupAfter !== "number") {
     next.cleanupAfter = resolveTaskCleanupAfter({
       ...next,
@@ -1778,7 +1700,6 @@ export function createTaskRecord(params: {
   progressSummary?: string | null;
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
-  executionReceipt?: TaskRecord["executionReceipt"];
 }): TaskRecord | null {
   ensureTaskRegistryReady();
   const requesterSessionKey = resolveTaskRequesterSessionKey(params);
@@ -1833,7 +1754,7 @@ export function createTaskRecord(params: {
     scopeKind,
   });
   const lastEventAt = params.lastEventAt ?? params.startedAt ?? now;
-  const record: TaskRecord = normalizeTaskProjection({
+  const record: TaskRecord = normalizeTaskTimestamps({
     taskId,
     runtime: params.runtime,
     taskKind: normalizeOptionalString(params.taskKind),
@@ -1861,7 +1782,6 @@ export function createTaskRecord(params: {
       status,
       terminalOutcome: params.terminalOutcome,
     }),
-    executionReceipt: params.executionReceipt,
   });
   if (isTerminalTaskStatus(record.status) && typeof record.cleanupAfter !== "number") {
     record.cleanupAfter = resolveTaskCleanupAfter(record);
@@ -1907,7 +1827,6 @@ function updateTaskStateByRunId(params: {
   progressSummary?: string | null;
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
-  executionReceipt?: TaskRecord["executionReceipt"];
   eventSummary?: string | null;
 }) {
   ensureTaskRegistryReady();
@@ -1942,14 +1861,7 @@ function updateTaskStateByRunId(params: {
       patch.lastEventAt = params.lastEventAt;
     }
     if (params.error !== undefined) {
-      patch.executionError = params.error;
-    }
-    if (params.status) {
-      if (nextStatus === "succeeded") {
-        patch.executionError = undefined;
-      } else if (isTerminalExecutionFailureStatus(nextStatus)) {
-        patch.executionError = params.error ?? current.executionError ?? current.error;
-      }
+      patch.error = params.error;
     }
     if (params.progressSummary !== undefined) {
       patch.progressSummary = normalizeTaskSummary(params.progressSummary);
@@ -1958,23 +1870,10 @@ function updateTaskStateByRunId(params: {
       patch.terminalSummary = normalizeTaskSummary(params.terminalSummary);
     }
     if (params.terminalOutcome !== undefined) {
-      const terminalOutcome = resolveTaskTerminalOutcome({
+      patch.terminalOutcome = resolveTaskTerminalOutcome({
         status: nextStatus,
         terminalOutcome: params.terminalOutcome,
       });
-      patch.terminalOutcome = terminalOutcome;
-      if (terminalOutcome === "blocked") {
-        patch.finalityError =
-          normalizeTaskSummary(params.terminalSummary) ??
-          current.finalityError ??
-          current.error ??
-          "task finality blocked";
-      } else {
-        patch.finalityError = undefined;
-      }
-    }
-    if (params.executionReceipt !== undefined) {
-      patch.executionReceipt = params.executionReceipt;
     }
     const eventSummary =
       normalizeTaskSummary(params.eventSummary) ??
@@ -2017,12 +1916,8 @@ function updateTaskDeliveryByRunId(params: {
   const patch: Partial<TaskRecord> = {
     deliveryStatus: params.deliveryStatus,
   };
-  if (params.deliveryStatus === "delivered" || params.deliveryStatus === "not_applicable") {
-    patch.deliveryError = undefined;
-  } else if (params.deliveryStatus === "failed") {
-    patch.deliveryError = params.error ?? "delivery failed";
-  } else if (params.error !== undefined) {
-    patch.deliveryError = params.error;
+  if (params.error !== undefined) {
+    patch.error = params.error;
   }
   return updateTasksByRunId({
     runId: params.runId,
@@ -2083,7 +1978,6 @@ export function markTaskTerminalByRunId(params: {
   progressSummary?: string | null;
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
-  executionReceipt?: TaskRecord["executionReceipt"];
 }) {
   return finalizeTaskRunByRunId(params);
 }
@@ -2100,7 +1994,6 @@ export function finalizeTaskRunByRunId(params: {
   progressSummary?: string | null;
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
-  executionReceipt?: TaskRecord["executionReceipt"];
 }) {
   return updateTaskStateByRunId({
     runId: params.runId,
@@ -2114,21 +2007,6 @@ export function finalizeTaskRunByRunId(params: {
     progressSummary: params.progressSummary,
     terminalSummary: params.terminalSummary,
     terminalOutcome: params.terminalOutcome,
-    executionReceipt: params.executionReceipt,
-  });
-}
-
-export function updateTaskExecutionReceiptByRunId(params: {
-  runId: string;
-  runtime?: TaskRuntime;
-  sessionKey?: string;
-  executionReceipt: TaskRecord["executionReceipt"];
-}) {
-  return updateTaskStateByRunId({
-    runId: params.runId,
-    runtime: params.runtime,
-    sessionKey: params.sessionKey,
-    executionReceipt: params.executionReceipt,
   });
 }
 

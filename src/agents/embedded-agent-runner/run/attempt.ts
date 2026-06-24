@@ -151,7 +151,7 @@ import {
 } from "../../embedded-agent-helpers.js";
 import { countActiveToolExecutions } from "../../embedded-agent-subscribe.handlers.tools.js";
 import { subscribeEmbeddedAgentSession } from "../../embedded-agent-subscribe.js";
-import { assertFreshExecutionPlanBinding } from "../../execution-plan.js";
+import { assertFreshExecutionPlanBinding, isFreshExecutionPlan } from "../../execution-plan.js";
 import { isTimeoutError } from "../../failover-error.js";
 import { runAgentEndSideEffects } from "../../harness/agent-end-side-effects.js";
 import { runAgentHarnessBeforeAgentFinalizeHook } from "../../harness/lifecycle-hook-helpers.js";
@@ -425,7 +425,10 @@ import {
   TOOL_SEARCH_CONTROL_ALLOWLIST_NAMES,
 } from "./attempt.tool-search-run-plan.js";
 import { resolveAttemptTranscriptPolicy } from "./attempt.transcript-policy.js";
-import { waitForCompactionRetryWithAggregateTimeout } from "./compaction-retry-aggregate-timeout.js";
+import {
+  hasActiveCompactionRetryWork,
+  waitForCompactionRetryWithAggregateTimeout,
+} from "./compaction-retry-aggregate-timeout.js";
 import {
   resolveRunTimeoutDuringCompaction,
   selectCompactionTimeoutSnapshot,
@@ -727,6 +730,7 @@ function collectAttemptExplicitToolAllowlistSources(params: {
   senderE164?: string | null;
   sandboxToolPolicy?: { allow?: string[]; deny?: string[] };
   toolsAllow?: string[];
+  freshPlannedRun?: boolean;
 }) {
   const { agentId, globalPolicy, globalProviderPolicy, agentPolicy, agentProviderPolicy } =
     resolveEffectiveToolPolicy({
@@ -768,6 +772,7 @@ function collectAttemptExplicitToolAllowlistSources(params: {
     params.sandboxSessionKey,
     {
       store: subagentStore,
+      includeInheritedAllow: params.freshPlannedRun !== true,
     },
   );
   return collectExplicitToolAllowlistSources([
@@ -1231,6 +1236,7 @@ export async function runEmbeddedAttempt(
             groupSpace: params.groupSpace,
             memberRoleIds: params.memberRoleIds,
             spawnedBy: params.spawnedBy,
+            freshPlannedRun: isFreshExecutionPlan(params.launchExecutionPlan),
             senderId: params.senderId,
             senderName: params.senderName,
             senderUsername: params.senderUsername,
@@ -1558,6 +1564,7 @@ export async function runEmbeddedAttempt(
       senderUsername: params.senderUsername,
       senderE164: params.senderE164,
       warn: (message) => log.warn(message),
+      freshPlannedRun: isFreshExecutionPlan(params.launchExecutionPlan),
     });
     const normalizedBundledTools =
       filteredBundledTools.length > 0
@@ -1697,6 +1704,7 @@ export async function runEmbeddedAttempt(
       senderE164: params.senderE164,
       sandboxToolPolicy: sandbox?.tools,
       toolsAllow: params.toolsAllow,
+      freshPlannedRun: isFreshExecutionPlan(params.launchExecutionPlan),
     });
     const toolSearchRunPlan = buildToolSearchRunPlan({
       visibleTools: effectiveTools,
@@ -2993,10 +3001,12 @@ export async function runEmbeddedAttempt(
           }
 
           if (params.sessionKey && params.config && !isRawModelRun) {
+            // Capability guidance must include deferred OpenClaw tools without
+            // interpreting arbitrary client tool names as native capabilities.
             const activeSubagentPromptAddition = buildActiveSubagentSystemPromptAddition({
               cfg: params.config,
               controllerSessionKey: params.sessionKey,
-              hasSessionsYield: effectiveTools.some((tool) => tool.name === "sessions_yield"),
+              hasSessionsYield: toolSearchRunPlan.capabilityToolNames.has("sessions_yield"),
             });
             if (activeSubagentPromptAddition) {
               setActiveSessionSystemPrompt(
@@ -4636,7 +4646,11 @@ export async function runEmbeddedAttempt(
                 waitForCompactionRetry,
                 abortable,
                 aggregateTimeoutMs: COMPACTION_RETRY_AGGREGATE_TIMEOUT_MS,
-                isCompactionStillInFlight: isCompactionInFlight,
+                isCompactionRetryStillActive: () =>
+                  hasActiveCompactionRetryWork({
+                    isCompactionInFlight: isCompactionInFlight(),
+                    isSessionStreaming: activeSession.isStreaming,
+                  }),
               });
           if (compactionRetryWait.timedOut) {
             timedOutDuringCompaction = true;

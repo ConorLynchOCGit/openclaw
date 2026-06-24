@@ -4,10 +4,11 @@
  * Searches files by glob through fd/local operations and returns bounded, renderable results.
  */
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { Text } from "@earendil-works/pi-tui";
+import { minimatch } from "minimatch";
 import { Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
 import type { AgentTool } from "../../runtime/index.js";
@@ -36,6 +37,7 @@ const findSchema = Type.Object({
 export type { FindToolDetails, FindToolInput } from "./tool-contracts.js";
 
 const DEFAULT_LIMIT = 1000;
+const DEFAULT_IGNORE_NAMES = new Set([".git", "node_modules"]);
 
 /**
  * Pluggable operations for the find tool.
@@ -151,6 +153,77 @@ function buildFindResult(params: {
   };
 }
 
+function normalizeGlobPattern(pattern: string): string {
+  return pattern.split(path.sep).join("/");
+}
+
+function matchLocalFindPattern(relativePath: string, pattern: string): boolean {
+  const normalizedPath = toPosixPath(relativePath);
+  const normalizedPattern = normalizeGlobPattern(pattern);
+  if (
+    minimatch(normalizedPath, normalizedPattern, { dot: true }) ||
+    minimatch(path.basename(normalizedPath), normalizedPattern, { dot: true })
+  ) {
+    return true;
+  }
+  if (!normalizedPattern.startsWith("**/")) {
+    return minimatch(normalizedPath, `**/${normalizedPattern}`, { dot: true });
+  }
+  return false;
+}
+
+function localFindFallback(params: {
+  pattern: string;
+  searchPath: string;
+  effectiveLimit: number;
+}): string[] {
+  const results: string[] = [];
+  const stack: string[] = [params.searchPath];
+  while (stack.length > 0 && results.length < params.effectiveLimit) {
+    const current = stack.pop();
+    if (!current) {
+      continue;
+    }
+    let entries;
+    try {
+      entries = readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (results.length >= params.effectiveLimit) {
+        break;
+      }
+      if (DEFAULT_IGNORE_NAMES.has(entry.name)) {
+        continue;
+      }
+      const absolute = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(absolute);
+        continue;
+      }
+      if (!entry.isFile() && !entry.isSymbolicLink()) {
+        continue;
+      }
+      if (entry.isSymbolicLink()) {
+        try {
+          if (!lstatSync(absolute).isSymbolicLink()) {
+            continue;
+          }
+        } catch {
+          continue;
+        }
+      }
+      const relative = path.relative(params.searchPath, absolute);
+      if (matchLocalFindPattern(relative, params.pattern)) {
+        results.push(absolute);
+      }
+    }
+  }
+  results.sort((a, b) => a.localeCompare(b));
+  return results;
+}
+
 export function createFindToolDefinition(
   cwd: string,
   options?: FindToolOptions,
@@ -255,7 +328,35 @@ export function createFindToolDefinition(
               return;
             }
             if (!fdPath) {
-              settle(() => reject(new Error("fd is not available and could not be downloaded")));
+              if (!(await ops.exists(searchPath))) {
+                settle(() => reject(new Error(`Path not found: ${searchPath}`)));
+                return;
+              }
+              const fallbackResults = localFindFallback({
+                pattern,
+                searchPath,
+                effectiveLimit,
+              });
+              if (fallbackResults.length === 0) {
+                settle(() =>
+                  resolve({
+                    content: [{ type: "text", text: "No files found matching pattern" }],
+                    details: undefined,
+                  }),
+                );
+                return;
+              }
+              settle(() =>
+                resolve(
+                  buildFindResult({
+                    relativized: fallbackResults.map((p) =>
+                      toPosixPath(path.relative(searchPath, p)),
+                    ),
+                    effectiveLimit,
+                    limitNotice: `${effectiveLimit} results limit reached. Use limit=${effectiveLimit * 2} for more, or refine pattern`,
+                  }),
+                ),
+              );
               return;
             }
 
