@@ -335,8 +335,8 @@ export async function applySessionsPatchToStore(params: {
       if (!Array.isArray(raw)) {
         return invalid("invalid inheritedToolAllow (use an array of tool names)");
       }
-      if (!supportsSpawnLineage(storeKey)) {
-        return invalid("inheritedToolAllow is only supported for subagent:* or acp:* sessions");
+      if (!isAcpSessionKey(storeKey)) {
+        return invalid("inheritedToolAllow is only supported for acp:* sessions");
       }
       const inheritedToolAllow = normalizeInheritedToolAllowlist(raw);
       if (inheritedToolAllow.length > 0) {

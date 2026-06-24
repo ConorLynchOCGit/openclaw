@@ -64,6 +64,7 @@ function createAttemptResult(): EmbeddedRunAttemptResult {
     messagesSnapshot: [],
     assistantTexts: ["ok"],
     toolMetas: [],
+    actualToolNames: [],
     lastAssistant: undefined,
     didSendViaMessagingTool: false,
     messagingToolSentTexts: [],

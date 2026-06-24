@@ -20,9 +20,7 @@ import {
 import {
   collectExplicitDenylist,
   collectExplicitAllowlist,
-  hasRestrictiveAllowPolicy,
   mergeAlsoAllowPolicy,
-  replaceWithEffectiveToolAllowlist,
   resolveToolProfilePolicy,
 } from "../../agents/tool-policy.js";
 import type { SessionEntry } from "../../config/sessions.js";
@@ -152,7 +150,6 @@ export function resolveSkillDispatchTools(params: {
     subagentPolicy,
     inheritedToolPolicy,
   ];
-  const inheritedToolAllowlist: string[] = [];
   const beforeToolCallHookContext = params.skillCommand
     ? {
         cwd: params.workspaceDir,
@@ -192,7 +189,7 @@ export function resolveSkillDispatchTools(params: {
     modelId: params.model,
     pluginToolAllowlist: collectExplicitAllowlist(explicitPolicyList),
     pluginToolDenylist: collectExplicitDenylist(explicitPolicyList),
-    inheritedToolAllowlist,
+    inheritedToolAllowlist: [],
     inheritedToolDenylist: collectExplicitDenylist(explicitPolicyList),
   });
   const policyFiltered = applyToolPolicyPipeline({
@@ -220,8 +217,5 @@ export function resolveSkillDispatchTools(params: {
       { policy: inheritedToolPolicy, label: "inherited tools" },
     ],
   });
-  if (explicitPolicyList.some(hasRestrictiveAllowPolicy)) {
-    replaceWithEffectiveToolAllowlist(inheritedToolAllowlist, policyFiltered);
-  }
   return policyFiltered;
 }

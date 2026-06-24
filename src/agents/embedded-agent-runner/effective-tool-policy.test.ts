@@ -30,9 +30,9 @@ describe("applyFinalEffectiveToolPolicy", () => {
     expect(filtered.map((tool) => tool.name)).toEqual(["mcp__bundle__fs_read"]);
   });
 
-  it("filters bundled tools through inherited subagent allowlists", () => {
-    // Inherited allowlists are persisted by session key; use a real temp store
-    // so parsing and lookup match production policy application.
+  it("does not filter bundled tools through native inherited subagent allowlists", () => {
+    // Native subagents resolve positive capability from the target agent config.
+    // Stale inherited allowlists in a session store must not narrow bundled MCP/LSP tools.
     const agentId = `bundled-inherited-allow-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const sessionKey = `agent:${agentId}:subagent:limited`;
     const storePath = path.join(os.tmpdir(), `openclaw-bundled-inherited-allow-${agentId}.json`);
@@ -66,10 +66,13 @@ describe("applyFinalEffectiveToolPolicy", () => {
       warn: () => {},
     });
 
-    expect(filtered.map((tool) => tool.name)).toEqual(["mcp__bundle__fs_read"]);
+    expect(filtered.map((tool) => tool.name)).toEqual([
+      "mcp__bundle__fs_delete",
+      "mcp__bundle__fs_read",
+    ]);
   });
 
-  it("honors configured plugin allow entries alongside inherited bundled tool allows", () => {
+  it("honors configured plugin allow entries without native inherited bundled tool allows", () => {
     const agentId = `bundled-plugin-allow-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const sessionKey = `agent:${agentId}:subagent:limited`;
     const storePath = path.join(os.tmpdir(), `openclaw-bundled-plugin-allow-${agentId}.json`);
@@ -114,7 +117,10 @@ describe("applyFinalEffectiveToolPolicy", () => {
       warn: () => {},
     });
 
-    expect(filtered.map((tool) => tool.name)).toEqual(["mcp__bundle__fs_read"]);
+    expect(filtered.map((tool) => tool.name)).toEqual([
+      "mcp__bundle__fs_delete",
+      "mcp__bundle__fs_read",
+    ]);
   });
 
   it("applies channel-normalized per-sender policy to bundled tools", () => {

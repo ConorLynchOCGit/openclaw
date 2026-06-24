@@ -28,11 +28,7 @@ import { expectReadWriteEditTools } from "./test-helpers/agent-tools-fs-helpers.
 import { createAgentToolsSandboxContext } from "./test-helpers/agent-tools-sandbox-context.js";
 import { createHostSandboxFsBridge } from "./test-helpers/host-sandbox-fs-bridge.js";
 import { buildEmptyExplicitToolAllowlistError } from "./tool-allowlist-guard.js";
-import {
-  DEFAULT_PLUGIN_TOOLS_ALLOWLIST_ENTRY,
-  normalizeToolName,
-  replaceWithEffectiveToolAllowlist,
-} from "./tool-policy.js";
+import { DEFAULT_PLUGIN_TOOLS_ALLOWLIST_ENTRY, normalizeToolName } from "./tool-policy.js";
 
 const tinyPngBuffer = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2f7z8AAAAASUVORK5CYII=",
@@ -694,13 +690,12 @@ describe("createOpenClawCodingTools", () => {
     });
 
     expect(createOpenClawToolsMock).toHaveBeenCalledTimes(1);
-    expectListIncludes(latestCreateOpenClawToolsOptions().pluginToolAllowlist, [
-      "custom_plugin_tool",
-      "sessions_spawn",
-    ]);
+    const opts = latestCreateOpenClawToolsOptions();
+    expect(opts.pluginToolAllowlist?.includes("custom_plugin_tool")).toBe(false);
+    expect(opts.inheritedToolAllowlist).toEqual([]);
   });
 
-  it("passes effective allow-list-restricted tool surface to spawned sessions", () => {
+  it("does not pass the parent effective allow-list-restricted tool surface to spawned sessions", () => {
     const createOpenClawToolsMock = vi.mocked(createOpenClawTools);
     createOpenClawToolsMock.mockClear();
 
@@ -710,34 +705,19 @@ describe("createOpenClawCodingTools", () => {
 
     expect(createOpenClawToolsMock).toHaveBeenCalledTimes(1);
     const inheritedAllow = latestCreateOpenClawToolsOptions().inheritedToolAllowlist;
-    expectListIncludes(inheritedAllow, ["read", "sessions_spawn"]);
-    expect(inheritedAllow?.includes("exec")).toBe(false);
-    expect(inheritedAllow?.includes("process")).toBe(false);
+    expect(inheritedAllow).toEqual([]);
   });
 
-  it("lets the embedded runner refresh spawned-session inherited tools after late tool projection", () => {
+  it("does not expose a mutable inherited allow-list reference to OpenClaw tools", () => {
     const createOpenClawToolsMock = vi.mocked(createOpenClawTools);
     createOpenClawToolsMock.mockClear();
-    const inheritedToolAllowlistRef: string[] = ["stale_snapshot"];
 
     createOpenClawCodingTools({
       config: { tools: { allow: ["read", "sessions_spawn"] } },
-      effectiveToolAllowlistRef: inheritedToolAllowlistRef,
     });
 
     const inheritedAllow = latestCreateOpenClawToolsOptions().inheritedToolAllowlist;
-    expect(inheritedAllow).toBe(inheritedToolAllowlistRef);
-    expectListIncludes(inheritedAllow, ["read", "sessions_spawn"]);
-    expect(inheritedAllow?.includes("gbrain__query")).toBe(false);
-
-    replaceWithEffectiveToolAllowlist(inheritedToolAllowlistRef, [
-      { name: "sessions_spawn" },
-      { name: "gbrain__query" },
-      { name: "gbrain__query" },
-      { name: "gbrain__put_page" },
-    ]);
-
-    expect(inheritedAllow).toEqual(["sessions_spawn", "gbrain__query", "gbrain__put_page"]);
+    expect(inheritedAllow).toEqual([]);
   });
 
   it("records core tool-prep stages for hot-path diagnostics", () => {

@@ -122,6 +122,7 @@ export function makeEmbeddedRunnerAttempt(
     messagesSnapshot: [],
     assistantTexts: [],
     toolMetas,
+    actualToolNames: [],
     lastAssistant: undefined,
     replayMetadata:
       overrides.replayMetadata ??

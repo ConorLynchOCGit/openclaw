@@ -126,6 +126,7 @@ function createAttemptResult(sessionIdUsed: string): EmbeddedRunAttemptResult {
     messagesSnapshot: [],
     assistantTexts: [`${sessionIdUsed} ok`],
     toolMetas: [],
+    actualToolNames: [],
     lastAssistant: undefined,
     didSendViaMessagingTool: false,
     messagingToolSentTexts: [],

@@ -172,6 +172,7 @@ export type EmbeddedRunAttemptResult = {
     asyncTaskRunId?: string;
     asyncTaskId?: string;
   }>;
+  actualToolNames: string[];
   acceptedSessionSpawns?: AcceptedSessionSpawn[];
   lastAssistant: AssistantMessage | undefined;
   currentAttemptAssistant?: AssistantMessage | undefined;

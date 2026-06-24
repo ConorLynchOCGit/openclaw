@@ -347,7 +347,7 @@ describe("sessions_spawn tool", () => {
     expect(spawnContext.inheritedToolDenylist).toEqual(["exec", "read"]);
   });
 
-  it("passes inherited tool allow lists to subagent spawns", async () => {
+  it("does not pass inherited positive tool allow lists to native subagent spawns", async () => {
     const tool = createSessionsSpawnTool({
       agentSessionKey: "agent:main:main",
       inheritedToolAllowlist: ["sessions_spawn", "read"],
@@ -358,7 +358,7 @@ describe("sessions_spawn tool", () => {
     });
 
     const spawnContext = mockCallArg(hoisted.spawnSubagentDirectMock, 0, 1, "spawnSubagentDirect");
-    expect(spawnContext.inheritedToolAllowlist).toEqual(["sessions_spawn", "read"]);
+    expect(spawnContext.inheritedToolAllowlist).toBeUndefined();
   });
 
   it("accepts taskName as a stable subagent handle", async () => {

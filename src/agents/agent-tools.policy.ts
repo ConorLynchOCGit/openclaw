@@ -19,7 +19,7 @@ import { resolveChannelGroupToolsPolicy } from "../config/group-policy.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { AgentToolsConfig } from "../config/types.tools.js";
 import { logWarn } from "../logger.js";
-import { normalizeAgentId } from "../routing/session-key.js";
+import { isAcpSessionKey, normalizeAgentId } from "../routing/session-key.js";
 import {
   parseRawSessionConversationRef,
   parseThreadSessionSuffix,
@@ -162,10 +162,13 @@ export function resolveInheritedToolPolicyForSession(
     store?: SessionCapabilityStore;
   },
 ): SandboxToolPolicy | undefined {
-  const inheritedToolAllow = resolveStoredSubagentInheritedToolAllowlist(sessionKey, {
-    cfg,
-    store: opts?.store,
-  });
+  const inheritedToolAllow =
+    typeof sessionKey === "string" && isAcpSessionKey(sessionKey)
+      ? resolveStoredSubagentInheritedToolAllowlist(sessionKey, {
+          cfg,
+          store: opts?.store,
+        })
+      : [];
   const inheritedToolDeny = resolveStoredSubagentInheritedToolDenylist(sessionKey, {
     cfg,
     store: opts?.store,

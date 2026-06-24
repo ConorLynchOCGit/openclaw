@@ -57,6 +57,11 @@ export type AgentExecutionPlan = {
   };
   workspace?: string;
   contextMode?: "full" | "lightweight";
+  toolPolicyRef?: {
+    source: "target_agent_config";
+    agentId: string;
+  };
+  securityDenyRefs?: string[];
   admission: RunAdmissionDecision;
   /**
    * Compatibility projection from admission.model.primaryIdentityKey.
@@ -107,6 +112,7 @@ export type AgentAttemptRecord = {
   transportSnapshot?: ModelIdentityTransportSnapshot;
   harness: string;
   contextMode?: "full" | "lightweight";
+  actualToolNames?: string[];
   status: "running" | "succeeded" | "failed" | "timed_out" | "cancelled";
   fallback: {
     used: boolean;
@@ -393,6 +399,15 @@ export function resolveExecutionPlan(params: {
     source,
     ...(targetAgentId ? { workspace: resolveAgentWorkspaceDir(params.cfg, targetAgentId) } : {}),
     ...(contextMode ? { contextMode } : {}),
+    ...(targetAgentId
+      ? {
+          toolPolicyRef: {
+            source: "target_agent_config" as const,
+            agentId: targetAgentId,
+          },
+          securityDenyRefs: ["parent_channel_security"],
+        }
+      : {}),
     admission,
     model: {
       provider: primaryTransport.provider,

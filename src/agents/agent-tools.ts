@@ -98,10 +98,8 @@ import {
   collectExplicitAllowlist,
   collectExplicitDenylist,
   expandToolGroups,
-  hasRestrictiveAllowPolicy,
   mergeAlsoAllowPolicy,
   normalizeToolName,
-  replaceWithEffectiveToolAllowlist,
   resolveToolProfilePolicy,
 } from "./tool-policy.js";
 import {
@@ -530,14 +528,6 @@ export function createOpenClawCodingTools(options?: {
   toolSearchCatalogRef?: ToolSearchCatalogRef;
   /** Limits which tool families are materialized before the shared policy pipeline runs. */
   toolConstructionPlan?: OpenClawCodingToolConstructionPlan;
-  /**
-   * Mutable run-local projection of the final effective tool surface for
-   * child-session inheritance. The embedded runner updates this again after
-   * late bundled MCP/LSP and tool-search projection, so sessions_spawn reads
-   * the same effective surface the provider sees instead of an early core-tool
-   * snapshot.
-   */
-  effectiveToolAllowlistRef?: string[];
   /** Trusted sender identity bit for command/channel-action auth; does not filter model tools. */
   senderIsOwner?: boolean;
   /** Auth profiles already loaded for this run; used for prompt-time tool availability. */
@@ -921,23 +911,10 @@ export function createOpenClawCodingTools(options?: {
     inheritedToolPolicy,
   ]);
   const inheritedToolDenylist = [...pluginToolDenylist];
-  // Passed by reference to sessions_spawn and populated after the final policy
-  // pass so child sessions inherit the actual parent tool surface.
-  const inheritedToolAllowlist = options?.effectiveToolAllowlistRef ?? [];
-  const shouldInheritEffectiveToolAllowlist = [
-    profilePolicy,
-    providerProfilePolicy,
-    globalPolicy,
-    globalProviderPolicy,
-    agentPolicy,
-    agentProviderPolicy,
-    groupPolicy,
-    senderPolicy,
-    sandboxToolPolicy,
-    subagentPolicy,
-    inheritedToolPolicy,
-    options?.runtimeToolAllowlist ? { allow: options.runtimeToolAllowlist } : undefined,
-  ].some(hasRestrictiveAllowPolicy);
+  // Fresh native subagents resolve positive capability from the target agent
+  // config. Parent/channel security still flows downward through deny policy,
+  // but parent allowlists must not narrow child tools.
+  const inheritedToolAllowlist: string[] = [];
   const pluginToolsOnly =
     includeOpenClawTools || !includePluginTools
       ? []
@@ -1160,9 +1137,6 @@ export function createOpenClawCodingTools(options?: {
     ],
     auditLogLevel: options?.toolPolicyAuditLogLevel,
   });
-  if (shouldInheritEffectiveToolAllowlist) {
-    replaceWithEffectiveToolAllowlist(inheritedToolAllowlist, subagentFiltered);
-  }
   options?.recordToolPrepStage?.("authorization-policy");
   // Always normalize tool JSON Schemas before handing them to OpenClaw model runtime.
   // Without this, some providers (notably OpenAI) will reject root-level union schemas.

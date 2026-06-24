@@ -183,6 +183,7 @@ const makeAttempt = (overrides: Partial<EmbeddedRunAttemptResult>): EmbeddedRunA
     messagesSnapshot: [],
     assistantTexts: [],
     toolMetas,
+    actualToolNames: [],
     lastAssistant: undefined,
     replayMetadata:
       overrides.replayMetadata ??

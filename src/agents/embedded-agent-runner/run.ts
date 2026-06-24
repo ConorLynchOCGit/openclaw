@@ -3069,6 +3069,7 @@ export async function runEmbeddedAgent(
             model: reportedModelRef.model,
             contextTokens: ctxInfo.tokens,
             agentHarnessId: attempt.agentHarnessId,
+            actualToolNames: attempt.actualToolNames,
             usage: usageMeta.usage,
             lastCallUsage: usageMeta.lastCallUsage,
             promptTokens: usageMeta.promptTokens,

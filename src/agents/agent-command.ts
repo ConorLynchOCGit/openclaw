@@ -1926,6 +1926,9 @@ async function agentCommandInternal(
         ...((plan?.contextMode ?? opts.bootstrapContextMode)
           ? { contextMode: plan?.contextMode ?? opts.bootstrapContextMode }
           : {}),
+        ...(result?.meta.agentMeta?.actualToolNames
+          ? { actualToolNames: result.meta.agentMeta.actualToolNames }
+          : {}),
         status: params.status,
         fallback: {
           used: fallbackUsed,

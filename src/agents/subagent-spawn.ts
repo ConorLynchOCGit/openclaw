@@ -39,12 +39,7 @@ import { resolveUserPath } from "../utils.js";
 import type { DeliveryContext } from "../utils/delivery-context.types.js";
 import { listAgentIds, resolveAgentDir } from "./agent-scope-config.js";
 import type { BootstrapContextMode } from "./bootstrap-files.js";
-import {
-  inheritedToolAllowPatch,
-  inheritedToolDenyPatch,
-  normalizeInheritedToolAllowlist,
-  normalizeInheritedToolDenylist,
-} from "./inherited-tool-deny.js";
+import { inheritedToolDenyPatch, normalizeInheritedToolDenylist } from "./inherited-tool-deny.js";
 import {
   normalizeStoredOverrideModel,
   resolveDefaultModelForAgent,
@@ -204,7 +199,6 @@ export type SpawnSubagentContext = {
   requesterAgentIdOverride?: string;
   /** Explicit workspace directory for subagent to inherit (optional). */
   workspaceDir?: string;
-  inheritedToolAllowlist?: string[];
   inheritedToolDenylist?: string[];
 };
 
@@ -334,10 +328,6 @@ function buildDirectChildSessionPatch(patch: Record<string, unknown>): Partial<S
   const inheritedToolDeny = normalizeInheritedToolDenylist(patch.inheritedToolDeny);
   if (inheritedToolDeny.length > 0) {
     entry.inheritedToolDeny = inheritedToolDeny;
-  }
-  const inheritedToolAllow = normalizeInheritedToolAllowlist(patch.inheritedToolAllow);
-  if (inheritedToolAllow.length > 0) {
-    entry.inheritedToolAllow = inheritedToolAllow;
   }
   if (typeof patch.thinkingLevel === "string" && patch.thinkingLevel.trim()) {
     entry.thinkingLevel = patch.thinkingLevel.trim();
@@ -1334,7 +1324,6 @@ export async function spawnSubagentDirect(
     spawnDepth: childDepth,
     subagentRole: childCapabilities.role === "main" ? null : childCapabilities.role,
     subagentControlScope: childCapabilities.controlScope,
-    ...inheritedToolAllowPatch(ctx.inheritedToolAllowlist),
     ...inheritedToolDenyPatch(ctx.inheritedToolDenylist),
     ...plan.initialSessionPatch,
   };

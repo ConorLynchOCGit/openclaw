@@ -492,7 +492,7 @@ describe("subagent announce timeout config", () => {
       { role: "toolResult", content: [{ type: "text", text: "stale tool output" }] },
     ];
 
-    await runAnnounceFlowForTest("run-terminal-error-no-stale-output", {
+    await runAnnounceFlowForTest("run-terminal-error-no-cached-output", {
       outcome: { status: "error", error: "All models failed (2): timeout" },
       roundOneReply: "stale frozen output",
       fallbackReply: "older fallback output",

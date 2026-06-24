@@ -56,6 +56,7 @@ export function makeAttemptResult(
     assistantTexts: ["Hello!"],
     toolMetas,
     acceptedSessionSpawns,
+    actualToolNames: [],
     lastAssistant: undefined,
     messagesSnapshot: [],
     replayMetadata:

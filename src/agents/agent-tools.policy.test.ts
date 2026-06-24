@@ -412,7 +412,7 @@ describe("resolveSubagentToolPolicy depth awareness", () => {
     expect(isToolAllowedByPolicyName("sessions_spawn", policy)).toBe(true);
   });
 
-  it("resolves inherited tool allows from stored subagent sessions", () => {
+  it("ignores inherited positive tool allows from stored native subagent sessions", () => {
     const storePath = path.join(
       os.tmpdir(),
       `openclaw-subagent-inherited-allow-${Date.now()}-${Math.random().toString(16).slice(2)}.json`,
@@ -444,10 +444,7 @@ describe("resolveSubagentToolPolicy depth awareness", () => {
     } as unknown as OpenClawConfig;
 
     const policy = resolveInheritedToolPolicyForSession(cfg, "agent:main:subagent:limited");
-    expect(isToolAllowedByPolicyName("sessions_spawn", policy)).toBe(true);
-    expect(isToolAllowedByPolicyName("memory_search", policy)).toBe(true);
-    expect(isToolAllowedByPolicyName("read", policy)).toBe(false);
-    expect(isToolAllowedByPolicyName("exec", policy)).toBe(false);
+    expect(policy).toBeUndefined();
   });
 
   it("keeps configured plugin allows separate from inherited tool allows", () => {
@@ -496,7 +493,7 @@ describe("resolveSubagentToolPolicy depth awareness", () => {
       "agent:main:subagent:limited",
     );
     expect(subagentPolicy.allow).toEqual(["plugin-id"]);
-    expect(inheritedPolicy?.allow).toEqual(["plugin_tool"]);
+    expect(inheritedPolicy).toBeUndefined();
   });
 
   it("applies inherited tool policy from stored ACP sessions without subagent metadata", () => {

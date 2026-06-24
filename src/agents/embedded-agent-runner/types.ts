@@ -23,6 +23,7 @@ export type EmbeddedAgentMeta = {
   model: string;
   contextTokens?: number;
   agentHarnessId?: string;
+  actualToolNames?: string[];
   fallbackAttempts?: FallbackAttempt[];
   cliSessionBinding?: CliSessionBinding;
   clearCliSessionBinding?: boolean;

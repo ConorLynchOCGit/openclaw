@@ -207,7 +207,6 @@ import {
   buildEmptyExplicitToolAllowlistError,
   collectExplicitToolAllowlistSources,
 } from "../../tool-allowlist-guard.js";
-import { replaceWithEffectiveToolAllowlist } from "../../tool-policy.js";
 import { filterRuntimeCompatibleTools } from "../../tool-schema-projection.js";
 import { logRuntimeToolSchemaQuarantine } from "../../tool-schema-quarantine.js";
 import {
@@ -1205,7 +1204,6 @@ export async function runEmbeddedAttempt(
       toolConstructionPlan.constructTools ||
       toolSearchControlsEnabledForRun ||
       codeModeControlsEnabledForRun;
-    const effectiveToolAllowlistRef: string[] = [];
     let toolSearchCatalogExecutor: ToolSearchCatalogToolExecutor | undefined;
     toolSearchCatalogRef =
       toolSearchControlsEnabledForRun || codeModeControlsEnabledForRun
@@ -1250,7 +1248,6 @@ export async function runEmbeddedAttempt(
             sessionId: params.sessionId,
             runId: params.runId,
             toolSearchCatalogRef,
-            effectiveToolAllowlistRef,
             agentDir,
             cwd: effectiveCwd,
             workspaceDir: effectiveWorkspace,
@@ -1672,7 +1669,6 @@ export async function runEmbeddedAttempt(
       sessionId: params.sessionId,
     });
     effectiveTools = [...toolSearchSchemaProjection.tools];
-    replaceWithEffectiveToolAllowlist(effectiveToolAllowlistRef, effectiveTools);
     if (toolSearch.compacted && !toolSearch.catalogReused) {
       prepStages.mark(codeModeControlsEnabledForRun ? "code-mode" : "tool-search");
       log.info(
@@ -5267,6 +5263,7 @@ export async function runEmbeddedAttempt(
         assistantTexts,
         lastAssistantTextMessageIndex: getLastAssistantTextMessageIndex(),
         toolMetas: toolMetasNormalized,
+        actualToolNames: effectiveTools.map((tool) => tool.name),
         acceptedSessionSpawns,
         lastAssistant,
         currentAttemptAssistant,
