@@ -1170,6 +1170,35 @@ describe("createOpenClawCodingTools", () => {
     expect(toolNameList(tools)).toContain("skill_workshop");
   });
 
+  it("keeps read-only discovery tools available under the coding profile", () => {
+    const tools = createOpenClawCodingTools({
+      config: { tools: { profile: "coding" } },
+    });
+
+    expect(toolNameList(tools)).toEqual(expect.arrayContaining(["read", "grep", "find", "ls"]));
+  });
+
+  it("lets agent allowlists retain read-only discovery tools under the coding profile", () => {
+    const tools = createOpenClawCodingTools({
+      sessionKey: "agent:codebase-researcher:main",
+      config: {
+        tools: { profile: "coding" },
+        agents: {
+          list: [
+            {
+              id: "codebase-researcher",
+              tools: { allow: ["read", "grep", "find", "ls", "sessions_yield"] },
+            },
+          ],
+        },
+      } as OpenClawConfig,
+    });
+
+    expect(toolNameList(tools)).toEqual(
+      expect.arrayContaining(["read", "grep", "find", "ls", "sessions_yield"]),
+    );
+  });
+
   it("can keep message available when a cron route needs it under a provider coding profile", () => {
     const providerProfileTools = createOpenClawCodingTools({
       config: { tools: { byProvider: { openai: { profile: "coding" } } } },
@@ -1193,6 +1222,9 @@ describe("createOpenClawCodingTools", () => {
     });
     const names = new Set(tools.map((tool) => tool.name));
     expect(names.has("read")).toBe(true);
+    expect(names.has("grep")).toBe(true);
+    expect(names.has("find")).toBe(true);
+    expect(names.has("ls")).toBe(true);
     expect(names.has("write")).toBe(true);
     expect(names.has("edit")).toBe(true);
     expect(names.has("exec")).toBe(false);

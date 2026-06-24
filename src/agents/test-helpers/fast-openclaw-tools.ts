@@ -41,6 +41,7 @@ const coreTools = [
   stubActionTool("sessions_history", ["read", "tail"]),
   stubActionTool("sessions_send", ["send", "reply"]),
   stubActionTool("sessions_spawn", ["spawn", "handoff"]),
+  stubTool("sessions_yield"),
   stubActionTool("subagents", ["list", "show"]),
   stubActionTool("session_status", ["get", "show"]),
   stubTool("skill_workshop"),
