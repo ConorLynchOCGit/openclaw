@@ -853,11 +853,17 @@ export function createOAuthManager(adapter: OAuthManagerAdapter) {
         profileId: params.profileId,
         credential: effectiveCredential,
       });
+      const fallbackIdentityOk =
+        fallback &&
+        (hasMatchingOAuthIdentity(params.credential, fallback) ||
+          (runtimeExternalCredential
+            ? isSafeToAdoptBootstrapOAuthIdentity(runtimeExternalCredential, fallback)
+            : false));
       if (
         fallback &&
         fallback.provider === params.credential.provider &&
         hasUsableOAuthCredential(fallback) &&
-        hasMatchingOAuthIdentity(params.credential, fallback) &&
+        fallbackIdentityOk &&
         canReuseOAuthCredentialAfterRefreshFailure({
           forceRefresh: params.forceRefresh,
           attempted: effectiveCredential,

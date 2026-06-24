@@ -984,6 +984,55 @@ describe("resolveApiKeyForProfile openai refresh fallback", () => {
     });
   });
 
+  it("recovers a runtime-only external OpenAI profile from a reused refresh token via the external owner", async () => {
+    const profileId = "openai:default";
+    externalAuthTesting.setResolveExternalAuthProfilesForTest(() => [
+      {
+        profileId,
+        persistence: "runtime-only",
+        credential: {
+          type: "oauth",
+          provider: "openai",
+          access: "runtime-expired-access-token",
+          refresh: "runtime-reused-refresh-token",
+          expires: Date.now() - 60_000,
+        },
+      },
+    ]);
+    readCodexCliCredentialsCachedMock.mockReturnValue({
+      type: "oauth",
+      provider: "openai",
+      access: "runtime-owner-fresh-access-token",
+      refresh: "runtime-owner-fresh-refresh-token",
+      expires: Date.now() + 86_400_000,
+      accountId: "acct-runtime-owner",
+    });
+    refreshProviderOAuthCredentialWithPluginMock.mockImplementationOnce(async () => {
+      throw new Error(
+        '401 {"error":{"message":"Your refresh token has already been used to generate a new access token.","code":"refresh_token_reused"}}',
+      );
+    });
+
+    const store = ensureAuthProfileStore(agentDir);
+    expect(store.runtimeExternalProfileIds).toContain(profileId);
+    expect(await readPersistedStore(agentDir)).toEqual({ version: 1, profiles: {} });
+
+    await expect(
+      resolveApiKeyForProfile({
+        store,
+        profileId,
+        agentDir,
+      }),
+    ).resolves.toEqual({
+      apiKey: "runtime-owner-fresh-access-token",
+      provider: "openai",
+      email: undefined,
+    });
+
+    const persisted = await readPersistedStore(agentDir);
+    expect(persisted).toEqual({ version: 1, profiles: {} });
+  });
+
   it("keeps throwing for non-codex providers on the same refresh error", async () => {
     const profileId = "anthropic:default";
     saveAuthProfileStore(
