@@ -92,12 +92,12 @@ describe("task tool", () => {
       runId: "run-child",
       agentId: "codebase-researcher",
       taskName: "codebase_scan",
-      resultPreview: "Context Pack\n\nP1...",
       resultChars: "Context Pack\n\nP1...".length,
       resultTruncated: false,
       resolvedProvider: "openrouter",
       resolvedModel: "anthropic/claude-haiku-4.5",
     });
+    expect(result.details).not.toHaveProperty("resultPreview");
     expect(JSON.stringify(result.details)).not.toContain('"result":"Context Pack');
     expect(result.content[0]?.type).toBe("text");
     expect(result.content[0]?.text).toContain("<task_result>");
@@ -119,8 +119,8 @@ describe("task tool", () => {
     expect(result.details).toMatchObject({
       status: "ok",
       agentId: "reviewer",
-      resultPreview: "Context Pack\n\nP1...",
     });
+    expect(result.details).not.toHaveProperty("resultPreview");
   });
 
   it("does not duplicate long child output in both model text and details", async () => {
@@ -140,6 +140,8 @@ describe("task tool", () => {
     expect(result.content[0]?.text).toContain(longPacket.trim());
     expect(serializedDetails.length).toBeLessThan(longPacket.length);
     expect(serializedDetails).not.toContain("plan-shaping evidence ".repeat(100));
+    expect(serializedDetails).not.toContain("preview truncated");
+    expect(result.details).not.toHaveProperty("resultPreview");
     expect(result.details).toMatchObject({
       resultChars: longPacket.trim().length,
       resultTruncated: false,

@@ -18,7 +18,6 @@ import { jsonResult, readStringParam, textResult } from "./common.js";
 
 const TASK_WAIT_POLL_MS = 60_000;
 const TASK_CHILD_REPLY_MAX_CHARS = 28_000;
-const TASK_RESULT_PREVIEW_CHARS = 1_000;
 
 const TaskToolSchema = Type.Object({
   agentId: Type.String({
@@ -67,14 +66,6 @@ function formatTaskResult(params: {
     "  </task_result>",
     "</task>",
   ].join("\n");
-}
-
-function previewText(value: string): string {
-  const trimmed = value.trim();
-  if (trimmed.length <= TASK_RESULT_PREVIEW_CHARS) {
-    return trimmed;
-  }
-  return `${trimmed.slice(0, TASK_RESULT_PREVIEW_CHARS).trimEnd()}\n...(preview truncated)...`;
 }
 
 async function waitForForegroundTaskResult(params: {
@@ -263,7 +254,6 @@ export function createTaskTool(
         runId: spawn.runId,
         agentId,
         taskName,
-        resultPreview: previewText(wait.replyText),
         resultChars: wait.replyText.trim().length,
         resultTruncated: wait.replyText.includes("...(truncated)..."),
         resolvedModel: spawn.resolvedModel,
