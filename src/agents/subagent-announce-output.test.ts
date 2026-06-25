@@ -224,6 +224,54 @@ describe("readSubagentOutput", () => {
     expect(deps.callGateway).not.toHaveBeenCalled();
   });
 
+  it("resolves the child private transcript before truncated gateway history", async () => {
+    const fullContextPack = `${"# Context Pack\n\n".repeat(1)}${"full finding ".repeat(1_200).trim()}`;
+    const deps = installOutputDeps({
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: `${fullContextPack.slice(0, 8_000)}\n...(truncated)...` },
+          ],
+        },
+      ],
+      transcriptMessages: [
+        {
+          role: "assistant",
+          stopReason: "stop",
+          content: [{ type: "text", text: fullContextPack }],
+        },
+      ],
+    });
+    testing.setDepsForTest({
+      callGateway: deps.callGateway as unknown as CallGateway,
+      readSessionMessagesAsync:
+        deps.readSessionMessagesAsync as unknown as ReadSessionMessagesAsync,
+      getRuntimeConfig: (() => ({
+        session: { store: "/tmp/openclaw/{agentId}/sessions.json" },
+      })) as GetRuntimeConfig,
+      resolveAgentIdFromSessionKey: (() => "codebase-researcher") as ResolveAgentIdFromSessionKey,
+      resolveStorePath: (() =>
+        "/tmp/openclaw/codebase-researcher/sessions.json") as ResolveStorePath,
+      readSessionEntry: (() => ({
+        sessionId: "child-session-id",
+        sessionFile: "child-session-id.jsonl",
+        updatedAt: 1,
+      })) as ReadSessionEntry,
+    });
+
+    await expect(readSubagentOutput("agent:codebase-researcher:subagent:child")).resolves.toBe(
+      fullContextPack,
+    );
+    expect(deps.readSessionMessagesAsync).toHaveBeenCalledWith(
+      "child-session-id",
+      "/tmp/openclaw/codebase-researcher/sessions.json",
+      "child-session-id.jsonl",
+      { mode: "recent", maxMessages: 100, maxBytes: 1024 * 1024 },
+    );
+    expect(deps.callGateway).not.toHaveBeenCalled();
+  });
+
   it("does not read visible gateway history when a private transcript is empty", async () => {
     const deps = installOutputDeps({
       messages: [

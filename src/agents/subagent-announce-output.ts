@@ -199,25 +199,63 @@ function selectSubagentOutputText(snapshot: SubagentOutputSnapshot): string | un
   return undefined;
 }
 
-export async function readSubagentOutput(
+async function readResolvedSubagentTranscriptMessages(
   sessionKey: string,
-  _outcome?: SubagentRunOutcome,
   options?: { sessionFile?: string },
-): Promise<string | undefined> {
-  let messages: unknown[] | undefined;
-  if (options?.sessionFile) {
-    const transcriptMessages = await subagentAnnounceOutputDeps.readSessionMessagesAsync(
+): Promise<unknown[] | undefined> {
+  const explicitSessionFile = options?.sessionFile?.trim();
+  if (explicitSessionFile) {
+    return await subagentAnnounceOutputDeps.readSessionMessagesAsync(
       sessionKey,
       undefined,
-      options.sessionFile,
+      explicitSessionFile,
       {
         mode: "recent",
         maxMessages: 100,
         maxBytes: 1024 * 1024,
       },
     );
-    messages = transcriptMessages;
   }
+
+  let agentId: string;
+  let storePath: string;
+  try {
+    const cfg = subagentAnnounceOutputDeps.getRuntimeConfig();
+    agentId = subagentAnnounceOutputDeps.resolveAgentIdFromSessionKey(sessionKey);
+    storePath = subagentAnnounceOutputDeps.resolveStorePath(cfg.session?.store, { agentId });
+  } catch {
+    return undefined;
+  }
+
+  let entry: ReturnType<SubagentAnnounceOutputDeps["readSessionEntry"]>;
+  try {
+    entry = subagentAnnounceOutputDeps.readSessionEntry(storePath, sessionKey);
+  } catch {
+    return undefined;
+  }
+  const sessionId = typeof entry?.sessionId === "string" ? entry.sessionId.trim() : "";
+  if (!sessionId) {
+    return undefined;
+  }
+
+  return await subagentAnnounceOutputDeps.readSessionMessagesAsync(
+    sessionId,
+    storePath,
+    typeof entry?.sessionFile === "string" ? entry.sessionFile : undefined,
+    {
+      mode: "recent",
+      maxMessages: 100,
+      maxBytes: 1024 * 1024,
+    },
+  );
+}
+
+export async function readSubagentOutput(
+  sessionKey: string,
+  _outcome?: SubagentRunOutcome,
+  options?: { sessionFile?: string },
+): Promise<string | undefined> {
+  const messages = await readResolvedSubagentTranscriptMessages(sessionKey, options);
   const history =
     messages === undefined
       ? await subagentAnnounceOutputDeps.callGateway({
