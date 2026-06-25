@@ -204,6 +204,32 @@ describe("tasks gateway handlers", () => {
     expect(JSON.stringify(payload?.task)).not.toContain("Child found three concrete routing gaps.");
   });
 
+  it("keeps long subagent Context Pack progress visible in task readback", async () => {
+    const longContextPack = Array.from({ length: 2_100 }, (_, index) => `finding-${index}`).join(
+      " ",
+    );
+    const task = createTaskRecord({
+      runtime: "subagent",
+      taskKind: "research-child",
+      requesterSessionKey: "agent:planning:main",
+      ownerKey: "agent:planning:main",
+      scopeKind: "session",
+      childSessionKey: "agent:codebase-researcher:subagent:child-context-pack",
+      agentId: "codebase-researcher",
+      runId: "run-child-long-context-pack",
+      task: "Inspect codebase and return Context Pack",
+      status: "succeeded",
+      deliveryStatus: "not_applicable",
+      progressSummary: longContextPack,
+    });
+
+    const { payload } = await getTaskPayload(task.taskId);
+
+    expect(payload?.task?.progressSummary).toBe(longContextPack);
+    expect(String(payload?.task?.progressSummary)).toContain("finding-2099");
+    expect(String(payload?.task?.progressSummary)).not.toContain("…");
+  });
+
   it("does not project descendant child-run state into parent task summaries", async () => {
     addSubagentRunForTests({
       runId: "run-child-a",

@@ -24,6 +24,10 @@ import type { GatewayRequestHandlers } from "./types.js";
 
 const DEFAULT_TASKS_LIST_LIMIT = 100;
 const MAX_TASKS_LIST_LIMIT = 500;
+// Subagent completions use progressSummary as a requester-facing Context Pack
+// pointer/readback surface. Keep ordinary task status compact, but allow child
+// task readback to carry more than a 2,000-word scout packet.
+const SUBAGENT_PROGRESS_READBACK_MAX_CHARS = 32_000;
 
 type TaskLedgerStatus = TaskSummary["status"];
 
@@ -56,17 +60,22 @@ function taskUpdatedAt(task: TaskRecord): number {
 // public task shape bounded before it reaches control-plane clients.
 function sanitizeOptionalTaskText(
   value: unknown,
-  opts?: { errorContext?: boolean },
+  opts?: { errorContext?: boolean; maxChars?: number },
 ): string | undefined {
   const sanitized = sanitizeTaskStatusText(value, {
     errorContext: opts?.errorContext,
-    maxChars: TASK_STATUS_DETAIL_MAX_CHARS,
+    maxChars: opts?.maxChars ?? TASK_STATUS_DETAIL_MAX_CHARS,
   });
   return sanitized || undefined;
 }
 
 function mapTaskSummary(task: TaskRecord): TaskSummary {
-  const progressSummary = sanitizeOptionalTaskText(task.progressSummary);
+  const progressSummary = sanitizeOptionalTaskText(task.progressSummary, {
+    maxChars:
+      task.runtime === "subagent"
+        ? SUBAGENT_PROGRESS_READBACK_MAX_CHARS
+        : TASK_STATUS_DETAIL_MAX_CHARS,
+  });
   const terminalSummary = sanitizeOptionalTaskText(task.terminalSummary, { errorContext: true });
   const error = sanitizeOptionalTaskText(task.error, { errorContext: true });
   return {
