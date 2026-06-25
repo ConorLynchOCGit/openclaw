@@ -2617,6 +2617,32 @@ describe("runEmbeddedAttempt tool-result guard budget wiring", () => {
     ).toBe(1_000_000);
   });
 
+  it("uses the model contextWindow for the persistence guard when contextTokenBudget is missing", async () => {
+    await createContextEngineAttemptRunner({
+      contextEngine: createContextEngineBootstrapAndAssemble(),
+      sessionKey,
+      tempPaths,
+      attemptOverrides: {
+        contextTokenBudget: undefined,
+        model: {
+          api: "openai-completions",
+          provider: "openai",
+          compat: {},
+          contextWindow: 200_000,
+          maxTokens: 8_192,
+          input: ["text"],
+        } as never,
+      },
+    });
+
+    expect(
+      requireRecord(
+        mockArg(hoisted.guardSessionManagerMock, 0, 1, "session guard params"),
+        "session guard params",
+      ).contextWindowTokens,
+    ).toBe(200_000);
+  });
+
   it("bounds aggregate tool-result prompt history without rewriting append results", async () => {
     const toolText = "process output ".repeat(70);
     const sessionMessages: AgentMessage[] = [{ role: "user", content: "seed", timestamp: 1 }];

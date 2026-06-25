@@ -228,4 +228,43 @@ describe("guardSessionManager integration", () => {
     expect(serialized).toContain('"text":"peter@d***.io\\n"');
     expect(serialized).toContain('"/tmp/peter@d***.io"');
   });
+
+  it("uses per-agent context limit caps for persisted live tool results", () => {
+    const cfg = {
+      agents: {
+        list: [
+          {
+            id: "planning",
+            contextLimits: {
+              toolResultMaxChars: 32_000,
+            },
+          },
+        ],
+      },
+    } satisfies OpenClawConfig;
+    const sm = guardSessionManager(SessionManager.inMemory(), {
+      agentId: "planning",
+      config: cfg,
+      contextWindowTokens: 128_000,
+    });
+    const appendMessage = sm.appendMessage.bind(sm) as unknown as (message: AgentMessage) => void;
+
+    appendMessage(assistantToolCall("call_1"));
+    appendMessage({
+      role: "toolResult",
+      toolCallId: "call_1",
+      toolName: "task",
+      content: [{ type: "text", text: "x".repeat(20_000) }],
+      isError: false,
+    } as AgentMessage);
+
+    const messages = sm
+      .getEntries()
+      .filter((e) => e.type === "message")
+      .map((e) => (e as { message: AgentMessage }).message);
+    const text = JSON.stringify(messages);
+
+    expect(text).toContain("x".repeat(20_000));
+    expect(text).not.toContain("truncated");
+  });
 });

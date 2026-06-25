@@ -2027,6 +2027,15 @@ export async function runEmbeddedAttempt(
         config: params.config,
         env: process.env,
       });
+      const sessionToolResultContextWindowTokens = Math.max(
+        1,
+        Math.floor(
+          params.contextTokenBudget ??
+            params.model.contextWindow ??
+            params.model.maxTokens ??
+            DEFAULT_CONTEXT_TOKENS,
+        ),
+      );
       const isOpenAIResponsesApi =
         params.model.api === "openai-responses" ||
         params.model.api === "azure-openai-responses" ||
@@ -2038,7 +2047,7 @@ export async function runEmbeddedAttempt(
         agentId: sessionAgentId,
         sessionKey: params.sessionKey,
         config: params.config,
-        contextWindowTokens: params.contextTokenBudget,
+        contextWindowTokens: sessionToolResultContextWindowTokens,
         inputProvenance: params.inputProvenance,
         preparedUserTurnMessage,
         allowSyntheticToolResults: transcriptPolicy.allowSyntheticToolResults,
@@ -3567,7 +3576,7 @@ export async function runEmbeddedAttempt(
           );
         };
         if (request.route === "truncate_tool_results_only") {
-          const contextTokenBudget = params.contextTokenBudget ?? DEFAULT_CONTEXT_TOKENS;
+          const contextTokenBudget = sessionToolResultContextWindowTokens;
           const toolResultMaxChars = resolveLiveToolResultMaxChars({
             contextWindowTokens: contextTokenBudget,
             cfg: params.config,
@@ -3882,7 +3891,7 @@ export async function runEmbeddedAttempt(
             activeSession.agent.state.messages = filteredMessages;
           }
           prePromptMessageCount = activeSession.messages.length;
-          const contextTokenBudget = params.contextTokenBudget ?? DEFAULT_CONTEXT_TOKENS;
+          const contextTokenBudget = sessionToolResultContextWindowTokens;
           const promptToolResultMaxChars = resolveLiveToolResultMaxChars({
             contextWindowTokens: contextTokenBudget,
             cfg: params.config,
