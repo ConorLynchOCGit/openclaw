@@ -134,6 +134,27 @@ describe("readLatestAssistantReply", () => {
     expect(result.fingerprint).toContain('"timestamp":42');
   });
 
+  it("passes explicit history maxChars through for long child readback", async () => {
+    callGatewayMock.mockResolvedValue({
+      messages: [{ role: "assistant", content: [{ type: "text", text: "long child packet" }] }],
+    });
+
+    const result = await readLatestAssistantReply({
+      sessionKey: "agent:codebase-researcher:subagent:child",
+      maxChars: 28_000,
+    });
+
+    expect(result).toBe("long child packet");
+    expect(callGatewayMock).toHaveBeenCalledWith({
+      method: "chat.history",
+      params: {
+        sessionKey: "agent:codebase-researcher:subagent:child",
+        limit: 50,
+        maxChars: 28_000,
+      },
+    });
+  });
+
   it("reads only final_answer text from phased assistant history", async () => {
     callGatewayMock.mockResolvedValue({
       messages: [

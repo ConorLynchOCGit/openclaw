@@ -821,7 +821,7 @@ describe("sessions tools", () => {
     expect(details.contentTruncated).toBe(true);
     expect(details.contentRedacted).toBe(false);
     expect(typeof details.bytes).toBe("number");
-    expect((details.bytes ?? 0) <= 80 * 1024).toBe(true);
+    expect((details.bytes ?? 0) <= 256 * 1024).toBe(true);
     expect(details.messages && details.messages.length > 0).toBe(true);
 
     const first = details.messages?.[0] as
@@ -841,7 +841,7 @@ describe("sessions tools", () => {
     expect(first?.usage).toBeUndefined();
     const textBlock = first?.content?.find((block) => block.type === "text");
     expect(typeof textBlock?.text).toBe("string");
-    expect((textBlock?.text ?? "").length <= 4015).toBe(true);
+    expect((textBlock?.text ?? "").length <= 32_015).toBe(true);
     const thinkingBlock = first?.content?.find((block) => block.type === "thinking");
     expect(thinkingBlock?.thinkingSignature).toBeUndefined();
     expect(thinkingBlock?.openclawReasoningReplay).toBeUndefined();
@@ -856,7 +856,7 @@ describe("sessions tools", () => {
             {
               role: "assistant",
               content: [{ type: "text", text: "ok" }],
-              extra: "x".repeat(200_000),
+              extra: "x".repeat(400_000),
             },
           ],
         };
@@ -886,7 +886,7 @@ describe("sessions tools", () => {
     expect(details.contentTruncated).toBe(false);
     expect(details.contentRedacted).toBe(false);
     expect(typeof details.bytes).toBe("number");
-    expect((details.bytes ?? 0) <= 80 * 1024).toBe(true);
+    expect((details.bytes ?? 0) <= 256 * 1024).toBe(true);
     expect(details.messages).toHaveLength(1);
     expect(details.messages?.[0]?.content).toContain(
       "[sessions_history omitted: message too large]",
@@ -935,7 +935,7 @@ describe("sessions tools", () => {
 
   it("sessions_history sets both contentRedacted and contentTruncated independently", async () => {
     callGatewayMock.mockReset();
-    const longPrefix = "safe text ".repeat(420);
+    const longPrefix = "safe text ".repeat(4_000);
     const sensitiveText = `${longPrefix} sk-9876543210fedcba9876 end`;
     callGatewayMock.mockImplementation(async (opts: unknown) => {
       const request = opts as { method?: string };
@@ -1007,6 +1007,7 @@ describe("sessions tools", () => {
     );
     const request = requireGatewayCall(historyCall?.[0], "chat.history");
     expect(request.params?.sessionKey).toBe(targetKey);
+    expect(request.params?.maxChars).toBe(32_000);
   });
 
   it("sessions_history errors on missing sessionId", async () => {

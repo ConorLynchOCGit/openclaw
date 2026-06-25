@@ -23,7 +23,7 @@ import { stripInlineDirectiveTagsForDisplay } from "../utils/directive-tags.js";
 import { stripEnvelopeFromMessages } from "./chat-sanitize.js";
 import { isSuppressedControlReplyText } from "./control-reply-text.js";
 
-export const DEFAULT_CHAT_HISTORY_TEXT_MAX_CHARS = 8_000;
+export const DEFAULT_CHAT_HISTORY_TEXT_MAX_CHARS = 32_000;
 
 type RoleContentMessage = {
   role: string;

@@ -84,6 +84,7 @@ describe("task tool", () => {
     });
     expect(hoisted.readLatestAssistantReplyMock).toHaveBeenCalledWith({
       sessionKey: "agent:codebase-researcher:subagent:child",
+      maxChars: 28_000,
     });
     expect(result.details).toMatchObject({
       status: "ok",
@@ -91,11 +92,16 @@ describe("task tool", () => {
       runId: "run-child",
       agentId: "codebase-researcher",
       taskName: "codebase_scan",
-      result: "Context Pack\n\nP1...",
+      resultPreview: "Context Pack\n\nP1...",
+      resultChars: "Context Pack\n\nP1...".length,
+      resultTruncated: false,
       resolvedProvider: "openrouter",
       resolvedModel: "anthropic/claude-haiku-4.5",
     });
-    expect(JSON.stringify(result.details)).toContain("<task_result>");
+    expect(JSON.stringify(result.details)).not.toContain('"result":"Context Pack');
+    expect(result.content[0]?.type).toBe("text");
+    expect(result.content[0]?.text).toContain("<task_result>");
+    expect(result.content[0]?.text).toContain("Context Pack\n\nP1...");
   });
 
   it("keeps waiting through agent.wait timeout without turning it into task failure", async () => {
@@ -113,7 +119,30 @@ describe("task tool", () => {
     expect(result.details).toMatchObject({
       status: "ok",
       agentId: "reviewer",
-      result: "Context Pack\n\nP1...",
+      resultPreview: "Context Pack\n\nP1...",
+    });
+  });
+
+  it("does not duplicate long child output in both model text and details", async () => {
+    const longPacket = `# Context Pack\n\n${"plan-shaping evidence ".repeat(1200)}`;
+    hoisted.readLatestAssistantReplyMock.mockResolvedValue(longPacket);
+
+    const result = await createTaskTool().execute("call-1", {
+      agentId: "codebase-researcher",
+      task: "Return a long Context Pack.",
+    });
+
+    const serializedDetails = JSON.stringify(result.details);
+    expect(hoisted.readLatestAssistantReplyMock).toHaveBeenCalledWith({
+      sessionKey: "agent:codebase-researcher:subagent:child",
+      maxChars: 28_000,
+    });
+    expect(result.content[0]?.text).toContain(longPacket.trim());
+    expect(serializedDetails.length).toBeLessThan(longPacket.length);
+    expect(serializedDetails).not.toContain("plan-shaping evidence ".repeat(100));
+    expect(result.details).toMatchObject({
+      resultChars: longPacket.trim().length,
+      resultTruncated: false,
     });
   });
 });

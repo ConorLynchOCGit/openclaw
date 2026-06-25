@@ -35,8 +35,8 @@ const SessionsHistoryToolSchema = Type.Object({
   includeTools: Type.Optional(Type.Boolean()),
 });
 
-const SESSIONS_HISTORY_MAX_BYTES = 80 * 1024;
-const SESSIONS_HISTORY_TEXT_MAX_CHARS = 4000;
+const SESSIONS_HISTORY_MAX_BYTES = 256 * 1024;
+const SESSIONS_HISTORY_TEXT_MAX_CHARS = 32_000;
 type GatewayCaller = typeof callGateway;
 
 // sandbox policy handling is shared with sessions-list-tool via sessions-helpers.ts
@@ -257,7 +257,7 @@ export function createSessionsHistoryTool(opts?: {
       const includeTools = Boolean(params.includeTools);
       const result = await gatewayCall<{ messages: Array<unknown> }>({
         method: "chat.history",
-        params: { sessionKey: resolvedKey, limit },
+        params: { sessionKey: resolvedKey, limit, maxChars: SESSIONS_HISTORY_TEXT_MAX_CHARS },
       });
       const rawMessages = Array.isArray(result?.messages) ? result.messages : [];
       const selectedMessages = includeTools ? rawMessages : stripToolMessages(rawMessages);

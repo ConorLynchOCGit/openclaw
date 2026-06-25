@@ -14,9 +14,11 @@ import type { SpawnedToolContext } from "../spawned-context.js";
 import { spawnSubagentDirect } from "../subagent-spawn.js";
 import { normalizeSubagentTaskName } from "../subagent-task-name.js";
 import type { AnyAgentTool } from "./common.js";
-import { jsonResult, readStringParam } from "./common.js";
+import { jsonResult, readStringParam, textResult } from "./common.js";
 
 const TASK_WAIT_POLL_MS = 60_000;
+const TASK_CHILD_REPLY_MAX_CHARS = 28_000;
+const TASK_RESULT_PREVIEW_CHARS = 1_000;
 
 const TaskToolSchema = Type.Object({
   agentId: Type.String({
@@ -67,6 +69,14 @@ function formatTaskResult(params: {
   ].join("\n");
 }
 
+function previewText(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length <= TASK_RESULT_PREVIEW_CHARS) {
+    return trimmed;
+  }
+  return `${trimmed.slice(0, TASK_RESULT_PREVIEW_CHARS).trimEnd()}\n...(preview truncated)...`;
+}
+
 async function waitForForegroundTaskResult(params: {
   runId: string;
   sessionKey: string;
@@ -82,6 +92,7 @@ async function waitForForegroundTaskResult(params: {
         status: "ok",
         replyText: await readLatestAssistantReply({
           sessionKey: params.sessionKey,
+          maxChars: TASK_CHILD_REPLY_MAX_CHARS,
         }),
       };
     }
@@ -246,14 +257,15 @@ export function createTaskTool(
         taskName,
         replyText: wait.replyText,
       });
-      return jsonResult({
+      return textResult(text, {
         status: "ok",
         childSessionKey: spawn.childSessionKey,
         runId: spawn.runId,
         agentId,
         taskName,
-        text,
-        result: wait.replyText.trim(),
+        resultPreview: previewText(wait.replyText),
+        resultChars: wait.replyText.trim().length,
+        resultTruncated: wait.replyText.includes("...(truncated)..."),
         resolvedModel: spawn.resolvedModel,
         resolvedProvider: spawn.resolvedProvider,
       });
