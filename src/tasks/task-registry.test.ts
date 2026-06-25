@@ -791,6 +791,91 @@ describe("task-registry", () => {
     });
   });
 
+  it("lets recovered foreground subagent tasks replace a stale failed projection", async () => {
+    await withTaskRegistryTempDir(async () => {
+      resetTaskRegistryMemoryForTest();
+
+      createTaskRecord({
+        runtime: "subagent",
+        ownerKey: "agent:planning:main",
+        scopeKind: "session",
+        childSessionKey: "agent:codebase-researcher:subagent:child",
+        runId: "run-foreground-recovered",
+        task: "Inspect source and return a Context Pack",
+        status: "running",
+        deliveryStatus: "not_applicable",
+        startedAt: 100,
+      });
+
+      markTaskTerminalByRunId({
+        runId: "run-foreground-recovered",
+        runtime: "subagent",
+        sessionKey: "agent:codebase-researcher:subagent:child",
+        status: "failed",
+        endedAt: 200,
+        error: "Context overflow: prompt too large for the model",
+      });
+      markTaskTerminalByRunId({
+        runId: "run-foreground-recovered",
+        runtime: "subagent",
+        sessionKey: "agent:codebase-researcher:subagent:child",
+        status: "succeeded",
+        endedAt: 300,
+        progressSummary: "Context Pack\n\nP1 recovered final answer",
+        terminalSummary: "completed",
+      });
+
+      expectRecordFields(requireTaskByRunId("run-foreground-recovered"), {
+        status: "succeeded",
+        endedAt: 300,
+        progressSummary: "Context Pack P1 recovered final answer",
+        terminalSummary: "completed",
+        error: undefined,
+      });
+    });
+  });
+
+  it("does not upgrade delivery-required subagent failures from late success", async () => {
+    await withTaskRegistryTempDir(async () => {
+      resetTaskRegistryMemoryForTest();
+
+      createTaskRecord({
+        runtime: "subagent",
+        ownerKey: "agent:planning:main",
+        scopeKind: "session",
+        childSessionKey: "agent:reviewer:subagent:child",
+        runId: "run-delivery-required-failed",
+        task: "Review draft and announce completion",
+        status: "running",
+        deliveryStatus: "pending",
+        startedAt: 100,
+      });
+
+      markTaskTerminalByRunId({
+        runId: "run-delivery-required-failed",
+        runtime: "subagent",
+        sessionKey: "agent:reviewer:subagent:child",
+        status: "failed",
+        endedAt: 200,
+        error: "completion agent did not produce a visible reply",
+      });
+      markTaskTerminalByRunId({
+        runId: "run-delivery-required-failed",
+        runtime: "subagent",
+        sessionKey: "agent:reviewer:subagent:child",
+        status: "succeeded",
+        endedAt: 300,
+        progressSummary: "late completion",
+      });
+
+      expectRecordFields(requireTaskByRunId("run-delivery-required-failed"), {
+        status: "failed",
+        endedAt: 200,
+        error: "completion agent did not produce a visible reply",
+      });
+    });
+  });
+
   it("lets delivery failure upgrade a lifecycle success", async () => {
     await withTaskRegistryTempDir(async () => {
       resetTaskRegistryMemoryForTest();

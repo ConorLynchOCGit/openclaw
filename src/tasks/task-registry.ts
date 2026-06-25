@@ -481,20 +481,35 @@ function normalizeTaskTerminalOutcome(
   return value === "succeeded" || value === "blocked" ? value : undefined;
 }
 
-function shouldApplyRunScopedStatusUpdate(params: {
-  currentStatus: TaskStatus;
+function isForegroundSubagentRecoverySuccess(params: {
+  task: Pick<TaskRecord, "runtime" | "deliveryStatus" | "status">;
   nextStatus: TaskStatus;
 }): boolean {
-  if (params.currentStatus === params.nextStatus) {
+  return (
+    params.task.runtime === "subagent" &&
+    params.task.deliveryStatus === "not_applicable" &&
+    params.task.status === "failed" &&
+    params.nextStatus === "succeeded"
+  );
+}
+
+function shouldApplyRunScopedStatusUpdate(params: {
+  task: Pick<TaskRecord, "runtime" | "deliveryStatus" | "status">;
+  nextStatus: TaskStatus;
+}): boolean {
+  if (params.task.status === params.nextStatus) {
     return true;
   }
-  if (!isTerminalTaskStatus(params.currentStatus)) {
+  if (!isTerminalTaskStatus(params.task.status)) {
     return true;
   }
   if (!isTerminalTaskStatus(params.nextStatus)) {
     return false;
   }
-  return params.currentStatus === "succeeded" && params.nextStatus !== "lost";
+  if (isForegroundSubagentRecoverySuccess(params)) {
+    return true;
+  }
+  return params.task.status === "succeeded" && params.nextStatus !== "lost";
 }
 
 function resolveTaskTerminalOutcome(params: {
@@ -1841,7 +1856,7 @@ function updateTaskStateByRunId(params: {
     if (
       params.status &&
       !shouldApplyRunScopedStatusUpdate({
-        currentStatus: current.status,
+        task: current,
         nextStatus,
       })
     ) {
@@ -1862,6 +1877,8 @@ function updateTaskStateByRunId(params: {
     }
     if (params.error !== undefined) {
       patch.error = params.error;
+    } else if (isForegroundSubagentRecoverySuccess({ task: current, nextStatus })) {
+      patch.error = undefined;
     }
     if (params.progressSummary !== undefined) {
       patch.progressSummary = normalizeTaskSummary(params.progressSummary);
