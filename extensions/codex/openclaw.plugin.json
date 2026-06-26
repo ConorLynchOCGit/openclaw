@@ -43,6 +43,20 @@
         "items": { "type": "string" },
         "default": []
       },
+      "codexDynamicToolTimeoutMs": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 600000
+      },
+      "codexDynamicToolTimeouts": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 600000
+        },
+        "default": {}
+      },
       "discovery": {
         "type": "object",
         "additionalProperties": false,
@@ -218,6 +232,16 @@
     "codexDynamicToolsExclude": {
       "label": "Dynamic Tool Excludes",
       "help": "Additional OpenClaw dynamic tool names to omit from Codex app-server turns.",
+      "advanced": true
+    },
+    "codexDynamicToolTimeoutMs": {
+      "label": "Dynamic Tool Default Timeout",
+      "help": "Default Codex app-server RPC watchdog for OpenClaw dynamic tools, in milliseconds. Per-tool overrides win.",
+      "advanced": true
+    },
+    "codexDynamicToolTimeouts": {
+      "label": "Dynamic Tool Timeout Overrides",
+      "help": "Per-tool Codex app-server RPC watchdog overrides, in milliseconds. Use for long native tools such as task without changing their runtime semantics.",
       "advanced": true
     },
     "discovery": {

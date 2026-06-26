@@ -11,6 +11,9 @@ import {
   type DiagnosticEventPayload,
 } from "openclaw/plugin-sdk/diagnostic-runtime";
 import { parseStrictNonNegativeInteger } from "openclaw/plugin-sdk/number-runtime";
+import { resolvePluginConfigObject } from "openclaw/plugin-sdk/plugin-config-runtime";
+import { CODEX_PROVIDER_ID } from "../../provider-catalog.js";
+import { readCodexPluginConfig } from "./config.js";
 import type { CodexDynamicToolBridge } from "./dynamic-tools.js";
 import {
   isJsonObject,
@@ -392,6 +395,22 @@ function readConfiguredDynamicToolTimeoutMs(
   toolName: string,
   config: EmbeddedRunAttemptParams["config"],
 ): number | undefined {
+  const codexPluginConfig = readCodexPluginConfig(
+    config ? resolvePluginConfigObject(config, CODEX_PROVIDER_ID) : undefined,
+  );
+  const configuredToolTimeoutMs = readPositiveFiniteTimeoutMs(
+    codexPluginConfig.codexDynamicToolTimeouts?.[toolName],
+  );
+  if (configuredToolTimeoutMs !== undefined) {
+    return configuredToolTimeoutMs;
+  }
+  const configuredDefaultTimeoutMs = readPositiveFiniteTimeoutMs(
+    codexPluginConfig.codexDynamicToolTimeoutMs,
+  );
+  if (configuredDefaultTimeoutMs !== undefined) {
+    return configuredDefaultTimeoutMs;
+  }
+
   if (toolName === "image_generate") {
     const imageGenerationModel = config?.agents?.defaults?.imageGenerationModel;
     if (!imageGenerationModel || typeof imageGenerationModel !== "object") {

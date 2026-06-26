@@ -163,6 +163,66 @@ describe("dynamic tool execution helpers", () => {
     ).toBe(CODEX_DYNAMIC_TOOL_MAX_TIMEOUT_MS);
   });
 
+  it("uses Codex plugin per-tool dynamic timeout overrides", () => {
+    expect(
+      resolveDynamicToolCallTimeoutMs({
+        call: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          callId: "call-task",
+          namespace: null,
+          tool: "task",
+          arguments: {
+            description: "context scout",
+            prompt: "Return a bounded Context Pack.",
+            subagent_type: "project_explorer",
+          },
+        },
+        config: {
+          plugins: {
+            entries: {
+              codex: {
+                enabled: true,
+                config: {
+                  codexDynamicToolTimeouts: {
+                    task: 600_000,
+                  },
+                },
+              },
+            },
+          },
+        },
+      }),
+    ).toBe(600_000);
+  });
+
+  it("uses Codex plugin default dynamic timeout when no per-tool override exists", () => {
+    expect(
+      resolveDynamicToolCallTimeoutMs({
+        call: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          callId: "call-session-status-configured",
+          namespace: null,
+          tool: "session_status",
+          arguments: { sessionKey: "current" },
+        },
+        config: {
+          plugins: {
+            entries: {
+              codex: {
+                enabled: true,
+                config: {
+                  codexDynamicToolTimeoutMs: 180_000,
+                },
+              },
+            },
+          },
+        },
+      }),
+    ).toBe(180_000);
+  });
+
   it("uses a 90 second default for generic Codex dynamic tool calls", () => {
     expect(
       resolveDynamicToolCallTimeoutMs({

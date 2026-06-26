@@ -458,7 +458,7 @@ Experimental built-in tool flags. Default off unless a strict-agentic GPT-5 auto
         allowAgents: ["research"],
         model: "minimax/MiniMax-M2.7",
         maxConcurrent: 8,
-        runTimeoutSeconds: 900,
+        runTimeoutSeconds: 0,
         announceTimeoutMs: 120000,
         archiveAfterMinutes: 60,
       },

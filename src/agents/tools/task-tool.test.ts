@@ -84,7 +84,7 @@ describe("task tool", () => {
     });
     expect(hoisted.readLatestAssistantReplyMock).toHaveBeenCalledWith({
       sessionKey: "agent:codebase-researcher:subagent:child",
-      maxChars: 28_000,
+      maxChars: 32_000,
     });
     expect(result.details).toMatchObject({
       status: "ok",
@@ -135,7 +135,7 @@ describe("task tool", () => {
     const serializedDetails = JSON.stringify(result.details);
     expect(hoisted.readLatestAssistantReplyMock).toHaveBeenCalledWith({
       sessionKey: "agent:codebase-researcher:subagent:child",
-      maxChars: 28_000,
+      maxChars: 32_000,
     });
     expect(result.content[0]?.text).toContain(longPacket.trim());
     expect(serializedDetails.length).toBeLessThan(longPacket.length);

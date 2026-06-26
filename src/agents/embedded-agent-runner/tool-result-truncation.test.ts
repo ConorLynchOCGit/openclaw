@@ -205,7 +205,7 @@ describe("calculateMaxToolResultChars", () => {
   });
 
   it("exports the low-context live cap constant", () => {
-    expect(DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS).toBe(16_000);
+    expect(DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS).toBe(32_000);
   });
 
   it("auto-scales above the low-context cap for very large windows", () => {
@@ -215,12 +215,12 @@ describe("calculateMaxToolResultChars", () => {
 
   it("uses a larger auto cap for 128K contexts", () => {
     const result = calculateMaxToolResultChars(128_000);
-    expect(result).toBe(32_000);
+    expect(result).toBe(64_000);
   });
 
   it("uses the largest auto cap for 200K contexts", () => {
-    expect(resolveAutoLiveToolResultMaxChars(200_000)).toBe(64_000);
-    expect(calculateMaxToolResultChars(200_000)).toBe(64_000);
+    expect(resolveAutoLiveToolResultMaxChars(200_000)).toBe(96_000);
+    expect(calculateMaxToolResultChars(200_000)).toBe(96_000);
   });
 
   it("supports a higher configured hard cap", () => {
@@ -278,7 +278,7 @@ describe("sessionLikelyHasOversizedToolResults", () => {
   });
 
   it("returns true for aggregate medium tool results that exceed the shared budget", () => {
-    const medium = "alpha beta gamma delta epsilon ".repeat(600);
+    const medium = "alpha beta gamma delta epsilon ".repeat(900);
     const messages: AgentMessage[] = [
       makeToolResult(medium, "call_1"),
       makeToolResult(medium, "call_2"),
@@ -304,7 +304,7 @@ describe("estimateToolResultReductionPotential", () => {
   });
 
   it("estimates reducible chars for aggregate medium tool-result tails", () => {
-    const medium = "alpha beta gamma delta epsilon ".repeat(400);
+    const medium = "alpha beta gamma delta epsilon ".repeat(800);
     const messages: AgentMessage[] = [
       makeToolResult(medium, "call_1"),
       makeToolResult(medium, "call_2"),
@@ -538,8 +538,8 @@ describe("truncateOversizedToolResultsInSession", () => {
     const sm = SessionManager.create(dir, dir);
     sm.appendMessage(makeUserMessage("hello"));
     sm.appendMessage(makeAssistantMessage("calling tools"));
-    const olderLarge = "older-large ".repeat(1_000);
-    const newerEnough = "newer-enough ".repeat(500);
+    const olderLarge = "older-large ".repeat(2_500);
+    const newerEnough = "newer-enough ".repeat(1_000);
     sm.appendMessage(makeToolResult(olderLarge, "call_1"));
     sm.appendMessage(makeToolResult(newerEnough, "call_2"));
     const sessionFile = sm.getSessionFile()!;

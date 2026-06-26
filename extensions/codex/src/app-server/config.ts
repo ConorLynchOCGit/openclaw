@@ -162,6 +162,8 @@ export type CodexModelBackedReviewerContext = {
 export type CodexPluginConfig = {
   codexDynamicToolsLoading?: CodexDynamicToolsLoading;
   codexDynamicToolsExclude?: string[];
+  codexDynamicToolTimeoutMs?: number;
+  codexDynamicToolTimeouts?: Record<string, number>;
   discovery?: {
     enabled?: boolean;
     timeoutMs?: number;
@@ -291,6 +293,8 @@ const codexPluginConfigSchema = z
   .object({
     codexDynamicToolsLoading: codexDynamicToolsLoadingSchema.optional(),
     codexDynamicToolsExclude: z.array(z.string()).optional(),
+    codexDynamicToolTimeoutMs: z.number().positive().optional(),
+    codexDynamicToolTimeouts: z.record(z.string(), z.number().positive()).optional(),
     discovery: z
       .object({
         enabled: z.boolean().optional(),

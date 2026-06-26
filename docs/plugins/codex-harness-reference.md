@@ -309,6 +309,8 @@ OpenClaw-owned dynamic tool calls are bounded independently from
 available timeout in this order:
 
 - A positive per-call `timeoutMs` argument.
+- `plugins.entries.codex.config.codexDynamicToolTimeouts[toolName]`.
+- `plugins.entries.codex.config.codexDynamicToolTimeoutMs`.
 - For `image_generate`, `agents.defaults.imageGenerationModel.timeoutMs`.
 - For `image_generate` without a configured timeout, the 120 second
   image-generation default.

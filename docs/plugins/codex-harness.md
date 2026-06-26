@@ -522,11 +522,13 @@ tool payload.
 
 Supported top-level Codex plugin fields:
 
-| Field                      | Default        | Meaning                                                                                  |
-| -------------------------- | -------------- | ---------------------------------------------------------------------------------------- |
-| `codexDynamicToolsLoading` | `"searchable"` | Use `"direct"` to put OpenClaw dynamic tools directly in the initial Codex tool context. |
-| `codexDynamicToolsExclude` | `[]`           | Additional OpenClaw dynamic tool names to omit from Codex app-server turns.              |
-| `codexPlugins`             | disabled       | Native Codex plugin/app support for migrated source-installed curated plugins.           |
+| Field                       | Default        | Meaning                                                                                  |
+| --------------------------- | -------------- | ---------------------------------------------------------------------------------------- |
+| `codexDynamicToolsLoading`  | `"searchable"` | Use `"direct"` to put OpenClaw dynamic tools directly in the initial Codex tool context. |
+| `codexDynamicToolsExclude`  | `[]`           | Additional OpenClaw dynamic tool names to omit from Codex app-server turns.              |
+| `codexDynamicToolTimeoutMs` | unset          | Default Codex app-server RPC watchdog for OpenClaw dynamic tools, in milliseconds.       |
+| `codexDynamicToolTimeouts`  | `{}`           | Per-tool Codex app-server RPC watchdog overrides, in milliseconds.                       |
+| `codexPlugins`              | disabled       | Native Codex plugin/app support for migrated source-installed curated plugins.           |
 
 Supported `appServer` fields:
 
@@ -553,10 +555,13 @@ Supported `appServer` fields:
 OpenClaw-owned dynamic tool calls are bounded independently from
 `appServer.requestTimeoutMs`: Codex `item/tool/call` requests use a 90 second
 OpenClaw watchdog by default. A positive per-call `timeoutMs` argument extends
-or shortens that specific tool budget. The `image_generate` tool uses
-`agents.defaults.imageGenerationModel.timeoutMs` when the tool call does not
-provide its own timeout, or a 120 second image-generation default otherwise.
-The media-understanding `image` tool uses
+or shortens that specific tool budget. Plugin config can also set a default
+`codexDynamicToolTimeoutMs` or per-tool `codexDynamicToolTimeouts` override for
+long native OpenClaw tools such as `task`; this changes only the Codex
+app-server RPC watchdog, not the tool's own runtime semantics. The
+`image_generate` tool uses `agents.defaults.imageGenerationModel.timeoutMs`
+when the tool call does not provide its own timeout, or a 120 second
+image-generation default otherwise. The media-understanding `image` tool uses
 `tools.media.image.timeoutSeconds` or its 60 second media default. Dynamic tool
 budgets are capped at 600000 ms. On timeout, OpenClaw aborts the tool signal
 where supported and returns a failed dynamic-tool response to Codex so the turn

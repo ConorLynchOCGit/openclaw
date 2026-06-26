@@ -391,7 +391,7 @@ worker sub-sub-agents.
         maxSpawnDepth: 2, // allow sub-agents to spawn children (default: 1)
         maxChildrenPerAgent: 5, // max active children per agent session (default: 5)
         maxConcurrent: 8, // global concurrency lane cap (default: 8)
-        runTimeoutSeconds: 900, // default timeout for sessions_spawn (0 = no timeout)
+        runTimeoutSeconds: 0, // no fixed deadline; use a positive value only for an intentional timeout
         announceTimeoutMs: 120000, // per-call gateway announce timeout
       },
     },

@@ -802,10 +802,18 @@ allowed_sandbox_modes = ["read-only", "workspace-write"]
       readCodexPluginConfig({
         codexDynamicToolsLoading: "direct",
         codexDynamicToolsExclude: ["custom_tool"],
+        codexDynamicToolTimeoutMs: 120_000,
+        codexDynamicToolTimeouts: {
+          task: 600_000,
+        },
       }),
     ).toEqual({
       codexDynamicToolsLoading: "direct",
       codexDynamicToolsExclude: ["custom_tool"],
+      codexDynamicToolTimeoutMs: 120_000,
+      codexDynamicToolTimeouts: {
+        task: 600_000,
+      },
     });
   });
 

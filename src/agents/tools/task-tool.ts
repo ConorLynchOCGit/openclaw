@@ -17,7 +17,7 @@ import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readStringParam, textResult } from "./common.js";
 
 const TASK_WAIT_POLL_MS = 60_000;
-const TASK_CHILD_REPLY_MAX_CHARS = 28_000;
+const TASK_CHILD_REPLY_MAX_CHARS = 32_000;
 
 const TaskToolSchema = Type.Object({
   agentId: Type.String({
