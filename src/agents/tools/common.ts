@@ -47,6 +47,7 @@ type ErasedAgentToolExecute = {
 export type AnyAgentTool = Omit<AgentTool, "execute"> &
   ErasedAgentToolExecute & {
     displaySummary?: string;
+    promptGuidelines?: string[];
     prepareBeforeToolCallParams?: AgentToolWithMeta<
       TSchema,
       unknown

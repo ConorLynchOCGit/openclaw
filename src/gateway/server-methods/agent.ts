@@ -1397,7 +1397,6 @@ export const agentHandlers: GatewayRequestHandlers = {
 
     try {
       let message = (request.message ?? "").trim();
-      let resolvedSessionStorePath: string | undefined;
       if (!isRawModelRun) {
         message = annotateInterSessionPromptText(message, inputProvenance);
       }
@@ -1667,7 +1666,6 @@ export const agentHandlers: GatewayRequestHandlers = {
           entry,
           canonicalKey,
         } = loadSessionEntry(requestedSessionKey, sessionLoadOptions);
-        resolvedSessionStorePath = storePath;
         cfgForAgent = cfgLocal;
         const sessionMaintenanceConfig = resolveMaintenanceConfigFromInput(
           cfgLocal.session?.maintenance,

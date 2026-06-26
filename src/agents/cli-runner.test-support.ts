@@ -85,6 +85,7 @@ setCliRunnerExecuteTestDeps({
     },
     cancel: vi.fn(),
     cancelScope: vi.fn(),
+    touch: vi.fn(() => false),
     reconcileOrphans: vi.fn(),
     getRecord: vi.fn(),
   }),

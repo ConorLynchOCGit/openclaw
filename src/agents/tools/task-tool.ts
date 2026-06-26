@@ -72,12 +72,15 @@ async function waitForForegroundTaskResult(params: {
   runId: string;
   sessionKey: string;
   signal?: AbortSignal;
+  onProgress?: () => void;
 }): Promise<AgentWaitResult & { replyText?: string }> {
   while (params.signal?.aborted !== true) {
+    params.onProgress?.();
     const wait = await waitForAgentRun({
       runId: params.runId,
       timeoutMs: TASK_WAIT_POLL_MS,
     });
+    params.onProgress?.();
     if (wait.status === "ok") {
       return {
         status: "ok",
@@ -131,6 +134,7 @@ export function createTaskTool(
     config?: OpenClawConfig;
     requesterAgentIdOverride?: string;
     workspaceDir?: string;
+    onProgress?: () => void;
   } & SpawnedToolContext,
 ): AnyAgentTool {
   return {
@@ -211,10 +215,12 @@ export function createTaskTool(
         });
       }
 
+      opts?.onProgress?.();
       const wait = await waitForForegroundTaskResult({
         runId: spawn.runId,
         sessionKey: spawn.childSessionKey,
         signal,
+        onProgress: opts?.onProgress,
       });
       if (wait.status !== "ok" || !wait.replyText?.trim()) {
         const error =

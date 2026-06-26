@@ -99,9 +99,13 @@ describe("task tool", () => {
     });
     expect(result.details).not.toHaveProperty("resultPreview");
     expect(JSON.stringify(result.details)).not.toContain('"result":"Context Pack');
-    expect(result.content[0]?.type).toBe("text");
-    expect(result.content[0]?.text).toContain("<task_result>");
-    expect(result.content[0]?.text).toContain("Context Pack\n\nP1...");
+    const content = result.content[0];
+    expect(content?.type).toBe("text");
+    if (!content || content.type !== "text") {
+      throw new Error("Expected text tool result");
+    }
+    expect(content.text).toContain("<task_result>");
+    expect(content.text).toContain("Context Pack\n\nP1...");
   });
 
   it("keeps waiting through agent.wait timeout without turning it into task failure", async () => {
@@ -123,6 +127,25 @@ describe("task tool", () => {
     expect(result.details).not.toHaveProperty("resultPreview");
   });
 
+  it("emits progress while waiting through foreground child polls", async () => {
+    const onProgress = vi.fn();
+    hoisted.waitForAgentRunMock
+      .mockResolvedValueOnce({ status: "timeout" })
+      .mockResolvedValueOnce({ status: "pending" })
+      .mockResolvedValueOnce({ status: "ok" });
+
+    const result = await createTaskTool({ onProgress }).execute("call-1", {
+      agentId: "coding",
+      task: "Implement the approved brief.",
+    });
+
+    expect(result.details).toMatchObject({
+      status: "ok",
+      agentId: "coding",
+    });
+    expect(onProgress).toHaveBeenCalledTimes(7);
+  });
+
   it("does not duplicate long child output in both model text and details", async () => {
     const longPacket = `# Context Pack\n\n${"plan-shaping evidence ".repeat(1200)}`;
     hoisted.readLatestAssistantReplyMock.mockResolvedValue(longPacket);
@@ -137,7 +160,12 @@ describe("task tool", () => {
       sessionKey: "agent:codebase-researcher:subagent:child",
       maxChars: 32_000,
     });
-    expect(result.content[0]?.text).toContain(longPacket.trim());
+    const content = result.content[0];
+    expect(content?.type).toBe("text");
+    if (!content || content.type !== "text") {
+      throw new Error("Expected text tool result");
+    }
+    expect(content.text).toContain(longPacket.trim());
     expect(serializedDetails.length).toBeLessThan(longPacket.length);
     expect(serializedDetails).not.toContain("plan-shaping evidence ".repeat(100));
     expect(serializedDetails).not.toContain("preview truncated");

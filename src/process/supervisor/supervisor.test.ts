@@ -169,6 +169,40 @@ describe("process supervisor", () => {
     expect(exit.timedOut).toBe(true);
   });
 
+  it("lets explicit liveness touches refresh the no-output timeout", async () => {
+    vi.useFakeTimers();
+    const adapter = createStubChildAdapter({
+      onKill: (signal, current) => {
+        current.settle(null, signal ?? "SIGKILL");
+      },
+    });
+    createChildAdapterMock.mockResolvedValue(adapter);
+
+    const supervisor = createProcessSupervisor();
+    const run = await spawnChild(supervisor, {
+      sessionId: "s-touch",
+      argv: createSilentIdleArgv(),
+      timeoutMs: 300,
+      noOutputTimeoutMs: 20,
+      stdinMode: "pipe-closed",
+    });
+
+    const exitPromise = run.wait();
+    await vi.advanceTimersByTimeAsync(15);
+    expect(supervisor.touch(run.runId)).toBe(true);
+    await vi.advanceTimersByTimeAsync(15);
+    expect(adapter.killMock).not.toHaveBeenCalled();
+    expect(supervisor.touch(run.runId)).toBe(true);
+    await vi.advanceTimersByTimeAsync(15);
+    expect(adapter.killMock).not.toHaveBeenCalled();
+
+    adapter.settle(0);
+    const exit = await exitPromise;
+    expect(exit.reason).toBe("exit");
+    expect(exit.noOutputTimedOut).toBe(false);
+    expect(supervisor.touch(run.runId)).toBe(false);
+  });
+
   it("escalates cancellation to SIGKILL when graceful shutdown does not settle", async () => {
     vi.useFakeTimers();
     const adapter = createStubChildAdapter({

@@ -20,6 +20,7 @@ type SupervisorLogRuntime = typeof import("./supervisor-log.runtime.js");
 type ActiveRun = {
   run: ManagedRun;
   scopeKey?: string;
+  touchOutput: () => void;
 };
 
 const GRACEFUL_CANCEL_TIMEOUT_MS = 5000;
@@ -118,6 +119,15 @@ export function createProcessSupervisor(): ProcessSupervisor {
       }
       cancel(runId, reason);
     }
+  };
+
+  const touch = (runId: string): boolean => {
+    const current = active.get(runId);
+    if (!current) {
+      return false;
+    }
+    current.touchOutput();
+    return true;
   };
 
   const spawn = async (input: SpawnInput): Promise<ManagedRun> => {
@@ -342,6 +352,7 @@ export function createProcessSupervisor(): ProcessSupervisor {
       active.set(runId, {
         run: managedRun,
         scopeKey,
+        touchOutput,
       });
       return managedRun;
     } catch (err) {
@@ -360,6 +371,7 @@ export function createProcessSupervisor(): ProcessSupervisor {
     spawn,
     cancel,
     cancelScope,
+    touch,
     reconcileOrphans: async () => {
       // Deliberate no-op: this supervisor uses in-memory ownership only.
       // Active runs are not recovered after process restart in the current model.
