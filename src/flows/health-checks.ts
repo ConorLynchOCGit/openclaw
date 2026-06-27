@@ -48,6 +48,16 @@ export interface HealthFinding {
 
 export type HealthCheckMode = "doctor" | "lint" | "fix";
 
+/** Loader-owned identity for plugin-provided health checks. */
+export interface HealthCheckPluginContext {
+  readonly id: string;
+  readonly origin: string;
+  readonly rootDir: string;
+  readonly source: string;
+  readonly packageName?: string;
+  readonly version?: string;
+}
+
 /** Immutable runtime/config context passed to health check detection. */
 export interface HealthCheckContext {
   readonly mode: HealthCheckMode;
@@ -56,6 +66,7 @@ export interface HealthCheckContext {
   readonly cwd?: string;
   readonly configPath?: string;
   readonly allowExecSecretRefs?: boolean;
+  readonly plugin?: HealthCheckPluginContext;
 }
 
 /** Repair-capable health-check context; fixes may emit diffs or dry-run previews. */

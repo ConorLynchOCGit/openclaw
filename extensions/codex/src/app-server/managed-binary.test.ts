@@ -5,6 +5,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { CodexAppServerStartOptions } from "./config.js";
 import {
+  inspectManagedCodexAppServerRuntime,
   testing,
   resolveManagedCodexAppServerPaths,
   resolveManagedCodexAppServerStartOptions,
@@ -77,6 +78,9 @@ describe("managed Codex app-server binary", () => {
     expect(
       testing.resolveDefaultCodexPluginRoot("/repo/openclaw/extensions/codex/src/app-server"),
     ).toBe("/repo/openclaw/extensions/codex");
+    expect(
+      testing.resolveDefaultCodexPluginRoot("/app/dist/extensions/codex/dist/src/app-server"),
+    ).toBe("/app/dist/extensions/codex");
   });
 
   it("finds Codex in the package install root used by packaged plugins", async () => {
@@ -94,6 +98,25 @@ describe("managed Codex app-server binary", () => {
     ).resolves.toEqual({
       ...startOptions("managed"),
       command: installedCommand,
+      commandSource: "resolved-managed",
+    });
+  });
+
+  it("finds Codex in the bundled image root for dist extension plugins", async () => {
+    const imageRoot = path.join("/app");
+    const pluginRoot = path.join(imageRoot, "dist", "extensions", "codex");
+    const bundledCommand = managedCommandPath(imageRoot, "linux");
+    const pathExists = vi.fn(async (filePath: string) => filePath === bundledCommand);
+
+    await expect(
+      resolveManagedCodexAppServerStartOptions(startOptions("managed"), {
+        platform: "linux",
+        pluginRoot,
+        pathExists,
+      }),
+    ).resolves.toEqual({
+      ...startOptions("managed"),
+      command: bundledCommand,
       commandSource: "resolved-managed",
     });
   });
@@ -184,6 +207,35 @@ describe("managed Codex app-server binary", () => {
         pluginRoot: path.join("/tmp", "openclaw", "extensions", "codex"),
         pathExists: vi.fn(async () => false),
       }),
-    ).rejects.toThrow("Managed Codex app-server binary was not found");
+    ).rejects.toThrow("Bundled Codex plugin runtime dependency is missing or incomplete");
+  });
+
+  it("inspects managed runtime package and binary readiness", async () => {
+    const installRoot = await mkdtemp(path.join(os.tmpdir(), "openclaw-codex-inspect-"));
+    const pluginRoot = path.join(installRoot, "dist", "extensions", "codex");
+    const packageRoot = path.join(installRoot, "node_modules", "@openai", "codex");
+    const packageBin = path.join(packageRoot, "bin", "codex.js");
+    await mkdir(path.dirname(packageBin), { recursive: true });
+    await writeFile(
+      path.join(packageRoot, "package.json"),
+      JSON.stringify({
+        name: "@openai/codex",
+        bin: {
+          codex: "bin/codex.js",
+        },
+      }),
+    );
+    await writeFile(packageBin, "#!/usr/bin/env node\n");
+    const resolvedPackageBin = await realpath(packageBin);
+
+    const report = await inspectManagedCodexAppServerRuntime({
+      platform: "linux",
+      pluginRoot,
+      pathExists: vi.fn(async (filePath: string) => filePath === resolvedPackageBin),
+    });
+
+    expect(report.ok).toBe(true);
+    expect(report.packageJsonPath).toBe(path.join(packageRoot, "package.json"));
+    expect(report.commandPath).toBe(resolvedPackageBin);
   });
 });

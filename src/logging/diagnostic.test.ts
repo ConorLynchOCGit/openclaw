@@ -593,14 +593,10 @@ describe("stuck session diagnostics threshold", () => {
       reason: "active_work_without_progress",
       activeWorkKind: "embedded_run",
     });
-    expectRecoveryCall(
-      recoverStuckSession,
-      { sessionId: "s1", sessionKey: "main", queueDepth: 0, allowActiveAbort: true },
-      ["ageMs", "stateGeneration"],
-    );
+    expect(recoverStuckSession).not.toHaveBeenCalled();
   });
 
-  it("recovers stale native tool calls through the active-run abort path", async () => {
+  it("reports stale native tool calls without automatically aborting active work", async () => {
     const events: DiagnosticEventPayload[] = [];
     const recoverStuckSession = vi.fn();
     const stuckSessionWarnMs = 30_000;
@@ -650,14 +646,10 @@ describe("stuck session diagnostics threshold", () => {
         activeToolCallId: "cmd-1",
       },
     );
-    expectRecoveryCall(
-      recoverStuckSession,
-      { sessionId: "s1", sessionKey: "main", queueDepth: 0, allowActiveAbort: true },
-      ["ageMs", "stateGeneration"],
-    );
+    expect(recoverStuckSession).not.toHaveBeenCalled();
   });
 
-  it("recovers stale model calls through the active embedded-run abort path", async () => {
+  it("reports stale model calls without automatically aborting active work", async () => {
     const events: DiagnosticEventPayload[] = [];
     const recoverStuckSession = vi.fn();
     const stuckSessionWarnMs = 30_000;
@@ -706,11 +698,7 @@ describe("stuck session diagnostics threshold", () => {
         lastProgressReason: "model_call:started",
       },
     );
-    expectRecoveryCall(
-      recoverStuckSession,
-      { sessionId: "s1", sessionKey: "main", queueDepth: 0, allowActiveAbort: true },
-      ["ageMs", "stateGeneration"],
-    );
+    expect(recoverStuckSession).not.toHaveBeenCalled();
   });
 
   it("does not actively abort model calls with recent stream progress", async () => {
@@ -767,7 +755,7 @@ describe("stuck session diagnostics threshold", () => {
     expect(recoverStuckSession).not.toHaveBeenCalled();
   });
 
-  it("actively aborts silent local model calls after the stuck timeout", async () => {
+  it("reports silent local model calls after the stuck timeout without automatic abort", async () => {
     const events: DiagnosticEventPayload[] = [];
     const recoverStuckSession = vi.fn();
     const stuckSessionWarnMs = 30_000;
@@ -813,11 +801,7 @@ describe("stuck session diagnostics threshold", () => {
         lastProgressReason: "model_call:started",
       },
     );
-    expectRecoveryCall(
-      recoverStuckSession,
-      { sessionId: "s1", sessionKey: "main", queueDepth: 0, allowActiveAbort: true },
-      ["ageMs", "stateGeneration"],
-    );
+    expect(recoverStuckSession).not.toHaveBeenCalled();
   });
 
   it("does not recover stale model calls without active embedded-run ownership", async () => {
@@ -898,14 +882,10 @@ describe("stuck session diagnostics threshold", () => {
     expect(recoverStuckSession).not.toHaveBeenCalled();
 
     vi.advanceTimersByTime(30_000);
-    expectRecoveryCall(
-      recoverStuckSession,
-      { sessionId: "s1", sessionKey: "main", queueDepth: 0, allowActiveAbort: true },
-      ["ageMs", "stateGeneration"],
-    );
+    expect(recoverStuckSession).not.toHaveBeenCalled();
   });
 
-  it("uses diagnostics.stuckSessionAbortMs for stalled active-work recovery", () => {
+  it("does not use diagnostics.stuckSessionAbortMs to abort active work automatically", () => {
     const recoverStuckSession = vi.fn();
 
     startDiagnosticHeartbeat(
@@ -928,33 +908,12 @@ describe("stuck session diagnostics threshold", () => {
 
     vi.advanceTimersByTime(61_000);
 
-    expectRecoveryCall(
-      recoverStuckSession,
-      {
-        sessionId: "s1",
-        sessionKey: "main",
-        sessionFile: "/tmp/openclaw-active-abort-session.jsonl",
-        queueDepth: 0,
-        allowActiveAbort: true,
-      },
-      ["ageMs", "stateGeneration"],
-    );
+    expect(recoverStuckSession).not.toHaveBeenCalled();
   });
 
-  it("recovers idle queued embedded-run stalls after stale progress", async () => {
+  it("does not recover idle queued work while an active embedded owner remains", async () => {
     const events: DiagnosticEventPayload[] = [];
-    const recoverStuckSession = vi.fn().mockResolvedValue({
-      status: "aborted",
-      action: "abort_embedded_run",
-      sessionId: "s1",
-      sessionKey: "main",
-      activeSessionId: "s1",
-      activeWorkKind: "embedded_run",
-      aborted: true,
-      drained: true,
-      forceCleared: false,
-      released: 0,
-    });
+    const recoverStuckSession = vi.fn();
     const unsubscribe = onDiagnosticEvent((event) => {
       events.push(event);
     });
@@ -981,43 +940,25 @@ describe("stuck session diagnostics threshold", () => {
       unsubscribe();
     }
 
-    expectRecoveryCall(
-      recoverStuckSession,
+    expectRecordFields(
+      requireRecord(
+        events.findLast((event) => event.type === "session.stalled"),
+        "stalled event",
+      ),
       {
-        sessionId: "s1",
-        sessionKey: "main",
+        type: "session.stalled",
+        classification: "stalled_agent_run",
+        reason: "active_work_without_progress",
+        activeWorkKind: "embedded_run",
         queueDepth: 1,
-        allowActiveAbort: true,
-        expectedState: "idle",
       },
-      ["ageMs", "stateGeneration"],
     );
-    requireMatchingRecord(
-      events,
-      {
-        type: "session.recovery.completed",
-        state: "idle",
-        status: "aborted",
-        action: "abort_embedded_run",
-      },
-      "idle abort recovery event",
-    );
-    expect(getDiagnosticSessionState({ sessionId: "s1", sessionKey: "main" }).queueDepth).toBe(0);
+    expect(recoverStuckSession).not.toHaveBeenCalled();
+    expect(getDiagnosticSessionState({ sessionId: "s1", sessionKey: "main" }).queueDepth).toBe(1);
   });
 
-  it("recovers idle queued work when embedded ownership is surfaced as a model call", async () => {
-    const recoverStuckSession = vi.fn().mockResolvedValue({
-      status: "aborted",
-      action: "abort_embedded_run",
-      sessionId: "s1",
-      sessionKey: "main",
-      activeSessionId: "s1",
-      activeWorkKind: "embedded_run",
-      aborted: true,
-      drained: true,
-      forceCleared: false,
-      released: 0,
-    });
+  it("does not recover idle queued work when embedded ownership is surfaced as a model call", async () => {
+    const recoverStuckSession = vi.fn();
     startDiagnosticHeartbeat(
       {
         diagnostics: {
@@ -1044,17 +985,7 @@ describe("stuck session diagnostics threshold", () => {
     vi.advanceTimersByTime(1_000);
     await Promise.resolve();
 
-    expectRecoveryCall(
-      recoverStuckSession,
-      {
-        sessionId: "s1",
-        sessionKey: "main",
-        queueDepth: 1,
-        allowActiveAbort: true,
-        expectedState: "idle",
-      },
-      ["ageMs", "stateGeneration"],
-    );
+    expect(recoverStuckSession).not.toHaveBeenCalled();
   });
 
   it("recovers idle queued work blocked by stale model activity without active ownership", async () => {
@@ -1698,7 +1629,7 @@ describe("stuck session diagnostics threshold", () => {
     expect(recoverStuckSession).not.toHaveBeenCalled();
   });
 
-  it("recovers queued sessions behind terminal embedded progress after the abort threshold", () => {
+  it("reports queued sessions behind terminal embedded progress without automatic abort", () => {
     const events: DiagnosticEventPayload[] = [];
     const recoverStuckSession = vi.fn();
     const stuckSessionWarnMs = 30_000;
@@ -1748,11 +1679,7 @@ describe("stuck session diagnostics threshold", () => {
       terminalProgressStale: true,
       lastProgressReason: terminalReason,
     });
-    expectRecoveryCall(
-      recoverStuckSession,
-      { sessionId: "s1", sessionKey: "main", queueDepth: 1, allowActiveAbort: true },
-      ["ageMs", "stateGeneration"],
-    );
+    expect(recoverStuckSession).not.toHaveBeenCalled();
   });
 
   it("starts and stops the stability recorder with the heartbeat lifecycle", () => {

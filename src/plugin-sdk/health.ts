@@ -18,6 +18,7 @@ export {
   parseHealthFindingSeverity,
   type HealthCheck,
   type HealthCheckContext,
+  type HealthCheckPluginContext,
   type HealthCheckScope,
   type HealthFinding,
   type HealthFindingSeverity,

@@ -388,6 +388,65 @@ describe("GatewayClient", () => {
     expect((client as unknown as { pending: Map<string, unknown> }).pending.size).toBe(0);
   });
 
+  test("treats chat.send started as intermediate when expectFinal waits for final", async () => {
+    const client = new GatewayClient({
+      requestTimeoutMs: 25,
+    });
+    const send = vi.fn();
+    (
+      client as unknown as {
+        ws: WebSocket | { readyState: number; send: (data: string) => void; close: () => void };
+      }
+    ).ws = {
+      readyState: WebSocket.OPEN,
+      send,
+      close: vi.fn(),
+    };
+
+    const onAccepted = vi.fn();
+    const requestPromise = client.request<{ status: string; runId: string }>(
+      "chat.send",
+      undefined,
+      {
+        expectFinal: true,
+        onAccepted,
+      },
+    );
+    const frame = JSON.parse(String(send.mock.calls[0]?.[0])) as { id: string };
+
+    (
+      client as unknown as {
+        handleMessage: (raw: string) => void;
+      }
+    ).handleMessage(
+      JSON.stringify({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: { status: "started", runId: "run-chat" },
+      }),
+    );
+
+    expect(onAccepted).toHaveBeenCalledWith({ status: "started", runId: "run-chat" });
+    expect(getPendingCount(client)).toBe(1);
+
+    (
+      client as unknown as {
+        handleMessage: (raw: string) => void;
+      }
+    ).handleMessage(
+      JSON.stringify({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: { status: "ok", runId: "run-chat" },
+      }),
+    );
+
+    await expect(requestPromise).resolves.toEqual({ status: "ok", runId: "run-chat" });
+    expect(getPendingCount(client)).toBe(0);
+  });
+
   test("aborts in-flight requests from caller AbortSignal", async () => {
     const client = new GatewayClient({
       requestTimeoutMs: 25,

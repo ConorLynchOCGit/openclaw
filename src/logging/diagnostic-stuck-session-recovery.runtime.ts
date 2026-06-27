@@ -14,7 +14,6 @@ import {
   getCommandLaneSnapshot,
   resetCommandLane,
 } from "../process/command-queue.js";
-import { getDiagnosticSessionActivitySnapshot } from "./diagnostic-run-activity.js";
 import { diagnosticLogger as diag } from "./diagnostic-runtime.js";
 import {
   formatStoppedCronSessionDiagnosticFields,
@@ -30,35 +29,10 @@ import { isDiagnosticSessionStateCurrent } from "./diagnostic-session-state.js";
 
 // Runtime repair path for diagnostic sessions that appear stuck in processing/waiting states.
 const STUCK_SESSION_ABORT_SETTLE_MS = 15_000;
-const STUCK_SESSION_PROGRESS_STALE_MS = 5 * 60_000;
 const recoveriesInFlight = new Set<string>();
 
 /** Request parameters accepted by the stuck-session recovery runtime. */
 export type StuckSessionRecoveryParams = StuckSessionRecoveryRequest;
-
-function resolveStaleActiveProgressAbortMs(params: StuckSessionRecoveryParams): number {
-  const configured = params.staleActiveProgressAbortMs;
-  return typeof configured === "number" && configured > 0
-    ? configured
-    : STUCK_SESSION_PROGRESS_STALE_MS;
-}
-
-function isActiveRunProgressStale(params: {
-  sessionId?: string;
-  sessionKey?: string;
-  queueDepth?: number;
-  staleAbortMs: number;
-}): boolean {
-  if ((params.queueDepth ?? 0) <= 0) {
-    return false;
-  }
-  const activity = getDiagnosticSessionActivitySnapshot({
-    sessionId: params.sessionId,
-    sessionKey: params.sessionKey,
-  });
-  const lastProgressAgeMs = activity.lastProgressAgeMs;
-  return typeof lastProgressAgeMs === "number" && lastProgressAgeMs >= params.staleAbortMs;
-}
 
 function formatRecoveryContext(
   params: StuckSessionRecoveryParams,
@@ -145,18 +119,9 @@ export async function recoverStuckDiagnosticSession(
     let aborted = false;
     let drained = true;
     let forceCleared = false;
-    const staleActiveProgressAbortMs = resolveStaleActiveProgressAbortMs(params);
-
     if (activeSessionId) {
-      const reclaimStaleActiveRun =
-        params.allowActiveAbort !== true &&
-        isActiveRunProgressStale({
-          sessionId: activeSessionId,
-          sessionKey: params.sessionKey,
-          queueDepth: params.queueDepth,
-          staleAbortMs: staleActiveProgressAbortMs,
-        });
-      if (params.allowActiveAbort !== true && !reclaimStaleActiveRun) {
+      const reclaimStaleActiveRun = params.allowActiveAbort === true;
+      if (!reclaimStaleActiveRun) {
         const outcome: StuckSessionRecoveryOutcome = {
           status: "skipped",
           action: "observe_only",
@@ -191,23 +156,7 @@ export async function recoverStuckDiagnosticSession(
     }
 
     if (!activeSessionId && activeWorkSessionId && isEmbeddedAgentRunActive(activeWorkSessionId)) {
-      const reclaimStaleReplyWork =
-        params.allowActiveAbort !== true &&
-        isActiveRunProgressStale({
-          sessionId: activeWorkSessionId,
-          sessionKey: params.sessionKey,
-          queueDepth: params.queueDepth,
-          staleAbortMs: staleActiveProgressAbortMs,
-        });
-      if (params.allowActiveAbort === true || reclaimStaleReplyWork) {
-        if (reclaimStaleReplyWork) {
-          diag.warn(
-            `stuck session recovery reclaiming stale active reply work: ${formatRecoveryContext(
-              params,
-              { activeSessionId: activeWorkSessionId },
-            )}`,
-          );
-        }
+      if (params.allowActiveAbort === true) {
         const result = await abortAndDrainEmbeddedAgentRun({
           sessionId: activeWorkSessionId,
           sessionKey: params.sessionKey,

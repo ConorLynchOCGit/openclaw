@@ -1640,6 +1640,17 @@ describe("gateway server chat", () => {
           error: undefined,
         },
         {
+          id: "first",
+          ok: true,
+          payload: expect.objectContaining({
+            agentId: "main",
+            runId: "idem-sequential-a",
+            sessionKey: "agent:main:main",
+            status: "ok",
+          }),
+          error: undefined,
+        },
+        {
           id: "second",
           ok: true,
           payload: expect.objectContaining({
@@ -1649,6 +1660,17 @@ describe("gateway server chat", () => {
               receivedToAckMs: expect.any(Number),
               loadSessionMs: expect.any(Number),
             },
+          }),
+          error: undefined,
+        },
+        {
+          id: "second",
+          ok: true,
+          payload: expect.objectContaining({
+            agentId: "main",
+            runId: "idem-sequential-b",
+            sessionKey: "agent:main:main",
+            status: "ok",
           }),
           error: undefined,
         },
@@ -1917,16 +1939,14 @@ describe("gateway server chat", () => {
         context,
       });
 
-      expect(responses).toEqual([
-        {
-          ok: true,
-          payload: expect.objectContaining({
-            runId: "idem-direct-server-timing",
-            status: "started",
-          }),
-          error: undefined,
-        },
-      ]);
+      expect(responses[0]).toEqual({
+        ok: true,
+        payload: expect.objectContaining({
+          runId: "idem-direct-server-timing",
+          status: "started",
+        }),
+        error: undefined,
+      });
       await vi.waitFor(
         () => {
           expect(broadcastToConnIds).toHaveBeenCalledWith(
@@ -1955,6 +1975,20 @@ describe("gateway server chat", () => {
                 ]),
               }),
             }),
+          );
+          expect(responses).toEqual(
+            expect.arrayContaining([
+              {
+                ok: true,
+                payload: expect.objectContaining({
+                  runId: "idem-direct-server-timing",
+                  status: "ok",
+                  sessionKey: "agent:main:main",
+                  agentId: "main",
+                }),
+                error: undefined,
+              },
+            ]),
           );
         },
         { timeout: 2_000, interval: 5 },

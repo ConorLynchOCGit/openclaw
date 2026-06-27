@@ -498,69 +498,6 @@ function resolveStalledEmbeddedRunAbortMs(stuckSessionWarnMs: number): number {
   );
 }
 
-function isStalledEmbeddedRunRecoveryEligible(params: {
-  classification: SessionAttentionClassification | undefined;
-  ageMs: number;
-  stuckSessionAbortMs: number;
-}): boolean {
-  return (
-    params.classification?.eventType === "session.stalled" &&
-    params.classification.classification === "stalled_agent_run" &&
-    params.classification.activeWorkKind === "embedded_run" &&
-    params.ageMs >= params.stuckSessionAbortMs
-  );
-}
-
-function isBlockedToolCallRecoveryEligible(params: {
-  classification: SessionAttentionClassification | undefined;
-  activity?: DiagnosticSessionActivitySnapshot;
-  stuckSessionAbortMs: number;
-}): boolean {
-  const toolAgeMs = params.activity?.activeToolAgeMs;
-  const lastProgressAgeMs = params.activity?.lastProgressAgeMs;
-  return (
-    params.classification?.eventType === "session.stalled" &&
-    params.classification.classification === "blocked_tool_call" &&
-    params.classification.activeWorkKind === "tool_call" &&
-    typeof toolAgeMs === "number" &&
-    typeof lastProgressAgeMs === "number" &&
-    toolAgeMs >= params.stuckSessionAbortMs &&
-    lastProgressAgeMs >= params.stuckSessionAbortMs
-  );
-}
-
-function isStalledModelCallRecoveryEligible(params: {
-  classification: SessionAttentionClassification | undefined;
-  activity?: DiagnosticSessionActivitySnapshot;
-  stuckSessionAbortMs: number;
-}): boolean {
-  const lastProgressAgeMs = params.activity?.lastProgressAgeMs;
-  // Local providers are not blanket-exempt from recovery. Streaming model
-  // chunks refresh run activity while emitted progress events are throttled, so
-  // active streams stay fresh and silent/non-streaming calls can be recovered.
-  return (
-    params.classification?.eventType === "session.stalled" &&
-    params.classification.classification === "stalled_agent_run" &&
-    params.classification.activeWorkKind === "model_call" &&
-    params.activity?.hasActiveEmbeddedRun === true &&
-    typeof lastProgressAgeMs === "number" &&
-    lastProgressAgeMs >= params.stuckSessionAbortMs
-  );
-}
-
-function isActiveAbortRecoveryEligible(params: {
-  classification: SessionAttentionClassification | undefined;
-  activity?: DiagnosticSessionActivitySnapshot;
-  ageMs: number;
-  stuckSessionAbortMs: number;
-}): boolean {
-  return (
-    isStalledEmbeddedRunRecoveryEligible(params) ||
-    isBlockedToolCallRecoveryEligible(params) ||
-    isStalledModelCallRecoveryEligible(params)
-  );
-}
-
 function isIdleQueuedRecoverableSessionStall(params: {
   state: {
     state: SessionStateValue;
@@ -1013,15 +950,7 @@ export function logSessionAttention(
     activity,
     staleMs: params.thresholdMs,
   });
-  const recoveryEligible =
-    classification.recoveryEligible ||
-    isActiveAbortRecoveryEligible({
-      classification,
-      activity,
-      ageMs: params.ageMs,
-      stuckSessionAbortMs:
-        params.abortThresholdMs ?? resolveStalledEmbeddedRunAbortMs(params.thresholdMs),
-    });
+  const recoveryEligible = classification.recoveryEligible;
   if (classification.eventType === "session.stuck") {
     const nextWarnAgeMs =
       state.lastStuckWarnAgeMs === undefined
@@ -1296,30 +1225,6 @@ export function startDiagnosticHeartbeat(
               sessionFile: state.sessionFile,
               ageMs: attentionAgeMs,
               queueDepth: state.queueDepth,
-              expectedState: state.state,
-              stateGeneration: state.generation,
-              staleActiveProgressAbortMs: stuckSessionAbortMs,
-            },
-          });
-        } else if (
-          classification &&
-          isActiveAbortRecoveryEligible({
-            classification,
-            activity,
-            ageMs: attentionAgeMs,
-            stuckSessionAbortMs,
-          })
-        ) {
-          requestStuckSessionRecovery({
-            recover: opts?.recoverStuckSession ?? recoverStuckSession,
-            classification,
-            request: {
-              sessionId: state.sessionId,
-              sessionKey: state.sessionKey,
-              sessionFile: state.sessionFile,
-              ageMs: attentionAgeMs,
-              queueDepth: state.queueDepth,
-              allowActiveAbort: true,
               expectedState: state.state,
               stateGeneration: state.generation,
             },

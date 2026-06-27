@@ -14,6 +14,7 @@ import { getProcessSupervisor } from "../process/supervisor/index.js";
 import { getActiveSecretsRuntimeConfigSnapshot } from "../secrets/runtime-state.js";
 import { getActiveRuntimeWebToolsMetadata } from "../secrets/runtime-web-tools-state.js";
 import { isCronRunSessionKey } from "../sessions/session-key-utils.js";
+import { notifyLlmRequestActivity } from "../shared/llm-request-activity.js";
 import { resolveTranscriptsConfig } from "../transcripts/config.js";
 import { normalizeDeliveryContext } from "../utils/delivery-context.js";
 import type { GatewayMessageChannel } from "../utils/message-channel.js";
@@ -89,6 +90,7 @@ export function createOpenClawTools(
     sandboxBrowserBridgeUrl?: string;
     allowHostBrowserControl?: boolean;
     agentSessionKey?: string;
+    runAbortSignal?: AbortSignal;
     /**
      * The actual live run session key. When the tool is constructed with a sandbox/policy
      * session key, this allows `session_status({sessionKey:"current"})` to resolve to
@@ -203,6 +205,7 @@ export function createOpenClawTools(
   );
   const touchParentRunProgress = options?.runId
     ? () => {
+        notifyLlmRequestActivity(options.runAbortSignal);
         getProcessSupervisor().touch(options.runId!);
       }
     : undefined;

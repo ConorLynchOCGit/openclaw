@@ -1982,18 +1982,6 @@ export function buildGatewaySessionRow(params: {
   const persistedSessionEndedAt = entry?.endedAt;
   const persistedSessionStartedAt = entry?.startedAt;
   const persistedSessionRuntimeMs = entry?.runtimeMs;
-  const subagentRunState = subagentRun
-    ? liveSubagentRunActive
-      ? "active"
-      : typeof subagentRun.endedAt === "number" ||
-          persistedSessionStatus === "done" ||
-          persistedSessionStatus === "failed" ||
-          persistedSessionStatus === "killed" ||
-          persistedSessionStatus === "timeout" ||
-          typeof persistedSessionEndedAt === "number"
-        ? "historical"
-        : "interrupted"
-    : undefined;
   const subagentStatus = subagentRun
     ? liveSubagentRunActive
       ? resolveSubagentSessionStatus(subagentRun)
@@ -2246,8 +2234,6 @@ export function buildGatewaySessionRow(params: {
     goal,
     estimatedCostUsd,
     status: subagentRun ? subagentStatus : entry?.status,
-    subagentRunState,
-    hasActiveSubagentRun: subagentRun ? liveSubagentRunActive : undefined,
     startedAt: subagentRun ? subagentStartedAt : entry?.startedAt,
     endedAt: subagentRun ? subagentEndedAt : entry?.endedAt,
     runtimeMs: subagentRun ? subagentRuntimeMs : entry?.runtimeMs,

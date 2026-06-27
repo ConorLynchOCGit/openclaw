@@ -99,6 +99,7 @@ export function buildCodexTurnStartFailureResult(params: {
     messagesSnapshot: params.messagesSnapshot,
     assistantTexts: [],
     toolMetas: [],
+    actualToolNames: [],
     lastAssistant: undefined,
     didSendViaMessagingTool: false,
     messagingToolSentTexts: [],

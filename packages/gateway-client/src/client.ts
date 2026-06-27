@@ -297,6 +297,7 @@ function isSecureWebSocketUrl(rawUrl: string, options?: { allowPrivateWs?: boole
 }
 
 type Pending = {
+  method: string;
   resolve: (value: unknown) => void;
   reject: (err: unknown) => void;
   expectFinal: boolean;
@@ -1333,10 +1334,14 @@ export class GatewayClient {
       if (!pending) {
         return;
       }
-      // If the payload is an ack with status accepted, keep waiting for final.
+      // If the payload is an intermediate ack for an expectFinal-capable
+      // method, keep waiting for the final response frame.
       const payload = parsed.payload as { status?: unknown } | undefined;
       const status = payload?.status;
-      if (pending.expectFinal && status === "accepted") {
+      if (
+        pending.expectFinal &&
+        (status === "accepted" || (pending.method === "chat.send" && status === "started"))
+      ) {
         if (!pending.acceptedNotified) {
           pending.acceptedNotified = true;
           try {
@@ -1553,6 +1558,7 @@ export class GatewayClient {
         reject(createGatewayRequestAbortError(method));
       };
       this.pending.set(id, {
+        method,
         resolve: (value) => resolve(value as T),
         reject,
         expectFinal,

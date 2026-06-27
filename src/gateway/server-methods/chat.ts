@@ -3844,7 +3844,7 @@ export const chatHandlers: GatewayRequestHandlers = {
               },
             },
           });
-          if (dispatchResult.beforeAgentRunBlocked === true) {
+          if (dispatchResult?.beforeAgentRunBlocked === true) {
             userTurnRecorder.markBlocked();
           }
           return dispatchResult;
@@ -4442,21 +4442,33 @@ export const chatHandlers: GatewayRequestHandlers = {
                       returnedAgentErrorMessage ?? "agent returned an error payload",
                     )
                   : undefined;
+                const finalPayload = shouldBroadcastAgentError
+                  ? {
+                      runId: clientRunId,
+                      status: "error" as const,
+                      summary: returnedAgentErrorMessage ?? "agent returned an error payload",
+                      sessionKey,
+                      ...(agentId ? { agentId } : {}),
+                    }
+                  : {
+                      runId: clientRunId,
+                      status: "ok" as const,
+                      sessionKey,
+                      ...(agentId ? { agentId } : {}),
+                    };
                 setGatewayDedupeEntry({
                   dedupe: context.dedupe,
                   key: `chat:${clientRunId}`,
                   entry: {
                     ts: Date.now(),
                     ok: !shouldBroadcastAgentError,
-                    payload: shouldBroadcastAgentError
-                      ? {
-                          runId: clientRunId,
-                          status: "error" as const,
-                          summary: returnedAgentErrorMessage ?? "agent returned an error payload",
-                        }
-                      : { runId: clientRunId, status: "ok" as const },
+                    payload: finalPayload,
                     ...(returnedAgentError ? { error: returnedAgentError } : {}),
                   },
+                });
+                respond(!shouldBroadcastAgentError, finalPayload, returnedAgentError, {
+                  runId: clientRunId,
+                  final: true,
                 });
               }
             },
@@ -4499,6 +4511,22 @@ export const chatHandlers: GatewayRequestHandlers = {
               error,
             },
           });
+          respond(
+            false,
+            {
+              runId: clientRunId,
+              status: "error" as const,
+              summary: String(err),
+              sessionKey,
+              ...(agentId ? { agentId } : {}),
+            },
+            error,
+            {
+              runId: clientRunId,
+              final: true,
+              error: formatForLog(err),
+            },
+          );
           broadcastChatError({
             context,
             runId: clientRunId,

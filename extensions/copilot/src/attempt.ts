@@ -690,6 +690,7 @@ function createResult(
     ...(state.sdkSessionId ? { sdkSessionId: state.sdkSessionId } : {}),
     assistantTexts: state.assistantTexts ?? [],
     attemptUsage: state.usage,
+    actualToolNames: toolMetas.map((toolMeta) => toolMeta.toolName),
     cloudCodeAssistFormatError: false,
     currentAttemptAssistant: state.currentAttemptAssistant,
     didSendViaMessagingTool: false,

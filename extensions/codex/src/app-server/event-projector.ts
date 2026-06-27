@@ -384,6 +384,7 @@ export class CodexAppServerEventProjector {
       messagesSnapshot,
       assistantTexts,
       toolMetas,
+      actualToolNames: toolMetas.map((toolMeta) => toolMeta.toolName),
       lastAssistant,
       ...(this.lastNativeToolError ? { lastToolError: this.lastNativeToolError } : {}),
       didSendViaMessagingTool: toolTelemetry.didSendViaMessagingTool,

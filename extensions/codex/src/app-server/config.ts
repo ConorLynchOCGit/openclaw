@@ -293,8 +293,8 @@ const codexPluginConfigSchema = z
   .object({
     codexDynamicToolsLoading: codexDynamicToolsLoadingSchema.optional(),
     codexDynamicToolsExclude: z.array(z.string()).optional(),
-    codexDynamicToolTimeoutMs: z.number().positive().optional(),
-    codexDynamicToolTimeouts: z.record(z.string(), z.number().positive()).optional(),
+    codexDynamicToolTimeoutMs: z.number().nonnegative().optional(),
+    codexDynamicToolTimeouts: z.record(z.string(), z.number().nonnegative()).optional(),
     discovery: z
       .object({
         enabled: z.boolean().optional(),

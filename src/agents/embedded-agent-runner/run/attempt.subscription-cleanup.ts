@@ -101,15 +101,11 @@ export async function cleanupEmbeddedAttemptResources(params: {
         sessionId: params.sessionId ?? "unknown",
       });
     }
-    // PERF: When the run was aborted (user stop / timeout), skip the expensive
-    // waitForIdle (up to 30 s) and flush pending tool results synchronously so
-    // the session write-lock is released without leaving orphaned tool calls.
     if (!params.skipSessionFlush) {
       try {
         await params.flushPendingToolResultsAfterIdle({
           agent: params.session?.agent as IdleAwareAgent | null | undefined,
           sessionManager: params.sessionManager as ToolResultFlushManager | null | undefined,
-          ...(params.aborted ? { timeoutMs: 0 } : {}),
         });
       } catch {
         /* best-effort */

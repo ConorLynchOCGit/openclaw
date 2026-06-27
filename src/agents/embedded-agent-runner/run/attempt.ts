@@ -3105,10 +3105,6 @@ export async function runEmbeddedAttempt(
         await flushPendingToolResultsAfterIdle({
           agent: activeSession?.agent,
           sessionManager,
-          // PERF: If the run was aborted during the setup,
-          // skip the idle wait and flush pending results synchronously so we can
-          // immediately dispose the session without orphaning tool calls.
-          ...(params.abortSignal?.aborted ? { timeoutMs: 0 } : {}),
         });
         activeSession.dispose();
         throw err;
@@ -5369,9 +5365,6 @@ export async function runEmbeddedAttempt(
           bundleMcpRuntime,
           bundleLspRuntime,
           sessionLock: cleanupSessionLock,
-          // PERF: If the run was aborted (user stop, timeout, sessions_yield, etc.),
-          // skip the idle wait and flush pending results synchronously so we can
-          // release the session lock ASAP.
           aborted: cleanupAbortLike,
           abortSettlePromise: cleanupAborted ? buildAbortSettlePromise() : null,
           skipSessionFlush: sessionLockController.hasSessionTakeover(),

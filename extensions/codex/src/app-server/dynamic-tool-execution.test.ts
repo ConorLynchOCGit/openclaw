@@ -223,6 +223,35 @@ describe("dynamic tool execution helpers", () => {
     ).toBe(180_000);
   });
 
+  it("allows configured task dynamic calls to rely on run cancellation instead of a fixed bridge timeout", () => {
+    expect(
+      resolveDynamicToolCallTimeoutMs({
+        call: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          callId: "call-task-no-timeout",
+          namespace: null,
+          tool: "task",
+          arguments: { agentId: "coding", task: "Implement the approved brief." },
+        },
+        config: {
+          plugins: {
+            entries: {
+              codex: {
+                enabled: true,
+                config: {
+                  codexDynamicToolTimeouts: {
+                    task: 0,
+                  },
+                },
+              },
+            },
+          },
+        },
+      }),
+    ).toBe(0);
+  });
+
   it("uses a 90 second default for generic Codex dynamic tool calls", () => {
     expect(
       resolveDynamicToolCallTimeoutMs({
@@ -276,6 +305,43 @@ describe("dynamic tool execution helpers", () => {
     });
     expect(capturedSignal?.aborted).toBe(true);
     expect(onTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not timeout a dynamic tool call when timeoutMs is 0", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    let capturedSignal: AbortSignal | undefined;
+    const onTimeout = vi.fn();
+    const response = handleDynamicToolCallWithTimeout({
+      call: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        callId: "call-no-timeout",
+        namespace: null,
+        tool: "task",
+        arguments: { agentId: "coding", task: "Implement the approved brief." },
+      },
+      toolBridge: {
+        handleToolCall: (_call, options) => {
+          capturedSignal = options.signal;
+          return new Promise(() => {});
+        },
+      },
+      signal: controller.signal,
+      timeoutMs: 0,
+      onTimeout,
+    });
+
+    await vi.advanceTimersByTimeAsync(CODEX_DYNAMIC_TOOL_MAX_TIMEOUT_MS + 1_000);
+    expect(onTimeout).not.toHaveBeenCalled();
+    expect(capturedSignal?.aborted).not.toBe(true);
+
+    controller.abort();
+    await expect(response).resolves.toMatchObject({
+      success: false,
+      contentItems: [{ type: "inputText", text: "OpenClaw dynamic tool call aborted." }],
+    });
+    expect(capturedSignal?.aborted).toBe(true);
   });
 
   it("logs process poll timeout context separately from session idle", async () => {

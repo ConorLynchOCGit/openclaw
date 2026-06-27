@@ -15,6 +15,10 @@ import { listAllCodexAppServerModels } from "./app-server/models.js";
 import { isJsonObject, type JsonValue } from "./app-server/protocol.js";
 import { rememberCodexRateLimits } from "./app-server/rate-limit-cache.js";
 import {
+  buildCodexRuntimeReadinessReport,
+  formatCodexRuntimeReadinessReport,
+} from "./app-server/readiness.js";
+import {
   resolveCodexNativeExecutionBlock,
   resolveCodexNativeSandboxBlock,
 } from "./app-server/sandbox-guard.js";
@@ -94,6 +98,7 @@ export type CodexCommandDeps = {
   setCodexConversationPermissions: typeof setCodexConversationPermissions;
   steerCodexConversationTurn: typeof steerCodexConversationTurn;
   stopCodexConversationTurn: typeof stopCodexConversationTurn;
+  buildCodexRuntimeReadinessReport: typeof buildCodexRuntimeReadinessReport;
   listCodexCliSessionsOnNode: ListCodexCliSessionsOnNodeFn;
   resolveCodexCliSessionForBindingOnNode: ResolveCodexCliSessionForBindingOnNodeFn;
   codexPluginsManagementIo?: CodexPluginsManagementIO;
@@ -140,6 +145,7 @@ const defaultCodexCommandDeps: CodexCommandDeps = {
   setCodexConversationPermissions,
   steerCodexConversationTurn,
   stopCodexConversationTurn,
+  buildCodexRuntimeReadinessReport,
   listCodexCliSessionsOnNode: async () => {
     throw new Error("Codex CLI node sessions require Gateway node runtime.");
   },
@@ -397,6 +403,19 @@ export async function handleCodexSubcommand(
     }
     return {
       text: formatCodexStatus(await deps.readCodexStatusProbes(options.pluginConfig, ctx.config)),
+    };
+  }
+  if (normalized === "doctor") {
+    if (rest.length > 0) {
+      return { text: "Usage: /codex doctor" };
+    }
+    return {
+      text: formatCodexRuntimeReadinessReport(
+        await deps.buildCodexRuntimeReadinessReport({
+          pluginConfig: options.pluginConfig,
+          config: ctx.config,
+        }),
+      ),
     };
   }
   if (normalized === "models") {

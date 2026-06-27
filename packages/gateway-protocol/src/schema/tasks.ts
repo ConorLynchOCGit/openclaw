@@ -43,7 +43,6 @@ export const TaskSummarySchema = Type.Object(
     endedAt: Type.Optional(TimestampSchema),
     progressSummary: Type.Optional(Type.String()),
     terminalSummary: Type.Optional(Type.String()),
-    executionReceipt: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
     error: Type.Optional(Type.String()),
   },
   { additionalProperties: false },

@@ -247,8 +247,8 @@ describe("listSessionsFromStore subagent metadata", () => {
 
     const row = result.sessions.find((session) => session.key === childSessionKey);
     expect(row?.status).toBe("done");
-    expect(row?.subagentRunState).toBe("historical");
-    expect(row?.hasActiveSubagentRun).toBe(false);
+    expect("subagentRunState" in (row ?? {})).toBe(false);
+    expect("hasActiveSubagentRun" in (row ?? {})).toBe(false);
     expect(row?.endedAt).toBe(now - 500);
     expect(row?.runtimeMs).toBe(3_500);
   });
@@ -776,8 +776,8 @@ describe("listSessionsFromStore subagent metadata", () => {
       );
 
       expect(row?.status).toBe("done");
-      expect(row?.subagentRunState).toBe("historical");
-      expect(row?.hasActiveSubagentRun).toBe(false);
+      expect("subagentRunState" in (row ?? {})).toBe(false);
+      expect("hasActiveSubagentRun" in (row ?? {})).toBe(false);
       expect(row?.startedAt).toBe(now - 9_000);
       expect(row?.endedAt).toBe(now - 1_800);
       expect(row?.runtimeMs).toBe(100);

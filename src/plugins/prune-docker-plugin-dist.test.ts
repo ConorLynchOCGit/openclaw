@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  collectDockerPluginKeepIds,
   parseDockerPluginKeepList,
   pruneDockerPluginDist,
 } from "../../scripts/prune-docker-plugin-dist.mjs";
@@ -54,6 +55,17 @@ describe("pruneDockerPluginDist", () => {
       "feishu",
       "discord",
     ]);
+  });
+
+  it("always keeps required first-party bundled plugin ids in Docker runtime images", () => {
+    expect([
+      ...collectDockerPluginKeepIds({ OPENCLAW_EXTENSIONS: "" } as NodeJS.ProcessEnv),
+    ]).toEqual(["codex"]);
+    expect([
+      ...collectDockerPluginKeepIds({
+        OPENCLAW_EXTENSIONS: "diagnostics-otel",
+      } as NodeJS.ProcessEnv),
+    ]).toEqual(["codex", "diagnostics-otel"]);
   });
 
   it("removes package-excluded plugin runtime artifacts unless Docker explicitly opts it in", () => {
@@ -153,7 +165,7 @@ describe("pruneDockerPluginDist", () => {
 
     const removed = pruneDockerPluginDist({
       repoRoot,
-      env: { OPENCLAW_EXTENSIONS: "codex" } as NodeJS.ProcessEnv,
+      env: { OPENCLAW_EXTENSIONS: "" } as NodeJS.ProcessEnv,
     });
 
     expect(removed).toEqual([

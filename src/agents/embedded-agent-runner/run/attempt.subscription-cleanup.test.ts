@@ -159,6 +159,29 @@ describe("cleanupEmbeddedAttemptResources", () => {
     expect(release).toHaveBeenCalledTimes(1);
   });
 
+  it("does not force immediate pending tool-result flushing on aborted cleanup", async () => {
+    const flushPendingToolResultsAfterIdle = vi.fn(async () => {});
+
+    await cleanupEmbeddedAttemptResources({
+      flushPendingToolResultsAfterIdle,
+      session: {
+        agent: {},
+        dispose: vi.fn(),
+      },
+      sessionManager: {},
+      sessionLock: { release: vi.fn(async () => {}) },
+      aborted: true,
+      abortSettlePromise: Promise.resolve(),
+      runId: "run-1",
+      sessionId: "session-1",
+    });
+
+    expect(flushPendingToolResultsAfterIdle).toHaveBeenCalledWith({
+      agent: {},
+      sessionManager: {},
+    });
+  });
+
   it("still disposes resources when lock release fails", async () => {
     const releaseError = new Error("release failed");
     const dispose = vi.fn();

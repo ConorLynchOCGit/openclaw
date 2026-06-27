@@ -164,7 +164,7 @@ describe("stuck session recovery", () => {
     expect(mocks.resetCommandLane).not.toHaveBeenCalled();
   });
 
-  it("reclaims a stale active embedded run with queued work and no forward progress (#85639)", async () => {
+  it("does not reclaim stale active embedded work without explicit active abort", async () => {
     mocks.resolveActiveEmbeddedRunHandleSessionId.mockReturnValue("session-1");
     mocks.getDiagnosticSessionActivitySnapshot.mockReturnValue({
       lastProgressAgeMs: 10 * 60_000,
@@ -180,10 +180,16 @@ describe("stuck session recovery", () => {
       queueDepth: 1,
     });
 
-    expect(mocks.abortEmbeddedAgentRun).toHaveBeenCalledWith("session-1");
-    expect(outcome.status).toBe("aborted");
-    expect(warnLogMessages().some((m) => m.includes("reclaiming stale active run"))).toBe(true);
+    expect(mocks.abortEmbeddedAgentRun).not.toHaveBeenCalled();
+    expect(outcome).toMatchObject({
+      status: "skipped",
+      action: "observe_only",
+      reason: "active_embedded_run",
+      activeSessionId: "session-1",
+    });
+    expect(warnLogMessages().some((m) => m.includes("reclaiming stale active run"))).toBe(false);
   });
+
   it("aborts an active embedded run when active abort recovery is enabled", async () => {
     mocks.resolveActiveEmbeddedRunHandleSessionId.mockReturnValue("session-1");
     mocks.abortEmbeddedAgentRun.mockReturnValue(true);

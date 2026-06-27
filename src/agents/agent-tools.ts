@@ -1007,6 +1007,7 @@ export function createOpenClawCodingTools(options?: {
           allowHostBrowserControl: sandbox ? sandbox.browserAllowHostControl : true,
           agentSessionKey: options?.sessionKey,
           runId: options?.runId,
+          runAbortSignal: options?.abortSignal,
           runSessionKey: options?.runSessionKey,
           agentChannel: resolveGatewayMessageChannel(options?.messageProvider),
           agentAccountId: options?.agentAccountId,

@@ -804,7 +804,7 @@ allowed_sandbox_modes = ["read-only", "workspace-write"]
         codexDynamicToolsExclude: ["custom_tool"],
         codexDynamicToolTimeoutMs: 120_000,
         codexDynamicToolTimeouts: {
-          task: 600_000,
+          task: 0,
         },
       }),
     ).toEqual({
@@ -812,7 +812,7 @@ allowed_sandbox_modes = ["read-only", "workspace-write"]
       codexDynamicToolsExclude: ["custom_tool"],
       codexDynamicToolTimeoutMs: 120_000,
       codexDynamicToolTimeouts: {
-        task: 600_000,
+        task: 0,
       },
     });
   });

@@ -1139,9 +1139,11 @@ describe("codex command", () => {
     const listCodexAppServerModels = vi.fn();
     const safeCodexControlRequest = vi.fn();
     const codexControlRequest = vi.fn();
+    const buildCodexRuntimeReadinessReport = vi.fn();
     const getCurrentConversationBinding = vi.fn();
     const deps = createDeps({
       codexControlRequest,
+      buildCodexRuntimeReadinessReport,
       listCodexAppServerModels,
       readCodexStatusProbes,
       safeCodexControlRequest,
@@ -1152,6 +1154,9 @@ describe("codex command", () => {
     });
     await expect(handleCodexCommand(createContext("models all"), { deps })).resolves.toEqual({
       text: "Usage: /codex models",
+    });
+    await expect(handleCodexCommand(createContext("doctor now"), { deps })).resolves.toEqual({
+      text: "Usage: /codex doctor",
     });
     await expect(handleCodexCommand(createContext("account refresh"), { deps })).resolves.toEqual({
       text: "Usage: /codex account",
@@ -1174,10 +1179,45 @@ describe("codex command", () => {
     });
 
     expect(readCodexStatusProbes).not.toHaveBeenCalled();
+    expect(buildCodexRuntimeReadinessReport).not.toHaveBeenCalled();
     expect(listCodexAppServerModels).not.toHaveBeenCalled();
     expect(safeCodexControlRequest).not.toHaveBeenCalled();
     expect(codexControlRequest).not.toHaveBeenCalled();
     expect(getCurrentConversationBinding).not.toHaveBeenCalled();
+  });
+
+  it("formats /codex doctor readiness", async () => {
+    const result = await handleCodexCommand(createContext("doctor"), {
+      deps: createDeps({
+        buildCodexRuntimeReadinessReport: vi.fn(async () => ({
+          ok: true,
+          pluginRoot: "/app/dist/extensions/codex",
+          start: {
+            transport: "stdio",
+            command: "/app/node_modules/@openai/codex/bin/codex.js",
+            commandSource: "resolved-managed",
+            args: ["app-server", "--listen", "stdio://"],
+          },
+          appServer: {
+            requestTimeoutMs: 60_000,
+            turnCompletionIdleTimeoutMs: 60_000,
+            sandbox: "danger-full-access",
+            approvalsReviewer: "user",
+          },
+          checks: [
+            {
+              id: "codex.app_server.managed_runtime",
+              status: "ready",
+              message: "Managed Codex app-server runtime resolved.",
+            },
+          ],
+        })),
+      }),
+    });
+
+    expect(result.text).toContain("Codex doctor: ready");
+    expect(result.text).toContain("resolved-managed");
+    expect(result.text).toContain("codex.app_server.managed_runtime");
   });
 
   it("formats generated account/read responses", async () => {

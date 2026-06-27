@@ -128,6 +128,7 @@ export async function handleDynamicToolCallWithTimeout(params: {
   call: CodexDynamicToolCallParams;
   toolBridge: Pick<CodexDynamicToolBridge, "handleToolCall">;
   signal: AbortSignal;
+  /** 0 disables the per-call bridge watchdog; run cancellation still applies. */
   timeoutMs: number;
   onTimeout?: () => void;
 }): Promise<CodexDynamicToolCallResponse> {
@@ -147,23 +148,31 @@ export async function handleDynamicToolCallWithTimeout(params: {
   const abortPromise = new Promise<CodexDynamicToolCallResponse>((resolve) => {
     resolveAbort = resolve;
   });
-  const timeoutPromise = new Promise<CodexDynamicToolCallResponse>((resolve) => {
-    const timeoutMs = clampDynamicToolTimeoutMs(params.timeoutMs);
-    timeout = setTimeout(() => {
-      timedOut = true;
-      const timeoutDetails = formatDynamicToolTimeoutDetails({ call: params.call, timeoutMs });
-      controller.abort(new Error(timeoutDetails.responseMessage));
-      params.onTimeout?.();
-      embeddedAgentLog.warn("codex dynamic tool call timed out", {
-        ...timeoutDetails.meta,
-        consoleMessage: timeoutDetails.consoleMessage,
-      });
-      resolve(
-        failedDynamicToolResponse(timeoutDetails.responseMessage, { sideEffectEvidence: true }),
-      );
-    }, timeoutMs);
-    timeout.unref?.();
-  });
+  const timeoutMs = clampDynamicToolTimeoutMs(params.timeoutMs);
+  const timeoutPromise =
+    timeoutMs > 0
+      ? new Promise<CodexDynamicToolCallResponse>((resolve) => {
+          timeout = setTimeout(() => {
+            timedOut = true;
+            const timeoutDetails = formatDynamicToolTimeoutDetails({
+              call: params.call,
+              timeoutMs,
+            });
+            controller.abort(new Error(timeoutDetails.responseMessage));
+            params.onTimeout?.();
+            embeddedAgentLog.warn("codex dynamic tool call timed out", {
+              ...timeoutDetails.meta,
+              consoleMessage: timeoutDetails.consoleMessage,
+            });
+            resolve(
+              failedDynamicToolResponse(timeoutDetails.responseMessage, {
+                sideEffectEvidence: true,
+              }),
+            );
+          }, timeoutMs);
+          timeout.unref?.();
+        })
+      : new Promise<CodexDynamicToolCallResponse>(() => {});
 
   try {
     params.signal.addEventListener("abort", abortFromRun, { once: true });
@@ -398,13 +407,13 @@ function readConfiguredDynamicToolTimeoutMs(
   const codexPluginConfig = readCodexPluginConfig(
     config ? resolvePluginConfigObject(config, CODEX_PROVIDER_ID) : undefined,
   );
-  const configuredToolTimeoutMs = readPositiveFiniteTimeoutMs(
+  const configuredToolTimeoutMs = readNonNegativeFiniteTimeoutMs(
     codexPluginConfig.codexDynamicToolTimeouts?.[toolName],
   );
   if (configuredToolTimeoutMs !== undefined) {
     return configuredToolTimeoutMs;
   }
-  const configuredDefaultTimeoutMs = readPositiveFiniteTimeoutMs(
+  const configuredDefaultTimeoutMs = readNonNegativeFiniteTimeoutMs(
     codexPluginConfig.codexDynamicToolTimeoutMs,
   );
   if (configuredDefaultTimeoutMs !== undefined) {
@@ -441,6 +450,12 @@ function readTimeoutSecondsAsMs(value: unknown): number | undefined {
   return seconds === undefined ? undefined : seconds * 1000;
 }
 
+function readNonNegativeFiniteTimeoutMs(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
+    : undefined;
+}
+
 function readPositiveFiniteTimeoutMs(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0
     ? Math.floor(value)
@@ -448,5 +463,11 @@ function readPositiveFiniteTimeoutMs(value: unknown): number | undefined {
 }
 
 function clampDynamicToolTimeoutMs(timeoutMs: number): number {
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
+    return CODEX_DYNAMIC_TOOL_TIMEOUT_MS;
+  }
+  if (timeoutMs === 0) {
+    return 0;
+  }
   return Math.max(1, Math.min(CODEX_DYNAMIC_TOOL_MAX_TIMEOUT_MS, Math.floor(timeoutMs)));
 }

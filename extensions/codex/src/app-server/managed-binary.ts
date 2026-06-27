@@ -15,6 +15,7 @@ const CODEX_PLUGIN_ROOT = resolveDefaultCodexPluginRoot(CODEX_APP_SERVER_MODULE_
 
 type ManagedCodexAppServerPaths = {
   commandPath: string;
+  candidateRoots: string[];
   candidateCommandPaths: string[];
 };
 
@@ -22,6 +23,17 @@ type ResolveManagedCodexAppServerOptions = {
   platform?: NodeJS.Platform;
   pluginRoot?: string;
   pathExists?: (filePath: string, platform: NodeJS.Platform) => Promise<boolean>;
+};
+
+export type ManagedCodexAppServerRuntimeInspection = {
+  packageName: string;
+  pluginRoot: string;
+  candidateRoots: string[];
+  candidateCommandPaths: string[];
+  packageJsonPath?: string;
+  commandPath?: string;
+  ok: boolean;
+  error?: string;
 };
 
 /** Rewrites managed stdio start options to point at an executable Codex binary path. */
@@ -58,23 +70,25 @@ export function resolveManagedCodexAppServerPaths(params: {
   pluginRoot?: string;
 }): ManagedCodexAppServerPaths {
   const platform = params.platform ?? process.platform;
-  const candidateCommandPaths = resolveManagedCodexAppServerCommandCandidates(
-    params.pluginRoot ?? CODEX_PLUGIN_ROOT,
+  const pluginRoot = params.pluginRoot ?? CODEX_PLUGIN_ROOT;
+  const candidateRoots = resolveManagedCodexAppServerCandidateRoots(pluginRoot, platform);
+  const candidateCommandPaths = resolveManagedCodexAppServerCommandCandidatesFromRoots(
+    candidateRoots,
     platform,
   );
   return {
     commandPath: candidateCommandPaths[0] ?? "",
+    candidateRoots,
     candidateCommandPaths,
   };
 }
 
-function resolveManagedCodexAppServerCommandCandidates(
-  pluginRoot: string,
+function resolveManagedCodexAppServerCommandCandidatesFromRoots(
+  roots: readonly string[],
   platform: NodeJS.Platform,
 ): string[] {
   const pathApi = pathForPlatform(platform);
   const commandName = platform === "win32" ? "codex.cmd" : "codex";
-  const roots = resolveManagedCodexAppServerCandidateRoots(pluginRoot, platform);
   return [
     ...new Set([
       ...roots.map((root) => pathApi.join(root, "node_modules", ".bin", commandName)),
@@ -88,6 +102,19 @@ function resolveDefaultCodexPluginRoot(moduleDir: string): string {
   if (moduleBaseName === "dist" || moduleBaseName === "dist-runtime") {
     return path.dirname(moduleDir);
   }
+  const moduleParent = path.dirname(moduleDir);
+  const parentBaseName = path.basename(moduleParent);
+  if (parentBaseName === "dist" || parentBaseName === "dist-runtime") {
+    return path.dirname(moduleParent);
+  }
+  const grandParent = path.dirname(moduleParent);
+  const grandParentBaseName = path.basename(grandParent);
+  if (
+    parentBaseName === "src" &&
+    (grandParentBaseName === "dist" || grandParentBaseName === "dist-runtime")
+  ) {
+    return path.dirname(grandParent);
+  }
   return path.resolve(moduleDir, "..", "..");
 }
 
@@ -96,40 +123,68 @@ function resolveManagedCodexAppServerCandidateRoots(
   platform: NodeJS.Platform,
 ): string[] {
   const pathApi = pathForPlatform(platform);
-  const directRoots = [
-    pluginRoot,
-    pathApi.dirname(pluginRoot),
-    pathApi.dirname(pathApi.dirname(pluginRoot)),
-    isDistExtensionRoot(pluginRoot, platform)
-      ? pathApi.dirname(pathApi.dirname(pathApi.dirname(pluginRoot)))
-      : null,
-  ].filter((root): root is string => Boolean(root));
-  return [
-    ...new Set([...directRoots, ...resolveNearestNodeModulesProjectRoots(directRoots, platform)]),
-  ];
+  const directRoots = [pluginRoot];
+  const distPackageRoot = resolveDistExtensionPackageRoot(pluginRoot, platform);
+  if (distPackageRoot) {
+    directRoots.push(distPackageRoot);
+  }
+  const sourcePackageRoot = resolveSourceExtensionPackageRoot(pluginRoot, platform);
+  if (sourcePackageRoot) {
+    directRoots.push(sourcePackageRoot);
+  }
+  const npmProjectRoot = resolveNearestNodeModulesProjectRoot(pluginRoot, platform);
+  if (npmProjectRoot) {
+    directRoots.push(npmProjectRoot);
+  }
+  return [...new Set(directRoots.map((root) => pathApi.resolve(root)))];
 }
 
-function resolveNearestNodeModulesProjectRoots(
-  roots: readonly string[],
+function resolveNearestNodeModulesProjectRoot(
+  root: string,
   platform: NodeJS.Platform,
-): string[] {
+): string | null {
   const pathApi = pathForPlatform(platform);
-  const projectRoots: string[] = [];
-  for (const root of roots) {
-    let current = pathApi.resolve(root);
-    while (true) {
-      if (pathApi.basename(current) === "node_modules") {
-        projectRoots.push(pathApi.dirname(current));
-        break;
-      }
-      const parent = pathApi.dirname(current);
-      if (parent === current) {
-        break;
-      }
-      current = parent;
+  let current = pathApi.resolve(root);
+  while (true) {
+    if (pathApi.basename(current) === "node_modules") {
+      return pathApi.dirname(current);
     }
+    const parent = pathApi.dirname(current);
+    if (parent === current) {
+      return null;
+    }
+    current = parent;
   }
-  return projectRoots;
+}
+
+function resolveDistExtensionPackageRoot(
+  pluginRoot: string,
+  platform: NodeJS.Platform,
+): string | null {
+  if (!isDistExtensionRoot(pluginRoot, platform)) {
+    return null;
+  }
+  const pathApi = pathForPlatform(platform);
+  return pathApi.dirname(pathApi.dirname(pathApi.dirname(pluginRoot)));
+}
+
+function resolveSourceExtensionPackageRoot(
+  pluginRoot: string,
+  platform: NodeJS.Platform,
+): string | null {
+  const pathApi = pathForPlatform(platform);
+  const extensionsDir = pathApi.dirname(pluginRoot);
+  if (
+    pathApi.basename(pluginRoot) !== "codex" ||
+    pathApi.basename(extensionsDir) !== "extensions"
+  ) {
+    return null;
+  }
+  const packageRoot = pathApi.dirname(extensionsDir);
+  return pathApi.basename(packageRoot) === "dist" ||
+    pathApi.basename(packageRoot) === "dist-runtime"
+    ? null
+    : packageRoot;
 }
 
 function resolveManagedCodexPackageBinCandidates(
@@ -151,11 +206,11 @@ function resolveManagedCodexPackageBinCandidates(
 }
 
 function resolveManagedCodexPackageBinCandidate(root: string): string | null {
+  const packageJsonPath = resolveManagedCodexPackageJsonPath(root);
+  if (!packageJsonPath) {
+    return null;
+  }
   try {
-    const requireFromRoot = createRequire(path.join(root, "package.json"));
-    const packageJsonPath = requireFromRoot.resolve(
-      `${MANAGED_CODEX_APP_SERVER_PACKAGE}/package.json`,
-    );
     const packageRoot = path.dirname(packageJsonPath);
     const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as {
       bin?: unknown;
@@ -170,6 +225,71 @@ function resolveManagedCodexPackageBinCandidate(root: string): string | null {
   } catch {
     return null;
   }
+}
+
+function resolveManagedCodexPackageJsonPath(root: string): string | null {
+  try {
+    const requireFromRoot = createRequire(path.join(root, "package.json"));
+    return requireFromRoot.resolve(`${MANAGED_CODEX_APP_SERVER_PACKAGE}/package.json`);
+  } catch {
+    return null;
+  }
+}
+
+function resolveFirstManagedCodexPackageJsonPath(roots: readonly string[]): string | undefined {
+  for (const root of roots) {
+    const packageJsonPath = resolveManagedCodexPackageJsonPath(root);
+    if (packageJsonPath) {
+      return packageJsonPath;
+    }
+  }
+  return undefined;
+}
+
+export async function inspectManagedCodexAppServerRuntime(
+  options: ResolveManagedCodexAppServerOptions = {},
+): Promise<ManagedCodexAppServerRuntimeInspection> {
+  const platform = options.platform ?? process.platform;
+  const pluginRoot = options.pluginRoot ?? CODEX_PLUGIN_ROOT;
+  const paths = resolveManagedCodexAppServerPaths({ platform, pluginRoot });
+  const pathExists = options.pathExists ?? commandPathExists;
+  const packageJsonPath = resolveFirstManagedCodexPackageJsonPath(paths.candidateRoots);
+  let commandPath: string | undefined;
+  let commandError: string | undefined;
+  try {
+    commandPath = await findManagedCodexAppServerCommandPath({
+      candidateCommandPaths: paths.candidateCommandPaths,
+      pathExists,
+      platform,
+    });
+  } catch (error) {
+    commandError = error instanceof Error ? error.message : String(error);
+  }
+
+  const missing: string[] = [];
+  if (!packageJsonPath) {
+    missing.push(`${MANAGED_CODEX_APP_SERVER_PACKAGE}/package.json`);
+  }
+  if (!commandPath) {
+    missing.push("executable codex app-server binary");
+  }
+
+  return {
+    packageName: MANAGED_CODEX_APP_SERVER_PACKAGE,
+    pluginRoot,
+    candidateRoots: paths.candidateRoots,
+    candidateCommandPaths: paths.candidateCommandPaths,
+    ...(packageJsonPath ? { packageJsonPath } : {}),
+    ...(commandPath ? { commandPath } : {}),
+    ok: missing.length === 0,
+    ...(missing.length > 0
+      ? {
+          error:
+            commandError ??
+            `Managed Codex app-server runtime is incomplete; missing ${missing.join(" and ")}.`,
+        }
+      : {}),
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -209,8 +329,9 @@ async function findManagedCodexAppServerCommandPath(params: {
   throw new Error(
     [
       `Managed Codex app-server binary was not found for ${MANAGED_CODEX_APP_SERVER_PACKAGE}.`,
-      "Reinstall or update OpenClaw, or run pnpm install in a source checkout.",
-      "Set plugins.entries.codex.config.appServer.command or OPENCLAW_CODEX_APP_SERVER_BIN to use a custom Codex binary.",
+      "Bundled Codex plugin runtime dependency is missing or incomplete at the declared plugin runtime roots.",
+      `Checked: ${params.candidateCommandPaths.join(", ") || "<none>"}.`,
+      "Rebuild OpenClaw so the bundled Codex runtime dependency is present, or set plugins.entries.codex.config.appServer.command / OPENCLAW_CODEX_APP_SERVER_BIN as an explicit operator override.",
     ].join(" "),
   );
 }

@@ -357,6 +357,7 @@ export function buildHelp(): string {
   return [
     "Codex commands:",
     "- /codex status",
+    "- /codex doctor",
     "- /codex models",
     "- /codex threads [filter]",
     "- /codex sessions --host <node> [filter]",

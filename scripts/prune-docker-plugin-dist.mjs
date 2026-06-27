@@ -7,6 +7,7 @@ import { collectRootPackageExcludedExtensionDirs } from "./lib/bundled-plugin-bu
 import { removePathIfExists } from "./runtime-postbuild-shared.mjs";
 
 const RUNTIME_DEPENDENCY_FIELDS = ["dependencies", "optionalDependencies"];
+const REQUIRED_DOCKER_BUNDLED_PLUGIN_IDS = new Set(["codex"]);
 
 function parsePluginList(value) {
   if (typeof value !== "string") {
@@ -25,6 +26,14 @@ function parsePluginList(value) {
  */
 export function parseDockerPluginKeepList(value) {
   return parsePluginList(value);
+}
+
+/** Docker runtime images always keep first-party bundled plugin ids required by core runtime. */
+export function collectDockerPluginKeepIds(env = process.env) {
+  return new Set([
+    ...REQUIRED_DOCKER_BUNDLED_PLUGIN_IDS,
+    ...parseDockerPluginKeepList(env.OPENCLAW_EXTENSIONS),
+  ]);
 }
 
 function readPackageJson(filePath) {
@@ -170,7 +179,7 @@ export function pruneDockerPluginDist(params = {}) {
   const repoRoot = params.cwd ?? params.repoRoot ?? process.cwd();
   const env = params.env ?? process.env;
   const bundledPluginDir = env.OPENCLAW_BUNDLED_PLUGIN_DIR ?? "extensions";
-  const keepPluginIds = parseDockerPluginKeepList(env.OPENCLAW_EXTENSIONS);
+  const keepPluginIds = collectDockerPluginKeepIds(env);
   const excludedPluginIds = collectRootPackageExcludedExtensionDirs({ cwd: repoRoot });
   const omittedPluginIds = new Set(
     [...excludedPluginIds].filter((pluginId) => !keepPluginIds.has(pluginId)),

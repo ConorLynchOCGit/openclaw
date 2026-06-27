@@ -105,7 +105,6 @@ describe("dispatchReplyFromConfig stale visible admission recovery", () => {
         sessionId: "active-session",
         sessionKey,
         queueDepth: 1,
-        staleActiveProgressAbortMs: 1_000,
       }),
     );
     expect(result).toMatchObject({

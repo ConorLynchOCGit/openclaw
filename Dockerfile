@@ -8,6 +8,7 @@
 #
 # Build stages use full bookworm; the runtime image is always bookworm-slim.
 ARG OPENCLAW_EXTENSIONS=""
+ARG OPENCLAW_REQUIRED_BUNDLED_PLUGINS="codex"
 ARG OPENCLAW_BUNDLED_PLUGIN_DIR=extensions
 ARG OPENCLAW_NODE_BOOKWORM_IMAGE="docker.io/library/node:24-bookworm@sha256:8530f76a96d88820d288761f022e318970dda93d01536919fbc16076b7983e63"
 ARG OPENCLAW_NODE_BOOKWORM_SLIM_IMAGE="docker.io/library/node:24-bookworm-slim@sha256:242549cd46785b480c832479a730f4f2a20865d61ea2e404fdb2a5c3d3b73ecf"
@@ -25,6 +26,7 @@ ARG OPENCLAW_BUN_IMAGE="docker.io/oven/bun:1.3.13@sha256:87416c977a612a204eb54ab
 
 FROM ${OPENCLAW_NODE_BOOKWORM_IMAGE} AS workspace-deps
 ARG OPENCLAW_EXTENSIONS
+ARG OPENCLAW_REQUIRED_BUNDLED_PLUGINS
 ARG OPENCLAW_BUNDLED_PLUGIN_DIR
 # Copy package.json files for workspace packages used by the install layer.
 RUN --mount=type=bind,source=packages,target=/tmp/packages,readonly \
@@ -37,7 +39,7 @@ RUN --mount=type=bind,source=packages,target=/tmp/packages,readonly \
       mkdir -p "/out/packages/$pkg_name" && \
       cp "$manifest" "/out/packages/$pkg_name/package.json"; \
     done && \
-    for ext in $(printf '%s\n' "$OPENCLAW_EXTENSIONS" | tr ',' ' '); do \
+    for ext in $(printf '%s\n%s\n' "$OPENCLAW_REQUIRED_BUNDLED_PLUGINS" "$OPENCLAW_EXTENSIONS" | tr ',' ' '); do \
       if [ -f "/tmp/${OPENCLAW_BUNDLED_PLUGIN_DIR}/$ext/package.json" ]; then \
         mkdir -p "/out/${OPENCLAW_BUNDLED_PLUGIN_DIR}/$ext" && \
         cp "/tmp/${OPENCLAW_BUNDLED_PLUGIN_DIR}/$ext/package.json" "/out/${OPENCLAW_BUNDLED_PLUGIN_DIR}/$ext/package.json"; \
@@ -49,6 +51,7 @@ FROM ${OPENCLAW_BUN_IMAGE} AS bun-binary
 FROM ${OPENCLAW_NODE_BOOKWORM_IMAGE} AS build
 ARG OPENCLAW_BUNDLED_PLUGIN_DIR
 ARG OPENCLAW_EXTENSIONS
+ARG OPENCLAW_REQUIRED_BUNDLED_PLUGINS
 
 # Copy pinned Bun binary from the official image instead of fetching via curl.
 COPY --from=bun-binary /usr/local/bin/bun /usr/local/bin/bun
@@ -126,6 +129,7 @@ RUN pnpm_config_verify_deps_before_run=false pnpm qa:lab:build
 # metadata before copying runtime assets into the final image.
 FROM build AS runtime-assets
 ARG OPENCLAW_EXTENSIONS
+ARG OPENCLAW_REQUIRED_BUNDLED_PLUGINS
 ARG OPENCLAW_BUNDLED_PLUGIN_DIR
 # BuildKit cache mounts are not part of cached layers; seed tarballs for the
 # installed prod graph in the same step that runs offline prune.
@@ -136,7 +140,8 @@ RUN --mount=type=cache,id=openclaw-pnpm-store,target=/root/.local/share/pnpm/sto
       --config.supportedArchitectures.os=linux \
       --config.supportedArchitectures.cpu="$(node -p 'process.arch')" \
       --config.supportedArchitectures.libc=glibc && \
-    OPENCLAW_EXTENSIONS="$OPENCLAW_EXTENSIONS" OPENCLAW_BUNDLED_PLUGIN_DIR="$OPENCLAW_BUNDLED_PLUGIN_DIR" node scripts/prune-docker-plugin-dist.mjs && \
+    OPENCLAW_EXTENSIONS="$(printf '%s,%s' "$OPENCLAW_REQUIRED_BUNDLED_PLUGINS" "$OPENCLAW_EXTENSIONS")" OPENCLAW_BUNDLED_PLUGIN_DIR="$OPENCLAW_BUNDLED_PLUGIN_DIR" node scripts/prune-docker-plugin-dist.mjs && \
+    node scripts/verify-bundled-codex-runtime.mjs --root /app --plugin-root "/app/dist/${OPENCLAW_BUNDLED_PLUGIN_DIR}/codex" && \
     node scripts/postinstall-bundled-plugins.mjs && \
     find dist -type f \( -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' -o -name '*.map' \) -delete && \
     node scripts/check-package-dist-imports.mjs /app

@@ -1280,7 +1280,6 @@ export async function dispatchReplyFromConfig(
         sessionKey: dispatchOperationSessionKey,
         ageMs: visibleReplyRecoveryWaitMs,
         queueDepth: 1,
-        staleActiveProgressAbortMs: visibleReplyRecoveryWaitMs,
       });
     let admission = await admitReplyTurn({
       sessionKey: dispatchOperationSessionKey,

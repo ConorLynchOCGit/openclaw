@@ -45,14 +45,14 @@
       },
       "codexDynamicToolTimeoutMs": {
         "type": "number",
-        "minimum": 1,
+        "minimum": 0,
         "maximum": 600000
       },
       "codexDynamicToolTimeouts": {
         "type": "object",
         "additionalProperties": {
           "type": "number",
-          "minimum": 1,
+          "minimum": 0,
           "maximum": 600000
         },
         "default": {}
