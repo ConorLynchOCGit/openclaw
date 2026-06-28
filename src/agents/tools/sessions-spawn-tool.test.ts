@@ -333,7 +333,7 @@ describe("sessions_spawn tool", () => {
     expect(hoisted.spawnAcpDirectMock).not.toHaveBeenCalled();
   });
 
-  it("passes inherited tool denies to subagent spawns", async () => {
+  it("does not pass parent inherited tool denies to native subagent spawns", async () => {
     const tool = createSessionsSpawnTool({
       agentSessionKey: "agent:main:main",
       inheritedToolDenylist: ["exec", "read"],
@@ -344,7 +344,7 @@ describe("sessions_spawn tool", () => {
     });
 
     const spawnContext = mockCallArg(hoisted.spawnSubagentDirectMock, 0, 1, "spawnSubagentDirect");
-    expect(spawnContext.inheritedToolDenylist).toEqual(["exec", "read"]);
+    expect(spawnContext).not.toHaveProperty("inheritedToolDenylist");
   });
 
   it("does not pass inherited positive tool allow lists to native subagent spawns", async () => {

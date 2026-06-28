@@ -266,12 +266,101 @@ describe("sessionsCommand", () => {
       agentId?: string;
       session?: {
         key?: string;
+        finalAssistantText?: string | null;
         childSessions?: string[];
       };
     };
     expect(payload.agentId).toBe("planning");
     expect(payload.session?.key).toBe("agent:planning:main");
+    expect(payload.session?.finalAssistantText).toBe(
+      "Final recursive planning improvement synthesized.",
+    );
     expect(payload.session?.childSessions).toContain("agent:researcher:subagent:child");
+  });
+
+  it("derives final assistant text from transcript even when a later user turn is present", async () => {
+    const sessionId = "33333333-3333-4333-8333-333333333333";
+    const store = writeStore(
+      {
+        "agent:main:main": {
+          sessionId,
+          updatedAt: Date.now() - 60_000,
+          status: "done",
+          endedAt: Date.now() - 30_000,
+          modelProvider: "openai",
+          model: "gpt-5.5",
+        },
+      },
+      "sessions-show-final-assistant",
+    );
+    const transcript = path.join(path.dirname(store), `${sessionId}.jsonl`);
+    fs.writeFileSync(
+      transcript,
+      [
+        JSON.stringify({
+          message: {
+            role: "user",
+            content: "Run the approved proof.",
+          },
+        }),
+        JSON.stringify({
+          message: {
+            role: "assistant",
+            content: [
+              {
+                type: "text",
+                text: "Commentary progress",
+                textSignature: JSON.stringify({
+                  v: 1,
+                  id: "msg_commentary",
+                  phase: "commentary",
+                }),
+              },
+              {
+                type: "text",
+                text: "PHASE0W_FINAL_POSTFIX_PROOF_DONE",
+                textSignature: JSON.stringify({
+                  v: 1,
+                  id: "msg_final",
+                  phase: "final_answer",
+                }),
+              },
+            ],
+          },
+        }),
+        JSON.stringify({
+          message: {
+            role: "user",
+            content: "Trailing operator readback request.",
+          },
+        }),
+      ].join("\n"),
+    );
+
+    const { runtime, logs } = makeRuntime();
+    try {
+      await sessionsShowCommand(
+        {
+          store,
+          sessionKey: "agent:main:main",
+          json: true,
+          agent: "main",
+        },
+        runtime,
+      );
+    } finally {
+      fs.rmSync(store, { force: true });
+      fs.rmSync(transcript, { force: true });
+    }
+
+    const payload = JSON.parse(logs[0] ?? "{}") as {
+      session?: {
+        lastMessagePreview?: string | null;
+        finalAssistantText?: string | null;
+      };
+    };
+    expect(payload.session?.lastMessagePreview).toBe("Trailing operator readback request.");
+    expect(payload.session?.finalAssistantText).toBe("PHASE0W_FINAL_POSTFIX_PROOF_DONE");
   });
 
   it("applies --active filtering in JSON output", async () => {

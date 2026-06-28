@@ -8,8 +8,6 @@ import path from "node:path";
 import { embeddedAgentLog, formatErrorMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
 import {
   createAgentHarnessTaskRuntime,
-  deliverAgentHarnessTaskCompletion,
-  isDurableAgentHarnessCompletionDelivery,
   type AgentHarnessTaskRuntimeScope,
   type AgentHarnessTaskRuntime,
   type AgentHarnessTaskRecord,
@@ -35,7 +33,6 @@ import { isJsonObject } from "./protocol.js";
 
 type NativeSubagentMonitorRuntime = {
   createAgentHarnessTaskRuntime: typeof createAgentHarnessTaskRuntime;
-  deliverAgentHarnessTaskCompletion: typeof deliverAgentHarnessTaskCompletion;
 };
 
 type ParentState = {
@@ -45,7 +42,7 @@ type ParentState = {
   agentId?: string;
   taskRuntime?: AgentHarnessTaskRuntime;
   mirror?: CodexNativeSubagentTaskMirror;
-  deliveredCompletionKeys: Set<string>;
+  mirroredCompletionKeys: Set<string>;
 };
 
 type ChildState = {
@@ -55,11 +52,6 @@ type ChildState = {
   transcriptPollAttempt: number;
   transcriptPollTimer?: ReturnType<typeof setTimeout>;
   transcriptTerminal: boolean;
-  pendingCompletion?: CodexNativeSubagentCompletion;
-  pendingCompletionEventAt?: number;
-  completionDeliveryAttempt: number;
-  completionDeliveryTimer?: ReturnType<typeof setTimeout>;
-  deliveringCompletionKey?: string;
   noFinalCompletionFallbackTimer?: ReturnType<typeof setTimeout>;
 };
 
@@ -71,22 +63,17 @@ type TranscriptCompletion = CodexNativeSubagentCompletion & {
 type MonitorOptions = {
   codexHome?: string;
   transcriptPollDelaysMs?: readonly number[];
-  completionDeliveryRetryDelaysMs?: readonly number[];
   taskRowReconcileIntervalMs?: number;
 };
 
 const DEFAULT_TRANSCRIPT_POLL_DELAYS_MS = [
   2_000, 5_000, 10_000, 15_000, 30_000, 60_000, 120_000, 300_000,
 ];
-const DEFAULT_COMPLETION_DELIVERY_RETRY_DELAYS_MS = [
-  5_000, 15_000, 30_000, 60_000, 120_000, 300_000,
-];
 const DEFAULT_TASK_ROW_RECONCILE_INTERVAL_MS = 10_000;
 const RECENT_TERMINAL_TASK_RECONCILE_GRACE_MS = 60_000;
 
 const defaultRuntime: NativeSubagentMonitorRuntime = {
   createAgentHarnessTaskRuntime,
-  deliverAgentHarnessTaskCompletion,
 };
 
 const monitors = new WeakMap<CodexAppServerClient, CodexNativeSubagentMonitor>();
@@ -118,7 +105,7 @@ export function registerCodexNativeSubagentMonitor(params: {
   });
 }
 
-/** Tracks native subagent thread notifications, transcript completions, and task delivery. */
+/** Tracks native subagent thread notifications and mirrors completion into task rows. */
 export class CodexNativeSubagentMonitor {
   private readonly startedAt = Date.now();
   private readonly parentStates = new Map<string, ParentState>();
@@ -128,7 +115,6 @@ export class CodexNativeSubagentMonitor {
   private readonly transcriptPathsByChildThreadId = new Map<string, string>();
   private codexHome?: string;
   private transcriptPollDelaysMs: readonly number[];
-  private completionDeliveryRetryDelaysMs: readonly number[];
   private taskRowReconcileTimer?: ReturnType<typeof setInterval>;
 
   constructor(
@@ -139,8 +125,6 @@ export class CodexNativeSubagentMonitor {
     this.codexHome = normalizeOptionalString(options.codexHome);
     this.transcriptPollDelaysMs =
       options.transcriptPollDelaysMs ?? DEFAULT_TRANSCRIPT_POLL_DELAYS_MS;
-    this.completionDeliveryRetryDelaysMs =
-      options.completionDeliveryRetryDelaysMs ?? DEFAULT_COMPLETION_DELIVERY_RETRY_DELAYS_MS;
     this.startTaskRowReconciler(
       options.taskRowReconcileIntervalMs ?? DEFAULT_TASK_ROW_RECONCILE_INTERVAL_MS,
     );
@@ -186,7 +170,7 @@ export class CodexNativeSubagentMonitor {
         requesterSessionKey: params.requesterSessionKey,
         taskRuntimeScope: params.taskRuntimeScope,
         agentId: params.agentId,
-        deliveredCompletionKeys: new Set<string>(),
+        mirroredCompletionKeys: new Set<string>(),
       };
       this.ensureParentTaskRuntime(state);
       this.parentStates.set(parentThreadId, {
@@ -368,124 +352,23 @@ export class CodexNativeSubagentMonitor {
         childState.noFinalCompletionFallbackTimer = undefined;
       }
     }
-    if (!state.requesterSessionKey) {
-      return;
-    }
     const completionKey = buildCompletionDedupeKey(state.parentThreadId, completion);
-    if (state.deliveredCompletionKeys.has(completionKey)) {
+    if (state.mirroredCompletionKeys.has(completionKey)) {
       return;
     }
-    const deliveryState =
-      childState ?? this.ensureChildState(state.parentThreadId, completion.childThreadId);
-    deliveryState.pendingCompletion = completion;
-    deliveryState.pendingCompletionEventAt = eventAt;
-    this.markCompletionDeliveryPending(completion);
-    await this.deliverPendingCompletion(state, deliveryState);
+    state.mirroredCompletionKeys.add(completionKey);
+    this.markCompletionDeliveryNotApplicable(completion);
   }
 
-  private async deliverPendingCompletion(
-    state: ParentState,
-    childState: ChildState,
-  ): Promise<void> {
-    const completion = childState.pendingCompletion;
-    if (!completion || !state.requesterSessionKey || !state.taskRuntimeScope) {
-      return;
-    }
-    const completionKey = buildCompletionDedupeKey(state.parentThreadId, completion);
-    if (
-      state.deliveredCompletionKeys.has(completionKey) ||
-      childState.deliveringCompletionKey === completionKey
-    ) {
-      return;
-    }
-    childState.deliveringCompletionKey = completionKey;
-    try {
-      const delivery = await this.runtime.deliverAgentHarnessTaskCompletion({
-        scope: state.taskRuntimeScope,
-        childSessionKey: codexNativeSubagentRunId(completion.childThreadId),
-        childSessionId: completion.childThreadId,
-        announceId: `codex-native:${state.parentThreadId}:${completion.childThreadId}:${completion.status}`,
-        announceType: "Codex native subagent",
-        taskLabel: "Codex native subagent",
-        status: completion.status,
-        statusLabel: completion.statusLabel,
-        result: completion.result,
-        replyInstruction:
-          "Use the Codex native subagent result to continue or wrap up the parent task. If this is a Discord/channel session, send the visible response with the message tool instead of only writing a transcript final answer. Reply in your normal assistant voice and do not expose internal notification markup.",
-      });
-      if (isDurableAgentHarnessCompletionDelivery(delivery)) {
-        state.deliveredCompletionKeys.add(completionKey);
-        childState.pendingCompletion = undefined;
-        childState.pendingCompletionEventAt = undefined;
-        childState.completionDeliveryAttempt = 0;
-        if (childState.completionDeliveryTimer) {
-          clearTimeout(childState.completionDeliveryTimer);
-          childState.completionDeliveryTimer = undefined;
-        }
-        this.markCompletionDeliveryDelivered(completion);
-        return;
-      }
-      const error = delivery.error ?? "completion delivery did not produce a parent response";
-      this.markCompletionDeliveryPending(completion, error);
-      this.scheduleCompletionDeliveryRetry(childState);
-    } catch (error) {
-      this.markCompletionDeliveryPending(completion, formatErrorMessage(error));
-      this.scheduleCompletionDeliveryRetry(childState);
-      embeddedAgentLog.warn("Failed to deliver Codex native subagent completion", {
-        parentThreadId: state.parentThreadId,
-        childThreadId: completion.childThreadId,
-        error: formatErrorMessage(error),
-      });
-    } finally {
-      childState.deliveringCompletionKey = undefined;
-    }
-  }
-
-  private markCompletionDeliveryPending(
-    completion: CodexNativeSubagentCompletion,
-    error?: string,
-  ): void {
+  private markCompletionDeliveryNotApplicable(completion: CodexNativeSubagentCompletion): void {
     const taskRuntime = this.getTaskRuntimeForChild(completion.childThreadId);
     if (!taskRuntime) {
       return;
     }
     taskRuntime.setDetachedTaskDeliveryStatusByRunId({
       runId: codexNativeSubagentRunId(completion.childThreadId),
-      deliveryStatus: "pending",
-      ...(error ? { error } : {}),
+      deliveryStatus: "not_applicable",
     });
-  }
-
-  private markCompletionDeliveryDelivered(completion: CodexNativeSubagentCompletion): void {
-    const taskRuntime = this.getTaskRuntimeForChild(completion.childThreadId);
-    if (!taskRuntime) {
-      return;
-    }
-    taskRuntime.setDetachedTaskDeliveryStatusByRunId({
-      runId: codexNativeSubagentRunId(completion.childThreadId),
-      deliveryStatus: "delivered",
-    });
-  }
-
-  private scheduleCompletionDeliveryRetry(childState: ChildState): void {
-    if (!childState.pendingCompletion || childState.completionDeliveryTimer) {
-      return;
-    }
-    const attempt = childState.completionDeliveryAttempt;
-    const delayMs =
-      this.completionDeliveryRetryDelaysMs[
-        Math.min(attempt, this.completionDeliveryRetryDelaysMs.length - 1)
-      ];
-    childState.completionDeliveryAttempt += 1;
-    childState.completionDeliveryTimer = setTimeout(() => {
-      childState.completionDeliveryTimer = undefined;
-      const state = this.parentStates.get(childState.parentThreadId);
-      if (!state) {
-        return;
-      }
-      void this.deliverPendingCompletion(state, childState);
-    }, delayMs);
-    unrefTimer(childState.completionDeliveryTimer);
   }
 
   private finalizeCompletionTask(completion: CodexNativeSubagentCompletion, eventAt: number): void {
@@ -539,7 +422,6 @@ export class CodexNativeSubagentMonitor {
         parentThreadId: normalizedParentThreadId,
         transcriptPollAttempt: 0,
         transcriptTerminal: false,
-        completionDeliveryAttempt: 0,
       };
       this.childStates.set(normalizedChildThreadId, childState);
     }
@@ -640,10 +522,6 @@ export class CodexNativeSubagentMonitor {
       if (childState.transcriptPollTimer) {
         clearTimeout(childState.transcriptPollTimer);
         childState.transcriptPollTimer = undefined;
-      }
-      if (childState.completionDeliveryTimer) {
-        clearTimeout(childState.completionDeliveryTimer);
-        childState.completionDeliveryTimer = undefined;
       }
       if (childState.noFinalCompletionFallbackTimer) {
         clearTimeout(childState.noFinalCompletionFallbackTimer);
@@ -780,14 +658,13 @@ export class CodexNativeSubagentMonitor {
     ) {
       return false;
     }
-    if (
-      task.status === "running" ||
-      task.status === "queued" ||
-      task.deliveryStatus === "pending"
-    ) {
+    if (task.status === "running" || task.status === "queued") {
       return true;
     }
-    return task.deliveryStatus === "not_applicable" && this.isRecentTerminalTask(task);
+    return (
+      (task.deliveryStatus === "not_applicable" || task.deliveryStatus === "pending") &&
+      this.isRecentTerminalTask(task)
+    );
   }
 
   private isRecentTerminalTask(task: AgentHarnessTaskRecord): boolean {

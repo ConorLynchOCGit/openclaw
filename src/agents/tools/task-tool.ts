@@ -191,7 +191,6 @@ export function createTaskTool(
           agentMemberRoleIds: opts?.agentMemberRoleIds,
           requesterAgentIdOverride: opts?.requesterAgentIdOverride,
           workspaceDir: opts?.workspaceDir,
-          inheritedToolDenylist: opts?.inheritedToolDenylist,
         },
       );
 

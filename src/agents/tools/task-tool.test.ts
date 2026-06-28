@@ -75,9 +75,12 @@ describe("task tool", () => {
         completionOwnerKey: "agent:planning:main",
         requesterAgentIdOverride: "planning",
         workspaceDir: "/workspace",
-        inheritedToolDenylist: ["gateway"],
       }),
     );
+    const spawnContext = hoisted.spawnSubagentDirectMock.mock.calls[0]?.[1] as
+      | Record<string, unknown>
+      | undefined;
+    expect(spawnContext).not.toHaveProperty("inheritedToolDenylist");
     expect(hoisted.waitForAgentRunMock).toHaveBeenCalledWith({
       runId: "run-child",
       timeoutMs: 60_000,
