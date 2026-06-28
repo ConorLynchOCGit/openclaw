@@ -132,6 +132,14 @@ export type ArtifactsDownloadResult = {
 
 export type TaskStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "timed_out";
 
+export type TaskDeliveryStatus =
+  | "pending"
+  | "delivered"
+  | "session_queued"
+  | "failed"
+  | "parent_missing"
+  | "not_applicable";
+
 /** Gateway task summary returned by task list/get calls. */
 export type TaskSummary = {
   id: string;
@@ -140,6 +148,7 @@ export type TaskSummary = {
   runtime?: string;
   status: TaskStatus;
   title?: string;
+  deliveryStatus: TaskDeliveryStatus;
   agentId?: string;
   sessionKey?: string;
   childSessionKey?: string;
