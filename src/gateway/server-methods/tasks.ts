@@ -85,6 +85,7 @@ function mapTaskSummary(task: TaskRecord): TaskSummary {
     runtime: task.runtime,
     status: TASK_STATUS_TO_LEDGER_STATUS[task.status],
     title: formatTaskStatusTitle(task),
+    deliveryStatus: task.deliveryStatus,
     ...(task.agentId ? { agentId: task.agentId } : {}),
     sessionKey: task.requesterSessionKey,
     ...(task.childSessionKey ? { childSessionKey: task.childSessionKey } : {}),

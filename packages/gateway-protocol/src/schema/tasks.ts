@@ -18,6 +18,16 @@ export const TaskLedgerStatusSchema = Type.Union([
   Type.Literal("timed_out"),
 ]);
 
+/** Closed task completion-delivery statuses visible as bounded readback only. */
+export const TaskDeliveryStatusSchema = Type.Union([
+  Type.Literal("pending"),
+  Type.Literal("delivered"),
+  Type.Literal("session_queued"),
+  Type.Literal("failed"),
+  Type.Literal("parent_missing"),
+  Type.Literal("not_applicable"),
+]);
+
 const TimestampSchema = Type.Union([Type.String(), Type.Integer({ minimum: 0 })]);
 
 /** Public task summary returned by task list/get/cancel responses. */
@@ -37,6 +47,7 @@ export const TaskSummarySchema = Type.Object(
     flowId: Type.Optional(Type.String()),
     parentTaskId: Type.Optional(Type.String()),
     sourceId: Type.Optional(Type.String()),
+    deliveryStatus: TaskDeliveryStatusSchema,
     createdAt: Type.Optional(TimestampSchema),
     updatedAt: Type.Optional(TimestampSchema),
     startedAt: Type.Optional(TimestampSchema),

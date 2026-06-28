@@ -135,6 +135,7 @@ describe("tasks gateway handlers", () => {
     expect(listedTask?.kind).toBe("investigation");
     expect(listedTask?.runtime).toBe("subagent");
     expect(listedTask?.status).toBe("running");
+    expect(listedTask?.deliveryStatus).toBe("pending");
     expect(listedTask?.title).toBe("Investigate issue");
     expect(listedTask?.agentId).toBe("main");
     expect(listedTask?.sessionKey).toBe("agent:main:main");
@@ -157,6 +158,7 @@ describe("tasks gateway handlers", () => {
     const { payload } = await getTaskPayload(task.taskId);
 
     expect(payload?.task?.status).toBe("completed");
+    expect(payload?.task?.deliveryStatus).toBe("not_applicable");
     expect(payload?.task?.title).toBe("Done task");
   });
 
@@ -199,6 +201,7 @@ describe("tasks gateway handlers", () => {
       childSessionKey: "agent:researcher:subagent:child-result",
       runId: "run-child-result",
       agentId: "researcher",
+      deliveryStatus: "not_applicable",
     });
     expect(payload?.task?.childResult).toBeUndefined();
     expect(JSON.stringify(payload?.task)).not.toContain("Child found three concrete routing gaps.");
