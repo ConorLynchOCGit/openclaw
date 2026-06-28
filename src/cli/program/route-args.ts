@@ -390,3 +390,21 @@ export function parseTasksAuditRouteArgs(argv: string[]) {
     limit,
   };
 }
+
+/** Parse JSON-only `openclaw tasks show <task-id>` lookups for the route-first path. */
+export function parseTasksShowRouteArgs(argv: string[]) {
+  if (!hasFlag(argv, "--json")) {
+    return null;
+  }
+  const lookup = parseSinglePositional(argv, {
+    commandPath: ["tasks", "show"],
+    booleanFlags: ["--json"],
+  });
+  if (!lookup) {
+    return null;
+  }
+  return {
+    json: true as const,
+    lookup,
+  };
+}

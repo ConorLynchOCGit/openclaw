@@ -13,7 +13,7 @@ import {
 } from "../tasks/task-registry.js";
 import type { TaskRecord } from "../tasks/task-registry.types.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
-import { tasksAuditJsonCommand, tasksListJsonCommand } from "./tasks-json.js";
+import { tasksAuditJsonCommand, tasksListJsonCommand, tasksShowJsonCommand } from "./tasks-json.js";
 
 function createRuntime(): RuntimeEnv {
   return {
@@ -112,6 +112,38 @@ describe("tasks JSON commands", () => {
         status: "running",
         tasks: [jsonRoundTrip(cliTask)],
       });
+    });
+  });
+
+  it("shows one task record as JSON by task id or run id", async () => {
+    await withTaskJsonStateDir(async () => {
+      const task = createTaskRecord({
+        runtime: "cli",
+        ownerKey: "agent:main:main",
+        scopeKind: "session",
+        runId: "run-json-show",
+        status: "running",
+        task: "Inspect task JSON readback",
+      });
+
+      const byTaskIdRuntime = createRuntime();
+      await tasksShowJsonCommand({ json: true, lookup: task.taskId }, byTaskIdRuntime);
+      expect(readJsonLog(byTaskIdRuntime)).toStrictEqual(jsonRoundTrip(task));
+
+      const byRunIdRuntime = createRuntime();
+      await tasksShowJsonCommand({ json: true, lookup: "run-json-show" }, byRunIdRuntime);
+      expect(readJsonLog(byRunIdRuntime)).toStrictEqual(jsonRoundTrip(task));
+    });
+  });
+
+  it("exits when task JSON show cannot resolve the lookup", async () => {
+    await withTaskJsonStateDir(async () => {
+      const runtime = createRuntime();
+      await tasksShowJsonCommand({ json: true, lookup: "missing-task" }, runtime);
+
+      expect(runtime.error).toHaveBeenCalledWith("Task not found: missing-task");
+      expect(runtime.exit).toHaveBeenCalledWith(1);
+      expect(runtime.log).not.toHaveBeenCalled();
     });
   });
 

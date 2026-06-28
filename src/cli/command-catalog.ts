@@ -241,6 +241,16 @@ export const cliCommandCatalog: readonly CliCommandCatalogEntry[] = [
     route: { id: "tasks-audit" },
   },
   {
+    commandPath: ["tasks", "show"],
+    exact: true,
+    policy: {
+      ensureCliPath: false,
+      loadPlugins: "never",
+      networkProxy: "bypass",
+    },
+    route: { id: "tasks-show" },
+  },
+  {
     commandPath: ["tasks"],
     policy: {
       ensureCliPath: false,

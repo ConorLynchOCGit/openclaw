@@ -3,7 +3,7 @@
 
 import type { RuntimeEnv } from "../runtime.js";
 import { writeRuntimeJson } from "../runtime.js";
-import { listTaskRecords } from "../tasks/runtime-internal.js";
+import { listTaskRecords, resolveTaskForLookupToken } from "../tasks/runtime-internal.js";
 import { listTaskFlowAuditFindings } from "../tasks/task-flow-registry.audit.js";
 import { listTaskFlowRecords } from "../tasks/task-flow-runtime-internal.js";
 import { listTaskAuditFindings, summarizeTaskAuditFindings } from "../tasks/task-registry.audit.js";
@@ -31,6 +31,11 @@ export type TasksAuditJsonArgs = {
   severity?: string;
   code?: string;
   limit?: number;
+};
+
+export type TasksShowJsonArgs = {
+  json?: boolean;
+  lookup: string;
 };
 
 function toSystemAuditFindings(params: {
@@ -103,6 +108,10 @@ function buildTasksAuditJsonPayload(opts: TasksAuditJsonArgs) {
   };
 }
 
+function buildTasksShowJsonPayload(opts: TasksShowJsonArgs) {
+  return resolveTaskForLookupToken(opts.lookup);
+}
+
 /** Writes task list JSON without triggering task maintenance. */
 export async function tasksListJsonCommand(
   opts: TasksListJsonArgs,
@@ -117,4 +126,18 @@ export async function tasksAuditJsonCommand(
   runtime: RuntimeEnv,
 ): Promise<void> {
   writeRuntimeJson(runtime, buildTasksAuditJsonPayload(opts));
+}
+
+/** Writes one task as JSON without triggering task maintenance. */
+export async function tasksShowJsonCommand(
+  opts: TasksShowJsonArgs,
+  runtime: RuntimeEnv,
+): Promise<void> {
+  const task = buildTasksShowJsonPayload(opts);
+  if (!task) {
+    runtime.error(`Task not found: ${opts.lookup}`);
+    runtime.exit(1);
+    return;
+  }
+  writeRuntimeJson(runtime, task);
 }

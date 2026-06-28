@@ -16,6 +16,7 @@ import {
   parseStatusRouteArgs,
   parseTasksAuditRouteArgs,
   parseTasksListRouteArgs,
+  parseTasksShowRouteArgs,
 } from "./route-args.js";
 
 type RouteArgParser<TArgs> = (argv: string[]) => TArgs | null;
@@ -169,6 +170,13 @@ export const routedCommandDefinitions = {
     runParsedArgs: async (args) => {
       const { tasksAuditJsonCommand } = await loadTasksJsonCommand();
       await tasksAuditJsonCommand(args, defaultRuntime);
+    },
+  }),
+  "tasks-show": defineRoutedCommand({
+    parseArgs: parseTasksShowRouteArgs,
+    runParsedArgs: async (args) => {
+      const { tasksShowJsonCommand } = await loadTasksJsonCommand();
+      await tasksShowJsonCommand(args, defaultRuntime);
     },
   }),
   "channels-list": defineRoutedCommand({

@@ -11,6 +11,7 @@ const runDaemonStatusMock = vi.hoisted(() => vi.fn(async () => {}));
 const statusJsonCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 const tasksListJsonCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 const tasksAuditJsonCommandMock = vi.hoisted(() => vi.fn(async () => {}));
+const tasksShowJsonCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 const channelsListCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 const channelsStatusCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 const agentsListCommandMock = vi.hoisted(() => vi.fn(async () => {}));
@@ -40,6 +41,7 @@ vi.mock("../../commands/status-json.js", () => ({
 vi.mock("../../commands/tasks-json.js", () => ({
   tasksListJsonCommand: tasksListJsonCommandMock,
   tasksAuditJsonCommand: tasksAuditJsonCommandMock,
+  tasksShowJsonCommand: tasksShowJsonCommandMock,
 }));
 
 vi.mock("../../commands/tasks.js", () => {
@@ -586,6 +588,27 @@ describe("program routes", () => {
     );
   });
 
+  it("routes tasks show JSON through the lean task JSON command for both option placements", async () => {
+    const route = expectRoute(["tasks", "show"]);
+    expect(route.loadPlugins).toBeUndefined();
+    expect(route.canRun?.(["node", "openclaw", "tasks", "show", "run-123"])).toBe(false);
+    await expect(
+      route.run(["node", "openclaw", "tasks", "show", "run-123", "--json"]),
+    ).resolves.toBe(true);
+    expect(tasksShowJsonCommandMock).toHaveBeenCalledWith(
+      { json: true, lookup: "run-123" },
+      defaultRuntime,
+    );
+
+    await expect(
+      route.run(["node", "openclaw", "tasks", "--json", "show", "task-456"]),
+    ).resolves.toBe(true);
+    expect(tasksShowJsonCommandMock).toHaveBeenLastCalledWith(
+      { json: true, lookup: "task-456" },
+      defaultRuntime,
+    );
+  });
+
   it("returns false for task JSON routes when option values are missing or unknown", async () => {
     await expectRunFalse(["tasks"], ["node", "openclaw", "tasks", "--json", "--runtime"]);
     await expectRunFalse(["tasks", "list"], ["node", "openclaw", "tasks", "list"]);
@@ -600,6 +623,11 @@ describe("program routes", () => {
     await expectRunFalse(
       ["tasks", "audit"],
       ["node", "openclaw", "tasks", "audit", "--json", "--unknown"],
+    );
+    await expectRunFalse(["tasks", "show"], ["node", "openclaw", "tasks", "show", "--json"]);
+    await expectRunFalse(
+      ["tasks", "show"],
+      ["node", "openclaw", "tasks", "show", "run-123", "--json", "--unknown"],
     );
     expect(
       findRoutedCommand(["tasks", "cli"], ["node", "openclaw", "tasks", "--runtime", "cli"]),
