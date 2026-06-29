@@ -80,8 +80,11 @@ function findSessionStoreMatch(
   const candidates = new Set(keys.filter((key) => key.trim()));
   for (const key of keys) {
     const lower = key.toLowerCase();
-    for (const storeKey of Object.keys(store)) {
+    for (const [storeKey, entry] of Object.entries(store)) {
       if (storeKey.toLowerCase() === lower) {
+        candidates.add(storeKey);
+      }
+      if (typeof entry.sessionId === "string" && entry.sessionId.toLowerCase() === lower) {
         candidates.add(storeKey);
       }
     }

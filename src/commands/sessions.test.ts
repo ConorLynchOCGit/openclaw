@@ -498,6 +498,46 @@ describe("sessionsCommand", () => {
     );
   });
 
+  it("shows a session by session id alias while preserving canonical key", async () => {
+    const sessionId = "55555555-5555-4555-9555-555555555555";
+    const sessionKey = "agent:coding:phase0z-live-active-progress-readback-proof";
+    const store = writeStore(
+      {
+        [sessionKey]: {
+          sessionId,
+          updatedAt: Date.now(),
+          modelProvider: "openai",
+          model: "gpt-5.5",
+        },
+      },
+      "sessions-show-session-id-alias",
+    );
+
+    const { runtime, logs } = makeRuntime();
+    try {
+      await sessionsShowCommand(
+        {
+          store,
+          sessionKey: sessionId,
+          json: true,
+          agent: "coding",
+        },
+        runtime,
+      );
+    } finally {
+      fs.rmSync(store, { force: true });
+    }
+
+    const payload = JSON.parse(logs[0] ?? "{}") as {
+      session?: {
+        key?: string;
+        sessionId?: string;
+      };
+    };
+    expect(payload.session?.key).toBe(sessionKey);
+    expect(payload.session?.sessionId).toBe(sessionId);
+  });
+
   it("applies --active filtering in JSON output", async () => {
     const store = writeStore(
       {
