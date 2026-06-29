@@ -21,7 +21,7 @@ import {
   readSessionTranscriptIndex,
   type IndexedTranscriptEntry,
 } from "./session-transcript-index.fs.js";
-import type { SessionPreviewItem } from "./session-utils.types.js";
+import type { ReadbackFieldProvenance, SessionPreviewItem } from "./session-utils.types.js";
 
 type SessionTitleFields = {
   firstUserMessage: string | null;
@@ -1844,10 +1844,44 @@ export function readLastAssistantTextFromTranscript(
   agentId: string | undefined,
   maxChars = 12_000,
 ): string | null {
+  return readLastAssistantTextFromTranscriptWithProvenance(
+    sessionId,
+    storePath,
+    sessionFile,
+    agentId,
+    maxChars,
+  ).text;
+}
+
+export type LastAssistantTextTranscriptRead = {
+  text: string | null;
+  provenance: ReadbackFieldProvenance;
+};
+
+function finalAssistantTextProvenance(sessionId: string, note: string): ReadbackFieldProvenance {
+  return {
+    source: "session-transcript",
+    ref: `session:${sessionId}`,
+    derivedBy: "readLastAssistantTextFromTranscript",
+    bounded: true,
+    note,
+  };
+}
+
+export function readLastAssistantTextFromTranscriptWithProvenance(
+  sessionId: string,
+  storePath: string | undefined,
+  sessionFile: string | undefined,
+  agentId: string | undefined,
+  maxChars = 12_000,
+): LastAssistantTextTranscriptRead {
   const candidates = resolveSessionTranscriptCandidates(sessionId, storePath, sessionFile, agentId);
   const filePath = candidates.find((p) => fs.existsSync(p));
   if (!filePath) {
-    return null;
+    return {
+      text: null,
+      provenance: finalAssistantTextProvenance(sessionId, "no transcript candidate found"),
+    };
   }
 
   const boundedChars = Math.max(20, Math.min(maxChars, 50_000));
@@ -1860,13 +1894,30 @@ export function readLastAssistantTextFromTranscript(
       }
       const text = extractPreviewText(message);
       if (text) {
-        return truncatePreviewText(text.trim(), boundedChars);
+        return {
+          text: truncatePreviewText(text.trim(), boundedChars),
+          provenance: finalAssistantTextProvenance(
+            sessionId,
+            `derived from bounded transcript tail; readBytes=${readSize}`,
+          ),
+        };
       }
     }
     if (messages.length > 0 || readSize === PREVIEW_READ_SIZES[PREVIEW_READ_SIZES.length - 1]) {
-      return null;
+      return {
+        text: null,
+        provenance: finalAssistantTextProvenance(
+          sessionId,
+          messages.length > 0
+            ? `no visible assistant text in bounded transcript tail; readBytes=${readSize}`
+            : `no recent transcript messages found; readBytes=${readSize}`,
+        ),
+      };
     }
   }
 
-  return null;
+  return {
+    text: null,
+    provenance: finalAssistantTextProvenance(sessionId, "no transcript read result"),
+  };
 }

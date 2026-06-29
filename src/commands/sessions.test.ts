@@ -357,10 +357,28 @@ describe("sessionsCommand", () => {
       session?: {
         lastMessagePreview?: string | null;
         finalAssistantText?: string | null;
+        readbackProvenance?: {
+          finalAssistantText?: {
+            source?: string;
+            ref?: string;
+            derivedBy?: string;
+            bounded?: boolean;
+            note?: string;
+          };
+        };
       };
     };
     expect(payload.session?.lastMessagePreview).toBe("Trailing operator readback request.");
     expect(payload.session?.finalAssistantText).toBe("PHASE0W_FINAL_POSTFIX_PROOF_DONE");
+    expect(payload.session?.readbackProvenance?.finalAssistantText).toMatchObject({
+      source: "session-transcript",
+      ref: `session:${sessionId}`,
+      derivedBy: "readLastAssistantTextFromTranscript",
+      bounded: true,
+    });
+    expect(payload.session?.readbackProvenance?.finalAssistantText?.note).toContain(
+      "bounded transcript tail",
+    );
   });
 
   it("applies --active filtering in JSON output", async () => {

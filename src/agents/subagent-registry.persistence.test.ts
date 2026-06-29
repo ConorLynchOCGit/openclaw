@@ -12,6 +12,7 @@ import {
 } from "../config/sessions/store.js";
 import { callGateway } from "../gateway/call.js";
 import { onAgentEvent } from "../infra/agent-events.js";
+import { resolveOpenClawTestStateRoot } from "../infra/openclaw-test-state-root.js";
 import { captureEnv, withEnv } from "../test-utils/env.js";
 import { persistSubagentSessionTiming } from "./subagent-registry-helpers.js";
 import { getSubagentRunsSnapshotForRead } from "./subagent-registry-state.js";
@@ -948,6 +949,6 @@ describe("subagent registry persistence", () => {
   it("uses isolated temp state when OPENCLAW_STATE_DIR is unset in tests", () => {
     delete process.env.OPENCLAW_STATE_DIR;
     const registryPath = resolveSubagentRegistryPath();
-    expect(registryPath).toContain(path.join(os.tmpdir(), "openclaw-test-state"));
+    expect(registryPath).toContain(resolveOpenClawTestStateRoot());
   });
 });

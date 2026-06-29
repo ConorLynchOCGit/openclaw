@@ -4,11 +4,11 @@
  * Loads and saves persisted subagent run records with legacy migration and bounded read caching.
  */
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { readStringValue } from "@openclaw/normalization-core/string-coerce";
 import { resolveStateDir } from "../config/paths.js";
 import { loadJsonFile, saveJsonFile } from "../infra/json-file.js";
+import { resolveOpenClawTestStateRoot } from "../infra/openclaw-test-state-root.js";
 import { normalizeDeliveryContext } from "../utils/delivery-context.shared.js";
 import { normalizeSubagentRunState } from "./subagent-delivery-state.js";
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
@@ -77,7 +77,7 @@ function resolveSubagentStateDir(env: NodeJS.ProcessEnv = process.env): string {
     return resolveStateDir(env);
   }
   if (env.VITEST || env.NODE_ENV === "test") {
-    return path.join(os.tmpdir(), "openclaw-test-state", String(process.pid));
+    return path.join(resolveOpenClawTestStateRoot(env), String(process.pid));
   }
   return resolveStateDir(env);
 }

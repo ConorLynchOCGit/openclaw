@@ -98,7 +98,7 @@ import {
   resolveStoredSessionKeyForAgentStore,
 } from "./session-store-key.js";
 import {
-  readLastAssistantTextFromTranscript,
+  readLastAssistantTextFromTranscriptWithProvenance,
   readRecentSessionUsageFromTranscript,
   readSessionTitleFieldsFromTranscriptAsync,
   readSessionTitleFieldsFromTranscript,
@@ -2165,6 +2165,7 @@ export function buildGatewaySessionRow(params: {
   let derivedTitle: string | undefined;
   let lastMessagePreview: string | undefined;
   let finalAssistantText: string | null | undefined;
+  let readbackProvenance: GatewaySessionRow["readbackProvenance"] | undefined;
   if (entry?.sessionId && (params.includeDerivedTitles || params.includeLastMessage)) {
     const fields = readSessionTitleFieldsFromTranscript(
       entry.sessionId,
@@ -2179,12 +2180,17 @@ export function buildGatewaySessionRow(params: {
       lastMessagePreview = fields.lastMessagePreview;
     }
     if (params.includeLastMessage) {
-      finalAssistantText = readLastAssistantTextFromTranscript(
+      const finalAssistantRead = readLastAssistantTextFromTranscriptWithProvenance(
         entry.sessionId,
         storePath,
         entry.sessionFile,
         sessionAgentId,
       );
+      finalAssistantText = finalAssistantRead.text;
+      readbackProvenance = {
+        ...readbackProvenance,
+        finalAssistantText: finalAssistantRead.provenance,
+      };
     }
   }
 
@@ -2218,6 +2224,7 @@ export function buildGatewaySessionRow(params: {
     derivedTitle,
     lastMessagePreview,
     finalAssistantText,
+    readbackProvenance,
     channel,
     subject,
     groupChannel,

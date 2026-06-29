@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { executeSqliteQueryTakeFirstSync, getNodeSqliteKysely } from "../infra/kysely-sync.js";
 import { requireNodeSqlite } from "../infra/node-sqlite.js";
+import { resolveOpenClawTestStateRoot } from "../infra/openclaw-test-state-root.js";
 import { readSqliteNumberPragma } from "../infra/sqlite-pragma.test-support.js";
 import type { DB as OpenClawAgentKyselyDatabase } from "./openclaw-agent-db.generated.js";
 import {
@@ -56,8 +57,7 @@ describe("openclaw agent database", () => {
       }),
     ).toBe(
       path.join(
-        os.tmpdir(),
-        "openclaw-test-state",
+        resolveOpenClawTestStateRoot(),
         `${process.pid}-7`,
         "agents",
         "main",

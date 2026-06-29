@@ -1,8 +1,8 @@
 // State database path helpers resolve shared OpenClaw state DB paths.
-import os from "node:os";
 import path from "node:path";
 import { isMainThread, threadId } from "node:worker_threads";
 import { resolveStateDir } from "../config/paths.js";
+import { resolveOpenClawTestStateRoot } from "../infra/openclaw-test-state-root.js";
 import { parseStrictNonNegativeInteger } from "../infra/parse-finite-number.js";
 
 /**
@@ -25,7 +25,7 @@ function resolveOpenClawStateRootDir(env: NodeJS.ProcessEnv): string {
         : isMainThread
           ? String(process.pid)
           : `${process.pid}-${threadId}`;
-    return path.join(os.tmpdir(), "openclaw-test-state", shardSuffix);
+    return path.join(resolveOpenClawTestStateRoot(env), shardSuffix);
   }
   return resolveStateDir(env);
 }

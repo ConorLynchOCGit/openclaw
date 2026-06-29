@@ -27,6 +27,7 @@ type CliRoutedCommandId =
   | "models-status"
   | "tasks-list"
   | "tasks-audit"
+  | "tasks-show"
   | "channels-list"
   | "channels-status"
   | "plugins-list";

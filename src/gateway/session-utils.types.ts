@@ -30,6 +30,27 @@ export type GatewaySessionsDefaults = {
 /** Runtime status surfaced for the latest session run. */
 export type SessionRunStatus = "running" | "done" | "failed" | "killed" | "timeout";
 
+export type ReadbackFieldProvenance = {
+  source:
+    | "session-store"
+    | "session-transcript"
+    | "task-registry"
+    | "trajectory"
+    | "codex-native-subagent"
+    | "artifact-registry"
+    | "gbrain-pointer";
+  ref: string;
+  eventType?: string;
+  eventSeq?: number;
+  derivedBy?: string;
+  bounded?: boolean;
+  note?: string;
+};
+
+export type SessionReadbackProvenance = {
+  finalAssistantText?: ReadbackFieldProvenance;
+};
+
 export type SessionCompactionCheckpointPreview = Pick<
   SessionCompactionCheckpoint,
   "checkpointId" | "createdAt" | "reason"
@@ -50,6 +71,7 @@ export type GatewaySessionRow = {
   derivedTitle?: string;
   lastMessagePreview?: string;
   finalAssistantText?: string | null;
+  readbackProvenance?: SessionReadbackProvenance;
   channel?: string;
   subject?: string;
   groupChannel?: string;

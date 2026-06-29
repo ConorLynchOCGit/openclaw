@@ -10,6 +10,7 @@ import {
   getNodeSqliteKysely,
 } from "../infra/kysely-sync.js";
 import { requireNodeSqlite } from "../infra/node-sqlite.js";
+import { resolveOpenClawTestStateRoot } from "../infra/openclaw-test-state-root.js";
 import { readSqliteNumberPragma } from "../infra/sqlite-pragma.test-support.js";
 import type { DB as OpenClawStateKyselyDatabase } from "./openclaw-state-db.generated.js";
 import {
@@ -49,7 +50,7 @@ describe("openclaw state database", () => {
         VITEST_WORKER_ID: "7",
       } as NodeJS.ProcessEnv),
     ).toBe(
-      path.join(os.tmpdir(), "openclaw-test-state", `${process.pid}-7`, "state", "openclaw.sqlite"),
+      path.join(resolveOpenClawTestStateRoot(), `${process.pid}-7`, "state", "openclaw.sqlite"),
     );
   });
 
