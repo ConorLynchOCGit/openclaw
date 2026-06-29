@@ -40,7 +40,12 @@ const TaskToolSchema = Type.Object({
         'Native context. Omit/"isolated" for clean child; "fork" only when the child needs requester transcript.',
     }),
   ),
-  thinking: Type.Optional(Type.String()),
+  thinking: Type.Optional(
+    Type.String({
+      description:
+        "Optional explicit child thinking override. Omit by default so the target agent's role profile controls reasoning level; set only when intentionally overriding that profile for this task.",
+    }),
+  ),
   cwd: Type.Optional(Type.String()),
   lightContext: Type.Optional(
     Type.Boolean({
@@ -152,6 +157,7 @@ export function createTaskTool(
       "When multiple independent child tasks are useful, call `task` multiple times in the same assistant turn so the runtime can execute them in parallel.",
       "Use one `task` call per independent specialist; do not pack unrelated work into one child prompt just to avoid multiple calls.",
       "For narrow source-scout or reviewer packets that do not need root workspace memory or parent transcript, set `lightContext: true` and include the needed objective/output instructions in the child task.",
+      "Do not set `thinking` unless you intentionally need to override the target agent's role profile for this specific task; ordinary specialist tasks should omit it.",
     ],
     executionMode: "parallel",
     parameters: TaskToolSchema,
