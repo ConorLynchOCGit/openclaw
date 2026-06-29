@@ -1077,6 +1077,35 @@ describe("gateway session utils", () => {
     expect(target.storeKeys).toContain("agent:ops:MySession");
   });
 
+  test("resolveGatewaySessionStoreTarget finds an agent session by native sessionId alias", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "session-utils-session-id-"));
+    const storeTemplate = path.join(dir, "{agentId}", "sessions.json");
+    const codingStorePath = path.join(dir, "coding", "sessions.json");
+    fs.mkdirSync(path.dirname(codingStorePath), { recursive: true });
+    const sessionId = "33333333-3333-4333-8333-333333333333";
+    const sessionKey = "agent:coding:phase0z-live-active-progress-readback-proof";
+    fs.writeFileSync(
+      codingStorePath,
+      JSON.stringify({ [sessionKey]: { sessionId, updatedAt: 2 } }),
+      "utf8",
+    );
+    const cfg = {
+      session: { mainKey: "main", store: storeTemplate },
+      agents: { list: [{ id: "main", default: true }, { id: "coding" }] },
+    } as OpenClawConfig;
+
+    const target = resolveGatewaySessionStoreTarget({
+      cfg,
+      key: sessionId,
+      agentId: "coding",
+    });
+
+    expect(target.agentId).toBe("coding");
+    expect(target.storePath).toBe(resolveSyncRealpath(codingStorePath));
+    expect(target.storeKeys).toContain(sessionId);
+    expect(target.storeKeys).toContain(sessionKey);
+  });
+
   test("resolveGatewaySessionStoreTarget finds legacy main alias key when mainKey is customized", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "session-utils-alias-"));
     const storePath = path.join(dir, "sessions.json");

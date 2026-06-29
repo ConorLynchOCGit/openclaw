@@ -1,5 +1,6 @@
 // Sessions command tests cover listing, details, filtering, and transcript display behavior.
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -526,6 +527,63 @@ describe("sessionsCommand", () => {
       );
     } finally {
       fs.rmSync(store, { force: true });
+    }
+
+    const payload = JSON.parse(logs[0] ?? "{}") as {
+      session?: {
+        key?: string;
+        sessionId?: string;
+      };
+    };
+    expect(payload.session?.key).toBe(sessionKey);
+    expect(payload.session?.sessionId).toBe(sessionId);
+  });
+
+  it("shows an agent session by session id alias through configured gateway store lookup", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sessions-show-session-id-gateway-"));
+    const storePath = path.join(dir, "sessions.json");
+    const sessionId = "66666666-6666-4666-9666-666666666666";
+    const sessionKey = "agent:coding:phase0z-live-active-progress-readback-proof";
+    fs.writeFileSync(
+      storePath,
+      JSON.stringify(
+        {
+          [sessionKey]: {
+            sessionId,
+            updatedAt: Date.now(),
+            modelProvider: "openai",
+            model: "gpt-5.5",
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    setMockSessionsConfig(() => ({
+      session: { mainKey: "main", store: storePath },
+      agents: {
+        defaults: {
+          model: { primary: "test:opus" },
+          models: { "test:opus": {}, "openai/gpt-5.5": {} },
+          contextTokens: 32000,
+        },
+        list: [{ id: "main", default: true }, { id: "coding" }],
+      },
+    }));
+
+    const { runtime, logs } = makeRuntime();
+    try {
+      await sessionsShowCommand(
+        {
+          sessionKey: sessionId,
+          json: true,
+          agent: "coding",
+        },
+        runtime,
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
     }
 
     const payload = JSON.parse(logs[0] ?? "{}") as {

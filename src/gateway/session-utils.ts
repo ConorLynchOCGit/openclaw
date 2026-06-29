@@ -1069,6 +1069,14 @@ function findFreshestStoreMatch(
         matches.set(key, { entry, key });
       }
     }
+    for (const [key, entry] of Object.entries(store)) {
+      if (
+        normalizeLowercaseStringOrEmpty(entry.sessionId) ===
+        normalizeLowercaseStringOrEmpty(trimmed)
+      ) {
+        matches.set(key, { entry, key });
+      }
+    }
   }
   if (matches.size === 0) {
     return undefined;
@@ -1560,16 +1568,22 @@ export function resolveGatewaySessionStoreTargetWithStore(params: {
     return explicitDeletedMainTarget;
   }
 
-  const canonicalKey = resolveSessionStoreKey({
-    cfg: params.cfg,
-    sessionKey: key,
-  });
   const requestedAgentId = normalizeOptionalString(params.agentId);
+  const canonicalKey = requestedAgentId
+    ? resolveStoredSessionKeyForAgentStore({
+        cfg: params.cfg,
+        agentId: requestedAgentId,
+        sessionKey: key,
+      })
+    : resolveSessionStoreKey({
+        cfg: params.cfg,
+        sessionKey: key,
+      });
   const agentId =
     canonicalKey === "global" && requestedAgentId
       ? normalizeAgentId(requestedAgentId)
       : resolveSessionStoreAgentId(params.cfg, canonicalKey);
-  const { storePath, store } = resolveGatewaySessionStoreLookup({
+  const { storePath, store, match } = resolveGatewaySessionStoreLookup({
     cfg: params.cfg,
     key,
     canonicalKey,
@@ -1587,6 +1601,9 @@ export function resolveGatewaySessionStoreTargetWithStore(params: {
   storeKeys.add(canonicalKey);
   if (key && key !== canonicalKey) {
     storeKeys.add(key);
+  }
+  if (match?.key) {
+    storeKeys.add(match.key);
   }
   if (params.scanLegacyKeys !== false) {
     // Scan the on-disk store for case variants of every target to find
