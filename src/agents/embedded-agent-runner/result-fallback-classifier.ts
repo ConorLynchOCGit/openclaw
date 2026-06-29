@@ -9,6 +9,11 @@ import type { ModelFallbackResultClassification } from "../model-fallback.js";
 import { hasOutboundDeliveryEvidence, hasVisibleAgentPayload } from "./delivery-evidence.js";
 import type { EmbeddedAgentRunResult } from "./types.js";
 
+type ProviderErrorPayloadFailoverReason = Extract<
+  FailoverReason,
+  "auth" | "auth_permanent" | "billing" | "rate_limit" | "server_error" | "overloaded"
+>;
+
 /**
  * Classifies embedded-agent terminal results for model fallback decisions.
  *
@@ -66,11 +71,10 @@ function classifyHarnessResult(params: {
   }
 }
 
-/** Maps provider error payloads to fallback-safe business reasons. */
-function classifyBusinessDenialErrorPayloadReason(
+function classifyProviderErrorPayloadReason(
   errorText: string,
   provider: string,
-): Extract<FailoverReason, "auth" | "auth_permanent" | "billing"> | null {
+): ProviderErrorPayloadFailoverReason | null {
   if (!errorText.trim()) {
     return null;
   }
@@ -79,6 +83,9 @@ function classifyBusinessDenialErrorPayloadReason(
     case "auth":
     case "auth_permanent":
     case "billing":
+    case "rate_limit":
+    case "server_error":
+    case "overloaded":
       return failoverReason;
     default:
       return null;
@@ -137,7 +144,7 @@ export function classifyEmbeddedAgentRunResultForModelFallback(params: {
       code: "incomplete_result",
     };
   }
-  const failoverReason = classifyBusinessDenialErrorPayloadReason(errorText, params.provider);
+  const failoverReason = classifyProviderErrorPayloadReason(errorText, params.provider);
   if (failoverReason) {
     return {
       message: `${params.provider}/${params.model} ended with a provider error: ${errorText}`,
