@@ -375,6 +375,64 @@ describe("gateway server chat", () => {
     });
   });
 
+  test("chat.history resolves a backing session id alias for agent readback", async () => {
+    await withGatewayChatHarness(async ({ ws, createSessionDir }) => {
+      await writeGatewayConfig({
+        agents: {
+          defaults: {
+            model: { primary: "openai/gpt-main" },
+            models: { "openai/gpt-main": {} },
+          },
+          list: [{ id: "main", default: true }, { id: "coding" }],
+        },
+      });
+      await connectOk(ws);
+      const sessionDir = await createSessionDir();
+      const sessionId = "88888888-8888-4888-9888-888888888888";
+      const sessionKey = "agent:coding:phase0z-readback-session-id-alias";
+      await writeSessionStore({
+        entries: {
+          [sessionKey]: {
+            sessionId,
+            updatedAt: Date.now(),
+            modelProvider: "openai",
+            model: "gpt-main",
+          },
+        },
+      });
+      await fs.writeFile(
+        path.join(sessionDir, `${sessionId}.jsonl`),
+        `${JSON.stringify({
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "session id alias readback" }],
+            timestamp: Date.now(),
+          },
+        })}\n`,
+        "utf-8",
+      );
+
+      const history = await rpcReq<{
+        sessionKey?: string;
+        sessionId?: string;
+        messages?: Array<{ content?: Array<{ text?: string }> }>;
+        sessionInfo?: { key?: string; sessionId?: string };
+      }>(ws, "chat.history", { sessionKey: sessionId, agentId: "coding" });
+
+      if (!history.ok) {
+        throw new Error(`chat.history failed: ${JSON.stringify(history.error)}`);
+      }
+      expect(history.ok).toBe(true);
+      expect(history.payload?.sessionKey).toBe(sessionId);
+      expect(history.payload?.sessionId).toBe(sessionId);
+      expect(history.payload?.sessionInfo).toMatchObject({
+        key: sessionKey,
+        sessionId,
+      });
+      expect(history.payload?.messages?.[0]?.content?.[0]?.text).toBe("session id alias readback");
+    });
+  });
+
   test("chat.startup returns chat history with the initial agents list", async () => {
     await withGatewayChatHarness(async ({ ws, createSessionDir }) => {
       await writeGatewayConfig({

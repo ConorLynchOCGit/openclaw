@@ -1591,15 +1591,20 @@ export function resolveGatewaySessionStoreTargetWithStore(params: {
     clone: params.clone,
     initialStore: params.store,
   });
+  const matchedBySessionId =
+    match &&
+    normalizeLowercaseStringOrEmpty(match.entry.sessionId) === normalizeLowercaseStringOrEmpty(key);
+  const resolvedCanonicalKey =
+    matchedBySessionId && !store[canonicalKey] ? match.key : canonicalKey;
 
-  if (canonicalKey === "global" || canonicalKey === "unknown") {
-    const storeKeys = key && key !== canonicalKey ? [canonicalKey, key] : [key];
-    return { agentId, storePath, canonicalKey, storeKeys, store };
+  if (resolvedCanonicalKey === "global" || resolvedCanonicalKey === "unknown") {
+    const storeKeys = key && key !== resolvedCanonicalKey ? [resolvedCanonicalKey, key] : [key];
+    return { agentId, storePath, canonicalKey: resolvedCanonicalKey, storeKeys, store };
   }
 
   const storeKeys = new Set<string>();
-  storeKeys.add(canonicalKey);
-  if (key && key !== canonicalKey) {
+  storeKeys.add(resolvedCanonicalKey);
+  if (key && key !== resolvedCanonicalKey) {
     storeKeys.add(key);
   }
   if (match?.key) {
@@ -1611,7 +1616,7 @@ export function resolveGatewaySessionStoreTargetWithStore(params: {
     const scanTargets = buildGatewaySessionStoreScanTargets({
       cfg: params.cfg,
       key,
-      canonicalKey,
+      canonicalKey: resolvedCanonicalKey,
       agentId,
     });
     for (const seed of scanTargets) {
@@ -1623,7 +1628,7 @@ export function resolveGatewaySessionStoreTargetWithStore(params: {
   return {
     agentId,
     storePath,
-    canonicalKey,
+    canonicalKey: resolvedCanonicalKey,
     storeKeys: Array.from(storeKeys),
     store,
   };

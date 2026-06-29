@@ -1216,6 +1216,42 @@ describe("gateway session utils", () => {
     }
   });
 
+  test("loadSessionEntry resolves a backing session id alias to the stored session key", async () => {
+    resetConfigRuntimeState();
+    try {
+      await withStateDirEnv("session-utils-load-entry-session-id-alias-", async ({ stateDir }) => {
+        const sessionsDir = path.join(stateDir, "agents", "coding", "sessions");
+        fs.mkdirSync(sessionsDir, { recursive: true });
+        const storePath = path.join(sessionsDir, "sessions.json");
+        const sessionId = "77777777-7777-4777-9777-777777777777";
+        const sessionKey = "agent:coding:phase0z-readback-session-id-alias";
+        fs.writeFileSync(
+          storePath,
+          JSON.stringify({
+            [sessionKey]: { sessionId, updatedAt: 7 },
+          }),
+          "utf8",
+        );
+        const cfg = {
+          session: {
+            mainKey: "main",
+            store: path.join(stateDir, "agents", "{agentId}", "sessions", "sessions.json"),
+          },
+          agents: { list: [{ id: "main", default: true }, { id: "coding" }] },
+        } as OpenClawConfig;
+        setRuntimeConfigSnapshot(cfg, cfg);
+
+        const loaded = loadSessionEntry(sessionId, { agentId: "coding" });
+
+        expect(loaded.storePath).toBe(resolveSyncRealpath(storePath));
+        expect(loaded.canonicalKey).toBe(sessionKey);
+        expect(loaded.entry?.sessionId).toBe(sessionId);
+      });
+    } finally {
+      resetConfigRuntimeState();
+    }
+  });
+
   test("resolveGatewaySessionStoreTargetWithStore returns the caller-provided store", async () => {
     resetConfigRuntimeState();
     try {

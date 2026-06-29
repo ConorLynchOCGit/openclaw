@@ -635,6 +635,7 @@ function buildActiveChatSendDedupeKey(params: {
 function validateChatSelectedAgent(params: {
   cfg: OpenClawConfig;
   requestedSessionKey: string;
+  resolvedSessionKey?: string;
   agentId?: string;
 }): { ok: true; agentId?: string } | { ok: false; error: string } {
   const agentId = params.agentId ? normalizeAgentId(params.agentId) : undefined;
@@ -656,6 +657,14 @@ function validateChatSelectedAgent(params: {
     return { ok: true, agentId };
   }
   if (resolveSessionStoreKey({ cfg: params.cfg, sessionKey: requestedSessionKey }) === "global") {
+    return { ok: true, agentId };
+  }
+  const resolvedSessionKey = normalizeOptionalText(params.resolvedSessionKey);
+  const resolvedParsed =
+    resolvedSessionKey && resolvedSessionKey !== requestedSessionKey
+      ? parseAgentSessionKey(resolvedSessionKey)
+      : undefined;
+  if (resolvedParsed && normalizeAgentId(resolvedParsed.agentId) === agentId) {
     return { ok: true, agentId };
   }
   if (!parsed || normalizeAgentId(parsed.agentId) !== agentId) {
@@ -2499,6 +2508,7 @@ async function handleChatHistoryRequest({
   const selectedAgent = validateChatSelectedAgent({
     cfg,
     requestedSessionKey: sessionKey,
+    resolvedSessionKey: canonicalKey,
     agentId: requestedAgentId,
   });
   if (!selectedAgent.ok) {
@@ -2527,7 +2537,7 @@ async function handleChatHistoryRequest({
   }
   const sessionId = entry?.sessionId;
   const sessionAgentId = resolveSessionAgentId({
-    sessionKey,
+    sessionKey: canonicalKey,
     config: cfg,
     agentId: selectedAgent.agentId,
   });
