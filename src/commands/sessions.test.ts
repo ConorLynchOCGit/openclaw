@@ -400,6 +400,104 @@ describe("sessionsCommand", () => {
     );
   });
 
+  it("exposes active trajectory progress provenance when running session metadata is stale", async () => {
+    const sessionId = "44444444-4444-4444-8444-444444444444";
+    const store = writeStore(
+      {
+        "agent:main:main": {
+          sessionId,
+          updatedAt: Date.now() - 45 * 60_000,
+          status: "running",
+          startedAt: Date.now() - 50 * 60_000,
+          modelProvider: "openai",
+          model: "gpt-5.5",
+        },
+      },
+      "sessions-show-active-progress",
+    );
+    const trajectory = path.join(path.dirname(store), `${sessionId}.trajectory.jsonl`);
+    fs.writeFileSync(
+      trajectory,
+      [
+        JSON.stringify({
+          traceSchema: "openclaw-trajectory",
+          schemaVersion: 1,
+          traceId: sessionId,
+          source: "runtime",
+          type: "run.started",
+          ts: "2025-12-05T23:15:00.000Z",
+          seq: 1,
+          sessionId,
+          sessionKey: "agent:main:main",
+        }),
+        JSON.stringify({
+          traceSchema: "openclaw-trajectory",
+          schemaVersion: 1,
+          traceId: sessionId,
+          source: "runtime",
+          type: "tool.call",
+          ts: "2025-12-05T23:59:00.000Z",
+          seq: 7,
+          sourceSeq: 12,
+          sessionId,
+          sessionKey: "agent:main:main",
+          data: { name: "exec_command" },
+        }),
+      ].join("\n"),
+    );
+
+    const { runtime, logs } = makeRuntime();
+    try {
+      await sessionsShowCommand(
+        {
+          store,
+          sessionKey: "agent:main:main",
+          json: true,
+          agent: "main",
+        },
+        runtime,
+      );
+    } finally {
+      fs.rmSync(store, { force: true });
+      fs.rmSync(trajectory, { force: true });
+    }
+
+    const payload = JSON.parse(logs[0] ?? "{}") as {
+      session?: {
+        status?: string;
+        updatedAt?: number | null;
+        readbackProvenance?: {
+          status?: { source?: string; note?: string };
+          activeProgress?: {
+            source?: string;
+            eventType?: string;
+            eventSeq?: number;
+            derivedBy?: string;
+            bounded?: boolean;
+            note?: string;
+          };
+        };
+      };
+    };
+    expect(payload.session?.status).toBe("running");
+    expect(payload.session?.readbackProvenance?.status).toMatchObject({
+      source: "session-store",
+    });
+    expect(payload.session?.readbackProvenance?.status?.note).toContain(
+      "updatedAt may not track native trajectory events",
+    );
+    expect(payload.session?.readbackProvenance?.activeProgress).toMatchObject({
+      source: "trajectory",
+      eventType: "tool.call",
+      eventSeq: 12,
+      derivedBy: "readLatestTrajectoryProgressProvenance",
+      bounded: true,
+    });
+    expect(payload.session?.readbackProvenance?.activeProgress?.note).toContain(
+      "session updatedAt remains session-store metadata",
+    );
+  });
+
   it("applies --active filtering in JSON output", async () => {
     const store = writeStore(
       {

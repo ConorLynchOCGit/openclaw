@@ -48,6 +48,8 @@ export type ReadbackFieldProvenance = {
 };
 
 export type SessionReadbackProvenance = {
+  status?: ReadbackFieldProvenance;
+  activeProgress?: ReadbackFieldProvenance;
   finalAssistantText?: ReadbackFieldProvenance;
 };
 

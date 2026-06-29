@@ -99,6 +99,7 @@ import {
 } from "./session-store-key.js";
 import {
   readLastAssistantTextFromTranscriptWithProvenance,
+  readLatestTrajectoryProgressProvenance,
   readRecentSessionUsageFromTranscript,
   readSessionTitleFieldsFromTranscriptAsync,
   readSessionTitleFieldsFromTranscript,
@@ -118,6 +119,7 @@ export {
   capArrayByJsonBytes,
   readFirstUserMessageFromTranscript,
   readLastAssistantTextFromTranscript,
+  readLatestTrajectoryProgressProvenance,
   readLatestSessionUsageFromTranscriptAsync,
   readLatestRecentSessionUsageFromTranscriptAsync,
   readRecentSessionUsageFromTranscriptAsync,
@@ -2166,6 +2168,35 @@ export function buildGatewaySessionRow(params: {
   let lastMessagePreview: string | undefined;
   let finalAssistantText: string | null | undefined;
   let readbackProvenance: GatewaySessionRow["readbackProvenance"] | undefined;
+  const rowStatus = subagentRun ? subagentStatus : entry?.status;
+  if (rowStatus) {
+    readbackProvenance = {
+      ...readbackProvenance,
+      status: {
+        source: subagentRun ? "codex-native-subagent" : "session-store",
+        ref: `session:${entry?.sessionId ?? key}`,
+        derivedBy: "buildGatewaySessionRow",
+        bounded: false,
+        note: subagentRun
+          ? "projected from native subagent registry; not final assistant truth"
+          : "projected from session store metadata; updatedAt may not track native trajectory events",
+      },
+    };
+  }
+  if (rowStatus === "running" && entry?.sessionId) {
+    const activeProgress = readLatestTrajectoryProgressProvenance(
+      entry.sessionId,
+      storePath,
+      entry.sessionFile,
+      sessionAgentId,
+    );
+    if (activeProgress) {
+      readbackProvenance = {
+        ...readbackProvenance,
+        activeProgress,
+      };
+    }
+  }
   if (entry?.sessionId && (params.includeDerivedTitles || params.includeLastMessage)) {
     const fields = readSessionTitleFieldsFromTranscript(
       entry.sessionId,
@@ -2251,7 +2282,7 @@ export function buildGatewaySessionRow(params: {
     totalTokensFresh,
     goal,
     estimatedCostUsd,
-    status: subagentRun ? subagentStatus : entry?.status,
+    status: rowStatus,
     startedAt: subagentRun ? subagentStartedAt : entry?.startedAt,
     endedAt: subagentRun ? subagentEndedAt : entry?.endedAt,
     runtimeMs: subagentRun ? subagentRuntimeMs : entry?.runtimeMs,

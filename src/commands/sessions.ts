@@ -429,6 +429,19 @@ export async function sessionsShowCommand(
     `updatedAt: ${row.updatedAt ? new Date(row.updatedAt).toISOString() : "n/a"}`,
     `startedAt: ${row.startedAt ? new Date(row.startedAt).toISOString() : "n/a"}`,
     `endedAt: ${row.endedAt ? new Date(row.endedAt).toISOString() : "n/a"}`,
+    `activeProgress: ${
+      row.readbackProvenance?.activeProgress
+        ? [
+            row.readbackProvenance.activeProgress.source,
+            row.readbackProvenance.activeProgress.eventType,
+            row.readbackProvenance.activeProgress.eventSeq !== undefined
+              ? `seq=${row.readbackProvenance.activeProgress.eventSeq}`
+              : undefined,
+          ]
+            .filter(Boolean)
+            .join(" ")
+        : "n/a"
+    }`,
     `childSessions: ${(row.childSessions ?? []).length}`,
   ];
   for (const line of lines) {

@@ -12,6 +12,7 @@ import { jsonUtf8Bytes } from "../infra/json-utf8-bytes.js";
 import { hasInterSessionUserProvenance } from "../sessions/input-provenance.js";
 import { extractAssistantVisibleText } from "../shared/chat-message-content.js";
 import { escapeRegExp } from "../shared/regexp.js";
+import { resolveTrajectoryRuntimeFileSync } from "../trajectory/runtime-file.js";
 import { estimateStringChars, estimateTokensFromChars } from "../utils/cjk-chars.js";
 import { stripInlineDirectiveTagsForDisplay } from "../utils/directive-tags.js";
 import { extractToolCallNames, hasToolCall } from "../utils/transcript-tools.js";
@@ -1621,6 +1622,7 @@ export function readRecentSessionUsageFromTranscript(
 
 const PREVIEW_READ_SIZES = [64 * 1024, 256 * 1024, 1024 * 1024];
 const PREVIEW_MAX_LINES = 200;
+const TRAJECTORY_PROGRESS_READ_BYTES = 256 * 1024;
 
 type TranscriptContentEntry = {
   type?: string;
@@ -1919,5 +1921,119 @@ export function readLastAssistantTextFromTranscriptWithProvenance(
   return {
     text: null,
     provenance: finalAssistantTextProvenance(sessionId, "no transcript read result"),
+  };
+}
+
+function resolveSessionTrajectoryRuntimeFileSync(params: {
+  sessionId: string;
+  storePath: string | undefined;
+  sessionFile: string | undefined;
+  agentId: string | undefined;
+}): string | undefined {
+  const transcriptCandidates = resolveSessionTranscriptCandidates(
+    params.sessionId,
+    params.storePath,
+    params.sessionFile,
+    params.agentId,
+  );
+  const trajectoryCandidates: string[] = [];
+  for (const sessionFile of transcriptCandidates) {
+    const runtimeFile = resolveTrajectoryRuntimeFileSync({
+      sessionFile,
+      sessionId: params.sessionId,
+    });
+    if (runtimeFile) {
+      trajectoryCandidates.push(runtimeFile);
+    }
+  }
+  return trajectoryCandidates[0];
+}
+
+function readRecentTrajectoryLines(filePath: string, maxBytes: number): string[] {
+  let fd: number | null = null;
+  try {
+    fd = fs.openSync(filePath, "r");
+    const stat = fs.fstatSync(fd);
+    if (stat.size === 0) {
+      return [];
+    }
+    const readLen = Math.min(stat.size, Math.max(1024, Math.floor(maxBytes)));
+    const readStart = Math.max(0, stat.size - readLen);
+    const buf = Buffer.alloc(readLen);
+    const bytesRead = fs.readSync(fd, buf, 0, readLen, readStart);
+    if (bytesRead <= 0) {
+      return [];
+    }
+    return buf
+      .toString("utf-8", 0, bytesRead)
+      .split(/\r?\n/)
+      .slice(readStart > 0 ? 1 : 0)
+      .filter((line) => line.trim().length > 0);
+  } catch {
+    return [];
+  } finally {
+    if (fd !== null) {
+      fs.closeSync(fd);
+    }
+  }
+}
+
+export function readLatestTrajectoryProgressProvenance(
+  sessionId: string,
+  storePath: string | undefined,
+  sessionFile: string | undefined,
+  agentId: string | undefined,
+): ReadbackFieldProvenance | undefined {
+  const filePath = resolveSessionTrajectoryRuntimeFileSync({
+    sessionId,
+    storePath,
+    sessionFile,
+    agentId,
+  });
+  if (!filePath) {
+    return undefined;
+  }
+  const lines = readRecentTrajectoryLines(filePath, TRAJECTORY_PROGRESS_READ_BYTES);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    try {
+      const parsed = JSON.parse(lines[index] ?? "") as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        continue;
+      }
+      const event = parsed as Record<string, unknown>;
+      if (
+        event.traceSchema !== "openclaw-trajectory" ||
+        event.sessionId !== sessionId ||
+        typeof event.type !== "string"
+      ) {
+        continue;
+      }
+      const sourceSeq =
+        typeof event.sourceSeq === "number" && Number.isFinite(event.sourceSeq)
+          ? event.sourceSeq
+          : undefined;
+      const seq =
+        sourceSeq ??
+        (typeof event.seq === "number" && Number.isFinite(event.seq) ? event.seq : undefined);
+      const ts = typeof event.ts === "string" && event.ts ? event.ts : "unknown-ts";
+      return {
+        source: "trajectory",
+        ref: `session:${sessionId}`,
+        eventType: event.type,
+        ...(seq !== undefined ? { eventSeq: seq } : {}),
+        derivedBy: "readLatestTrajectoryProgressProvenance",
+        bounded: true,
+        note: `latest trajectory event ts=${ts}; session updatedAt remains session-store metadata`,
+      };
+    } catch {
+      continue;
+    }
+  }
+  return {
+    source: "trajectory",
+    ref: `session:${sessionId}`,
+    derivedBy: "readLatestTrajectoryProgressProvenance",
+    bounded: true,
+    note: "trajectory file found but no valid recent event in bounded tail",
   };
 }
