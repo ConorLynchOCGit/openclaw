@@ -42,6 +42,12 @@ const TaskToolSchema = Type.Object({
   ),
   thinking: Type.Optional(Type.String()),
   cwd: Type.Optional(Type.String()),
+  lightContext: Type.Optional(
+    Type.Boolean({
+      description:
+        "Use lightweight bootstrap context for bounded children that need their role contract but not root workspace memory/context.",
+    }),
+  ),
 });
 
 function escapeXmlText(value: string): string {
@@ -145,6 +151,7 @@ export function createTaskTool(
     promptGuidelines: [
       "When multiple independent child tasks are useful, call `task` multiple times in the same assistant turn so the runtime can execute them in parallel.",
       "Use one `task` call per independent specialist; do not pack unrelated work into one child prompt just to avoid multiple calls.",
+      "For narrow source-scout or reviewer packets that do not need root workspace memory or parent transcript, set `lightContext: true` and include the needed objective/output instructions in the child task.",
     ],
     executionMode: "parallel",
     parameters: TaskToolSchema,
@@ -176,6 +183,7 @@ export function createTaskTool(
           cleanup: "keep",
           sandbox: "inherit",
           context,
+          lightContext: params.lightContext === true,
           expectsCompletionMessage: false,
         },
         {

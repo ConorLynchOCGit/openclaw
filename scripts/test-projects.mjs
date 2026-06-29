@@ -192,6 +192,79 @@ function printNoChangedTestTargets(args, cwd, baseEnv) {
   console.error("[test] run `OPENCLAW_TEST_CHANGED_BROAD=1 pnpm test:changed` for broad coverage.");
 }
 
+function formatReceiptList(values, { empty = "none", limit = 6 } = {}) {
+  if (!values || values.length === 0) {
+    return empty;
+  }
+  const head = values.slice(0, limit);
+  const suffix = values.length > limit ? `, ... ${values.length - limit} more` : "";
+  return `${head.join(", ")}${suffix}`;
+}
+
+function resolveReceiptRequestMode(targetArgs, changedTargetArgs, runSpecs) {
+  if (targetArgs.length > 0) {
+    return "explicit-targets";
+  }
+  if (changedTargetArgs !== null) {
+    return "changed-targets";
+  }
+  if (runSpecs.some((spec) => spec.watchMode)) {
+    return "watch";
+  }
+  return "full-suite";
+}
+
+function resolveReceiptRuntimeClass(runSpecs, isFullSuiteRun) {
+  if (runSpecs.length === 1 && runSpecs[0]?.includePatterns?.length > 0) {
+    return "focused; usually under one minute for one to four focused files";
+  }
+  if (runSpecs.length === 1 && runSpecs[0]?.watchMode) {
+    return "watch; interactive";
+  }
+  if (isFullSuiteRun) {
+    return "broad full suite; expected to be materially slower";
+  }
+  if (runSpecs.length > 1) {
+    return "multi-shard; runtime depends on selected project configs";
+  }
+  return "single project/config; inspect selected config for expected runtime";
+}
+
+function formatReceiptSpec(spec) {
+  const include =
+    spec.includePatterns?.length > 0
+      ? `includes=${formatReceiptList(spec.includePatterns)}`
+      : "includes=whole-config-or-cli-target";
+  return `${spec.config}; ${include}`;
+}
+
+function printValidationReceipt({ changedTargetArgs, isFullSuiteRun, runSpecs, targetArgs }) {
+  const requestMode = resolveReceiptRequestMode(targetArgs, changedTargetArgs, runSpecs);
+  const requestedTargets = targetArgs.length > 0 ? targetArgs : (changedTargetArgs ?? []);
+  console.error("[test] validation receipt:");
+  console.error(`[test]   request=${requestMode}`);
+  console.error(`[test]   targets=${formatReceiptList(requestedTargets)}`);
+  console.error(
+    `[test]   selected=${runSpecs.length} Vitest shard${runSpecs.length === 1 ? "" : "s"}`,
+  );
+  const receiptSpecLimit = 8;
+  for (const [index, spec] of runSpecs.slice(0, receiptSpecLimit).entries()) {
+    console.error(`[test]   shard[${index + 1}]=${formatReceiptSpec(spec)}`);
+  }
+  if (runSpecs.length > receiptSpecLimit) {
+    console.error(`[test]   ... ${runSpecs.length - receiptSpecLimit} more shard receipts omitted`);
+  }
+  console.error(
+    `[test]   expected_runtime=${resolveReceiptRuntimeClass(runSpecs, isFullSuiteRun)}`,
+  );
+  console.error(
+    "[test]   known_bad=raw direct Vitest is not the default focused validation path when this wrapper owns the target",
+  );
+  console.error(
+    "[test]   fallback=if this receipt selects the wrong shard or stalls, classify the wrapper/routing issue before retrying raw Vitest as final evidence",
+  );
+}
+
 async function runVitestSpecsParallel(specs, concurrency) {
   let nextIndex = 0;
   let exitCode = 0;
@@ -303,6 +376,7 @@ async function main() {
     targetArgs.length === 0 &&
     changedTargetArgs === null &&
     !runSpecs.some((spec) => spec.watchMode);
+  printValidationReceipt({ changedTargetArgs, isFullSuiteRun, runSpecs, targetArgs });
   const isExplicitParallelMultiConfigRun =
     Boolean(baseEnv.OPENCLAW_TEST_PROJECTS_PARALLEL) &&
     runSpecs.length > 1 &&

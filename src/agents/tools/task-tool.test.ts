@@ -149,6 +149,26 @@ describe("task tool", () => {
     expect(onProgress).toHaveBeenCalledTimes(7);
   });
 
+  it("passes lightweight context through to native foreground children", async () => {
+    const result = await createTaskTool().execute("call-1", {
+      agentId: "codebase-researcher",
+      task: "Inspect the narrow source question and return a Context Pack.",
+      lightContext: true,
+    });
+
+    expect(result.details).toMatchObject({
+      status: "ok",
+      agentId: "codebase-researcher",
+    });
+    expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "codebase-researcher",
+        lightContext: true,
+      }),
+      expect.any(Object),
+    );
+  });
+
   it("does not duplicate long child output in both model text and details", async () => {
     const longPacket = `# Context Pack\n\n${"plan-shaping evidence ".repeat(1200)}`;
     hoisted.readLatestAssistantReplyMock.mockResolvedValue(longPacket);
