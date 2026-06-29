@@ -27,8 +27,8 @@ export function resolveSubagentThinkingOverride(params: {
   );
   const defaultSubagents = asOptionalObjectRecord(params.cfg.agents?.defaults?.subagents);
   const resolvedThinkingDefaultRaw =
-    readString(requesterSubagents ?? {}, "thinking") ??
     readString(targetSubagents ?? {}, "thinking") ??
+    readString(requesterSubagents ?? {}, "thinking") ??
     readString(defaultSubagents ?? {}, "thinking");
 
   const overrideCandidateRaw = params.thinkingOverrideRaw || resolvedThinkingDefaultRaw;

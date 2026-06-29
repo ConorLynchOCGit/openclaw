@@ -59,10 +59,18 @@ describe("sessions_spawn thinking defaults", () => {
     });
   });
 
-  it("prefers requester-agent subagent thinking over target-agent subagent thinking", () => {
+  it("prefers target-agent subagent thinking over requester-agent subagent thinking", () => {
     expectResolvedThinkingPlan({
       requesterAgentConfig: { subagents: { thinking: "low" } },
       targetAgentConfig: { subagents: { thinking: "medium" } },
+      callerThinkingRaw: "high",
+      expected: "medium",
+    });
+  });
+
+  it("uses requester-agent subagent thinking when the target has no subagent thinking", () => {
+    expectResolvedThinkingPlan({
+      requesterAgentConfig: { subagents: { thinking: "low" } },
       callerThinkingRaw: "high",
       expected: "low",
     });
