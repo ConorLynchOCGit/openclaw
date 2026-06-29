@@ -24,6 +24,7 @@ import {
   resolveChangedTargetArgs,
   resolveParallelFullSuiteConcurrency,
   shouldRetryVitestNoOutputTimeout,
+  shouldRunTargetedMultiConfigSpecsInParallel,
 } from "../../scripts/test-projects.test-support.mjs";
 import { captureReaddirSyncCallsDuring } from "../../src/test-utils/fs-scan-assertions.js";
 import { toRepoPath } from "../../src/test-utils/repo-files.js";
@@ -692,7 +693,7 @@ describe("scripts/test-projects changed-target routing", () => {
   it("routes explicit source files through precise owner tests before broad globs", () => {
     expect(buildVitestRunPlans(["src/gateway/server-startup-early.ts"])).toEqual([
       {
-        config: "test/vitest/vitest.gateway.config.ts",
+        config: "test/vitest/vitest.gateway-server.config.ts",
         forwardedArgs: [],
         includePatterns: ["src/gateway/server-startup-early.test.ts"],
         watchMode: false,
@@ -1874,6 +1875,45 @@ describe("scripts/test-projects changed-target routing", () => {
     ]);
   });
 
+  it("routes focused gateway test targets to leaf configs instead of the umbrella gateway config", () => {
+    const plans = buildVitestRunPlans(
+      [
+        "src/gateway/session-utils.test.ts",
+        "src/gateway/client.test.ts",
+        "src/gateway/server-methods/chat.abort-authorization.test.ts",
+        "src/gateway/server.chat.gateway-server-chat-b.test.ts",
+      ],
+      process.cwd(),
+    );
+
+    expect(plans).toEqual([
+      {
+        config: "test/vitest/vitest.gateway-core.config.ts",
+        forwardedArgs: [],
+        includePatterns: ["src/gateway/session-utils.test.ts"],
+        watchMode: false,
+      },
+      {
+        config: "test/vitest/vitest.gateway-client.config.ts",
+        forwardedArgs: [],
+        includePatterns: ["src/gateway/client.test.ts"],
+        watchMode: false,
+      },
+      {
+        config: "test/vitest/vitest.gateway-methods.config.ts",
+        forwardedArgs: [],
+        includePatterns: ["src/gateway/server-methods/chat.abort-authorization.test.ts"],
+        watchMode: false,
+      },
+      {
+        config: "test/vitest/vitest.gateway-server.config.ts",
+        forwardedArgs: [],
+        includePatterns: ["src/gateway/server.chat.gateway-server-chat-b.test.ts"],
+        watchMode: false,
+      },
+    ]);
+  });
+
   it.each(["src/tui/tui-pty-harness.e2e.test.ts", "src/tui/tui-pty-local.e2e.test.ts"])(
     "routes TUI PTY integration target %s to the PTY lane",
     (target) => {
@@ -2542,6 +2582,30 @@ describe("scripts/test-projects full-suite sharding", () => {
 });
 
 describe("scripts/test-projects parallel cache paths", () => {
+  it("allows targeted multi-config runs to use native parallel shard execution locally", () => {
+    const specs = [
+      { config: "test/vitest/vitest.gateway-core.config.ts", env: {}, pnpmArgs: [] },
+      { config: "test/vitest/vitest.commands.config.ts", env: {}, pnpmArgs: [] },
+    ];
+
+    expect(
+      shouldRunTargetedMultiConfigSpecsInParallel(specs, {
+        OPENCLAW_TEST_PROJECTS_SERIAL: "1",
+      }),
+    ).toBe(false);
+    expect(
+      shouldRunTargetedMultiConfigSpecsInParallel(specs, {
+        CI: "true",
+      }),
+    ).toBe(false);
+    expect(
+      shouldRunTargetedMultiConfigSpecsInParallel(specs, {
+        OPENCLAW_VITEST_MAX_WORKERS: "1",
+      }),
+    ).toBe(false);
+    expect(shouldRunTargetedMultiConfigSpecsInParallel(specs, {})).toBe(true);
+  });
+
   it("assigns isolated Vitest fs-module cache paths per parallel shard", () => {
     const specs = applyParallelVitestCachePaths(
       [

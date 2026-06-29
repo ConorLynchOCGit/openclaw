@@ -779,6 +779,7 @@ export function installVitestNoOutputWatchdog(params) {
         return;
       }
       silentForMs += heartbeatMs;
+      params.onHeartbeat?.({ heartbeatMs, silentForMs });
       params.log?.(`[vitest] still running with no output for ${silentForMs}ms${suffix}.`);
       if (silentForMs + heartbeatMs < timeoutMs) {
         scheduleHeartbeatTimer();
@@ -885,12 +886,24 @@ export function spawnWatchedVitestProcess({
   spawnParams,
   env,
   label,
+  onFirstOutput,
+  onNoOutputHeartbeat,
   onNoOutputTimeout,
 }) {
   const child = spawnVitestProcess({
     pnpmArgs,
     spawnParams,
   });
+  let sawFirstOutput = false;
+  const handleFirstOutput = () => {
+    if (sawFirstOutput) {
+      return;
+    }
+    sawFirstOutput = true;
+    onFirstOutput?.();
+  };
+  child.stdout?.once("data", handleFirstOutput);
+  child.stderr?.once("data", handleFirstOutput);
   const teardownChildCleanup = installVitestProcessGroupCleanup({ child });
   const teardownNoOutputWatchdog = installVitestNoOutputWatchdog({
     streams: [child.stdout, child.stderr],
@@ -900,6 +913,7 @@ export function spawnWatchedVitestProcess({
     log: (message) => {
       console.error(message);
     },
+    onHeartbeat: onNoOutputHeartbeat,
     onTimeout: () => {
       onNoOutputTimeout?.();
       forwardSignalToVitestProcessGroup({

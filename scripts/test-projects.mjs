@@ -1,6 +1,8 @@
 // Dispatches Vitest project shards for explicit targets, changed files, or the
 // full local suite.
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { formatMs } from "./lib/check-timing-summary.mjs";
 import { acquireLocalHeavyCheckLockSync } from "./lib/local-heavy-check-runtime.mjs";
@@ -35,6 +37,7 @@ import {
   resolveChangedTestTargetPlanForArgs,
   resolveChangedTargetArgs,
   shouldAcquireLocalHeavyCheckLock,
+  shouldRunTargetedMultiConfigSpecsInParallel,
   shouldRetryVitestNoOutputTimeout,
   writeVitestIncludeFile,
 } from "./test-projects.test-support.mjs";
@@ -82,16 +85,125 @@ function cleanupVitestRunSpec(spec) {
   }
 }
 
+function createPhaseTimer() {
+  const startedAt = performance.now();
+  let previousAt = startedAt;
+  const phases = [];
+  return {
+    mark(name) {
+      const now = performance.now();
+      phases.push({
+        durationMs: now - previousAt,
+        name,
+        sinceStartMs: now - startedAt,
+      });
+      previousAt = now;
+    },
+    print(label = "phase timings") {
+      const totalMs = performance.now() - startedAt;
+      const phaseText =
+        phases.length === 0
+          ? "none"
+          : phases.map((phase) => `${phase.name}=${formatMs(phase.durationMs)}`).join("; ");
+      console.error(`[test] ${label}: total=${formatMs(totalMs)}; ${phaseText}`);
+    },
+  };
+}
+
+function uniquePathEntries(entries) {
+  const seen = new Set();
+  return entries.filter((entry) => {
+    const key = `${entry.label}\0${entry.path}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function resolveConfiguredPnpmStorePath(env) {
+  return (
+    env.PNPM_STORE_PATH?.trim() ||
+    env.npm_config_store_dir?.trim() ||
+    env.pnpm_config_store_dir?.trim() ||
+    ""
+  );
+}
+
+function resolvePathState(filePath) {
+  if (!filePath) {
+    return "not_configured";
+  }
+  try {
+    fs.accessSync(filePath, fs.constants.W_OK);
+    return "writable";
+  } catch {
+    return fs.existsSync(filePath) ? "not_writable" : "missing";
+  }
+}
+
+function formatPathState(entry) {
+  const suffix = entry.path ? ` path=${entry.path}` : "";
+  return `${entry.label}:${entry.state}${suffix}`;
+}
+
+function collectValidationPreflightEntries({ cwd, env, runSpecs }) {
+  const configuredPnpmStorePath = resolveConfiguredPnpmStorePath(env);
+  const cachePaths = runSpecs
+    .map((spec) => spec.env?.OPENCLAW_VITEST_FS_MODULE_CACHE_PATH?.trim())
+    .filter(Boolean)
+    .map((cachePath) => path.dirname(cachePath));
+  const rawEntries = [
+    { label: "node_modules", path: path.join(cwd, "node_modules") },
+    { label: "pnpm_virtual_store", path: path.join(cwd, "node_modules", ".pnpm") },
+    { label: "pnpm_store", path: configuredPnpmStorePath },
+    { label: "corepack_home", path: env.COREPACK_HOME?.trim() || "" },
+    { label: "pnpm_home", path: env.PNPM_HOME?.trim() || "" },
+    { label: "tsgo_cache", path: path.join(cwd, ".artifacts", "tsgo-cache") },
+    { label: "include_tmp", path: os.tmpdir() },
+    ...cachePaths.map((cachePath, index) => ({
+      label: `vitest_fs_cache_parent_${index + 1}`,
+      path: cachePath,
+    })),
+  ];
+  return uniquePathEntries(rawEntries).map((entry) => ({
+    ...entry,
+    state: resolvePathState(entry.path),
+  }));
+}
+
+function printValidationPreflightReceipt({ cwd, env, runSpecs }) {
+  const entries = collectValidationPreflightEntries({ cwd, env, runSpecs });
+  const limit = 10;
+  console.error("[test] validation preflight:");
+  for (const entry of entries.slice(0, limit)) {
+    console.error(`[test]   ${formatPathState(entry)}`);
+  }
+  if (entries.length > limit) {
+    console.error(`[test]   ... ${entries.length - limit} more preflight entries omitted`);
+  }
+}
+
 function runVitestSpec(spec) {
   if (spec.includeFilePath && spec.includePatterns) {
     writeVitestIncludeFile(spec.includeFilePath, spec.includePatterns);
   }
   let noOutputTimedOut = false;
+  let noOutputHeartbeatCount = 0;
+  let firstOutputMs = null;
+  const startedAt = performance.now();
   return new Promise((resolve, reject) => {
     const { child, teardown } = spawnWatchedVitestProcess({
       pnpmArgs: spec.pnpmArgs,
       env: spec.env,
       label: spec.config,
+      onFirstOutput: () => {
+        firstOutputMs ??= performance.now() - startedAt;
+      },
+      onNoOutputHeartbeat: () => {
+        noOutputHeartbeatCount += 1;
+      },
       onNoOutputTimeout: () => {
         noOutputTimedOut = true;
       },
@@ -104,7 +216,13 @@ function runVitestSpec(spec) {
     child.on("exit", (code, signal) => {
       teardown();
       cleanupVitestRunSpec(spec);
-      resolve({ code: code ?? (signal ? 143 : 1), noOutputTimedOut, signal });
+      resolve({
+        code: code ?? (signal ? 143 : 1),
+        firstOutputMs,
+        noOutputHeartbeatCount,
+        noOutputTimedOut,
+        signal,
+      });
     });
 
     child.on("error", (error) => {
@@ -138,6 +256,10 @@ async function runLoggedVitestSpec(spec) {
     result = await runVitestSpec(spec);
   }
   const durationMs = performance.now() - startedAt;
+  const firstOutputText = result.firstOutputMs === null ? "none" : formatMs(result.firstOutputMs);
+  console.error(
+    `[test] timing ${spec.config}: total=${formatMs(durationMs)}; first_output=${firstOutputText}; no_output_heartbeats=${result.noOutputHeartbeatCount}`,
+  );
   if (result.noOutputTimedOut && result.signal) {
     console.error(`[test] ${spec.config} exceeded no-output timeout`);
     return {
@@ -306,6 +428,7 @@ async function runVitestSpecsParallel(specs, concurrency) {
 
 async function main() {
   const suiteStartedAt = performance.now();
+  const phaseTimer = createPhaseTimer();
   const args = process.argv.slice(2);
   if (isWrapperMetadataRequest(args)) {
     printHelp();
@@ -313,7 +436,9 @@ async function main() {
   }
   const baseEnv = resolveLocalVitestEnv(process.env);
   const { targetArgs } = parseTestProjectsArgs(args, process.cwd());
+  phaseTimer.mark("parse_args");
   const unmatchedExplicitTargets = findUnmatchedExplicitTestTargets(args, process.cwd());
+  phaseTimer.mark("target_validation");
   if (unmatchedExplicitTargets.length > 0) {
     for (const unmatched of unmatchedExplicitTargets) {
       const suffix = unmatched.includePattern ? ` (${unmatched.includePattern})` : "";
@@ -329,6 +454,7 @@ async function main() {
     targetArgs.length === 0
       ? resolveChangedTargetArgs(args, process.cwd(), undefined, { env: baseEnv })
       : null;
+  phaseTimer.mark("resolve_targets");
   const rawRunSpecs =
     targetArgs.length === 0 && changedTargetArgs === null
       ? buildFullSuiteVitestRunPlans(args, process.cwd()).map((plan) => ({
@@ -353,13 +479,16 @@ async function main() {
           baseEnv,
           cwd: process.cwd(),
         });
+  phaseTimer.mark("create_specs");
   const runSpecs = applyDefaultMultiSpecVitestCachePaths(
     applyDefaultVitestNoOutputTimeout(rawRunSpecs, { env: baseEnv }),
     { cwd: process.cwd(), env: baseEnv },
   );
+  phaseTimer.mark("apply_defaults");
 
   if (runSpecs.length === 0) {
     printNoChangedTestTargets(args, process.cwd(), baseEnv);
+    phaseTimer.print("dispatcher phase timings");
     printTestSummary("skipped", 0, performance.now() - suiteStartedAt);
     return;
   }
@@ -371,23 +500,40 @@ async function main() {
         toolName: "test",
       })
     : () => {};
+  phaseTimer.mark("acquire_lock");
 
   const isFullSuiteRun =
     targetArgs.length === 0 &&
     changedTargetArgs === null &&
     !runSpecs.some((spec) => spec.watchMode);
   printValidationReceipt({ changedTargetArgs, isFullSuiteRun, runSpecs, targetArgs });
+  printValidationPreflightReceipt({ cwd: process.cwd(), env: baseEnv, runSpecs });
+  phaseTimer.mark("print_receipts");
   const isExplicitParallelMultiConfigRun =
     Boolean(baseEnv.OPENCLAW_TEST_PROJECTS_PARALLEL) &&
     runSpecs.length > 1 &&
     !runSpecs.some((spec) => spec.watchMode);
+  const isTargetedParallelMultiConfigRun =
+    !isFullSuiteRun && shouldRunTargetedMultiConfigSpecsInParallel(runSpecs, baseEnv);
   const isParallelShardRun =
-    isFullSuiteRun || isFullExtensionsProjectRun(runSpecs) || isExplicitParallelMultiConfigRun;
+    isFullSuiteRun ||
+    isFullExtensionsProjectRun(runSpecs) ||
+    isExplicitParallelMultiConfigRun ||
+    isTargetedParallelMultiConfigRun;
   if (isParallelShardRun) {
     const concurrency = resolveParallelFullSuiteConcurrency(runSpecs.length, baseEnv);
-    if (!isCiLikeEnv(baseEnv) && runSpecs.length > 1) {
+    if (
+      !isCiLikeEnv(baseEnv) &&
+      runSpecs.length > 1 &&
+      (isFullSuiteRun || isFullExtensionsProjectRun(runSpecs))
+    ) {
       console.warn(
         `[test] warning: broad local run will start ${runSpecs.length} Vitest shards; use \`pnpm test:changed\` for routine checks.`,
+      );
+    }
+    if (!isCiLikeEnv(baseEnv) && isTargetedParallelMultiConfigRun) {
+      console.error(
+        `[test] targeted multi-config run will start ${runSpecs.length} Vitest shards; set OPENCLAW_TEST_PROJECTS_SERIAL=1 to force serial.`,
       );
     }
     if (concurrency > 1) {
@@ -419,6 +565,8 @@ async function main() {
         timings,
       } = await runVitestSpecsParallel(parallelSpecs, concurrency);
       writeShardTimings(timings, process.cwd(), baseEnv);
+      phaseTimer.mark("run_specs");
+      phaseTimer.print("dispatcher phase timings");
       printTestSummary(
         parallelExitCode === 0 ? "passed" : "failed",
         parallelSpecs.length,
@@ -449,6 +597,8 @@ async function main() {
     if (result.code !== 0) {
       exitCode = exitCode || result.code;
       if (spec.continueOnFailure !== true) {
+        phaseTimer.mark("run_specs");
+        phaseTimer.print("dispatcher phase timings");
         printTestSummary("failed", timings.length, performance.now() - suiteStartedAt);
         releaseLockOnce();
         process.exit(result.code);
@@ -456,6 +606,8 @@ async function main() {
     }
   }
   writeShardTimings(timings, process.cwd(), baseEnv);
+  phaseTimer.mark("run_specs");
+  phaseTimer.print("dispatcher phase timings");
   printTestSummary(
     exitCode === 0 ? "passed" : "failed",
     timings.length,

@@ -1607,6 +1607,31 @@ function resolveChannelContractTargetKind(relative) {
   return "contractsChannelSession";
 }
 
+function resolveGatewayTargetKind(relative) {
+  if (!relative.startsWith("src/gateway/")) {
+    return null;
+  }
+  if (relative.startsWith("src/gateway/server-methods/")) {
+    return "gatewayMethods";
+  }
+  if (!relative.endsWith(".test.ts")) {
+    return "gateway";
+  }
+  if (isGatewayServerFullSuiteTarget(relative)) {
+    return "gatewayServer";
+  }
+  const basename = path.posix.basename(relative);
+  if (
+    basename.includes("client") ||
+    basename.includes("reconnect") ||
+    basename.includes("android-node") ||
+    basename.includes("gateway-cli-backend")
+  ) {
+    return "gatewayClient";
+  }
+  return "gatewayCore";
+}
+
 function listChangedPathsFromGit(baseRef, cwd) {
   return listChangedPathsFromGitSource({ base: baseRef, cwd });
 }
@@ -2032,8 +2057,9 @@ function classifyTarget(arg, cwd) {
   if (relative.startsWith("src/channels/")) {
     return "channel";
   }
-  if (relative.startsWith("src/gateway/")) {
-    return "gateway";
+  const gatewayKind = resolveGatewayTargetKind(relative);
+  if (gatewayKind) {
+    return gatewayKind;
   }
   if (relative.startsWith("src/hooks/")) {
     return "hooks";
@@ -2535,6 +2561,13 @@ export function resolveParallelFullSuiteConcurrency(specCount, envInput, hostInf
     return 1;
   }
   return Math.min(resolveLocalFullSuiteProfile(env, hostInfo).shardParallelism, specCount);
+}
+
+export function shouldRunTargetedMultiConfigSpecsInParallel(specs, envInput = process.env) {
+  if (specs.length <= 1 || specs.some((spec) => spec.watchMode)) {
+    return false;
+  }
+  return resolveParallelFullSuiteConcurrency(specs.length, envInput) > 1;
 }
 
 function sanitizeVitestCachePathSegment(value) {
