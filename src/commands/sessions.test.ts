@@ -264,6 +264,7 @@ describe("sessionsCommand", () => {
 
     const payload = JSON.parse(logs[0] ?? "{}") as {
       agentId?: string;
+      finalAssistantText?: string | null;
       session?: {
         key?: string;
         finalAssistantText?: string | null;
@@ -275,6 +276,7 @@ describe("sessionsCommand", () => {
     expect(payload.session?.finalAssistantText).toBe(
       "Final recursive planning improvement synthesized.",
     );
+    expect(payload.finalAssistantText).toBe("Final recursive planning improvement synthesized.");
     expect(payload.session?.childSessions).toContain("agent:researcher:subagent:child");
   });
 
@@ -354,6 +356,16 @@ describe("sessionsCommand", () => {
     }
 
     const payload = JSON.parse(logs[0] ?? "{}") as {
+      finalAssistantText?: string | null;
+      readbackProvenance?: {
+        finalAssistantText?: {
+          source?: string;
+          ref?: string;
+          derivedBy?: string;
+          bounded?: boolean;
+          note?: string;
+        };
+      };
       session?: {
         lastMessagePreview?: string | null;
         finalAssistantText?: string | null;
@@ -369,7 +381,14 @@ describe("sessionsCommand", () => {
       };
     };
     expect(payload.session?.lastMessagePreview).toBe("Trailing operator readback request.");
+    expect(payload.finalAssistantText).toBe("PHASE0W_FINAL_POSTFIX_PROOF_DONE");
     expect(payload.session?.finalAssistantText).toBe("PHASE0W_FINAL_POSTFIX_PROOF_DONE");
+    expect(payload.readbackProvenance?.finalAssistantText).toMatchObject({
+      source: "session-transcript",
+      ref: `session:${sessionId}`,
+      derivedBy: "readLastAssistantTextFromTranscript",
+      bounded: true,
+    });
     expect(payload.session?.readbackProvenance?.finalAssistantText).toMatchObject({
       source: "session-transcript",
       ref: `session:${sessionId}`,

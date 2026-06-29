@@ -92,6 +92,7 @@ describe("classifySessionAttention", () => {
       queueDepth: 0,
       activity: {
         activeWorkKind: "tool_call" as const,
+        activeToolName: "bash",
         activeToolAgeMs: 31_000,
         lastProgressAgeMs: 31_000,
       },
@@ -99,6 +100,23 @@ describe("classifySessionAttention", () => {
         eventType: "session.stalled",
         reason: "blocked_tool_call",
         classification: "blocked_tool_call",
+        activeWorkKind: "tool_call",
+        recoveryEligible: false,
+      },
+    },
+    {
+      name: "foreground task wait is long-running instead of blocked",
+      queueDepth: 0,
+      activity: {
+        activeWorkKind: "tool_call" as const,
+        activeToolName: "task",
+        activeToolAgeMs: 31_000,
+        lastProgressAgeMs: 31_000,
+      },
+      expected: {
+        eventType: "session.long_running",
+        reason: "foreground_task_wait",
+        classification: "long_running",
         activeWorkKind: "tool_call",
         recoveryEligible: false,
       },

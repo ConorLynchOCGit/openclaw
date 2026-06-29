@@ -27,6 +27,7 @@ import type {
 } from "./server-chat-state.js";
 import { loadGatewaySessionRow } from "./server-chat.load-gateway-session-row.runtime.js";
 import { persistGatewaySessionLifecycleEvent } from "./server-chat.persist-session-lifecycle.runtime.js";
+import { maybeRecordSubagentTaskProgress } from "./server-chat.subagent-task-progress.js";
 import {
   deriveGatewaySessionLifecycleSnapshot,
   isStaleLifecycleEventForSession,
@@ -1047,6 +1048,7 @@ export function createAgentEventHandler({
     const suppressHeartbeatToolEvents =
       isToolEvent && shouldSuppressHeartbeatToolEvents(clientRunId, evt.runId);
     const shouldCoalesceAgentEvent = shouldCoalesceAgentTextEvent(evt);
+    maybeRecordSubagentTaskProgress({ evt, sessionKey });
     // Channel/node subscribers respect verbose; authenticated Control UI
     // recipients need tool result payloads to render live tool cards.
     const channelToolPayload =

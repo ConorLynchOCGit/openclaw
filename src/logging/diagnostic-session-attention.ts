@@ -51,6 +51,20 @@ export function classifySessionAttention(params: {
     }
     if (
       params.activity.activeWorkKind === "tool_call" &&
+      params.activity.activeToolName === "task" &&
+      (params.activity.activeToolAgeMs ?? 0) > params.staleMs &&
+      (params.activity.lastProgressAgeMs ?? 0) > params.staleMs
+    ) {
+      return {
+        eventType: "session.long_running",
+        reason: "foreground_task_wait",
+        classification: "long_running",
+        activeWorkKind: params.activity.activeWorkKind,
+        recoveryEligible: false,
+      };
+    }
+    if (
+      params.activity.activeWorkKind === "tool_call" &&
       (params.activity.activeToolAgeMs ?? 0) > params.staleMs &&
       (params.activity.lastProgressAgeMs ?? 0) > params.staleMs
     ) {

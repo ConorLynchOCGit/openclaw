@@ -411,6 +411,8 @@ export async function sessionsShowCommand(
     writeRuntimeJson(runtime, {
       path: target.storePath,
       agentId: target.agentId,
+      finalAssistantText: row.finalAssistantText ?? null,
+      readbackProvenance: row.readbackProvenance,
       session: row,
     });
     return;

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerBundledHealthChecks } from "./bundled-health-checks.js";
 import { clearHealthChecksForTest, listHealthChecks } from "./health-check-registry.js";
+import type { HealthCheckContext } from "./health-checks.js";
 
 const mocks = vi.hoisted(() => ({
   registerPolicyDoctorChecks: vi.fn(),
@@ -102,7 +103,7 @@ describe("registerBundledHealthChecks", () => {
         kind: "plugin",
         description: "test",
         source: "codex",
-        async detect(ctx) {
+        async detect(ctx: HealthCheckContext) {
           observedPlugin = ctx.plugin;
           return [];
         },
