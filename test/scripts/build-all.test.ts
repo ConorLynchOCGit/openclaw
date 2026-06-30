@@ -250,8 +250,37 @@ describe("resolveBuildAllSteps", () => {
     ]);
   });
 
+  it("uses a runtime-only Docker profile that mirrors the build:docker artifact chain", () => {
+    expect(resolveBuildAllSteps("dockerRuntime").map((step) => step.label)).toEqual([
+      "tsdown",
+      "check-cli-bootstrap-imports",
+      "runtime-postbuild",
+      "build-stamp",
+      "runtime-postbuild-stamp",
+      "plugins:assets:build",
+      "plugins:assets:copy",
+      "copy-hook-metadata",
+      "copy-export-html-templates",
+      "write-build-info",
+      "write-cli-startup-metadata",
+      "write-cli-compat",
+    ]);
+  });
+
+  it("routes package build:docker through the timed build-all Docker profile", () => {
+    const packageJson = JSON.parse(fs.readFileSync("package.json", "utf8"));
+
+    expect(packageJson.scripts["build:docker"]).toBe("node scripts/build-all.mjs dockerRuntime");
+  });
+
   it("skips bundled tsdown declarations for runtime-only profiles", () => {
-    for (const profile of ["ciArtifacts", "gatewayWatch", "qaRuntime", "cliStartup"]) {
+    for (const profile of [
+      "ciArtifacts",
+      "dockerRuntime",
+      "gatewayWatch",
+      "qaRuntime",
+      "cliStartup",
+    ]) {
       const tsdown = resolveBuildAllSteps(profile).find((step) => step.label === "tsdown");
       if (!tsdown) {
         throw new Error(`Missing ${profile} tsdown step`);
@@ -269,7 +298,7 @@ describe("resolveBuildAllSteps", () => {
   });
 
   it("preserves startup metadata only for profiles that regenerate it", () => {
-    for (const profile of ["full", "ciArtifacts", "cliStartup"]) {
+    for (const profile of ["full", "ciArtifacts", "dockerRuntime", "cliStartup"]) {
       const tsdown = resolveBuildAllSteps(profile).find((step) => step.label === "tsdown");
       if (!tsdown) {
         throw new Error(`Missing ${profile} tsdown step`);
@@ -390,7 +419,7 @@ describe("resolveBuildAllSteps", () => {
   });
 
   it("keeps ui:build out of minimal backend-only profiles", () => {
-    for (const profile of ["gatewayWatch", "qaRuntime", "cliStartup"]) {
+    for (const profile of ["dockerRuntime", "gatewayWatch", "qaRuntime", "cliStartup"]) {
       const labels = resolveBuildAllSteps(profile).map((step) => step.label);
       expect(labels).not.toContain("ui:build");
     }

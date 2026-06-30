@@ -182,6 +182,20 @@ export const BUILD_ALL_PROFILES = {
     "write-cli-startup-metadata",
     "write-cli-compat",
   ],
+  dockerRuntime: [
+    "tsdown",
+    "check-cli-bootstrap-imports",
+    "runtime-postbuild",
+    "build-stamp",
+    "runtime-postbuild-stamp",
+    "plugins:assets:build",
+    "plugins:assets:copy",
+    "copy-hook-metadata",
+    "copy-export-html-templates",
+    "write-build-info",
+    "write-cli-startup-metadata",
+    "write-cli-compat",
+  ],
   gatewayWatch: [
     "tsdown",
     "check-cli-bootstrap-imports",
@@ -215,6 +229,12 @@ export const BUILD_ALL_PROFILE_STEP_ENV = {
     },
   },
   ciArtifacts: {
+    tsdown: {
+      OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "1",
+      OPENCLAW_PRESERVE_CLI_STARTUP_METADATA: "1",
+    },
+  },
+  dockerRuntime: {
     tsdown: {
       OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "1",
       OPENCLAW_PRESERVE_CLI_STARTUP_METADATA: "1",
