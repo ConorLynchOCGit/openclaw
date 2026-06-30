@@ -42,6 +42,56 @@ describe("TaskSummarySchema", () => {
     ).toBe(true);
   });
 
+  it("accepts bounded registry-derived active progress capsules", () => {
+    expect(
+      validateTaskSummary.Check({
+        id: "task-1",
+        status: "running",
+        deliveryStatus: "pending",
+        activeProgress: {
+          source: "task-registry",
+          ref: "task:task-1",
+          currentPhase: "running",
+          activeLabel: "codebase-researcher",
+          observedAt: "2026-06-30T20:05:00.000Z",
+          elapsedMs: 1200,
+          note: "Task is active; richer session progress is not indexed yet.",
+          pointer: {
+            kind: "task",
+            ref: "task-1",
+            label: "task row",
+          },
+          derivedBy: "resolveTaskActiveProgressCapsule",
+          bounded: true,
+        },
+      }),
+    ).toBe(true);
+
+    expect(
+      validateTaskSummary.Check({
+        id: "task-2",
+        status: "running",
+        deliveryStatus: "pending",
+        activeProgress: {
+          source: "subagent-registry",
+          ref: "subagent-run:run-child",
+          currentPhase: "running",
+          activeLabel: "planner",
+          observedAt: "2026-06-30T20:06:00.000Z",
+          elapsedMs: 1400,
+          note: "Child run is active; session trajectory progress is not indexed yet.",
+          pointer: {
+            kind: "session",
+            ref: "agent:planning:subagent:child",
+            label: "child session",
+          },
+          derivedBy: "resolveTaskActiveProgressCapsule",
+          bounded: true,
+        },
+      }),
+    ).toBe(true);
+  });
+
   it("requires closed deliveryStatus values", () => {
     expect(
       validateTaskSummary.Check({

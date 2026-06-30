@@ -36,6 +36,7 @@ const TaskActiveProgressPointerSchema = Type.Object(
       Type.Literal("artifact"),
       Type.Literal("inspect-next"),
       Type.Literal("session"),
+      Type.Literal("task"),
       Type.Literal("trajectory"),
     ]),
     ref: NonEmptyString,
@@ -46,7 +47,11 @@ const TaskActiveProgressPointerSchema = Type.Object(
 
 const TaskActiveProgressCapsuleSchema = Type.Object(
   {
-    source: Type.Literal("trajectory"),
+    source: Type.Union([
+      Type.Literal("trajectory"),
+      Type.Literal("subagent-registry"),
+      Type.Literal("task-registry"),
+    ]),
     ref: NonEmptyString,
     currentPhase: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     activeLabel: Type.Optional(Type.Union([Type.String(), Type.Null()])),

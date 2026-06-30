@@ -312,6 +312,42 @@ describe("tasks gateway handlers", () => {
     });
   });
 
+  it("falls back to bounded task-registry progress when child session evidence is not indexed", async () => {
+    const task = createTaskRecord({
+      runtime: "subagent",
+      taskKind: "source-scout",
+      requesterSessionKey: "agent:main:phase0z",
+      ownerKey: "agent:main:phase0z",
+      scopeKind: "session",
+      childSessionKey: "agent:planning:subagent:not-yet-indexed",
+      agentId: "planning",
+      runId: "run-gateway-task-progress-unindexed-session",
+      task: "Plan native event spine completion",
+      status: "running",
+      deliveryStatus: "pending",
+      startedAt: Date.now() - 2_000,
+      lastEventAt: Date.now() - 1_000,
+      progressSummary: "Child run started.",
+    });
+
+    const { payload } = await getTaskPayload(task.taskId);
+
+    expect(payload?.task?.activeProgress).toMatchObject({
+      source: "task-registry",
+      ref: `task:${task.taskId}`,
+      currentPhase: "running",
+      activeLabel: "planning",
+      note: "Child run started.",
+      pointer: {
+        kind: "task",
+        ref: task.taskId,
+        label: "task row",
+      },
+      derivedBy: "resolveTaskActiveProgressCapsule",
+      bounded: true,
+    });
+  });
+
   it("keeps child task summaries as pointers instead of child result projections", async () => {
     addSubagentRunForTests({
       runId: "run-child-result",
