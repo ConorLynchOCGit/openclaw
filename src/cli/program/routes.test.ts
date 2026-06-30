@@ -1,5 +1,6 @@
 // Program route tests cover CLI route table registration and dispatch.
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { PostUpgradeReport } from "../../commands/doctor-post-upgrade.types.js";
 import { defaultRuntime } from "../../runtime.js";
 import { findRoutedCommand } from "./routes.js";
 
@@ -18,7 +19,10 @@ const agentsListCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 const runPluginsListCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 const runDoctorLintCliMock = vi.hoisted(() => vi.fn(async () => 0));
 const runPostUpgradeProbesMock = vi.hoisted(() =>
-  vi.fn(async () => ({ probesRun: ["plugin.index_unavailable"], findings: [] })),
+  vi.fn<() => Promise<PostUpgradeReport>>(async () => ({
+    probesRun: ["plugin.index_unavailable"],
+    findings: [],
+  })),
 );
 const runPromotionReadinessCliMock = vi.hoisted(() => vi.fn(async () => {}));
 const runExecPolicyShowCommandMock = vi.hoisted(() => vi.fn(async () => {}));
@@ -683,6 +687,14 @@ describe("program routes", () => {
     ).resolves.toBe(true);
     expect(tasksListJsonCommandMock).toHaveBeenLastCalledWith(
       { json: true, runtime: "cron", status: undefined },
+      defaultRuntime,
+    );
+
+    await expect(
+      listRoute.run(["node", "openclaw", "tasks", "list", "--json", "--summary", "--runtime=cron"]),
+    ).resolves.toBe(true);
+    expect(tasksListJsonCommandMock).toHaveBeenLastCalledWith(
+      { json: true, summary: true, runtime: "cron", status: undefined },
       defaultRuntime,
     );
   });

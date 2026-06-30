@@ -11,6 +11,7 @@ import {
   createTaskRecord as createTaskRecordOrNull,
   resetTaskRegistryDeliveryRuntimeForTests,
   resetTaskRegistryForTests,
+  setTaskProgressById,
 } from "../tasks/task-registry.js";
 import type { TaskRecord } from "../tasks/task-registry.types.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
@@ -113,6 +114,69 @@ describe("tasks JSON commands", () => {
         status: "running",
         tasks: [jsonRoundTrip(mapTaskSummary(cliTask))],
       });
+    });
+  });
+
+  it("returns a bounded operator summary for large task lists", async () => {
+    await withTaskJsonStateDir(async () => {
+      let progressTask: TaskRecord | undefined;
+      for (let index = 0; index < 25; index += 1) {
+        const task = createTaskRecord({
+          runtime: "cli",
+          ownerKey: "",
+          scopeKind: "system",
+          status: index % 2 === 0 ? "running" : "succeeded",
+          task: `Task ${index}`,
+        });
+        if (index === 24) {
+          progressTask = task;
+        }
+      }
+      if (!progressTask) {
+        throw new Error("expected progress task");
+      }
+      const progressAt = Date.now() + 1;
+      setTaskProgressById({
+        taskId: progressTask.taskId,
+        progressSummary: "running bounded list summary check",
+        lastEventAt: progressAt,
+      });
+
+      const runtime = createRuntime();
+      await tasksListJsonCommand({ json: true, summary: true }, runtime);
+
+      const payload = readJsonLog(runtime) as {
+        schema?: string;
+        count?: number;
+        displayed?: number;
+        displayLimit?: number;
+        truncated?: boolean;
+        summary?: { active?: number; total?: number };
+        activeProgress?: {
+          displayedWithProgress?: number;
+          displayedBySource?: Record<string, number>;
+        };
+        tasks?: Array<{ taskId?: string; activeProgress?: { source?: string; note?: string } }>;
+        authority?: string;
+      };
+      expect(payload.schema).toBe("openclaw.tasks.list.summary.v1");
+      expect(payload.count).toBe(25);
+      expect(payload.displayLimit).toBe(20);
+      expect(payload.displayed).toBe(20);
+      expect(payload.truncated).toBe(true);
+      expect(payload.summary).toMatchObject({ total: 25, active: 13 });
+      expect(payload.activeProgress?.displayedWithProgress).toBeGreaterThanOrEqual(1);
+      expect(payload.activeProgress?.displayedBySource?.["task-run-event"]).toBeGreaterThanOrEqual(
+        1,
+      );
+      expect(payload.tasks).toHaveLength(20);
+      expect(payload.tasks?.[0]).toMatchObject({
+        activeProgress: {
+          source: "task-run-event",
+          note: "running bounded list summary check",
+        },
+      });
+      expect(payload.authority).toContain("bounded readback projection");
     });
   });
 

@@ -9,17 +9,9 @@ import {
   resolveSubagentSessionStatus,
 } from "../agents/subagent-registry-read.js";
 import type { TaskRecord } from "../tasks/task-registry.types.js";
-import { loadGatewaySessionRow } from "./session-utils.js";
 import type { ActiveProgressCapsule } from "./session-utils.types.js";
 
 const TASK_PROGRESS_NOTE_MAX_CHARS = 240;
-
-function taskSessionCandidates(task: TaskRecord): string[] {
-  const candidates = [task.childSessionKey, task.requesterSessionKey, task.ownerKey]
-    .map((value) => normalizeOptionalString(value))
-    .filter((value): value is string => Boolean(value));
-  return [...new Set(candidates)];
-}
 
 function truncateTaskProgressNote(value: string | undefined): string | undefined {
   const text = normalizeOptionalString(value);
@@ -140,20 +132,6 @@ export function resolveTaskActiveProgressCapsule(
 ): ActiveProgressCapsule | undefined {
   if (task.status !== "running" && task.status !== "queued") {
     return undefined;
-  }
-  for (const sessionKey of taskSessionCandidates(task)) {
-    try {
-      const row = loadGatewaySessionRow(sessionKey, {
-        includeDerivedTitles: false,
-        includeLastMessage: false,
-      });
-      const activeProgress = row?.readbackProvenance?.activeProgress ?? row?.activeProgress;
-      if (activeProgress?.bounded) {
-        return activeProgress;
-      }
-    } catch {
-      // Missing or unreadable session evidence should leave task readback generic.
-    }
   }
   return resolveFallbackTaskProgressCapsule(task);
 }

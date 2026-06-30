@@ -468,6 +468,7 @@ export function registerStatusHealthSessionsCommands(program: Command) {
     .command("tasks")
     .description("Inspect durable background tasks and TaskFlow state")
     .option("--json", "Output as JSON", false)
+    .option("--summary", "Output a bounded operator summary instead of every task", false)
     .option("--runtime <name>", "Filter by kind (subagent, acp, cron, cli)")
     .option(
       "--status <name>",
@@ -479,6 +480,7 @@ export function registerStatusHealthSessionsCommands(program: Command) {
         await tasksListCommand(
           {
             json: Boolean(opts.json),
+            summary: Boolean(opts.summary),
             runtime: opts.runtime as string | undefined,
             status: opts.status as string | undefined,
           },
@@ -492,6 +494,7 @@ export function registerStatusHealthSessionsCommands(program: Command) {
     .command("list")
     .description("List tracked background tasks")
     .option("--json", "Output as JSON", false)
+    .option("--summary", "Output a bounded operator summary instead of every task", false)
     .option("--runtime <name>", "Filter by kind (subagent, acp, cron, cli)")
     .option(
       "--status <name>",
@@ -501,6 +504,7 @@ export function registerStatusHealthSessionsCommands(program: Command) {
       const parentOpts = command.parent?.opts() as
         | {
             json?: boolean;
+            summary?: boolean;
             runtime?: string;
             status?: string;
           }
@@ -510,6 +514,7 @@ export function registerStatusHealthSessionsCommands(program: Command) {
         await tasksListCommand(
           {
             json: Boolean(opts.json || parentOpts?.json),
+            summary: Boolean(opts.summary || parentOpts?.summary),
             runtime: (opts.runtime as string | undefined) ?? parentOpts?.runtime,
             status: (opts.status as string | undefined) ?? parentOpts?.status,
           },

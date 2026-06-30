@@ -16,6 +16,7 @@ import {
   createTaskRecord as createTaskRecordOrNull,
   resetTaskRegistryDeliveryRuntimeForTests,
   resetTaskRegistryForTests,
+  setTaskProgressById,
 } from "../tasks/task-registry.js";
 import * as taskRegistryMaintenance from "../tasks/task-registry.maintenance.js";
 import type { TaskRecord } from "../tasks/task-registry.types.js";
@@ -24,6 +25,7 @@ import type { OpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import {
   tasksAuditCommand,
   tasksCancelCommand,
+  tasksListCommand,
   tasksMaintenanceCommand,
   tasksShowCommand,
 } from "./tasks.js";
@@ -408,60 +410,61 @@ describe("tasks commands", () => {
     });
   });
 
-  it("shows active progress from a child session trajectory capsule", async () => {
-    await withTaskCommandStateDir(async (state) => {
-      const sessionId = "task-progress-child-session";
-      const childSessionKey = "agent:main:subagent:task-progress-child";
+  it("shows bounded task list summary output without dumping every task", async () => {
+    await withTaskCommandStateDir(async () => {
+      let progressTask: TaskRecord | undefined;
+      for (let index = 0; index < 25; index += 1) {
+        const task = createTaskRecord({
+          runtime: "cli",
+          ownerKey: "",
+          scopeKind: "system",
+          status: index % 2 === 0 ? "running" : "succeeded",
+          task: `Summary task ${index}`,
+        });
+        if (index === 24) {
+          progressTask = task;
+        }
+      }
+      if (!progressTask) {
+        throw new Error("expected progress task");
+      }
+      const progressAt = Date.now() + 1;
+      setTaskProgressById({
+        taskId: progressTask.taskId,
+        progressSummary: "validating bounded human list summary",
+        lastEventAt: progressAt,
+      });
+
+      const runtime = createRuntime();
+      await tasksListCommand({ summary: true }, runtime);
+
+      const logs = vi.mocked(runtime.log).mock.calls.map(([line]) => String(line));
+      const joined = logs.join("\n");
+      expect(joined).toContain("Background tasks: 25");
+      expect(joined).toContain("Showing 20 bounded rows");
+      expect(joined).toContain("full list available with `openclaw tasks list --json`");
+      expect(joined).toContain("task-run-event running cli validating bounded human list summary");
+      expect(joined).not.toContain("Summary task 9");
+    });
+  });
+
+  it("shows active progress from a task execution receipt", async () => {
+    await withTaskCommandStateDir(async () => {
       const task = createTaskRecord({
-        runtime: "subagent",
-        requesterSessionKey: "agent:main:main",
-        ownerKey: "agent:main:main",
-        scopeKind: "session",
-        childSessionKey,
-        runId: "run-task-progress-child",
+        runtime: "cli",
+        ownerKey: "",
+        scopeKind: "system",
+        label: "validation",
         status: "running",
         task: "Inspect active child progress",
+        startedAt: Date.now(),
       });
-      const sessionsDir = state.sessionsDir("main");
-      await fs.mkdir(sessionsDir, { recursive: true });
-      await fs.writeFile(
-        path.join(sessionsDir, "sessions.json"),
-        JSON.stringify(
-          {
-            [childSessionKey]: {
-              sessionId,
-              status: "running",
-              updatedAt: Date.now() - 45 * 60_000,
-            },
-          },
-          null,
-          2,
-        ),
-        "utf8",
-      );
-      await fs.writeFile(
-        path.join(sessionsDir, `${sessionId}.trajectory.jsonl`),
-        `${JSON.stringify({
-          traceSchema: "openclaw-trajectory",
-          schemaVersion: 1,
-          traceId: sessionId,
-          source: "runtime",
-          type: "tool.call",
-          ts: "2026-06-30T18:00:00.000Z",
-          seq: 5,
-          sourceSeq: 9,
-          sessionId,
-          sessionKey: childSessionKey,
-          data: {
-            name: "exec_command",
-            phase: "validation",
-            durationMs: 1250,
-            summary: "running focused task readback regression",
-            artifactPath: ".openclaw/trajectory-exports/task-progress",
-          },
-        })}\n`,
-        "utf8",
-      );
+      const progressAt = Date.now() + 1;
+      setTaskProgressById({
+        taskId: task.taskId,
+        progressSummary: "running focused task readback regression",
+        lastEventAt: progressAt,
+      });
 
       const runtime = createRuntime();
       await tasksShowCommand({ json: false, lookup: task.taskId }, runtime);
@@ -471,66 +474,29 @@ describe("tasks commands", () => {
         .mock.calls.map(([line]) => String(line))
         .join("\n");
       expect(joined).toContain(
-        "activeProgress: trajectory phase=validation exec_command tool.call seq=9 elapsedMs=1250",
+        "activeProgress: task-run-event phase=running validation task.progress",
       );
       expect(joined).toContain("note=running focused task readback regression");
-      expect(joined).toContain("pointer=artifact:.openclaw/trajectory-exports/task-progress");
+      expect(joined).toContain(`pointer=task:${task.taskId}`);
     });
   });
 
-  it("includes active progress in task show JSON from child session trajectory evidence", async () => {
-    await withTaskCommandStateDir(async (state) => {
-      const sessionId = "task-progress-json-child-session";
-      const childSessionKey = "agent:main:subagent:task-progress-json-child";
+  it("includes active progress in task show JSON from task execution receipts", async () => {
+    await withTaskCommandStateDir(async () => {
       const task = createTaskRecord({
-        runtime: "subagent",
-        requesterSessionKey: "agent:main:main",
-        ownerKey: "agent:main:main",
-        scopeKind: "session",
-        childSessionKey,
-        runId: "run-task-progress-json-child",
+        runtime: "cli",
+        ownerKey: "",
+        scopeKind: "system",
+        label: "validation-json",
         status: "running",
         task: "Inspect active child progress JSON",
       });
-      const sessionsDir = state.sessionsDir("main");
-      await fs.mkdir(sessionsDir, { recursive: true });
-      await fs.writeFile(
-        path.join(sessionsDir, "sessions.json"),
-        JSON.stringify(
-          {
-            [childSessionKey]: {
-              sessionId,
-              status: "running",
-              updatedAt: Date.now() - 45 * 60_000,
-            },
-          },
-          null,
-          2,
-        ),
-        "utf8",
-      );
-      await fs.writeFile(
-        path.join(sessionsDir, `${sessionId}.trajectory.jsonl`),
-        `${JSON.stringify({
-          traceSchema: "openclaw-trajectory",
-          schemaVersion: 1,
-          traceId: sessionId,
-          source: "runtime",
-          type: "tool.call",
-          ts: "2026-06-30T18:10:00.000Z",
-          seq: 7,
-          sourceSeq: 11,
-          sessionId,
-          sessionKey: childSessionKey,
-          data: {
-            name: "exec_command",
-            phase: "validation",
-            elapsedMs: 500,
-            summary: "running JSON task readback regression",
-          },
-        })}\n`,
-        "utf8",
-      );
+      const lastEventAt = Date.now() + 1;
+      setTaskProgressById({
+        taskId: task.taskId,
+        progressSummary: "running JSON task readback regression",
+        lastEventAt,
+      });
 
       const runtime = createRuntime();
       await tasksShowCommand({ json: true, lookup: task.taskId }, runtime);
@@ -542,17 +508,17 @@ describe("tasks commands", () => {
           currentPhase?: string;
           activeLabel?: string;
           sourceEventType?: string;
-          sourceEventSeq?: number;
+          note?: string;
           bounded?: boolean;
         };
       };
       expect(payload.activeProgress).toMatchObject({
-        source: "trajectory",
-        ref: `session:${sessionId}`,
-        currentPhase: "validation",
-        activeLabel: "exec_command",
-        sourceEventType: "tool.call",
-        sourceEventSeq: 11,
+        source: "task-run-event",
+        ref: `task-event:${task.taskId}:${lastEventAt}:progress`,
+        currentPhase: "running",
+        activeLabel: "validation-json",
+        sourceEventType: "task.progress",
+        note: "running JSON task readback regression",
         bounded: true,
       });
     });

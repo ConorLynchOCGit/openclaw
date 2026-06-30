@@ -4,6 +4,7 @@
 import fs from "node:fs";
 import { timestampMsToIsoString } from "@openclaw/normalization-core/number-coercion";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import type { TaskSummary } from "../../packages/gateway-protocol/src/index.js";
 import { isRich, theme } from "../../packages/terminal-core/src/theme.js";
 import { formatCliCommand } from "../cli/command-format.js";
 import { formatLookupMiss } from "../cli/error-format.js";
@@ -17,7 +18,10 @@ import {
 } from "../config/sessions.js";
 import { loadCronJobsStoreSync, resolveCronJobsStorePath } from "../cron/store.js";
 import { resolveTaskActiveProgressCapsule } from "../gateway/task-active-progress.js";
-import { mapTaskSummary } from "../gateway/task-summary-projection.js";
+import {
+  buildTasksListSummaryPayload,
+  mapTaskSummary,
+} from "../gateway/task-summary-projection.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { parseAgentSessionKey } from "../sessions/session-key-utils.js";
 import { getTaskById, updateTaskNotifyPolicyById } from "../tasks/runtime-internal.js";
@@ -324,6 +328,48 @@ function formatTaskRows(tasks: TaskRecord[], rich: boolean) {
   return lines;
 }
 
+function formatTaskSummaryRows(tasks: TaskSummary[], rich: boolean) {
+  const header = [
+    "Task".padEnd(ID_PAD),
+    "Kind".padEnd(RUNTIME_PAD),
+    "Status".padEnd(STATUS_PAD),
+    "Delivery".padEnd(DELIVERY_PAD),
+    "Updated".padEnd(20),
+    "Progress",
+  ].join(" ");
+  const lines = [rich ? theme.heading(header) : header];
+  for (const task of tasks) {
+    const progress = task.activeProgress
+      ? [
+          task.activeProgress.source,
+          task.activeProgress.currentPhase,
+          task.activeProgress.activeLabel,
+          task.activeProgress.note,
+        ]
+          .filter(Boolean)
+          .join(" ")
+      : (normalizeOptionalString(task.terminalSummary) ??
+        normalizeOptionalString(task.progressSummary) ??
+        normalizeOptionalString(task.error) ??
+        task.title);
+    lines.push(
+      [
+        shortToken(task.taskId).padEnd(ID_PAD),
+        (normalizeOptionalString(task.runtime) ?? "n/a").padEnd(RUNTIME_PAD),
+        formatTaskStatusCell(task.status, rich),
+        task.deliveryStatus.padEnd(DELIVERY_PAD),
+        formatTaskTimestamp(typeof task.updatedAt === "number" ? task.updatedAt : undefined).padEnd(
+          20,
+        ),
+        truncate(progress ?? "n/a", 96),
+      ]
+        .join(" ")
+        .trimEnd(),
+    );
+  }
+  return lines;
+}
+
 function formatTaskListSummary(tasks: TaskRecord[]) {
   const summary = summarizeTaskRecords(tasks);
   return `${summary.byStatus.queued} queued · ${summary.byStatus.running} running · ${summary.failures} issues`;
@@ -426,7 +472,7 @@ function toSystemAuditFindings(params: {
 
 /** Lists background tasks with optional runtime/status filters. */
 export async function tasksListCommand(
-  opts: { json?: boolean; runtime?: string; status?: string },
+  opts: { json?: boolean; runtime?: string; status?: string; summary?: boolean },
   runtime: RuntimeEnv,
 ) {
   const runtimeFilter = opts.runtime?.trim();
@@ -444,16 +490,44 @@ export async function tasksListCommand(
   if (opts.json) {
     runtime.log(
       JSON.stringify(
-        {
-          count: tasks.length,
-          runtime: runtimeFilter ?? null,
-          status: statusFilter ?? null,
-          tasks: tasks.map((task) => mapTaskSummary(task)),
-        },
+        opts.summary
+          ? buildTasksListSummaryPayload(tasks, {
+              runtime: runtimeFilter ?? null,
+              status: statusFilter ?? null,
+            })
+          : {
+              count: tasks.length,
+              runtime: runtimeFilter ?? null,
+              status: statusFilter ?? null,
+              tasks: tasks.map((task) => mapTaskSummary(task)),
+            },
         null,
         2,
       ),
     );
+    return;
+  }
+
+  if (opts.summary) {
+    const payload = buildTasksListSummaryPayload(tasks, {
+      runtime: runtimeFilter ?? null,
+      status: statusFilter ?? null,
+    });
+    runtime.log(info(`Background tasks: ${payload.count}`));
+    runtime.log(
+      info(
+        `Task pressure: ${payload.summary.byStatus.queued} queued · ${payload.summary.byStatus.running} running · ${payload.summary.failures} issues`,
+      ),
+    );
+    runtime.log(
+      info(
+        `Showing ${payload.displayed} bounded rows (${payload.selection.order})${payload.truncated ? "; full list available with `openclaw tasks list --json`" : ""}.`,
+      ),
+    );
+    const rich = isRich();
+    for (const line of formatTaskSummaryRows(payload.tasks, rich)) {
+      runtime.log(line);
+    }
     return;
   }
 

@@ -1,7 +1,10 @@
 // JSON-only task command helpers.
 // These paths avoid maintenance reconciliation so short-lived JSON CLI processes stay read-only and exit cleanly.
 
-import { mapTaskSummary } from "../gateway/task-summary-projection.js";
+import {
+  buildTasksListSummaryPayload,
+  mapTaskSummary,
+} from "../gateway/task-summary-projection.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { writeRuntimeJson } from "../runtime.js";
 import { listTaskRecords, resolveTaskForLookupToken } from "../tasks/runtime-internal.js";
@@ -25,6 +28,7 @@ export type TasksListJsonArgs = {
   json?: boolean;
   runtime?: string;
   status?: string;
+  summary?: boolean;
 };
 
 export type TasksAuditJsonArgs = {
@@ -68,6 +72,12 @@ function buildTasksListJsonPayload(opts: TasksListJsonArgs) {
     }
     return true;
   });
+  if (opts.summary) {
+    return buildTasksListSummaryPayload(tasks, {
+      runtime: runtimeFilter ?? null,
+      status: statusFilter ?? null,
+    });
+  }
   return {
     count: tasks.length,
     runtime: runtimeFilter ?? null,

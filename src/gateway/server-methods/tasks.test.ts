@@ -162,49 +162,10 @@ describe("tasks gateway handlers", () => {
     expect(payload?.task?.title).toBe("Done task");
   });
 
-  it("gets running tasks with active progress from child session trajectory evidence", async () => {
-    const sessionId = "gateway-task-progress-child";
+  it("gets running tasks with active progress from task execution receipts", async () => {
     const childSessionKey = "agent:coding:subagent:progress-child";
-    const sessionsDir = path.join(stateDir, "agents", "coding", "sessions");
-    await fs.mkdir(sessionsDir, { recursive: true });
-    await fs.writeFile(
-      path.join(sessionsDir, "sessions.json"),
-      JSON.stringify(
-        {
-          [childSessionKey]: {
-            sessionId,
-            status: "running",
-            updatedAt: Date.now() - 60_000,
-          },
-        },
-        null,
-        2,
-      ),
-      "utf8",
-    );
-    await fs.writeFile(
-      path.join(sessionsDir, `${sessionId}.trajectory.jsonl`),
-      `${JSON.stringify({
-        traceSchema: "openclaw-trajectory",
-        schemaVersion: 1,
-        traceId: sessionId,
-        source: "runtime",
-        type: "tool.call",
-        ts: "2026-06-30T18:30:00.000Z",
-        seq: 4,
-        sourceSeq: 14,
-        sessionId,
-        sessionKey: childSessionKey,
-        data: {
-          name: "exec_command",
-          phase: "validation",
-          elapsedMs: 900,
-          summary: "checking gateway task progress",
-          inspectNext: "openclaw sessions tail --session-key agent:coding:subagent:progress-child",
-        },
-      })}\n`,
-      "utf8",
-    );
+    const startedAt = Date.UTC(2026, 5, 30, 18, 29, 0);
+    const lastEventAt = Date.UTC(2026, 5, 30, 18, 30, 0);
     const task = createTaskRecord({
       runtime: "subagent",
       taskKind: "coding-child",
@@ -217,30 +178,35 @@ describe("tasks gateway handlers", () => {
       task: "Inspect gateway task progress",
       status: "running",
       deliveryStatus: "pending",
+      startedAt,
+    });
+    recordTaskProgressByRunId({
+      runId: "run-gateway-task-progress",
+      lastEventAt,
+      progressSummary: "checking gateway task progress",
     });
 
     const { payload } = await getTaskPayload(task.taskId);
 
     expect(payload?.task?.activeProgress).toMatchObject({
-      source: "trajectory",
-      ref: `session:${sessionId}`,
-      currentPhase: "validation",
-      activeLabel: "exec_command",
+      source: "task-run-event",
+      ref: `task-event:${task.taskId}:${lastEventAt}:progress`,
+      currentPhase: "running",
+      activeLabel: "coding",
       observedAt: "2026-06-30T18:30:00.000Z",
-      elapsedMs: 900,
-      sourceEventType: "tool.call",
-      sourceEventSeq: 14,
+      sourceEventType: "task.progress",
       note: "checking gateway task progress",
       pointer: {
-        kind: "inspect-next",
-        ref: "openclaw sessions tail --session-key agent:coding:subagent:progress-child",
+        kind: "task",
+        ref: task.taskId,
+        label: "task run receipt",
       },
-      derivedBy: "readLatestTrajectoryProgressCapsule",
+      derivedBy: "resolveTaskActiveProgressCapsule",
       bounded: true,
     });
   });
 
-  it("gets active progress when a running task links to a session with missing status", async () => {
+  it("does not read child session trajectory progress for task summaries", async () => {
     const sessionId = "gateway-task-progress-missing-status-child";
     const childSessionKey = "agent:codebase-researcher:subagent:progress-child";
     const sessionsDir = path.join(stateDir, "agents", "codebase-researcher", "sessions");
@@ -293,22 +259,29 @@ describe("tasks gateway handlers", () => {
       task: "Inspect event-spine owner files",
       status: "running",
       deliveryStatus: "pending",
+      progressSummary: "Child run started.",
     });
 
     const { payload } = await getTaskPayload(task.taskId);
 
     expect(payload?.task?.activeProgress).toMatchObject({
-      source: "trajectory",
-      ref: `session:${sessionId}`,
-      currentPhase: "source-inspection",
-      activeLabel: "read",
-      observedAt: "2026-06-30T19:45:00.000Z",
-      elapsedMs: 1500,
-      sourceEventType: "tool.call",
-      sourceEventSeq: 15,
-      note: "reading event-spine owner files",
-      derivedBy: "readLatestTrajectoryProgressCapsule",
+      source: "task-run-event",
+      ref: `task-event:${task.taskId}:${task.lastEventAt}:running`,
+      currentPhase: "running",
+      activeLabel: "codebase-researcher",
+      sourceEventType: "task.running",
+      note: "Child run started.",
+      pointer: {
+        kind: "task",
+        ref: task.taskId,
+        label: "task run receipt",
+      },
+      derivedBy: "resolveTaskActiveProgressCapsule",
       bounded: true,
+    });
+    expect(payload?.task?.activeProgress).not.toMatchObject({
+      ref: `session:${sessionId}`,
+      source: "trajectory",
     });
   });
 

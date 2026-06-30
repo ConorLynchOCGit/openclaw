@@ -454,7 +454,7 @@ function parseTasksListRouteArgsForCommandPath(argv: string[], commandPath: stri
   }
   const positionals = getCommandPositionalsWithRootOptions(argv, {
     commandPath,
-    booleanFlags: ["--json"],
+    booleanFlags: ["--json", "--summary"],
     valueFlags: ["--runtime", "--status"],
   });
   if (!positionals || positionals.length !== 0) {
@@ -470,6 +470,7 @@ function parseTasksListRouteArgsForCommandPath(argv: string[], commandPath: stri
   }
   return {
     json: true as const,
+    ...(hasFlag(argv, "--summary") ? { summary: true } : {}),
     runtime: runtime.value,
     status: status.value,
   };
