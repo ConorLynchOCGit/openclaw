@@ -312,7 +312,7 @@ describe("tasks gateway handlers", () => {
     });
   });
 
-  it("falls back to bounded task-registry progress when child session evidence is not indexed", async () => {
+  it("falls back to bounded task-run receipt progress when child session evidence is not indexed", async () => {
     const task = createTaskRecord({
       runtime: "subagent",
       taskKind: "source-scout",
@@ -333,15 +333,16 @@ describe("tasks gateway handlers", () => {
     const { payload } = await getTaskPayload(task.taskId);
 
     expect(payload?.task?.activeProgress).toMatchObject({
-      source: "task-registry",
-      ref: `task:${task.taskId}`,
+      source: "task-run-event",
+      ref: `task-event:${task.taskId}:${task.lastEventAt}:running`,
       currentPhase: "running",
       activeLabel: "planning",
+      sourceEventType: "task.running",
       note: "Child run started.",
       pointer: {
         kind: "task",
         ref: task.taskId,
-        label: "task row",
+        label: "task run receipt",
       },
       derivedBy: "resolveTaskActiveProgressCapsule",
       bounded: true,

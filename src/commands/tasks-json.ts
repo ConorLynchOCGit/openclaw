@@ -1,6 +1,7 @@
 // JSON-only task command helpers.
 // These paths avoid maintenance reconciliation so short-lived JSON CLI processes stay read-only and exit cleanly.
 
+import { mapTaskSummary } from "../gateway/task-summary-projection.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { writeRuntimeJson } from "../runtime.js";
 import { listTaskRecords, resolveTaskForLookupToken } from "../tasks/runtime-internal.js";
@@ -71,7 +72,7 @@ function buildTasksListJsonPayload(opts: TasksListJsonArgs) {
     count: tasks.length,
     runtime: runtimeFilter ?? null,
     status: statusFilter ?? null,
-    tasks,
+    tasks: tasks.map((task) => mapTaskSummary(task)),
   };
 }
 
@@ -109,7 +110,8 @@ function buildTasksAuditJsonPayload(opts: TasksAuditJsonArgs) {
 }
 
 function buildTasksShowJsonPayload(opts: TasksShowJsonArgs) {
-  return resolveTaskForLookupToken(opts.lookup);
+  const task = resolveTaskForLookupToken(opts.lookup);
+  return task ? mapTaskSummary(task) : null;
 }
 
 /** Writes task list JSON without triggering task maintenance. */

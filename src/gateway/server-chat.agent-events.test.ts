@@ -2245,6 +2245,103 @@ describe("agent event handler", () => {
     });
   });
 
+  it("projects bounded row readback fields into terminal lifecycle snapshots", () => {
+    const activeProgress = {
+      source: "trajectory" as const,
+      ref: "trajectory:sess-readback",
+      currentPhase: "validation",
+      activeLabel: "exec_command",
+      observedAt: "2026-06-30T20:00:00.000Z",
+      elapsedMs: 1250,
+      sourceEventType: "tool.call",
+      sourceEventSeq: 12,
+      note: "running focused regression",
+      derivedBy: "readLatestTrajectoryProgressCapsule",
+      bounded: true as const,
+    };
+    const readbackProvenance = {
+      status: {
+        source: "session-store" as const,
+        ref: "session:sess-readback",
+        derivedBy: "buildGatewaySessionRow",
+        bounded: false,
+      },
+      activeProgress,
+      finalAssistantText: {
+        source: "session-transcript" as const,
+        ref: "session:sess-readback",
+        derivedBy: "readLastAssistantTextFromTranscriptWithProvenance",
+        bounded: true,
+      },
+    };
+    vi.mocked(loadGatewaySessionRow).mockReturnValue({
+      key: "session-readback",
+      kind: "direct",
+      sessionId: "sess-readback",
+      updatedAt: 1_650,
+      status: "running",
+      startedAt: 900,
+      runtimeMs: 750,
+      derivedTitle: "Phase 0Z readback",
+      lastMessagePreview: "Trailing operator readback request.",
+      finalAssistantText: "Final readback answer.",
+      activeProgress,
+      readbackProvenance,
+      parentSessionKey: "agent:main:main",
+      childSessions: ["agent:researcher:subagent:child"],
+    });
+
+    const { broadcastToConnIds, sessionEventSubscribers, handler } = createHarness({
+      resolveSessionKeyForRun: () => "session-readback",
+    });
+
+    sessionEventSubscribers.subscribe("conn-session");
+    handler({
+      runId: "run-readback",
+      seq: 2,
+      stream: "lifecycle",
+      ts: 1_800,
+      data: {
+        phase: "end",
+        startedAt: 900,
+        endedAt: 1_700,
+      },
+    });
+
+    expect(loadGatewaySessionRow).toHaveBeenCalledWith("session-readback", {
+      includeDerivedTitles: true,
+      includeLastMessage: true,
+      transcriptUsageMaxBytes: 64 * 1024,
+    });
+    const payload = requireRecord(
+      requireMockArg(broadcastToConnIds, 0, 1, "sessions changed payload"),
+      "sessions changed payload",
+    );
+    expectRecordFields(payload, {
+      sessionKey: "session-readback",
+      phase: "end",
+      derivedTitle: "Phase 0Z readback",
+      lastMessagePreview: "Trailing operator readback request.",
+      finalAssistantText: "Final readback answer.",
+      activeProgress,
+      readbackProvenance,
+      parentSessionKey: "agent:main:main",
+      childSessions: ["agent:researcher:subagent:child"],
+      status: "done",
+      endedAt: 1_700,
+    });
+    expectRecordFields(requireRecord(payload.session, "nested session"), {
+      derivedTitle: "Phase 0Z readback",
+      lastMessagePreview: "Trailing operator readback request.",
+      finalAssistantText: "Final readback answer.",
+      activeProgress,
+      readbackProvenance,
+      parentSessionKey: "agent:main:main",
+      childSessions: ["agent:researcher:subagent:child"],
+      status: "done",
+    });
+  });
+
   it("omits goal state from unscoped global lifecycle snapshots", () => {
     vi.mocked(loadGatewaySessionRow).mockReturnValue({
       key: "global",

@@ -5,7 +5,6 @@ import {
   ErrorCodes,
   errorShape,
   formatValidationErrors,
-  type TaskSummary,
   type TasksListParams,
   validateTasksCancelParams,
   validateTasksGetParams,
@@ -15,97 +14,11 @@ import { parseAgentSessionKey } from "../../routing/session-key.js";
 import { cancelDetachedTaskRunById } from "../../tasks/detached-task-runtime.js";
 import { getTaskById, listTaskRecords } from "../../tasks/runtime-internal.js";
 import type { TaskRecord, TaskStatus } from "../../tasks/task-registry.types.js";
-import {
-  TASK_STATUS_DETAIL_MAX_CHARS,
-  formatTaskStatusTitle,
-  sanitizeTaskStatusText,
-} from "../../tasks/task-status.js";
-import { resolveTaskActiveProgressCapsule } from "../task-active-progress.js";
+import { LEDGER_STATUS_TO_TASK_STATUSES, mapTaskSummary } from "../task-summary-projection.js";
 import type { GatewayRequestHandlers } from "./types.js";
 
 const DEFAULT_TASKS_LIST_LIMIT = 100;
 const MAX_TASKS_LIST_LIMIT = 500;
-// Subagent completions use progressSummary as a requester-facing Context Pack
-// pointer/readback surface. Keep ordinary task status compact, but allow child
-// task readback to carry more than a 2,000-word scout packet.
-const SUBAGENT_PROGRESS_READBACK_MAX_CHARS = 32_000;
-
-type TaskLedgerStatus = TaskSummary["status"];
-
-// Gateway task APIs preserve the older ledger status vocabulary while the
-// runtime registry tracks finer-grained task states such as `lost`.
-const TASK_STATUS_TO_LEDGER_STATUS: Record<TaskStatus, TaskLedgerStatus> = {
-  queued: "queued",
-  running: "running",
-  succeeded: "completed",
-  failed: "failed",
-  timed_out: "timed_out",
-  cancelled: "cancelled",
-  lost: "failed",
-};
-
-const LEDGER_STATUS_TO_TASK_STATUSES: Record<TaskLedgerStatus, TaskStatus[]> = {
-  queued: ["queued"],
-  running: ["running"],
-  completed: ["succeeded"],
-  failed: ["failed", "lost"],
-  timed_out: ["timed_out"],
-  cancelled: ["cancelled"],
-};
-
-function taskUpdatedAt(task: TaskRecord): number {
-  return task.lastEventAt ?? task.endedAt ?? task.startedAt ?? task.createdAt;
-}
-
-// Status text can originate from providers, shells, and subprocesses. Keep the
-// public task shape bounded before it reaches control-plane clients.
-function sanitizeOptionalTaskText(
-  value: unknown,
-  opts?: { errorContext?: boolean; maxChars?: number },
-): string | undefined {
-  const sanitized = sanitizeTaskStatusText(value, {
-    errorContext: opts?.errorContext,
-    maxChars: opts?.maxChars ?? TASK_STATUS_DETAIL_MAX_CHARS,
-  });
-  return sanitized || undefined;
-}
-
-function mapTaskSummary(task: TaskRecord): TaskSummary {
-  const progressSummary = sanitizeOptionalTaskText(task.progressSummary, {
-    maxChars:
-      task.runtime === "subagent"
-        ? SUBAGENT_PROGRESS_READBACK_MAX_CHARS
-        : TASK_STATUS_DETAIL_MAX_CHARS,
-  });
-  const terminalSummary = sanitizeOptionalTaskText(task.terminalSummary, { errorContext: true });
-  const error = sanitizeOptionalTaskText(task.error, { errorContext: true });
-  const activeProgress = resolveTaskActiveProgressCapsule(task);
-  return {
-    id: task.taskId,
-    taskId: task.taskId,
-    kind: task.taskKind ?? task.runtime,
-    runtime: task.runtime,
-    status: TASK_STATUS_TO_LEDGER_STATUS[task.status],
-    title: formatTaskStatusTitle(task),
-    deliveryStatus: task.deliveryStatus,
-    ...(task.agentId ? { agentId: task.agentId } : {}),
-    sessionKey: task.requesterSessionKey,
-    ...(task.childSessionKey ? { childSessionKey: task.childSessionKey } : {}),
-    ownerKey: task.ownerKey,
-    ...(task.runId ? { runId: task.runId } : {}),
-    ...(task.parentFlowId ? { flowId: task.parentFlowId } : {}),
-    ...(task.parentTaskId ? { parentTaskId: task.parentTaskId } : {}),
-    ...(task.sourceId ? { sourceId: task.sourceId } : {}),
-    createdAt: task.createdAt,
-    updatedAt: taskUpdatedAt(task),
-    ...(task.startedAt !== undefined ? { startedAt: task.startedAt } : {}),
-    ...(task.endedAt !== undefined ? { endedAt: task.endedAt } : {}),
-    ...(activeProgress ? { activeProgress } : {}),
-    ...(progressSummary ? { progressSummary } : {}),
-    ...(terminalSummary ? { terminalSummary } : {}),
-    ...(error ? { error } : {}),
-  };
-}
 
 function normalizeTaskStatusFilter(status: TasksListParams["status"]): Set<TaskStatus> | null {
   if (!status) {

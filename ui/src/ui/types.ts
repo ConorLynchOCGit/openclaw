@@ -388,6 +388,45 @@ export type AgentsFilesSetResult = {
 };
 
 export type SessionRunStatus = "running" | "done" | "failed" | "killed" | "timeout";
+export type ReadbackFieldProvenance = {
+  source:
+    | "session-store"
+    | "session-transcript"
+    | "task-registry"
+    | "trajectory"
+    | "codex-native-subagent"
+    | "artifact-registry"
+    | "gbrain-pointer";
+  ref: string;
+  eventType?: string;
+  eventSeq?: number;
+  derivedBy?: string;
+  bounded?: boolean;
+  note?: string;
+};
+export type ActiveProgressCapsule = {
+  source: "trajectory" | "subagent-registry" | "task-run-event";
+  ref: string;
+  currentPhase?: string | null;
+  activeLabel?: string | null;
+  observedAt?: string | null;
+  elapsedMs?: number | null;
+  sourceEventType?: string;
+  sourceEventSeq?: number;
+  note?: string | null;
+  pointer?: {
+    kind: "artifact" | "inspect-next" | "session" | "task" | "trajectory";
+    ref: string;
+    label?: string;
+  };
+  derivedBy: string;
+  bounded: true;
+};
+export type SessionReadbackProvenance = {
+  status?: ReadbackFieldProvenance;
+  activeProgress?: ActiveProgressCapsule;
+  finalAssistantText?: ReadbackFieldProvenance;
+};
 export type SubagentRunState = "active" | "interrupted" | "historical";
 
 export type SessionCompactionCheckpointReason =
@@ -428,6 +467,11 @@ export type GatewaySessionRow = {
   kind: "cron" | "direct" | "group" | "global" | "unknown";
   label?: string;
   displayName?: string;
+  derivedTitle?: string;
+  lastMessagePreview?: string;
+  finalAssistantText?: string | null;
+  activeProgress?: ActiveProgressCapsule | null;
+  readbackProvenance?: SessionReadbackProvenance;
   surface?: string;
   subject?: string;
   room?: string;
@@ -456,6 +500,7 @@ export type GatewaySessionRow = {
   startedAt?: number;
   endedAt?: number;
   runtimeMs?: number;
+  parentSessionKey?: string;
   childSessions?: string[];
   model?: string;
   modelProvider?: string;

@@ -1,4 +1,5 @@
-// Task readback progress is a projection of native session evidence, not task state.
+// Task readback progress is a projection of native session evidence and task execution receipts,
+// not raw task-row lifecycle state.
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import {
   getSessionDisplaySubagentRunByChildSessionKey,
@@ -64,6 +65,36 @@ function resolveElapsedMs(now: number, ...candidates: unknown[]): number | undef
   return undefined;
 }
 
+function resolveTaskRunEventProgressCapsule(task: TaskRecord): ActiveProgressCapsule | undefined {
+  const latestEvent = task.executionReceipt?.latestEvent;
+  const note = truncateTaskProgressNote(latestEvent?.summary);
+  if (!latestEvent || !note) {
+    return undefined;
+  }
+  const now = Date.now();
+  return {
+    source: "task-run-event",
+    ref: `task-event:${task.taskId}:${latestEvent.at}:${latestEvent.kind}`,
+    currentPhase: latestEvent.kind === "progress" ? task.status : latestEvent.kind,
+    activeLabel:
+      normalizeOptionalString(task.label) ??
+      normalizeOptionalString(task.agentId) ??
+      normalizeOptionalString(task.taskKind) ??
+      normalizeOptionalString(task.runtime),
+    observedAt: formatTaskProgressObservedAt(latestEvent.at, task.lastEventAt),
+    elapsedMs: resolveElapsedMs(now, task.startedAt, task.createdAt),
+    sourceEventType: `task.${latestEvent.kind}`,
+    note,
+    pointer: {
+      kind: "task",
+      ref: task.taskId,
+      label: "task run receipt",
+    },
+    derivedBy: "resolveTaskActiveProgressCapsule",
+    bounded: true,
+  };
+}
+
 function resolveFallbackTaskProgressCapsule(task: TaskRecord): ActiveProgressCapsule | undefined {
   const childSessionKey = normalizeOptionalString(task.childSessionKey);
   const now = Date.now();
@@ -101,28 +132,7 @@ function resolveFallbackTaskProgressCapsule(task: TaskRecord): ActiveProgressCap
     }
   }
 
-  return {
-    source: "task-registry",
-    ref: `task:${task.taskId}`,
-    currentPhase: task.status,
-    activeLabel:
-      normalizeOptionalString(task.label) ??
-      normalizeOptionalString(task.agentId) ??
-      normalizeOptionalString(task.taskKind) ??
-      normalizeOptionalString(task.runtime),
-    observedAt: formatTaskProgressObservedAt(task.lastEventAt, task.startedAt, task.createdAt),
-    elapsedMs: resolveElapsedMs(now, task.startedAt, task.createdAt),
-    note:
-      truncateTaskProgressNote(task.progressSummary) ??
-      "Task is active; richer session progress is not indexed yet.",
-    pointer: {
-      kind: "task",
-      ref: task.taskId,
-      label: "task row",
-    },
-    derivedBy: "resolveTaskActiveProgressCapsule",
-    bounded: true,
-  };
+  return resolveTaskRunEventProgressCapsule(task);
 }
 
 export function resolveTaskActiveProgressCapsule(

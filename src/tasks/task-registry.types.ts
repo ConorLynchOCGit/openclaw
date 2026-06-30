@@ -107,6 +107,13 @@ export type TaskEventRecord = {
   summary?: string;
 };
 
+export type TaskExecutionReceipt = {
+  schema: "openclaw.task.execution_receipt.v1";
+  latestEvent?: TaskEventRecord;
+  eventCount: number;
+  updatedAt: number;
+};
+
 export type TaskDeliveryState = {
   taskId: string;
   requesterOrigin?: DeliveryContext;
@@ -140,6 +147,7 @@ export type TaskRecord = {
   progressSummary?: string;
   terminalSummary?: string;
   terminalOutcome?: TaskTerminalOutcome;
+  executionReceipt?: TaskExecutionReceipt;
 };
 
 export type TaskRegistrySnapshot = {

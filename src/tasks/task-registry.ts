@@ -47,6 +47,7 @@ import { summarizeTaskRecords } from "./task-registry.summary.js";
 import type {
   TaskDeliveryState,
   TaskDeliveryStatus,
+  TaskExecutionReceipt,
   TaskEventKind,
   TaskEventRecord,
   TaskNotifyPolicy,
@@ -191,7 +192,19 @@ function assertParentFlowLinkAllowed(params: {
 }
 
 function cloneTaskRecord(record: TaskRecord): TaskRecord {
-  return { ...record };
+  return {
+    ...record,
+    ...(record.executionReceipt
+      ? {
+          executionReceipt: {
+            ...record.executionReceipt,
+            ...(record.executionReceipt.latestEvent
+              ? { latestEvent: { ...record.executionReceipt.latestEvent } }
+              : {}),
+          },
+        }
+      : {}),
+  };
 }
 
 function normalizeTaskTimestamps(task: TaskRecord): TaskRecord {
@@ -575,6 +588,21 @@ function appendTaskEvent(event: {
     at: event.at,
     kind: event.kind,
     ...(summary ? { summary } : {}),
+  };
+}
+
+function appendTaskExecutionReceipt(
+  receipt: TaskExecutionReceipt | undefined,
+  event: TaskEventRecord | undefined,
+): TaskExecutionReceipt | undefined {
+  if (!event) {
+    return receipt;
+  }
+  return {
+    schema: "openclaw.task.execution_receipt.v1",
+    latestEvent: { ...event },
+    eventCount: (receipt?.eventCount ?? 0) + 1,
+    updatedAt: event.at,
   };
 }
 
@@ -1504,12 +1532,27 @@ export function setTaskProgressById(params: {
   lastEventAt?: number;
 }): TaskRecord | null {
   ensureTaskRegistryReady();
+  const current = tasks.get(params.taskId);
+  if (!current) {
+    return null;
+  }
   const patch: Partial<TaskRecord> = {};
   if (params.progressSummary !== undefined) {
     patch.progressSummary = normalizeTaskSummary(params.progressSummary);
   }
   if (params.lastEventAt != null) {
     patch.lastEventAt = params.lastEventAt;
+  }
+  if (params.progressSummary !== undefined) {
+    const eventAt = params.lastEventAt ?? Date.now();
+    patch.executionReceipt = appendTaskExecutionReceipt(
+      current.executionReceipt,
+      appendTaskEvent({
+        at: eventAt,
+        kind: "progress",
+        summary: params.progressSummary,
+      }),
+    );
   }
   return updateTask(params.taskId, patch);
 }
@@ -1769,6 +1812,14 @@ export function createTaskRecord(params: {
     scopeKind,
   });
   const lastEventAt = params.lastEventAt ?? params.startedAt ?? now;
+  const initialEvent = appendTaskEvent({
+    at: lastEventAt,
+    kind: status,
+    summary:
+      status === "succeeded" || status === "failed" || status === "timed_out"
+        ? (params.terminalSummary ?? params.progressSummary)
+        : params.progressSummary,
+  });
   const record: TaskRecord = normalizeTaskTimestamps({
     taskId,
     runtime: params.runtime,
@@ -1797,6 +1848,7 @@ export function createTaskRecord(params: {
       status,
       terminalOutcome: params.terminalOutcome,
     }),
+    executionReceipt: appendTaskExecutionReceipt(undefined, initialEvent),
   });
   if (isTerminalTaskStatus(record.status) && typeof record.cleanupAfter !== "number") {
     record.cleanupAfter = resolveTaskCleanupAfter(record);
@@ -1892,8 +1944,10 @@ function updateTaskStateByRunId(params: {
         terminalOutcome: params.terminalOutcome,
       });
     }
+    const normalizedProgressSummary = normalizeTaskSummary(params.progressSummary);
     const eventSummary =
       normalizeTaskSummary(params.eventSummary) ??
+      normalizedProgressSummary ??
       (nextStatus === "failed"
         ? normalizeTaskSummary(params.error ?? current.error)
         : nextStatus === "succeeded"
@@ -1902,6 +1956,21 @@ function updateTaskStateByRunId(params: {
     const shouldAppendEvent =
       (params.status && params.status !== current.status) ||
       Boolean(normalizeTaskSummary(params.eventSummary));
+    const receiptEvent =
+      (params.status && params.status !== current.status) ||
+      params.progressSummary !== undefined ||
+      params.eventSummary !== undefined ||
+      params.terminalSummary !== undefined ||
+      params.error !== undefined
+        ? appendTaskEvent({
+            at: eventAt,
+            kind:
+              params.status && normalizeTaskStatus(params.status) !== current.status
+                ? normalizeTaskStatus(params.status)
+                : "progress",
+            summary: eventSummary,
+          })
+        : undefined;
     const nextEvent = shouldAppendEvent
       ? appendTaskEvent({
           at: eventAt,
@@ -1912,6 +1981,9 @@ function updateTaskStateByRunId(params: {
           summary: eventSummary,
         })
       : undefined;
+    if (receiptEvent) {
+      patch.executionReceipt = appendTaskExecutionReceipt(current.executionReceipt, receiptEvent);
+    }
     const task = updateTask(current.taskId, patch);
     if (task) {
       updated.push(task);

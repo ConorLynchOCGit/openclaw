@@ -50,7 +50,7 @@ const TaskActiveProgressCapsuleSchema = Type.Object(
     source: Type.Union([
       Type.Literal("trajectory"),
       Type.Literal("subagent-registry"),
-      Type.Literal("task-registry"),
+      Type.Literal("task-run-event"),
     ]),
     ref: NonEmptyString,
     currentPhase: Type.Optional(Type.Union([Type.String(), Type.Null()])),

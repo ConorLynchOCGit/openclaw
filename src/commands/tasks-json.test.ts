@@ -1,5 +1,6 @@
 // Tasks JSON tests cover structured task command output and managed task flow state.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mapTaskSummary } from "../gateway/task-summary-projection.js";
 import type { RuntimeEnv } from "../runtime.js";
 import {
   createManagedTaskFlow as createManagedTaskFlowOrNull,
@@ -110,7 +111,7 @@ describe("tasks JSON commands", () => {
         count: 1,
         runtime: "cli",
         status: "running",
-        tasks: [jsonRoundTrip(cliTask)],
+        tasks: [jsonRoundTrip(mapTaskSummary(cliTask))],
       });
     });
   });
@@ -128,11 +129,11 @@ describe("tasks JSON commands", () => {
 
       const byTaskIdRuntime = createRuntime();
       await tasksShowJsonCommand({ json: true, lookup: task.taskId }, byTaskIdRuntime);
-      expect(readJsonLog(byTaskIdRuntime)).toStrictEqual(jsonRoundTrip(task));
+      expect(readJsonLog(byTaskIdRuntime)).toStrictEqual(jsonRoundTrip(mapTaskSummary(task)));
 
       const byRunIdRuntime = createRuntime();
       await tasksShowJsonCommand({ json: true, lookup: "run-json-show" }, byRunIdRuntime);
-      expect(readJsonLog(byRunIdRuntime)).toStrictEqual(jsonRoundTrip(task));
+      expect(readJsonLog(byRunIdRuntime)).toStrictEqual(jsonRoundTrip(mapTaskSummary(task)));
     });
   });
 

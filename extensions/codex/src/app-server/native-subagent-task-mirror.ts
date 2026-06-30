@@ -36,6 +36,8 @@ export class CodexNativeSubagentTaskMirror {
   private readonly mirroredThreadIds = new Set<string>();
   private readonly failedMirrorThreadIds = new Set<string>();
   private readonly terminalRunIds = new Set<string>();
+  private readonly latestCollabStatusDetailByThreadId = new Map<string, string>();
+  private readonly latestCollabTerminalDetailByThreadId = new Map<string, string>();
   private readonly now: () => number;
 
   constructor(
@@ -137,32 +139,42 @@ export class CodexNativeSubagentTaskMirror {
       this.runtime.recordTaskRunProgressByRunId({
         runId,
         lastEventAt: eventAt,
-        progressSummary: "Codex native subagent is active.",
+        progressSummary: nativeSubagentSummary(
+          "Codex native subagent is active",
+          this.latestCollabStatusDetailByThreadId.get(threadId) ??
+            activeFlagsSummary(status.activeFlags),
+        ),
       });
       return;
     }
     if (statusType === "idle") {
       this.terminalRunIds.add(runId);
+      const detail =
+        this.latestCollabTerminalDetailByThreadId.get(threadId) ??
+        this.latestCollabStatusDetailByThreadId.get(threadId);
       this.runtime.finalizeTaskRunByRunId({
         runId,
         status: "succeeded",
         endedAt: eventAt,
         lastEventAt: eventAt,
-        progressSummary: "Codex native subagent is idle.",
-        terminalSummary: "Codex native subagent finished.",
+        progressSummary: nativeSubagentSummary("Codex native subagent is idle", detail),
+        terminalSummary: nativeSubagentSummary("Codex native subagent finished", detail),
       });
       return;
     }
     if (statusType === "systemError") {
       this.terminalRunIds.add(runId);
+      const detail =
+        this.latestCollabTerminalDetailByThreadId.get(threadId) ??
+        this.latestCollabStatusDetailByThreadId.get(threadId);
       this.runtime.finalizeTaskRunByRunId({
         runId,
         status: "failed",
         endedAt: eventAt,
         lastEventAt: eventAt,
         error: "Codex app-server reported a system error for the native subagent thread.",
-        progressSummary: "Codex native subagent hit a system error.",
-        terminalSummary: "Codex native subagent failed.",
+        progressSummary: nativeSubagentSummary("Codex native subagent hit a system error", detail),
+        terminalSummary: nativeSubagentSummary("Codex native subagent failed", detail),
       });
       return;
     }
@@ -170,7 +182,10 @@ export class CodexNativeSubagentTaskMirror {
       this.runtime.recordTaskRunProgressByRunId({
         runId,
         lastEventAt: eventAt,
-        progressSummary: "Codex native subagent is not loaded.",
+        progressSummary: nativeSubagentSummary(
+          "Codex native subagent is not loaded",
+          this.latestCollabStatusDetailByThreadId.get(threadId),
+        ),
       });
     }
   }
@@ -277,43 +292,52 @@ export class CodexNativeSubagentTaskMirror {
     }
     const eventAt = this.now();
     if (normalizedStatus === "pendingInit" || normalizedStatus === "running") {
+      const detail = trimOptional(message);
+      this.rememberCollabStatusDetail(threadId, detail);
       this.runtime.recordTaskRunProgressByRunId({
         runId,
         lastEventAt: eventAt,
-        progressSummary:
-          trimOptional(message) ??
-          (normalizedStatus === "pendingInit"
-            ? "Codex native subagent is initializing."
-            : "Codex native subagent is running."),
+        progressSummary: nativeSubagentSummary(
+          normalizedStatus === "pendingInit"
+            ? "Codex native subagent is initializing"
+            : "Codex native subagent is running",
+          detail,
+        ),
       });
       return;
     }
     if (normalizedStatus === "completed") {
       this.terminalRunIds.add(runId);
+      const detail = trimOptional(message);
+      this.rememberCollabTerminalDetail(threadId, detail);
       this.runtime.finalizeTaskRunByRunId({
         runId,
         status: "succeeded",
         endedAt: eventAt,
         lastEventAt: eventAt,
-        progressSummary: trimOptional(message) ?? "Codex native subagent completed.",
-        terminalSummary: trimOptional(message) ?? "Codex native subagent finished.",
+        progressSummary: nativeSubagentSummary("Codex native subagent completed", detail),
+        terminalSummary: nativeSubagentSummary("Codex native subagent finished", detail),
       });
       return;
     }
     if (normalizedStatus === "blocked") {
       this.terminalRunIds.add(runId);
+      const detail = trimOptional(message);
+      this.rememberCollabTerminalDetail(threadId, detail);
       this.runtime.finalizeTaskRunByRunId({
         runId,
         status: "succeeded",
         endedAt: eventAt,
         lastEventAt: eventAt,
-        progressSummary: trimOptional(message) ?? "Codex native subagent blocked.",
-        terminalSummary: trimOptional(message) ?? "Codex native subagent blocked.",
+        progressSummary: nativeSubagentSummary("Codex native subagent blocked", detail),
+        terminalSummary: nativeSubagentSummary("Codex native subagent blocked", detail),
         terminalOutcome: "blocked",
       });
       return;
     }
     this.terminalRunIds.add(runId);
+    const detail = trimOptional(message) ?? `Codex native subagent status: ${normalizedStatus}`;
+    this.rememberCollabTerminalDetail(threadId, detail);
     this.runtime.finalizeTaskRunByRunId({
       runId,
       status:
@@ -322,10 +346,23 @@ export class CodexNativeSubagentTaskMirror {
           : "failed",
       endedAt: eventAt,
       lastEventAt: eventAt,
-      error: trimOptional(message) ?? `Codex native subagent status: ${normalizedStatus}`,
-      progressSummary: trimOptional(message) ?? `Codex native subagent ${normalizedStatus}.`,
-      terminalSummary: trimOptional(message) ?? "Codex native subagent did not complete.",
+      error: detail,
+      progressSummary: nativeSubagentSummary(`Codex native subagent ${normalizedStatus}`, detail),
+      terminalSummary: nativeSubagentSummary("Codex native subagent did not complete", detail),
     });
+  }
+
+  private rememberCollabStatusDetail(threadId: string, detail: string | undefined): void {
+    if (detail) {
+      this.latestCollabStatusDetailByThreadId.set(threadId, detail);
+    }
+  }
+
+  private rememberCollabTerminalDetail(threadId: string, detail: string | undefined): void {
+    if (detail) {
+      this.latestCollabStatusDetailByThreadId.set(threadId, detail);
+      this.latestCollabTerminalDetailByThreadId.set(threadId, detail);
+    }
   }
 }
 
@@ -482,6 +519,20 @@ function secondsToMillis(value: number | null | undefined): number | undefined {
     return undefined;
   }
   return value * 1000;
+}
+
+function nativeSubagentSummary(prefix: string, detail: string | null | undefined): string {
+  const normalizedPrefix = prefix.replace(/[.:]\s*$/u, "").trim();
+  const normalizedDetail = trimOptional(detail);
+  if (!normalizedDetail) {
+    return `${normalizedPrefix}.`;
+  }
+  return `${normalizedPrefix}: ${normalizedDetail}`;
+}
+
+function activeFlagsSummary(activeFlags: string[] | undefined): string | undefined {
+  const flags = activeFlags?.map((flag) => flag.trim()).filter(Boolean);
+  return flags && flags.length > 0 ? `active flags: ${flags.join(", ")}` : undefined;
 }
 
 function trimOptional(value: string | null | undefined): string | undefined {

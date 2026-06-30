@@ -254,8 +254,8 @@ describe("CodexNativeSubagentTaskMirror", () => {
       status: "succeeded",
       endedAt: 40_000,
       lastEventAt: 40_000,
-      progressSummary: "done",
-      terminalSummary: "done",
+      progressSummary: "Codex native subagent completed: done",
+      terminalSummary: "Codex native subagent finished: done",
     });
   });
 
@@ -330,7 +330,7 @@ describe("CodexNativeSubagentTaskMirror", () => {
       expect.objectContaining({
         runId: "codex-thread:child-thread",
         status: "succeeded",
-        terminalSummary: "done",
+        terminalSummary: "Codex native subagent finished: done",
       }),
     );
   });
@@ -369,15 +369,15 @@ describe("CodexNativeSubagentTaskMirror", () => {
     expect(runtime.recordTaskRunProgressByRunId).not.toHaveBeenCalledWith({
       runId: "codex-thread:child-thread",
       lastEventAt: 45_000,
-      progressSummary: "Native hook relay unavailable",
+      progressSummary: "Codex native subagent blocked: Native hook relay unavailable",
     });
     expect(runtime.finalizeTaskRunByRunId).toHaveBeenCalledWith({
       runId: "codex-thread:child-thread",
       status: "succeeded",
       endedAt: 45_000,
       lastEventAt: 45_000,
-      progressSummary: "Native hook relay unavailable",
-      terminalSummary: "Native hook relay unavailable",
+      progressSummary: "Codex native subagent blocked: Native hook relay unavailable",
+      terminalSummary: "Codex native subagent blocked: Native hook relay unavailable",
       terminalOutcome: "blocked",
     });
   });
@@ -454,9 +454,67 @@ describe("CodexNativeSubagentTaskMirror", () => {
     expect(runtime.recordTaskRunProgressByRunId).toHaveBeenCalledWith({
       runId: "codex-thread:child-thread",
       lastEventAt: 47_000,
-      progressSummary: "wait timed out",
+      progressSummary: "Codex native subagent is running: wait timed out",
     });
     expect(runtime.finalizeTaskRunByRunId).not.toHaveBeenCalled();
+  });
+
+  it("keeps collab-agent progress detail when thread status updates arrive later", () => {
+    const runtime = createRuntime();
+    const mirror = new CodexNativeSubagentTaskMirror(
+      {
+        parentThreadId: "parent-thread",
+        requesterSessionKey: "agent:main:main",
+        now: () => 48_000,
+      },
+      runtime,
+    );
+
+    mirror.handleNotification({
+      method: "item/completed",
+      params: {
+        item: {
+          type: "collabAgentToolCall",
+          tool: "spawnAgent",
+          senderThreadId: "parent-thread",
+          receiverThreadIds: ["child-thread"],
+          agentsStates: {
+            "child-thread": {
+              status: "running",
+              message: "Inspecting task registry readback.",
+            },
+          },
+        },
+      },
+    });
+    mirror.handleNotification({
+      method: "thread/status/changed",
+      params: {
+        threadId: "child-thread",
+        status: { type: "active", activeFlags: ["tool"] },
+      },
+    });
+    mirror.handleNotification({
+      method: "thread/status/changed",
+      params: {
+        threadId: "child-thread",
+        status: { type: "idle" },
+      },
+    });
+
+    expect(runtime.recordTaskRunProgressByRunId).toHaveBeenNthCalledWith(2, {
+      runId: "codex-thread:child-thread",
+      lastEventAt: 48_000,
+      progressSummary: "Codex native subagent is active: Inspecting task registry readback.",
+    });
+    expect(runtime.finalizeTaskRunByRunId).toHaveBeenCalledWith({
+      runId: "codex-thread:child-thread",
+      status: "succeeded",
+      endedAt: 48_000,
+      lastEventAt: 48_000,
+      progressSummary: "Codex native subagent is idle: Inspecting task registry readback.",
+      terminalSummary: "Codex native subagent finished: Inspecting task registry readback.",
+    });
   });
 
   it("preserves a completed collab agent message when the thread later goes idle", () => {
@@ -502,8 +560,8 @@ describe("CodexNativeSubagentTaskMirror", () => {
       status: "succeeded",
       endedAt: 50_000,
       lastEventAt: 50_000,
-      progressSummary: "No user task is specified.",
-      terminalSummary: "No user task is specified.",
+      progressSummary: "Codex native subagent completed: No user task is specified.",
+      terminalSummary: "Codex native subagent finished: No user task is specified.",
     });
   });
 
@@ -559,8 +617,8 @@ describe("CodexNativeSubagentTaskMirror", () => {
       endedAt: 55_000,
       lastEventAt: 55_000,
       error: "Native hook relay unavailable",
-      progressSummary: "Native hook relay unavailable",
-      terminalSummary: "Native hook relay unavailable",
+      progressSummary: "Codex native subagent failed: Native hook relay unavailable",
+      terminalSummary: "Codex native subagent did not complete: Native hook relay unavailable",
     });
   });
 
@@ -619,8 +677,8 @@ describe("CodexNativeSubagentTaskMirror", () => {
       status: "succeeded",
       endedAt: 60_000,
       lastEventAt: 60_000,
-      progressSummary: "done",
-      terminalSummary: "done",
+      progressSummary: "Codex native subagent completed: done",
+      terminalSummary: "Codex native subagent finished: done",
     });
   });
 });

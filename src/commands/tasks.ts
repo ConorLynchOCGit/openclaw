@@ -17,6 +17,7 @@ import {
 } from "../config/sessions.js";
 import { loadCronJobsStoreSync, resolveCronJobsStorePath } from "../cron/store.js";
 import { resolveTaskActiveProgressCapsule } from "../gateway/task-active-progress.js";
+import { mapTaskSummary } from "../gateway/task-summary-projection.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { parseAgentSessionKey } from "../sessions/session-key-utils.js";
 import { getTaskById, updateTaskNotifyPolicyById } from "../tasks/runtime-internal.js";
@@ -447,7 +448,7 @@ export async function tasksListCommand(
           count: tasks.length,
           runtime: runtimeFilter ?? null,
           status: statusFilter ?? null,
-          tasks,
+          tasks: tasks.map((task) => mapTaskSummary(task)),
         },
         null,
         2,
@@ -490,9 +491,7 @@ export async function tasksShowCommand(
 
   const activeProgress = resolveTaskActiveProgressCapsule(task);
   if (opts.json) {
-    runtime.log(
-      JSON.stringify({ ...task, ...(activeProgress ? { activeProgress } : {}) }, null, 2),
-    );
+    runtime.log(JSON.stringify(mapTaskSummary(task), null, 2));
     return;
   }
 

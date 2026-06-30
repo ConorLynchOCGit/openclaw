@@ -42,24 +42,25 @@ describe("TaskSummarySchema", () => {
     ).toBe(true);
   });
 
-  it("accepts bounded registry-derived active progress capsules", () => {
+  it("accepts bounded native receipt-derived active progress capsules", () => {
     expect(
       validateTaskSummary.Check({
         id: "task-1",
         status: "running",
         deliveryStatus: "pending",
         activeProgress: {
-          source: "task-registry",
-          ref: "task:task-1",
+          source: "task-run-event",
+          ref: "task-event:task-1:1782869100000:progress",
           currentPhase: "running",
           activeLabel: "codebase-researcher",
           observedAt: "2026-06-30T20:05:00.000Z",
           elapsedMs: 1200,
-          note: "Task is active; richer session progress is not indexed yet.",
+          sourceEventType: "task.progress",
+          note: "Codex native subagent is running: reviewing event-spine code.",
           pointer: {
             kind: "task",
             ref: "task-1",
-            label: "task row",
+            label: "task run receipt",
           },
           derivedBy: "resolveTaskActiveProgressCapsule",
           bounded: true,

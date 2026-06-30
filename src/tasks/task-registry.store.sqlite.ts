@@ -18,6 +18,8 @@ import {
   parseTaskScopeKind,
   parseTaskStatus,
   type TaskDeliveryState,
+  type TaskExecutionReceipt,
+  type TaskEventKind,
   type TaskRecord,
 } from "./task-registry.types.js";
 
@@ -56,6 +58,7 @@ type TaskRegistryRow = Pick<
   | "progress_summary"
   | "terminal_summary"
   | "terminal_outcome"
+  | "execution_receipt_json"
 >;
 
 type TaskDeliveryStateRow = Selectable<TaskDeliveryStateTable>;
@@ -93,6 +96,7 @@ const TASK_RUN_SELECT_COLUMNS = [
   "progress_summary",
   "terminal_summary",
   "terminal_outcome",
+  "execution_receipt_json",
 ] as const;
 
 let cachedDatabase: TaskRegistryDatabase | null = null;
@@ -108,6 +112,53 @@ function serializeJson(value: unknown): string | null {
   return value == null ? null : JSON.stringify(value);
 }
 
+function parseTaskExecutionReceiptEventKind(value: unknown): TaskEventKind | undefined {
+  if (value === "progress") {
+    return "progress";
+  }
+  try {
+    return parseTaskStatus(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function parseTaskExecutionReceiptJson(value: string | null): TaskExecutionReceipt | undefined {
+  if (!value) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(value) as Partial<TaskExecutionReceipt>;
+    if (parsed.schema !== "openclaw.task.execution_receipt.v1") {
+      return undefined;
+    }
+    const event = parsed.latestEvent;
+    const eventKind = parseTaskExecutionReceiptEventKind(event?.kind);
+    const latestEvent =
+      event && typeof event.at === "number" && Number.isFinite(event.at) && eventKind
+        ? {
+            at: event.at,
+            kind: eventKind,
+            ...(typeof event.summary === "string" ? { summary: event.summary } : {}),
+          }
+        : undefined;
+    return {
+      schema: "openclaw.task.execution_receipt.v1",
+      ...(latestEvent ? { latestEvent } : {}),
+      eventCount:
+        typeof parsed.eventCount === "number" && Number.isFinite(parsed.eventCount)
+          ? Math.max(0, Math.trunc(parsed.eventCount))
+          : 0,
+      updatedAt:
+        typeof parsed.updatedAt === "number" && Number.isFinite(parsed.updatedAt)
+          ? parsed.updatedAt
+          : (latestEvent?.at ?? 0),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 function rowToTaskRecord(row: TaskRegistryRow): TaskRecord {
   const startedAt = normalizeNumber(row.started_at);
   const endedAt = normalizeNumber(row.ended_at);
@@ -115,6 +166,7 @@ function rowToTaskRecord(row: TaskRegistryRow): TaskRecord {
   const cleanupAfter = normalizeNumber(row.cleanup_after);
   const scopeKind = parseTaskScopeKind(row.scope_kind);
   const terminalOutcome = parseOptionalTaskTerminalOutcome(row.terminal_outcome);
+  const executionReceipt = parseTaskExecutionReceiptJson(row.execution_receipt_json);
   // System tasks intentionally have no requester session; ownerKey is the lookup anchor.
   const requesterSessionKey =
     scopeKind === "system" ? "" : row.requester_session_key?.trim() || row.owner_key;
@@ -145,6 +197,7 @@ function rowToTaskRecord(row: TaskRegistryRow): TaskRecord {
     ...(row.progress_summary ? { progressSummary: row.progress_summary } : {}),
     ...(row.terminal_summary ? { terminalSummary: row.terminal_summary } : {}),
     ...(terminalOutcome ? { terminalOutcome } : {}),
+    ...(executionReceipt ? { executionReceipt } : {}),
   };
 }
 
@@ -186,6 +239,7 @@ function bindTaskRecordBase(record: TaskRecord): Insertable<TaskRunsTable> {
     progress_summary: record.progressSummary ?? null,
     terminal_summary: record.terminalSummary ?? null,
     terminal_outcome: record.terminalOutcome ?? null,
+    execution_receipt_json: serializeJson(record.executionReceipt),
   };
 }
 
@@ -274,6 +328,7 @@ function upsertTaskRow(db: DatabaseSync, row: Insertable<TaskRunsTable>): void {
           progress_summary: (eb) => eb.ref("excluded.progress_summary"),
           terminal_summary: (eb) => eb.ref("excluded.terminal_summary"),
           terminal_outcome: (eb) => eb.ref("excluded.terminal_outcome"),
+          execution_receipt_json: (eb) => eb.ref("excluded.execution_receipt_json"),
         }),
       ),
   );

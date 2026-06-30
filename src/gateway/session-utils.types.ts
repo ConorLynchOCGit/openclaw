@@ -48,7 +48,7 @@ export type ReadbackFieldProvenance = {
 };
 
 export type ActiveProgressCapsule = {
-  source: "trajectory" | "subagent-registry" | "task-registry";
+  source: "trajectory" | "subagent-registry" | "task-run-event";
   ref: string;
   currentPhase?: string | null;
   activeLabel?: string | null;

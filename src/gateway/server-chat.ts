@@ -343,7 +343,23 @@ export function createAgentEventHandler({
     evt?: AgentEventPayload,
     agentId?: string,
   ) => {
-    const row = loadGatewaySessionRowForSnapshot(sessionKey, agentId ? { agentId } : undefined);
+    const lifecyclePhase =
+      evt?.stream === "lifecycle" && typeof evt.data?.phase === "string" ? evt.data.phase : null;
+    const includeTranscriptReadback = lifecyclePhase === "end" || lifecyclePhase === "error";
+    const rowOptions =
+      agentId || includeTranscriptReadback
+        ? {
+            ...(agentId ? { agentId } : {}),
+            ...(includeTranscriptReadback
+              ? {
+                  includeDerivedTitles: true,
+                  includeLastMessage: true,
+                  transcriptUsageMaxBytes: 64 * 1024,
+                }
+              : {}),
+          }
+        : undefined;
+    const row = loadGatewaySessionRowForSnapshot(sessionKey, rowOptions);
     const omitUnscopedGlobalGoal = sessionKey === "global" && !agentId;
     const lifecyclePatch =
       evt &&
@@ -390,6 +406,11 @@ export function createAgentEventHandler({
       subagentControlScope: row?.subagentControlScope,
       label: row?.label,
       displayName: row?.displayName,
+      derivedTitle: row?.derivedTitle,
+      lastMessagePreview: row?.lastMessagePreview,
+      finalAssistantText: row?.finalAssistantText,
+      activeProgress: row?.activeProgress ?? null,
+      readbackProvenance: row?.readbackProvenance,
       deliveryContext: row?.deliveryContext,
       parentSessionKey: row?.parentSessionKey,
       childSessions: row?.childSessions,

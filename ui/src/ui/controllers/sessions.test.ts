@@ -1366,6 +1366,76 @@ describe("applySessionsChangedEvent", () => {
     ]);
   });
 
+  it("applies bounded readback fields from reliable session change snapshots", () => {
+    const state = createState(async () => undefined, {
+      sessionsResult: {
+        ts: 1,
+        path: "(multiple)",
+        count: 1,
+        defaults: { modelProvider: null, model: null, contextTokens: null },
+        sessions: [{ key: "agent:main:main", kind: "direct", updatedAt: 1 }],
+      },
+    });
+    const activeProgress = {
+      source: "trajectory" as const,
+      ref: "trajectory:sess-main",
+      currentPhase: "validation",
+      activeLabel: "exec_command",
+      observedAt: "2026-06-30T20:00:00.000Z",
+      elapsedMs: 1250,
+      sourceEventType: "tool.call",
+      sourceEventSeq: 12,
+      derivedBy: "readLatestTrajectoryProgressCapsule",
+      bounded: true as const,
+    };
+    const readbackProvenance = {
+      status: {
+        source: "session-store" as const,
+        ref: "session:sess-main",
+        derivedBy: "buildGatewaySessionRow",
+        bounded: false,
+      },
+      activeProgress,
+      finalAssistantText: {
+        source: "session-transcript" as const,
+        ref: "session:sess-main",
+        derivedBy: "readLastAssistantTextFromTranscriptWithProvenance",
+        bounded: true,
+      },
+    };
+
+    const applied = applySessionsChangedEvent(state, {
+      sessionKey: "agent:main:main",
+      phase: "end",
+      ts: 2,
+      sessionId: "sess-main",
+      derivedTitle: "Phase 0Z readback",
+      lastMessagePreview: "Trailing operator readback request.",
+      finalAssistantText: "Final readback answer.",
+      activeProgress,
+      readbackProvenance,
+      parentSessionKey: "agent:planning:main",
+      childSessions: ["agent:researcher:subagent:child"],
+      status: "done",
+    });
+
+    expect(applied).toEqual({ applied: true, change: "updated" });
+    expect(state.sessionsResult?.sessions[0]).toEqual(
+      expect.objectContaining({
+        key: "agent:main:main",
+        sessionId: "sess-main",
+        derivedTitle: "Phase 0Z readback",
+        lastMessagePreview: "Trailing operator readback request.",
+        finalAssistantText: "Final readback answer.",
+        activeProgress,
+        readbackProvenance,
+        parentSessionKey: "agent:planning:main",
+        childSessions: ["agent:researcher:subagent:child"],
+        status: "done",
+      }),
+    );
+  });
+
   it("ignores selected-global session events for another agent", () => {
     const state = createState(async () => undefined, {
       sessionKey: "global",

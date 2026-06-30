@@ -25,6 +25,7 @@ import {
   listFreshTasksForOwnerKey,
   markTaskTerminalById,
   maybeDeliverTaskStateChangeUpdate,
+  recordTaskProgressByRunId,
   resetTaskRegistryForTests,
   updateTaskNotifyPolicyById,
 } from "./task-registry.js";
@@ -578,6 +579,42 @@ describe("task-registry store runtime", () => {
     expect(findTaskByRunId("run-flow-linked")).toMatchObject({
       taskId: created.taskId,
       parentFlowId: flow.flowId,
+    });
+  });
+
+  it("persists execution receipts for task progress readback across sqlite restore", () => {
+    const created = createTaskRecord({
+      runtime: "subagent",
+      ownerKey: "agent:main:main",
+      scopeKind: "session",
+      childSessionKey: "agent:coding:subagent:progress",
+      runId: "run-progress-receipt-restore",
+      task: "Track progress receipt",
+      status: "running",
+      deliveryStatus: "pending",
+      progressSummary: "Child started.",
+    });
+    recordTaskProgressByRunId({
+      runId: "run-progress-receipt-restore",
+      runtime: "subagent",
+      lastEventAt: created.createdAt + 1_000,
+      progressSummary: "Codex native subagent is running: inspecting readback source.",
+    });
+
+    resetTaskRegistryForTests({ persist: false });
+
+    expect(findTaskByRunId("run-progress-receipt-restore")).toMatchObject({
+      taskId: created.taskId,
+      executionReceipt: {
+        schema: "openclaw.task.execution_receipt.v1",
+        eventCount: 2,
+        updatedAt: created.createdAt + 1_000,
+        latestEvent: {
+          at: created.createdAt + 1_000,
+          kind: "progress",
+          summary: "Codex native subagent is running: inspecting readback source.",
+        },
+      },
     });
   });
 
