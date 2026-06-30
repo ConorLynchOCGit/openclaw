@@ -73,6 +73,7 @@ export type GatewaySessionRow = {
   derivedTitle?: string;
   lastMessagePreview?: string;
   finalAssistantText?: string | null;
+  activeProgress?: ReadbackFieldProvenance | null;
   readbackProvenance?: SessionReadbackProvenance;
   channel?: string;
   subject?: string;

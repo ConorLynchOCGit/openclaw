@@ -107,6 +107,7 @@ function buildGatewaySessionSnapshot(params: {
     modelProvider: sessionRow.modelProvider,
     model: sessionRow.model,
     status: sessionRow.status,
+    activeProgress: sessionRow.activeProgress ?? null,
     readbackProvenance: sessionRow.readbackProvenance,
     startedAt: sessionRow.startedAt,
     endedAt: sessionRow.endedAt,

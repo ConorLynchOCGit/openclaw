@@ -47,6 +47,22 @@ type SessionsListDetails = {
     responseUsage?: string;
     thinkingLevel?: string;
     verboseLevel?: string;
+    activeProgress?: {
+      source?: string;
+      eventType?: string;
+      eventSeq?: number;
+      derivedBy?: string;
+      bounded?: boolean;
+    } | null;
+    readbackProvenance?: {
+      activeProgress?: {
+        source?: string;
+        eventType?: string;
+        eventSeq?: number;
+        derivedBy?: string;
+        bounded?: boolean;
+      };
+    };
   }>;
 };
 
@@ -196,6 +212,61 @@ describe("sessions-list-tool", () => {
     expect(session?.reasoningLevel).toBe("deep");
     expect(session?.elevatedLevel).toBe("on");
     expect(session?.responseUsage).toBe("full");
+  });
+
+  it("keeps bounded active progress from gateway session rows", async () => {
+    mocks.gatewayCall.mockImplementation(async (opts: unknown) => {
+      const request = opts as { method?: string };
+      if (request.method === "sessions.list") {
+        return {
+          path: "/tmp/sessions.json",
+          sessions: [
+            {
+              key: "agent:main:phase0z",
+              kind: "direct",
+              sessionId: "sess-progress",
+              status: "running",
+              activeProgress: {
+                source: "trajectory",
+                eventType: "tool.call",
+                eventSeq: 12,
+                derivedBy: "readLatestTrajectoryProgressProvenance",
+                bounded: true,
+              },
+              readbackProvenance: {
+                activeProgress: {
+                  source: "trajectory",
+                  eventType: "tool.call",
+                  eventSeq: 12,
+                  derivedBy: "readLatestTrajectoryProgressProvenance",
+                  bounded: true,
+                },
+              },
+            },
+          ],
+        };
+      }
+      return {};
+    });
+    const tool = createSessionsListTool({ config: {} as never });
+
+    const result = await tool.execute("call-progress", {});
+    const details = getSessionsListDetails(result);
+
+    expect(details.sessions?.[0]?.activeProgress).toMatchObject({
+      source: "trajectory",
+      eventType: "tool.call",
+      eventSeq: 12,
+      derivedBy: "readLatestTrajectoryProgressProvenance",
+      bounded: true,
+    });
+    expect(details.sessions?.[0]?.readbackProvenance?.activeProgress).toMatchObject({
+      source: "trajectory",
+      eventType: "tool.call",
+      eventSeq: 12,
+      derivedBy: "readLatestTrajectoryProgressProvenance",
+      bounded: true,
+    });
   });
 
   it.each([

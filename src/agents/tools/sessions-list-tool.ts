@@ -290,6 +290,8 @@ export function createSessionsListTool(opts?: {
           displayName: readStringValue(entry.displayName),
           derivedTitle: readStringValue(entry.derivedTitle),
           lastMessagePreview: readStringValue(entry.lastMessagePreview),
+          activeProgress: entry.activeProgress ?? null,
+          readbackProvenance: entry.readbackProvenance,
           parentSessionKey:
             typeof entry.parentSessionKey === "string"
               ? resolveDisplaySessionKey({

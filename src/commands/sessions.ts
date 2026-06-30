@@ -415,6 +415,7 @@ export async function sessionsShowCommand(
       path: target.storePath,
       agentId: target.agentId,
       finalAssistantText: row.finalAssistantText ?? null,
+      activeProgress: row.activeProgress ?? null,
       readbackProvenance: row.readbackProvenance,
       session: row,
     });

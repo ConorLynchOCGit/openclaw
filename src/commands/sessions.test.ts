@@ -467,6 +467,14 @@ describe("sessionsCommand", () => {
       session?: {
         status?: string;
         updatedAt?: number | null;
+        activeProgress?: {
+          source?: string;
+          eventType?: string;
+          eventSeq?: number;
+          derivedBy?: string;
+          bounded?: boolean;
+          note?: string;
+        } | null;
         readbackProvenance?: {
           status?: { source?: string; note?: string };
           activeProgress?: {
@@ -479,6 +487,14 @@ describe("sessionsCommand", () => {
           };
         };
       };
+      activeProgress?: {
+        source?: string;
+        eventType?: string;
+        eventSeq?: number;
+        derivedBy?: string;
+        bounded?: boolean;
+        note?: string;
+      } | null;
     };
     expect(payload.session?.status).toBe("running");
     expect(payload.session?.readbackProvenance?.status).toMatchObject({
@@ -488,6 +504,20 @@ describe("sessionsCommand", () => {
       "updatedAt may not track native trajectory events",
     );
     expect(payload.session?.readbackProvenance?.activeProgress).toMatchObject({
+      source: "trajectory",
+      eventType: "tool.call",
+      eventSeq: 12,
+      derivedBy: "readLatestTrajectoryProgressProvenance",
+      bounded: true,
+    });
+    expect(payload.activeProgress).toMatchObject({
+      source: "trajectory",
+      eventType: "tool.call",
+      eventSeq: 12,
+      derivedBy: "readLatestTrajectoryProgressProvenance",
+      bounded: true,
+    });
+    expect(payload.session?.activeProgress).toMatchObject({
       source: "trajectory",
       eventType: "tool.call",
       eventSeq: 12,

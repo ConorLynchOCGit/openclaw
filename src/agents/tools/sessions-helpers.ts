@@ -28,6 +28,10 @@ export {
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { getRuntimeConfig } from "../../config/config.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type {
+  ReadbackFieldProvenance,
+  SessionReadbackProvenance,
+} from "../../gateway/session-utils.types.js";
 
 /** Coarse session category used by session list/status tools. */
 export type SessionKind = "main" | "group" | "cron" | "hook" | "node" | "other";
@@ -58,6 +62,8 @@ export type SessionListRow = {
   displayName?: string;
   derivedTitle?: string;
   lastMessagePreview?: string;
+  activeProgress?: ReadbackFieldProvenance | null;
+  readbackProvenance?: SessionReadbackProvenance;
   parentSessionKey?: string;
   deliveryContext?: SessionListDeliveryContext;
   updatedAt?: number | null;
