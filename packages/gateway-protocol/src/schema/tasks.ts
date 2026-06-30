@@ -30,6 +30,38 @@ export const TaskDeliveryStatusSchema = Type.Union([
 
 const TimestampSchema = Type.Union([Type.String(), Type.Integer({ minimum: 0 })]);
 
+const TaskActiveProgressPointerSchema = Type.Object(
+  {
+    kind: Type.Union([
+      Type.Literal("artifact"),
+      Type.Literal("inspect-next"),
+      Type.Literal("session"),
+      Type.Literal("trajectory"),
+    ]),
+    ref: NonEmptyString,
+    label: Type.Optional(Type.String()),
+  },
+  { additionalProperties: false },
+);
+
+const TaskActiveProgressCapsuleSchema = Type.Object(
+  {
+    source: Type.Literal("trajectory"),
+    ref: NonEmptyString,
+    currentPhase: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    activeLabel: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    observedAt: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    elapsedMs: Type.Optional(Type.Union([Type.Integer({ minimum: 0 }), Type.Null()])),
+    sourceEventType: Type.Optional(Type.String()),
+    sourceEventSeq: Type.Optional(Type.Integer()),
+    note: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    pointer: Type.Optional(TaskActiveProgressPointerSchema),
+    derivedBy: NonEmptyString,
+    bounded: Type.Literal(true),
+  },
+  { additionalProperties: false },
+);
+
 /** Public task summary returned by task list/get/cancel responses. */
 export const TaskSummarySchema = Type.Object(
   {
@@ -52,6 +84,7 @@ export const TaskSummarySchema = Type.Object(
     updatedAt: Type.Optional(TimestampSchema),
     startedAt: Type.Optional(TimestampSchema),
     endedAt: Type.Optional(TimestampSchema),
+    activeProgress: Type.Optional(TaskActiveProgressCapsuleSchema),
     progressSummary: Type.Optional(Type.String()),
     terminalSummary: Type.Optional(Type.String()),
     error: Type.Optional(Type.String()),

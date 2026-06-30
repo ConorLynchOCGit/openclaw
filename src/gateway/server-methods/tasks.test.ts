@@ -162,6 +162,84 @@ describe("tasks gateway handlers", () => {
     expect(payload?.task?.title).toBe("Done task");
   });
 
+  it("gets running tasks with active progress from child session trajectory evidence", async () => {
+    const sessionId = "gateway-task-progress-child";
+    const childSessionKey = "agent:coding:subagent:progress-child";
+    const sessionsDir = path.join(stateDir, "agents", "coding", "sessions");
+    await fs.mkdir(sessionsDir, { recursive: true });
+    await fs.writeFile(
+      path.join(sessionsDir, "sessions.json"),
+      JSON.stringify(
+        {
+          [childSessionKey]: {
+            sessionId,
+            status: "running",
+            updatedAt: Date.now() - 60_000,
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(sessionsDir, `${sessionId}.trajectory.jsonl`),
+      `${JSON.stringify({
+        traceSchema: "openclaw-trajectory",
+        schemaVersion: 1,
+        traceId: sessionId,
+        source: "runtime",
+        type: "tool.call",
+        ts: "2026-06-30T18:30:00.000Z",
+        seq: 4,
+        sourceSeq: 14,
+        sessionId,
+        sessionKey: childSessionKey,
+        data: {
+          name: "exec_command",
+          phase: "validation",
+          elapsedMs: 900,
+          summary: "checking gateway task progress",
+          inspectNext: "openclaw sessions tail --session-key agent:coding:subagent:progress-child",
+        },
+      })}\n`,
+      "utf8",
+    );
+    const task = createTaskRecord({
+      runtime: "subagent",
+      taskKind: "coding-child",
+      requesterSessionKey: "agent:main:main",
+      ownerKey: "agent:main:main",
+      scopeKind: "session",
+      childSessionKey,
+      agentId: "coding",
+      runId: "run-gateway-task-progress",
+      task: "Inspect gateway task progress",
+      status: "running",
+      deliveryStatus: "pending",
+    });
+
+    const { payload } = await getTaskPayload(task.taskId);
+
+    expect(payload?.task?.activeProgress).toMatchObject({
+      source: "trajectory",
+      ref: `session:${sessionId}`,
+      currentPhase: "validation",
+      activeLabel: "exec_command",
+      observedAt: "2026-06-30T18:30:00.000Z",
+      elapsedMs: 900,
+      sourceEventType: "tool.call",
+      sourceEventSeq: 14,
+      note: "checking gateway task progress",
+      pointer: {
+        kind: "inspect-next",
+        ref: "openclaw sessions tail --session-key agent:coding:subagent:progress-child",
+      },
+      derivedBy: "readLatestTrajectoryProgressCapsule",
+      bounded: true,
+    });
+  });
+
   it("keeps child task summaries as pointers instead of child result projections", async () => {
     addSubagentRunForTests({
       runId: "run-child-result",

@@ -20,6 +20,7 @@ import {
   formatTaskStatusTitle,
   sanitizeTaskStatusText,
 } from "../../tasks/task-status.js";
+import { resolveTaskActiveProgressCapsule } from "../task-active-progress.js";
 import type { GatewayRequestHandlers } from "./types.js";
 
 const DEFAULT_TASKS_LIST_LIMIT = 100;
@@ -78,6 +79,7 @@ function mapTaskSummary(task: TaskRecord): TaskSummary {
   });
   const terminalSummary = sanitizeOptionalTaskText(task.terminalSummary, { errorContext: true });
   const error = sanitizeOptionalTaskText(task.error, { errorContext: true });
+  const activeProgress = resolveTaskActiveProgressCapsule(task);
   return {
     id: task.taskId,
     taskId: task.taskId,
@@ -98,6 +100,7 @@ function mapTaskSummary(task: TaskRecord): TaskSummary {
     updatedAt: taskUpdatedAt(task),
     ...(task.startedAt !== undefined ? { startedAt: task.startedAt } : {}),
     ...(task.endedAt !== undefined ? { endedAt: task.endedAt } : {}),
+    ...(activeProgress ? { activeProgress } : {}),
     ...(progressSummary ? { progressSummary } : {}),
     ...(terminalSummary ? { terminalSummary } : {}),
     ...(error ? { error } : {}),

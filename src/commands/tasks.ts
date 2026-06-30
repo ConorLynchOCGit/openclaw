@@ -16,6 +16,7 @@ import {
   type SessionEntry,
 } from "../config/sessions.js";
 import { loadCronJobsStoreSync, resolveCronJobsStorePath } from "../cron/store.js";
+import { resolveTaskActiveProgressCapsule } from "../gateway/task-active-progress.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { parseAgentSessionKey } from "../sessions/session-key-utils.js";
 import { getTaskById, updateTaskNotifyPolicyById } from "../tasks/runtime-internal.js";
@@ -347,6 +348,29 @@ function formatAgeMs(ageMs: number | undefined): string {
   return `${totalSeconds}s`;
 }
 
+type TaskActiveProgress = NonNullable<ReturnType<typeof resolveTaskActiveProgressCapsule>>;
+
+function formatTaskActiveProgress(progress: TaskActiveProgress | undefined): string {
+  if (!progress) {
+    return "n/a";
+  }
+  const parts = [
+    progress.source,
+    progress.currentPhase ? `phase=${progress.currentPhase}` : undefined,
+    progress.activeLabel,
+    progress.sourceEventType,
+    progress.sourceEventSeq !== undefined ? `seq=${progress.sourceEventSeq}` : undefined,
+    progress.elapsedMs !== undefined && progress.elapsedMs !== null
+      ? `elapsedMs=${progress.elapsedMs}`
+      : undefined,
+    progress.note ? `note=${truncate(progress.note, 120)}` : undefined,
+    progress.pointer
+      ? `pointer=${progress.pointer.kind}:${truncate(progress.pointer.ref, 120)}`
+      : undefined,
+  ];
+  return parts.filter(Boolean).join(" ");
+}
+
 function formatAuditRows(findings: TaskSystemAuditFinding[], rich: boolean) {
   const header = [
     "Scope".padEnd(8),
@@ -464,8 +488,11 @@ export async function tasksShowCommand(
     return;
   }
 
+  const activeProgress = resolveTaskActiveProgressCapsule(task);
   if (opts.json) {
-    runtime.log(JSON.stringify(task, null, 2));
+    runtime.log(
+      JSON.stringify({ ...task, ...(activeProgress ? { activeProgress } : {}) }, null, 2),
+    );
     return;
   }
 
@@ -490,6 +517,7 @@ export async function tasksShowCommand(
     `endedAt: ${formatTaskTimestamp(task.endedAt)}`,
     `lastEventAt: ${formatTaskTimestamp(task.lastEventAt)}`,
     `cleanupAfter: ${formatTaskTimestamp(task.cleanupAfter)}`,
+    `activeProgress: ${formatTaskActiveProgress(activeProgress)}`,
     ...(task.error ? [`error: ${task.error}`] : []),
     ...(task.progressSummary ? [`progressSummary: ${task.progressSummary}`] : []),
     ...(task.terminalSummary ? [`terminalSummary: ${task.terminalSummary}`] : []),

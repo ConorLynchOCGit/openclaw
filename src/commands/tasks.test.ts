@@ -408,6 +408,156 @@ describe("tasks commands", () => {
     });
   });
 
+  it("shows active progress from a child session trajectory capsule", async () => {
+    await withTaskCommandStateDir(async (state) => {
+      const sessionId = "task-progress-child-session";
+      const childSessionKey = "agent:main:subagent:task-progress-child";
+      const task = createTaskRecord({
+        runtime: "subagent",
+        requesterSessionKey: "agent:main:main",
+        ownerKey: "agent:main:main",
+        scopeKind: "session",
+        childSessionKey,
+        runId: "run-task-progress-child",
+        status: "running",
+        task: "Inspect active child progress",
+      });
+      const sessionsDir = state.sessionsDir("main");
+      await fs.mkdir(sessionsDir, { recursive: true });
+      await fs.writeFile(
+        path.join(sessionsDir, "sessions.json"),
+        JSON.stringify(
+          {
+            [childSessionKey]: {
+              sessionId,
+              status: "running",
+              updatedAt: Date.now() - 45 * 60_000,
+            },
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(sessionsDir, `${sessionId}.trajectory.jsonl`),
+        `${JSON.stringify({
+          traceSchema: "openclaw-trajectory",
+          schemaVersion: 1,
+          traceId: sessionId,
+          source: "runtime",
+          type: "tool.call",
+          ts: "2026-06-30T18:00:00.000Z",
+          seq: 5,
+          sourceSeq: 9,
+          sessionId,
+          sessionKey: childSessionKey,
+          data: {
+            name: "exec_command",
+            phase: "validation",
+            durationMs: 1250,
+            summary: "running focused task readback regression",
+            artifactPath: ".openclaw/trajectory-exports/task-progress",
+          },
+        })}\n`,
+        "utf8",
+      );
+
+      const runtime = createRuntime();
+      await tasksShowCommand({ json: false, lookup: task.taskId }, runtime);
+
+      const joined = vi
+        .mocked(runtime.log)
+        .mock.calls.map(([line]) => String(line))
+        .join("\n");
+      expect(joined).toContain(
+        "activeProgress: trajectory phase=validation exec_command tool.call seq=9 elapsedMs=1250",
+      );
+      expect(joined).toContain("note=running focused task readback regression");
+      expect(joined).toContain("pointer=artifact:.openclaw/trajectory-exports/task-progress");
+    });
+  });
+
+  it("includes active progress in task show JSON from child session trajectory evidence", async () => {
+    await withTaskCommandStateDir(async (state) => {
+      const sessionId = "task-progress-json-child-session";
+      const childSessionKey = "agent:main:subagent:task-progress-json-child";
+      const task = createTaskRecord({
+        runtime: "subagent",
+        requesterSessionKey: "agent:main:main",
+        ownerKey: "agent:main:main",
+        scopeKind: "session",
+        childSessionKey,
+        runId: "run-task-progress-json-child",
+        status: "running",
+        task: "Inspect active child progress JSON",
+      });
+      const sessionsDir = state.sessionsDir("main");
+      await fs.mkdir(sessionsDir, { recursive: true });
+      await fs.writeFile(
+        path.join(sessionsDir, "sessions.json"),
+        JSON.stringify(
+          {
+            [childSessionKey]: {
+              sessionId,
+              status: "running",
+              updatedAt: Date.now() - 45 * 60_000,
+            },
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(sessionsDir, `${sessionId}.trajectory.jsonl`),
+        `${JSON.stringify({
+          traceSchema: "openclaw-trajectory",
+          schemaVersion: 1,
+          traceId: sessionId,
+          source: "runtime",
+          type: "tool.call",
+          ts: "2026-06-30T18:10:00.000Z",
+          seq: 7,
+          sourceSeq: 11,
+          sessionId,
+          sessionKey: childSessionKey,
+          data: {
+            name: "exec_command",
+            phase: "validation",
+            elapsedMs: 500,
+            summary: "running JSON task readback regression",
+          },
+        })}\n`,
+        "utf8",
+      );
+
+      const runtime = createRuntime();
+      await tasksShowCommand({ json: true, lookup: task.taskId }, runtime);
+
+      const payload = readFirstJsonLog(runtime) as {
+        activeProgress?: {
+          source?: string;
+          ref?: string;
+          currentPhase?: string;
+          activeLabel?: string;
+          sourceEventType?: string;
+          sourceEventSeq?: number;
+          bounded?: boolean;
+        };
+      };
+      expect(payload.activeProgress).toMatchObject({
+        source: "trajectory",
+        ref: `session:${sessionId}`,
+        currentPhase: "validation",
+        activeLabel: "exec_command",
+        sourceEventType: "tool.call",
+        sourceEventSeq: 11,
+        bounded: true,
+      });
+    });
+  });
+
   it("explains retained lost task cleanup timing in maintenance text output", async () => {
     await withTaskCommandStateDir(async () => {
       const cleanupAfter = Date.now() + 60_000;
