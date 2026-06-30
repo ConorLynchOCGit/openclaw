@@ -3,8 +3,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { parse } from "yaml";
 
-const parsed = JSON.parse(fs.readFileSync(0, "utf8"));
-const roots = Array.isArray(parsed) ? parsed : [parsed];
 const specs = new Set();
 const target = {
   cpu: process.arch,
@@ -12,17 +10,73 @@ const target = {
   os: process.platform,
 };
 
+function parseArgs(argv) {
+  const args = {
+    fromLockfile: false,
+  };
+  for (const arg of argv) {
+    if (arg === "--from-lockfile") {
+      args.fromLockfile = true;
+      continue;
+    }
+    if (arg === "--help" || arg === "-h") {
+      process.stdout.write(
+        [
+          "Usage:",
+          "  pnpm list --prod --depth Infinity --json | node scripts/list-prod-store-packages.mjs",
+          "  node scripts/list-prod-store-packages.mjs --from-lockfile",
+          "",
+        ].join("\n"),
+      );
+      process.exit(0);
+    }
+    throw new Error(`unknown argument: ${arg}`);
+  }
+  return args;
+}
+
+function stripPeerSuffix(version) {
+  return version.replace(/\(.+\)$/, "");
+}
+
+function packageSpecFromRawSpec(rawSpec) {
+  const spec = stripPeerSuffix(rawSpec);
+  if (spec.startsWith("npm:")) {
+    return packageSpecFromRawSpec(spec.slice("npm:".length));
+  }
+  if (
+    !spec ||
+    !looksLikePackageSpec(spec) ||
+    spec.startsWith("file:") ||
+    spec.startsWith("link:") ||
+    spec.startsWith("workspace:")
+  ) {
+    return undefined;
+  }
+  return spec;
+}
+
+function looksLikePackageSpec(value) {
+  return /^@[^/]+\/[^@]+@.+/u.test(value) || /^[^/@][^@/]*@.+/u.test(value);
+}
+
 function packageSpec(name, version) {
   if (!name || !version || typeof version !== "string") {
     return undefined;
   }
-  const normalizedVersion = version.replace(/\(.+\)$/, "");
+  const normalizedVersion = stripPeerSuffix(version);
   if (
     normalizedVersion.startsWith("file:") ||
     normalizedVersion.startsWith("link:") ||
     normalizedVersion.startsWith("workspace:")
   ) {
     return undefined;
+  }
+  if (normalizedVersion.startsWith("npm:")) {
+    return packageSpecFromRawSpec(normalizedVersion.slice("npm:".length));
+  }
+  if (looksLikePackageSpec(normalizedVersion)) {
+    return normalizedVersion;
   }
   return `${name}@${normalizedVersion}`;
 }
@@ -70,6 +124,14 @@ function snapshotForSpec(lockfile, spec) {
   );
 }
 
+function snapshotsForSpec(lockfile, spec) {
+  const snapshots = lockfile?.snapshots;
+  if (!snapshots) {
+    return [];
+  }
+  return Object.entries(snapshots).filter(([key]) => normalizeLockfilePackageKey(key) === spec);
+}
+
 function packageSupportsTarget(lockfile, spec) {
   const entry = packageEntryForSpec(lockfile, spec);
   return (
@@ -81,7 +143,18 @@ function packageSupportsTarget(lockfile, spec) {
 
 function addSpec(lockfile, spec) {
   if (spec && packageSupportsTarget(lockfile, spec)) {
+    const wasMissing = !specs.has(spec);
     specs.add(spec);
+    return wasMissing;
+  }
+  return false;
+}
+
+function addImporterRuntimeSpecs(lockfile, importer) {
+  for (const section of ["dependencies", "optionalDependencies"]) {
+    for (const [name, entry] of Object.entries(importer?.[section] ?? {})) {
+      addSpec(lockfile, packageSpec(name, typeof entry === "string" ? entry : entry?.version));
+    }
   }
 }
 
@@ -93,6 +166,16 @@ function visitListNode(lockfile, node) {
       addSpec(lockfile, spec);
     }
     visitListNode(lockfile, dep);
+  }
+}
+
+function addPeerContextSpecs(lockfile, pending, snapshotKey) {
+  const matches = snapshotKey.matchAll(/\(([^()]+)\)/gu);
+  for (const match of matches) {
+    const spec = packageSpecFromRawSpec(match[1] ?? "");
+    if (addSpec(lockfile, spec)) {
+      pending.push(spec);
+    }
   }
 }
 
@@ -118,35 +201,80 @@ function addSnapshotClosure(lockfile) {
       continue;
     }
     visited.add(spec);
-    const snapshot = snapshotForSpec(lockfile, spec);
-    if (!snapshot) {
-      continue;
-    }
-    const addDependencySpec = (name, version) => {
-      const depSpec = packageSpec(name, typeof version === "string" ? version : version?.version);
-      if (
-        !depSpec ||
-        !packages[depSpec] ||
-        specs.has(depSpec) ||
-        !packageSupportsTarget(lockfile, depSpec)
-      ) {
-        return;
+    const matchingSnapshots = snapshotsForSpec(lockfile, spec);
+    if (matchingSnapshots.length === 0) {
+      const snapshot = snapshotForSpec(lockfile, spec);
+      if (!snapshot) {
+        continue;
       }
-      specs.add(depSpec);
-      pending.push(depSpec);
-    };
-    for (const [name, version] of Object.entries(snapshot.dependencies ?? {})) {
-      addDependencySpec(name, version);
+      matchingSnapshots.push([spec, snapshot]);
     }
-    for (const [name, version] of Object.entries(snapshot.optionalDependencies ?? {})) {
-      addDependencySpec(name, version);
+    for (const [snapshotKey, snapshot] of matchingSnapshots) {
+      addPeerContextSpecs(lockfile, pending, snapshotKey);
+      addSnapshotDependencies(lockfile, packages, pending, snapshot);
     }
   }
 }
 
+function addSnapshotDependencies(lockfile, packages, pending, snapshot) {
+  if (!snapshot) {
+    return;
+  }
+  const addDependencySpec = (name, version) => {
+    const depSpec = packageSpec(name, typeof version === "string" ? version : version?.version);
+    if (!depSpec || !packages[depSpec] || specs.has(depSpec)) {
+      return;
+    }
+    if (!packageSupportsTarget(lockfile, depSpec)) {
+      addSupportedDependenciesOfUnsupportedOptionalSnapshot(lockfile, packages, pending, depSpec);
+      return;
+    }
+    specs.add(depSpec);
+    pending.push(depSpec);
+  };
+  for (const [name, version] of Object.entries(snapshot.dependencies ?? {})) {
+    addDependencySpec(name, version);
+  }
+  for (const [name, version] of Object.entries(snapshot.optionalDependencies ?? {})) {
+    addDependencySpec(name, version);
+  }
+}
+
+function addSupportedDependenciesOfUnsupportedOptionalSnapshot(lockfile, packages, pending, spec) {
+  const snapshots = snapshotsForSpec(lockfile, spec);
+  for (const [, snapshot] of snapshots) {
+    if (snapshot?.optional !== true) {
+      continue;
+    }
+    for (const section of ["dependencies", "optionalDependencies"]) {
+      for (const [name, version] of Object.entries(snapshot[section] ?? {})) {
+        const depSpec = packageSpec(name, typeof version === "string" ? version : version?.version);
+        if (
+          depSpec &&
+          packages[depSpec] &&
+          !specs.has(depSpec) &&
+          packageSupportsTarget(lockfile, depSpec)
+        ) {
+          specs.add(depSpec);
+          pending.push(depSpec);
+        }
+      }
+    }
+  }
+}
+
+const args = parseArgs(process.argv.slice(2));
 const lockfile = readLockfile();
-for (const root of roots) {
-  visitListNode(lockfile, root);
+if (args.fromLockfile) {
+  for (const importer of Object.values(lockfile?.importers ?? {})) {
+    addImporterRuntimeSpecs(lockfile, importer);
+  }
+} else {
+  const parsed = JSON.parse(fs.readFileSync(0, "utf8"));
+  const roots = Array.isArray(parsed) ? parsed : [parsed];
+  for (const root of roots) {
+    visitListNode(lockfile, root);
+  }
 }
 addSnapshotClosure(lockfile);
 

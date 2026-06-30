@@ -101,7 +101,7 @@ describe("Dockerfile", () => {
     const dockerfile = await readFile(dockerfilePath, "utf8");
     const installIndex = dockerfile.indexOf("pnpm install --frozen-lockfile \\");
     const storeSeedIndex = dockerfile.indexOf(
-      "pnpm list --prod --depth Infinity --json | node scripts/list-prod-store-packages.mjs | xargs -r pnpm store add",
+      "node scripts/list-prod-store-packages.mjs --from-lockfile | xargs -r pnpm store add",
     );
     const pruneIndex = dockerfile.indexOf("CI=true pnpm prune --prod \\");
 
@@ -219,18 +219,20 @@ describe("Dockerfile", () => {
     expect(dockerfile).toContain(
       "RUN --mount=type=cache,id=openclaw-pnpm-store,target=/root/.local/share/pnpm/store,sharing=locked \\",
     );
+    expect(dockerfile).toContain(
+      "node scripts/list-prod-store-packages.mjs --from-lockfile | xargs -r pnpm store add",
+    );
+    expect(dockerfile).not.toContain("pnpm list --prod --depth Infinity --json");
     expect(dockerfile).toContain("COPY --from=workspace-deps /out/packages/ ./packages/");
     expect(dockerfile).toContain(
       "COPY --from=workspace-deps /out/${OPENCLAW_BUNDLED_PLUGIN_DIR}/ ./${OPENCLAW_BUNDLED_PLUGIN_DIR}/",
     );
-    expect(dockerfile).toContain(
-      'OPENCLAW_EXTENSIONS="$OPENCLAW_EXTENSIONS" OPENCLAW_BUNDLED_PLUGIN_DIR="$OPENCLAW_BUNDLED_PLUGIN_DIR" node scripts/prune-docker-plugin-dist.mjs',
-    );
+    const pruneCommand =
+      'OPENCLAW_EXTENSIONS="$(printf \'%s,%s\' "$OPENCLAW_REQUIRED_BUNDLED_PLUGINS" "$OPENCLAW_EXTENSIONS")" OPENCLAW_BUNDLED_PLUGIN_DIR="$OPENCLAW_BUNDLED_PLUGIN_DIR" node scripts/prune-docker-plugin-dist.mjs';
+    expect(dockerfile).toContain(pruneCommand);
     expect(dockerfile).toContain("CI=true pnpm prune --prod \\");
     expect(dockerfile.indexOf("CI=true pnpm prune --prod \\")).toBeLessThan(
-      dockerfile.indexOf(
-        'OPENCLAW_EXTENSIONS="$OPENCLAW_EXTENSIONS" OPENCLAW_BUNDLED_PLUGIN_DIR="$OPENCLAW_BUNDLED_PLUGIN_DIR" node scripts/prune-docker-plugin-dist.mjs',
-      ),
+      dockerfile.indexOf(pruneCommand),
     );
     expect(dockerfile).toContain("--config.offline=true");
     expect(dockerfile).toContain("--config.supportedArchitectures.os=linux");
