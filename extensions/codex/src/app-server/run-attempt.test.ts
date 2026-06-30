@@ -2297,6 +2297,52 @@ describe("runCodexAppServerAttempt", () => {
     });
   });
 
+  it("passes non-root AGENTS bootstrap files as OpenClaw developer instructions", async () => {
+    const sessionFile = path.join(tempDir, "session.jsonl");
+    const workspaceDir = path.join(tempDir, "workspace");
+    const rootAgentsGuidance = "Root AGENTS guidance stays Codex-native.";
+    const codingAgentsGuidance = "Coding contract requires a team-shape closeout.";
+    const codingAgentsPath = path.join(workspaceDir, "docs", "agents", "coding", "AGENTS.md");
+    await fs.mkdir(path.dirname(codingAgentsPath), { recursive: true });
+    await fs.writeFile(path.join(workspaceDir, "AGENTS.md"), rootAgentsGuidance);
+    await fs.writeFile(codingAgentsPath, codingAgentsGuidance);
+    registerInternalHook("agent:bootstrap", (event) => {
+      const context = event.context as {
+        bootstrapFiles: Array<{ content: string; missing: boolean; name?: string; path: string }>;
+      };
+      context.bootstrapFiles = [
+        ...context.bootstrapFiles,
+        {
+          name: "AGENTS.md",
+          path: codingAgentsPath,
+          content: codingAgentsGuidance,
+          missing: false,
+        },
+      ];
+    });
+    const params = createParams(sessionFile, workspaceDir);
+    setAgentWorkspaceForTest(params, workspaceDir);
+
+    const { inputText, systemPromptReport, threadDeveloperInstructions } =
+      await buildCodexTurnContextForTest(params, workspaceDir);
+
+    expect(threadDeveloperInstructions).toContain("OpenClaw Workspace Instructions");
+    expect(threadDeveloperInstructions).toContain(codingAgentsGuidance);
+    expect(threadDeveloperInstructions).not.toContain(rootAgentsGuidance);
+    expect(inputText).not.toContain(rootAgentsGuidance);
+    expect(inputText).not.toContain(codingAgentsGuidance);
+
+    const codingAgentsStats = systemPromptReport.injectedWorkspaceFiles.find(
+      (file) => file.path === codingAgentsPath,
+    );
+    expect(codingAgentsStats).toMatchObject({
+      name: "AGENTS.md",
+      rawChars: codingAgentsGuidance.length,
+      injectedChars: codingAgentsGuidance.length,
+      truncated: false,
+    });
+  });
+
   it("sends workspace bootstrap instructions through Codex app-server payloads", async () => {
     const sessionFile = path.join(tempDir, "session.jsonl");
     const workspaceDir = path.join(tempDir, "workspace");

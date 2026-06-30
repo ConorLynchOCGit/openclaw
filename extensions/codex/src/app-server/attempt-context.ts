@@ -26,7 +26,7 @@ import {
   type CodexContextEngineThreadBootstrapProjection,
 } from "./thread-lifecycle.js";
 
-const CODEX_NATIVE_PROJECT_DOC_BASENAMES = new Set(["agents.md"]);
+const CODEX_NATIVE_PROJECT_DOC_BASENAME = "agents.md";
 const CODEX_INHERITED_WORKSPACE_DEVELOPER_CONTEXT_BASENAMES = new Set(["tools.md"]);
 const CODEX_TURN_SCOPED_WORKSPACE_DEVELOPER_CONTEXT_BASENAMES = new Set([
   "identity.md",
@@ -220,10 +220,13 @@ export async function buildCodexWorkspaceBootstrapContext(params: {
     );
     const promptContextFiles = selectCodexWorkspacePromptContextFiles(contextFiles, {
       excludeMemory: memoryToolsAvailable,
+      workspaceDir: params.effectiveWorkspace,
       memoryWorkspaceDir: params.effectiveWorkspace,
     });
     const developerInstructionFiles = shouldInjectCodexOpenClawPromptContext(params.params)
-      ? selectCodexWorkspaceInheritedDeveloperInstructionFiles(contextFiles)
+      ? selectCodexWorkspaceInheritedDeveloperInstructionFiles(contextFiles, {
+          workspaceDir: params.effectiveWorkspace,
+        })
       : [];
     const turnScopedDeveloperInstructionFiles = shouldInjectCodexOpenClawPromptContext(
       params.params,
@@ -303,6 +306,7 @@ export function buildCodexSystemPromptReport(params: {
     },
     injectedWorkspaceFiles: buildCodexBootstrapInjectionStats({
       bootstrapFiles: params.workspaceBootstrapContext.bootstrapFiles,
+      workspaceDir: params.workspaceDir,
       injectedFiles: params.workspaceBootstrapContext.promptContextFiles ?? [],
       developerInstructionFiles: [
         ...(params.workspaceBootstrapContext.developerInstructionFiles ?? []),
@@ -404,6 +408,7 @@ function stableJsonHash(value: JsonValue): string {
 
 function buildCodexBootstrapInjectionStats(params: {
   bootstrapFiles: CodexBootstrapFile[];
+  workspaceDir?: string;
   injectedFiles: EmbeddedContextFile[];
   developerInstructionFiles?: EmbeddedContextFile[];
   memoryToolRoutedBootstrapFiles?: CodexBootstrapFile[];
@@ -436,7 +441,13 @@ function buildCodexBootstrapInjectionStats(params: {
     let injectedChars = memoryToolRoutedFile ? 0 : (injected?.length ?? 0);
     let truncated = memoryToolRoutedFile ? false : !file.missing && injectedChars < rawChars;
     if (injected === undefined) {
-      if (CODEX_NATIVE_PROJECT_DOC_BASENAMES.has(baseName)) {
+      if (
+        baseName === CODEX_NATIVE_PROJECT_DOC_BASENAME &&
+        isCodexWorkspaceRootAgentsPath({
+          filePath: pathValue || fileName || "",
+          workspaceDir: params.workspaceDir,
+        })
+      ) {
         injectedChars = rawChars;
         truncated = false;
       } else if (baseName === CODEX_HEARTBEAT_CONTEXT_BASENAME) {
@@ -627,7 +638,7 @@ function renderCodexWorkspaceBootstrapPromptContext(
 
 function selectCodexWorkspacePromptContextFiles(
   contextFiles: EmbeddedContextFile[],
-  options: { excludeMemory?: boolean; memoryWorkspaceDir?: string } = {},
+  options: { excludeMemory?: boolean; workspaceDir?: string; memoryWorkspaceDir?: string } = {},
 ): EmbeddedContextFile[] {
   const excludeMemory = options.excludeMemory ?? true;
   return contextFiles
@@ -635,7 +646,7 @@ function selectCodexWorkspacePromptContextFiles(
       const baseName = getCodexContextFileBasename(file.path);
       return (
         baseName &&
-        !CODEX_NATIVE_PROJECT_DOC_BASENAMES.has(baseName) &&
+        baseName !== CODEX_NATIVE_PROJECT_DOC_BASENAME &&
         !CODEX_WORKSPACE_DEVELOPER_CONTEXT_BASENAMES.has(baseName) &&
         baseName !== CODEX_HEARTBEAT_CONTEXT_BASENAME &&
         (!excludeMemory ||
@@ -651,11 +662,23 @@ function selectCodexWorkspacePromptContextFiles(
 
 function selectCodexWorkspaceInheritedDeveloperInstructionFiles(
   contextFiles: EmbeddedContextFile[],
+  options: { workspaceDir?: string } = {},
 ): EmbeddedContextFile[] {
-  return selectCodexWorkspaceDeveloperInstructionFiles(
-    contextFiles,
-    CODEX_INHERITED_WORKSPACE_DEVELOPER_CONTEXT_BASENAMES,
-  );
+  return contextFiles
+    .filter((file) => {
+      const baseName = getCodexContextFileBasename(file.path);
+      const isInheritedWorkspaceDeveloperFile =
+        baseName && CODEX_INHERITED_WORKSPACE_DEVELOPER_CONTEXT_BASENAMES.has(baseName);
+      const isContractAgentsFile =
+        baseName === CODEX_NATIVE_PROJECT_DOC_BASENAME &&
+        !isCodexWorkspaceRootAgentsContextFile({ file, workspaceDir: options.workspaceDir });
+      return (
+        (isInheritedWorkspaceDeveloperFile || isContractAgentsFile) &&
+        !isMissingCodexBootstrapContextFile(file) &&
+        file.content.trim().length > 0
+      );
+    })
+    .toSorted(compareCodexContextFiles);
 }
 
 function selectCodexWorkspaceTurnScopedDeveloperInstructionFiles(
@@ -864,18 +887,53 @@ function isCodexWorkspaceRootMemoryContextFile(params: {
   });
 }
 
+function isCodexWorkspaceRootAgentsContextFile(params: {
+  file: EmbeddedContextFile;
+  workspaceDir?: string;
+}): boolean {
+  return isCodexWorkspaceRootAgentsPath({
+    filePath: params.file.path,
+    workspaceDir: params.workspaceDir,
+  });
+}
+
+function isCodexWorkspaceRootAgentsPath(params: {
+  filePath: string;
+  workspaceDir?: string;
+}): boolean {
+  return isCodexWorkspaceRootFilePath({
+    filePath: params.filePath,
+    workspaceDir: params.workspaceDir,
+    fileName: "AGENTS.md",
+  });
+}
+
 function isCodexWorkspaceRootMemoryPath(params: {
   filePath: string;
   workspaceDir: string;
+}): boolean {
+  return isCodexWorkspaceRootFilePath({ ...params, fileName: "MEMORY.md" });
+}
+
+function isCodexWorkspaceRootFilePath(params: {
+  filePath: string;
+  workspaceDir?: string;
+  fileName: string;
 }): boolean {
   const filePath = params.filePath.trim();
   if (!filePath) {
     return false;
   }
+  if (!path.isAbsolute(filePath)) {
+    return normalizeCodexContextFilePath(filePath) === params.fileName.toLowerCase();
+  }
+  if (!params.workspaceDir) {
+    return false;
+  }
   const absolutePath = path.isAbsolute(filePath)
     ? path.resolve(filePath)
     : path.resolve(params.workspaceDir, filePath);
-  return absolutePath === path.join(path.resolve(params.workspaceDir), "MEMORY.md");
+  return absolutePath === path.join(path.resolve(params.workspaceDir), params.fileName);
 }
 
 function isSameCodexWorkspacePath(left: string, right: string): boolean {
