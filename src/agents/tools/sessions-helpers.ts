@@ -29,7 +29,7 @@ import { normalizeOptionalString } from "@openclaw/normalization-core/string-coe
 import { getRuntimeConfig } from "../../config/config.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type {
-  ActiveProgressCapsule,
+  ReadbackProgressProjection,
   SessionReadbackProvenance,
 } from "../../gateway/session-utils.types.js";
 
@@ -62,7 +62,7 @@ export type SessionListRow = {
   displayName?: string;
   derivedTitle?: string;
   lastMessagePreview?: string;
-  activeProgress?: ActiveProgressCapsule | null;
+  activeProgress?: ReadbackProgressProjection | null;
   readbackProvenance?: SessionReadbackProvenance;
   parentSessionKey?: string;
   deliveryContext?: SessionListDeliveryContext;

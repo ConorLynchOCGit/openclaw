@@ -1,3 +1,4 @@
+import type { ReadbackProgressProjection } from "../../shared/readback-progress.js";
 // Task domain types define plugin task-flow payloads shared by runtime adapters.
 import type { JsonValue } from "../../tasks/task-flow-registry.types.js";
 import type {
@@ -46,6 +47,7 @@ export type TaskRunView = {
   lastEventAt?: number;
   cleanupAfter?: number;
   error?: string;
+  activeProgress?: ReadbackProgressProjection;
   progressSummary?: string;
   terminalSummary?: string;
   terminalOutcome?: TaskTerminalOutcome;

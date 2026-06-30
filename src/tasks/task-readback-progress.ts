@@ -8,8 +8,8 @@ import {
   isSubagentRunLive,
   resolveSubagentSessionStatus,
 } from "../agents/subagent-registry-read.js";
-import type { TaskRecord } from "../tasks/task-registry.types.js";
-import type { ActiveProgressCapsule } from "./session-utils.types.js";
+import type { ReadbackProgressProjection } from "../shared/readback-progress.js";
+import type { TaskRecord } from "./task-registry.types.js";
 
 const TASK_PROGRESS_NOTE_MAX_CHARS = 240;
 
@@ -57,7 +57,9 @@ function resolveElapsedMs(now: number, ...candidates: unknown[]): number | undef
   return undefined;
 }
 
-function resolveTaskRunEventProgressCapsule(task: TaskRecord): ActiveProgressCapsule | undefined {
+function resolveTaskRunEventProgressProjection(
+  task: TaskRecord,
+): ReadbackProgressProjection | undefined {
   const latestEvent = task.executionReceipt?.latestEvent;
   const note = truncateTaskProgressNote(latestEvent?.summary);
   if (!latestEvent || !note) {
@@ -82,12 +84,14 @@ function resolveTaskRunEventProgressCapsule(task: TaskRecord): ActiveProgressCap
       ref: task.taskId,
       label: "task run receipt",
     },
-    derivedBy: "resolveTaskActiveProgressCapsule",
+    derivedBy: "resolveTaskReadbackProgressProjection",
     bounded: true,
   };
 }
 
-function resolveFallbackTaskProgressCapsule(task: TaskRecord): ActiveProgressCapsule | undefined {
+function resolveFallbackTaskProgressProjection(
+  task: TaskRecord,
+): ReadbackProgressProjection | undefined {
   const childSessionKey = normalizeOptionalString(task.childSessionKey);
   const now = Date.now();
   if (childSessionKey) {
@@ -118,20 +122,20 @@ function resolveFallbackTaskProgressCapsule(task: TaskRecord): ActiveProgressCap
           ref: childSessionKey,
           label: "child session",
         },
-        derivedBy: "resolveTaskActiveProgressCapsule",
+        derivedBy: "resolveTaskReadbackProgressProjection",
         bounded: true,
       };
     }
   }
 
-  return resolveTaskRunEventProgressCapsule(task);
+  return resolveTaskRunEventProgressProjection(task);
 }
 
-export function resolveTaskActiveProgressCapsule(
+export function resolveTaskReadbackProgressProjection(
   task: TaskRecord,
-): ActiveProgressCapsule | undefined {
+): ReadbackProgressProjection | undefined {
   if (task.status !== "running" && task.status !== "queued") {
     return undefined;
   }
-  return resolveFallbackTaskProgressCapsule(task);
+  return resolveFallbackTaskProgressProjection(task);
 }

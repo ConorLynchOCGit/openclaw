@@ -23,7 +23,7 @@ import {
   type IndexedTranscriptEntry,
 } from "./session-transcript-index.fs.js";
 import type {
-  ActiveProgressCapsule,
+  ReadbackProgressProjection,
   ReadbackFieldProvenance,
   SessionPreviewItem,
 } from "./session-utils.types.js";
@@ -2052,7 +2052,7 @@ function activeProgressNote(
 
 function activeProgressPointer(
   data: Record<string, unknown> | undefined,
-): ActiveProgressCapsule["pointer"] | undefined {
+): ReadbackProgressProjection["pointer"] | undefined {
   const artifactRef =
     boundedProgressText(data?.artifactRef, 200) ??
     boundedProgressText(data?.artifactPath, 200) ??
@@ -2075,11 +2075,11 @@ function activeProgressPointer(
   return undefined;
 }
 
-function activeProgressCapsuleFromTrajectoryEvent(params: {
+function activeProgressProjectionFromTrajectoryEvent(params: {
   sessionId: string;
   event: Record<string, unknown>;
   eventType: string;
-}): ActiveProgressCapsule {
+}): ReadbackProgressProjection {
   const data =
     params.event.data && typeof params.event.data === "object" && !Array.isArray(params.event.data)
       ? (params.event.data as Record<string, unknown>)
@@ -2102,17 +2102,17 @@ function activeProgressCapsuleFromTrajectoryEvent(params: {
     ...(sourceEventSeq !== undefined ? { sourceEventSeq } : {}),
     ...(note ? { note } : {}),
     ...(pointer ? { pointer } : {}),
-    derivedBy: "readLatestTrajectoryProgressCapsule",
+    derivedBy: "readLatestTrajectoryProgressProjection",
     bounded: true,
   };
 }
 
-export function readLatestTrajectoryProgressCapsule(
+export function readLatestTrajectoryProgressProjection(
   sessionId: string,
   storePath: string | undefined,
   sessionFile: string | undefined,
   agentId: string | undefined,
-): ActiveProgressCapsule | undefined {
+): ReadbackProgressProjection | undefined {
   const filePath = resolveSessionTrajectoryRuntimeFileSync({
     sessionId,
     storePath,
@@ -2137,7 +2137,7 @@ export function readLatestTrajectoryProgressCapsule(
       ) {
         continue;
       }
-      return activeProgressCapsuleFromTrajectoryEvent({
+      return activeProgressProjectionFromTrajectoryEvent({
         sessionId,
         event,
         eventType: event.type,
@@ -2149,7 +2149,7 @@ export function readLatestTrajectoryProgressCapsule(
   return {
     source: "trajectory",
     ref: `session:${sessionId}`,
-    derivedBy: "readLatestTrajectoryProgressCapsule",
+    derivedBy: "readLatestTrajectoryProgressProjection",
     bounded: true,
     note: "trajectory file found but no valid recent event in bounded tail",
   };

@@ -414,7 +414,7 @@ describe("sessionsCommand", () => {
           model: "gpt-5.5",
         },
       },
-      "sessions-show-active-progress",
+      "sessions-show-readback-progress",
     );
     const trajectory = path.join(path.dirname(store), `${sessionId}.trajectory.jsonl`);
     fs.writeFileSync(
@@ -527,7 +527,7 @@ describe("sessionsCommand", () => {
       observedAt: "2025-12-05T23:59:00.000Z",
       sourceEventType: "tool.call",
       sourceEventSeq: 12,
-      derivedBy: "readLatestTrajectoryProgressCapsule",
+      derivedBy: "readLatestTrajectoryProgressProjection",
       bounded: true,
       note: "running focused regression",
       pointer: {
@@ -541,7 +541,7 @@ describe("sessionsCommand", () => {
       activeLabel: "exec_command",
       sourceEventType: "tool.call",
       sourceEventSeq: 12,
-      derivedBy: "readLatestTrajectoryProgressCapsule",
+      derivedBy: "readLatestTrajectoryProgressProjection",
       bounded: true,
     });
     expect(payload.session?.activeProgress).toMatchObject({
@@ -550,7 +550,7 @@ describe("sessionsCommand", () => {
       activeLabel: "exec_command",
       sourceEventType: "tool.call",
       sourceEventSeq: 12,
-      derivedBy: "readLatestTrajectoryProgressCapsule",
+      derivedBy: "readLatestTrajectoryProgressProjection",
       bounded: true,
     });
 
@@ -586,7 +586,7 @@ describe("sessionsCommand", () => {
           model: "gpt-5.4-mini",
         },
       },
-      "sessions-show-active-progress-missing-status",
+      "sessions-show-readback-progress-missing-status",
     );
     const trajectory = path.join(path.dirname(store), `${sessionId}.trajectory.jsonl`);
     fs.writeFileSync(
@@ -682,7 +682,7 @@ describe("sessionsCommand", () => {
 
   it("shows a session by session id alias while preserving canonical key", async () => {
     const sessionId = "55555555-5555-4555-9555-555555555555";
-    const sessionKey = "agent:coding:phase0z-live-active-progress-readback-proof";
+    const sessionKey = "agent:coding:phase0z-live-readback-progress-proof";
     const store = writeStore(
       {
         [sessionKey]: {
@@ -724,7 +724,7 @@ describe("sessionsCommand", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sessions-show-session-id-gateway-"));
     const storePath = path.join(dir, "sessions.json");
     const sessionId = "66666666-6666-4666-9666-666666666666";
-    const sessionKey = "agent:coding:phase0z-live-active-progress-readback-proof";
+    const sessionKey = "agent:coding:phase0z-live-readback-progress-proof";
     fs.writeFileSync(
       storePath,
       JSON.stringify(

@@ -1,6 +1,7 @@
 // Control UI controller manages workboard gateway state.
+import { normalizeReadbackProgressProjection } from "../../../../src/shared/readback-progress.js";
 import type { GatewayBrowserClient } from "../gateway.ts";
-import type { GatewaySessionRow } from "../types.ts";
+import type { ReadbackProgressProjection, GatewaySessionRow } from "../types.ts";
 
 export const WORKBOARD_STATUSES = [
   "triage",
@@ -314,6 +315,7 @@ export type WorkboardTaskSummary = {
   runId?: string;
   sourceId?: string;
   updatedAt?: number | string;
+  activeProgress?: ReadbackProgressProjection;
   progressSummary?: string;
   terminalSummary?: string;
   error?: string;
@@ -956,6 +958,7 @@ function normalizeTaskSummary(value: unknown): WorkboardTaskSummary | null {
   if (!id || !taskId || !status) {
     return null;
   }
+  const activeProgress = normalizeReadbackProgressProjection(value.activeProgress);
   return {
     id,
     taskId,
@@ -972,6 +975,7 @@ function normalizeTaskSummary(value: unknown): WorkboardTaskSummary | null {
     ...(typeof value.updatedAt === "number" || typeof value.updatedAt === "string"
       ? { updatedAt: value.updatedAt }
       : {}),
+    ...(activeProgress ? { activeProgress } : {}),
     ...(typeof value.progressSummary === "string"
       ? { progressSummary: value.progressSummary }
       : {}),

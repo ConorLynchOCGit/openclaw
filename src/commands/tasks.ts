@@ -17,7 +17,6 @@ import {
   type SessionEntry,
 } from "../config/sessions.js";
 import { loadCronJobsStoreSync, resolveCronJobsStorePath } from "../cron/store.js";
-import { resolveTaskActiveProgressCapsule } from "../gateway/task-active-progress.js";
 import {
   buildTasksListSummaryPayload,
   mapTaskSummary,
@@ -32,6 +31,7 @@ import {
   previewTaskFlowRegistryMaintenance,
   runTaskFlowRegistryMaintenance,
 } from "../tasks/task-flow-registry.maintenance.js";
+import { resolveTaskReadbackProgressProjection } from "../tasks/task-readback-progress.js";
 import {
   listTaskAuditFindings,
   summarizeRetainedLostTaskAuditFindings,
@@ -395,9 +395,9 @@ function formatAgeMs(ageMs: number | undefined): string {
   return `${totalSeconds}s`;
 }
 
-type TaskActiveProgress = NonNullable<ReturnType<typeof resolveTaskActiveProgressCapsule>>;
+type TaskReadbackProgress = NonNullable<ReturnType<typeof resolveTaskReadbackProgressProjection>>;
 
-function formatTaskActiveProgress(progress: TaskActiveProgress | undefined): string {
+function formatTaskReadbackProgress(progress: TaskReadbackProgress | undefined): string {
   if (!progress) {
     return "n/a";
   }
@@ -563,7 +563,7 @@ export async function tasksShowCommand(
     return;
   }
 
-  const activeProgress = resolveTaskActiveProgressCapsule(task);
+  const activeProgress = resolveTaskReadbackProgressProjection(task);
   if (opts.json) {
     runtime.log(JSON.stringify(mapTaskSummary(task), null, 2));
     return;
@@ -590,7 +590,7 @@ export async function tasksShowCommand(
     `endedAt: ${formatTaskTimestamp(task.endedAt)}`,
     `lastEventAt: ${formatTaskTimestamp(task.lastEventAt)}`,
     `cleanupAfter: ${formatTaskTimestamp(task.cleanupAfter)}`,
-    `activeProgress: ${formatTaskActiveProgress(activeProgress)}`,
+    `activeProgress: ${formatTaskReadbackProgress(activeProgress)}`,
     ...(task.error ? [`error: ${task.error}`] : []),
     ...(task.progressSummary ? [`progressSummary: ${task.progressSummary}`] : []),
     ...(task.terminalSummary ? [`terminalSummary: ${task.terminalSummary}`] : []),

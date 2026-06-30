@@ -102,7 +102,22 @@ describe("workboard controller", () => {
     } satisfies WorkboardCard;
     const client = createClient({
       "workboard.cards.list": { cards: [linked], statuses: ["todo", "done"] },
-      "tasks.list": { tasks: [sampleTask] },
+      "tasks.list": {
+        tasks: [
+          {
+            ...sampleTask,
+            activeProgress: {
+              source: "task-run-event",
+              ref: "task-event:task-1:2:progress",
+              currentPhase: "running",
+              activeLabel: "coding",
+              note: "Running Workboard parity proof",
+              derivedBy: "resolveTaskReadbackProgressProjection",
+              bounded: true,
+            },
+          },
+        ],
+      },
     });
 
     await loadWorkboard({ host, client: client as never, force: true });
@@ -113,6 +128,11 @@ describe("workboard controller", () => {
     expect(state.tasksByCardId.get("card-1")).toMatchObject({
       taskId: "task-1",
       status: "running",
+      activeProgress: {
+        source: "task-run-event",
+        note: "Running Workboard parity proof",
+        bounded: true,
+      },
     });
   });
 

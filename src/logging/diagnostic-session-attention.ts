@@ -2,6 +2,25 @@
 import type { DiagnosticSessionActiveWorkKind } from "../infra/diagnostic-events.js";
 import type { DiagnosticSessionActivitySnapshot } from "./diagnostic-run-activity.js";
 
+function isForegroundTaskToolName(toolName: string | undefined): boolean {
+  if (!toolName) {
+    return false;
+  }
+
+  const normalized = toolName.trim().toLowerCase();
+  return (
+    normalized === "task" ||
+    normalized === "tasks" ||
+    normalized === "task.create" ||
+    normalized === "tasks.create" ||
+    normalized === "openclaw.task" ||
+    normalized === "openclaw.tasks" ||
+    normalized.endsWith(".task") ||
+    normalized.endsWith("/task") ||
+    normalized.endsWith(":task")
+  );
+}
+
 export type SessionAttentionClassification =
   | {
       eventType: "session.long_running";
@@ -51,7 +70,7 @@ export function classifySessionAttention(params: {
     }
     if (
       params.activity.activeWorkKind === "tool_call" &&
-      params.activity.activeToolName === "task" &&
+      isForegroundTaskToolName(params.activity.activeToolName) &&
       (params.activity.activeToolAgeMs ?? 0) > params.staleMs &&
       (params.activity.lastProgressAgeMs ?? 0) > params.staleMs
     ) {

@@ -162,7 +162,7 @@ describe("tasks gateway handlers", () => {
     expect(payload?.task?.title).toBe("Done task");
   });
 
-  it("gets running tasks with active progress from task execution receipts", async () => {
+  it("gets running tasks with readback progress from task execution receipts", async () => {
     const childSessionKey = "agent:coding:subagent:progress-child";
     const startedAt = Date.UTC(2026, 5, 30, 18, 29, 0);
     const lastEventAt = Date.UTC(2026, 5, 30, 18, 30, 0);
@@ -201,7 +201,7 @@ describe("tasks gateway handlers", () => {
         ref: task.taskId,
         label: "task run receipt",
       },
-      derivedBy: "resolveTaskActiveProgressCapsule",
+      derivedBy: "resolveTaskReadbackProgressProjection",
       bounded: true,
     });
   });
@@ -276,7 +276,7 @@ describe("tasks gateway handlers", () => {
         ref: task.taskId,
         label: "task run receipt",
       },
-      derivedBy: "resolveTaskActiveProgressCapsule",
+      derivedBy: "resolveTaskReadbackProgressProjection",
       bounded: true,
     });
     expect(payload?.task?.activeProgress).not.toMatchObject({
@@ -317,7 +317,7 @@ describe("tasks gateway handlers", () => {
         ref: task.taskId,
         label: "task run receipt",
       },
-      derivedBy: "resolveTaskActiveProgressCapsule",
+      derivedBy: "resolveTaskReadbackProgressProjection",
       bounded: true,
     });
   });

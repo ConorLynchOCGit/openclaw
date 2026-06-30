@@ -3,6 +3,7 @@ export type UpdateAvailable = import("../../../src/infra/update-startup.js").Upd
 import type { SessionGoal } from "../../../src/config/sessions/types.js";
 import type { CronJobBase } from "../../../src/cron/types-shared.js";
 import type { ConfigUiHints } from "../../../src/shared/config-ui-hints-types.js";
+import type { ReadbackProgressProjection } from "../../../src/shared/readback-progress.js";
 import type {
   GatewayAgentRuntime,
   GatewayAgentRow as SharedGatewayAgentRow,
@@ -10,6 +11,7 @@ import type {
   SessionsPatchResultBase,
 } from "../../../src/shared/session-types.js";
 export type { ConfigUiHint, ConfigUiHints } from "../../../src/shared/config-ui-hints-types.js";
+export type { ReadbackProgressProjection } from "../../../src/shared/readback-progress.js";
 export type { SessionGoal } from "../../../src/config/sessions/types.js";
 
 export type ChannelsStatusSnapshot = {
@@ -404,27 +406,9 @@ export type ReadbackFieldProvenance = {
   bounded?: boolean;
   note?: string;
 };
-export type ActiveProgressCapsule = {
-  source: "trajectory" | "subagent-registry" | "task-run-event";
-  ref: string;
-  currentPhase?: string | null;
-  activeLabel?: string | null;
-  observedAt?: string | null;
-  elapsedMs?: number | null;
-  sourceEventType?: string;
-  sourceEventSeq?: number;
-  note?: string | null;
-  pointer?: {
-    kind: "artifact" | "inspect-next" | "session" | "task" | "trajectory";
-    ref: string;
-    label?: string;
-  };
-  derivedBy: string;
-  bounded: true;
-};
 export type SessionReadbackProvenance = {
   status?: ReadbackFieldProvenance;
-  activeProgress?: ActiveProgressCapsule;
+  activeProgress?: ReadbackProgressProjection;
   finalAssistantText?: ReadbackFieldProvenance;
 };
 export type SubagentRunState = "active" | "interrupted" | "historical";
@@ -470,7 +454,7 @@ export type GatewaySessionRow = {
   derivedTitle?: string;
   lastMessagePreview?: string;
   finalAssistantText?: string | null;
-  activeProgress?: ActiveProgressCapsule | null;
+  activeProgress?: ReadbackProgressProjection | null;
   readbackProvenance?: SessionReadbackProvenance;
   surface?: string;
   subject?: string;

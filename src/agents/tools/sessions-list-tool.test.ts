@@ -226,7 +226,7 @@ describe("sessions-list-tool", () => {
     expect(session?.responseUsage).toBe("full");
   });
 
-  it("keeps bounded active progress from gateway session rows", async () => {
+  it("keeps bounded readback progress from gateway session rows", async () => {
     mocks.gatewayCall.mockImplementation(async (opts: unknown) => {
       const request = opts as { method?: string };
       if (request.method === "sessions.list") {
@@ -251,7 +251,7 @@ describe("sessions-list-tool", () => {
                   kind: "artifact",
                   ref: ".openclaw/trajectory-exports/proof",
                 },
-                derivedBy: "readLatestTrajectoryProgressCapsule",
+                derivedBy: "readLatestTrajectoryProgressProjection",
                 bounded: true,
               },
               readbackProvenance: {
@@ -268,7 +268,7 @@ describe("sessions-list-tool", () => {
                     kind: "artifact",
                     ref: ".openclaw/trajectory-exports/proof",
                   },
-                  derivedBy: "readLatestTrajectoryProgressCapsule",
+                  derivedBy: "readLatestTrajectoryProgressProjection",
                   bounded: true,
                 },
               },
@@ -296,7 +296,7 @@ describe("sessions-list-tool", () => {
         kind: "artifact",
         ref: ".openclaw/trajectory-exports/proof",
       },
-      derivedBy: "readLatestTrajectoryProgressCapsule",
+      derivedBy: "readLatestTrajectoryProgressProjection",
       bounded: true,
     });
     expect(details.sessions?.[0]?.readbackProvenance?.activeProgress).toMatchObject({
@@ -312,7 +312,7 @@ describe("sessions-list-tool", () => {
         kind: "artifact",
         ref: ".openclaw/trajectory-exports/proof",
       },
-      derivedBy: "readLatestTrajectoryProgressCapsule",
+      derivedBy: "readLatestTrajectoryProgressProjection",
       bounded: true,
     });
   });

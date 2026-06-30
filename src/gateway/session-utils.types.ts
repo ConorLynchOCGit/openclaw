@@ -7,6 +7,7 @@ import type {
   SessionGoal,
 } from "../config/sessions/types.js";
 import type { PluginSessionExtensionProjection } from "../plugins/host-hooks.js";
+import type { ReadbackProgressProjection } from "../shared/readback-progress.js";
 import type {
   GatewayAgentRuntime,
   GatewayAgentRow as SharedGatewayAgentRow,
@@ -47,28 +48,11 @@ export type ReadbackFieldProvenance = {
   note?: string;
 };
 
-export type ActiveProgressCapsule = {
-  source: "trajectory" | "subagent-registry" | "task-run-event";
-  ref: string;
-  currentPhase?: string | null;
-  activeLabel?: string | null;
-  observedAt?: string | null;
-  elapsedMs?: number | null;
-  sourceEventType?: string;
-  sourceEventSeq?: number;
-  note?: string | null;
-  pointer?: {
-    kind: "artifact" | "inspect-next" | "session" | "task" | "trajectory";
-    ref: string;
-    label?: string;
-  };
-  derivedBy: string;
-  bounded: true;
-};
+export type { ReadbackProgressProjection };
 
 export type SessionReadbackProvenance = {
   status?: ReadbackFieldProvenance;
-  activeProgress?: ActiveProgressCapsule;
+  activeProgress?: ReadbackProgressProjection;
   finalAssistantText?: ReadbackFieldProvenance;
 };
 
@@ -92,7 +76,7 @@ export type GatewaySessionRow = {
   derivedTitle?: string;
   lastMessagePreview?: string;
   finalAssistantText?: string | null;
-  activeProgress?: ActiveProgressCapsule | null;
+  activeProgress?: ReadbackProgressProjection | null;
   readbackProvenance?: SessionReadbackProvenance;
   channel?: string;
   subject?: string;

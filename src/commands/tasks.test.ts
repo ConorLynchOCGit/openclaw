@@ -448,7 +448,7 @@ describe("tasks commands", () => {
     });
   });
 
-  it("shows active progress from a task execution receipt", async () => {
+  it("shows readback progress from a task execution receipt", async () => {
     await withTaskCommandStateDir(async () => {
       const task = createTaskRecord({
         runtime: "cli",
@@ -481,7 +481,7 @@ describe("tasks commands", () => {
     });
   });
 
-  it("includes active progress in task show JSON from task execution receipts", async () => {
+  it("includes readback progress in task show JSON from task execution receipts", async () => {
     await withTaskCommandStateDir(async () => {
       const task = createTaskRecord({
         runtime: "cli",

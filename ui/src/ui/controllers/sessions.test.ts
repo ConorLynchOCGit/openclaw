@@ -1385,7 +1385,7 @@ describe("applySessionsChangedEvent", () => {
       elapsedMs: 1250,
       sourceEventType: "tool.call",
       sourceEventSeq: 12,
-      derivedBy: "readLatestTrajectoryProgressCapsule",
+      derivedBy: "readLatestTrajectoryProgressProjection",
       bounded: true as const,
     };
     const readbackProvenance = {

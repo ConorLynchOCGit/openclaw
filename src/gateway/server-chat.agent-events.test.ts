@@ -2256,7 +2256,7 @@ describe("agent event handler", () => {
       sourceEventType: "tool.call",
       sourceEventSeq: 12,
       note: "running focused regression",
-      derivedBy: "readLatestTrajectoryProgressCapsule",
+      derivedBy: "readLatestTrajectoryProgressProjection",
       bounded: true as const,
     };
     const readbackProvenance = {

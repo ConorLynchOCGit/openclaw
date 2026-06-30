@@ -1083,7 +1083,7 @@ describe("gateway session utils", () => {
     const codingStorePath = path.join(dir, "coding", "sessions.json");
     fs.mkdirSync(path.dirname(codingStorePath), { recursive: true });
     const sessionId = "33333333-3333-4333-8333-333333333333";
-    const sessionKey = "agent:coding:phase0z-live-active-progress-readback-proof";
+    const sessionKey = "agent:coding:phase0z-live-readback-progress-proof";
     fs.writeFileSync(
       codingStorePath,
       JSON.stringify({ [sessionKey]: { sessionId, updatedAt: 2 } }),

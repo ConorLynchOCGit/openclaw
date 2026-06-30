@@ -1,5 +1,6 @@
 // Shared public task readback projection for gateway APIs and CLI JSON.
 import { type TaskSummary } from "../../packages/gateway-protocol/src/index.js";
+import { resolveTaskReadbackProgressProjection } from "../tasks/task-readback-progress.js";
 import { summarizeTaskRecords } from "../tasks/task-registry.summary.js";
 import type { TaskRecord, TaskStatus } from "../tasks/task-registry.types.js";
 import {
@@ -7,7 +8,6 @@ import {
   formatTaskStatusTitle,
   sanitizeTaskStatusText,
 } from "../tasks/task-status.js";
-import { resolveTaskActiveProgressCapsule } from "./task-active-progress.js";
 
 // Subagent completions use progressSummary as a requester-facing Context Pack
 // pointer/readback surface. Keep ordinary task status compact, but allow child
@@ -72,7 +72,7 @@ export function mapTaskSummary(
   });
   const terminalSummary = sanitizeOptionalTaskText(task.terminalSummary, { errorContext: true });
   const error = sanitizeOptionalTaskText(task.error, { errorContext: true });
-  const activeProgress = resolveTaskActiveProgressCapsule(task);
+  const activeProgress = resolveTaskReadbackProgressProjection(task);
   return {
     id: task.taskId,
     taskId: task.taskId,

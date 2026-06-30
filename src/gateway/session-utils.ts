@@ -99,7 +99,7 @@ import {
 } from "./session-store-key.js";
 import {
   readLastAssistantTextFromTranscriptWithProvenance,
-  readLatestTrajectoryProgressCapsule,
+  readLatestTrajectoryProgressProjection,
   readRecentSessionUsageFromTranscript,
   readSessionTitleFieldsFromTranscriptAsync,
   readSessionTitleFieldsFromTranscript,
@@ -119,7 +119,7 @@ export {
   capArrayByJsonBytes,
   readFirstUserMessageFromTranscript,
   readLastAssistantTextFromTranscript,
-  readLatestTrajectoryProgressCapsule,
+  readLatestTrajectoryProgressProjection,
   readLatestSessionUsageFromTranscriptAsync,
   readLatestRecentSessionUsageFromTranscriptAsync,
   readRecentSessionUsageFromTranscriptAsync,
@@ -2209,7 +2209,7 @@ export function buildGatewaySessionRow(params: {
     entry?.sessionId &&
     (rowStatus === "running" || liveSubagentRunActive || (!rowStatus && !entry.endedAt));
   if (shouldReadActiveTrajectoryProgress && entry?.sessionId) {
-    const activeProgress = readLatestTrajectoryProgressCapsule(
+    const activeProgress = readLatestTrajectoryProgressProjection(
       entry.sessionId,
       storePath,
       entry.sessionFile,

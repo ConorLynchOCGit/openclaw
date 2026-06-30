@@ -7,6 +7,7 @@ import type {
   TaskRunView,
 } from "../plugins/runtime/task-domain-types.js";
 import type { TaskFlowRecord } from "./task-flow-registry.types.js";
+import { resolveTaskReadbackProgressProjection } from "./task-readback-progress.js";
 import { summarizeTaskRecords } from "./task-registry.summary.js";
 import type { TaskRecord, TaskRegistrySummary } from "./task-registry.types.js";
 
@@ -23,6 +24,7 @@ export function mapTaskRunAggregateSummary(summary: TaskRegistrySummary): TaskRu
 }
 
 export function mapTaskRunView(task: TaskRecord): TaskRunView {
+  const activeProgress = resolveTaskReadbackProgressProjection(task);
   return {
     id: task.taskId,
     runtime: task.runtime,
@@ -46,6 +48,7 @@ export function mapTaskRunView(task: TaskRecord): TaskRunView {
     ...(task.lastEventAt !== undefined ? { lastEventAt: task.lastEventAt } : {}),
     ...(task.cleanupAfter !== undefined ? { cleanupAfter: task.cleanupAfter } : {}),
     ...(task.error ? { error: task.error } : {}),
+    ...(activeProgress ? { activeProgress } : {}),
     ...(task.progressSummary ? { progressSummary: task.progressSummary } : {}),
     ...(task.terminalSummary ? { terminalSummary: task.terminalSummary } : {}),
     ...(task.terminalOutcome ? { terminalOutcome: task.terminalOutcome } : {}),

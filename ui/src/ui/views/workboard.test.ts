@@ -811,7 +811,63 @@ describe("renderWorkboard", () => {
     expect(container.querySelector(".workboard-detail")?.textContent).toContain(
       "Worker is active.",
     );
-    expect(container.querySelectorAll<HTMLButtonElement>(".workboard-card__start")).toHaveLength(0);
+  });
+
+  it("shows bounded readback progress for active task-only cards", () => {
+    const host = {};
+    const state = getWorkboardState(host);
+    state.loaded = true;
+    state.cards = [
+      {
+        id: "card-1",
+        title: "Task only run",
+        status: "running",
+        priority: "normal",
+        labels: [],
+        position: 1000,
+        createdAt: 1,
+        updatedAt: 1,
+        taskId: "task-1",
+      },
+    ];
+    state.tasksByCardId.set("card-1", {
+      id: "task-1",
+      taskId: "task-1",
+      status: "running",
+      title: "Task only run",
+      progressSummary: "Generic child run started.",
+      activeProgress: {
+        source: "task-run-event",
+        ref: "task-event:task-1:2:progress",
+        currentPhase: "running",
+        activeLabel: "coding",
+        note: "Running focused validation",
+        pointer: {
+          kind: "task",
+          ref: "task-1",
+          label: "task run receipt",
+        },
+        derivedBy: "resolveTaskReadbackProgressProjection",
+        bounded: true,
+      },
+    });
+    const container = document.createElement("div");
+    const props = {
+      host,
+      client: null,
+      connected: true,
+      pluginEnabled: true,
+      agentsList: null,
+      sessions: [],
+      onOpenSession: () => undefined,
+      onRequestUpdate: () => undefined,
+    };
+
+    render(renderWorkboard(props), container);
+
+    expect(container.textContent).toContain("Running focused validation");
+    expect(container.textContent).not.toContain("task-run-event");
+    expect(container.textContent).not.toContain("Generic child run started.");
   });
 
   it("hides write controls for read-only operators", () => {

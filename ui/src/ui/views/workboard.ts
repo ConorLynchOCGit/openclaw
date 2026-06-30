@@ -1064,7 +1064,15 @@ function formatLifecycle(lifecycle: WorkboardLifecycle): {
 
 function taskDetail(task: WorkboardTaskSummary): string {
   if (task.status === "queued" || task.status === "running") {
-    return task.progressSummary ?? task.title ?? task.taskId;
+    const activeProgress = task.activeProgress;
+    const activeParts = activeProgress
+      ? [activeProgress.note, activeProgress.currentPhase, activeProgress.activeLabel].filter(
+          (part): part is string => typeof part === "string" && part.trim().length > 0,
+        )
+      : [];
+    return activeParts.length > 0
+      ? activeParts.join(" ")
+      : (task.progressSummary ?? task.title ?? task.taskId);
   }
   return task.terminalSummary ?? task.error ?? task.progressSummary ?? task.title ?? task.taskId;
 }

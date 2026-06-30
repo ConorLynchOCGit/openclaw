@@ -135,6 +135,45 @@ describe("task domain view mappers", () => {
     });
   });
 
+  it("projects bounded readback progress onto active task run views", () => {
+    const task = makeTask({
+      taskId: "task-progress",
+      agentId: "coding",
+      runId: "run-progress",
+      label: "phase0z",
+      startedAt: 100,
+      lastEventAt: 150,
+      progressSummary: "Inspecting shared task projections",
+      executionReceipt: {
+        schema: "openclaw.task.execution_receipt.v1",
+        latestEvent: {
+          at: 150,
+          kind: "progress",
+          summary: "Inspecting shared task projections",
+        },
+        eventCount: 2,
+        updatedAt: 150,
+      },
+    });
+
+    expect(mapTaskRunView(task).activeProgress).toMatchObject({
+      source: "task-run-event",
+      ref: "task-event:task-progress:150:progress",
+      currentPhase: "running",
+      activeLabel: "phase0z",
+      observedAt: "1970-01-01T00:00:00.150Z",
+      sourceEventType: "task.progress",
+      note: "Inspecting shared task projections",
+      pointer: {
+        kind: "task",
+        ref: "task-progress",
+        label: "task run receipt",
+      },
+      derivedBy: "resolveTaskReadbackProgressProjection",
+      bounded: true,
+    });
+  });
+
   it("keeps task run detail aligned with the task run view shape", () => {
     const task = makeTask({ taskId: "task-detail", runId: "run-detail" });
 

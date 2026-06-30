@@ -367,7 +367,7 @@ test("sessions.list ignores hidden internal abortable runs", async () => {
   );
 });
 
-test("sessions.list exposes bounded active progress capsule from trajectory evidence", async () => {
+test("sessions.list exposes bounded readback progress projection from trajectory evidence", async () => {
   const { dir } = await createSessionStoreDir();
   await writeSessionStore({
     entries: {
@@ -402,7 +402,7 @@ test("sessions.list exposes bounded active progress capsule from trajectory evid
   );
 
   const { respond } = await invokeSessionsList({
-    requestId: "req-sessions-list-active-progress",
+    requestId: "req-sessions-list-readback-progress",
   });
   const payload = expectRespondPayload(respond);
   const session = findSession(payload, "agent:main:main");
@@ -420,7 +420,7 @@ test("sessions.list exposes bounded active progress capsule from trajectory evid
       kind: "inspect-next",
       ref: "openclaw sessions tail --session-key agent:main:main",
     },
-    derivedBy: "readLatestTrajectoryProgressCapsule",
+    derivedBy: "readLatestTrajectoryProgressProjection",
     bounded: true,
   });
 });

@@ -122,6 +122,40 @@ describe("classifySessionAttention", () => {
       },
     },
     {
+      name: "namespaced foreground task wait is long-running instead of blocked",
+      queueDepth: 0,
+      activity: {
+        activeWorkKind: "tool_call" as const,
+        activeToolName: "openclaw.task",
+        activeToolAgeMs: 31_000,
+        lastProgressAgeMs: 31_000,
+      },
+      expected: {
+        eventType: "session.long_running",
+        reason: "foreground_task_wait",
+        classification: "long_running",
+        activeWorkKind: "tool_call",
+        recoveryEligible: false,
+      },
+    },
+    {
+      name: "scoped foreground task wait is long-running instead of blocked",
+      queueDepth: 0,
+      activity: {
+        activeWorkKind: "tool_call" as const,
+        activeToolName: "tools/task",
+        activeToolAgeMs: 31_000,
+        lastProgressAgeMs: 31_000,
+      },
+      expected: {
+        eventType: "session.long_running",
+        reason: "foreground_task_wait",
+        classification: "long_running",
+        activeWorkKind: "tool_call",
+        recoveryEligible: false,
+      },
+    },
+    {
       name: "idle queued stale model activity without active embedded run",
       state: "idle" as const,
       queueDepth: 1,

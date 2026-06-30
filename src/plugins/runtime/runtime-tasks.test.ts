@@ -113,6 +113,20 @@ describe("runtime tasks", () => {
     expect(flowTask.title).toBe("Review PR 1");
     expect(flowTask.label).toBe("Inbox triage");
     expect(flowTask.runId).toBe("runtime-task-run");
+    expect(flowTask.activeProgress).toMatchObject({
+      source: "task-run-event",
+      currentPhase: "running",
+      activeLabel: "Inbox triage",
+      sourceEventType: "task.running",
+      note: "Inspecting",
+      pointer: {
+        kind: "task",
+        ref: child.task.taskId,
+        label: "task run receipt",
+      },
+      derivedBy: "resolveTaskReadbackProgressProjection",
+      bounded: true,
+    });
 
     const listedRun = requireRecordById(taskRuns.list(), child.task.taskId);
     expect(listedRun.flowId).toBe(created.flowId);
@@ -124,6 +138,13 @@ describe("runtime tasks", () => {
     expect(taskRun.flowId).toBe(created.flowId);
     expect(taskRun.title).toBe("Review PR 1");
     expect(taskRun.progressSummary).toBe("Inspecting");
+    expect(taskRun.activeProgress).toMatchObject({
+      source: "task-run-event",
+      currentPhase: "running",
+      activeLabel: "Inbox triage",
+      sourceEventType: "task.running",
+      note: "Inspecting",
+    });
     expect(taskRuns.findLatest()?.id).toBe(child.task.taskId);
     expect(taskRuns.resolve("runtime-task-run")?.id).toBe(child.task.taskId);
     const summary = requireRecord(taskFlows.getTaskSummary(created.flowId));
