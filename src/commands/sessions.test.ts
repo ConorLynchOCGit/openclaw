@@ -573,6 +573,113 @@ describe("sessionsCommand", () => {
     );
   });
 
+  it("exposes active trajectory progress when session status projection is missing", async () => {
+    const sessionId = "55555555-5555-4555-8555-555555555555";
+    const sessionKey = "agent:codebase-researcher:subagent:missing-status";
+    const store = writeStore(
+      {
+        [sessionKey]: {
+          sessionId,
+          updatedAt: Date.now() - 45 * 60_000,
+          startedAt: Date.now() - 50 * 60_000,
+          modelProvider: "openai",
+          model: "gpt-5.4-mini",
+        },
+      },
+      "sessions-show-active-progress-missing-status",
+    );
+    const trajectory = path.join(path.dirname(store), `${sessionId}.trajectory.jsonl`);
+    fs.writeFileSync(
+      trajectory,
+      [
+        JSON.stringify({
+          traceSchema: "openclaw-trajectory",
+          schemaVersion: 1,
+          traceId: sessionId,
+          source: "runtime",
+          type: "session.started",
+          ts: "2026-06-30T19:40:00.000Z",
+          seq: 1,
+          sessionId,
+          sessionKey,
+        }),
+        JSON.stringify({
+          traceSchema: "openclaw-trajectory",
+          schemaVersion: 1,
+          traceId: sessionId,
+          source: "runtime",
+          type: "tool.call",
+          ts: "2026-06-30T19:45:00.000Z",
+          seq: 9,
+          sourceSeq: 15,
+          sessionId,
+          sessionKey,
+          data: {
+            name: "read",
+            phase: "source-inspection",
+            elapsedMs: 1500,
+            summary: "reading event-spine owner files",
+          },
+        }),
+      ].join("\n"),
+    );
+
+    const { runtime, logs } = makeRuntime();
+    try {
+      await sessionsShowCommand(
+        {
+          store,
+          sessionKey,
+          json: true,
+          agent: "codebase-researcher",
+        },
+        runtime,
+      );
+    } finally {
+      fs.rmSync(store, { force: true });
+      fs.rmSync(trajectory, { force: true });
+    }
+
+    const payload = JSON.parse(logs[0] ?? "{}") as {
+      activeProgress?: {
+        source?: string;
+        currentPhase?: string;
+        activeLabel?: string;
+        sourceEventType?: string;
+        sourceEventSeq?: number;
+        bounded?: boolean;
+      } | null;
+      session?: {
+        status?: string;
+        activeProgress?: {
+          source?: string;
+          currentPhase?: string;
+          activeLabel?: string;
+          sourceEventType?: string;
+          sourceEventSeq?: number;
+          bounded?: boolean;
+        } | null;
+      };
+    };
+    expect(payload.session?.status).toBeUndefined();
+    expect(payload.activeProgress).toMatchObject({
+      source: "trajectory",
+      currentPhase: "source-inspection",
+      activeLabel: "read",
+      sourceEventType: "tool.call",
+      sourceEventSeq: 15,
+      bounded: true,
+    });
+    expect(payload.session?.activeProgress).toMatchObject({
+      source: "trajectory",
+      currentPhase: "source-inspection",
+      activeLabel: "read",
+      sourceEventType: "tool.call",
+      sourceEventSeq: 15,
+      bounded: true,
+    });
+  });
+
   it("shows a session by session id alias while preserving canonical key", async () => {
     const sessionId = "55555555-5555-4555-9555-555555555555";
     const sessionKey = "agent:coding:phase0z-live-active-progress-readback-proof";

@@ -240,6 +240,78 @@ describe("tasks gateway handlers", () => {
     });
   });
 
+  it("gets active progress when a running task links to a session with missing status", async () => {
+    const sessionId = "gateway-task-progress-missing-status-child";
+    const childSessionKey = "agent:codebase-researcher:subagent:progress-child";
+    const sessionsDir = path.join(stateDir, "agents", "codebase-researcher", "sessions");
+    await fs.mkdir(sessionsDir, { recursive: true });
+    await fs.writeFile(
+      path.join(sessionsDir, "sessions.json"),
+      JSON.stringify(
+        {
+          [childSessionKey]: {
+            sessionId,
+            updatedAt: Date.now() - 60_000,
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(sessionsDir, `${sessionId}.trajectory.jsonl`),
+      `${JSON.stringify({
+        traceSchema: "openclaw-trajectory",
+        schemaVersion: 1,
+        traceId: sessionId,
+        source: "runtime",
+        type: "tool.call",
+        ts: "2026-06-30T19:45:00.000Z",
+        seq: 9,
+        sourceSeq: 15,
+        sessionId,
+        sessionKey: childSessionKey,
+        data: {
+          name: "read",
+          phase: "source-inspection",
+          elapsedMs: 1500,
+          summary: "reading event-spine owner files",
+        },
+      })}\n`,
+      "utf8",
+    );
+    const task = createTaskRecord({
+      runtime: "subagent",
+      taskKind: "source-scout",
+      requesterSessionKey: "agent:main:phase0z",
+      ownerKey: "agent:main:phase0z",
+      scopeKind: "session",
+      childSessionKey,
+      agentId: "codebase-researcher",
+      runId: "run-gateway-task-progress-missing-status",
+      task: "Inspect event-spine owner files",
+      status: "running",
+      deliveryStatus: "pending",
+    });
+
+    const { payload } = await getTaskPayload(task.taskId);
+
+    expect(payload?.task?.activeProgress).toMatchObject({
+      source: "trajectory",
+      ref: `session:${sessionId}`,
+      currentPhase: "source-inspection",
+      activeLabel: "read",
+      observedAt: "2026-06-30T19:45:00.000Z",
+      elapsedMs: 1500,
+      sourceEventType: "tool.call",
+      sourceEventSeq: 15,
+      note: "reading event-spine owner files",
+      derivedBy: "readLatestTrajectoryProgressCapsule",
+      bounded: true,
+    });
+  });
+
   it("keeps child task summaries as pointers instead of child result projections", async () => {
     addSubagentRunForTests({
       runId: "run-child-result",

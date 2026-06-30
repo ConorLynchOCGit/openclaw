@@ -2205,7 +2205,10 @@ export function buildGatewaySessionRow(params: {
       },
     };
   }
-  if (rowStatus === "running" && entry?.sessionId) {
+  const shouldReadActiveTrajectoryProgress =
+    entry?.sessionId &&
+    (rowStatus === "running" || liveSubagentRunActive || (!rowStatus && !entry.endedAt));
+  if (shouldReadActiveTrajectoryProgress && entry?.sessionId) {
     const activeProgress = readLatestTrajectoryProgressCapsule(
       entry.sessionId,
       storePath,
