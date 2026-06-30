@@ -370,6 +370,28 @@ export function parseDoctorPostUpgradeRouteArgs(argv: string[]) {
   };
 }
 
+/** Parse JSON-only `openclaw doctor --promotion-readiness` bundled readiness output. */
+export function parseDoctorPromotionReadinessRouteArgs(argv: string[]) {
+  if (
+    !hasFlag(argv, "--json") ||
+    !hasFlag(argv, "--promotion-readiness") ||
+    hasFlag(argv, "--lint") ||
+    hasFlag(argv, "--post-upgrade")
+  ) {
+    return null;
+  }
+  const positionals = getCommandPositionalsWithRootOptions(argv, {
+    commandPath: ["doctor"],
+    booleanFlags: ["--json", "--promotion-readiness", "--no-workspace-suggestions"],
+  });
+  if (!positionals || positionals.length !== 0) {
+    return null;
+  }
+  return {
+    json: true as const,
+  };
+}
+
 /** Parse JSON-only `openclaw exec-policy show` for route-first readiness output. */
 export function parseExecPolicyShowRouteArgs(argv: string[]) {
   if (!hasFlag(argv, "--json")) {

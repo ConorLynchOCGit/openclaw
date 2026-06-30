@@ -10,6 +10,7 @@ import {
   parseConfigUnsetRouteArgs,
   parseDoctorLintRouteArgs,
   parseDoctorPostUpgradeRouteArgs,
+  parseDoctorPromotionReadinessRouteArgs,
   parseExecPolicyShowRouteArgs,
   parseGatewayStatusRouteArgs,
   parseHealthRouteArgs,
@@ -220,6 +221,13 @@ export const routedCommandDefinitions = {
       const report = await runPostUpgradeProbes({});
       writeRuntimeJson(defaultRuntime, report);
       process.exitCode = report.findings.some((finding) => finding.level === "error") ? 1 : 0;
+    },
+  }),
+  "doctor-promotion-readiness": defineRoutedCommand({
+    parseArgs: parseDoctorPromotionReadinessRouteArgs,
+    runParsedArgs: async () => {
+      const { runPromotionReadinessCli } = await import("../../commands/promotion-readiness.js");
+      await runPromotionReadinessCli(defaultRuntime);
     },
   }),
   "exec-policy-show": defineRoutedCommand({

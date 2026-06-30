@@ -45,6 +45,9 @@ type EffectivePolicyReport = {
   scopes: ExecPolicyScopeSnapshot[];
   note?: string;
 };
+export type ExecApprovalsGetPayload = ExecApprovalsSnapshot & {
+  effectivePolicy: EffectivePolicyReport;
+};
 const APPROVALS_GET_DEFAULT_TIMEOUT_MS = 60_000;
 const EXEC_APPROVALS_STDIN_MAX_BYTES = 1024 * 1024;
 
@@ -375,16 +378,9 @@ function renderApprovalsSnapshot(snapshot: ExecApprovalsSnapshot, targetLabel: s
 /** Runs the read-only approvals get command through the shared implementation. */
 export async function runExecApprovalsGetCommand(opts: ExecApprovalsCliOpts): Promise<void> {
   try {
-    const { snapshot, nodeId, source } = await loadSnapshotTarget(opts);
-    const configLoad = await loadConfigForApprovalsTarget({ opts, source });
-    const effectivePolicy = buildEffectivePolicyReport({
-      configLoad,
-      source,
-      approvals: snapshot.file,
-      hostPath: snapshot.path,
-    });
+    const { payload, nodeId, source } = await buildExecApprovalsGetPayload(opts);
     if (opts.json) {
-      defaultRuntime.writeJson({ ...snapshot, effectivePolicy }, 0);
+      defaultRuntime.writeJson(payload, 0);
       return;
     }
 
@@ -394,12 +390,33 @@ export async function runExecApprovalsGetCommand(opts: ExecApprovalsCliOpts): Pr
       defaultRuntime.log("");
     }
     const targetLabel = source === "local" ? "local" : nodeId ? `node:${nodeId}` : "gateway";
-    renderApprovalsSnapshot(snapshot, targetLabel);
-    renderEffectivePolicy({ report: effectivePolicy });
+    renderApprovalsSnapshot(payload, targetLabel);
+    renderEffectivePolicy({ report: payload.effectivePolicy });
   } catch (err) {
     defaultRuntime.error(formatCliError(err));
     defaultRuntime.exit(1);
   }
+}
+
+/** Build approvals readback output without writing terminal output. */
+export async function buildExecApprovalsGetPayload(opts: ExecApprovalsCliOpts): Promise<{
+  payload: ExecApprovalsGetPayload;
+  nodeId: string | null;
+  source: ApprovalsTargetSource;
+}> {
+  const { snapshot, nodeId, source } = await loadSnapshotTarget(opts);
+  const configLoad = await loadConfigForApprovalsTarget({ opts, source });
+  const effectivePolicy = buildEffectivePolicyReport({
+    configLoad,
+    source,
+    approvals: snapshot.file,
+    hostPath: snapshot.path,
+  });
+  return {
+    payload: { ...snapshot, effectivePolicy },
+    nodeId,
+    source,
+  };
 }
 
 async function saveSnapshot(

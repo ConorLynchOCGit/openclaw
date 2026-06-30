@@ -33,6 +33,7 @@ type CliRoutedCommandId =
   | "plugins-list"
   | "doctor-lint"
   | "doctor-post-upgrade"
+  | "doctor-promotion-readiness"
   | "exec-policy-show"
   | "approvals-get";
 
@@ -315,6 +316,17 @@ export const cliCommandCatalog: readonly CliCommandCatalogEntry[] = [
       networkProxy: "bypass",
     },
     route: { id: "doctor-post-upgrade" },
+  },
+  {
+    commandPath: ["doctor"],
+    exact: true,
+    policy: {
+      bypassConfigGuard: true,
+      loadPlugins: "never",
+      ensureCliPath: false,
+      networkProxy: "bypass",
+    },
+    route: { id: "doctor-promotion-readiness" },
   },
   { commandPath: ["exec-policy"], policy: { networkProxy: "bypass" } },
   {

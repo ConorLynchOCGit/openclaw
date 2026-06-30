@@ -79,9 +79,32 @@ export async function agentsListCommand(
   opts: AgentsListOptions,
   runtime: RuntimeEnv = defaultRuntime,
 ) {
+  const summaries = await buildAgentsListPayload(opts, runtime);
+  if (summaries === null) {
+    return;
+  }
+
+  if (opts.json) {
+    writeRuntimeJson(runtime, summaries);
+    return;
+  }
+
+  const lines = ["Agents:", ...summaries.map(formatSummary)];
+  lines.push("Routing rules map channel/account/peer to an agent. Use --bindings for full rules.");
+  lines.push(
+    `Channel status reflects local config/creds. For live health: ${formatCliCommand("openclaw channels status --probe")}.`,
+  );
+  runtime.log(lines.join("\n"));
+}
+
+/** Build configured agent summaries without writing terminal output. */
+export async function buildAgentsListPayload(
+  opts: AgentsListOptions,
+  runtime: RuntimeEnv = defaultRuntime,
+): Promise<AgentSummary[] | null> {
   const cfg = await requireValidConfig(runtime);
   if (!cfg) {
-    return;
+    return null;
   }
 
   const summaries = buildAgentSummaries(cfg);
@@ -135,15 +158,5 @@ export async function agentsListCommand(
     }
   }
 
-  if (opts.json) {
-    writeRuntimeJson(runtime, summaries);
-    return;
-  }
-
-  const lines = ["Agents:", ...summaries.map(formatSummary)];
-  lines.push("Routing rules map channel/account/peer to an agent. Use --bindings for full rules.");
-  lines.push(
-    `Channel status reflects local config/creds. For live health: ${formatCliCommand("openclaw channels status --probe")}.`,
-  );
-  runtime.log(lines.join("\n"));
+  return summaries;
 }

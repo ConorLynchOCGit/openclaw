@@ -20,6 +20,7 @@ const runDoctorLintCliMock = vi.hoisted(() => vi.fn(async () => 0));
 const runPostUpgradeProbesMock = vi.hoisted(() =>
   vi.fn(async () => ({ probesRun: ["plugin.index_unavailable"], findings: [] })),
 );
+const runPromotionReadinessCliMock = vi.hoisted(() => vi.fn(async () => {}));
 const runExecPolicyShowCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 const runExecApprovalsGetCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 const pluginsCliLoadedMock = vi.hoisted(() => vi.fn());
@@ -76,6 +77,10 @@ vi.mock("../../commands/doctor-lint.js", () => ({
 
 vi.mock("../../commands/doctor-post-upgrade.js", () => ({
   runPostUpgradeProbes: runPostUpgradeProbesMock,
+}));
+
+vi.mock("../../commands/promotion-readiness.js", () => ({
+  runPromotionReadinessCli: runPromotionReadinessCliMock,
 }));
 
 vi.mock("../exec-policy-cli.js", () => ({
@@ -250,12 +255,33 @@ describe("program routes", () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it("routes doctor promotion-readiness JSON through the native bundled command", async () => {
+    const argv = [
+      "node",
+      "openclaw",
+      "doctor",
+      "--promotion-readiness",
+      "--json",
+      "--no-workspace-suggestions",
+    ];
+    const route = expectRoute(["doctor"], argv);
+    expect(route.loadPlugins).toBeUndefined();
+    await expect(route.run(argv)).resolves.toBe(true);
+
+    expect(runPromotionReadinessCliMock).toHaveBeenCalledWith(defaultRuntime);
+  });
+
   it("returns false for unsupported doctor readiness route shapes", async () => {
     await expectRunFalse(["doctor"], ["node", "openclaw", "doctor", "--lint"]);
     await expectRunFalse(["doctor"], ["node", "openclaw", "doctor", "--json"]);
+    await expectRunFalse(["doctor"], ["node", "openclaw", "doctor", "--promotion-readiness"]);
     await expectRunFalse(
       ["doctor"],
       ["node", "openclaw", "doctor", "--lint", "--post-upgrade", "--json"],
+    );
+    await expectRunFalse(
+      ["doctor"],
+      ["node", "openclaw", "doctor", "--lint", "--promotion-readiness", "--json"],
     );
     await expectRunFalse(
       ["doctor"],

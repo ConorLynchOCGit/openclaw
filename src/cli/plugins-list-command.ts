@@ -42,24 +42,8 @@ export async function runPluginsListCommand(
   opts: PluginsListOptions,
   runtime: RuntimeEnv = defaultRuntime,
 ): Promise<void> {
-  const { buildPluginRegistrySnapshotReport } = await import("../plugins/status-snapshot.js");
-  const cfg = getRuntimeConfig();
-  const report = buildPluginRegistrySnapshotReport({
-    config: cfg,
-    ...(opts.json ? { logger: quietPluginJsonLogger } : {}),
-  });
-  const list = opts.enabled ? report.plugins.filter((p) => p.enabled) : report.plugins;
-
+  const { report, list, payload } = await buildPluginsListPayload(opts);
   if (opts.json) {
-    const payload = {
-      workspaceDir: report.workspaceDir,
-      registry: {
-        source: report.registrySource,
-        diagnostics: report.registryDiagnostics,
-      },
-      plugins: list,
-      diagnostics: report.diagnostics,
-    };
     writeRuntimeJson(runtime, payload);
     return;
   }
@@ -152,4 +136,28 @@ export async function runPluginsListCommand(
     lines.push("");
   }
   runtime.log(lines.join("\n").trim());
+}
+
+/** Build installed plugin discovery state for JSON callers without writing output. */
+export async function buildPluginsListPayload(opts: PluginsListOptions) {
+  const { buildPluginRegistrySnapshotReport } = await import("../plugins/status-snapshot.js");
+  const cfg = getRuntimeConfig();
+  const report = buildPluginRegistrySnapshotReport({
+    config: cfg,
+    ...(opts.json ? { logger: quietPluginJsonLogger } : {}),
+  });
+  const list = opts.enabled ? report.plugins.filter((p) => p.enabled) : report.plugins;
+  return {
+    report,
+    list,
+    payload: {
+      workspaceDir: report.workspaceDir,
+      registry: {
+        source: report.registrySource,
+        diagnostics: report.registryDiagnostics,
+      },
+      plugins: list,
+      diagnostics: report.diagnostics,
+    },
+  };
 }

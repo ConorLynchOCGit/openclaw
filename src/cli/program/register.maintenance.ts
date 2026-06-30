@@ -34,7 +34,16 @@ export function registerMaintenanceCommands(program: Command) {
       "Emit plugin-compat findings only (machine-readable with --json)",
       false,
     )
-    .option("--json", "With --lint or --post-upgrade: emit machine-readable JSON output", false)
+    .option(
+      "--promotion-readiness",
+      "Emit bundled promotion-readiness checks only (machine-readable with --json)",
+      false,
+    )
+    .option(
+      "--json",
+      "With --lint, --post-upgrade, or --promotion-readiness: emit machine-readable JSON output",
+      false,
+    )
     .option(
       "--severity-min <level>",
       "With --lint: drop findings below this severity (info|warning|error)",
@@ -52,6 +61,33 @@ export function registerMaintenanceCommands(program: Command) {
       [],
     )
     .action(async (opts) => {
+      if (opts.promotionReadiness === true) {
+        if (opts.lint === true || opts.postUpgrade === true) {
+          defaultRuntime.error(
+            "doctor --promotion-readiness cannot be combined with --lint or --post-upgrade.",
+          );
+          defaultRuntime.exit(2);
+          return;
+        }
+        if (opts.json !== true) {
+          defaultRuntime.error("doctor --promotion-readiness requires --json.");
+          defaultRuntime.exit(2);
+          return;
+        }
+        await runCommandWithRuntime(
+          defaultRuntime,
+          async () => {
+            const { runPromotionReadinessCli } =
+              await import("../../commands/promotion-readiness.js");
+            await runPromotionReadinessCli(defaultRuntime);
+          },
+          (err) => {
+            defaultRuntime.error(String(err));
+            defaultRuntime.exit(2);
+          },
+        );
+        return;
+      }
       if (opts.lint === true) {
         await runCommandWithRuntime(
           defaultRuntime,
@@ -178,12 +214,13 @@ export function registerMaintenanceCommands(program: Command) {
 function hasLintOnlyDoctorOptions(opts: {
   readonly json?: boolean;
   readonly postUpgrade?: boolean;
+  readonly promotionReadiness?: boolean;
   readonly severityMin?: unknown;
   readonly skip?: unknown;
   readonly only?: unknown;
 }): boolean {
   return (
-    (opts.json === true && opts.postUpgrade !== true) ||
+    (opts.json === true && opts.postUpgrade !== true && opts.promotionReadiness !== true) ||
     typeof opts.severityMin === "string" ||
     (Array.isArray(opts.skip) && opts.skip.length > 0) ||
     (Array.isArray(opts.only) && opts.only.length > 0)

@@ -235,7 +235,7 @@ function buildNextExecPolicyConfig(
   return draft;
 }
 
-async function buildLocalExecPolicyShowPayload(): Promise<ExecPolicyShowPayload> {
+export async function buildLocalExecPolicyShowPayload(): Promise<ExecPolicyShowPayload> {
   const configSnapshot = await readConfigFileSnapshot();
   const approvalsSnapshot = readExecApprovalsSnapshot();
   const scopes = collectExecPolicyScopeSnapshots({

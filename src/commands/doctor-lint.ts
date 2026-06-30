@@ -27,6 +27,13 @@ export interface DoctorLintCliOptions {
   readonly allowExec?: boolean;
 }
 
+export type DoctorLintJsonResult = {
+  ok: boolean;
+  checksRun: number;
+  checksSkipped: number;
+  findings: Record<string, unknown>[];
+};
+
 function detectMode(opts: DoctorLintCliOptions): "human" | "json" {
   if (opts.json === true) {
     return "json";
@@ -34,16 +41,11 @@ function detectMode(opts: DoctorLintCliOptions): "human" | "json" {
   return process.stdout.isTTY ? "human" : "json";
 }
 
-/**
- * Runs registered doctor health checks in human or JSON mode and returns the lint exit code.
- *
- * Invalid config is reported before regular health checks because most checks need a parsed config
- * and workspace root.
- */
-export async function runDoctorLintCli(
+/** Build the machine-readable doctor lint payload without writing to stdout. */
+export async function buildDoctorLintJsonResult(
   runtime: RuntimeEnv,
   opts: DoctorLintCliOptions,
-): Promise<number> {
+): Promise<{ payload: DoctorLintJsonResult; exitCode: number; visibleFindings: HealthFinding[] }> {
   registerCoreHealthChecks();
 
   const sevMin =
@@ -55,21 +57,17 @@ export async function runDoctorLintCli(
   if (snapshot.exists && !snapshot.valid) {
     const findings = configValidationIssuesToHealthFindings(snapshot.issues);
     const visible = findings.filter((finding) => healthFindingMeetsSeverity(finding, sevMin));
-    if (detectMode(opts) === "json") {
-      writeJsonResult({
+    const exitCode = exitCodeFromFindings(findings, sevMin);
+    return {
+      payload: {
         ok: false,
         checksRun: 1,
         checksSkipped: 0,
-        findings: visible,
-      });
-    } else {
-      runtime.error("doctor --lint: config file exists but does not parse cleanly.");
-      for (const issue of snapshot.issues) {
-        const path = issue.path || "<root>";
-        runtime.error(`- ${path}: ${issue.message}`);
-      }
-    }
-    return exitCodeFromFindings(findings, sevMin);
+        findings: visible.map(toJsonFinding),
+      },
+      exitCode,
+      visibleFindings: visible,
+    };
   }
 
   const ctx: HealthCheckContext = {
@@ -88,50 +86,66 @@ export async function runDoctorLintCli(
   };
   const result = await runDoctorLintChecks(ctx, runOpts);
   const visible = result.findings.filter((finding) => healthFindingMeetsSeverity(finding, sevMin));
-
-  const mode = detectMode(opts);
-  if (mode === "json") {
-    writeJsonResult({
-      ok: exitCodeFromFindings(result.findings, sevMin) === 0,
+  const exitCode = exitCodeFromFindings(result.findings, sevMin);
+  return {
+    payload: {
+      ok: exitCode === 0,
       checksRun: result.checksRun,
       checksSkipped: result.checksSkipped,
-      findings: visible,
-    });
+      findings: visible.map(toJsonFinding),
+    },
+    exitCode,
+    visibleFindings: visible,
+  };
+}
+
+/**
+ * Runs registered doctor health checks in human or JSON mode and returns the lint exit code.
+ *
+ * Invalid config is reported before regular health checks because most checks need a parsed config
+ * and workspace root.
+ */
+export async function runDoctorLintCli(
+  runtime: RuntimeEnv,
+  opts: DoctorLintCliOptions,
+): Promise<number> {
+  const result = await buildDoctorLintJsonResult(runtime, opts);
+  if (detectMode(opts) === "json") {
+    writeJsonResult(result.payload);
+    return result.exitCode;
+  }
+
+  const snapshot = await readConfigFileSnapshot({ observe: false });
+  if (snapshot.exists && !snapshot.valid) {
+    runtime.error("doctor --lint: config file exists but does not parse cleanly.");
+    for (const issue of snapshot.issues) {
+      const path = issue.path || "<root>";
+      runtime.error(`- ${path}: ${issue.message}`);
+    }
+    return result.exitCode;
+  }
+
+  process.stdout.write(
+    `doctor --lint: ran ${result.payload.checksRun} check(s), ${result.visibleFindings.length} finding(s)\n`,
+  );
+  if (result.visibleFindings.length === 0) {
+    process.stdout.write("  no findings\n");
   } else {
-    process.stdout.write(
-      `doctor --lint: ran ${result.checksRun} check(s), ${visible.length} finding(s)\n`,
-    );
-    if (visible.length === 0) {
-      process.stdout.write("  no findings\n");
-    } else {
-      for (const f of visible) {
-        const where = f.path !== undefined ? ` ${f.path}` : "";
-        const line = f.line !== undefined ? `:${f.line}` : "";
-        process.stdout.write(`  [${f.severity}] ${f.checkId}${where}${line} - ${f.message}\n`);
-        if (f.fixHint !== undefined) {
-          process.stdout.write(`    fix: ${f.fixHint}\n`);
-        }
+    for (const f of result.visibleFindings) {
+      const where = f.path !== undefined ? ` ${f.path}` : "";
+      const line = f.line !== undefined ? `:${f.line}` : "";
+      process.stdout.write(`  [${f.severity}] ${f.checkId}${where}${line} - ${f.message}\n`);
+      if (f.fixHint !== undefined) {
+        process.stdout.write(`    fix: ${f.fixHint}\n`);
       }
     }
   }
 
-  return exitCodeFromFindings(result.findings, sevMin);
+  return result.exitCode;
 }
 
-function writeJsonResult(result: {
-  ok: boolean;
-  checksRun: number;
-  checksSkipped: number;
-  findings: readonly HealthFinding[];
-}): void {
-  process.stdout.write(
-    JSON.stringify({
-      ok: result.ok,
-      checksRun: result.checksRun,
-      checksSkipped: result.checksSkipped,
-      findings: result.findings.map(toJsonFinding),
-    }) + "\n",
-  );
+function writeJsonResult(result: DoctorLintJsonResult): void {
+  process.stdout.write(JSON.stringify(result) + "\n");
 }
 
 function toJsonFinding(f: HealthFinding): Record<string, unknown> {

@@ -2308,35 +2308,33 @@ export async function runConfigPatch(opts: {
   }
 }
 
+export async function buildConfigGetPayload(opts: { path: string; runtime?: RuntimeEnv }) {
+  const runtime = opts.runtime ?? defaultRuntime;
+  const parsedPath = parseRequiredPath(opts.path);
+  const snapshot = await loadValidConfig(runtime);
+  const redacted = redactConfigObject(snapshot.config);
+  const res = getAtPath(redacted, parsedPath);
+  if (!res.found) {
+    throw new Error(
+      `Config path not found: ${opts.path}. Run ${formatCliCommand("openclaw config validate")} to inspect config shape.`,
+    );
+  }
+  return res.value ?? null;
+}
+
 export async function runConfigGet(opts: { path: string; json?: boolean; runtime?: RuntimeEnv }) {
   const runtime = opts.runtime ?? defaultRuntime;
   try {
-    const parsedPath = parseRequiredPath(opts.path);
-    const snapshot = await loadValidConfig(runtime);
-    const redacted = redactConfigObject(snapshot.config);
-    const res = getAtPath(redacted, parsedPath);
-    if (!res.found) {
-      runtime.error(
-        danger(
-          `Config path not found: ${opts.path}. Run ${formatCliCommand("openclaw config validate")} to inspect config shape.`,
-        ),
-      );
-      runtime.exit(1);
-      return;
-    }
+    const value = await buildConfigGetPayload({ path: opts.path, runtime });
     if (opts.json) {
-      writeRuntimeJson(runtime, res.value ?? null);
+      writeRuntimeJson(runtime, value);
       return;
     }
-    if (
-      typeof res.value === "string" ||
-      typeof res.value === "number" ||
-      typeof res.value === "boolean"
-    ) {
-      runtime.log(String(res.value));
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      runtime.log(String(value));
       return;
     }
-    writeRuntimeJson(runtime, res.value ?? null);
+    writeRuntimeJson(runtime, value);
   } catch (err) {
     runtime.error(danger(String(err)));
     runtime.exit(1);
