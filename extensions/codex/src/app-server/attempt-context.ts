@@ -418,6 +418,7 @@ function buildCodexBootstrapInjectionStats(params: {
   const developerInstructionIndex = indexCodexContextFileContent(
     params.developerInstructionFiles ?? [],
   );
+  const ambiguousFallbackBaseNames = collectAmbiguousCodexBootstrapBaseNames(params.bootstrapFiles);
   const memoryToolRoutedPaths = new Set(
     (params.memoryToolRoutedBootstrapFiles ?? [])
       .map((file) => readNonEmptyString(file.path))
@@ -436,8 +437,18 @@ function buildCodexBootstrapInjectionStats(params: {
       memoryToolRoutedPaths.has(normalizeCodexContextFilePath(pathValue));
     const injected = memoryToolRoutedFile
       ? undefined
-      : (readCodexIndexedContextFileContent(injectedIndex, pathValue, fileName) ??
-        readCodexIndexedContextFileContent(developerInstructionIndex, pathValue, fileName));
+      : (readCodexIndexedContextFileContent(
+          injectedIndex,
+          pathValue,
+          fileName,
+          ambiguousFallbackBaseNames,
+        ) ??
+        readCodexIndexedContextFileContent(
+          developerInstructionIndex,
+          pathValue,
+          fileName,
+          ambiguousFallbackBaseNames,
+        ));
     let injectedChars = memoryToolRoutedFile ? 0 : (injected?.length ?? 0);
     let truncated = memoryToolRoutedFile ? false : !file.missing && injectedChars < rawChars;
     if (injected === undefined) {
@@ -471,6 +482,7 @@ function indexCodexContextFileContent(files: EmbeddedContextFile[]): {
   byBaseName: Map<string, string>;
 } {
   const byPath = new Map<string, string>();
+  const baseNameCounts = new Map<string, number>();
   const byBaseName = new Map<string, string>();
   for (const file of files) {
     const pathValue = readNonEmptyString(file.path);
@@ -481,17 +493,49 @@ function indexCodexContextFileContent(files: EmbeddedContextFile[]): {
       byPath.set(pathValue, file.content);
     }
     const baseName = getCodexContextFileBasename(pathValue);
-    if (baseName && !byBaseName.has(baseName)) {
+    if (baseName) {
+      baseNameCounts.set(baseName, (baseNameCounts.get(baseName) ?? 0) + 1);
+    }
+  }
+  for (const file of files) {
+    const pathValue = readNonEmptyString(file.path);
+    if (!pathValue) {
+      continue;
+    }
+    const baseName = getCodexContextFileBasename(pathValue);
+    if (baseName && baseNameCounts.get(baseName) === 1 && !byBaseName.has(baseName)) {
       byBaseName.set(baseName, file.content);
     }
   }
   return { byPath, byBaseName };
 }
 
+function collectAmbiguousCodexBootstrapBaseNames(files: CodexBootstrapFile[]): Set<string> {
+  const counts = new Map<string, number>();
+  for (const file of files) {
+    const pathValue = readNonEmptyString(file.path) ?? readNonEmptyString(file.name);
+    if (!pathValue) {
+      continue;
+    }
+    const baseName = getCodexContextFileBasename(pathValue);
+    if (baseName) {
+      counts.set(baseName, (counts.get(baseName) ?? 0) + 1);
+    }
+  }
+  const ambiguous = new Set<string>();
+  for (const [baseName, count] of counts.entries()) {
+    if (count > 1) {
+      ambiguous.add(baseName);
+    }
+  }
+  return ambiguous;
+}
+
 function readCodexIndexedContextFileContent(
   index: { byPath: Map<string, string>; byBaseName: Map<string, string> },
   pathValue: string,
   fileName: string | undefined,
+  ambiguousFallbackBaseNames?: ReadonlySet<string>,
 ): string | undefined {
   const pathContent = index.byPath.get(pathValue);
   if (pathContent !== undefined) {
@@ -504,6 +548,9 @@ function readCodexIndexedContextFileContent(
     }
   }
   const baseName = getCodexContextFileBasename(fileName ?? pathValue);
+  if (baseName && ambiguousFallbackBaseNames?.has(baseName)) {
+    return undefined;
+  }
   return baseName ? index.byBaseName.get(baseName) : undefined;
 }
 

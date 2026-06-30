@@ -2332,6 +2332,16 @@ describe("runCodexAppServerAttempt", () => {
     expect(inputText).not.toContain(rootAgentsGuidance);
     expect(inputText).not.toContain(codingAgentsGuidance);
 
+    const rootAgentsStats = systemPromptReport.injectedWorkspaceFiles.find(
+      (file) => file.path === path.join(workspaceDir, "AGENTS.md"),
+    );
+    expect(rootAgentsStats).toMatchObject({
+      name: "AGENTS.md",
+      rawChars: rootAgentsGuidance.length,
+      injectedChars: rootAgentsGuidance.length,
+      truncated: false,
+    });
+
     const codingAgentsStats = systemPromptReport.injectedWorkspaceFiles.find(
       (file) => file.path === codingAgentsPath,
     );
