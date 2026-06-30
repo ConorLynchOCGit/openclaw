@@ -1,5 +1,6 @@
 /** CLI command for exporting a session transcript as a trajectory artifact. */
 import path from "node:path";
+import { resolveDefaultAgentWorkspaceDir } from "../agents/workspace-default.js";
 import { formatCliCommand } from "../cli/command-format.js";
 import {
   resolveDefaultSessionStorePath,
@@ -94,6 +95,33 @@ function resolveExportTrajectoryOptions(
   };
 }
 
+function resolveExportTrajectoryWorkspace(
+  opts: ExportTrajectoryCommandOptions,
+  entry: SessionEntry,
+): {
+  workspaceDir: string;
+  explicit: boolean;
+} {
+  const explicitWorkspace = opts.workspace?.trim();
+  if (explicitWorkspace) {
+    return { workspaceDir: path.resolve(explicitWorkspace), explicit: true };
+  }
+  const spawnedWorkspace = entry.spawnedWorkspaceDir?.trim();
+  if (spawnedWorkspace) {
+    return { workspaceDir: path.resolve(spawnedWorkspace), explicit: false };
+  }
+  return { workspaceDir: path.resolve(resolveDefaultAgentWorkspaceDir()), explicit: false };
+}
+
+function formatDefaultWorkspaceExportError(error: unknown, workspaceDir: string): string {
+  const message = formatErrorMessage(error);
+  const code = (error as NodeJS.ErrnoException)?.code;
+  if (code !== "EACCES" && code !== "ENOENT" && code !== "ENOTDIR") {
+    return message;
+  }
+  return `${message}. Default export workspace resolved to ${workspaceDir}. Pass --workspace <writable-workspace> or set OPENCLAW_WORKSPACE_DIR.`;
+}
+
 /** Resolves the requested session and exports its trajectory summary or JSON result. */
 export async function exportTrajectoryCommand(
   opts: ExportTrajectoryCommandOptions,
@@ -149,6 +177,7 @@ export async function exportTrajectoryCommand(
     return;
   }
 
+  const exportWorkspace = resolveExportTrajectoryWorkspace(resolvedOpts, entry);
   let summary: TrajectoryCommandExportSummary;
   try {
     summary = await exportTrajectoryForCommand({
@@ -156,10 +185,13 @@ export async function exportTrajectoryCommand(
       sessionFile,
       sessionId: entry.sessionId,
       sessionKey,
-      workspaceDir: path.resolve(resolvedOpts.workspace ?? process.cwd()),
+      workspaceDir: exportWorkspace.workspaceDir,
     });
   } catch (error) {
-    runtime.error(`Failed to export trajectory: ${formatErrorMessage(error)}`);
+    const message = exportWorkspace.explicit
+      ? formatErrorMessage(error)
+      : formatDefaultWorkspaceExportError(error, exportWorkspace.workspaceDir);
+    runtime.error(`Failed to export trajectory: ${message}`);
     runtime.exit(1);
     return;
   }

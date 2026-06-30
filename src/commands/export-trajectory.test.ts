@@ -4,8 +4,19 @@ import type { RuntimeEnv } from "../runtime.js";
 import { exportTrajectoryCommand } from "./export-trajectory.js";
 
 const mocks = vi.hoisted(() => ({
+  exportTrajectoryForCommand: vi.fn(),
   loadSessionStore: vi.fn(),
+  pathExists: vi.fn(),
   resolveDefaultSessionStorePath: vi.fn(),
+}));
+
+vi.mock("../infra/fs-safe.js", () => ({
+  pathExists: mocks.pathExists,
+}));
+
+vi.mock("../trajectory/command-export.js", () => ({
+  exportTrajectoryForCommand: mocks.exportTrajectoryForCommand,
+  formatTrajectoryCommandExportSummary: () => "trajectory exported",
 }));
 
 vi.mock("../config/sessions/store.js", () => ({
@@ -31,8 +42,19 @@ function createRuntime(): RuntimeEnv {
 describe("exportTrajectoryCommand", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllEnvs();
+    mocks.exportTrajectoryForCommand.mockResolvedValue({
+      outputDir: "/tmp/workspace/.openclaw/trajectory-exports/export",
+      displayPath: ".openclaw/trajectory-exports/export",
+      sessionId: "session-1",
+      eventCount: 1,
+      runtimeEventCount: 0,
+      transcriptEventCount: 1,
+      files: ["manifest.json"],
+    });
     mocks.resolveDefaultSessionStorePath.mockReturnValue("/tmp/openclaw/sessions.json");
     mocks.loadSessionStore.mockReturnValue({});
+    mocks.pathExists.mockResolvedValue(false);
   });
 
   it("points missing session key users at the sessions command", async () => {
@@ -91,6 +113,72 @@ describe("exportTrajectoryCommand", () => {
 
     expect(runtime.error).toHaveBeenCalledWith(
       "Session not found: agent:main:telegram:direct:123. Run openclaw sessions to see available sessions.",
+    );
+    expect(runtime.exit).toHaveBeenCalledWith(1);
+  });
+
+  it("defaults trajectory exports to the configured OpenClaw workspace, not cwd", async () => {
+    const runtime = createRuntime();
+    vi.stubEnv("OPENCLAW_WORKSPACE_DIR", "/tmp/openclaw-workspace");
+    mocks.loadSessionStore.mockReturnValue({
+      "agent:main:telegram:direct:123": { sessionId: "session-1" },
+    });
+    mocks.pathExists.mockResolvedValue(true);
+
+    await exportTrajectoryCommand({ sessionKey: "agent:main:telegram:direct:123" }, runtime);
+
+    expect(mocks.exportTrajectoryForCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "session-1",
+        sessionKey: "agent:main:telegram:direct:123",
+        workspaceDir: "/tmp/openclaw-workspace",
+      }),
+    );
+    expect(runtime.error).not.toHaveBeenCalled();
+    expect(runtime.log).toHaveBeenCalledWith("trajectory exported");
+  });
+
+  it("prefers the stored spawned session workspace when workspace is omitted", async () => {
+    const runtime = createRuntime();
+    vi.stubEnv("OPENCLAW_WORKSPACE_DIR", "/tmp/openclaw-workspace");
+    mocks.loadSessionStore.mockReturnValue({
+      "agent:main:subagent:123": {
+        sessionId: "session-1",
+        spawnedWorkspaceDir: "/tmp/spawned-workspace",
+      },
+    });
+    mocks.pathExists.mockResolvedValue(true);
+
+    await exportTrajectoryCommand({ sessionKey: "agent:main:subagent:123" }, runtime);
+
+    expect(mocks.exportTrajectoryForCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceDir: "/tmp/spawned-workspace",
+      }),
+    );
+    expect(runtime.error).not.toHaveBeenCalled();
+  });
+
+  it("adds an actionable hint when the default export workspace is not writable", async () => {
+    const runtime = createRuntime();
+    vi.stubEnv("OPENCLAW_WORKSPACE_DIR", "/tmp/openclaw-workspace");
+    mocks.loadSessionStore.mockReturnValue({
+      "agent:main:telegram:direct:123": { sessionId: "session-1" },
+    });
+    mocks.pathExists.mockResolvedValue(true);
+    mocks.exportTrajectoryForCommand.mockRejectedValue(
+      Object.assign(
+        new Error("EACCES: permission denied, mkdir '/tmp/openclaw-workspace/.openclaw'"),
+        {
+          code: "EACCES",
+        },
+      ),
+    );
+
+    await exportTrajectoryCommand({ sessionKey: "agent:main:telegram:direct:123" }, runtime);
+
+    expect(runtime.error).toHaveBeenCalledWith(
+      "Failed to export trajectory: EACCES: permission denied, mkdir '/tmp/openclaw-workspace/.openclaw'. Default export workspace resolved to /tmp/openclaw-workspace. Pass --workspace <writable-workspace> or set OPENCLAW_WORKSPACE_DIR.",
     );
     expect(runtime.exit).toHaveBeenCalledWith(1);
   });
