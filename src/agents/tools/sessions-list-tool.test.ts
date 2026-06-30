@@ -49,16 +49,28 @@ type SessionsListDetails = {
     verboseLevel?: string;
     activeProgress?: {
       source?: string;
-      eventType?: string;
-      eventSeq?: number;
+      currentPhase?: string;
+      activeLabel?: string;
+      elapsedMs?: number;
+      observedAt?: string;
+      sourceEventType?: string;
+      sourceEventSeq?: number;
+      note?: string;
+      pointer?: { kind?: string; ref?: string };
       derivedBy?: string;
       bounded?: boolean;
     } | null;
     readbackProvenance?: {
       activeProgress?: {
         source?: string;
-        eventType?: string;
-        eventSeq?: number;
+        currentPhase?: string;
+        activeLabel?: string;
+        elapsedMs?: number;
+        observedAt?: string;
+        sourceEventType?: string;
+        sourceEventSeq?: number;
+        note?: string;
+        pointer?: { kind?: string; ref?: string };
         derivedBy?: string;
         bounded?: boolean;
       };
@@ -228,17 +240,35 @@ describe("sessions-list-tool", () => {
               status: "running",
               activeProgress: {
                 source: "trajectory",
-                eventType: "tool.call",
-                eventSeq: 12,
-                derivedBy: "readLatestTrajectoryProgressProvenance",
+                currentPhase: "validation",
+                activeLabel: "exec_command",
+                elapsedMs: 1250,
+                observedAt: "2025-12-05T23:59:00.000Z",
+                sourceEventType: "tool.call",
+                sourceEventSeq: 12,
+                note: "running focused regression",
+                pointer: {
+                  kind: "artifact",
+                  ref: ".openclaw/trajectory-exports/proof",
+                },
+                derivedBy: "readLatestTrajectoryProgressCapsule",
                 bounded: true,
               },
               readbackProvenance: {
                 activeProgress: {
                   source: "trajectory",
-                  eventType: "tool.call",
-                  eventSeq: 12,
-                  derivedBy: "readLatestTrajectoryProgressProvenance",
+                  currentPhase: "validation",
+                  activeLabel: "exec_command",
+                  elapsedMs: 1250,
+                  observedAt: "2025-12-05T23:59:00.000Z",
+                  sourceEventType: "tool.call",
+                  sourceEventSeq: 12,
+                  note: "running focused regression",
+                  pointer: {
+                    kind: "artifact",
+                    ref: ".openclaw/trajectory-exports/proof",
+                  },
+                  derivedBy: "readLatestTrajectoryProgressCapsule",
                   bounded: true,
                 },
               },
@@ -255,16 +285,34 @@ describe("sessions-list-tool", () => {
 
     expect(details.sessions?.[0]?.activeProgress).toMatchObject({
       source: "trajectory",
-      eventType: "tool.call",
-      eventSeq: 12,
-      derivedBy: "readLatestTrajectoryProgressProvenance",
+      currentPhase: "validation",
+      activeLabel: "exec_command",
+      elapsedMs: 1250,
+      observedAt: "2025-12-05T23:59:00.000Z",
+      sourceEventType: "tool.call",
+      sourceEventSeq: 12,
+      note: "running focused regression",
+      pointer: {
+        kind: "artifact",
+        ref: ".openclaw/trajectory-exports/proof",
+      },
+      derivedBy: "readLatestTrajectoryProgressCapsule",
       bounded: true,
     });
     expect(details.sessions?.[0]?.readbackProvenance?.activeProgress).toMatchObject({
       source: "trajectory",
-      eventType: "tool.call",
-      eventSeq: 12,
-      derivedBy: "readLatestTrajectoryProgressProvenance",
+      currentPhase: "validation",
+      activeLabel: "exec_command",
+      elapsedMs: 1250,
+      observedAt: "2025-12-05T23:59:00.000Z",
+      sourceEventType: "tool.call",
+      sourceEventSeq: 12,
+      note: "running focused regression",
+      pointer: {
+        kind: "artifact",
+        ref: ".openclaw/trajectory-exports/proof",
+      },
+      derivedBy: "readLatestTrajectoryProgressCapsule",
       bounded: true,
     });
   });

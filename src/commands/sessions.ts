@@ -437,9 +437,16 @@ export async function sessionsShowCommand(
       row.readbackProvenance?.activeProgress
         ? [
             row.readbackProvenance.activeProgress.source,
-            row.readbackProvenance.activeProgress.eventType,
-            row.readbackProvenance.activeProgress.eventSeq !== undefined
-              ? `seq=${row.readbackProvenance.activeProgress.eventSeq}`
+            row.readbackProvenance.activeProgress.currentPhase
+              ? `phase=${row.readbackProvenance.activeProgress.currentPhase}`
+              : undefined,
+            row.readbackProvenance.activeProgress.activeLabel,
+            row.readbackProvenance.activeProgress.sourceEventType,
+            row.readbackProvenance.activeProgress.sourceEventSeq !== undefined
+              ? `seq=${row.readbackProvenance.activeProgress.sourceEventSeq}`
+              : undefined,
+            row.readbackProvenance.activeProgress.elapsedMs !== undefined
+              ? `elapsedMs=${row.readbackProvenance.activeProgress.elapsedMs}`
               : undefined,
           ]
             .filter(Boolean)

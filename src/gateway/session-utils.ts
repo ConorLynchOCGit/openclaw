@@ -99,7 +99,7 @@ import {
 } from "./session-store-key.js";
 import {
   readLastAssistantTextFromTranscriptWithProvenance,
-  readLatestTrajectoryProgressProvenance,
+  readLatestTrajectoryProgressCapsule,
   readRecentSessionUsageFromTranscript,
   readSessionTitleFieldsFromTranscriptAsync,
   readSessionTitleFieldsFromTranscript,
@@ -119,7 +119,7 @@ export {
   capArrayByJsonBytes,
   readFirstUserMessageFromTranscript,
   readLastAssistantTextFromTranscript,
-  readLatestTrajectoryProgressProvenance,
+  readLatestTrajectoryProgressCapsule,
   readLatestSessionUsageFromTranscriptAsync,
   readLatestRecentSessionUsageFromTranscriptAsync,
   readRecentSessionUsageFromTranscriptAsync,
@@ -2206,7 +2206,7 @@ export function buildGatewaySessionRow(params: {
     };
   }
   if (rowStatus === "running" && entry?.sessionId) {
-    const activeProgress = readLatestTrajectoryProgressProvenance(
+    const activeProgress = readLatestTrajectoryProgressCapsule(
       entry.sessionId,
       storePath,
       entry.sessionFile,
@@ -2261,7 +2261,7 @@ export function buildGatewaySessionRow(params: {
   const thinkingDefault = thinkingMetadata.defaultLevel;
   const pluginExtensions =
     !lightweight && entry ? projectPluginSessionExtensionsSync({ sessionKey: key, entry }) : [];
-  const activeProgress = readbackProvenance?.activeProgress?.eventType
+  const activeProgress = readbackProvenance?.activeProgress?.sourceEventType
     ? readbackProvenance.activeProgress
     : null;
 

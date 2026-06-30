@@ -22,7 +22,11 @@ import {
   readSessionTranscriptIndex,
   type IndexedTranscriptEntry,
 } from "./session-transcript-index.fs.js";
-import type { ReadbackFieldProvenance, SessionPreviewItem } from "./session-utils.types.js";
+import type {
+  ActiveProgressCapsule,
+  ReadbackFieldProvenance,
+  SessionPreviewItem,
+} from "./session-utils.types.js";
 
 type SessionTitleFields = {
   firstUserMessage: string | null;
@@ -1623,6 +1627,7 @@ export function readRecentSessionUsageFromTranscript(
 const PREVIEW_READ_SIZES = [64 * 1024, 256 * 1024, 1024 * 1024];
 const PREVIEW_MAX_LINES = 200;
 const TRAJECTORY_PROGRESS_READ_BYTES = 256 * 1024;
+const ACTIVE_PROGRESS_TEXT_LIMIT = 160;
 
 type TranscriptContentEntry = {
   type?: string;
@@ -1978,12 +1983,136 @@ function readRecentTrajectoryLines(filePath: string, maxBytes: number): string[]
   }
 }
 
-export function readLatestTrajectoryProgressProvenance(
+function boundedProgressText(
+  value: unknown,
+  limit = ACTIVE_PROGRESS_TEXT_LIMIT,
+): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.replace(/\s+/gu, " ").trim();
+  if (!normalized) {
+    return undefined;
+  }
+  if (normalized.length <= limit) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(0, limit - 3))}...`;
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function activeProgressLabel(
+  eventType: string,
+  data: Record<string, unknown> | undefined,
+): string | undefined {
+  return (
+    boundedProgressText(data?.activeLabel, 96) ??
+    boundedProgressText(data?.label, 96) ??
+    boundedProgressText(data?.title, 96) ??
+    boundedProgressText(data?.name, 96) ??
+    boundedProgressText(data?.toolName, 96) ??
+    boundedProgressText(data?.action, 96) ??
+    (eventType === "run.started" ? "run" : undefined)
+  );
+}
+
+function activeProgressElapsedMs(data: Record<string, unknown> | undefined): number | undefined {
+  const elapsedMs = finiteNumber(data?.elapsedMs) ?? finiteNumber(data?.durationMs);
+  if (elapsedMs !== undefined && elapsedMs >= 0) {
+    return elapsedMs;
+  }
+  const startedAt = finiteNumber(data?.startedAt);
+  const endedAt = finiteNumber(data?.endedAt);
+  if (startedAt !== undefined && endedAt !== undefined && endedAt >= startedAt) {
+    return endedAt - startedAt;
+  }
+  return undefined;
+}
+
+function activeProgressNote(
+  eventType: string,
+  data: Record<string, unknown> | undefined,
+): string | undefined {
+  const explicit =
+    boundedProgressText(data?.summary) ??
+    boundedProgressText(data?.note) ??
+    boundedProgressText(data?.status);
+  if (explicit) {
+    return explicit;
+  }
+  const label = activeProgressLabel(eventType, data);
+  if (eventType === "tool.call" && label) {
+    return `${label} started`;
+  }
+  return undefined;
+}
+
+function activeProgressPointer(
+  data: Record<string, unknown> | undefined,
+): ActiveProgressCapsule["pointer"] | undefined {
+  const artifactRef =
+    boundedProgressText(data?.artifactRef, 200) ??
+    boundedProgressText(data?.artifactPath, 200) ??
+    boundedProgressText(data?.artifact, 200);
+  if (artifactRef) {
+    const artifactLabel = boundedProgressText(data?.artifactLabel, 80);
+    return {
+      kind: "artifact",
+      ref: artifactRef,
+      ...(artifactLabel ? { label: artifactLabel } : {}),
+    };
+  }
+  const inspectNext = boundedProgressText(data?.inspectNext, 200);
+  if (inspectNext) {
+    return {
+      kind: "inspect-next",
+      ref: inspectNext,
+    };
+  }
+  return undefined;
+}
+
+function activeProgressCapsuleFromTrajectoryEvent(params: {
+  sessionId: string;
+  event: Record<string, unknown>;
+  eventType: string;
+}): ActiveProgressCapsule {
+  const data =
+    params.event.data && typeof params.event.data === "object" && !Array.isArray(params.event.data)
+      ? (params.event.data as Record<string, unknown>)
+      : undefined;
+  const observedAt = boundedProgressText(params.event.ts, 64);
+  const sourceEventSeq = finiteNumber(params.event.sourceSeq) ?? finiteNumber(params.event.seq);
+  const currentPhase = boundedProgressText(data?.phase, 64);
+  const activeLabel = activeProgressLabel(params.eventType, data);
+  const elapsedMs = activeProgressElapsedMs(data);
+  const note = activeProgressNote(params.eventType, data);
+  const pointer = activeProgressPointer(data);
+  return {
+    source: "trajectory",
+    ref: `session:${params.sessionId}`,
+    ...(currentPhase ? { currentPhase } : {}),
+    ...(activeLabel ? { activeLabel } : {}),
+    ...(observedAt ? { observedAt } : {}),
+    ...(elapsedMs !== undefined ? { elapsedMs } : {}),
+    sourceEventType: params.eventType,
+    ...(sourceEventSeq !== undefined ? { sourceEventSeq } : {}),
+    ...(note ? { note } : {}),
+    ...(pointer ? { pointer } : {}),
+    derivedBy: "readLatestTrajectoryProgressCapsule",
+    bounded: true,
+  };
+}
+
+export function readLatestTrajectoryProgressCapsule(
   sessionId: string,
   storePath: string | undefined,
   sessionFile: string | undefined,
   agentId: string | undefined,
-): ReadbackFieldProvenance | undefined {
+): ActiveProgressCapsule | undefined {
   const filePath = resolveSessionTrajectoryRuntimeFileSync({
     sessionId,
     storePath,
@@ -2008,23 +2137,11 @@ export function readLatestTrajectoryProgressProvenance(
       ) {
         continue;
       }
-      const sourceSeq =
-        typeof event.sourceSeq === "number" && Number.isFinite(event.sourceSeq)
-          ? event.sourceSeq
-          : undefined;
-      const seq =
-        sourceSeq ??
-        (typeof event.seq === "number" && Number.isFinite(event.seq) ? event.seq : undefined);
-      const ts = typeof event.ts === "string" && event.ts ? event.ts : "unknown-ts";
-      return {
-        source: "trajectory",
-        ref: `session:${sessionId}`,
+      return activeProgressCapsuleFromTrajectoryEvent({
+        sessionId,
+        event,
         eventType: event.type,
-        ...(seq !== undefined ? { eventSeq: seq } : {}),
-        derivedBy: "readLatestTrajectoryProgressProvenance",
-        bounded: true,
-        note: `latest trajectory event ts=${ts}; session updatedAt remains session-store metadata`,
-      };
+      });
     } catch {
       continue;
     }
@@ -2032,7 +2149,7 @@ export function readLatestTrajectoryProgressProvenance(
   return {
     source: "trajectory",
     ref: `session:${sessionId}`,
-    derivedBy: "readLatestTrajectoryProgressProvenance",
+    derivedBy: "readLatestTrajectoryProgressCapsule",
     bounded: true,
     note: "trajectory file found but no valid recent event in bounded tail",
   };

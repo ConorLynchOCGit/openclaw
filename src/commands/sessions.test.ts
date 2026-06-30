@@ -442,26 +442,27 @@ describe("sessionsCommand", () => {
           sourceSeq: 12,
           sessionId,
           sessionKey: "agent:main:main",
-          data: { name: "exec_command" },
+          data: {
+            name: "exec_command",
+            phase: "validation",
+            durationMs: 1250,
+            summary: "running focused regression",
+            artifactPath: ".openclaw/trajectory-exports/proof",
+          },
         }),
       ].join("\n"),
     );
 
     const { runtime, logs } = makeRuntime();
-    try {
-      await sessionsShowCommand(
-        {
-          store,
-          sessionKey: "agent:main:main",
-          json: true,
-          agent: "main",
-        },
-        runtime,
-      );
-    } finally {
-      fs.rmSync(store, { force: true });
-      fs.rmSync(trajectory, { force: true });
-    }
+    await sessionsShowCommand(
+      {
+        store,
+        sessionKey: "agent:main:main",
+        json: true,
+        agent: "main",
+      },
+      runtime,
+    );
 
     const payload = JSON.parse(logs[0] ?? "{}") as {
       session?: {
@@ -469,31 +470,46 @@ describe("sessionsCommand", () => {
         updatedAt?: number | null;
         activeProgress?: {
           source?: string;
-          eventType?: string;
-          eventSeq?: number;
+          currentPhase?: string;
+          activeLabel?: string;
+          elapsedMs?: number;
+          observedAt?: string;
+          sourceEventType?: string;
+          sourceEventSeq?: number;
           derivedBy?: string;
           bounded?: boolean;
           note?: string;
+          pointer?: { kind?: string; ref?: string };
         } | null;
         readbackProvenance?: {
           status?: { source?: string; note?: string };
           activeProgress?: {
             source?: string;
-            eventType?: string;
-            eventSeq?: number;
+            currentPhase?: string;
+            activeLabel?: string;
+            elapsedMs?: number;
+            observedAt?: string;
+            sourceEventType?: string;
+            sourceEventSeq?: number;
             derivedBy?: string;
             bounded?: boolean;
             note?: string;
+            pointer?: { kind?: string; ref?: string };
           };
         };
       };
       activeProgress?: {
         source?: string;
-        eventType?: string;
-        eventSeq?: number;
+        currentPhase?: string;
+        activeLabel?: string;
+        elapsedMs?: number;
+        observedAt?: string;
+        sourceEventType?: string;
+        sourceEventSeq?: number;
         derivedBy?: string;
         bounded?: boolean;
         note?: string;
+        pointer?: { kind?: string; ref?: string };
       } | null;
     };
     expect(payload.session?.status).toBe("running");
@@ -505,27 +521,55 @@ describe("sessionsCommand", () => {
     );
     expect(payload.session?.readbackProvenance?.activeProgress).toMatchObject({
       source: "trajectory",
-      eventType: "tool.call",
-      eventSeq: 12,
-      derivedBy: "readLatestTrajectoryProgressProvenance",
+      currentPhase: "validation",
+      activeLabel: "exec_command",
+      elapsedMs: 1250,
+      observedAt: "2025-12-05T23:59:00.000Z",
+      sourceEventType: "tool.call",
+      sourceEventSeq: 12,
+      derivedBy: "readLatestTrajectoryProgressCapsule",
       bounded: true,
+      note: "running focused regression",
+      pointer: {
+        kind: "artifact",
+        ref: ".openclaw/trajectory-exports/proof",
+      },
     });
     expect(payload.activeProgress).toMatchObject({
       source: "trajectory",
-      eventType: "tool.call",
-      eventSeq: 12,
-      derivedBy: "readLatestTrajectoryProgressProvenance",
+      currentPhase: "validation",
+      activeLabel: "exec_command",
+      sourceEventType: "tool.call",
+      sourceEventSeq: 12,
+      derivedBy: "readLatestTrajectoryProgressCapsule",
       bounded: true,
     });
     expect(payload.session?.activeProgress).toMatchObject({
       source: "trajectory",
-      eventType: "tool.call",
-      eventSeq: 12,
-      derivedBy: "readLatestTrajectoryProgressProvenance",
+      currentPhase: "validation",
+      activeLabel: "exec_command",
+      sourceEventType: "tool.call",
+      sourceEventSeq: 12,
+      derivedBy: "readLatestTrajectoryProgressCapsule",
       bounded: true,
     });
-    expect(payload.session?.readbackProvenance?.activeProgress?.note).toContain(
-      "session updatedAt remains session-store metadata",
+
+    const compact = makeRuntime();
+    try {
+      await sessionsShowCommand(
+        {
+          store,
+          sessionKey: "agent:main:main",
+          agent: "main",
+        },
+        compact.runtime,
+      );
+    } finally {
+      fs.rmSync(store, { force: true });
+      fs.rmSync(trajectory, { force: true });
+    }
+    expect(compact.logs.join("\n")).toContain(
+      "activeProgress: trajectory phase=validation exec_command tool.call seq=12 elapsedMs=1250",
     );
   });
 

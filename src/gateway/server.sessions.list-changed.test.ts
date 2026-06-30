@@ -367,6 +367,64 @@ test("sessions.list ignores hidden internal abortable runs", async () => {
   );
 });
 
+test("sessions.list exposes bounded active progress capsule from trajectory evidence", async () => {
+  const { dir } = await createSessionStoreDir();
+  await writeSessionStore({
+    entries: {
+      main: sessionStoreEntry("sess-main", {
+        status: "running",
+        updatedAt: Date.now() - 45 * 60_000,
+      }),
+    },
+  });
+  await fs.writeFile(
+    path.join(dir, "sess-main.trajectory.jsonl"),
+    `${JSON.stringify({
+      traceSchema: "openclaw-trajectory",
+      schemaVersion: 1,
+      traceId: "sess-main",
+      source: "runtime",
+      type: "tool.call",
+      ts: "2025-12-05T23:59:00.000Z",
+      seq: 7,
+      sourceSeq: 12,
+      sessionId: "sess-main",
+      sessionKey: "agent:main:main",
+      data: {
+        name: "sessions_list",
+        phase: "readback",
+        elapsedMs: 900,
+        summary: "checking current sessions",
+        inspectNext: "openclaw sessions tail --session-key agent:main:main",
+      },
+    })}\n`,
+    "utf-8",
+  );
+
+  const { respond } = await invokeSessionsList({
+    requestId: "req-sessions-list-active-progress",
+  });
+  const payload = expectRespondPayload(respond);
+  const session = findSession(payload, "agent:main:main");
+
+  expect(session.activeProgress).toMatchObject({
+    source: "trajectory",
+    currentPhase: "readback",
+    activeLabel: "sessions_list",
+    elapsedMs: 900,
+    observedAt: "2025-12-05T23:59:00.000Z",
+    sourceEventType: "tool.call",
+    sourceEventSeq: 12,
+    note: "checking current sessions",
+    pointer: {
+      kind: "inspect-next",
+      ref: "openclaw sessions tail --session-key agent:main:main",
+    },
+    derivedBy: "readLatestTrajectoryProgressCapsule",
+    bounded: true,
+  });
+});
+
 test("sessions.list yields before responding during bulk transcript hydration", async () => {
   const { dir } = await createSessionStoreDir();
   const entries: Record<string, ReturnType<typeof sessionStoreEntry>> = {};

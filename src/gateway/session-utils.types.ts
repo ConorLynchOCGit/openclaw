@@ -47,9 +47,28 @@ export type ReadbackFieldProvenance = {
   note?: string;
 };
 
+export type ActiveProgressCapsule = {
+  source: "trajectory";
+  ref: string;
+  currentPhase?: string | null;
+  activeLabel?: string | null;
+  observedAt?: string | null;
+  elapsedMs?: number | null;
+  sourceEventType?: string;
+  sourceEventSeq?: number;
+  note?: string | null;
+  pointer?: {
+    kind: "artifact" | "inspect-next" | "session" | "trajectory";
+    ref: string;
+    label?: string;
+  };
+  derivedBy: string;
+  bounded: true;
+};
+
 export type SessionReadbackProvenance = {
   status?: ReadbackFieldProvenance;
-  activeProgress?: ReadbackFieldProvenance;
+  activeProgress?: ActiveProgressCapsule;
   finalAssistantText?: ReadbackFieldProvenance;
 };
 
@@ -73,7 +92,7 @@ export type GatewaySessionRow = {
   derivedTitle?: string;
   lastMessagePreview?: string;
   finalAssistantText?: string | null;
-  activeProgress?: ReadbackFieldProvenance | null;
+  activeProgress?: ActiveProgressCapsule | null;
   readbackProvenance?: SessionReadbackProvenance;
   channel?: string;
   subject?: string;
