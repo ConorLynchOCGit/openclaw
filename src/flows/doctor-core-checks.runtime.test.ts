@@ -381,6 +381,50 @@ describe("doctor runtime tool schema checks", () => {
     );
   });
 
+  it("skips Codex-backed agents because Codex has its own runtime tool projection", async () => {
+    mocks.createOpenClawCodingTools.mockImplementation((options) =>
+      options?.agentId === "coding"
+        ? [tool("fuzzplugin_move_angles", { type: "array", items: { type: "number" } })]
+        : [tool("healthy", { type: "object", properties: {} })],
+    );
+    mocks.createBundleMcpToolRuntime.mockImplementation(
+      async (options: { workspaceDir: string }) => ({
+        tools: options.workspaceDir.includes("coding")
+          ? [bundleMcpTool("fuzzplugin__bad", { type: "array", items: { type: "number" } })]
+          : [],
+        dispose: mocks.disposeBundleRuntime,
+      }),
+    );
+
+    await expect(
+      collectRuntimeToolSchemaFindings({
+        agents: {
+          list: [
+            { id: "main", default: true, workspace: "/tmp/main-workspace" },
+            {
+              id: "coding",
+              workspace: "/tmp/coding-workspace",
+              model: { primary: "openai/gpt-5.5" },
+              models: {
+                "openai/gpt-5.5": {
+                  agentRuntime: { id: "codex" },
+                },
+              },
+            },
+          ],
+        },
+      }),
+    ).resolves.toEqual([]);
+    expect(mocks.createOpenClawCodingTools).toHaveBeenCalledTimes(1);
+    expect(mocks.createOpenClawCodingTools).toHaveBeenCalledWith(
+      expect.objectContaining({ agentId: "main" }),
+    );
+    expect(mocks.createBundleMcpToolRuntime).toHaveBeenCalledTimes(1);
+    expect(mocks.createBundleMcpToolRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceDir: expect.stringContaining("main-workspace") }),
+    );
+  });
+
   it("loads bundled MCP runtime once per distinct agent workspace", async () => {
     mocks.createOpenClawCodingTools.mockReturnValue([]);
     mocks.createBundleMcpToolRuntime.mockImplementation(

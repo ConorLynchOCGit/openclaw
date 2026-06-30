@@ -16,6 +16,8 @@ import { resolveEffectiveToolPolicy } from "../agents/agent-tools.policy.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../agents/defaults.js";
 import { applyFinalEffectiveToolPolicy } from "../agents/embedded-agent-runner/effective-tool-policy.js";
 import { shouldCreateBundleMcpRuntimeForAttempt } from "../agents/embedded-agent-runner/run/attempt-tool-construction-plan.js";
+import { resolveAgentHarnessPolicy } from "../agents/harness/policy.js";
+import { getRegisteredAgentHarness } from "../agents/harness/registry.js";
 import {
   findModelInCatalog,
   loadModelCatalog,
@@ -890,11 +892,31 @@ function filterPolicyActiveBundleMcpDiagnostics(params: {
   );
 }
 
-function isAcpRuntimeAgent(cfg: OpenClawConfig, agentId: string): boolean {
-  const entry = listAgentEntries(cfg).find(
-    (candidate) => normalizeAgentId(candidate.id) === agentId,
+function agentUsesOpenClawRuntimeToolProjection(params: {
+  cfg: OpenClawConfig;
+  agentId: string;
+  modelRef: { provider: string; model: string };
+}): boolean {
+  const entry = listAgentEntries(params.cfg).find(
+    (candidate) => normalizeAgentId(candidate.id) === params.agentId,
   );
-  return entry?.runtime?.type === "acp";
+  if (entry?.runtime?.type === "acp") {
+    return false;
+  }
+  const policy = resolveAgentHarnessPolicy({
+    config: params.cfg,
+    agentId: params.agentId,
+    provider: params.modelRef.provider,
+    modelId: params.modelRef.model,
+  });
+  if (policy.runtime === "openclaw" || policy.runtime === "auto") {
+    return true;
+  }
+  return (
+    policy.runtime === "codex" &&
+    policy.runtimeSource === "implicit" &&
+    !getRegisteredAgentHarness("codex")
+  );
 }
 
 export async function collectRuntimeToolSchemaFindings(
@@ -907,9 +929,6 @@ export async function collectRuntimeToolSchemaFindings(
   const reportedBundleRuntimeLoadErrors = new Set<string>();
   try {
     for (const agentId of listAgentIds(cfg)) {
-      if (isAcpRuntimeAgent(cfg, agentId)) {
-        continue;
-      }
       const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
       const modelRef = resolveDefaultModelForAgent({
         cfg,
@@ -922,6 +941,15 @@ export async function collectRuntimeToolSchemaFindings(
         modelId: modelRef.model,
       });
       if (!supportsModelTools(model)) {
+        continue;
+      }
+      if (
+        !agentUsesOpenClawRuntimeToolProjection({
+          cfg,
+          agentId,
+          modelRef,
+        })
+      ) {
         continue;
       }
       findings.push(
