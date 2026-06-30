@@ -43,6 +43,19 @@ import { buildWorkspaceSkillStatus, type SkillStatusEntry } from "../skills/disc
 import type { HealthFinding } from "./health-checks.js";
 
 type BundleMcpToolRuntime = Awaited<ReturnType<typeof createBundleMcpToolRuntime>>;
+type BundleMcpRuntimeSchemaDiagnosticEntry = {
+  diagnostic: RuntimeToolSchemaDiagnostic;
+  tools: readonly AnyAgentTool[];
+};
+type BundleMcpRuntimeSchemaInspection =
+  | {
+      ok: true;
+      diagnostics: readonly BundleMcpRuntimeSchemaDiagnosticEntry[];
+    }
+  | {
+      ok: false;
+      finding: HealthFinding;
+    };
 const PROVIDER_CATALOG_ORDERS = ["simple", "profile", "paired", "late"] as const;
 const PROVIDER_CATALOG_ORDER_SET = new Set<ProviderCatalogOrder>(PROVIDER_CATALOG_ORDERS);
 
@@ -593,13 +606,48 @@ function collectToolSchemaFindings(params: {
   );
 }
 
-function collectBundleMcpRuntimeToolSchemaFindings(params: {
+function inspectBundleMcpRuntimeToolSchemas(params: {
   bundleRuntime: BundleMcpToolRuntime;
   cfg: OpenClawConfig;
-  agentId: string;
   workspaceDir: string;
   modelRef: { provider: string; model: string };
   model: ProviderRuntimeModel;
+}): BundleMcpRuntimeSchemaInspection {
+  const schemaDiagnostics: BundleMcpRuntimeSchemaDiagnosticEntry[] = [];
+
+  let normalizedTools: AnyAgentTool[];
+  try {
+    normalizedTools = normalizeAgentRuntimeTools({
+      tools: params.bundleRuntime.tools,
+      provider: params.modelRef.provider,
+      config: params.cfg,
+      workspaceDir: params.workspaceDir,
+      env: process.env,
+      modelId: params.modelRef.model,
+      modelApi: params.model.api,
+      model: params.model,
+      onPreNormalizationSchemaDiagnostics: (preNormalizationDiagnostics, sourceTools) => {
+        for (const diagnostic of preNormalizationDiagnostics) {
+          schemaDiagnostics.push({ diagnostic, tools: sourceTools });
+        }
+      },
+    });
+  } catch (error) {
+    return { ok: false, finding: bundleMcpRuntimeNormalizationFailureFinding(error) };
+  }
+
+  for (const diagnostic of inspectRuntimeToolInputSchemas(normalizedTools)) {
+    schemaDiagnostics.push({ diagnostic, tools: normalizedTools });
+  }
+  return { ok: true, diagnostics: schemaDiagnostics };
+}
+
+function collectBundleMcpRuntimeToolSchemaFindings(params: {
+  bundleRuntime: BundleMcpToolRuntime;
+  schemaInspection: BundleMcpRuntimeSchemaInspection;
+  cfg: OpenClawConfig;
+  agentId: string;
+  modelRef: { provider: string; model: string };
 }): readonly HealthFinding[] {
   const activeBundleTools = applyFinalEffectiveToolPolicy({
     bundledTools: params.bundleRuntime.tools,
@@ -610,42 +658,22 @@ function collectBundleMcpRuntimeToolSchemaFindings(params: {
     warn: () => {},
     toolPolicyAuditLogLevel: "debug",
   });
-  const preNormalizationFindings: HealthFinding[] = [];
-
-  let normalizedTools: AnyAgentTool[];
-  try {
-    normalizedTools = normalizeAgentRuntimeTools({
-      tools: activeBundleTools,
-      provider: params.modelRef.provider,
-      config: params.cfg,
-      workspaceDir: params.workspaceDir,
-      env: process.env,
-      modelId: params.modelRef.model,
-      modelApi: params.model.api,
-      model: params.model,
-      onPreNormalizationSchemaDiagnostics: (diagnostics, sourceTools) => {
-        preNormalizationFindings.push(
-          ...diagnostics.map((diagnostic) =>
-            toolSchemaDiagnosticToFinding({
-              agentId: params.agentId,
-              tools: sourceTools,
-              diagnostic,
-            }),
-          ),
-        );
-      },
-    });
-  } catch (error) {
-    return [...preNormalizationFindings, bundleMcpRuntimeNormalizationFailureFinding(error)];
+  if (activeBundleTools.length === 0) {
+    return [];
   }
-
-  return [
-    ...preNormalizationFindings,
-    ...collectToolSchemaFindings({
-      agentId: params.agentId,
-      tools: normalizedTools,
-    }),
-  ];
+  if (!params.schemaInspection.ok) {
+    return [params.schemaInspection.finding];
+  }
+  const activeToolNames = new Set(activeBundleTools.map((tool) => normalizeToolName(tool.name)));
+  return params.schemaInspection.diagnostics
+    .filter(({ diagnostic }) => activeToolNames.has(normalizeToolName(diagnostic.toolName)))
+    .map(({ diagnostic, tools }) =>
+      toolSchemaDiagnosticToFinding({
+        agentId: params.agentId,
+        tools,
+        diagnostic,
+      }),
+    );
 }
 
 function agentRuntimeToolLoadFailureFinding(params: {
@@ -926,6 +954,10 @@ export async function collectRuntimeToolSchemaFindings(
   const findings: HealthFinding[] = [];
   const bundleRuntimeByWorkspace = new Map<string, BundleMcpToolRuntime>();
   const bundleRuntimeLoadErrorsByWorkspace = new Map<string, HealthFinding>();
+  const bundleSchemaInspectionByWorkspaceModel = new Map<
+    string,
+    BundleMcpRuntimeSchemaInspection
+  >();
   const reportedBundleRuntimeLoadErrors = new Set<string>();
   try {
     for (const agentId of listAgentIds(cfg)) {
@@ -993,6 +1025,23 @@ export async function collectRuntimeToolSchemaFindings(
       }
       const bundleRuntime = bundleRuntimeByWorkspace.get(workspaceDir);
       if (bundleRuntime) {
+        const schemaInspectionKey = [
+          workspaceDir,
+          modelRef.provider,
+          modelRef.model,
+          model.api ?? "",
+        ].join("\0");
+        let schemaInspection = bundleSchemaInspectionByWorkspaceModel.get(schemaInspectionKey);
+        if (!schemaInspection) {
+          schemaInspection = inspectBundleMcpRuntimeToolSchemas({
+            bundleRuntime,
+            cfg,
+            workspaceDir,
+            modelRef,
+            model,
+          });
+          bundleSchemaInspectionByWorkspaceModel.set(schemaInspectionKey, schemaInspection);
+        }
         if (bundleRuntime.diagnostics && bundleRuntime.diagnostics.length > 0) {
           const policyActiveDiagnostics = filterPolicyActiveBundleMcpDiagnostics({
             diagnostics: bundleRuntime.diagnostics,
@@ -1005,11 +1054,10 @@ export async function collectRuntimeToolSchemaFindings(
         findings.push(
           ...collectBundleMcpRuntimeToolSchemaFindings({
             bundleRuntime,
+            schemaInspection,
             cfg,
             agentId,
-            workspaceDir,
             modelRef,
-            model,
           }),
         );
       }

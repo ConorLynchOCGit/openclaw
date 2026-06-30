@@ -342,6 +342,46 @@ describe("doctor runtime tool schema checks", () => {
     expect(mocks.disposeBundleRuntime).toHaveBeenCalledTimes(1);
   });
 
+  it("normalizes bundle MCP schemas once per shared workspace and model", async () => {
+    mocks.createOpenClawCodingTools.mockReturnValue([]);
+    mocks.createBundleMcpToolRuntime.mockReturnValueOnce({
+      tools: [
+        bundleMcpTool("fuzzplugin__healthy", { type: "object", properties: {} }),
+        bundleMcpTool("fuzzplugin__move_angles", {
+          type: "array",
+          items: { type: "number" },
+        }),
+      ],
+      dispose: mocks.disposeBundleRuntime,
+    });
+
+    const findings = await collectRuntimeToolSchemaFindings({
+      agents: {
+        list: [
+          { id: "main", default: true, workspace: "/tmp/shared-workspace" },
+          { id: "worker", workspace: "/tmp/shared-workspace" },
+        ],
+      },
+    });
+
+    expect(findings).toContainEqual(
+      expect.objectContaining({
+        message:
+          "Agent main tool fuzzplugin__move_angles from plugin bundle-mcp has an unsupported input schema for runtime projection.",
+      }),
+    );
+    expect(findings).toContainEqual(
+      expect.objectContaining({
+        message:
+          "Agent worker tool fuzzplugin__move_angles from plugin bundle-mcp has an unsupported input schema for runtime projection.",
+      }),
+    );
+    expect(mocks.createBundleMcpToolRuntime).toHaveBeenCalledTimes(1);
+    // Two empty core-tool normalizations, one per agent, plus one shared
+    // bundle-MCP schema normalization for the workspace/model pair.
+    expect(mocks.normalizeProviderToolSchemasWithPlugin).toHaveBeenCalledTimes(3);
+  });
+
   it("skips ACP-only agents because they do not use embedded tool projection", async () => {
     mocks.createOpenClawCodingTools.mockImplementation((options) =>
       options?.agentId === "acp-worker"
