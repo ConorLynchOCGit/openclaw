@@ -17,10 +17,20 @@ export interface DoctorLintRunOptions {
   readonly onlyIds?: ReadonlySet<string> | readonly string[];
 }
 
+export interface DoctorLintCheckTiming {
+  readonly id: string;
+  readonly durationMs: number;
+  readonly status: "passed" | "failed";
+}
+
 export interface DoctorLintRunResult {
   readonly findings: readonly HealthFinding[];
   readonly checksRun: number;
   readonly checksSkipped: number;
+  readonly timingsMs: {
+    readonly total: number;
+    readonly checks: readonly DoctorLintCheckTiming[];
+  };
 }
 
 /** Runs selected health checks in lint mode and returns sorted findings. */
@@ -28,6 +38,7 @@ export async function runDoctorLintChecks(
   ctx: HealthCheckContext,
   opts: DoctorLintRunOptions = {},
 ): Promise<DoctorLintRunResult> {
+  const startedAt = Date.now();
   const all = opts.checks ?? listHealthChecks();
   const skip = opts.skipIds instanceof Set ? opts.skipIds : new Set(opts.skipIds ?? []);
   const only = opts.onlyIds instanceof Set ? opts.onlyIds : new Set(opts.onlyIds ?? []);
@@ -44,6 +55,7 @@ export async function runDoctorLintChecks(
   });
 
   const findings: HealthFinding[] = [];
+  const timings: DoctorLintCheckTiming[] = [];
   for (const id of only) {
     if (!allIds.has(id)) {
       findings.push({
@@ -55,16 +67,25 @@ export async function runDoctorLintChecks(
     }
   }
   for (const check of selected) {
+    const checkStartedAt = Date.now();
+    let status: "passed" | "failed" = "passed";
     try {
       const out = await check.detect(ctx);
       for (const f of out) {
         findings.push(f);
       }
     } catch (err) {
+      status = "failed";
       findings.push({
         checkId: check.id,
         severity: "error",
         message: `health check threw: ${scrubDoctorErrorMessage(err)}`,
+      });
+    } finally {
+      timings.push({
+        id: check.id,
+        durationMs: Date.now() - checkStartedAt,
+        status,
       });
     }
   }
@@ -75,6 +96,10 @@ export async function runDoctorLintChecks(
     findings,
     checksRun: selected.length,
     checksSkipped: all.length - selected.length,
+    timingsMs: {
+      total: Date.now() - startedAt,
+      checks: timings,
+    },
   };
 }
 

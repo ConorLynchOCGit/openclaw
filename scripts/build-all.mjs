@@ -6,13 +6,28 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { pluginSdkEntrypoints } from "./lib/plugin-sdk-entries.mjs";
 import { resolvePnpmRunner } from "./pnpm-runner.mjs";
 
 const nodeBin = process.execPath;
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(scriptDir, "..");
 const WINDOWS_BUILD_MAX_OLD_SPACE_MB = 8192;
 const BUILD_CACHE_VERSION = 3;
+function listExtensionPackageManifestInputs(rootDir = repoRoot) {
+  const extensionsDir = path.join(rootDir, "extensions");
+  try {
+    return fs
+      .readdirSync(extensionsDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => `extensions/${entry.name}/package.json`)
+      .filter((entry) => fs.existsSync(path.join(rootDir, entry)))
+      .toSorted();
+  } catch {
+    return [];
+  }
+}
 const PLUGIN_SDK_DTS_CACHE_INPUTS = [
   "package.json",
   "pnpm-lock.yaml",
@@ -61,6 +76,34 @@ const PLUGIN_SDK_ENTRY_DTS_CACHE_OUTPUTS = [
   "dist/plugin-sdk/webhook-path.js",
   "dist/plugin-sdk/.boundary-entry-shims.stamp",
   ...pluginSdkEntrypoints.map((entry) => `packages/plugin-sdk/dist/src/plugin-sdk/${entry}.d.ts`),
+];
+const CLI_STARTUP_METADATA_CACHE_INPUTS = [
+  "package.json",
+  "scripts/write-cli-startup-metadata.ts",
+  "src/cli/program/root-help.ts",
+  "src/cli/program/help.ts",
+  "src/cli/program/context.ts",
+  "src/cli/banner.ts",
+  "src/cli/help-format.ts",
+  "src/cli/secrets-cli.ts",
+  "src/cli/nodes-cli",
+  "src/cli/daemon-cli/register-service-commands.ts",
+  "src/cli/program/register.maintenance.ts",
+  "src/cli/gateway-cli.ts",
+  "src/cli/gateway-cli/register.ts",
+  "src/cli/gateway-cli/run-command.ts",
+  "src/cli/models-cli.ts",
+  "src/cli/plugins-cli.ts",
+  "src/plugins/register-plugin-cli-command-groups.ts",
+  "extensions/browser/src/cli",
+  "extensions/canvas/cli-metadata.ts",
+  "extensions/canvas/index.ts",
+  "extensions/canvas/src/a2ui-jsonl.ts",
+  "extensions/canvas/src/cli-helpers.ts",
+  "extensions/canvas/src/cli.ts",
+  ...listExtensionPackageManifestInputs(),
+  "packages/terminal-core/src/links.ts",
+  "packages/terminal-core/src/theme.ts",
 ];
 const PNPM_STEP_NODE_FALLBACKS = new Map([
   ["plugins:assets:build", ["scripts/bundled-plugin-assets.mjs", "--phase", "build"]],
@@ -154,6 +197,11 @@ export const BUILD_ALL_STEPS = [
     label: "write-cli-startup-metadata",
     kind: "node",
     args: ["--experimental-strip-types", "scripts/write-cli-startup-metadata.ts"],
+    cache: {
+      inputs: CLI_STARTUP_METADATA_CACHE_INPUTS,
+      outputs: ["dist/cli-startup-metadata.json"],
+      restore: "always",
+    },
   },
   {
     label: "write-cli-compat",

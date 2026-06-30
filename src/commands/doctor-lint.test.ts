@@ -45,7 +45,14 @@ describe("runDoctorLintCli", () => {
 
       expect(exitCode).toBe(0);
       expect(mocks.readConfigFileSnapshot).toHaveBeenCalledWith({ observe: false });
-      expect(String(stdout.mock.calls.at(-1)?.[0])).toContain('"findings":[]');
+      const payload = JSON.parse(String(stdout.mock.calls.at(-1)?.[0]));
+      expect(payload).toMatchObject({
+        findings: [],
+        timingsMs: {
+          checks: [{ id: "core/doctor/final-config-validation", status: "passed" }],
+        },
+      });
+      expect(payload.timingsMs.total).toBeGreaterThanOrEqual(0);
     } finally {
       stdout.mockRestore();
     }

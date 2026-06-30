@@ -196,6 +196,9 @@ describe("Dockerfile", () => {
     const dockerfile = await readFile(dockerfilePath, "utf8");
 
     expect(dockerfile).toContain(
+      "RUN --mount=type=cache,id=openclaw-build-all-cache,target=/app/.artifacts/build-all-cache,sharing=locked \\",
+    );
+    expect(dockerfile).toContain(
       "NODE_OPTIONS=--max-old-space-size=8192 pnpm_config_verify_deps_before_run=false pnpm build:docker",
     );
     expect(dockerfile).toContain(

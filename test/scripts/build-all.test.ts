@@ -321,6 +321,25 @@ describe("resolveBuildAllSteps", () => {
     }
   });
 
+  it("caches generated CLI startup metadata from its owner inputs", () => {
+    const step = getBuildAllStep("write-cli-startup-metadata");
+
+    expect(step.cache?.outputs).toEqual(["dist/cli-startup-metadata.json"]);
+    expect(step.cache?.restore).toBe("always");
+    expect(step.cache?.inputs).toEqual(
+      expect.arrayContaining([
+        "scripts/write-cli-startup-metadata.ts",
+        "src/cli/program/root-help.ts",
+        "src/cli/program/help.ts",
+        "src/cli/secrets-cli.ts",
+        "src/cli/nodes-cli",
+        "extensions/browser/src/cli",
+        "extensions/codex/package.json",
+        "packages/terminal-core/src/links.ts",
+      ]),
+    );
+  });
+
   it("uses a minimal built runtime profile for gateway watch regression", () => {
     expect(resolveBuildAllSteps("gatewayWatch").map((step) => step.label)).toEqual([
       "tsdown",

@@ -37,6 +37,9 @@ describe("runDoctorLintChecks", () => {
     expect(result.checksRun).toBe(1);
     expect(result.checksSkipped).toBe(1);
     expect(result.findings.map((finding) => finding.checkId)).toEqual(["a"]);
+    expect(result.timingsMs.checks.map((timing) => timing.id)).toEqual(["a"]);
+    expect(result.timingsMs.checks[0]?.status).toBe("passed");
+    expect(result.timingsMs.total).toBeGreaterThanOrEqual(0);
   });
 
   it("supports single-run checks in lint mode", async () => {
@@ -83,6 +86,7 @@ describe("runDoctorLintChecks", () => {
         message: "health check threw: nope",
       },
     ]);
+    expect(result.timingsMs.checks).toMatchObject([{ id: "boom", status: "failed" }]);
   });
 });
 

@@ -31,6 +31,14 @@ export type DoctorLintJsonResult = {
   ok: boolean;
   checksRun: number;
   checksSkipped: number;
+  timingsMs?: {
+    total: number;
+    checks: readonly {
+      id: string;
+      durationMs: number;
+      status: "passed" | "failed";
+    }[];
+  };
   findings: Record<string, unknown>[];
 };
 
@@ -92,6 +100,7 @@ export async function buildDoctorLintJsonResult(
       ok: exitCode === 0,
       checksRun: result.checksRun,
       checksSkipped: result.checksSkipped,
+      timingsMs: result.timingsMs,
       findings: visible.map(toJsonFinding),
     },
     exitCode,
