@@ -16,6 +16,12 @@ const channelsListCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 const channelsStatusCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 const agentsListCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 const runPluginsListCommandMock = vi.hoisted(() => vi.fn(async () => {}));
+const runDoctorLintCliMock = vi.hoisted(() => vi.fn(async () => 0));
+const runPostUpgradeProbesMock = vi.hoisted(() =>
+  vi.fn(async () => ({ probesRun: ["plugin.index_unavailable"], findings: [] })),
+);
+const runExecPolicyShowCommandMock = vi.hoisted(() => vi.fn(async () => {}));
+const runExecApprovalsGetCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 const pluginsCliLoadedMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../config-cli.js", () => ({
@@ -64,6 +70,22 @@ vi.mock("../plugins-list-command.js", () => ({
   runPluginsListCommand: runPluginsListCommandMock,
 }));
 
+vi.mock("../../commands/doctor-lint.js", () => ({
+  runDoctorLintCli: runDoctorLintCliMock,
+}));
+
+vi.mock("../../commands/doctor-post-upgrade.js", () => ({
+  runPostUpgradeProbes: runPostUpgradeProbesMock,
+}));
+
+vi.mock("../exec-policy-cli.js", () => ({
+  runExecPolicyShowCommand: runExecPolicyShowCommandMock,
+}));
+
+vi.mock("../exec-approvals-cli.js", () => ({
+  runExecApprovalsGetCommand: runExecApprovalsGetCommandMock,
+}));
+
 vi.mock("../plugins-cli.js", () => {
   pluginsCliLoadedMock();
   return {
@@ -74,6 +96,7 @@ vi.mock("../plugins-cli.js", () => {
 describe("program routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.exitCode = undefined;
   });
 
   type ProgramRoute = NonNullable<ReturnType<typeof findRoutedCommand>>;
@@ -180,6 +203,120 @@ describe("program routes", () => {
       defaultRuntime,
     );
     expect(pluginsCliLoadedMock).not.toHaveBeenCalled();
+  });
+
+  it("routes doctor lint JSON through the native lint command without full maintenance CLI", async () => {
+    const argv = [
+      "node",
+      "openclaw",
+      "doctor",
+      "--lint",
+      "--json",
+      "--no-workspace-suggestions",
+      "--severity-min",
+      "warning",
+      "--skip",
+      "core/one",
+      "--skip=core/two",
+      "--only",
+      "core/three",
+      "--allow-exec",
+    ];
+    const route = expectRoute(["doctor"], argv);
+    expect(route.loadPlugins).toBeUndefined();
+    await expect(route.run(argv)).resolves.toBe(true);
+
+    expect(runDoctorLintCliMock).toHaveBeenCalledWith(defaultRuntime, {
+      json: true,
+      severityMin: "warning",
+      skipIds: ["core/one", "core/two"],
+      onlyIds: ["core/three"],
+      allowExec: true,
+    });
+    expect(process.exitCode).toBe(0);
+  });
+
+  it("routes doctor post-upgrade JSON through the native probe function", async () => {
+    runPostUpgradeProbesMock.mockResolvedValueOnce({
+      probesRun: ["plugin.index_unavailable"],
+      findings: [{ level: "error", code: "plugin.index_unavailable", message: "missing" }],
+    });
+    const argv = ["node", "openclaw", "doctor", "--post-upgrade", "--json"];
+    const route = expectRoute(["doctor"], argv);
+    expect(route.loadPlugins).toBeUndefined();
+    await expect(route.run(argv)).resolves.toBe(true);
+
+    expect(runPostUpgradeProbesMock).toHaveBeenCalledWith({});
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("returns false for unsupported doctor readiness route shapes", async () => {
+    await expectRunFalse(["doctor"], ["node", "openclaw", "doctor", "--lint"]);
+    await expectRunFalse(["doctor"], ["node", "openclaw", "doctor", "--json"]);
+    await expectRunFalse(
+      ["doctor"],
+      ["node", "openclaw", "doctor", "--lint", "--post-upgrade", "--json"],
+    );
+    await expectRunFalse(
+      ["doctor"],
+      ["node", "openclaw", "doctor", "--lint", "--json", "--unknown"],
+    );
+  });
+
+  it("routes exec-policy show JSON through the native show command", async () => {
+    const route = expectRoute(["exec-policy", "show"]);
+    expect(route.loadPlugins).toBeUndefined();
+    expect(route.canRun?.(["node", "openclaw", "exec-policy", "show"])).toBe(false);
+
+    await expect(route.run(["node", "openclaw", "exec-policy", "show", "--json"])).resolves.toBe(
+      true,
+    );
+
+    expect(runExecPolicyShowCommandMock).toHaveBeenCalledWith({ json: true });
+  });
+
+  it("routes approvals get JSON through the native approvals command", async () => {
+    const route = expectRoute(["approvals", "get"]);
+    expect(route.loadPlugins).toBeUndefined();
+    expect(route.canRun?.(["node", "openclaw", "approvals", "get"])).toBe(false);
+
+    await expect(
+      route.run([
+        "node",
+        "openclaw",
+        "approvals",
+        "get",
+        "--json",
+        "--gateway",
+        "--url",
+        "ws://127.0.0.1:18789",
+        "--token=token-1",
+      ]),
+    ).resolves.toBe(true);
+
+    expect(runExecApprovalsGetCommandMock).toHaveBeenCalledWith({
+      json: true,
+      gateway: true,
+      node: undefined,
+      url: "ws://127.0.0.1:18789",
+      token: "token-1",
+      timeout: "60000",
+    });
+  });
+
+  it("returns false for unsupported exec-policy and approvals route shapes", async () => {
+    await expectRunFalse(
+      ["exec-policy", "show"],
+      ["node", "openclaw", "exec-policy", "show", "--json", "--unknown"],
+    );
+    await expectRunFalse(
+      ["approvals", "get"],
+      ["node", "openclaw", "approvals", "get", "--json", "--timeout"],
+    );
+    await expectRunFalse(
+      ["approvals", "get"],
+      ["node", "openclaw", "approvals", "get", "--json", "--unknown"],
+    );
   });
 
   it("returns false for plugins list JSON route with unsupported arguments", async () => {

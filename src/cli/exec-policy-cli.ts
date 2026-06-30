@@ -120,6 +120,18 @@ async function runExecPolicyAction(action: () => Promise<void>): Promise<void> {
   }
 }
 
+/** Runs the read-only exec-policy show command through the shared implementation. */
+export async function runExecPolicyShowCommand(opts: { json?: boolean }): Promise<void> {
+  await runExecPolicyAction(async () => {
+    const payload = await buildLocalExecPolicyShowPayload();
+    if (opts.json) {
+      defaultRuntime.writeJson(payload, 0);
+      return;
+    }
+    renderExecPolicyShow(payload);
+  });
+}
+
 function sanitizeExecPolicyTableCell(value: string): string {
   return sanitizeExecApprovalDisplayText(sanitizeTerminalText(value));
 }
@@ -379,14 +391,7 @@ export function registerExecPolicyCli(program: Command) {
     .description("Show the local config policy, host approvals, and effective merge")
     .option("--json", "Output as JSON", false)
     .action(async (opts: { json?: boolean }) => {
-      await runExecPolicyAction(async () => {
-        const payload = await buildLocalExecPolicyShowPayload();
-        if (opts.json) {
-          defaultRuntime.writeJson(payload, 0);
-          return;
-        }
-        renderExecPolicyShow(payload);
-      });
+      await runExecPolicyShowCommand(opts);
     });
 
   execPolicy

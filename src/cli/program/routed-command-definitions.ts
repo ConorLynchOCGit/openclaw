@@ -3,10 +3,14 @@ import { defaultRuntime } from "../../runtime.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import {
   parseAgentsListRouteArgs,
+  parseApprovalsGetRouteArgs,
   parseChannelsListRouteArgs,
   parseChannelsStatusRouteArgs,
   parseConfigGetRouteArgs,
   parseConfigUnsetRouteArgs,
+  parseDoctorLintRouteArgs,
+  parseDoctorPostUpgradeRouteArgs,
+  parseExecPolicyShowRouteArgs,
   parseGatewayStatusRouteArgs,
   parseHealthRouteArgs,
   parseModelsListRouteArgs,
@@ -198,6 +202,38 @@ export const routedCommandDefinitions = {
     runParsedArgs: async (args) => {
       const { runPluginsListCommand } = await import("../plugins-list-command.js");
       await runPluginsListCommand(args, defaultRuntime);
+    },
+  }),
+  "doctor-lint": defineRoutedCommand({
+    parseArgs: parseDoctorLintRouteArgs,
+    runParsedArgs: async (args) => {
+      const { runDoctorLintCli } = await import("../../commands/doctor-lint.js");
+      const exitCode = await runDoctorLintCli(defaultRuntime, args);
+      process.exitCode = exitCode;
+    },
+  }),
+  "doctor-post-upgrade": defineRoutedCommand({
+    parseArgs: parseDoctorPostUpgradeRouteArgs,
+    runParsedArgs: async () => {
+      const { runPostUpgradeProbes } = await import("../../commands/doctor-post-upgrade.js");
+      const { writeRuntimeJson } = await import("../../runtime.js");
+      const report = await runPostUpgradeProbes({});
+      writeRuntimeJson(defaultRuntime, report);
+      process.exitCode = report.findings.some((finding) => finding.level === "error") ? 1 : 0;
+    },
+  }),
+  "exec-policy-show": defineRoutedCommand({
+    parseArgs: parseExecPolicyShowRouteArgs,
+    runParsedArgs: async (args) => {
+      const { runExecPolicyShowCommand } = await import("../exec-policy-cli.js");
+      await runExecPolicyShowCommand(args);
+    },
+  }),
+  "approvals-get": defineRoutedCommand({
+    parseArgs: parseApprovalsGetRouteArgs,
+    runParsedArgs: async (args) => {
+      const { runExecApprovalsGetCommand } = await import("../exec-approvals-cli.js");
+      await runExecApprovalsGetCommand(args);
     },
   }),
 };

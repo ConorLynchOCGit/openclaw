@@ -319,6 +319,113 @@ export function parsePluginsListRouteArgs(argv: string[]) {
   };
 }
 
+/** Parse JSON-only `openclaw doctor --lint` readiness checks for route-first execution. */
+export function parseDoctorLintRouteArgs(argv: string[]) {
+  if (!hasFlag(argv, "--json") || !hasFlag(argv, "--lint") || hasFlag(argv, "--post-upgrade")) {
+    return null;
+  }
+  const positionals = getCommandPositionalsWithRootOptions(argv, {
+    commandPath: ["doctor"],
+    booleanFlags: ["--json", "--lint", "--no-workspace-suggestions", "--allow-exec"],
+    valueFlags: ["--severity-min", "--skip", "--only"],
+  });
+  if (!positionals || positionals.length !== 0) {
+    return null;
+  }
+  const severityMin = parseOptionalFlagValue(argv, "--severity-min");
+  if (!severityMin.ok) {
+    return null;
+  }
+  const skipIds = parseRepeatedFlagValues(argv, "--skip");
+  if (skipIds === null) {
+    return null;
+  }
+  const onlyIds = parseRepeatedFlagValues(argv, "--only");
+  if (onlyIds === null) {
+    return null;
+  }
+  return {
+    json: true as const,
+    severityMin: severityMin.value,
+    skipIds,
+    onlyIds,
+    allowExec: hasFlag(argv, "--allow-exec"),
+  };
+}
+
+/** Parse JSON-only `openclaw doctor --post-upgrade` readiness probes. */
+export function parseDoctorPostUpgradeRouteArgs(argv: string[]) {
+  if (!hasFlag(argv, "--json") || !hasFlag(argv, "--post-upgrade") || hasFlag(argv, "--lint")) {
+    return null;
+  }
+  const positionals = getCommandPositionalsWithRootOptions(argv, {
+    commandPath: ["doctor"],
+    booleanFlags: ["--json", "--post-upgrade", "--no-workspace-suggestions"],
+  });
+  if (!positionals || positionals.length !== 0) {
+    return null;
+  }
+  return {
+    json: true as const,
+  };
+}
+
+/** Parse JSON-only `openclaw exec-policy show` for route-first readiness output. */
+export function parseExecPolicyShowRouteArgs(argv: string[]) {
+  if (!hasFlag(argv, "--json")) {
+    return null;
+  }
+  const positionals = getCommandPositionalsWithRootOptions(argv, {
+    commandPath: ["exec-policy", "show"],
+    booleanFlags: ["--json"],
+  });
+  if (!positionals || positionals.length !== 0) {
+    return null;
+  }
+  return {
+    json: true as const,
+  };
+}
+
+/** Parse JSON-only `openclaw approvals get` for local/gateway/node readiness output. */
+export function parseApprovalsGetRouteArgs(argv: string[]) {
+  if (!hasFlag(argv, "--json")) {
+    return null;
+  }
+  const positionals = getCommandPositionalsWithRootOptions(argv, {
+    commandPath: ["approvals", "get"],
+    booleanFlags: ["--json", "--gateway"],
+    valueFlags: ["--node", "--url", "--token", "--timeout"],
+  });
+  if (!positionals || positionals.length !== 0) {
+    return null;
+  }
+  const node = parseOptionalFlagValue(argv, "--node");
+  if (!node.ok) {
+    return null;
+  }
+  const url = parseOptionalFlagValue(argv, "--url");
+  if (!url.ok) {
+    return null;
+  }
+  const token = parseOptionalFlagValue(argv, "--token");
+  if (!token.ok) {
+    return null;
+  }
+  const timeout = parseOptionalFlagValue(argv, "--timeout");
+  if (!timeout.ok) {
+    return null;
+  }
+  return {
+    json: true as const,
+    gateway: hasFlag(argv, "--gateway"),
+    node: node.value,
+    url: url.value,
+    token: token.value,
+    timeout: timeout.value ?? "60000",
+  };
+}
+
 function parseTasksListRouteArgsForCommandPath(argv: string[], commandPath: string[]) {
   if (!hasFlag(argv, "--json")) {
     return null;

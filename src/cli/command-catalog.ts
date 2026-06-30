@@ -30,7 +30,11 @@ type CliRoutedCommandId =
   | "tasks-show"
   | "channels-list"
   | "channels-status"
-  | "plugins-list";
+  | "plugins-list"
+  | "doctor-lint"
+  | "doctor-post-upgrade"
+  | "exec-policy-show"
+  | "approvals-get";
 
 export type CliCommandPathPolicy = {
   bypassConfigGuard: boolean;
@@ -270,6 +274,12 @@ export const cliCommandCatalog: readonly CliCommandCatalogEntry[] = [
   },
   { commandPath: ["acp"], policy: { networkProxy: "bypass" } },
   { commandPath: ["approvals"], policy: { networkProxy: "bypass" } },
+  {
+    commandPath: ["approvals", "get"],
+    exact: true,
+    policy: { ensureCliPath: false, networkProxy: "bypass" },
+    route: { id: "approvals-get" },
+  },
   { commandPath: ["backup"], policy: { bypassConfigGuard: true, networkProxy: "bypass" } },
   { commandPath: ["chat"], policy: { networkProxy: "bypass" } },
   { commandPath: ["config"], policy: { networkProxy: "bypass" } },
@@ -284,7 +294,35 @@ export const cliCommandCatalog: readonly CliCommandCatalogEntry[] = [
       loadPlugins: "never",
     },
   },
+  {
+    commandPath: ["doctor"],
+    exact: true,
+    policy: {
+      bypassConfigGuard: true,
+      loadPlugins: "never",
+      ensureCliPath: false,
+      networkProxy: "bypass",
+    },
+    route: { id: "doctor-lint" },
+  },
+  {
+    commandPath: ["doctor"],
+    exact: true,
+    policy: {
+      bypassConfigGuard: true,
+      loadPlugins: "never",
+      ensureCliPath: false,
+      networkProxy: "bypass",
+    },
+    route: { id: "doctor-post-upgrade" },
+  },
   { commandPath: ["exec-policy"], policy: { networkProxy: "bypass" } },
+  {
+    commandPath: ["exec-policy", "show"],
+    exact: true,
+    policy: { ensureCliPath: false, networkProxy: "bypass" },
+    route: { id: "exec-policy-show" },
+  },
   { commandPath: ["hooks"], policy: { networkProxy: "bypass" } },
   { commandPath: ["logs"], policy: { networkProxy: "bypass" } },
   { commandPath: ["mcp"], policy: { networkProxy: "bypass" } },

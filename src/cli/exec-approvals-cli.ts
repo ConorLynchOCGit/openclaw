@@ -372,6 +372,36 @@ function renderApprovalsSnapshot(snapshot: ExecApprovalsSnapshot, targetLabel: s
   );
 }
 
+/** Runs the read-only approvals get command through the shared implementation. */
+export async function runExecApprovalsGetCommand(opts: ExecApprovalsCliOpts): Promise<void> {
+  try {
+    const { snapshot, nodeId, source } = await loadSnapshotTarget(opts);
+    const configLoad = await loadConfigForApprovalsTarget({ opts, source });
+    const effectivePolicy = buildEffectivePolicyReport({
+      configLoad,
+      source,
+      approvals: snapshot.file,
+      hostPath: snapshot.path,
+    });
+    if (opts.json) {
+      defaultRuntime.writeJson({ ...snapshot, effectivePolicy }, 0);
+      return;
+    }
+
+    const muted = (text: string) => (isRich() ? theme.muted(text) : text);
+    if (source === "local") {
+      defaultRuntime.log(muted("Showing local approvals."));
+      defaultRuntime.log("");
+    }
+    const targetLabel = source === "local" ? "local" : nodeId ? `node:${nodeId}` : "gateway";
+    renderApprovalsSnapshot(snapshot, targetLabel);
+    renderEffectivePolicy({ report: effectivePolicy });
+  } catch (err) {
+    defaultRuntime.error(formatCliError(err));
+    defaultRuntime.exit(1);
+  }
+}
+
 async function saveSnapshot(
   opts: ExecApprovalsCliOpts,
   nodeId: string | null,
@@ -504,32 +534,7 @@ export function registerExecApprovalsCli(program: Command) {
     .option("--node <node>", "Target node id/name/IP")
     .option("--gateway", "Force gateway approvals", false)
     .action(async (opts: ExecApprovalsCliOpts) => {
-      try {
-        const { snapshot, nodeId, source } = await loadSnapshotTarget(opts);
-        const configLoad = await loadConfigForApprovalsTarget({ opts, source });
-        const effectivePolicy = buildEffectivePolicyReport({
-          configLoad,
-          source,
-          approvals: snapshot.file,
-          hostPath: snapshot.path,
-        });
-        if (opts.json) {
-          defaultRuntime.writeJson({ ...snapshot, effectivePolicy }, 0);
-          return;
-        }
-
-        const muted = (text: string) => (isRich() ? theme.muted(text) : text);
-        if (source === "local") {
-          defaultRuntime.log(muted("Showing local approvals."));
-          defaultRuntime.log("");
-        }
-        const targetLabel = source === "local" ? "local" : nodeId ? `node:${nodeId}` : "gateway";
-        renderApprovalsSnapshot(snapshot, targetLabel);
-        renderEffectivePolicy({ report: effectivePolicy });
-      } catch (err) {
-        defaultRuntime.error(formatCliError(err));
-        defaultRuntime.exit(1);
-      }
+      await runExecApprovalsGetCommand(opts);
     });
   nodesCallOpts(getCmd, { timeoutMs: APPROVALS_GET_DEFAULT_TIMEOUT_MS });
 
