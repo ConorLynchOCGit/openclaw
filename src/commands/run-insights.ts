@@ -24,6 +24,10 @@ const LONG_ACTIVE_TASK_WARN_MS = 10 * 60_000;
 const TOOL_HEAVY_SESSION_WARN_CALLS = 50;
 const DELIVERY_ISSUE_STATUSES = new Set(["failed", "parent_missing", "session_queued"]);
 const DEPLOY_EVENT_TAIL_LINES = 200;
+const RECENT_DEPLOY_ATTENTION_MS = 30 * 60_000;
+const SUMMARY_TEXT_MAX_CHARS = 360;
+
+type AttentionSource = "session" | "task" | "deploy" | "status";
 
 export type RunInsightsOptions = {
   json?: boolean;
@@ -41,6 +45,15 @@ export type RunInsightSignal = {
   code: string;
   message: string;
   evidence?: Record<string, unknown>;
+};
+
+export type RunInsightAttentionItem = {
+  severity: SignalSeverity;
+  code: string;
+  message: string;
+  source: AttentionSource;
+  pointer: string;
+  evidence: Record<string, unknown>;
 };
 
 export type RunInsightSessionUsage = {
@@ -107,6 +120,18 @@ export type RunInsightTask = {
     at: number;
     summary: string | null;
   } | null;
+  progressSummary: string | null;
+  attention: {
+    waitClass:
+      | "queued"
+      | "active_child"
+      | "validation_or_promotion"
+      | "delivery"
+      | "long_running"
+      | null;
+    reason: string | null;
+    pointer: string;
+  };
   pointer: string;
 };
 
@@ -162,6 +187,11 @@ export type RunInsightsReport = {
       lastPromotedImageDigest: string | null;
       recentFailures: number;
     };
+  };
+  attention: {
+    whyWorkMayFeelSlow: RunInsightAttentionItem[];
+    validationAndPromotion: RunInsightAttentionItem[];
+    evidencePointers: string[];
   };
   signals: RunInsightSignal[];
   sessions: RunInsightSession[];
@@ -235,6 +265,27 @@ function formatTokenCount(value: number | null | undefined): string {
     return "unknown";
   }
   return new Intl.NumberFormat("en-US").format(value);
+}
+
+function compactSummaryText(value: string | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= SUMMARY_TEXT_MAX_CHARS) {
+    return normalized;
+  }
+  const suffix = "... [truncated; use pointer for full evidence]";
+  return `${normalized.slice(0, SUMMARY_TEXT_MAX_CHARS - suffix.length).trimEnd()}${suffix}`;
+}
+
+function textMatchesRunStage(value: string | null | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+  return /\b(?:validation|validate|test|smoke|build|deploy|promotion|promote|candidate|proof)\b/i.test(
+    value,
+  );
 }
 
 function selectRecentSessions(summary: StatusSummary, agent: string | undefined): SessionStatus[] {
@@ -392,6 +443,67 @@ function taskMatchesTaskFilter(task: TaskRecord, taskId: string | undefined): bo
   return task.taskId === taskId;
 }
 
+function classifyTaskAttention(
+  task: TaskRecord,
+  insight: Pick<
+    RunInsightTask,
+    "ageMs" | "childSessionKey" | "deliveryStatus" | "status" | "latestEvent"
+  >,
+): RunInsightTask["attention"] {
+  const pointer = `openclaw tasks show ${task.taskId}`;
+  const progressText =
+    task.progressSummary ??
+    task.executionReceipt?.latestEvent?.summary ??
+    task.label ??
+    task.taskKind;
+  const compactProgressText = compactSummaryText(progressText);
+  if (DELIVERY_ISSUE_STATUSES.has(insight.deliveryStatus)) {
+    return {
+      waitClass: "delivery",
+      reason: `deliveryStatus=${insight.deliveryStatus}`,
+      pointer,
+    };
+  }
+  if (textMatchesRunStage(progressText) || textMatchesRunStage(task.task)) {
+    return {
+      waitClass: "validation_or_promotion",
+      reason:
+        compactProgressText ??
+        "task text references validation, build, deploy, proof, or promotion work",
+      pointer,
+    };
+  }
+  if (insight.childSessionKey && (insight.status === "queued" || insight.status === "running")) {
+    return {
+      waitClass: "active_child",
+      reason: `active child session ${insight.childSessionKey}`,
+      pointer,
+    };
+  }
+  if (insight.status === "queued") {
+    return {
+      waitClass: "queued",
+      reason: "task is queued in native task readback",
+      pointer,
+    };
+  }
+  if (
+    (insight.status === "running" || insight.status === "queued") &&
+    insight.ageMs >= LONG_ACTIVE_TASK_WARN_MS
+  ) {
+    return {
+      waitClass: "long_running",
+      reason: `task has been ${insight.status} for ${formatDurationMs(insight.ageMs)}`,
+      pointer,
+    };
+  }
+  return {
+    waitClass: null,
+    reason: null,
+    pointer,
+  };
+}
+
 function readRecentDeployEventLines(stateDir = resolveStateDir(process.env)): string[] {
   const eventsPath = path.join(stateDir, "deploy", "events.ndjson");
   if (!fs.existsSync(eventsPath)) {
@@ -460,7 +572,7 @@ function toInsightTask(task: TaskRecord, now: number): RunInsightTask {
   const referenceAt = taskReferenceAt(task);
   const elapsedMs = taskElapsedMs(task, now);
   const latestEvent = task.executionReceipt?.latestEvent;
-  return {
+  const insight = {
     taskId: task.taskId,
     runtime: task.runtime,
     status: task.status,
@@ -486,10 +598,20 @@ function toInsightTask(task: TaskRecord, now: number): RunInsightTask {
       ? {
           kind: latestEvent.kind,
           at: latestEvent.at,
-          summary: latestEvent.summary ?? null,
+          summary: compactSummaryText(latestEvent.summary),
         }
       : null,
+    progressSummary: compactSummaryText(task.progressSummary),
+    attention: {
+      waitClass: null,
+      reason: null,
+      pointer: `openclaw tasks show ${task.taskId}`,
+    },
     pointer: `openclaw tasks show ${task.taskId}`,
+  };
+  return {
+    ...insight,
+    attention: classifyTaskAttention(task, insight),
   };
 }
 
@@ -668,6 +790,147 @@ function buildSignals(
   return signals;
 }
 
+function buildAttention(params: {
+  summary: StatusSummary;
+  sessions: RunInsightSession[];
+  tasks: RunInsightTask[];
+  deployEvents: RunInsightDeployEvent[];
+}): RunInsightsReport["attention"] {
+  const whyWorkMayFeelSlow: RunInsightAttentionItem[] = [];
+  const validationAndPromotion: RunInsightAttentionItem[] = [];
+  const evidencePointers = new Set<string>([
+    "openclaw status --json",
+    "openclaw sessions --json",
+    "openclaw tasks list --summary",
+    "openclaw tasks audit --json",
+    "openclaw run-insights --json",
+  ]);
+
+  if (params.summary.tasks.active > 0) {
+    whyWorkMayFeelSlow.push({
+      severity: "info",
+      code: "active_task_work",
+      message: `${params.summary.tasks.active} active native task(s) can make the parent run look quiet while child work proceeds.`,
+      source: "status",
+      pointer: "openclaw tasks list --summary",
+      evidence: {
+        active: params.summary.tasks.active,
+        byRuntime: params.summary.tasks.byRuntime,
+      },
+    });
+  }
+
+  for (const session of params.sessions) {
+    if (
+      typeof session.percentUsed === "number" &&
+      session.percentUsed >= HIGH_CONTEXT_WARN_PERCENT
+    ) {
+      whyWorkMayFeelSlow.push({
+        severity: session.percentUsed >= HIGH_CONTEXT_ERROR_PERCENT ? "error" : "warn",
+        code: "context_pressure",
+        message: `${session.key} is under high context pressure, which can slow or destabilize long turns.`,
+        source: "session",
+        pointer: session.pointer,
+        evidence: {
+          sessionKey: session.key,
+          percentUsed: session.percentUsed,
+          totalTokens: session.totalTokens,
+          totalTokensFresh: session.totalTokensFresh,
+        },
+      });
+      evidencePointers.add(session.pointer);
+    }
+
+    if (session.usage?.toolCalls && session.usage.toolCalls >= TOOL_HEAVY_SESSION_WARN_CALLS) {
+      whyWorkMayFeelSlow.push({
+        severity: "warn",
+        code: "tool_volume",
+        message: `${session.key} has cached evidence of heavy tool use in this run.`,
+        source: "session",
+        pointer: session.pointer,
+        evidence: {
+          sessionKey: session.key,
+          toolCalls: session.usage.toolCalls,
+          uniqueTools: session.usage.uniqueTools,
+          topTools: session.usage.topTools,
+          durationMs: session.usage.durationMs,
+        },
+      });
+      evidencePointers.add(session.pointer);
+    }
+  }
+
+  for (const task of params.tasks) {
+    if (task.attention.waitClass) {
+      const item: RunInsightAttentionItem = {
+        severity:
+          task.attention.waitClass === "delivery" || task.attention.waitClass === "long_running"
+            ? "warn"
+            : "info",
+        code: `task_${task.attention.waitClass}`,
+        message: `${task.taskId}: ${task.attention.reason ?? task.attention.waitClass}.`,
+        source: "task",
+        pointer: task.pointer,
+        evidence: {
+          taskId: task.taskId,
+          status: task.status,
+          deliveryStatus: task.deliveryStatus,
+          ageMs: task.ageMs,
+          elapsedMs: task.elapsedMs,
+          childSessionKey: task.childSessionKey,
+          latestEvent: task.latestEvent,
+          progressSummary: task.progressSummary,
+        },
+      };
+      whyWorkMayFeelSlow.push(item);
+      evidencePointers.add(task.pointer);
+      if (task.attention.waitClass === "validation_or_promotion") {
+        validationAndPromotion.push({
+          ...item,
+          code: "task_validation_or_promotion",
+        });
+      }
+    }
+  }
+
+  for (const event of params.deployEvents) {
+    const recent = event.ageMs !== null && event.ageMs <= RECENT_DEPLOY_ATTENTION_MS;
+    const stageLike = textMatchesRunStage(event.eventType) || textMatchesRunStage(event.status);
+    if (!recent && !stageLike) {
+      continue;
+    }
+    const item: RunInsightAttentionItem = {
+      severity:
+        event.status && !["built", "passed", "prepared"].includes(event.status) ? "warn" : "info",
+      code: "deploy_receipt_activity",
+      message: `${event.eventType}${event.status ? ` status=${event.status}` : ""} is present in recent deploy receipts.`,
+      source: "deploy",
+      pointer: "openclaw run-insights --json",
+      evidence: {
+        eventId: event.eventId,
+        eventType: event.eventType,
+        status: event.status,
+        ageMs: event.ageMs,
+        buildEpisodeId: event.buildEpisodeId,
+        artifactRefs: event.artifactRefs,
+      },
+    };
+    validationAndPromotion.push(item);
+    evidencePointers.add("openclaw run-insights --json");
+    for (const ref of event.artifactRefs) {
+      if (ref.path) {
+        evidencePointers.add(ref.path);
+      }
+    }
+  }
+
+  return {
+    whyWorkMayFeelSlow,
+    validationAndPromotion,
+    evidencePointers: [...evidencePointers],
+  };
+}
+
 export function buildRunInsightsReport(
   summary: StatusSummary,
   options: {
@@ -709,9 +972,16 @@ export function buildRunInsightsReport(
     (event) => event.status && !["built", "passed", "prepared"].includes(event.status),
   );
 
+  const attention = buildAttention({
+    summary,
+    sessions,
+    tasks,
+    deployEvents,
+  });
+
   return {
     schema: "openclaw.run_insights.v1",
-    generatedAt: new Date().toISOString(),
+    generatedAt: new Date(now).toISOString(),
     authority:
       "Derived readback over native status/session/task summaries; advisory only, not lifecycle truth.",
     filters: {
@@ -747,6 +1017,7 @@ export function buildRunInsightsReport(
         recentFailures: failedDeployEvents.length,
       },
     },
+    attention,
     signals: buildSignals(summary, sessions, tasks, deployEvents),
     sessions,
     tasks,
@@ -766,6 +1037,16 @@ function formatSignals(signals: RunInsightSignal[]): string[] {
     const prefix =
       signal.severity === "error" ? "ERROR" : signal.severity === "warn" ? "WARN" : "INFO";
     return `  ${prefix} ${signal.code}: ${signal.message}`;
+  });
+}
+
+function formatAttentionItems(items: RunInsightAttentionItem[], emptyMessage: string): string[] {
+  if (items.length === 0) {
+    return [`  ${emptyMessage}`];
+  }
+  return items.slice(0, 8).map((item) => {
+    const prefix = item.severity === "error" ? "ERROR" : item.severity === "warn" ? "WARN" : "INFO";
+    return `  ${prefix} ${item.code}: ${item.message} (${item.source}; ${item.pointer})`;
   });
 }
 
@@ -798,11 +1079,12 @@ function formatTasks(tasks: RunInsightTask[]): string[] {
     const label = task.label ? ` label="${task.label}"` : "";
     const child = task.childSessionKey ? ` child=${task.childSessionKey}` : "";
     const latest = task.latestEvent?.summary ? ` latest="${task.latestEvent.summary}"` : "";
+    const attention = task.attention.waitClass ? ` attention=${task.attention.waitClass}` : "";
     const delivery =
       task.deliveryStatus === "delivered" || task.deliveryStatus === "not_applicable"
         ? ""
         : ` delivery=${task.deliveryStatus}`;
-    return `  ${task.taskId} runtime=${task.runtime} status=${task.status}${delivery} age=${task.age} elapsed=${task.elapsed}${label}${child}${latest}`;
+    return `  ${task.taskId} runtime=${task.runtime} status=${task.status}${delivery} age=${task.age} elapsed=${task.elapsed}${label}${child}${latest}${attention}`;
   });
 }
 
@@ -832,6 +1114,18 @@ function formatHumanReport(report: RunInsightsReport): string[] {
     "",
     theme.heading("Signals"),
     ...formatSignals(report.signals),
+    "",
+    theme.heading("Why Work May Feel Slow"),
+    ...formatAttentionItems(
+      report.attention.whyWorkMayFeelSlow,
+      "No advisory slow-run reasons found in bounded readback.",
+    ),
+    "",
+    theme.heading("Validation / Promotion Watch"),
+    ...formatAttentionItems(
+      report.attention.validationAndPromotion,
+      "No validation, proof, build, deploy, or promotion receipts found in bounded readback.",
+    ),
     "",
     theme.heading("Recent Sessions"),
     ...formatSessions(report.sessions),

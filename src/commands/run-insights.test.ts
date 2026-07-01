@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { runInsightsCommand } from "./run-insights.js";
+import { buildRunInsightsReport, runInsightsCommand } from "./run-insights.js";
 import type { StatusSummary } from "./status.types.js";
 
 const mocks = vi.hoisted(() => ({
@@ -271,6 +271,7 @@ describe("runInsightsCommand", () => {
       },
     });
     const taskStartedAt = Date.now() - 11 * 60_000;
+    const longValidationSummary = `Running validation proof over source refs ${"with repeated diagnostic text ".repeat(25)}`;
     listTaskRecords.mockReturnValue([
       {
         taskId: "task-coding-child",
@@ -290,6 +291,7 @@ describe("runInsightsCommand", () => {
         createdAt: taskStartedAt,
         startedAt: taskStartedAt,
         lastEventAt: taskStartedAt,
+        progressSummary: longValidationSummary,
         executionReceipt: {
           schema: "openclaw.task.execution_receipt.v1",
           eventCount: 1,
@@ -297,7 +299,7 @@ describe("runInsightsCommand", () => {
           latestEvent: {
             at: taskStartedAt,
             kind: "progress",
-            summary: "reading bounded source refs",
+            summary: `reading bounded source refs ${"without raw transcript dump ".repeat(25)}`,
           },
         },
       },
@@ -379,6 +381,38 @@ describe("runInsightsCommand", () => {
       "openclaw sessions show agent:coding:main --agent coding",
     );
     expect(payload.tasks[0].pointer).toBe("openclaw tasks show task-coding-child");
+    expect(payload.tasks[0].progressSummary).toContain("Running validation proof over source refs");
+    expect(payload.tasks[0].progressSummary).toContain(
+      "[truncated; use pointer for full evidence]",
+    );
+    expect(payload.tasks[0].progressSummary.length).toBeLessThanOrEqual(360);
+    expect(payload.tasks[0].latestEvent.summary).toContain(
+      "[truncated; use pointer for full evidence]",
+    );
+    expect(payload.tasks[0].latestEvent.summary.length).toBeLessThanOrEqual(360);
+    expect(payload.tasks[0].attention).toMatchObject({
+      waitClass: "validation_or_promotion",
+      pointer: "openclaw tasks show task-coding-child",
+    });
+    expect(payload.attention.whyWorkMayFeelSlow.map((item: { code: string }) => item.code)).toEqual(
+      expect.arrayContaining([
+        "active_task_work",
+        "context_pressure",
+        "tool_volume",
+        "task_validation_or_promotion",
+        "task_delivery",
+      ]),
+    );
+    expect(
+      payload.attention.validationAndPromotion.map((item: { code: string }) => item.code),
+    ).toEqual(expect.arrayContaining(["task_validation_or_promotion", "deploy_receipt_activity"]));
+    expect(payload.attention.evidencePointers).toEqual(
+      expect.arrayContaining([
+        "openclaw sessions show agent:coding:main --agent coding",
+        "openclaw tasks show task-coding-child",
+        "/srv/openclaw-next/artifacts/deploy-controller-promote-test.json",
+      ]),
+    );
     expect(payload.signals.map((signal: { code: string }) => signal.code)).toEqual(
       expect.arrayContaining([
         "task_failures_present",
@@ -421,6 +455,18 @@ describe("runInsightsCommand", () => {
     ]);
   });
 
+  it("uses injected time for deterministic report timestamps", () => {
+    const now = Date.UTC(2026, 6, 1, 5, 30, 0);
+    const payload = buildRunInsightsReport(buildSummary(), {
+      activeMinutes: 60,
+      limit: 1,
+      now,
+      taskRecords: [],
+    });
+
+    expect(payload.generatedAt).toBe("2026-07-01T05:30:00.000Z");
+  });
+
   it("prints human readback without crawling raw transcripts", async () => {
     await runInsightsCommand({}, runtime);
 
@@ -429,7 +475,12 @@ describe("runInsightsCommand", () => {
     expect(output).toContain("Derived readback over native status/session/task summaries");
     expect(output).toContain("tools=55/2");
     expect(output).toContain("cost=$0.1234");
+    expect(output).toContain("Why Work May Feel Slow");
+    expect(output).toContain("task_validation_or_promotion");
+    expect(output).toContain("Validation / Promotion Watch");
+    expect(output).toContain("deploy_receipt_activity");
     expect(output).toContain("Recent Tasks");
+    expect(output).toContain("attention=validation_or_promotion");
     expect(output).toContain("Recent Deploy Events");
     expect(output).toContain("deploy.promote status=passed");
     expect(output).toContain("openclaw tasks audit --json");
