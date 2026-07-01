@@ -1114,14 +1114,14 @@ function includePatternMatchesAnyFile(pattern, files) {
 
 function resolveExplicitSourceTestTargets(targetArg, cwd, options = {}) {
   const relative = toRepoRelativeTarget(targetArg, cwd);
-  const kind = classifyTarget(targetArg, cwd);
-  if (shouldUseWholeConfigTarget(kind, targetArg, cwd)) {
-    return null;
-  }
   if (!isExistingFileTarget(targetArg, cwd)) {
     return null;
   }
   if (isTestFileTarget(relative)) {
+    return null;
+  }
+  const kind = classifyTarget(targetArg, cwd);
+  if (shouldUseWholeConfigTarget(kind, targetArg, cwd)) {
     return null;
   }
   const preciseTargets = resolvePreciseChangedTestTargets(relative, {
@@ -1180,10 +1180,6 @@ export function findUnmatchedExplicitTestTargets(args, cwd = process.cwd()) {
     ) {
       continue;
     }
-    const kind = classifyTarget(targetArg, cwd);
-    if (shouldUseWholeConfigTarget(kind, targetArg, cwd)) {
-      continue;
-    }
     if (isGlobTarget(relative)) {
       if (!includePatternMatchesAnyFile(relative, getCandidateFiles())) {
         unmatched.push({
@@ -1204,6 +1200,11 @@ export function findUnmatchedExplicitTestTargets(args, cwd = process.cwd()) {
     }
 
     if (isTestFileTarget(relative)) {
+      continue;
+    }
+
+    const kind = classifyTarget(targetArg, cwd);
+    if (shouldUseWholeConfigTarget(kind, targetArg, cwd)) {
       continue;
     }
 

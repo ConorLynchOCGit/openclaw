@@ -2465,6 +2465,28 @@ describe("scripts/test-projects full-suite sharding", () => {
     ]);
   });
 
+  it("does not scan source files while routing exact Codex app-server attempt test files", () => {
+    const target = "extensions/codex/src/app-server/attempt-turn-watches.test.ts";
+    const readFileSync = vi.spyOn(fs, "readFileSync");
+    const before = readFileSync.mock.calls.length;
+
+    expect(buildVitestRunPlans([target], process.cwd())).toEqual([
+      {
+        config: "test/vitest/vitest.extension-codex-app-server-attempt-support.config.ts",
+        forwardedArgs: [],
+        includePatterns: [target],
+        watchMode: false,
+      },
+    ]);
+
+    const repoSourceReads = readFileSync.mock.calls
+      .slice(before)
+      .filter(([file]) => typeof file === "string" && normalizeRepoPath(file).includes("/src/"));
+    readFileSync.mockRestore();
+
+    expect(repoSourceReads).toEqual([]);
+  });
+
   it("routes Codex app-server attempt integration files to the narrow extra shard", () => {
     const target = "extensions/codex/src/app-server/run-attempt.turn-watches.test.ts";
 

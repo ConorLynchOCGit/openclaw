@@ -442,6 +442,7 @@ let cachedUnitFastTestFileSet = null;
 let cachedUnitFastTimerTestFiles = null;
 let cachedUnitFastTimerTestFileSet = null;
 const cachedSingleUnitFastTestFileResults = new Map();
+const cachedSingleUnitFastTimerTestFileResults = new Map();
 
 export function getUnitFastTestFiles() {
   if (cachedUnitFastTestFiles !== null) {
@@ -506,6 +507,32 @@ function isUnitFastTestFileOnDemand(file, cwd = process.cwd()) {
   return result;
 }
 
+function isUnitFastTimerTestFileOnDemand(file, cwd = process.cwd()) {
+  const normalized = normalizeRepoPath(file);
+  const cacheKey = `${normalizeRepoPath(cwd)}\0${normalized}`;
+  if (cachedSingleUnitFastTimerTestFileResults.has(cacheKey)) {
+    return cachedSingleUnitFastTimerTestFileResults.get(cacheKey);
+  }
+
+  if (!isUnitFastCandidateFile(normalized)) {
+    cachedSingleUnitFastTimerTestFileResults.set(cacheKey, false);
+    return false;
+  }
+
+  let source;
+  try {
+    source = fs.readFileSync(path.join(cwd, normalized), "utf8");
+  } catch {
+    cachedSingleUnitFastTimerTestFileResults.set(cacheKey, false);
+    return false;
+  }
+
+  const reasons = classifyUnitFastTestFileContent(source);
+  const result = forcedUnitFastTestFileSet.has(normalized) && reasons.includes("fake-timers");
+  cachedSingleUnitFastTimerTestFileResults.set(cacheKey, result);
+  return result;
+}
+
 export function isUnitFastTestFile(file) {
   return getUnitFastTestFileSet().has(normalizeRepoPath(file));
 }
@@ -516,14 +543,14 @@ export function isUnitFastTimerTestFile(file) {
 
 export function resolveUnitFastTestIncludePattern(file) {
   const normalized = normalizeRepoPath(file);
-  if (isUnitFastTimerTestFile(normalized)) {
+  if (isUnitFastTimerTestFileOnDemand(normalized)) {
     return null;
   }
   if (isUnitFastTestFileOnDemand(normalized)) {
     return normalized;
   }
   const siblingTestFile = normalized.replace(/\.ts$/u, ".test.ts");
-  if (isUnitFastTimerTestFile(siblingTestFile)) {
+  if (isUnitFastTimerTestFileOnDemand(siblingTestFile)) {
     return null;
   }
   if (isUnitFastTestFileOnDemand(siblingTestFile)) {
@@ -538,9 +565,9 @@ export function resolveUnitFastTestIncludePattern(file) {
 
 export function resolveUnitFastTimerTestIncludePattern(file) {
   const normalized = normalizeRepoPath(file);
-  if (isUnitFastTimerTestFile(normalized)) {
+  if (isUnitFastTimerTestFileOnDemand(normalized)) {
     return normalized;
   }
   const siblingTestFile = normalized.replace(/\.ts$/u, ".test.ts");
-  return isUnitFastTimerTestFile(siblingTestFile) ? siblingTestFile : null;
+  return isUnitFastTimerTestFileOnDemand(siblingTestFile) ? siblingTestFile : null;
 }

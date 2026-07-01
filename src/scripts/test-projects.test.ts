@@ -426,10 +426,10 @@ describe("test-projects args", () => {
     ]);
   });
 
-  it("routes gateway targets to the gateway config", () => {
+  it("routes gateway targets to the gateway core config", () => {
     expect(buildVitestRunPlans(["src/gateway/call.test.ts"])).toEqual([
       {
-        config: "test/vitest/vitest.gateway.config.ts",
+        config: "test/vitest/vitest.gateway-core.config.ts",
         forwardedArgs: [],
         includePatterns: ["src/gateway/call.test.ts"],
         watchMode: false,
@@ -664,7 +664,7 @@ describe("test-projects args", () => {
   it("routes non-test helper file targets to importing tests inside the routed suites", () => {
     expect(buildVitestRunPlans(["src/gateway/gateway-connection.test-mocks.ts"])).toEqual([
       {
-        config: "test/vitest/vitest.gateway.config.ts",
+        config: "test/vitest/vitest.gateway-core.config.ts",
         forwardedArgs: [],
         includePatterns: ["src/gateway/call.test.ts"],
         watchMode: false,
