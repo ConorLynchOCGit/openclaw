@@ -2,6 +2,7 @@
 import path from "node:path";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { colorize, theme } from "../../../packages/terminal-core/src/theme.js";
+import { listAgentIds } from "../../agents/agent-scope.js";
 import {
   buildAuthHealthSummary,
   DEFAULT_OAUTH_WARN_MS,
@@ -243,15 +244,118 @@ export async function modelsStatusCommand(
     probeConcurrency?: string;
     probeMaxTokens?: string;
     agent?: string;
+    allAgents?: boolean;
   },
   runtime: RuntimeEnv,
+  preloaded?: {
+    configPath: string;
+    cfg: Awaited<ReturnType<typeof loadModelsConfig>>;
+  },
 ) {
   ensureFlagCompatibility(opts);
   if (opts.plain && opts.probe) {
     throw new Error("--probe cannot be used with --plain output.");
   }
-  const configPath = createConfigIO().configPath;
-  const cfg = await loadModelsConfig({ commandName: "models status", runtime });
+  if (opts.allAgents) {
+    if (!opts.json) {
+      throw new Error("--all-agents requires --json output.");
+    }
+    if (opts.plain) {
+      throw new Error("--all-agents cannot be used with --plain output.");
+    }
+    if (opts.agent?.trim()) {
+      throw new Error("Use either --all-agents or --agent, not both.");
+    }
+    if (opts.probe) {
+      throw new Error("--all-agents cannot be used with --probe.");
+    }
+    const configPath = preloaded?.configPath ?? createConfigIO().configPath;
+    const cfg =
+      preloaded?.cfg ?? (await loadModelsConfig({ commandName: "models status", runtime }));
+    const agentIds = listAgentIds(cfg);
+    const agentSummaries: Array<{
+      agentId: string;
+      ok: boolean;
+      model: string | null;
+      missingProvidersInUse: unknown[];
+      missingRuntimeAuthRoutes: unknown[];
+      error?: string;
+    }> = [];
+
+    for (const agentId of agentIds) {
+      const logs: string[] = [];
+      let exitCode: number | undefined;
+      const captureRuntime = {
+        ...runtime,
+        log: (message: unknown) => {
+          logs.push(String(message));
+        },
+        exit: (code?: number) => {
+          exitCode = typeof code === "number" ? code : 0;
+        },
+      } as RuntimeEnv;
+      try {
+        await modelsStatusCommand(
+          { ...opts, allAgents: false, json: true, check: false, agent: agentId },
+          captureRuntime,
+          { configPath, cfg },
+        );
+        const status = JSON.parse(logs[0] ?? "{}") as {
+          resolvedDefault?: unknown;
+          defaultModel?: unknown;
+          auth?: {
+            missingProvidersInUse?: unknown[];
+            runtimeAuthRoutes?: Array<{ status?: unknown }>;
+          };
+        };
+        const missingProvidersInUse = Array.isArray(status.auth?.missingProvidersInUse)
+          ? status.auth.missingProvidersInUse
+          : [];
+        const missingRuntimeAuthRoutes = Array.isArray(status.auth?.runtimeAuthRoutes)
+          ? status.auth.runtimeAuthRoutes.filter((route) => route?.status === "missing")
+          : [];
+        agentSummaries.push({
+          agentId,
+          ok:
+            exitCode !== 1 &&
+            missingProvidersInUse.length === 0 &&
+            missingRuntimeAuthRoutes.length === 0,
+          model:
+            typeof status.resolvedDefault === "string"
+              ? status.resolvedDefault
+              : typeof status.defaultModel === "string"
+                ? status.defaultModel
+                : null,
+          missingProvidersInUse,
+          missingRuntimeAuthRoutes,
+        });
+      } catch (error) {
+        agentSummaries.push({
+          agentId,
+          ok: false,
+          model: null,
+          missingProvidersInUse: [],
+          missingRuntimeAuthRoutes: [],
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    const missingCount = agentSummaries.filter((agent) => !agent.ok).length;
+    writeRuntimeJson(runtime, {
+      configPath,
+      ok: missingCount === 0,
+      agentCount: agentSummaries.length,
+      missingCount,
+      agents: agentSummaries,
+    });
+    if (opts.check) {
+      runtime.exit(missingCount === 0 ? 0 : 1);
+    }
+    return;
+  }
+  const configPath = preloaded?.configPath ?? createConfigIO().configPath;
+  const cfg = preloaded?.cfg ?? (await loadModelsConfig({ commandName: "models status", runtime }));
   const scope = resolveModelsCommandAgentScope({
     cfg,
     rawAgentId: opts.agent,

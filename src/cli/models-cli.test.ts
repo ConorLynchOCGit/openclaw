@@ -155,6 +155,11 @@ describe("models cli", () => {
     expectCommandOptions(modelsStatusCommand, { agent: "poe" });
   });
 
+  it("passes --all-agents to models status", async () => {
+    await runModelsCommand(["models", "status", "--all-agents", "--json"]);
+    expectCommandOptions(modelsStatusCommand, { allAgents: true, json: true });
+  });
+
   it.each([
     { label: "list flag", args: ["models", "list", "--agent", "poe"] },
     { label: "parent flag", args: ["models", "--agent", "poe", "list"] },

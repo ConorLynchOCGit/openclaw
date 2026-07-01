@@ -437,6 +437,34 @@ describe("modelsStatusCommand auth overview", () => {
     );
   });
 
+  it("summarizes model auth status for all configured agents", async () => {
+    const localRuntime = createRuntime();
+    const originalListAgentIds = mocks.listAgentIds.getMockImplementation();
+    mocks.listAgentIds.mockReturnValue(["main", "planning"]);
+
+    try {
+      await modelsStatusCommand({ json: true, allAgents: true }, localRuntime as never);
+      const payload = parseFirstJsonLog(localRuntime);
+      expect(payload.ok).toBe(true);
+      expect(payload.agentCount).toBe(2);
+      expect(payload.missingCount).toBe(0);
+      expect(payload.agents.map((agent: { agentId: string }) => agent.agentId)).toEqual([
+        "main",
+        "planning",
+      ]);
+      expect(payload.agents.every((agent: { ok: boolean }) => agent.ok)).toBe(true);
+      expect(
+        payload.agents.every((agent: { model: unknown }) => typeof agent.model === "string"),
+      ).toBe(true);
+    } finally {
+      if (originalListAgentIds) {
+        mocks.listAgentIds.mockImplementation(originalListAgentIds);
+      } else {
+        mocks.listAgentIds.mockReturnValue(["main", "jeremiah"]);
+      }
+    }
+  });
+
   it("honors OPENCLAW_AGENT_DIR when no --agent override is provided", async () => {
     const localRuntime = createRuntime();
     mocks.resolveAgentDir.mockClear();

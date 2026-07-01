@@ -266,6 +266,7 @@ export function parseModelsStatusRouteArgs(argv: string[]) {
     probeConcurrency: probeConcurrency.value,
     probeMaxTokens: probeMaxTokens.value,
     agent: agent.value,
+    allAgents: hasFlag(argv, "--all-agents"),
     probeProfile,
     json: hasFlag(argv, "--json"),
     plain: hasFlag(argv, "--plain"),

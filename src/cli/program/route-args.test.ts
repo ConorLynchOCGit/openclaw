@@ -226,6 +226,7 @@ describe("route-args", () => {
         "--plain",
         "--check",
         "--probe",
+        "--all-agents",
       ]),
     ).toEqual({
       probeProvider: "openai",
@@ -234,6 +235,7 @@ describe("route-args", () => {
       probeMaxTokens: "64",
       probeProfile: ["fast", "safe"],
       agent: "default",
+      allAgents: true,
       json: true,
       plain: true,
       check: true,

@@ -91,6 +91,7 @@ export function registerModelsCli(program: Command) {
     .option("--probe-concurrency <n>", "Concurrent probes")
     .option("--probe-max-tokens <n>", "Probe max tokens (best-effort)")
     .option("--agent <id>", "Agent id to inspect (overrides OPENCLAW_AGENT_DIR)")
+    .option("--all-agents", "Summarize configured model auth status for every agent", false)
     .action(async (opts, command) => {
       await withModelsRuntime(async ({ defaultRuntime, resolveModelAgentOption }) => {
         const agent = resolveModelAgentOption(command, opts);
@@ -107,6 +108,7 @@ export function registerModelsCli(program: Command) {
             probeConcurrency: opts.probeConcurrency as string | undefined,
             probeMaxTokens: opts.probeMaxTokens as string | undefined,
             agent,
+            allAgents: Boolean(opts.allAgents),
           },
           defaultRuntime,
         );
