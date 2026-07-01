@@ -2,6 +2,8 @@
 import { theme } from "../../packages/terminal-core/src/theme.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { writeRuntimeJson } from "../runtime.js";
+import { listTaskRecords } from "../tasks/task-registry.js";
+import type { TaskRecord } from "../tasks/task-registry.types.js";
 import { getStatusSummary } from "./status.summary.js";
 import type { SessionStatus, StatusSummary } from "./status.types.js";
 
@@ -9,6 +11,7 @@ const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
 const HIGH_CONTEXT_WARN_PERCENT = 80;
 const HIGH_CONTEXT_ERROR_PERCENT = 90;
+const LONG_ACTIVE_TASK_WARN_MS = 10 * 60_000;
 
 export type RunInsightsOptions = {
   json?: boolean;
@@ -46,6 +49,36 @@ export type RunInsightSession = {
   pointer: string;
 };
 
+export type RunInsightTask = {
+  taskId: string;
+  runtime: string;
+  status: string;
+  deliveryStatus: string;
+  taskKind: string | null;
+  agentId: string | null;
+  runId: string | null;
+  label: string | null;
+  ownerKey: string;
+  requesterSessionKey: string;
+  childSessionKey: string | null;
+  parentTaskId: string | null;
+  parentFlowId: string | null;
+  createdAt: number;
+  startedAt: number | null;
+  endedAt: number | null;
+  lastEventAt: number | null;
+  ageMs: number;
+  age: string;
+  elapsedMs: number | null;
+  elapsed: string;
+  latestEvent: {
+    kind: string;
+    at: number;
+    summary: string | null;
+  } | null;
+  pointer: string;
+};
+
 export type RunInsightsReport = {
   schema: "openclaw.run_insights.v1";
   generatedAt: string;
@@ -64,12 +97,16 @@ export type RunInsightsReport = {
       active: number;
       terminal: number;
       failures: number;
+      recentDisplayed: number;
+      activeDisplayed: number;
+      childTasksDisplayed: number;
       byStatus: StatusSummary["tasks"]["byStatus"];
       byRuntime: StatusSummary["tasks"]["byRuntime"];
     };
   };
   signals: RunInsightSignal[];
   sessions: RunInsightSession[];
+  tasks: RunInsightTask[];
   pointers: {
     statusJson: string;
     sessions: string;
@@ -166,7 +203,73 @@ function toInsightSession(row: SessionStatus): RunInsightSession {
   };
 }
 
-function buildSignals(summary: StatusSummary, sessions: RunInsightSession[]): RunInsightSignal[] {
+function taskReferenceAt(task: TaskRecord): number {
+  return task.lastEventAt ?? task.startedAt ?? task.createdAt;
+}
+
+function taskElapsedMs(task: TaskRecord, now: number): number | null {
+  if (typeof task.startedAt !== "number") {
+    return null;
+  }
+  return Math.max(0, (task.endedAt ?? now) - task.startedAt);
+}
+
+function taskMatchesActiveFilter(task: TaskRecord, activeMinutes: number | undefined, now: number) {
+  if (activeMinutes === undefined) {
+    return true;
+  }
+  return now - taskReferenceAt(task) <= activeMinutes * 60_000;
+}
+
+function taskMatchesAgentFilter(task: TaskRecord, agent: string | undefined): boolean {
+  if (!agent) {
+    return true;
+  }
+  return task.agentId === agent || task.ownerKey.includes(`agent:${agent}:`);
+}
+
+function toInsightTask(task: TaskRecord, now: number): RunInsightTask {
+  const referenceAt = taskReferenceAt(task);
+  const elapsedMs = taskElapsedMs(task, now);
+  const latestEvent = task.executionReceipt?.latestEvent;
+  return {
+    taskId: task.taskId,
+    runtime: task.runtime,
+    status: task.status,
+    deliveryStatus: task.deliveryStatus,
+    taskKind: task.taskKind ?? null,
+    agentId: task.agentId ?? null,
+    runId: task.runId ?? null,
+    label: task.label ?? null,
+    ownerKey: task.ownerKey,
+    requesterSessionKey: task.requesterSessionKey,
+    childSessionKey: task.childSessionKey ?? null,
+    parentTaskId: task.parentTaskId ?? null,
+    parentFlowId: task.parentFlowId ?? null,
+    createdAt: task.createdAt,
+    startedAt: task.startedAt ?? null,
+    endedAt: task.endedAt ?? null,
+    lastEventAt: task.lastEventAt ?? null,
+    ageMs: Math.max(0, now - referenceAt),
+    age: formatDurationMs(Math.max(0, now - referenceAt)),
+    elapsedMs,
+    elapsed: formatDurationMs(elapsedMs),
+    latestEvent: latestEvent
+      ? {
+          kind: latestEvent.kind,
+          at: latestEvent.at,
+          summary: latestEvent.summary ?? null,
+        }
+      : null,
+    pointer: `openclaw tasks show ${task.taskId}`,
+  };
+}
+
+function buildSignals(
+  summary: StatusSummary,
+  sessions: RunInsightSession[],
+  tasks: RunInsightTask[],
+): RunInsightSignal[] {
   const signals: RunInsightSignal[] = [];
 
   if (summary.tasks.failures > 0) {
@@ -238,6 +341,25 @@ function buildSignals(summary: StatusSummary, sessions: RunInsightSession[]): Ru
     }
   }
 
+  for (const task of tasks) {
+    if (
+      (task.status === "queued" || task.status === "running") &&
+      task.ageMs >= LONG_ACTIVE_TASK_WARN_MS
+    ) {
+      signals.push({
+        severity: "warn",
+        code: "long_active_task",
+        message: `${task.taskId} has been ${task.status} for ${task.age}.`,
+        evidence: {
+          taskId: task.taskId,
+          status: task.status,
+          ageMs: task.ageMs,
+          pointer: task.pointer,
+        },
+      });
+    }
+  }
+
   if (signals.length === 0) {
     signals.push({
       severity: "info",
@@ -255,11 +377,20 @@ export function buildRunInsightsReport(
     agent?: string;
     activeMinutes?: number;
     limit: number;
+    now?: number;
+    taskRecords?: TaskRecord[];
   },
 ): RunInsightsReport {
+  const now = options.now ?? Date.now();
   const recent = selectRecentSessions(summary, options.agent);
   const filtered = recent.filter((row) => sessionMatchesActiveFilter(row, options.activeMinutes));
   const sessions = filtered.slice(0, options.limit).map(toInsightSession);
+  const taskRecords = options.taskRecords ?? listTaskRecords();
+  const tasks = taskRecords
+    .filter((task) => taskMatchesAgentFilter(task, options.agent))
+    .filter((task) => taskMatchesActiveFilter(task, options.activeMinutes, now))
+    .slice(0, options.limit)
+    .map((task) => toInsightTask(task, now));
 
   return {
     schema: "openclaw.run_insights.v1",
@@ -280,12 +411,18 @@ export function buildRunInsightsReport(
         active: summary.tasks.active,
         terminal: summary.tasks.terminal,
         failures: summary.tasks.failures,
+        recentDisplayed: tasks.length,
+        activeDisplayed: tasks.filter(
+          (task) => task.status === "queued" || task.status === "running",
+        ).length,
+        childTasksDisplayed: tasks.filter((task) => task.childSessionKey !== null).length,
         byStatus: summary.tasks.byStatus,
         byRuntime: summary.tasks.byRuntime,
       },
     },
-    signals: buildSignals(summary, sessions),
+    signals: buildSignals(summary, sessions, tasks),
     sessions,
+    tasks,
     pointers: {
       statusJson: "openclaw status --json",
       sessions: "openclaw sessions --json",
@@ -319,6 +456,18 @@ function formatSessions(sessions: RunInsightSession[]): string[] {
   });
 }
 
+function formatTasks(tasks: RunInsightTask[]): string[] {
+  if (tasks.length === 0) {
+    return ["  No recent tasks matched the filters."];
+  }
+  return tasks.map((task) => {
+    const label = task.label ? ` label="${task.label}"` : "";
+    const child = task.childSessionKey ? ` child=${task.childSessionKey}` : "";
+    const latest = task.latestEvent?.summary ? ` latest="${task.latestEvent.summary}"` : "";
+    return `  ${task.taskId} runtime=${task.runtime} status=${task.status} age=${task.age} elapsed=${task.elapsed}${label}${child}${latest}`;
+  });
+}
+
 function formatHumanReport(report: RunInsightsReport): string[] {
   const lines = [
     theme.heading("Run Insights"),
@@ -331,6 +480,9 @@ function formatHumanReport(report: RunInsightsReport): string[] {
     "",
     theme.heading("Recent Sessions"),
     ...formatSessions(report.sessions),
+    "",
+    theme.heading("Recent Tasks"),
+    ...formatTasks(report.tasks),
     "",
     theme.heading("Pointers"),
     `  ${report.pointers.statusJson}`,

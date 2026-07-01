@@ -4,6 +4,7 @@ import type { StatusSummary } from "./status.types.js";
 
 const mocks = vi.hoisted(() => ({
   getStatusSummary: vi.fn(),
+  listTaskRecords: vi.fn(),
   runtime: {
     log: vi.fn(),
     error: vi.fn(),
@@ -12,10 +13,15 @@ const mocks = vi.hoisted(() => ({
 }));
 
 const getStatusSummary = mocks.getStatusSummary;
+const listTaskRecords = mocks.listTaskRecords;
 const runtime = mocks.runtime;
 
 vi.mock("./status.summary.js", () => ({
   getStatusSummary: mocks.getStatusSummary,
+}));
+
+vi.mock("../tasks/task-registry.js", () => ({
+  listTaskRecords: mocks.listTaskRecords,
 }));
 
 function buildSummary(): StatusSummary {
@@ -151,6 +157,38 @@ describe("runInsightsCommand", () => {
     vi.clearAllMocks();
     runtime.exit.mockImplementation(() => {});
     getStatusSummary.mockResolvedValue(buildSummary());
+    const taskStartedAt = Date.now() - 11 * 60_000;
+    listTaskRecords.mockReturnValue([
+      {
+        taskId: "task-coding-child",
+        runtime: "subagent",
+        taskKind: "source_scout",
+        agentId: "coding",
+        runId: "run-coding-child",
+        label: "codebase scout",
+        requesterSessionKey: "agent:coding:main",
+        ownerKey: "agent:coding:main",
+        scopeKind: "session",
+        childSessionKey: "agent:coding:child:1",
+        task: "inspect source",
+        status: "running",
+        deliveryStatus: "pending",
+        notifyPolicy: "done_only",
+        createdAt: taskStartedAt,
+        startedAt: taskStartedAt,
+        lastEventAt: taskStartedAt,
+        executionReceipt: {
+          schema: "openclaw.task.execution_receipt.v1",
+          eventCount: 1,
+          updatedAt: taskStartedAt,
+          latestEvent: {
+            at: taskStartedAt,
+            kind: "progress",
+            summary: "reading bounded source refs",
+          },
+        },
+      },
+    ]);
   });
 
   it("emits bounded JSON run performance evidence from status summaries", async () => {
@@ -178,16 +216,20 @@ describe("runInsightsCommand", () => {
       limit: 5,
     });
     expect(payload.summary.tasks.failures).toBe(1);
+    expect(payload.summary.tasks.childTasksDisplayed).toBe(1);
     expect(payload.sessions).toHaveLength(1);
+    expect(payload.tasks).toHaveLength(1);
     expect(payload.sessions[0].pointer).toBe(
       "openclaw sessions show agent:coding:main --agent coding",
     );
+    expect(payload.tasks[0].pointer).toBe("openclaw tasks show task-coding-child");
     expect(payload.signals.map((signal: { code: string }) => signal.code)).toEqual(
       expect.arrayContaining([
         "task_failures_present",
         "active_tasks_present",
         "session_aborted_last_run",
         "high_context_pressure",
+        "long_active_task",
       ]),
     );
   });
@@ -198,6 +240,7 @@ describe("runInsightsCommand", () => {
     const output = runtime.log.mock.calls.map((call) => String(call[0])).join("\n");
     expect(output).toContain("Run Insights");
     expect(output).toContain("Derived readback over native status/session/task summaries");
+    expect(output).toContain("Recent Tasks");
     expect(output).toContain("openclaw tasks audit --json");
   });
 
