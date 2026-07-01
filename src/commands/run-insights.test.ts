@@ -283,6 +283,8 @@ describe("runInsightsCommand", () => {
     expect(payload.authority).toContain("not lifecycle truth");
     expect(payload.filters).toEqual({
       agent: "coding",
+      session: null,
+      task: null,
       activeMinutes: 60,
       limit: 5,
     });
@@ -315,6 +317,33 @@ describe("runInsightsCommand", () => {
     );
   });
 
+  it("focuses run insight readback by session and task", async () => {
+    await runInsightsCommand(
+      {
+        json: true,
+        session: "agent:coding:main",
+        task: "task-coding-child",
+        limit: "10",
+      },
+      runtime,
+    );
+
+    const payload = JSON.parse(String(runtime.log.mock.calls[0]?.[0]));
+    expect(payload.filters).toEqual({
+      agent: null,
+      session: "agent:coding:main",
+      task: "task-coding-child",
+      activeMinutes: null,
+      limit: 10,
+    });
+    expect(payload.sessions.map((session: { key: string }) => session.key)).toEqual([
+      "agent:coding:main",
+    ]);
+    expect(payload.tasks.map((task: { taskId: string }) => task.taskId)).toEqual([
+      "task-coding-child",
+    ]);
+  });
+
   it("prints human readback without crawling raw transcripts", async () => {
     await runInsightsCommand({}, runtime);
 
@@ -331,6 +360,15 @@ describe("runInsightsCommand", () => {
     await runInsightsCommand({ limit: "nope" }, runtime);
 
     expect(runtime.error).toHaveBeenCalledWith("--limit must be a positive integer.");
+    expect(runtime.exit).toHaveBeenCalledWith(1);
+    expect(getStatusSummary).not.toHaveBeenCalled();
+    expect(loadSessionCostSummaryFromCache).not.toHaveBeenCalled();
+  });
+
+  it("rejects empty focus filters before reading status summaries", async () => {
+    await runInsightsCommand({ session: " " }, runtime);
+
+    expect(runtime.error).toHaveBeenCalledWith("--session must not be empty.");
     expect(runtime.exit).toHaveBeenCalledWith(1);
     expect(getStatusSummary).not.toHaveBeenCalled();
     expect(loadSessionCostSummaryFromCache).not.toHaveBeenCalled();

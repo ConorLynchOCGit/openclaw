@@ -227,6 +227,10 @@ describe("registerStatusHealthSessionsCommands", () => {
       "--json",
       "--agent",
       "coding",
+      "--session",
+      "agent:coding:main",
+      "--task",
+      "task-coding-child",
       "--active",
       "120",
       "--limit",
@@ -236,6 +240,8 @@ describe("registerStatusHealthSessionsCommands", () => {
     expectCommandOptions(runInsightsCommand, {
       json: true,
       agent: "coding",
+      session: "agent:coding:main",
+      task: "task-coding-child",
       active: "120",
       limit: "5",
     });

@@ -18,6 +18,8 @@ memory.
 ```bash
 openclaw run-insights
 openclaw run-insights --agent coding
+openclaw run-insights --session agent:coding:main
+openclaw run-insights --task <task-id>
 openclaw run-insights --active 120
 openclaw run-insights --limit 5
 openclaw run-insights --json
@@ -27,6 +29,10 @@ openclaw run-insights --json
 
 - `--json`: output machine-readable JSON.
 - `--agent <id>`: focus recent session readback on one agent.
+- `--session <key>`: focus readback on one session key or session id. Task
+  readback is limited to tasks whose requester, owner, or child session key
+  matches.
+- `--task <id>`: focus task readback on one task id.
 - `--active <minutes>`: only consider sessions updated within the past N minutes.
 - `--limit <count>`: maximum sessions to show. The command caps this at 50.
 

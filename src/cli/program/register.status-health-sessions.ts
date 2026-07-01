@@ -25,6 +25,8 @@ type SessionsListCliOptions = {
 type RunInsightsCliOptions = {
   json?: boolean;
   agent?: string;
+  session?: string;
+  task?: string;
   active?: string;
   limit?: string;
 };
@@ -205,6 +207,8 @@ export function registerStatusHealthSessionsCommands(program: Command) {
     .description("Summarize recent run/session/task performance evidence")
     .option("--json", "Output JSON instead of text", false)
     .option("--agent <id>", "Limit recent session readback to one agent")
+    .option("--session <key>", "Limit readback to one session key or session id")
+    .option("--task <id>", "Limit task readback to one task id")
     .option("--active <minutes>", "Only consider sessions updated within the past N minutes")
     .option("--limit <count>", `Max sessions to show (default: 10, max: 50)`)
     .addHelpText(
@@ -213,6 +217,8 @@ export function registerStatusHealthSessionsCommands(program: Command) {
         `\n${theme.heading("Examples:")}\n${formatHelpExamples([
           ["openclaw run-insights", "Show compact run performance signals."],
           ["openclaw run-insights --agent coding", "Focus on one agent's recent sessions."],
+          ["openclaw run-insights --session agent:coding:main", "Focus on one session."],
+          ["openclaw run-insights --task <task-id>", "Focus on one task."],
           [
             "openclaw run-insights --active 120 --json",
             "Machine-readable readback for recent active work.",
@@ -228,6 +234,8 @@ export function registerStatusHealthSessionsCommands(program: Command) {
           {
             json: Boolean(opts.json),
             agent: opts.agent,
+            session: opts.session,
+            task: opts.task,
             active: opts.active,
             limit: opts.limit,
           },

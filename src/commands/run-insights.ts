@@ -24,6 +24,8 @@ const DELIVERY_ISSUE_STATUSES = new Set(["failed", "parent_missing", "session_qu
 export type RunInsightsOptions = {
   json?: boolean;
   agent?: string;
+  session?: string;
+  task?: string;
   active?: string | number;
   limit?: string | number;
 };
@@ -110,6 +112,8 @@ export type RunInsightsReport = {
   authority: string;
   filters: {
     agent: string | null;
+    session: string | null;
+    task: string | null;
     activeMinutes: number | null;
     limit: number;
   };
@@ -158,6 +162,23 @@ function parsePositiveInteger(
   return Number(text);
 }
 
+function parseStringFilter(
+  value: string | undefined,
+  name: string,
+  runtime: RuntimeEnv,
+): string | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const text = value.trim();
+  if (!text) {
+    runtime.error(`${name} must not be empty.`);
+    runtime.exit(1);
+    return null;
+  }
+  return text;
+}
+
 function clampLimit(limit: number | undefined): number {
   return Math.min(limit ?? DEFAULT_LIMIT, MAX_LIMIT);
 }
@@ -203,6 +224,13 @@ function sessionMatchesActiveFilter(
     return false;
   }
   return row.age <= activeMinutes * 60_000;
+}
+
+function sessionMatchesSessionFilter(row: SessionStatus, session: string | undefined): boolean {
+  if (!session) {
+    return true;
+  }
+  return row.key === session || row.sessionId === session;
 }
 
 function toInsightSession(row: SessionStatus): RunInsightSession {
@@ -313,6 +341,24 @@ function taskMatchesAgentFilter(task: TaskRecord, agent: string | undefined): bo
     return true;
   }
   return task.agentId === agent || task.ownerKey.includes(`agent:${agent}:`);
+}
+
+function taskMatchesSessionFilter(task: TaskRecord, session: string | undefined): boolean {
+  if (!session) {
+    return true;
+  }
+  return (
+    task.requesterSessionKey === session ||
+    task.ownerKey === session ||
+    task.childSessionKey === session
+  );
+}
+
+function taskMatchesTaskFilter(task: TaskRecord, taskId: string | undefined): boolean {
+  if (!taskId) {
+    return true;
+  }
+  return task.taskId === taskId;
 }
 
 function toInsightTask(task: TaskRecord, now: number): RunInsightTask {
@@ -515,6 +561,8 @@ export function buildRunInsightsReport(
   summary: StatusSummary,
   options: {
     agent?: string;
+    session?: string;
+    task?: string;
     activeMinutes?: number;
     limit: number;
     now?: number;
@@ -524,7 +572,9 @@ export function buildRunInsightsReport(
 ): RunInsightsReport {
   const now = options.now ?? Date.now();
   const recent = selectRecentSessions(summary, options.agent);
-  const filtered = recent.filter((row) => sessionMatchesActiveFilter(row, options.activeMinutes));
+  const filtered = recent
+    .filter((row) => sessionMatchesSessionFilter(row, options.session))
+    .filter((row) => sessionMatchesActiveFilter(row, options.activeMinutes));
   const sessions = filtered
     .slice(0, options.limit)
     .map(toInsightSession)
@@ -535,6 +585,8 @@ export function buildRunInsightsReport(
   const taskRecords = options.taskRecords ?? listTaskRecords();
   const tasks = taskRecords
     .filter((task) => taskMatchesAgentFilter(task, options.agent))
+    .filter((task) => taskMatchesSessionFilter(task, options.session))
+    .filter((task) => taskMatchesTaskFilter(task, options.task))
     .filter((task) => taskMatchesActiveFilter(task, options.activeMinutes, now))
     .slice(0, options.limit)
     .map((task) => toInsightTask(task, now));
@@ -546,6 +598,8 @@ export function buildRunInsightsReport(
       "Derived readback over native status/session/task summaries; advisory only, not lifecycle truth.",
     filters: {
       agent: options.agent ?? null,
+      session: options.session ?? null,
+      task: options.task ?? null,
       activeMinutes: options.activeMinutes ?? null,
       limit: options.limit,
     },
@@ -663,6 +717,14 @@ export async function runInsightsCommand(
   if (parsedActive === null) {
     return;
   }
+  const parsedSession = parseStringFilter(options.session, "--session", runtime);
+  if (parsedSession === null) {
+    return;
+  }
+  const parsedTask = parseStringFilter(options.task, "--task", runtime);
+  if (parsedTask === null) {
+    return;
+  }
 
   const summary = await getStatusSummary({
     includeSensitive: true,
@@ -671,6 +733,8 @@ export async function runInsightsCommand(
   const parsedLimitValue = clampLimit(parsedLimit);
   const initialReport = buildRunInsightsReport(summary, {
     agent: options.agent,
+    session: parsedSession,
+    task: parsedTask,
     activeMinutes: parsedActive,
     limit: parsedLimitValue,
   });
@@ -680,6 +744,8 @@ export async function runInsightsCommand(
   );
   const report = buildRunInsightsReport(summary, {
     agent: options.agent,
+    session: parsedSession,
+    task: parsedTask,
     activeMinutes: parsedActive,
     limit: parsedLimitValue,
     sessionUsage,

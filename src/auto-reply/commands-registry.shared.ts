@@ -233,7 +233,8 @@ export function buildBuiltinChatCommands(
       args: [
         {
           name: "options",
-          description: "Optional run-insights flags, such as --agent coding --active 120",
+          description:
+            "Optional run-insights flags, such as --agent coding --session agent:coding:main --task <task-id> --active 120",
           type: "string",
           captureRemaining: true,
         },
