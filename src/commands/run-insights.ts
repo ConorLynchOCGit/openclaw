@@ -450,6 +450,44 @@ function readDeployArtifactSummary(
   }
 }
 
+function deployEventSlowestChecks(
+  summary: Record<string, unknown>,
+): RunInsightDeployArtifactSummary["slowestChecks"] {
+  const rawChecks = Array.isArray(summary.slowestChecks) ? summary.slowestChecks : [];
+  return rawChecks
+    .filter((check): check is Record<string, unknown> => isRecord(check))
+    .map((check) => {
+      const durationMs = finiteNumberOrNull(check.durationMs);
+      return {
+        id: stringOrNull(check.id) ?? "unknown",
+        durationMs,
+        duration: formatDurationMs(durationMs),
+        status: stringOrNull(check.status),
+        exitCode: finiteNumberOrNull(check.exitCode),
+      };
+    });
+}
+
+function deployEventArtifactSummary(
+  event: Record<string, unknown>,
+  artifactRefs: RunInsightDeployEvent["artifactRefs"],
+): RunInsightDeployArtifactSummary | null {
+  const summary = isRecord(event.artifactSummary) ? event.artifactSummary : null;
+  if (summary) {
+    const durationMs = finiteNumberOrNull(summary.durationMs);
+    return {
+      path: stringOrNull(summary.path) ?? artifactRefs.find((ref) => ref.path)?.path ?? null,
+      readable: summary.readable === false ? false : true,
+      skippedReason: stringOrNull(summary.skippedReason),
+      durationMs,
+      duration: stringOrNull(summary.duration) ?? formatDurationMs(durationMs),
+      failedCount: finiteNumberOrNull(summary.failedCount),
+      slowestChecks: deployEventSlowestChecks(summary),
+    };
+  }
+  return readDeployArtifactSummary(artifactRefs);
+}
+
 function textMatchesRunStage(value: string | null | undefined): boolean {
   if (!value) {
     return false;
@@ -735,7 +773,7 @@ function readRecentDeployEvents(limit: number): RunInsightDeployEvent[] {
         buildEpisodeId:
           buildEpisode && typeof buildEpisode.id === "string" ? buildEpisode.id : null,
         artifactRefs,
-        artifactSummary: readDeployArtifactSummary(artifactRefs),
+        artifactSummary: deployEventArtifactSummary(event, artifactRefs),
       };
     });
 }

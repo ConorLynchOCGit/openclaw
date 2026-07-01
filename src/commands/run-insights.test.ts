@@ -265,9 +265,24 @@ describe("runInsightsCommand", () => {
           artifactRefs: [
             {
               kind: "deploy-controller-artifact",
-              path: promoteArtifactPath,
+              path: "/srv/openclaw-next/artifacts/host-only-promote.json",
             },
           ],
+          artifactSummary: {
+            path: "/srv/openclaw-next/artifacts/host-only-promote.json",
+            readable: true,
+            skippedReason: null,
+            durationMs: 240_000,
+            failedCount: 0,
+            slowestChecks: [
+              {
+                id: "openclaw-native-checks",
+                durationMs: 91_000,
+                status: "passed",
+                exitCode: 0,
+              },
+            ],
+          },
         }),
       ].join("\n"),
     );
@@ -419,6 +434,7 @@ describe("runInsightsCommand", () => {
       readable: true,
       durationMs: 240_000,
       failedCount: 0,
+      path: "/srv/openclaw-next/artifacts/host-only-promote.json",
     });
     expect(payload.deployEvents[0].artifactSummary.slowestChecks[0]).toMatchObject({
       id: "openclaw-native-checks",
