@@ -2619,7 +2619,7 @@ export function applyParallelVitestCachePaths(specs, params = {}) {
 }
 
 export function applyDefaultMultiSpecVitestCachePaths(specs, params = {}) {
-  if (specs.length <= 1 || specs.some((spec) => spec.watchMode)) {
+  if (specs.length === 0 || specs.some((spec) => spec.watchMode)) {
     return specs;
   }
   return applyParallelVitestCachePaths(specs, params);

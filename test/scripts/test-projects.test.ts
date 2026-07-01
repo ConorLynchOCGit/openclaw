@@ -2842,7 +2842,7 @@ describe("scripts/test-projects Vitest cache isolation", () => {
     ]);
   });
 
-  it("keeps single-spec and watch runs on the default cache", () => {
+  it("assigns isolated fs-module caches to single-spec non-watch runs", () => {
     const single = [
       {
         config: "test/vitest/vitest.unit-fast.config.ts",
@@ -2853,8 +2853,20 @@ describe("scripts/test-projects Vitest cache isolation", () => {
         watchMode: false,
       },
     ];
-    expect(applyDefaultMultiSpecVitestCachePaths(single, { cwd: "/repo", env: {} })).toBe(single);
+    const specs = applyDefaultMultiSpecVitestCachePaths(single, { cwd: "/repo", env: {} });
 
+    expect(specs).not.toBe(single);
+    expect(specs[0]?.env.OPENCLAW_VITEST_FS_MODULE_CACHE_PATH).toBe(
+      path.join(
+        "/repo",
+        "node_modules",
+        ".experimental-vitest-cache",
+        "0-test-vitest-vitest.unit-fast.config.ts",
+      ),
+    );
+  });
+
+  it("keeps watch runs on the default cache", () => {
     const watch = [
       {
         config: "vitest.config.ts",
