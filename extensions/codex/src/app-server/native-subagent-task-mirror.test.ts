@@ -41,6 +41,7 @@ describe("CodexNativeSubagentTaskMirror", () => {
               thread_spawn: {
                 parent_thread_id: "parent-thread",
                 depth: 1,
+                agent_path: "agents/project_explorer.toml",
                 agent_nickname: "Poincare",
                 agent_role: "worker",
               },
@@ -54,14 +55,15 @@ describe("CodexNativeSubagentTaskMirror", () => {
       sourceId: "codex-thread:child-thread",
       agentId: "main",
       runId: "codex-thread:child-thread",
-      label: "Poincare",
+      label: "Poincare (worker)",
       task: "write the Madrid wine script",
       notifyPolicy: "silent",
       deliveryStatus: "not_applicable",
       preferMetadata: true,
       startedAt: 10_000,
       lastEventAt: 20_000,
-      progressSummary: "Codex native subagent started.",
+      progressSummary:
+        "Codex native subagent started (role: worker; agent_path: agents/project_explorer.toml).",
     });
     expect(vi.mocked(runtime.tryCreateRunningTaskRun).mock.calls[0]?.[0]).not.toHaveProperty(
       "childSessionKey",

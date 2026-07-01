@@ -2264,9 +2264,7 @@ export function buildGatewaySessionRow(params: {
   const thinkingDefault = thinkingMetadata.defaultLevel;
   const pluginExtensions =
     !lightweight && entry ? projectPluginSessionExtensionsSync({ sessionKey: key, entry }) : [];
-  const activeProgress = readbackProvenance?.activeProgress?.sourceEventType
-    ? readbackProvenance.activeProgress
-    : null;
+  const activeProgress = readbackProvenance?.activeProgress ?? null;
 
   return {
     key,

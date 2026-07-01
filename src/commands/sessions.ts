@@ -295,6 +295,16 @@ function formatRuntimeCell(runtimeLabel: string, rich: boolean): string {
   return rich ? theme.info(label) : label;
 }
 
+function truncate(value: string, maxChars: number): string {
+  if (value.length <= maxChars) {
+    return value;
+  }
+  if (maxChars <= 1) {
+    return value.slice(0, maxChars);
+  }
+  return `${value.slice(0, maxChars - 1)}...`;
+}
+
 function toJsonSessionRow(row: SessionRow): Omit<SessionRow, "runtimeLabel"> {
   const { runtimeLabel, ...jsonRow } = row;
   void runtimeLabel;
@@ -447,6 +457,15 @@ export async function sessionsShowCommand(
               : undefined,
             row.readbackProvenance.activeProgress.elapsedMs !== undefined
               ? `elapsedMs=${row.readbackProvenance.activeProgress.elapsedMs}`
+              : undefined,
+            row.readbackProvenance.activeProgress.note
+              ? `note=${truncate(row.readbackProvenance.activeProgress.note, 120)}`
+              : undefined,
+            row.readbackProvenance.activeProgress.pointer
+              ? `pointer=${row.readbackProvenance.activeProgress.pointer.kind}:${truncate(
+                  row.readbackProvenance.activeProgress.pointer.ref,
+                  120,
+                )}`
               : undefined,
           ]
             .filter(Boolean)

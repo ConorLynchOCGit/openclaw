@@ -564,6 +564,53 @@ describe("gateway session utils", () => {
     expect(row.thinkingLevels?.map((level) => level.id)).toContain("xhigh");
   });
 
+  test("session rows expose bounded active-progress diagnostics when the trajectory tail has no useful event", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "session-utils-active-progress-"));
+    try {
+      const sessionId = "session-active-progress-empty-tail";
+      const sessionFile = path.join(dir, `${sessionId}.jsonl`);
+      const trajectoryFile = path.join(dir, `${sessionId}.trajectory.jsonl`);
+      fs.writeFileSync(sessionFile, "", "utf8");
+      fs.writeFileSync(
+        trajectoryFile,
+        [
+          JSON.stringify({
+            traceSchema: "openclaw-trajectory",
+            sessionId,
+            type: "session.ended",
+            ts: "2026-07-01T00:00:00.000Z",
+            data: {},
+          }),
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+
+      const row = buildGatewaySessionRow({
+        cfg: createModelDefaultsConfig({ primary: "openai/gpt-5.5" }),
+        storePath: path.join(dir, "sessions.json"),
+        store: {},
+        key: "agent:main:main",
+        entry: {
+          sessionId,
+          sessionFile,
+          status: "running",
+          updatedAt: 1,
+        },
+      });
+
+      expect(row.activeProgress).toMatchObject({
+        source: "trajectory",
+        ref: `session:${sessionId}`,
+        derivedBy: "readLatestTrajectoryProgressProjection",
+        bounded: true,
+        note: "trajectory file found but no valid recent event in bounded tail",
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("session defaults use configured thinking default", () => {
     const defaults = getSessionDefaults({
       agents: {

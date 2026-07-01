@@ -2939,7 +2939,7 @@ function readStringList(value: unknown): string[] {
     return [];
   }
   return value
-    .filter((item): item is string => typeof item === "string" && item.trim())
+    .filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
     .map((item) => item.trim());
 }
 

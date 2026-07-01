@@ -81,12 +81,8 @@ export class CodexNativeSubagentTaskMirror {
     }
     this.mirroredThreadIds.add(threadId);
     const runId = codexNativeSubagentRunId(threadId);
-    const label =
-      trimOptional(spawn.agent_nickname) ??
-      trimOptional(thread.agentNickname) ??
-      trimOptional(spawn.agent_role) ??
-      trimOptional(thread.agentRole) ??
-      "Codex subagent";
+    const identity = resolveThreadSubagentIdentity(thread, spawn);
+    const label = formatNativeSubagentLabel(identity) ?? "Codex subagent";
     const task =
       trimOptional(thread.preview) ??
       `Codex native subagent${label === "Codex subagent" ? "" : ` ${label}`}`;
@@ -102,7 +98,7 @@ export class CodexNativeSubagentTaskMirror {
       preferMetadata: true,
       startedAt: createdAt,
       lastEventAt: this.now(),
-      progressSummary: "Codex native subagent started.",
+      progressSummary: nativeSubagentStartSummary("started", identity),
     });
     if (!taskRecord) {
       this.mirroredThreadIds.delete(threadId);
@@ -254,20 +250,22 @@ export class CodexNativeSubagentTaskMirror {
     }
     this.mirroredThreadIds.add(normalizedThreadId);
     const prompt = trimOptional(readString(item, "prompt"));
+    const identity = resolveCollabItemSubagentIdentity(item);
+    const label = formatNativeSubagentLabel(identity) ?? "Codex subagent";
     const runId = codexNativeSubagentRunId(normalizedThreadId);
     const createdAt = this.now();
     const taskRecord = this.runtime.tryCreateRunningTaskRun({
       sourceId: runId,
       agentId: this.params.agentId,
       runId,
-      label: "Codex subagent",
-      task: prompt ?? "Codex native subagent",
+      label,
+      task: prompt ?? `Codex native subagent${label === "Codex subagent" ? "" : ` ${label}`}`,
       notifyPolicy: "silent",
       deliveryStatus: "not_applicable",
       preferMetadata: true,
       startedAt: createdAt,
       lastEventAt: createdAt,
-      progressSummary: "Codex native subagent spawned.",
+      progressSummary: nativeSubagentStartSummary("spawned", identity),
     });
     if (!taskRecord) {
       this.mirroredThreadIds.delete(normalizedThreadId);
@@ -449,6 +447,60 @@ function readStringArray(value: JsonValue | undefined): string[] {
     return [];
   }
   return value.filter((entry): entry is string => typeof entry === "string" && entry.trim() !== "");
+}
+
+type NativeSubagentIdentity = {
+  nickname?: string;
+  role?: string;
+  agentPath?: string;
+};
+
+function resolveThreadSubagentIdentity(
+  thread: CodexThread,
+  spawn: CodexSubAgentThreadSpawnSource,
+): NativeSubagentIdentity {
+  return {
+    nickname: trimOptional(spawn.agent_nickname) ?? trimOptional(thread.agentNickname),
+    role: trimOptional(spawn.agent_role) ?? trimOptional(thread.agentRole),
+    agentPath: trimOptional(spawn.agent_path),
+  };
+}
+
+function resolveCollabItemSubagentIdentity(item: JsonObject): NativeSubagentIdentity {
+  return {
+    nickname:
+      trimOptional(readString(item, "agent_nickname")) ??
+      trimOptional(readString(item, "agentNickname")),
+    role:
+      trimOptional(readString(item, "agent_role")) ??
+      trimOptional(readString(item, "agentRole")) ??
+      trimOptional(readString(item, "role")),
+    agentPath:
+      trimOptional(readString(item, "agent_path")) ?? trimOptional(readString(item, "agentPath")),
+  };
+}
+
+function formatNativeSubagentLabel(identity: NativeSubagentIdentity): string | undefined {
+  const nickname = trimOptional(identity.nickname);
+  const role = trimOptional(identity.role);
+  if (nickname && role && nickname !== role) {
+    return `${nickname} (${role})`;
+  }
+  return nickname ?? role;
+}
+
+function nativeSubagentStartSummary(
+  verb: "started" | "spawned",
+  identity: NativeSubagentIdentity,
+): string {
+  const role = trimOptional(identity.role);
+  const agentPath = trimOptional(identity.agentPath);
+  const detailParts = [
+    role ? `role: ${role}` : undefined,
+    agentPath && agentPath !== role ? `agent_path: ${agentPath}` : undefined,
+  ].filter((part): part is string => Boolean(part));
+  const detail = detailParts.length > 0 ? ` (${detailParts.join("; ")})` : "";
+  return `Codex native subagent ${verb}${detail}.`;
 }
 
 function readString(value: JsonObject, key: string): string | undefined {

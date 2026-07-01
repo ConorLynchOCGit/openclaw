@@ -430,11 +430,6 @@ export class CodexNativeSubagentMonitor {
     }
   }
 
-  private ensureChildState(parentThreadId: string, childThreadId: string): ChildState {
-    this.registerChildThread(parentThreadId, childThreadId);
-    return this.childStates.get(childThreadId.trim())!;
-  }
-
   private resolveChildThreadIdForAgentPath(
     parentThreadId: string,
     agentPath: string,
