@@ -10,6 +10,30 @@ export type RunInsightsAttentionItem = {
   evidence?: unknown;
 };
 
+export type RunInsightsDeployEvent = {
+  eventId?: string;
+  eventType?: string;
+  status?: string | null;
+  age?: string | null;
+  imageDigest?: string | null;
+  sourceCommit?: string | null;
+  artifactRefs?: Array<{
+    kind?: string | null;
+    path?: string | null;
+  }>;
+  artifactSummary?: {
+    readable?: boolean;
+    duration?: string | null;
+    durationMs?: number | null;
+    failedCount?: number | null;
+    slowestChecks?: Array<{
+      id?: string;
+      duration?: string | null;
+      status?: string | null;
+    }>;
+  } | null;
+};
+
 export type RunInsightsReport = {
   schema?: string;
   generatedAt?: string;
@@ -49,7 +73,7 @@ export type RunInsightsReport = {
     validationAndPromotion?: RunInsightsAttentionItem[];
     evidencePointers?: string[];
   };
-  deployEvents?: unknown[];
+  deployEvents?: RunInsightsDeployEvent[];
   sessions?: unknown[];
   tasks?: unknown[];
   pointers?: unknown;

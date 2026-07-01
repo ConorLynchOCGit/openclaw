@@ -38,6 +38,34 @@ function createProps(overrides: Partial<RunInsightsProps> = {}): RunInsightsProp
         ],
         evidencePointers: ["/srv/openclaw-next/artifacts/proof.json"],
       },
+      deployEvents: [
+        {
+          eventId: "deploy-promote-test",
+          eventType: "deploy.promote",
+          status: "passed",
+          age: "3m",
+          imageDigest: "sha256:caf794952d2db69293b182d44630d943c7144f48bb8dc3bfb6b4a3969f2fde2f",
+          artifactRefs: [
+            {
+              kind: "deploy-controller-artifact",
+              path: "/srv/openclaw-next/artifacts/deploy-controller-promote-test.json",
+            },
+          ],
+          artifactSummary: {
+            readable: true,
+            duration: "4m",
+            durationMs: 240_000,
+            failedCount: 0,
+            slowestChecks: [
+              {
+                id: "openclaw-native-checks",
+                duration: "2m",
+                status: "passed",
+              },
+            ],
+          },
+        },
+      ],
     },
     onActiveMinutesChange: vi.fn(),
     onRefresh: vi.fn(),
@@ -54,6 +82,10 @@ describe("renderRunInsights", () => {
     expect(container.textContent).toContain("Run insights");
     expect(container.textContent).toContain("advisory only, not lifecycle truth");
     expect(container.textContent).toContain("deploy.promote");
+    expect(container.textContent).toContain("Recent deploy receipts");
+    expect(container.textContent).toContain("duration 4m");
+    expect(container.textContent).toContain("slowest openclaw-native-checks 2m");
+    expect(container.textContent).toContain("deploy-controller-promote-test.json");
     expect(container.textContent).toContain("sha256:caf794952d2d");
     expect(container.textContent).toContain("Validation/promotion work is active.");
     expect(container.textContent).toContain("/srv/openclaw-next/artifacts/proof.json");

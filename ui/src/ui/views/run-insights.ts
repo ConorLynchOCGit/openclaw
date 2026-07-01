@@ -1,6 +1,10 @@
 // Control UI view renders run-insights performance readback.
 import { html, nothing } from "lit";
-import type { RunInsightsAttentionItem, RunInsightsReport } from "../controllers/run-insights.ts";
+import type {
+  RunInsightsAttentionItem,
+  RunInsightsDeployEvent,
+  RunInsightsReport,
+} from "../controllers/run-insights.ts";
 
 export type RunInsightsProps = {
   loading: boolean;
@@ -103,6 +107,46 @@ function renderPointerList(pointers: string[] | undefined) {
   `;
 }
 
+function renderDeployEvent(event: RunInsightsDeployEvent) {
+  const slowest = event.artifactSummary?.slowestChecks?.[0];
+  const artifact = event.artifactRefs?.find((ref) => ref.path)?.path;
+  return html`
+    <div class="list-item">
+      <div class="list-main">
+        <div class="list-title">
+          <span>${event.eventType ?? "deploy.event"}</span>
+          ${event.status ? html`<span class="pill pill--sm">${event.status}</span>` : nothing}
+        </div>
+        <div class="list-sub">
+          ${event.artifactSummary?.duration
+            ? html`<span>duration ${event.artifactSummary.duration}</span>`
+            : html`<span>duration n/a</span>`}
+          ${slowest?.id
+            ? html`<span>
+                · slowest ${slowest.id}${slowest.duration ? ` ${slowest.duration}` : ""}</span
+              >`
+            : nothing}
+          ${event.imageDigest ? html`<span> · ${formatDigest(event.imageDigest)}</span>` : nothing}
+        </div>
+        ${artifact ? html`<div class="list-sub mono">${artifact}</div>` : nothing}
+      </div>
+      ${event.age ? html`<div class="list-meta">${event.age}</div>` : nothing}
+    </div>
+  `;
+}
+
+function renderDeployEvents(events: RunInsightsDeployEvent[] | undefined) {
+  if (!events || events.length === 0) {
+    return nothing;
+  }
+  return html`
+    <section class="card">
+      <div class="card-title">Recent deploy receipts</div>
+      <div class="list" style="margin-top: 12px;">${events.slice(0, 8).map(renderDeployEvent)}</div>
+    </section>
+  `;
+}
+
 export function renderRunInsights(props: RunInsightsProps) {
   const report = props.report;
   const summary = report?.summary;
@@ -164,7 +208,7 @@ export function renderRunInsights(props: RunInsightsProps) {
 
       ${renderAttentionGroup("Why work may feel slow", attention?.whyWorkMayFeelSlow)}
       ${renderAttentionGroup("Validation and promotion", attention?.validationAndPromotion)}
-      ${renderPointerList(attention?.evidencePointers)}
+      ${renderDeployEvents(report?.deployEvents)} ${renderPointerList(attention?.evidencePointers)}
       ${report
         ? html`
             <details class="card">
