@@ -665,7 +665,7 @@ export class OpenClawApp extends LitElement {
   @state() debugHealth: HealthSummary | null = null;
   @state() debugModels: ModelCatalogEntry[] = [];
   @state() debugHeartbeat: unknown = null;
-  @state() debugCallMethod = "";
+  @state() debugCallMethod = "run.insights";
   @state() debugCallParams = "{}";
   @state() debugCallResult: string | null = null;
   @state() debugCallError: string | null = null;
