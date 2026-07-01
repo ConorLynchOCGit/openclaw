@@ -54,6 +54,9 @@ openclaw skills info <name> --agent <id>
 openclaw skills check
 openclaw skills check --agent <id>
 openclaw skills check --json
+openclaw skills audit-lifecycle
+openclaw skills audit-lifecycle --agent <id>
+openclaw skills audit-lifecycle --json
 openclaw skills workshop propose-create --name "qa-check" --description "QA checklist" --proposal ./PROPOSAL.md
 openclaw skills workshop propose-update qa-check --proposal ./PROPOSAL.md
 openclaw skills workshop list
@@ -120,6 +123,12 @@ Notes:
   fingerprint.
 - `check --agent <id>` checks the selected agent's workspace and reports which
   ready skills are actually visible to that agent's prompt or command surface.
+- `audit-lifecycle` is a read-only advisory report that composes existing
+  skill discovery, agent config, workspace prompt-file, and plugin registry
+  evidence. It reports stale references, duplication risks, missing
+  docs/registry mismatches, prompt/bootstrap footprint, and per-agent summaries.
+  It is not lifecycle truth, a state machine, a parser gate, or a skill/plugin
+  approval surface; missing evidence is reported as unknown with a pointer.
 - `list` is the default action when no subcommand is provided.
 - `list`, `info`, and `check` write their rendered output to stdout. With
   `--json`, that means the machine-readable payload stays on stdout for pipes

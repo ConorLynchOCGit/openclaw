@@ -9,6 +9,7 @@ import {
   resolveExistingUsageSessionFile,
 } from "../infra/session-cost-usage.js";
 import type { SessionCostSummary, UsageCacheStatus } from "../infra/session-cost-usage.types.js";
+import { buildAdvisoryReadback, type AdvisoryReadback } from "../readback/advisory.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { writeRuntimeJson } from "../runtime.js";
 import { listTaskRecords } from "../tasks/task-registry.js";
@@ -196,6 +197,7 @@ export type RunInsightsReport = {
   schema: "openclaw.run_insights.v1";
   generatedAt: string;
   authority: string;
+  advisory: AdvisoryReadback;
   filters: {
     agent: string | null;
     session: string | null;
@@ -1191,11 +1193,20 @@ export function buildRunInsightsReport(
     deployEvents,
   });
 
+  const advisory = buildAdvisoryReadback({
+    surface: "Run Insights",
+    pointers: attention.evidencePointers,
+    caveats: [
+      "Session usage comes from the native usage cache and may be absent or stale.",
+      "Deploy/build/promote details are receipt pointers, not deployment authority.",
+    ],
+  });
+
   return {
     schema: "openclaw.run_insights.v1",
     generatedAt: new Date(now).toISOString(),
-    authority:
-      "Derived readback over native status/session/task summaries; advisory only, not lifecycle truth.",
+    authority: advisory.semantics,
+    advisory,
     filters: {
       agent: options.agent ?? null,
       session: options.session ?? null,
@@ -1356,6 +1367,7 @@ function formatHumanReport(report: RunInsightsReport): string[] {
   const lines = [
     theme.heading("Run Insights"),
     `Authority: ${report.authority}`,
+    `Missing Evidence: ${report.advisory.missingEvidenceLanguage}`,
     `Sessions: ${report.summary.sessionsDisplayed} shown of ${report.summary.recentSessionsConsidered} matching recent session(s); ${report.summary.sessionCount} total stored.`,
     `Tasks: ${report.summary.tasks.active} active, ${report.summary.tasks.failures} failure(s), ${report.summary.tasks.deliveryIssues} delivery issue(s), ${report.summary.tasks.terminal} terminal of ${report.summary.tasks.total} total.`,
     "",

@@ -8,12 +8,14 @@ import {
   resolveAgentWorkspaceDir,
   resolveDefaultAgentId,
 } from "../agents/agent-scope.js";
+import { lifecycleAuditCommand } from "../commands/lifecycle-audit.js";
 import { getRuntimeConfig } from "../config/config.js";
 import {
   fetchClawHubSkillCard,
   fetchClawHubSkillVerification,
   type ClawHubSkillVerificationResponse,
 } from "../infra/clawhub.js";
+import { buildPluginRegistrySnapshotReport } from "../plugins/status-snapshot.js";
 import { defaultRuntime } from "../runtime.js";
 import {
   installSkillFromClawHub,
@@ -851,6 +853,34 @@ export function registerSkillsCli(program: Command) {
       await runSkillsAction((report) => formatSkillsCheck(report, opts), {
         agentId: resolveAgentOption(command, opts),
       });
+    });
+
+  skills
+    .command("audit-lifecycle")
+    .description("Read-only advisory audit of agent and skill lifecycle evidence")
+    .option("--agent <id>", "Target agent workspace (defaults to cwd-inferred, then default agent)")
+    .option("--json", "Output as JSON", false)
+    .action(async (opts: { json?: boolean; agent?: string }, command: Command) => {
+      try {
+        const { config, workspaceDir, agentId } = resolveSkillsWorkspaceForCommand(command, opts);
+        const skillReport = await loadSkillsStatusReport({ agentId });
+        const pluginReport = buildPluginRegistrySnapshotReport({ config, workspaceDir });
+        await lifecycleAuditCommand(
+          {
+            json: Boolean(opts.json),
+            agent: agentId,
+          },
+          defaultRuntime,
+          {
+            config,
+            skillReport,
+            pluginReport,
+          },
+        );
+      } catch (err) {
+        defaultRuntime.error(String(err));
+        defaultRuntime.exit(1);
+      }
     });
 
   // Default action (no subcommand) - show list

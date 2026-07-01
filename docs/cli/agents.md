@@ -36,6 +36,10 @@ openclaw agents delete work
 Use routing bindings to pin inbound channel traffic to a specific agent.
 
 If you also want different visible skills per agent, configure `agents.defaults.skills` and `agents.list[].skills` in `openclaw.json`. See [Skills config](/tools/skills-config) and [Configuration reference](/gateway/config-agents#agents-defaults-skills).
+To audit the read-only relationship between configured agents, visible skills,
+runtime prompt files, workspace docs, and plugin registry evidence, run
+`openclaw skills audit-lifecycle --agent <id> --json`. The audit is advisory
+readback only and reports missing evidence as unknown.
 
 List bindings:
 

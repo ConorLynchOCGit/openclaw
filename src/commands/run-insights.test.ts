@@ -408,6 +408,7 @@ describe("runInsightsCommand", () => {
     const payload = JSON.parse(String(runtime.log.mock.calls[0]?.[0]));
     expect(payload.schema).toBe("openclaw.run_insights.v1");
     expect(payload.authority).toContain("not lifecycle truth");
+    expect(payload.advisory.missingEvidenceLanguage).toContain("unknown");
     expect(payload.filters).toEqual({
       agent: "coding",
       session: null,
@@ -542,7 +543,8 @@ describe("runInsightsCommand", () => {
 
     const output = runtime.log.mock.calls.map((call) => String(call[0])).join("\n");
     expect(output).toContain("Run Insights");
-    expect(output).toContain("Derived readback over native status/session/task summaries");
+    expect(output).toContain("Run Insights is advisory readback over native evidence");
+    expect(output).toContain("Missing Evidence");
     expect(output).toContain("tools=55/2");
     expect(output).toContain("cost=$0.1234");
     expect(output).toContain("Why Work May Feel Slow");

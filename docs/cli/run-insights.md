@@ -12,6 +12,8 @@ delivery performance evidence from native readback surfaces.
 It is an operator-facing projection. It is not lifecycle truth, a proof runner,
 a quality gate, or a replacement for transcripts, tasks, artifacts, or GBrain
 memory.
+When evidence is absent or unreadable, the report should say `unknown` and
+point to the missing evidence rather than infer state.
 
 ## Usage
 
