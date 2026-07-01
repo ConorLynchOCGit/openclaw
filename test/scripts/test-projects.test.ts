@@ -12,6 +12,7 @@ import {
   applyDefaultVitestNoOutputTimeout,
   applyParallelVitestCachePaths,
   buildFullSuiteVitestRunPlans,
+  buildValidationPerformanceProfile,
   buildVitestArgs,
   buildVitestRunPlans,
   findUnmatchedExplicitTestTargets,
@@ -1929,6 +1930,49 @@ describe("scripts/test-projects changed-target routing", () => {
       ]);
     },
   );
+});
+
+describe("scripts/test-projects validation performance profile", () => {
+  it("describes focused command choice, cache behavior, and known-bad direct Vitest path", () => {
+    const profile = buildValidationPerformanceProfile({
+      isFullSuiteRun: false,
+      targetArgs: ["src/commands/run-insights.test.ts"],
+      runSpecs: [
+        {
+          config: "test/vitest/vitest.unit-fast.config.ts",
+          includePatterns: ["src/commands/run-insights.test.ts"],
+        },
+      ],
+      preflightEntries: [
+        { label: "pnpm_store", path: "/cache/pnpm", state: "writable" },
+        { label: "vitest_fs_cache_parent_1", path: "/cache/vitest", state: "missing" },
+      ],
+    });
+
+    expect(profile).toMatchObject({
+      schema: "openclaw.validation_performance_profile.v1",
+      advisory: true,
+      commandChoice: "focused",
+      selectedShardCount: 1,
+      cacheSummary: {
+        unavailableCount: 1,
+        notWritableCount: 0,
+        missingCount: 1,
+        notConfiguredCount: 0,
+      },
+      knownBadDirectVitestPathApplies: true,
+    });
+    expect(profile.cacheBehavior).toEqual(
+      expect.arrayContaining([
+        { label: "pnpm_store", path: "/cache/pnpm", state: "writable" },
+        { label: "vitest_fs_cache_parent_1", path: "/cache/vitest", state: "missing" },
+      ]),
+    );
+    expect(profile.actionableSummaries.join("\n")).toContain(
+      "known-bad direct Vitest path applies",
+    );
+    expect(profile.actionableSummaries.join("\n")).toContain("configure only if");
+  });
 });
 
 describe("scripts/test-projects local heavy-check lock", () => {

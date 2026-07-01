@@ -2823,6 +2823,64 @@ export function formatFailedShardDigest(failures, options = {}) {
   return lines;
 }
 
+export function buildValidationPerformanceProfile({
+  isFullSuiteRun = false,
+  preflightEntries = [],
+  runSpecs = [],
+  targetArgs = [],
+} = {}) {
+  const selectedShardCount = runSpecs.length;
+  const targeted = targetArgs.length > 0 || runSpecs.some((spec) => spec.includePatterns?.length);
+  const commandChoice = isFullSuiteRun ? "regression" : targeted ? "focused" : "configured-shard";
+  const knownBadDirectVitestPathApplies = targeted;
+  const cacheBehavior = preflightEntries.map((entry) => ({
+    label: entry.label,
+    path: entry.path || null,
+    state: entry.state,
+  }));
+  const cacheSummary = {
+    unavailableCount: cacheBehavior.filter((entry) =>
+      ["missing", "not_writable", "not_configured"].includes(entry.state),
+    ).length,
+    notWritableCount: cacheBehavior.filter((entry) => entry.state === "not_writable").length,
+    missingCount: cacheBehavior.filter((entry) => entry.state === "missing").length,
+    notConfiguredCount: cacheBehavior.filter((entry) => entry.state === "not_configured").length,
+  };
+  const shardOverhead =
+    selectedShardCount > 1
+      ? `${selectedShardCount} shard dispatches selected; inspect per-shard timings for startup/transform overhead.`
+      : "single shard selected";
+  const transformImportOverhead =
+    runSpecs.length > 1
+      ? "multi-shard runs repeat Vitest startup and transform/import setup unless cache paths are warm"
+      : "inspect first_output timing for transform/import startup cost";
+  const actionableSummaries = [
+    commandChoice === "focused"
+      ? "focused selection chosen; broaden only when owner tests cannot cover the changed behavior"
+      : "regression/configured selection chosen; expect higher startup and shard overhead",
+    cacheSummary.notWritableCount > 0
+      ? `cache preflight has ${cacheSummary.notWritableCount} not-writable path(s); fix cache ownership before blaming tests`
+      : cacheSummary.unavailableCount > 0
+        ? `cache preflight has ${cacheSummary.unavailableCount} unavailable/non-configured path(s); configure only if the selected command needs them`
+        : "cache preflight did not report unavailable paths",
+    knownBadDirectVitestPathApplies
+      ? "known-bad direct Vitest path applies: use this wrapper as final evidence for wrapper-owned focused targets"
+      : "known-bad path warning still applies if this run is later narrowed to wrapper-owned focused targets",
+  ];
+  return {
+    schema: "openclaw.validation_performance_profile.v1",
+    advisory: true,
+    commandChoice,
+    selectedShardCount,
+    shardOverhead,
+    transformImportOverhead,
+    cacheBehavior,
+    cacheSummary,
+    knownBadDirectVitestPathApplies,
+    actionableSummaries,
+  };
+}
+
 export function buildVitestArgs(args, cwd = process.cwd()) {
   const [plan] = buildVitestRunPlans(args, cwd);
   if (!plan) {

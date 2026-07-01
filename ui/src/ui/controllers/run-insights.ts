@@ -73,6 +73,29 @@ export type RunInsightsReport = {
     validationAndPromotion?: RunInsightsAttentionItem[];
     evidencePointers?: string[];
   };
+  performanceProfile?: {
+    expensiveRunExplanation?: RunInsightsAttentionItem[];
+    timeline?: Array<{
+      at?: number | null;
+      age?: string;
+      source?: string;
+      label?: string;
+      pointer?: string;
+      evidence?: unknown;
+    }>;
+    childSessionEvidence?: unknown[];
+    retryBuildProofCost?: {
+      deployReceiptCount?: number;
+      totalKnownDuration?: string;
+      slowestReceipt?: {
+        eventType?: string;
+        duration?: string;
+        pointer?: string;
+      } | null;
+    };
+    validationBuildBottlenecks?: RunInsightsAttentionItem[];
+    advisoryInefficiencyFlags?: unknown[];
+  };
   deployEvents?: RunInsightsDeployEvent[];
   sessions?: unknown[];
   tasks?: unknown[];

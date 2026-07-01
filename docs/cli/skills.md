@@ -126,7 +126,9 @@ Notes:
 - `audit-lifecycle` is a read-only advisory report that composes existing
   skill discovery, agent config, workspace prompt-file, and plugin registry
   evidence. It reports stale references, duplication risks, missing
-  docs/registry mismatches, prompt/bootstrap footprint, and per-agent summaries.
+  docs/registry mismatches, prompt/bootstrap footprint, selected/default
+  workspace clarity, duplicate canonical prompt/support surfaces, cleanup
+  suggestions, and per-agent summaries.
   It is not lifecycle truth, a state machine, a parser gate, or a skill/plugin
   approval surface; missing evidence is reported as unknown with a pointer.
 - `list` is the default action when no subcommand is provided.

@@ -28,6 +28,9 @@ const DEPLOY_EVENT_TAIL_LINES = 200;
 const RECENT_DEPLOY_ATTENTION_MS = 30 * 60_000;
 const DEPLOY_ARTIFACT_READ_MAX_BYTES = 512 * 1024;
 const SUMMARY_TEXT_MAX_CHARS = 360;
+const EXPENSIVE_RUN_COST_WARN_USD = 1;
+const LONG_SESSION_DURATION_WARN_MS = 30 * 60_000;
+const SLOW_DEPLOY_RECEIPT_WARN_MS = 5 * 60_000;
 
 type AttentionSource = "session" | "task" | "deploy" | "status";
 
@@ -232,6 +235,49 @@ export type RunInsightsReport = {
     whyWorkMayFeelSlow: RunInsightAttentionItem[];
     validationAndPromotion: RunInsightAttentionItem[];
     evidencePointers: string[];
+  };
+  performanceProfile: {
+    expensiveRunExplanation: Array<{
+      code: string;
+      severity: SignalSeverity;
+      message: string;
+      pointer: string;
+      evidence: Record<string, unknown>;
+    }>;
+    timeline: Array<{
+      at: number | null;
+      age: string;
+      source: AttentionSource;
+      label: string;
+      pointer: string;
+      evidence: Record<string, unknown>;
+    }>;
+    childSessionEvidence: Array<{
+      taskId: string;
+      childSessionKey: string;
+      status: string;
+      elapsed: string;
+      pointer: string;
+    }>;
+    retryBuildProofCost: {
+      deployReceiptCount: number;
+      totalKnownDurationMs: number;
+      totalKnownDuration: string;
+      slowestReceipt: {
+        eventId: string;
+        eventType: string;
+        durationMs: number;
+        duration: string;
+        pointer: string;
+      } | null;
+    };
+    validationBuildBottlenecks: Array<{
+      code: string;
+      message: string;
+      pointer: string;
+      evidence: Record<string, unknown>;
+    }>;
+    advisoryInefficiencyFlags: RunInsightSignal[];
   };
   signals: RunInsightSignal[];
   sessions: RunInsightSession[];
@@ -1145,6 +1191,183 @@ function buildAttention(params: {
   };
 }
 
+function buildPerformanceProfile(params: {
+  sessions: RunInsightSession[];
+  tasks: RunInsightTask[];
+  deployEvents: RunInsightDeployEvent[];
+  signals: RunInsightSignal[];
+}): RunInsightsReport["performanceProfile"] {
+  const expensiveRunExplanation: RunInsightsReport["performanceProfile"]["expensiveRunExplanation"] =
+    [];
+  const timeline: RunInsightsReport["performanceProfile"]["timeline"] = [];
+  const validationBuildBottlenecks: RunInsightsReport["performanceProfile"]["validationBuildBottlenecks"] =
+    [];
+
+  for (const session of params.sessions) {
+    if (session.usage && session.usage.totalCost >= EXPENSIVE_RUN_COST_WARN_USD) {
+      expensiveRunExplanation.push({
+        code: "session_cost",
+        severity: "warn",
+        message: `${session.key} has cached cost $${session.usage.totalCost.toFixed(4)}.`,
+        pointer: session.pointer,
+        evidence: {
+          sessionKey: session.key,
+          totalCost: session.usage.totalCost,
+          totalTokens: session.usage.totalTokens,
+          durationMs: session.usage.durationMs,
+          cacheStatus: session.usage.cacheStatus,
+        },
+      });
+    }
+    if (session.usage && session.usage.durationMs !== null) {
+      timeline.push({
+        at: session.updatedAt,
+        age: session.age,
+        source: "session",
+        label: `${session.key} cached usage duration ${session.usage.duration}`,
+        pointer: session.pointer,
+        evidence: {
+          durationMs: session.usage.durationMs,
+          toolCalls: session.usage.toolCalls,
+          totalCost: session.usage.totalCost,
+        },
+      });
+    }
+    if (session.usage?.durationMs && session.usage.durationMs >= LONG_SESSION_DURATION_WARN_MS) {
+      expensiveRunExplanation.push({
+        code: "session_duration",
+        severity: "info",
+        message: `${session.key} has cached duration ${session.usage.duration}.`,
+        pointer: session.pointer,
+        evidence: {
+          sessionKey: session.key,
+          durationMs: session.usage.durationMs,
+          messageCount: session.usage.messageCount,
+          toolCalls: session.usage.toolCalls,
+        },
+      });
+    }
+  }
+
+  for (const task of params.tasks) {
+    if (task.latestEvent) {
+      timeline.push({
+        at: task.latestEvent.at,
+        age: task.age,
+        source: "task",
+        label: `${task.taskId} latest ${task.latestEvent.kind}`,
+        pointer: task.pointer,
+        evidence: {
+          status: task.status,
+          deliveryStatus: task.deliveryStatus,
+          summary: task.latestEvent.summary,
+          progressSummary: task.progressSummary,
+        },
+      });
+    }
+    if (task.attention.waitClass === "validation_or_promotion") {
+      validationBuildBottlenecks.push({
+        code: "task_validation_or_promotion",
+        message: task.attention.reason ?? "Task references validation, build, proof, or promotion.",
+        pointer: task.pointer,
+        evidence: {
+          taskId: task.taskId,
+          status: task.status,
+          elapsedMs: task.elapsedMs,
+          latestEvent: task.latestEvent,
+          progressSummary: task.progressSummary,
+        },
+      });
+    }
+  }
+
+  const deployDurations = params.deployEvents
+    .map((event) => ({
+      event,
+      durationMs: event.artifactSummary?.durationMs ?? null,
+    }))
+    .filter(
+      (entry): entry is { event: RunInsightDeployEvent; durationMs: number } =>
+        typeof entry.durationMs === "number",
+    );
+  for (const { event, durationMs } of deployDurations) {
+    timeline.push({
+      at: event.generatedAt ? Date.parse(event.generatedAt) : null,
+      age: event.age,
+      source: "deploy",
+      label: `${event.eventType}${event.status ? ` ${event.status}` : ""}`,
+      pointer: event.artifactRefs.find((ref) => ref.path)?.path ?? "openclaw run-insights --json",
+      evidence: {
+        eventId: event.eventId,
+        durationMs,
+        slowestChecks: event.artifactSummary?.slowestChecks ?? [],
+        buildEpisodeId: event.buildEpisodeId,
+      },
+    });
+    if (durationMs >= SLOW_DEPLOY_RECEIPT_WARN_MS) {
+      validationBuildBottlenecks.push({
+        code: "slow_deploy_receipt",
+        message: `${event.eventType} receipt took ${formatDurationMs(durationMs)}.`,
+        pointer: event.artifactRefs.find((ref) => ref.path)?.path ?? "openclaw run-insights --json",
+        evidence: {
+          eventId: event.eventId,
+          eventType: event.eventType,
+          status: event.status,
+          durationMs,
+          slowestChecks: event.artifactSummary?.slowestChecks ?? [],
+        },
+      });
+    }
+  }
+
+  const totalKnownDurationMs = deployDurations.reduce((sum, entry) => sum + entry.durationMs, 0);
+  const slowestDeploy = deployDurations.toSorted((a, b) => b.durationMs - a.durationMs)[0] ?? null;
+  const childSessionEvidence = params.tasks
+    .filter((task) => task.childSessionKey)
+    .map((task) => ({
+      taskId: task.taskId,
+      childSessionKey: task.childSessionKey ?? "",
+      status: task.status,
+      elapsed: task.elapsed,
+      pointer: task.pointer,
+    }));
+
+  const advisoryInefficiencyFlags = params.signals.filter((signal) =>
+    [
+      "high_context_pressure",
+      "tool_heavy_session",
+      "long_active_task",
+      "task_delivery_issue",
+      "session_usage_errors",
+      "recent_deploy_event_failure",
+    ].includes(signal.code),
+  );
+
+  return {
+    expensiveRunExplanation,
+    timeline: timeline.toSorted((a, b) => (b.at ?? 0) - (a.at ?? 0)).slice(0, 12),
+    childSessionEvidence,
+    retryBuildProofCost: {
+      deployReceiptCount: deployDurations.length,
+      totalKnownDurationMs,
+      totalKnownDuration: formatDurationMs(totalKnownDurationMs),
+      slowestReceipt: slowestDeploy
+        ? {
+            eventId: slowestDeploy.event.eventId,
+            eventType: slowestDeploy.event.eventType,
+            durationMs: slowestDeploy.durationMs,
+            duration: formatDurationMs(slowestDeploy.durationMs),
+            pointer:
+              slowestDeploy.event.artifactRefs.find((ref) => ref.path)?.path ??
+              "openclaw run-insights --json",
+          }
+        : null,
+    },
+    validationBuildBottlenecks,
+    advisoryInefficiencyFlags,
+  };
+}
+
 export function buildRunInsightsReport(
   summary: StatusSummary,
   options: {
@@ -1191,6 +1414,13 @@ export function buildRunInsightsReport(
     sessions,
     tasks,
     deployEvents,
+  });
+  const signals = buildSignals(summary, sessions, tasks, deployEvents);
+  const performanceProfile = buildPerformanceProfile({
+    sessions,
+    tasks,
+    deployEvents,
+    signals,
   });
 
   const advisory = buildAdvisoryReadback({
@@ -1241,7 +1471,8 @@ export function buildRunInsightsReport(
       },
     },
     attention,
-    signals: buildSignals(summary, sessions, tasks, deployEvents),
+    performanceProfile,
+    signals,
     sessions,
     tasks,
     deployEvents,
@@ -1363,6 +1594,31 @@ function formatDeployEvents(events: RunInsightDeployEvent[]): string[] {
   });
 }
 
+function formatPerformanceProfile(profile: RunInsightsReport["performanceProfile"]): string[] {
+  const lines = [
+    `  Expensive explanations: ${profile.expensiveRunExplanation.length}; bottlenecks: ${profile.validationBuildBottlenecks.length}; inefficiency flags: ${profile.advisoryInefficiencyFlags.length}.`,
+    `  Retry/build/proof cost: receipts=${profile.retryBuildProofCost.deployReceiptCount} knownDuration=${profile.retryBuildProofCost.totalKnownDuration}`,
+  ];
+  if (profile.retryBuildProofCost.slowestReceipt) {
+    lines.push(
+      `  Slowest receipt: ${profile.retryBuildProofCost.slowestReceipt.eventType} ${profile.retryBuildProofCost.slowestReceipt.duration} (${profile.retryBuildProofCost.slowestReceipt.pointer})`,
+    );
+  }
+  for (const item of profile.expensiveRunExplanation.slice(0, 4)) {
+    lines.push(`  ${item.severity.toUpperCase()} ${item.code}: ${item.message} (${item.pointer})`);
+  }
+  for (const item of profile.validationBuildBottlenecks.slice(0, 4)) {
+    lines.push(`  BOTTLENECK ${item.code}: ${item.message} (${item.pointer})`);
+  }
+  for (const event of profile.timeline.slice(0, 4)) {
+    lines.push(`  Timeline ${event.source}: ${event.label} age=${event.age} (${event.pointer})`);
+  }
+  if (lines.length === 2) {
+    lines.push("  No expensive-run, bottleneck, or timeline details found in bounded readback.");
+  }
+  return lines;
+}
+
 function formatHumanReport(report: RunInsightsReport): string[] {
   const lines = [
     theme.heading("Run Insights"),
@@ -1385,6 +1641,9 @@ function formatHumanReport(report: RunInsightsReport): string[] {
       report.attention.validationAndPromotion,
       "No validation, proof, build, deploy, or promotion receipts found in bounded readback.",
     ),
+    "",
+    theme.heading("Performance Profile"),
+    ...formatPerformanceProfile(report.performanceProfile),
     "",
     theme.heading("Recent Sessions"),
     ...formatSessions(report.sessions),

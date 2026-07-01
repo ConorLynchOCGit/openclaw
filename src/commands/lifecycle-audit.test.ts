@@ -50,7 +50,8 @@ describe("buildLifecycleAuditReport", () => {
               id: "coding",
               workspace: "/tmp/workspace",
               contractPack: "docs/agents/coding",
-              runtimePromptFiles: ["AGENTS.md"],
+              runtimePromptFiles: ["AGENTS.md", "TOOLS.md", "SOUL.md", "USER.md", "MEMORY.md"],
+              bootstrapTotalMaxChars: 100_000,
             },
           ],
         },
@@ -87,8 +88,25 @@ describe("buildLifecycleAuditReport", () => {
         "skill_agent_filter_missing",
         "duplicate_skill_name",
         "configured_plugin_unknown",
+        "large_prompt_bootstrap",
+        "duplicate_canonical_surface",
       ]),
     );
+    expect(payload.alignment).toMatchObject({
+      defaultWorkspace: "/tmp/workspace",
+      selectedAgentWorkspace: "/tmp/workspace",
+      selectedAgentConfigured: true,
+    });
+    expect(payload.alignment.duplicateCanonicalSurfaces.map((surface) => surface.surface)).toEqual(
+      expect.arrayContaining(["agents.md", "tools.md", "soul.md", "user.md", "memory.md"]),
+    );
+    expect(payload.cleanupSuggestions.map((suggestion) => suggestion.code)).toEqual(
+      expect.arrayContaining(["missing_runtime_prompt_file", "duplicate_skill_name"]),
+    );
+    expect(payload.promptBootstrapFootprint).toMatchObject({
+      runtimePromptFileCount: 5,
+      totalBootstrapMaxChars: 100_000,
+    });
     expect(payload.evidencePointers).toEqual(
       expect.arrayContaining([
         "openclaw skills check --json",

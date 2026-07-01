@@ -27,6 +27,7 @@ import {
   applyDefaultVitestNoOutputTimeout,
   applyParallelVitestCachePaths,
   buildFullSuiteVitestRunPlans,
+  buildValidationPerformanceProfile,
   createVitestRunSpecs,
   findUnmatchedExplicitTestTargets,
   formatFailedShardDigest,
@@ -182,6 +183,37 @@ function printValidationPreflightReceipt({ cwd, env, runSpecs }) {
   }
   if (entries.length > limit) {
     console.error(`[test]   ... ${entries.length - limit} more preflight entries omitted`);
+  }
+}
+
+function printValidationPerformanceProfile({
+  isFullSuiteRun,
+  preflightEntries,
+  runSpecs,
+  targetArgs,
+}) {
+  const profile = buildValidationPerformanceProfile({
+    isFullSuiteRun,
+    preflightEntries,
+    runSpecs,
+    targetArgs,
+  });
+  console.error("[test] validation performance profile:");
+  console.error(`[test]   schema=${profile.schema}`);
+  console.error(`[test]   advisory=${profile.advisory}`);
+  console.error(`[test]   command_choice=${profile.commandChoice}`);
+  console.error(`[test]   selected_shards=${profile.selectedShardCount}`);
+  console.error(`[test]   shard_overhead=${profile.shardOverhead}`);
+  console.error(`[test]   transform_import_overhead=${profile.transformImportOverhead}`);
+  console.error(`[test]   cache_unavailable=${profile.cacheSummary.unavailableCount}`);
+  console.error(`[test]   cache_not_writable=${profile.cacheSummary.notWritableCount}`);
+  console.error(`[test]   cache_missing=${profile.cacheSummary.missingCount}`);
+  console.error(`[test]   cache_not_configured=${profile.cacheSummary.notConfiguredCount}`);
+  console.error(
+    `[test]   known_bad_direct_vitest_path_applies=${profile.knownBadDirectVitestPathApplies}`,
+  );
+  for (const summary of profile.actionableSummaries.slice(0, 4)) {
+    console.error(`[test]   action=${summary}`);
   }
 }
 
@@ -508,6 +540,16 @@ async function main() {
     !runSpecs.some((spec) => spec.watchMode);
   printValidationReceipt({ changedTargetArgs, isFullSuiteRun, runSpecs, targetArgs });
   printValidationPreflightReceipt({ cwd: process.cwd(), env: baseEnv, runSpecs });
+  printValidationPerformanceProfile({
+    isFullSuiteRun,
+    preflightEntries: collectValidationPreflightEntries({
+      cwd: process.cwd(),
+      env: baseEnv,
+      runSpecs,
+    }),
+    runSpecs,
+    targetArgs,
+  });
   phaseTimer.mark("print_receipts");
   const isExplicitParallelMultiConfigRun =
     Boolean(baseEnv.OPENCLAW_TEST_PROJECTS_PARALLEL) &&

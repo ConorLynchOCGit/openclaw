@@ -443,6 +443,26 @@ describe("runInsightsCommand", () => {
       status: "passed",
       exitCode: 0,
     });
+    expect(payload.performanceProfile.retryBuildProofCost).toMatchObject({
+      deployReceiptCount: 2,
+      totalKnownDurationMs: 420_000,
+      totalKnownDuration: "7m",
+    });
+    expect(payload.performanceProfile.retryBuildProofCost.slowestReceipt).toMatchObject({
+      eventType: "deploy.promote",
+      durationMs: 240_000,
+    });
+    expect(
+      payload.performanceProfile.validationBuildBottlenecks.map(
+        (item: { code: string }) => item.code,
+      ),
+    ).toEqual(expect.arrayContaining(["task_validation_or_promotion"]));
+    expect(
+      payload.performanceProfile.advisoryInefficiencyFlags.map(
+        (item: { code: string }) => item.code,
+      ),
+    ).toEqual(expect.arrayContaining(["high_context_pressure", "tool_heavy_session"]));
+    expect(payload.performanceProfile.timeline.length).toBeGreaterThan(0);
     expect(payload.sessions[0].usage.toolCalls).toBe(55);
     expect(payload.sessions[0].usage.topTools).toEqual([
       { name: "read", count: 40 },
@@ -551,6 +571,9 @@ describe("runInsightsCommand", () => {
     expect(output).toContain("task_validation_or_promotion");
     expect(output).toContain("Validation / Promotion Watch");
     expect(output).toContain("deploy_receipt_activity");
+    expect(output).toContain("Performance Profile");
+    expect(output).toContain("Retry/build/proof cost: receipts=2 knownDuration=7m");
+    expect(output).toContain("BOTTLENECK task_validation_or_promotion");
     expect(output).toContain("Recent Tasks");
     expect(output).toContain("attention=validation_or_promotion");
     expect(output).toContain("Recent Deploy Events");

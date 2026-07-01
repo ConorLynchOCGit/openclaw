@@ -17,6 +17,9 @@ type FindingCode =
   | "skill_agent_filter_missing"
   | "duplicate_skill_name"
   | "shared_agent_workspace"
+  | "workspace_scope_unclear"
+  | "large_prompt_bootstrap"
+  | "duplicate_canonical_surface"
   | "plugin_registry_diagnostic"
   | "configured_plugin_unknown";
 
@@ -46,6 +49,9 @@ export type LifecycleAuditAgentReport = {
       exists: boolean;
     }>;
     contextInjection: string | null;
+    configuredRuntimePromptFiles: number;
+    bootstrapMaxChars: number | null;
+    bootstrapTotalMaxChars: number | null;
   };
 };
 
@@ -89,6 +95,20 @@ export type LifecycleAuditReport = {
     count: number | null;
     diagnostics: string[];
   };
+  alignment: {
+    defaultWorkspace: string | null;
+    selectedAgentWorkspace: string | null;
+    selectedAgentConfigured: boolean | null;
+    duplicateCanonicalSurfaces: Array<{
+      surface: string;
+      paths: string[];
+    }>;
+  };
+  cleanupSuggestions: Array<{
+    code: string;
+    message: string;
+    pointer: string;
+  }>;
   promptBootstrapFootprint: {
     workspaceDocs: Array<{
       path: string;
@@ -96,6 +116,11 @@ export type LifecycleAuditReport = {
     }>;
     runtimePromptFileCount: number;
     modelVisibleSkillCount: number;
+    runtimePromptFilesByAgent: Array<{
+      agentId: string;
+      count: number;
+    }>;
+    totalBootstrapMaxChars: number | null;
   };
   findings: LifecycleAuditFinding[];
 };
@@ -211,9 +236,37 @@ function buildAgentReports(params: {
         contractPack: entry?.contractPack ?? null,
         runtimePromptFiles,
         contextInjection: entry?.contextInjection ?? null,
+        configuredRuntimePromptFiles: entry?.runtimePromptFiles?.length ?? 0,
+        bootstrapMaxChars: entry?.bootstrapMaxChars ?? null,
+        bootstrapTotalMaxChars: entry?.bootstrapTotalMaxChars ?? null,
       },
     };
   });
+}
+
+function buildDuplicateCanonicalSurfaces(params: {
+  workspaceDocs: Array<{ path: string; exists: boolean }>;
+  agents: LifecycleAuditAgentReport[];
+}): LifecycleAuditReport["alignment"]["duplicateCanonicalSurfaces"] {
+  const surfaces = new Map<string, string[]>();
+  for (const doc of params.workspaceDocs) {
+    surfaces.set(path.basename(doc.path).toLowerCase(), [
+      ...(surfaces.get(path.basename(doc.path).toLowerCase()) ?? []),
+      doc.path,
+    ]);
+  }
+  for (const agent of params.agents) {
+    for (const promptFile of agent.promptBootstrap.runtimePromptFiles) {
+      const key = path.basename(promptFile.path).toLowerCase();
+      surfaces.set(key, [...(surfaces.get(key) ?? []), promptFile.path]);
+    }
+  }
+  return [...surfaces.entries()]
+    .filter(([, paths]) => new Set(paths).size > 1)
+    .map(([surface, paths]) => ({
+      surface,
+      paths: [...new Set(paths)].toSorted(),
+    }));
 }
 
 function buildFindings(params: {
@@ -221,9 +274,34 @@ function buildFindings(params: {
   skillReport: SkillStatusReport;
   pluginReport?: PluginRegistryStatusReport | null;
   agents: LifecycleAuditAgentReport[];
+  duplicateCanonicalSurfaces?: LifecycleAuditReport["alignment"]["duplicateCanonicalSurfaces"];
 }): LifecycleAuditFinding[] {
   const findings: LifecycleAuditFinding[] = [];
   for (const agent of params.agents) {
+    if (!agent.configured || !agent.workspaceDir) {
+      findings.push({
+        severity: "warn",
+        code: "workspace_scope_unclear",
+        message: `${agent.agentId} workspace scope could not be tied to a configured agent entry.`,
+        evidence: { agentId: agent.agentId, workspaceDir: agent.workspaceDir },
+      });
+    }
+    if (
+      agent.promptBootstrap.configuredRuntimePromptFiles > 4 ||
+      (agent.promptBootstrap.bootstrapTotalMaxChars ?? 0) > 80_000
+    ) {
+      findings.push({
+        severity: "info",
+        code: "large_prompt_bootstrap",
+        message: `${agent.agentId} has a large prompt/bootstrap footprint; review whether all runtime prompt files remain canonical.`,
+        evidence: {
+          agentId: agent.agentId,
+          runtimePromptFileCount: agent.promptBootstrap.configuredRuntimePromptFiles,
+          bootstrapTotalMaxChars: agent.promptBootstrap.bootstrapTotalMaxChars,
+          contractPack: agent.promptBootstrap.contractPack,
+        },
+      });
+    }
     for (const promptFile of agent.promptBootstrap.runtimePromptFiles) {
       if (!promptFile.exists) {
         findings.push({
@@ -286,6 +364,15 @@ function buildFindings(params: {
     }
   }
 
+  for (const duplicate of params.duplicateCanonicalSurfaces ?? []) {
+    findings.push({
+      severity: "info",
+      code: "duplicate_canonical_surface",
+      message: `Multiple prompt/support files share canonical basename "${duplicate.surface}".`,
+      evidence: { surface: duplicate.surface, paths: duplicate.paths },
+    });
+  }
+
   for (const diagnostic of params.pluginReport?.registryDiagnostics ?? []) {
     findings.push({
       severity: "warn",
@@ -309,6 +396,61 @@ function buildFindings(params: {
   return findings;
 }
 
+function buildCleanupSuggestions(
+  findings: LifecycleAuditFinding[],
+): LifecycleAuditReport["cleanupSuggestions"] {
+  return findings.map((finding) => {
+    switch (finding.code) {
+      case "missing_runtime_prompt_file":
+        return {
+          code: finding.code,
+          message:
+            "Remove stale runtimePromptFiles entries or restore the missing canonical prompt file.",
+          pointer: String(finding.evidence.path ?? "openclaw skills audit-lifecycle --json"),
+        };
+      case "skill_agent_filter_missing":
+        return {
+          code: finding.code,
+          message:
+            "Reconcile the agent skill allowlist with discovered skill names or retire stale references.",
+          pointer: "openclaw skills check --json",
+        };
+      case "duplicate_skill_name":
+        return {
+          code: finding.code,
+          message:
+            "Rename, merge, or quarantine duplicate skill surfaces so prompt selection is unambiguous.",
+          pointer: String(
+            (finding.evidence.files as string[] | undefined)?.[0] ?? "openclaw skills check --json",
+          ),
+        };
+      case "duplicate_canonical_surface":
+        return {
+          code: finding.code,
+          message:
+            "Review duplicate canonical prompt/support basenames and keep one owner per surface.",
+          pointer: String(
+            (finding.evidence.paths as string[] | undefined)?.[0] ??
+              "openclaw skills audit-lifecycle --json",
+          ),
+        };
+      case "configured_plugin_unknown":
+        return {
+          code: finding.code,
+          message: "Refresh plugin registry readback or remove stale plugin config entries.",
+          pointer: "openclaw plugins status --json",
+        };
+      default:
+        return {
+          code: finding.code,
+          message:
+            "Inspect the advisory finding and reconcile the owning config, docs, skill, or registry surface.",
+          pointer: "openclaw skills audit-lifecycle --json",
+        };
+    }
+  });
+}
+
 export function buildLifecycleAuditReport(params: {
   config: OpenClawConfig;
   skillReport: SkillStatusReport;
@@ -327,6 +469,10 @@ export function buildLifecycleAuditReport(params: {
       exists: fileExists(path.join(params.skillReport.workspaceDir, fileName)),
     }),
   );
+  const duplicateCanonicalSurfaces = buildDuplicateCanonicalSurfaces({
+    workspaceDocs,
+    agents,
+  });
   const unknowns: LifecycleAuditReport["unknowns"] = [];
   if (!params.pluginReport) {
     unknowns.push({
@@ -357,8 +503,10 @@ export function buildLifecycleAuditReport(params: {
       skillReport: params.skillReport,
       pluginReport: params.pluginReport,
       agents,
+      duplicateCanonicalSurfaces,
     }),
   ];
+  const cleanupSuggestions = buildCleanupSuggestions(findings);
   const evidencePointers = uniqueStrings([
     "openclaw skills check --json",
     "openclaw skills audit-lifecycle --json",
@@ -415,6 +563,13 @@ export function buildLifecycleAuditReport(params: {
         ...(params.pluginReport?.registryDiagnostics.map((diagnostic) => diagnostic.message) ?? []),
       ],
     },
+    alignment: {
+      defaultWorkspace: params.config.agents?.defaults?.workspace ?? null,
+      selectedAgentWorkspace: agents[0]?.workspaceDir ?? null,
+      selectedAgentConfigured: agents.length === 1 ? (agents[0]?.configured ?? false) : null,
+      duplicateCanonicalSurfaces,
+    },
+    cleanupSuggestions,
     promptBootstrapFootprint: {
       workspaceDocs,
       runtimePromptFileCount: agents.reduce(
@@ -423,6 +578,22 @@ export function buildLifecycleAuditReport(params: {
       ),
       modelVisibleSkillCount: params.skillReport.skills.filter((skill) => skill.modelVisible)
         .length,
+      runtimePromptFilesByAgent: agents.map((agent) => ({
+        agentId: agent.agentId,
+        count: agent.promptBootstrap.runtimePromptFiles.length,
+      })),
+      totalBootstrapMaxChars: agents.reduce(
+        (sum, agent) => {
+          if (sum === null) {
+            return agent.promptBootstrap.bootstrapTotalMaxChars;
+          }
+          if (agent.promptBootstrap.bootstrapTotalMaxChars === null) {
+            return sum;
+          }
+          return sum + agent.promptBootstrap.bootstrapTotalMaxChars;
+        },
+        null as number | null,
+      ),
     },
     findings,
   };
@@ -449,6 +620,24 @@ function formatLifecycleAuditReport(report: LifecycleAuditReport): string[] {
       (agent) =>
         `  ${agent.agentId} workspace=${agent.workspaceDir} skills=${agent.skills.modelVisible}/${agent.skills.total} model-visible promptFiles=${agent.promptBootstrap.runtimePromptFiles.length}`,
     ),
+    "",
+    theme.heading("Alignment"),
+    `  Default workspace: ${report.alignment.defaultWorkspace ?? "unknown"}`,
+    `  Selected workspace: ${report.alignment.selectedAgentWorkspace ?? "unknown"} configured=${report.alignment.selectedAgentConfigured ?? "mixed"}`,
+    ...(report.alignment.duplicateCanonicalSurfaces.length === 0
+      ? ["  No duplicate canonical prompt/support basenames found."]
+      : report.alignment.duplicateCanonicalSurfaces
+          .slice(0, 8)
+          .map((surface) => `  ${surface.surface}: ${surface.paths.join(", ")}`)),
+    "",
+    theme.heading("Cleanup Suggestions"),
+    ...(report.cleanupSuggestions.length === 0
+      ? ["  No cleanup suggestions in bounded lifecycle audit."]
+      : report.cleanupSuggestions
+          .slice(0, 8)
+          .map(
+            (suggestion) => `  ${suggestion.code}: ${suggestion.message} (${suggestion.pointer})`,
+          )),
     "",
     theme.heading("Unknowns"),
     ...(report.unknowns.length === 0

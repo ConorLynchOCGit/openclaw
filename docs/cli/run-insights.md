@@ -48,6 +48,9 @@ It displays:
 - recent sessions, token/context pressure, and session pointers;
 - cached session cost/usage, message count, tool-call count, and top tools when
   the native usage cache is fresh;
+- V3 performance profile sections that explain expensive runs, child/session
+  evidence, bounded timeline entries, retry/build/proof cost, validation/build
+  bottleneck indicators, and advisory inefficiency flags;
 - recent task records, status, delivery status, age, elapsed time, labels, and
   latest task event summaries;
 - child task pointers when native task records expose child sessions;
@@ -78,6 +81,10 @@ The command surfaces advisory signals such as:
 
 Signals are evidence for review. They do not deterministically fail or pass a
 run.
+
+The performance profile is also advisory. It summarizes evidence already
+available from sessions, task records, usage caches, and deploy receipts; it
+does not execute proof, retry work, promote builds, or decide finality.
 
 ## Related
 
