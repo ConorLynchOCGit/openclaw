@@ -1,6 +1,9 @@
 // Operator-facing run performance readback derived from native status summaries.
+import fs from "node:fs";
+import path from "node:path";
 import { theme } from "../../packages/terminal-core/src/theme.js";
 import { getRuntimeConfig } from "../config/config.js";
+import { resolveStateDir } from "../config/paths.js";
 import {
   loadSessionCostSummaryFromCache,
   resolveExistingUsageSessionFile,
@@ -20,6 +23,7 @@ const HIGH_CONTEXT_ERROR_PERCENT = 90;
 const LONG_ACTIVE_TASK_WARN_MS = 10 * 60_000;
 const TOOL_HEAVY_SESSION_WARN_CALLS = 50;
 const DELIVERY_ISSUE_STATUSES = new Set(["failed", "parent_missing", "session_queued"]);
+const DEPLOY_EVENT_TAIL_LINES = 200;
 
 export type RunInsightsOptions = {
   json?: boolean;
@@ -106,6 +110,25 @@ export type RunInsightTask = {
   pointer: string;
 };
 
+export type RunInsightDeployEvent = {
+  eventId: string;
+  eventType: string;
+  status: string | null;
+  generatedAt: string | null;
+  ageMs: number | null;
+  age: string;
+  imageRef: string | null;
+  imageDigest: string | null;
+  sourceCommit: string | null;
+  buildProfile: string | null;
+  previousImageDigest: string | null;
+  buildEpisodeId: string | null;
+  artifactRefs: Array<{
+    kind: string | null;
+    path: string | null;
+  }>;
+};
+
 export type RunInsightsReport = {
   schema: "openclaw.run_insights.v1";
   generatedAt: string;
@@ -133,15 +156,23 @@ export type RunInsightsReport = {
       byStatus: StatusSummary["tasks"]["byStatus"];
       byRuntime: StatusSummary["tasks"]["byRuntime"];
     };
+    deploy: {
+      recentDisplayed: number;
+      lastEventType: string | null;
+      lastPromotedImageDigest: string | null;
+      recentFailures: number;
+    };
   };
   signals: RunInsightSignal[];
   sessions: RunInsightSession[];
   tasks: RunInsightTask[];
+  deployEvents: RunInsightDeployEvent[];
   pointers: {
     statusJson: string;
     sessions: string;
     tasksSummary: string;
     tasksAudit: string;
+    deployEvents: string;
   };
 };
 
@@ -361,6 +392,70 @@ function taskMatchesTaskFilter(task: TaskRecord, taskId: string | undefined): bo
   return task.taskId === taskId;
 }
 
+function readRecentDeployEventLines(stateDir = resolveStateDir(process.env)): string[] {
+  const eventsPath = path.join(stateDir, "deploy", "events.ndjson");
+  if (!fs.existsSync(eventsPath)) {
+    return [];
+  }
+  const text = fs.readFileSync(eventsPath, "utf8");
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return lines.slice(-DEPLOY_EVENT_TAIL_LINES);
+}
+
+function readRecentDeployEvents(limit: number): RunInsightDeployEvent[] {
+  const now = Date.now();
+  return readRecentDeployEventLines()
+    .map((line) => {
+      try {
+        return JSON.parse(line) as Record<string, unknown>;
+      } catch {
+        return null;
+      }
+    })
+    .filter((event): event is Record<string, unknown> => event !== null)
+    .reverse()
+    .slice(0, limit)
+    .map((event) => {
+      const generatedAt = typeof event.generatedAt === "string" ? event.generatedAt : null;
+      const eventTime = generatedAt ? Date.parse(generatedAt) : NaN;
+      const ageMs = Number.isFinite(eventTime) ? Math.max(0, now - eventTime) : null;
+      const buildEpisode =
+        event.buildEpisode && typeof event.buildEpisode === "object"
+          ? (event.buildEpisode as Record<string, unknown>)
+          : null;
+      const artifactRefs = Array.isArray(event.artifactRefs)
+        ? event.artifactRefs
+            .filter((ref): ref is Record<string, unknown> =>
+              Boolean(ref && typeof ref === "object"),
+            )
+            .map((ref) => ({
+              kind: typeof ref.kind === "string" ? ref.kind : null,
+              path: typeof ref.path === "string" ? ref.path : null,
+            }))
+        : [];
+      return {
+        eventId: typeof event.eventId === "string" ? event.eventId : "unknown",
+        eventType: typeof event.eventType === "string" ? event.eventType : "unknown",
+        status: typeof event.status === "string" ? event.status : null,
+        generatedAt,
+        ageMs,
+        age: formatDurationMs(ageMs),
+        imageRef: typeof event.imageRef === "string" ? event.imageRef : null,
+        imageDigest: typeof event.imageDigest === "string" ? event.imageDigest : null,
+        sourceCommit: typeof event.sourceCommit === "string" ? event.sourceCommit : null,
+        buildProfile: typeof event.buildProfile === "string" ? event.buildProfile : null,
+        previousImageDigest:
+          typeof event.previousImageDigest === "string" ? event.previousImageDigest : null,
+        buildEpisodeId:
+          buildEpisode && typeof buildEpisode.id === "string" ? buildEpisode.id : null,
+        artifactRefs,
+      };
+    });
+}
+
 function toInsightTask(task: TaskRecord, now: number): RunInsightTask {
   const referenceAt = taskReferenceAt(task);
   const elapsedMs = taskElapsedMs(task, now);
@@ -402,6 +497,7 @@ function buildSignals(
   summary: StatusSummary,
   sessions: RunInsightSession[],
   tasks: RunInsightTask[],
+  deployEvents: RunInsightDeployEvent[],
 ): RunInsightSignal[] {
   const signals: RunInsightSignal[] = [];
 
@@ -546,6 +642,21 @@ function buildSignals(
     }
   }
 
+  const failedDeployEvents = deployEvents.filter(
+    (event) => event.status && !["built", "passed", "prepared"].includes(event.status),
+  );
+  if (failedDeployEvents.length > 0) {
+    signals.push({
+      severity: "warn",
+      code: "recent_deploy_event_failure",
+      message: `${failedDeployEvents.length} recent deploy event(s) are not successful/prepared.`,
+      evidence: {
+        eventIds: failedDeployEvents.map((event) => event.eventId),
+        pointer: "openclaw run-insights --json",
+      },
+    });
+  }
+
   if (signals.length === 0) {
     signals.push({
       severity: "info",
@@ -590,6 +701,13 @@ export function buildRunInsightsReport(
     .filter((task) => taskMatchesActiveFilter(task, options.activeMinutes, now))
     .slice(0, options.limit)
     .map((task) => toInsightTask(task, now));
+  const deployEvents = readRecentDeployEvents(options.limit);
+  const lastPromotedEvent = deployEvents.find(
+    (event) => event.eventType === "deploy.promote" && event.status === "passed",
+  );
+  const failedDeployEvents = deployEvents.filter(
+    (event) => event.status && !["built", "passed", "prepared"].includes(event.status),
+  );
 
   return {
     schema: "openclaw.run_insights.v1",
@@ -622,15 +740,23 @@ export function buildRunInsightsReport(
         byStatus: summary.tasks.byStatus,
         byRuntime: summary.tasks.byRuntime,
       },
+      deploy: {
+        recentDisplayed: deployEvents.length,
+        lastEventType: deployEvents[0]?.eventType ?? null,
+        lastPromotedImageDigest: lastPromotedEvent?.imageDigest ?? null,
+        recentFailures: failedDeployEvents.length,
+      },
     },
-    signals: buildSignals(summary, sessions, tasks),
+    signals: buildSignals(summary, sessions, tasks, deployEvents),
     sessions,
     tasks,
+    deployEvents,
     pointers: {
       statusJson: "openclaw status --json",
       sessions: "openclaw sessions --json",
       tasksSummary: "openclaw tasks list --summary",
       tasksAudit: "openclaw tasks audit --json",
+      deployEvents: "openclaw run-insights --json",
     },
   };
 }
@@ -680,6 +806,23 @@ function formatTasks(tasks: RunInsightTask[]): string[] {
   });
 }
 
+function formatDeployEvents(events: RunInsightDeployEvent[]): string[] {
+  if (events.length === 0) {
+    return ["  No recent deploy events found."];
+  }
+  return events.map((event) => {
+    const status = event.status ? ` status=${event.status}` : "";
+    const profile = event.buildProfile ? ` profile=${event.buildProfile}` : "";
+    const digest = event.imageDigest ? ` image=${event.imageDigest.slice(0, 19)}...` : "";
+    const commit = event.sourceCommit ? ` commit=${event.sourceCommit.slice(0, 12)}` : "";
+    const artifact =
+      event.artifactRefs.length > 0 && event.artifactRefs[0]?.path
+        ? ` artifact=${event.artifactRefs[0].path}`
+        : "";
+    return `  ${event.eventType}${status} age=${event.age}${profile}${digest}${commit}${artifact}`;
+  });
+}
+
 function formatHumanReport(report: RunInsightsReport): string[] {
   const lines = [
     theme.heading("Run Insights"),
@@ -696,11 +839,15 @@ function formatHumanReport(report: RunInsightsReport): string[] {
     theme.heading("Recent Tasks"),
     ...formatTasks(report.tasks),
     "",
+    theme.heading("Recent Deploy Events"),
+    ...formatDeployEvents(report.deployEvents),
+    "",
     theme.heading("Pointers"),
     `  ${report.pointers.statusJson}`,
     `  ${report.pointers.sessions}`,
     `  ${report.pointers.tasksSummary}`,
     `  ${report.pointers.tasksAudit}`,
+    `  ${report.pointers.deployEvents}`,
   ];
   return lines;
 }

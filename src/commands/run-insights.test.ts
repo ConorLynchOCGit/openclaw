@@ -1,10 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runInsightsCommand } from "./run-insights.js";
 import type { StatusSummary } from "./status.types.js";
 
 const mocks = vi.hoisted(() => ({
   getStatusSummary: vi.fn(),
   getRuntimeConfig: vi.fn(() => ({})),
+  resolveStateDir: vi.fn(),
   listTaskRecords: vi.fn(),
   loadSessionCostSummaryFromCache: vi.fn(),
   resolveExistingUsageSessionFile: vi.fn(),
@@ -19,7 +23,10 @@ const getStatusSummary = mocks.getStatusSummary;
 const listTaskRecords = mocks.listTaskRecords;
 const loadSessionCostSummaryFromCache = mocks.loadSessionCostSummaryFromCache;
 const resolveExistingUsageSessionFile = mocks.resolveExistingUsageSessionFile;
+const resolveStateDir = mocks.resolveStateDir;
 const runtime = mocks.runtime;
+
+let stateDir: string | undefined;
 
 vi.mock("./status.summary.js", () => ({
   getStatusSummary: mocks.getStatusSummary,
@@ -27,6 +34,10 @@ vi.mock("./status.summary.js", () => ({
 
 vi.mock("../config/config.js", () => ({
   getRuntimeConfig: mocks.getRuntimeConfig,
+}));
+
+vi.mock("../config/paths.js", () => ({
+  resolveStateDir: mocks.resolveStateDir,
 }));
 
 vi.mock("../tasks/task-registry.js", () => ({
@@ -169,6 +180,55 @@ function buildSummary(): StatusSummary {
 describe("runInsightsCommand", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-run-insights-"));
+    fs.mkdirSync(path.join(stateDir, "deploy"), { recursive: true });
+    fs.writeFileSync(
+      path.join(stateDir, "deploy", "events.ndjson"),
+      [
+        JSON.stringify({
+          schema: "openclaw-next.deploy-controller.deploy-event.v1",
+          generatedAt: new Date(Date.now() - 3 * 60_000).toISOString(),
+          eventId: "deploy-build-test",
+          eventType: "deploy.build",
+          status: "built",
+          imageRef: "openclaw-next/gateway:candidate-test",
+          imageDigest: "sha256:builddigest",
+          sourceCommit: "abc1234567890",
+          buildProfile: "full",
+          buildEpisode: {
+            id: "candidate-test",
+          },
+          artifactRefs: [
+            {
+              kind: "deploy-controller-artifact",
+              path: "/srv/openclaw-next/artifacts/deploy-controller-build-test.json",
+            },
+          ],
+        }),
+        JSON.stringify({
+          schema: "openclaw-next.deploy-controller.deploy-event.v1",
+          generatedAt: new Date(Date.now() - 60_000).toISOString(),
+          eventId: "deploy-promote-test",
+          eventType: "deploy.promote",
+          status: "passed",
+          imageRef: "openclaw-next/gateway:candidate-test",
+          imageDigest: "sha256:promoteddigest",
+          sourceCommit: "def1234567890",
+          buildProfile: "full",
+          previousImageDigest: "sha256:previousdigest",
+          buildEpisode: {
+            id: "candidate-test",
+          },
+          artifactRefs: [
+            {
+              kind: "deploy-controller-artifact",
+              path: "/srv/openclaw-next/artifacts/deploy-controller-promote-test.json",
+            },
+          ],
+        }),
+      ].join("\n"),
+    );
+    resolveStateDir.mockReturnValue(stateDir);
     runtime.exit.mockImplementation(() => {});
     getStatusSummary.mockResolvedValue(buildSummary());
     resolveExistingUsageSessionFile.mockReturnValue("/tmp/sess-coding.jsonl");
@@ -262,6 +322,13 @@ describe("runInsightsCommand", () => {
     ]);
   });
 
+  afterEach(() => {
+    if (stateDir) {
+      fs.rmSync(stateDir, { recursive: true, force: true });
+      stateDir = undefined;
+    }
+  });
+
   it("emits bounded JSON run performance evidence from status summaries", async () => {
     await runInsightsCommand(
       {
@@ -291,8 +358,18 @@ describe("runInsightsCommand", () => {
     expect(payload.summary.tasks.failures).toBe(1);
     expect(payload.summary.tasks.childTasksDisplayed).toBe(1);
     expect(payload.summary.tasks.deliveryIssues).toBe(1);
+    expect(payload.summary.deploy).toMatchObject({
+      recentDisplayed: 2,
+      lastEventType: "deploy.promote",
+      lastPromotedImageDigest: "sha256:promoteddigest",
+      recentFailures: 0,
+    });
     expect(payload.sessions).toHaveLength(1);
     expect(payload.tasks).toHaveLength(2);
+    expect(payload.deployEvents.map((event: { eventId: string }) => event.eventId)).toEqual([
+      "deploy-promote-test",
+      "deploy-build-test",
+    ]);
     expect(payload.sessions[0].usage.toolCalls).toBe(55);
     expect(payload.sessions[0].usage.topTools).toEqual([
       { name: "read", count: 40 },
@@ -353,6 +430,8 @@ describe("runInsightsCommand", () => {
     expect(output).toContain("tools=55/2");
     expect(output).toContain("cost=$0.1234");
     expect(output).toContain("Recent Tasks");
+    expect(output).toContain("Recent Deploy Events");
+    expect(output).toContain("deploy.promote status=passed");
     expect(output).toContain("openclaw tasks audit --json");
   });
 

@@ -51,6 +51,9 @@ It displays:
 - child task pointers when native task records expose child sessions;
 - task delivery friction such as failed, parent-missing, or queued-session
   delivery states.
+- recent deploy/build/smoke/gate/promote receipt events from the native
+  runtime-visible deploy journal, including image digest, source commit, build
+  profile, and artifact pointers when present.
 
 It does not crawl raw transcripts or refresh usage caches. It emits pointers to
 deeper surfaces when follow-up inspection is needed.
@@ -69,6 +72,7 @@ The command surfaces advisory signals such as:
 - cached usage/parsing errors;
 - long-active tasks with no recent task-event movement;
 - stale token estimates.
+- recent deploy receipt failures.
 
 Signals are evidence for review. They do not deterministically fail or pass a
 run.
