@@ -651,7 +651,31 @@ describe("program routes", () => {
         probeMaxTokens: "64",
         probeProfile: "-1",
         agent: "default",
+        allAgents: false,
         json: false,
+        plain: false,
+        check: false,
+        probe: false,
+      },
+      defaultRuntime,
+    );
+  });
+
+  it("routes models status all-agent JSON through the native status command", async () => {
+    const route = expectRoute(["models", "status"]);
+    await expect(
+      route.run(["node", "openclaw", "models", "status", "--all-agents", "--json"]),
+    ).resolves.toBe(true);
+    expect(modelsStatusCommandMock).toHaveBeenCalledWith(
+      {
+        probeProvider: undefined,
+        probeTimeout: undefined,
+        probeConcurrency: undefined,
+        probeMaxTokens: undefined,
+        agent: undefined,
+        allAgents: true,
+        probeProfile: undefined,
+        json: true,
         plain: false,
         check: false,
         probe: false,
