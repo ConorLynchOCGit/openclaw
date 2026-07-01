@@ -1,5 +1,5 @@
 /** Bundled machine-readable readiness checks for deploy promotion gates. */
-import { buildConfigGetPayload } from "../cli/config-cli.js";
+import { buildConfigGetPayload, buildConfigValidatePayload } from "../cli/config-cli.js";
 import { buildExecApprovalsGetPayload } from "../cli/exec-approvals-cli.js";
 import { buildLocalExecPolicyShowPayload } from "../cli/exec-policy-cli.js";
 import { buildPluginsListPayload } from "../cli/plugins-list-command.js";
@@ -14,6 +14,7 @@ export type PromotionReadinessCheckId =
   | "openclaw-plugins"
   | "openclaw-agents-list"
   | "openclaw-agent-config"
+  | "openclaw-config-validation"
   | "openclaw-exec-policy"
   | "openclaw-approvals";
 
@@ -140,6 +141,17 @@ export async function buildPromotionReadinessReport(
         stdoutJson: await buildConfigGetPayload({ path: "agents.list", runtime }),
         exitCode: 0,
       }),
+    ),
+    timeCheck(
+      "openclaw-config-validation",
+      ["openclaw", "config", "validate", "--json"],
+      async () => {
+        const payload = await buildConfigValidatePayload();
+        return {
+          stdoutJson: payload,
+          exitCode: payload.valid ? 0 : 1,
+        };
+      },
     ),
     timeCheck("openclaw-exec-policy", ["openclaw", "exec-policy", "show", "--json"], async () => ({
       stdoutJson: await buildLocalExecPolicyShowPayload(),

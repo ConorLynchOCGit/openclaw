@@ -2453,6 +2453,22 @@ export async function runConfigSchema(opts: { runtime?: RuntimeEnv } = {}) {
   }
 }
 
+export type ConfigValidatePayload =
+  | { valid: true; path: string }
+  | { valid: false; path: string; issues: ReturnType<typeof normalizeConfigIssues> }
+  | { valid: false; path: string; error: string };
+
+export async function buildConfigValidatePayload(): Promise<ConfigValidatePayload> {
+  const snapshot = await readConfigFileSnapshot();
+  if (!snapshot.exists) {
+    return { valid: false, path: snapshot.path, error: "file not found" };
+  }
+  if (!snapshot.valid) {
+    return { valid: false, path: snapshot.path, issues: normalizeConfigIssues(snapshot.issues) };
+  }
+  return { valid: true, path: snapshot.path };
+}
+
 export async function runConfigValidate(opts: { json?: boolean; runtime?: RuntimeEnv } = {}) {
   const runtime = opts.runtime ?? defaultRuntime;
   let outputPath = CONFIG_PATH ?? "openclaw.json";

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   buildAgentsListPayload: vi.fn(),
   buildConfigGetPayload: vi.fn(),
+  buildConfigValidatePayload: vi.fn(),
   buildDoctorLintJsonResult: vi.fn(),
   buildExecApprovalsGetPayload: vi.fn(),
   buildLocalExecPolicyShowPayload: vi.fn(),
@@ -13,6 +14,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../cli/config-cli.js", () => ({
   buildConfigGetPayload: mocks.buildConfigGetPayload,
+  buildConfigValidatePayload: mocks.buildConfigValidatePayload,
 }));
 
 vi.mock("../cli/exec-approvals-cli.js", () => ({
@@ -59,6 +61,7 @@ describe("promotion readiness", () => {
     const plugins = deferred<{ payload: unknown }>();
     const agents = deferred<unknown[]>();
     const config = deferred<unknown>();
+    const configValidation = deferred<{ valid: boolean; path: string }>();
     const execPolicy = deferred<unknown>();
     const approvals = deferred<{ payload: unknown }>();
 
@@ -67,6 +70,7 @@ describe("promotion readiness", () => {
     mocks.buildPluginsListPayload.mockReturnValue(plugins.promise);
     mocks.buildAgentsListPayload.mockReturnValue(agents.promise);
     mocks.buildConfigGetPayload.mockReturnValue(config.promise);
+    mocks.buildConfigValidatePayload.mockReturnValue(configValidation.promise);
     mocks.buildLocalExecPolicyShowPayload.mockReturnValue(execPolicy.promise);
     mocks.buildExecApprovalsGetPayload.mockReturnValue(approvals.promise);
 
@@ -79,11 +83,13 @@ describe("promotion readiness", () => {
     expect(mocks.buildPluginsListPayload).toHaveBeenCalledTimes(1);
     expect(mocks.buildAgentsListPayload).toHaveBeenCalledTimes(1);
     expect(mocks.buildConfigGetPayload).toHaveBeenCalledTimes(1);
+    expect(mocks.buildConfigValidatePayload).toHaveBeenCalledTimes(1);
     expect(mocks.buildLocalExecPolicyShowPayload).toHaveBeenCalledTimes(1);
     expect(mocks.buildExecApprovalsGetPayload).toHaveBeenCalledTimes(1);
 
     approvals.resolve({ payload: { approvals: [] } });
     execPolicy.resolve({ policy: "ok" });
+    configValidation.resolve({ valid: true, path: "openclaw.json" });
     config.resolve([{ id: "main" }]);
     agents.resolve([{ id: "main" }]);
     plugins.resolve({ payload: { plugins: [] } });
@@ -98,6 +104,7 @@ describe("promotion readiness", () => {
       "openclaw-plugins",
       "openclaw-agents-list",
       "openclaw-agent-config",
+      "openclaw-config-validation",
       "openclaw-exec-policy",
       "openclaw-approvals",
     ]);
