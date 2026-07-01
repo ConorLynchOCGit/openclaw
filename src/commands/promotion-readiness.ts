@@ -93,9 +93,8 @@ export async function buildPromotionReadinessReport(
   runtime: RuntimeEnv = defaultRuntime,
 ): Promise<PromotionReadinessReport> {
   const startedAt = Date.now();
-  const checks: PromotionReadinessCheck[] = [];
-  checks.push(
-    await timeCheck(
+  const checks = await Promise.all([
+    timeCheck(
       "openclaw-doctor-lint",
       ["openclaw", "doctor", "--lint", "--json", "--no-workspace-suggestions"],
       async () => {
@@ -109,9 +108,7 @@ export async function buildPromotionReadinessReport(
         };
       },
     ),
-  );
-  checks.push(
-    await timeCheck(
+    timeCheck(
       "openclaw-plugin-compatibility",
       ["openclaw", "doctor", "--post-upgrade", "--json"],
       async () => {
@@ -122,27 +119,21 @@ export async function buildPromotionReadinessReport(
         };
       },
     ),
-  );
-  checks.push(
-    await timeCheck("openclaw-plugins", ["openclaw", "plugins", "list", "--json"], async () => {
+    timeCheck("openclaw-plugins", ["openclaw", "plugins", "list", "--json"], async () => {
       const { payload } = await buildPluginsListPayload({ json: true });
       return {
         stdoutJson: payload,
         exitCode: 0,
       };
     }),
-  );
-  checks.push(
-    await timeCheck("openclaw-agents-list", ["openclaw", "agents", "list", "--json"], async () => {
+    timeCheck("openclaw-agents-list", ["openclaw", "agents", "list", "--json"], async () => {
       const payload = await buildAgentsListPayload({ json: true }, runtime);
       return {
         stdoutJson: payload ?? [],
         exitCode: payload === null ? 1 : 0,
       };
     }),
-  );
-  checks.push(
-    await timeCheck(
+    timeCheck(
       "openclaw-agent-config",
       ["openclaw", "config", "get", "agents.list", "--json"],
       async () => ({
@@ -150,26 +141,18 @@ export async function buildPromotionReadinessReport(
         exitCode: 0,
       }),
     ),
-  );
-  checks.push(
-    await timeCheck(
-      "openclaw-exec-policy",
-      ["openclaw", "exec-policy", "show", "--json"],
-      async () => ({
-        stdoutJson: await buildLocalExecPolicyShowPayload(),
-        exitCode: 0,
-      }),
-    ),
-  );
-  checks.push(
-    await timeCheck("openclaw-approvals", ["openclaw", "approvals", "get", "--json"], async () => {
+    timeCheck("openclaw-exec-policy", ["openclaw", "exec-policy", "show", "--json"], async () => ({
+      stdoutJson: await buildLocalExecPolicyShowPayload(),
+      exitCode: 0,
+    })),
+    timeCheck("openclaw-approvals", ["openclaw", "approvals", "get", "--json"], async () => {
       const { payload } = await buildExecApprovalsGetPayload({ json: true });
       return {
         stdoutJson: payload,
         exitCode: 0,
       };
     }),
-  );
+  ]);
 
   return {
     schema: "openclaw.promotion_readiness.v1",
