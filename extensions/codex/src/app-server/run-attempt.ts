@@ -1285,6 +1285,7 @@ export async function runCodexAppServerAttempt(
   let activeAppServerTurnRequests = 0;
   const pendingOpenClawDynamicToolCompletionIds = new Set<string>();
   const activeTurnItemIds = new Set<string>();
+  const activeNativeSubagentThreadIds = new Set<string>();
   let turnCrossedToolHandoff = false;
   let pendingTerminalDynamicToolRelease:
     | {
@@ -1641,7 +1642,15 @@ export async function runCodexAppServerAttempt(
         activeNativeTurnCompletionWaiter.resolve();
       }
     }
-    if (isCodexNotificationOutsideActiveRun(correlation)) {
+    const nativeSubagentActivityMatchesActiveThread = isNativeSubagentActivityForThread(
+      notification,
+      thread.threadId,
+      activeNativeSubagentThreadIds,
+    );
+    if (
+      !nativeSubagentActivityMatchesActiveThread &&
+      isCodexNotificationOutsideActiveRun(correlation)
+    ) {
       return Promise.resolve();
     }
     if (!projector || !turnId) {
@@ -1664,19 +1673,28 @@ export async function runCodexAppServerAttempt(
     const notificationMatchesActiveTurn =
       correlation.matchesActiveTurn === true ||
       (!isNativeResponseStreamDelta && correlation.matchesActiveTurn !== false) ||
-      nativeResponseStreamDeltaMatchesActiveTurn;
+      nativeResponseStreamDeltaMatchesActiveTurn ||
+      nativeSubagentActivityMatchesActiveThread;
     if (notificationMatchesActiveTurn) {
       // If Codex app-server exposes raw response deltas, treat them as activity
-      // only when scoped to this turn or attributable to a single lease.
+      // only when scoped to this turn or attributable to a single lease. Native
+      // Codex subagent lifecycle/activity is parent-thread progress too: a
+      // parent waiting on a child should not be aborted as quiet while Codex is
+      // reporting child work through its own event stream.
       turnWatches.noteNotificationReceived(
         notification.method,
-        isNativeResponseStreamDelta
+        isNativeResponseStreamDelta || nativeSubagentActivityMatchesActiveThread
           ? {
               attemptProgress: true,
               ...(turnCrossedToolHandoff
                 ? { attemptTimeoutMs: postToolRawAssistantCompletionIdleTimeoutMs }
                 : {}),
-              details: { lastNotificationMethod: notification.method },
+              details: {
+                lastNotificationMethod: notification.method,
+                ...(nativeSubagentActivityMatchesActiveThread
+                  ? { nativeSubagentActivity: true }
+                  : {}),
+              },
             }
           : undefined,
       );
@@ -2853,6 +2871,75 @@ function isUnscopedCodexNotification(
     !correlation.nestedTurnThreadId &&
     !correlation.nestedTurnId
   );
+}
+
+function isNativeSubagentActivityForThread(
+  notification: CodexServerNotification,
+  parentThreadId: string,
+  childThreadIds: Set<string>,
+): boolean {
+  const params = isJsonObject(notification.params) ? notification.params : undefined;
+  if (!params) {
+    return false;
+  }
+
+  if (notification.method === "thread/started") {
+    const thread = isJsonObject(params.thread) ? params.thread : undefined;
+    const source = isJsonObject(thread?.source) ? thread.source : undefined;
+    const subAgent = isJsonObject(source?.subAgent) ? source.subAgent : undefined;
+    const spawn = isJsonObject(subAgent?.thread_spawn) ? subAgent.thread_spawn : undefined;
+    if (spawn?.parent_thread_id !== parentThreadId) {
+      return false;
+    }
+    const childThreadId = typeof thread?.id === "string" ? thread.id.trim() : "";
+    if (childThreadId) {
+      childThreadIds.add(childThreadId);
+    }
+    return true;
+  }
+
+  if (notification.method === "thread/status/changed") {
+    const threadId = typeof params.threadId === "string" ? params.threadId.trim() : "";
+    return Boolean(threadId && childThreadIds.has(threadId));
+  }
+
+  if (notification.method !== "item/started" && notification.method !== "item/completed") {
+    return false;
+  }
+
+  const item = isJsonObject(params.item) ? params.item : undefined;
+  if (item?.type !== "collabAgentToolCall") {
+    return false;
+  }
+  const senderThreadId =
+    typeof item.senderThreadId === "string" && item.senderThreadId.trim()
+      ? item.senderThreadId.trim()
+      : typeof params.threadId === "string" && params.threadId.trim()
+        ? params.threadId.trim()
+        : undefined;
+  if (senderThreadId !== parentThreadId) {
+    return false;
+  }
+  for (const threadId of readStringList(item.receiverThreadIds)) {
+    childThreadIds.add(threadId);
+  }
+  if (isJsonObject(item.agentsStates)) {
+    for (const threadId of Object.keys(item.agentsStates)) {
+      if (threadId.trim()) {
+        childThreadIds.add(threadId.trim());
+      }
+    }
+  }
+  return true;
+}
+
+function readStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item): item is string => typeof item === "string" && item.trim())
+    .map((item) => item.trim());
 }
 
 function shouldUseFreshCodexThreadAfterContextEngineOverflow(params: {

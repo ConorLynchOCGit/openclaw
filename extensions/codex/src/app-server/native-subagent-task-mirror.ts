@@ -136,14 +136,16 @@ export class CodexNativeSubagentTaskMirror {
     }
     const eventAt = this.now();
     if (statusType === "active") {
+      const progressSummary = nativeSubagentSummary(
+        "Codex native subagent is active",
+        this.latestCollabStatusDetailByThreadId.get(threadId) ??
+          activeFlagsSummary(status.activeFlags),
+      );
       this.runtime.recordTaskRunProgressByRunId({
         runId,
         lastEventAt: eventAt,
-        progressSummary: nativeSubagentSummary(
-          "Codex native subagent is active",
-          this.latestCollabStatusDetailByThreadId.get(threadId) ??
-            activeFlagsSummary(status.activeFlags),
-        ),
+        progressSummary,
+        eventSummary: progressSummary,
       });
       return;
     }
@@ -179,13 +181,15 @@ export class CodexNativeSubagentTaskMirror {
       return;
     }
     if (statusType === "notLoaded") {
+      const progressSummary = nativeSubagentSummary(
+        "Codex native subagent is not loaded",
+        this.latestCollabStatusDetailByThreadId.get(threadId),
+      );
       this.runtime.recordTaskRunProgressByRunId({
         runId,
         lastEventAt: eventAt,
-        progressSummary: nativeSubagentSummary(
-          "Codex native subagent is not loaded",
-          this.latestCollabStatusDetailByThreadId.get(threadId),
-        ),
+        progressSummary,
+        eventSummary: progressSummary,
       });
     }
   }
@@ -294,15 +298,17 @@ export class CodexNativeSubagentTaskMirror {
     if (normalizedStatus === "pendingInit" || normalizedStatus === "running") {
       const detail = trimOptional(message);
       this.rememberCollabStatusDetail(threadId, detail);
+      const progressSummary = nativeSubagentSummary(
+        normalizedStatus === "pendingInit"
+          ? "Codex native subagent is initializing"
+          : "Codex native subagent is running",
+        detail,
+      );
       this.runtime.recordTaskRunProgressByRunId({
         runId,
         lastEventAt: eventAt,
-        progressSummary: nativeSubagentSummary(
-          normalizedStatus === "pendingInit"
-            ? "Codex native subagent is initializing"
-            : "Codex native subagent is running",
-          detail,
-        ),
+        progressSummary,
+        eventSummary: progressSummary,
       });
       return;
     }
