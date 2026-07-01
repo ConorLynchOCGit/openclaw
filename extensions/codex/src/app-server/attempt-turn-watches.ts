@@ -2,8 +2,7 @@
  * Idle-watch controller for Codex app-server turn progress, completion, and
  * terminal-event gaps.
  */
-import { embeddedAgentLog } from "openclaw/plugin-sdk/agent-harness-runtime";
-import { resolveTimerTimeoutMs } from "openclaw/plugin-sdk/number-runtime";
+import { resolveTimerTimeoutMs } from "@openclaw/normalization-core/number-coercion";
 
 type Timer = ReturnType<typeof setTimeout>;
 
@@ -50,6 +49,7 @@ export function createCodexAttemptTurnWatchController(params: {
   onRecordEvent: (name: string, fields: Record<string, unknown>) => void;
   onAttemptProgress: (reason: string, details?: Record<string, unknown>) => void;
   onProgressDiagnostic: (reason: string) => void;
+  onWarn?: (message: string, fields: Record<string, unknown>) => void;
 }) {
   let completionIdleTimer: Timer | undefined;
   let completionIdleWatchArmed = false;
@@ -79,6 +79,9 @@ export function createCodexAttemptTurnWatchController(params: {
   const turnTerminalIdleTimeoutMs = resolveTimerTimeoutMs(params.turnTerminalIdleTimeoutMs, 1);
   const interruptTimeoutMs = resolveTimerTimeoutMs(params.interruptTimeoutMs, 1);
   const resolveWatchTimeoutMs = (timeoutMs: number) => resolveTimerTimeoutMs(timeoutMs, 1);
+  const warn = (message: string, fields: Record<string, unknown>) => {
+    params.onWarn?.(message, fields);
+  };
 
   const clearCompletionIdleTimer = () => {
     if (completionIdleTimer) {
@@ -233,16 +236,13 @@ export function createCodexAttemptTurnWatchController(params: {
       timeoutMs: turnAssistantCompletionIdleTimeoutMs,
       ...assistantCompletionLastActivityDetails,
     });
-    embeddedAgentLog.warn(
-      "codex app-server turn released after completed assistant item without terminal event",
-      {
-        threadId: params.threadId,
-        turnId,
-        idleMs,
-        timeoutMs: turnAssistantCompletionIdleTimeoutMs,
-        ...assistantCompletionLastActivityDetails,
-      },
-    );
+    warn("codex app-server turn released after completed assistant item without terminal event", {
+      threadId: params.threadId,
+      turnId,
+      idleMs,
+      timeoutMs: turnAssistantCompletionIdleTimeoutMs,
+      ...assistantCompletionLastActivityDetails,
+    });
     if (turnId) {
       params.onInterruptTurn({
         threadId: params.threadId,
@@ -285,7 +285,7 @@ export function createCodexAttemptTurnWatchController(params: {
       lastActivityReason: timeout.lastActivityReason,
       ...timeout.details,
     });
-    embeddedAgentLog.warn("codex app-server turn idle timed out waiting for progress", {
+    warn("codex app-server turn idle timed out waiting for progress", {
       threadId: params.threadId,
       turnId: params.getTurnId(),
       idleMs,
@@ -338,7 +338,7 @@ export function createCodexAttemptTurnWatchController(params: {
       lastActivityReason: timeout.lastActivityReason,
       ...timeout.details,
     });
-    embeddedAgentLog.warn("codex app-server turn idle timed out waiting for completion", {
+    warn("codex app-server turn idle timed out waiting for completion", {
       threadId: params.threadId,
       turnId: params.getTurnId(),
       idleMs,
@@ -381,7 +381,7 @@ export function createCodexAttemptTurnWatchController(params: {
       lastActivityReason: timeout.lastActivityReason,
       ...timeout.details,
     });
-    embeddedAgentLog.warn("codex app-server turn idle timed out waiting for terminal event", {
+    warn("codex app-server turn idle timed out waiting for terminal event", {
       threadId: params.threadId,
       turnId: params.getTurnId(),
       idleMs,
@@ -466,6 +466,7 @@ export function createCodexAttemptTurnWatchController(params: {
       }
       if (options?.attemptProgress) {
         recordAttemptProgress(completionLastActivityReason, options);
+        params.onProgressDiagnostic(completionLastActivityReason);
       }
     },
     extendAttemptIdleWatch: (timeoutMs: number) => {

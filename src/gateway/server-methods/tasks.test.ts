@@ -206,6 +206,91 @@ describe("tasks gateway handlers", () => {
     });
   });
 
+  it("lists active task progress from requester session trajectory before stale task text", async () => {
+    const sessionKey = "agent:coding:phase0z-event-spine";
+    const sessionId = "gateway-task-requester-trajectory";
+    const sessionsDir = path.join(stateDir, "agents", "coding", "sessions");
+    await fs.mkdir(sessionsDir, { recursive: true });
+    await fs.writeFile(
+      path.join(sessionsDir, "sessions.json"),
+      JSON.stringify(
+        {
+          [sessionKey]: {
+            sessionId,
+            sessionFile: path.join(sessionsDir, `${sessionId}.jsonl`),
+            updatedAt: Date.UTC(2026, 5, 30, 20, 0, 0),
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(sessionsDir, `${sessionId}.trajectory.jsonl`),
+      `${JSON.stringify({
+        traceSchema: "openclaw-trajectory",
+        schemaVersion: 1,
+        traceId: sessionId,
+        source: "runtime",
+        type: "tool.call",
+        ts: "2026-06-30T20:00:00.000Z",
+        seq: 7,
+        sourceSeq: 21,
+        sessionId,
+        sessionKey,
+        data: {
+          name: "spawn_agent",
+          phase: "child-work",
+          elapsedMs: 5000,
+          summary: "project_explorer child is inspecting readback seams",
+        },
+      })}\n`,
+      "utf8",
+    );
+    const task = createTaskRecord({
+      runtime: "cli",
+      taskKind: "coding",
+      requesterSessionKey: sessionKey,
+      ownerKey: sessionKey,
+      scopeKind: "session",
+      agentId: "coding",
+      runId: "run-gateway-requester-trajectory",
+      task: "Runtime liveness check for Phase 0Z",
+      status: "running",
+      deliveryStatus: "pending",
+      progressSummary: "Runtime liveness check for Phase 0Z",
+    });
+
+    const { calls, payload } = await runTaskHandler("tasks.list", {
+      status: "running",
+      agentId: "coding",
+      sessionKey,
+    });
+
+    expect(calls[0]?.[0]).toBe(true);
+    expect(payload?.tasks).toHaveLength(1);
+    expect(payload?.tasks?.[0]?.id).toBe(task.taskId);
+    expect(payload?.tasks?.[0]?.activeProgress).toMatchObject({
+      source: "trajectory",
+      ref: `session:${sessionId}`,
+      currentPhase: "child-work",
+      activeLabel: "spawn_agent",
+      observedAt: "2026-06-30T20:00:00.000Z",
+      elapsedMs: 5000,
+      sourceEventType: "tool.call",
+      sourceEventSeq: 21,
+      note: "project_explorer child is inspecting readback seams",
+      pointer: {
+        kind: "trajectory",
+        ref: `session:${sessionId}`,
+        label: "requester session trajectory",
+      },
+      derivedBy: "readLatestTrajectoryProgressProjection",
+      bounded: true,
+    });
+  });
+
   it("does not read child session trajectory progress for task summaries", async () => {
     const sessionId = "gateway-task-progress-missing-status-child";
     const childSessionKey = "agent:codebase-researcher:subagent:progress-child";

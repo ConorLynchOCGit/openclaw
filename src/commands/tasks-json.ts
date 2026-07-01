@@ -3,6 +3,7 @@
 
 import {
   buildTasksListSummaryPayload,
+  mapTaskSummaries,
   mapTaskSummary,
 } from "../gateway/task-summary-projection.js";
 import type { RuntimeEnv } from "../runtime.js";
@@ -82,7 +83,7 @@ function buildTasksListJsonPayload(opts: TasksListJsonArgs) {
     count: tasks.length,
     runtime: runtimeFilter ?? null,
     status: statusFilter ?? null,
-    tasks: tasks.map((task) => mapTaskSummary(task)),
+    tasks: mapTaskSummaries(tasks),
   };
 }
 

@@ -1,6 +1,10 @@
 // Shared public task readback projection for gateway APIs and CLI JSON.
 import { type TaskSummary } from "../../packages/gateway-protocol/src/index.js";
-import { resolveTaskReadbackProgressProjection } from "../tasks/task-readback-progress.js";
+import {
+  createTaskReadbackProgressProjectionContext,
+  resolveTaskReadbackProgressProjection,
+  type TaskReadbackProgressProjectionContext,
+} from "../tasks/task-readback-progress.js";
 import { summarizeTaskRecords } from "../tasks/task-registry.summary.js";
 import type { TaskRecord, TaskStatus } from "../tasks/task-registry.types.js";
 import {
@@ -20,6 +24,7 @@ type TaskLedgerStatus = TaskSummary["status"];
 type TaskSummaryProjectionOptions = {
   progressMaxChars?: number;
   subagentProgressMaxChars?: number;
+  readbackContext?: TaskReadbackProgressProjectionContext;
 };
 
 // Public task readback preserves the older ledger status vocabulary while the
@@ -72,7 +77,7 @@ export function mapTaskSummary(
   });
   const terminalSummary = sanitizeOptionalTaskText(task.terminalSummary, { errorContext: true });
   const error = sanitizeOptionalTaskText(task.error, { errorContext: true });
-  const activeProgress = resolveTaskReadbackProgressProjection(task);
+  const activeProgress = resolveTaskReadbackProgressProjection(task, opts.readbackContext);
   return {
     id: task.taskId,
     taskId: task.taskId,
@@ -154,10 +159,12 @@ export function buildTasksListSummaryPayload(
     typeof opts.limit === "number" && Number.isFinite(opts.limit) && opts.limit > 0
       ? Math.min(Math.floor(opts.limit), TASK_LIST_SUMMARY_LIMIT)
       : TASK_LIST_SUMMARY_LIMIT;
+  const readbackContext = createTaskReadbackProgressProjectionContext();
   const sample = selectTaskSummarySample(tasks, limit).map((task) =>
     mapTaskSummary(task, {
       progressMaxChars: TASK_LIST_SUMMARY_TEXT_MAX_CHARS,
       subagentProgressMaxChars: TASK_LIST_SUMMARY_TEXT_MAX_CHARS,
+      readbackContext,
     }),
   );
   return {
@@ -180,6 +187,11 @@ export function buildTasksListSummaryPayload(
     },
     tasks: sample,
     authority:
-      "bounded readback projection derived from task registry records and task summaries; use tasks list --json for the full list",
+      "bounded readback projection derived from task registry records, task receipts, and session trajectory evidence; use tasks list --json for the full list",
   };
+}
+
+export function mapTaskSummaries(tasks: readonly TaskRecord[]): TaskSummary[] {
+  const readbackContext = createTaskReadbackProgressProjectionContext();
+  return tasks.map((task) => mapTaskSummary(task, { readbackContext }));
 }

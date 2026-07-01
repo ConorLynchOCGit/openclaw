@@ -1377,6 +1377,7 @@ export async function runCodexAppServerAttempt(
         reason: `codex_app_server:${reason}`,
       });
     },
+    onWarn: (message, fields) => embeddedAgentLog.warn(message, fields),
   });
 
   const releaseTurnAfterTerminalDynamicTool = (paramsValue: {

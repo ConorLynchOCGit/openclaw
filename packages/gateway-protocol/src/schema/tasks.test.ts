@@ -15,7 +15,7 @@ describe("TaskSummarySchema", () => {
     ).toBe(true);
   });
 
-  it("accepts optional bounded active progress capsules", () => {
+  it("accepts optional bounded active progress projections", () => {
     expect(
       validateTaskSummary.Check({
         id: "task-1",
@@ -35,14 +35,14 @@ describe("TaskSummarySchema", () => {
             kind: "inspect-next",
             ref: "openclaw sessions tail --session-key agent:coding:subagent:child-1",
           },
-          derivedBy: "readLatestTrajectoryProgressCapsule",
+          derivedBy: "readLatestTrajectoryProgressProjection",
           bounded: true,
         },
       }),
     ).toBe(true);
   });
 
-  it("accepts bounded native receipt-derived active progress capsules", () => {
+  it("accepts bounded native receipt-derived active progress projections", () => {
     expect(
       validateTaskSummary.Check({
         id: "task-1",
@@ -62,7 +62,7 @@ describe("TaskSummarySchema", () => {
             ref: "task-1",
             label: "task run receipt",
           },
-          derivedBy: "resolveTaskActiveProgressCapsule",
+          derivedBy: "resolveTaskReadbackProgressProjection",
           bounded: true,
         },
       }),
@@ -86,7 +86,7 @@ describe("TaskSummarySchema", () => {
             ref: "agent:planning:subagent:child",
             label: "child session",
           },
-          derivedBy: "resolveTaskActiveProgressCapsule",
+          derivedBy: "resolveTaskReadbackProgressProjection",
           bounded: true,
         },
       }),

@@ -1529,6 +1529,7 @@ export async function maybeDeliverTaskStateChangeUpdate(
 export function setTaskProgressById(params: {
   taskId: string;
   progressSummary?: string | null;
+  eventSummary?: string | null;
   lastEventAt?: number;
 }): TaskRecord | null {
   ensureTaskRegistryReady();
@@ -1543,14 +1544,16 @@ export function setTaskProgressById(params: {
   if (params.lastEventAt != null) {
     patch.lastEventAt = params.lastEventAt;
   }
-  if (params.progressSummary !== undefined) {
+  if (params.progressSummary !== undefined || params.eventSummary !== undefined) {
     const eventAt = params.lastEventAt ?? Date.now();
+    const eventSummary =
+      normalizeTaskSummary(params.eventSummary) ?? normalizeTaskSummary(params.progressSummary);
     patch.executionReceipt = appendTaskExecutionReceipt(
       current.executionReceipt,
       appendTaskEvent({
         at: eventAt,
         kind: "progress",
-        summary: params.progressSummary,
+        summary: eventSummary,
       }),
     );
   }

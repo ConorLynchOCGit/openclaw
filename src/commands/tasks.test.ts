@@ -448,6 +448,111 @@ describe("tasks commands", () => {
     });
   });
 
+  it("uses requester session trajectory progress before stale prompt-shaped task text", async () => {
+    await withTaskCommandStateDir(async (state) => {
+      const sessionKey = "agent:coding:phase0z-event-spine";
+      const sessionId = "sess-phase0z-event-spine";
+      const sessionsDir = state.sessionsDir("coding");
+      await fs.mkdir(sessionsDir, { recursive: true });
+      await fs.writeFile(
+        path.join(sessionsDir, "sessions.json"),
+        `${JSON.stringify(
+          {
+            [sessionKey]: {
+              sessionId,
+              status: "running",
+              updatedAt: 1_000,
+            },
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      );
+      await fs.writeFile(
+        path.join(sessionsDir, `${sessionId}.trajectory.jsonl`),
+        `${JSON.stringify({
+          traceSchema: "openclaw-trajectory",
+          schemaVersion: 1,
+          traceId: sessionId,
+          source: "runtime",
+          type: "tool.call",
+          ts: "2026-07-01T00:30:00.000Z",
+          seq: 8,
+          sourceSeq: 15,
+          sessionId,
+          sessionKey,
+          data: {
+            name: "spawn_agent",
+            phase: "child-work",
+            elapsedMs: 42_000,
+            summary: "project_explorer child is inspecting readback seams",
+          },
+        })}\n`,
+        "utf8",
+      );
+
+      createTaskRecord({
+        runtime: "cli",
+        requesterSessionKey: sessionKey,
+        ownerKey: sessionKey,
+        scopeKind: "session",
+        agentId: "coding",
+        status: "running",
+        task: "Runtime liveness check for Phase 0Z: use exactly one Codex-native child...",
+        progressSummary:
+          "Runtime liveness check for Phase 0Z: use exactly one Codex-native child...",
+        startedAt: 1_000,
+      });
+
+      const runtime = createRuntime();
+      await tasksListCommand({ summary: true }, runtime);
+
+      const joined = vi
+        .mocked(runtime.log)
+        .mock.calls.map(([line]) => String(line))
+        .join("\n");
+      expect(joined).toContain(
+        "trajectory child-work spawn_agent project_explorer child is inspecting readback seams",
+      );
+      expect(joined).not.toContain("Runtime liveness check for Phase 0Z");
+    });
+  });
+
+  it("uses fresh task run events before stale child progress summaries", async () => {
+    await withTaskCommandStateDir(async () => {
+      const task = createTaskRecord({
+        runtime: "subagent",
+        ownerKey: "agent:main:main",
+        scopeKind: "session",
+        childSessionKey: "agent:coding:subagent:child-1",
+        label: "project_explorer",
+        status: "running",
+        task: "Child run started.",
+        progressSummary: "Child started.",
+        startedAt: Date.now(),
+      });
+      setTaskProgressById({
+        taskId: task.taskId,
+        progressSummary: "Child started.",
+        eventSummary: "project_explorer is inspecting task registry readback.",
+        lastEventAt: Date.now() + 1,
+      });
+
+      const runtime = createRuntime();
+      await tasksListCommand({ summary: true, runtime: "subagent", status: "running" }, runtime);
+
+      const joined = vi
+        .mocked(runtime.log)
+        .mock.calls.map(([line]) => String(line))
+        .join("\n");
+      expect(joined).toContain(
+        "task-run-event running project_explorer project_explorer is inspecting task registry readback.",
+      );
+      expect(joined).not.toContain("Child started.");
+    });
+  });
+
   it("shows readback progress from a task execution receipt", async () => {
     await withTaskCommandStateDir(async () => {
       const task = createTaskRecord({

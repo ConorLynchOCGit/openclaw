@@ -1,5 +1,5 @@
 // Codex tests cover attempt turn watches plugin behavior.
-import { MAX_TIMER_TIMEOUT_MS } from "openclaw/plugin-sdk/number-runtime";
+import { MAX_TIMER_TIMEOUT_MS } from "@openclaw/normalization-core/number-coercion";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCodexAttemptTurnWatchController } from "./attempt-turn-watches.js";
 
@@ -193,6 +193,34 @@ describe("Codex app-server attempt turn watches", () => {
       "request:item/tool/call:start",
       "notification:item/completed",
     ]);
+  });
+
+  it("records notification attempt progress diagnostics before progress timeout", () => {
+    const harness = createController({
+      turnCompletionIdleTimeoutMs: 500,
+      turnTerminalIdleTimeoutMs: 500,
+      turnAttemptIdleTimeoutMs: 200,
+    });
+
+    harness.controller.armAttemptIdleWatch();
+    harness.controller.touchActivity("turn:start", { attemptProgress: true });
+    vi.advanceTimersByTime(20);
+    harness.controller.noteNotificationReceived("response.output_text.delta", {
+      attemptProgress: true,
+      attemptTimeoutMs: 40,
+    });
+    vi.advanceTimersByTime(40);
+
+    expect(harness.timeouts).toMatchObject([
+      {
+        kind: "progress",
+        timeoutMs: 40,
+        lastActivityReason: "notification:response.output_text.delta",
+      },
+    ]);
+    expect(harness.abortController.signal.reason).toBe("turn_progress_idle_timeout");
+    expect(harness.progress).toEqual(["turn:start", "notification:response.output_text.delta"]);
+    expect(harness.diagnostics).toEqual(["turn:start", "notification:response.output_text.delta"]);
   });
 
   it("does not count receive-only notifications as attempt progress", () => {

@@ -140,6 +140,26 @@ export type TaskDeliveryStatus =
   | "parent_missing"
   | "not_applicable";
 
+/** Bounded native progress evidence projected onto readback rows. */
+export type ReadbackProgressProjection = {
+  source: "trajectory" | "subagent-registry" | "task-run-event";
+  ref: string;
+  currentPhase?: string | null;
+  activeLabel?: string | null;
+  observedAt?: string | null;
+  elapsedMs?: number | null;
+  sourceEventType?: string;
+  sourceEventSeq?: number;
+  note?: string | null;
+  pointer?: {
+    kind: "artifact" | "inspect-next" | "session" | "task" | "trajectory";
+    ref: string;
+    label?: string;
+  };
+  derivedBy: string;
+  bounded: true;
+};
+
 /** Gateway task summary returned by task list/get calls. */
 export type TaskSummary = {
   id: string;
@@ -161,6 +181,7 @@ export type TaskSummary = {
   updatedAt?: RunTimestamp;
   startedAt?: RunTimestamp;
   endedAt?: RunTimestamp;
+  activeProgress?: ReadbackProgressProjection;
   progressSummary?: string;
   terminalSummary?: string;
   error?: string;

@@ -14,6 +14,7 @@ import { isAcpxExtensionRoot } from "../test/vitest/vitest.extension-acpx-paths.
 import { isActiveMemoryExtensionRoot } from "../test/vitest/vitest.extension-active-memory-paths.mjs";
 import { isBrowserExtensionRoot } from "../test/vitest/vitest.extension-browser-paths.mjs";
 import { resolveSplitChannelExtensionShard } from "../test/vitest/vitest.extension-channel-split-paths.mjs";
+import { resolveCodexAppServerAttemptTestGroup } from "../test/vitest/vitest.extension-codex-app-server-attempt-groups.mjs";
 import { isCodexExtensionRoot } from "../test/vitest/vitest.extension-codex-paths.mjs";
 import { isDiffsExtensionRoot } from "../test/vitest/vitest.extension-diffs-paths.mjs";
 import { isFeishuExtensionRoot } from "../test/vitest/vitest.extension-feishu-paths.mjs";
@@ -322,6 +323,8 @@ const VITEST_CONFIG_BY_KIND = {
   extensionAcpx: EXTENSION_ACPX_VITEST_CONFIG,
   extensionBrowser: EXTENSION_BROWSER_VITEST_CONFIG,
   extensionChannel: EXTENSION_CHANNELS_VITEST_CONFIG,
+  extensionCodexAppServerAttemptExtra: EXTENSION_CODEX_APP_SERVER_ATTEMPT_EXTRA_VITEST_CONFIG,
+  extensionCodexAppServerAttemptSupport: EXTENSION_CODEX_APP_SERVER_ATTEMPT_SUPPORT_VITEST_CONFIG,
   extensionCodex: EXTENSION_CODEX_VITEST_CONFIG,
   extensionDiffs: EXTENSION_DIFFS_VITEST_CONFIG,
   extensionDiscord: EXTENSION_DISCORD_VITEST_CONFIG,
@@ -1961,6 +1964,13 @@ function classifyTarget(arg, cwd) {
   }
   if (relative.startsWith("extensions/")) {
     const extensionRoot = relative.split("/").slice(0, 2).join("/");
+    const codexAttemptTestGroup = resolveCodexAppServerAttemptTestGroup(relative);
+    if (codexAttemptTestGroup === "support") {
+      return "extensionCodexAppServerAttemptSupport";
+    }
+    if (codexAttemptTestGroup === "extra") {
+      return "extensionCodexAppServerAttemptExtra";
+    }
     const splitChannelShard = resolveSplitChannelExtensionShard(extensionRoot);
     if (splitChannelShard) {
       return splitChannelShard.kind;
@@ -2367,6 +2377,8 @@ export function buildVitestRunPlans(
     "e2e",
     "extensionActiveMemory",
     "extensionAcpx",
+    "extensionCodexAppServerAttemptSupport",
+    "extensionCodexAppServerAttemptExtra",
     "extensionCodex",
     "extensionDiffs",
     "extensionBrowser",

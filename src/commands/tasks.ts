@@ -19,6 +19,7 @@ import {
 import { loadCronJobsStoreSync, resolveCronJobsStorePath } from "../cron/store.js";
 import {
   buildTasksListSummaryPayload,
+  mapTaskSummaries,
   mapTaskSummary,
 } from "../gateway/task-summary-projection.js";
 import type { RuntimeEnv } from "../runtime.js";
@@ -499,7 +500,7 @@ export async function tasksListCommand(
               count: tasks.length,
               runtime: runtimeFilter ?? null,
               status: statusFilter ?? null,
-              tasks: tasks.map((task) => mapTaskSummary(task)),
+              tasks: mapTaskSummaries(tasks),
             },
         null,
         2,

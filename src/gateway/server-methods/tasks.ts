@@ -14,7 +14,11 @@ import { parseAgentSessionKey } from "../../routing/session-key.js";
 import { cancelDetachedTaskRunById } from "../../tasks/detached-task-runtime.js";
 import { getTaskById, listTaskRecords } from "../../tasks/runtime-internal.js";
 import type { TaskRecord, TaskStatus } from "../../tasks/task-registry.types.js";
-import { LEDGER_STATUS_TO_TASK_STATUSES, mapTaskSummary } from "../task-summary-projection.js";
+import {
+  LEDGER_STATUS_TO_TASK_STATUSES,
+  mapTaskSummaries,
+  mapTaskSummary,
+} from "../task-summary-projection.js";
 import type { GatewayRequestHandlers } from "./types.js";
 
 const DEFAULT_TASKS_LIST_LIMIT = 100;
@@ -106,7 +110,7 @@ export const tasksHandlers: GatewayRequestHandlers = {
     const page = filtered.slice(cursor, cursor + limit);
     const nextOffset = cursor + page.length;
     respond(true, {
-      tasks: page.map((task) => mapTaskSummary(task)),
+      tasks: mapTaskSummaries(page),
       ...(nextOffset < filtered.length ? { nextCursor: String(nextOffset) } : {}),
     });
   },

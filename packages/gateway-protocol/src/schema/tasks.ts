@@ -30,7 +30,7 @@ export const TaskDeliveryStatusSchema = Type.Union([
 
 const TimestampSchema = Type.Union([Type.String(), Type.Integer({ minimum: 0 })]);
 
-const TaskActiveProgressPointerSchema = Type.Object(
+const TaskReadbackProgressPointerSchema = Type.Object(
   {
     kind: Type.Union([
       Type.Literal("artifact"),
@@ -45,7 +45,7 @@ const TaskActiveProgressPointerSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const TaskActiveProgressCapsuleSchema = Type.Object(
+const TaskReadbackProgressProjectionSchema = Type.Object(
   {
     source: Type.Union([
       Type.Literal("trajectory"),
@@ -60,7 +60,7 @@ const TaskActiveProgressCapsuleSchema = Type.Object(
     sourceEventType: Type.Optional(Type.String()),
     sourceEventSeq: Type.Optional(Type.Integer()),
     note: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-    pointer: Type.Optional(TaskActiveProgressPointerSchema),
+    pointer: Type.Optional(TaskReadbackProgressPointerSchema),
     derivedBy: NonEmptyString,
     bounded: Type.Literal(true),
   },
@@ -89,7 +89,7 @@ export const TaskSummarySchema = Type.Object(
     updatedAt: Type.Optional(TimestampSchema),
     startedAt: Type.Optional(TimestampSchema),
     endedAt: Type.Optional(TimestampSchema),
-    activeProgress: Type.Optional(TaskActiveProgressCapsuleSchema),
+    activeProgress: Type.Optional(TaskReadbackProgressProjectionSchema),
     progressSummary: Type.Optional(Type.String()),
     terminalSummary: Type.Optional(Type.String()),
     error: Type.Optional(Type.String()),

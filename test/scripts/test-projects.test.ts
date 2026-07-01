@@ -2451,6 +2451,34 @@ describe("scripts/test-projects full-suite sharding", () => {
     );
   });
 
+  it("routes Codex app-server attempt support files to the narrow support shard", () => {
+    const target = "extensions/codex/src/app-server/attempt-turn-watches.test.ts";
+
+    expect(findUnmatchedExplicitTestTargets([target], process.cwd())).toEqual([]);
+    expect(buildVitestRunPlans([target], process.cwd())).toEqual([
+      {
+        config: "test/vitest/vitest.extension-codex-app-server-attempt-support.config.ts",
+        forwardedArgs: [],
+        includePatterns: [target],
+        watchMode: false,
+      },
+    ]);
+  });
+
+  it("routes Codex app-server attempt integration files to the narrow extra shard", () => {
+    const target = "extensions/codex/src/app-server/run-attempt.turn-watches.test.ts";
+
+    expect(findUnmatchedExplicitTestTargets([target], process.cwd())).toEqual([]);
+    expect(buildVitestRunPlans([target], process.cwd())).toEqual([
+      {
+        config: "test/vitest/vitest.extension-codex-app-server-attempt-extra.config.ts",
+        forwardedArgs: [],
+        includePatterns: [target],
+        watchMode: false,
+      },
+    ]);
+  });
+
   it("keeps shared Vitest config helpers out of whole-config targets", () => {
     const args = ["test/vitest/vitest.shared.config.ts"];
 
