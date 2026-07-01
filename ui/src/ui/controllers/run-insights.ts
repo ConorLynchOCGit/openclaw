@@ -22,7 +22,9 @@ export type RunInsightsDeployEvent = {
     path?: string | null;
   }>;
   artifactSummary?: {
+    path?: string | null;
     readable?: boolean;
+    skippedReason?: string | null;
     duration?: string | null;
     durationMs?: number | null;
     failedCount?: number | null;
@@ -34,10 +36,83 @@ export type RunInsightsDeployEvent = {
   } | null;
 };
 
+export type RunInsightsSessionUsage = {
+  cacheStatus?: string;
+  totalCost?: number | null;
+  totalTokens?: number | null;
+  durationMs?: number | null;
+  duration?: string | null;
+  messageCount?: number | null;
+  toolCalls?: number | null;
+  uniqueTools?: number | null;
+  topTools?: Array<{
+    name?: string;
+    count?: number;
+  }>;
+  errors?: number | null;
+};
+
+export type RunInsightsSession = {
+  key?: string;
+  agentId?: string | null;
+  runtime?: string | null;
+  model?: string | null;
+  totalTokens?: number | null;
+  totalTokensFresh?: boolean;
+  percentUsed?: number | null;
+  age?: string | null;
+  usage?: RunInsightsSessionUsage | null;
+  pointer?: string;
+};
+
+export type RunInsightsTask = {
+  taskId?: string;
+  runtime?: string;
+  status?: string;
+  deliveryStatus?: string;
+  taskKind?: string | null;
+  agentId?: string | null;
+  label?: string | null;
+  childSessionKey?: string | null;
+  age?: string;
+  elapsed?: string;
+  latestEvent?: {
+    kind?: string;
+    summary?: string | null;
+  } | null;
+  progressSummary?: string | null;
+  attention?: {
+    waitClass?: string | null;
+    reason?: string | null;
+    pointer?: string;
+  };
+  pointer?: string;
+};
+
+export type RunInsightsTimelineItem = {
+  at?: number | null;
+  age?: string;
+  source?: string;
+  label?: string;
+  pointer?: string;
+  evidence?: unknown;
+};
+
+export type RunInsightsChildSessionEvidence = {
+  taskId?: string;
+  childSessionKey?: string;
+  status?: string;
+  elapsed?: string;
+  pointer?: string;
+};
+
 export type RunInsightsReport = {
   schema?: string;
   generatedAt?: string;
   authority?: string;
+  advisory?: {
+    missingEvidenceLanguage?: string;
+  };
   filters?: {
     activeMinutes?: number | null;
     limit?: number | null;
@@ -75,31 +150,32 @@ export type RunInsightsReport = {
   };
   performanceProfile?: {
     expensiveRunExplanation?: RunInsightsAttentionItem[];
-    timeline?: Array<{
-      at?: number | null;
-      age?: string;
-      source?: string;
-      label?: string;
-      pointer?: string;
-      evidence?: unknown;
-    }>;
-    childSessionEvidence?: unknown[];
+    timeline?: RunInsightsTimelineItem[];
+    childSessionEvidence?: RunInsightsChildSessionEvidence[];
     retryBuildProofCost?: {
       deployReceiptCount?: number;
+      totalKnownDurationMs?: number;
       totalKnownDuration?: string;
       slowestReceipt?: {
+        eventId?: string;
         eventType?: string;
+        durationMs?: number;
         duration?: string;
         pointer?: string;
       } | null;
     };
     validationBuildBottlenecks?: RunInsightsAttentionItem[];
-    advisoryInefficiencyFlags?: unknown[];
+    advisoryInefficiencyFlags?: Array<{
+      severity?: string;
+      code?: string;
+      message?: string;
+      evidence?: unknown;
+    }>;
   };
   deployEvents?: RunInsightsDeployEvent[];
-  sessions?: unknown[];
-  tasks?: unknown[];
-  pointers?: unknown;
+  sessions?: RunInsightsSession[];
+  tasks?: RunInsightsTask[];
+  pointers?: Record<string, string>;
   signals?: unknown;
 };
 

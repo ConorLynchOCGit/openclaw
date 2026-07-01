@@ -63,6 +63,32 @@ It displays:
 It does not crawl raw transcripts or refresh usage caches. It emits pointers to
 deeper surfaces when follow-up inspection is needed.
 
+## Control UI Workbench
+
+The Control UI exposes the same report at `/run-insights` as an operator
+workbench. It is meant for scanning current run friction before deciding which
+native surface to inspect next.
+
+The workbench panels mirror bounded report fields:
+
+- summary metrics for sessions, tasks, attention, and deploy activity;
+- performance and cost profile for cached usage, token, tool, error, and
+  promoted-image evidence;
+- attention readback for slow-work, validation, and promotion signals;
+- timeline and phase readback from existing timeline entries only;
+- child and task evidence from native task rows, child-session pointers,
+  progress summaries, and delivery state;
+- validation, build, and promote cost from deploy receipts, known durations,
+  bottlenecks, failed counts, and artifact summaries;
+- pointers and debug fallback for task/session/deploy/audit commands, proof or
+  artifact paths, and the raw bounded JSON report.
+
+The workbench preserves the same authority boundary as the CLI: advisory
+signals explain where to look, evidence rows and pointers name what was read,
+and runtime truth remains in native sessions, tasks, deploy receipts,
+transcripts, and bounded artifacts. Missing evidence should render as
+`unknown` or an empty bounded panel, not as inferred lifecycle state.
+
 ## Signals
 
 The command surfaces advisory signals such as:
