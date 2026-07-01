@@ -188,6 +188,24 @@ describe("runInsightsCommand", () => {
           },
         },
       },
+      {
+        taskId: "task-delivery-watch",
+        runtime: "subagent",
+        taskKind: "review",
+        agentId: "coding",
+        runId: "run-delivery-watch",
+        label: "review closeout",
+        requesterSessionKey: "agent:coding:main",
+        ownerKey: "agent:coding:main",
+        scopeKind: "session",
+        task: "review output",
+        status: "succeeded",
+        deliveryStatus: "session_queued",
+        notifyPolicy: "done_only",
+        createdAt: Date.now() - 2 * 60_000,
+        startedAt: Date.now() - 2 * 60_000,
+        endedAt: Date.now() - 60_000,
+      },
     ]);
   });
 
@@ -217,8 +235,9 @@ describe("runInsightsCommand", () => {
     });
     expect(payload.summary.tasks.failures).toBe(1);
     expect(payload.summary.tasks.childTasksDisplayed).toBe(1);
+    expect(payload.summary.tasks.deliveryIssues).toBe(1);
     expect(payload.sessions).toHaveLength(1);
-    expect(payload.tasks).toHaveLength(1);
+    expect(payload.tasks).toHaveLength(2);
     expect(payload.sessions[0].pointer).toBe(
       "openclaw sessions show agent:coding:main --agent coding",
     );
@@ -227,6 +246,8 @@ describe("runInsightsCommand", () => {
       expect.arrayContaining([
         "task_failures_present",
         "active_tasks_present",
+        "active_child_task",
+        "task_delivery_issue",
         "session_aborted_last_run",
         "high_context_pressure",
         "long_active_task",

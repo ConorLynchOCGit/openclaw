@@ -12,6 +12,7 @@ const MAX_LIMIT = 50;
 const HIGH_CONTEXT_WARN_PERCENT = 80;
 const HIGH_CONTEXT_ERROR_PERCENT = 90;
 const LONG_ACTIVE_TASK_WARN_MS = 10 * 60_000;
+const DELIVERY_ISSUE_STATUSES = new Set(["failed", "parent_missing", "session_queued"]);
 
 export type RunInsightsOptions = {
   json?: boolean;
@@ -100,6 +101,7 @@ export type RunInsightsReport = {
       recentDisplayed: number;
       activeDisplayed: number;
       childTasksDisplayed: number;
+      deliveryIssues: number;
       byStatus: StatusSummary["tasks"]["byStatus"];
       byRuntime: StatusSummary["tasks"]["byRuntime"];
     };
@@ -342,6 +344,32 @@ function buildSignals(
   }
 
   for (const task of tasks) {
+    if (task.childSessionKey && (task.status === "queued" || task.status === "running")) {
+      signals.push({
+        severity: "info",
+        code: "active_child_task",
+        message: `${task.taskId} is active child work for ${task.childSessionKey}.`,
+        evidence: {
+          taskId: task.taskId,
+          childSessionKey: task.childSessionKey,
+          pointer: task.pointer,
+        },
+      });
+    }
+
+    if (DELIVERY_ISSUE_STATUSES.has(task.deliveryStatus)) {
+      signals.push({
+        severity: task.deliveryStatus === "failed" ? "error" : "warn",
+        code: "task_delivery_issue",
+        message: `${task.taskId} has deliveryStatus=${task.deliveryStatus}.`,
+        evidence: {
+          taskId: task.taskId,
+          deliveryStatus: task.deliveryStatus,
+          pointer: task.pointer,
+        },
+      });
+    }
+
     if (
       (task.status === "queued" || task.status === "running") &&
       task.ageMs >= LONG_ACTIVE_TASK_WARN_MS
@@ -416,6 +444,8 @@ export function buildRunInsightsReport(
           (task) => task.status === "queued" || task.status === "running",
         ).length,
         childTasksDisplayed: tasks.filter((task) => task.childSessionKey !== null).length,
+        deliveryIssues: tasks.filter((task) => DELIVERY_ISSUE_STATUSES.has(task.deliveryStatus))
+          .length,
         byStatus: summary.tasks.byStatus,
         byRuntime: summary.tasks.byRuntime,
       },
@@ -464,7 +494,11 @@ function formatTasks(tasks: RunInsightTask[]): string[] {
     const label = task.label ? ` label="${task.label}"` : "";
     const child = task.childSessionKey ? ` child=${task.childSessionKey}` : "";
     const latest = task.latestEvent?.summary ? ` latest="${task.latestEvent.summary}"` : "";
-    return `  ${task.taskId} runtime=${task.runtime} status=${task.status} age=${task.age} elapsed=${task.elapsed}${label}${child}${latest}`;
+    const delivery =
+      task.deliveryStatus === "delivered" || task.deliveryStatus === "not_applicable"
+        ? ""
+        : ` delivery=${task.deliveryStatus}`;
+    return `  ${task.taskId} runtime=${task.runtime} status=${task.status}${delivery} age=${task.age} elapsed=${task.elapsed}${label}${child}${latest}`;
   });
 }
 
@@ -473,7 +507,7 @@ function formatHumanReport(report: RunInsightsReport): string[] {
     theme.heading("Run Insights"),
     `Authority: ${report.authority}`,
     `Sessions: ${report.summary.sessionsDisplayed} shown of ${report.summary.recentSessionsConsidered} matching recent session(s); ${report.summary.sessionCount} total stored.`,
-    `Tasks: ${report.summary.tasks.active} active, ${report.summary.tasks.failures} failure(s), ${report.summary.tasks.terminal} terminal of ${report.summary.tasks.total} total.`,
+    `Tasks: ${report.summary.tasks.active} active, ${report.summary.tasks.failures} failure(s), ${report.summary.tasks.deliveryIssues} delivery issue(s), ${report.summary.tasks.terminal} terminal of ${report.summary.tasks.total} total.`,
     "",
     theme.heading("Signals"),
     ...formatSignals(report.signals),
