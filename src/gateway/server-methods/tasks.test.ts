@@ -245,6 +245,21 @@ describe("tasks gateway handlers", () => {
           elapsedMs: 5000,
           summary: "project_explorer child is inspecting readback seams",
         },
+      })}\n${JSON.stringify({
+        traceSchema: "openclaw-trajectory",
+        schemaVersion: 1,
+        traceId: sessionId,
+        source: "runtime",
+        type: "tool.result",
+        ts: "2026-06-30T20:00:01.000Z",
+        seq: 8,
+        sourceSeq: 22,
+        sessionId,
+        sessionKey,
+        data: {
+          name: "spawn_agent",
+          status: "completed",
+        },
       })}\n`,
       "utf8",
     );

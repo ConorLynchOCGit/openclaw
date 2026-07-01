@@ -2050,6 +2050,48 @@ function activeProgressNote(
   return undefined;
 }
 
+function isLowSignalSuccessfulStatus(value: unknown): boolean {
+  const normalized =
+    typeof value === "string" ? value.replace(/[^a-z0-9]/giu, "").toLowerCase() : "";
+  return (
+    normalized === "completed" ||
+    normalized === "succeeded" ||
+    normalized === "success" ||
+    normalized === "ok"
+  );
+}
+
+function trajectoryEventIsUsefulActiveProgress(
+  eventType: string,
+  data: Record<string, unknown> | undefined,
+): boolean {
+  if (
+    eventType === "context.compiled" ||
+    eventType === "prompt.submitted" ||
+    eventType === "session.started" ||
+    eventType === "model.completed" ||
+    eventType === "session.ended"
+  ) {
+    return false;
+  }
+  if (
+    eventType === "tool.result" &&
+    isLowSignalSuccessfulStatus(data?.status) &&
+    !boundedProgressText(data?.summary) &&
+    !boundedProgressText(data?.note) &&
+    !boundedProgressText(data?.phase) &&
+    !activeProgressPointer(data)
+  ) {
+    return false;
+  }
+  return Boolean(
+    activeProgressLabel(eventType, data) ??
+    activeProgressNote(eventType, data) ??
+    boundedProgressText(data?.phase) ??
+    activeProgressPointer(data),
+  );
+}
+
 function activeProgressPointer(
   data: Record<string, unknown> | undefined,
 ): ReadbackProgressProjection["pointer"] | undefined {
@@ -2135,6 +2177,13 @@ export function readLatestTrajectoryProgressProjection(
         event.sessionId !== sessionId ||
         typeof event.type !== "string"
       ) {
+        continue;
+      }
+      const data =
+        event.data && typeof event.data === "object" && !Array.isArray(event.data)
+          ? (event.data as Record<string, unknown>)
+          : undefined;
+      if (!trajectoryEventIsUsefulActiveProgress(event.type, data)) {
         continue;
       }
       return activeProgressProjectionFromTrajectoryEvent({

@@ -488,6 +488,21 @@ describe("tasks commands", () => {
             elapsedMs: 42_000,
             summary: "project_explorer child is inspecting readback seams",
           },
+        })}\n${JSON.stringify({
+          traceSchema: "openclaw-trajectory",
+          schemaVersion: 1,
+          traceId: sessionId,
+          source: "runtime",
+          type: "tool.result",
+          ts: "2026-07-01T00:30:01.000Z",
+          seq: 9,
+          sourceSeq: 16,
+          sessionId,
+          sessionKey,
+          data: {
+            name: "spawn_agent",
+            status: "completed",
+          },
         })}\n`,
         "utf8",
       );

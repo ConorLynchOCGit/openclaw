@@ -450,6 +450,22 @@ describe("sessionsCommand", () => {
             artifactPath: ".openclaw/trajectory-exports/proof",
           },
         }),
+        JSON.stringify({
+          traceSchema: "openclaw-trajectory",
+          schemaVersion: 1,
+          traceId: sessionId,
+          source: "runtime",
+          type: "tool.result",
+          ts: "2025-12-05T23:59:01.000Z",
+          seq: 8,
+          sourceSeq: 13,
+          sessionId,
+          sessionKey: "agent:main:main",
+          data: {
+            name: "exec_command",
+            status: "completed",
+          },
+        }),
       ].join("\n"),
     );
 
