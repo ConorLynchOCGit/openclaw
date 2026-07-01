@@ -182,6 +182,49 @@ describe("runInsightsCommand", () => {
     vi.clearAllMocks();
     stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-run-insights-"));
     fs.mkdirSync(path.join(stateDir, "deploy"), { recursive: true });
+    const buildArtifactPath = path.join(stateDir, "deploy-controller-build-test.json");
+    const promoteArtifactPath = path.join(stateDir, "deploy-controller-promote-test.json");
+    fs.writeFileSync(
+      buildArtifactPath,
+      JSON.stringify(
+        {
+          schema: "openclaw-next.deploy-controller.build-candidate.v1",
+          timingsMs: {
+            total: 180_000,
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    fs.writeFileSync(
+      promoteArtifactPath,
+      JSON.stringify(
+        {
+          schema: "openclaw-next.deploy-controller.promote.v1",
+          timingsMs: {
+            total: 240_000,
+            checks: [
+              {
+                id: "openclaw-native-checks",
+                durationMs: 91_000,
+                status: "passed",
+                exitCode: 0,
+              },
+              {
+                id: "business-ops-surface-check",
+                durationMs: 44_000,
+                status: "passed",
+                exitCode: 0,
+              },
+            ],
+          },
+          failedCount: 0,
+        },
+        null,
+        2,
+      ),
+    );
     fs.writeFileSync(
       path.join(stateDir, "deploy", "events.ndjson"),
       [
@@ -201,7 +244,7 @@ describe("runInsightsCommand", () => {
           artifactRefs: [
             {
               kind: "deploy-controller-artifact",
-              path: "/srv/openclaw-next/artifacts/deploy-controller-build-test.json",
+              path: buildArtifactPath,
             },
           ],
         }),
@@ -222,7 +265,7 @@ describe("runInsightsCommand", () => {
           artifactRefs: [
             {
               kind: "deploy-controller-artifact",
-              path: "/srv/openclaw-next/artifacts/deploy-controller-promote-test.json",
+              path: promoteArtifactPath,
             },
           ],
         }),
@@ -372,6 +415,17 @@ describe("runInsightsCommand", () => {
       "deploy-promote-test",
       "deploy-build-test",
     ]);
+    expect(payload.deployEvents[0].artifactSummary).toMatchObject({
+      readable: true,
+      durationMs: 240_000,
+      failedCount: 0,
+    });
+    expect(payload.deployEvents[0].artifactSummary.slowestChecks[0]).toMatchObject({
+      id: "openclaw-native-checks",
+      durationMs: 91_000,
+      status: "passed",
+      exitCode: 0,
+    });
     expect(payload.sessions[0].usage.toolCalls).toBe(55);
     expect(payload.sessions[0].usage.topTools).toEqual([
       { name: "read", count: 40 },
@@ -410,7 +464,7 @@ describe("runInsightsCommand", () => {
       expect.arrayContaining([
         "openclaw sessions show agent:coding:main --agent coding",
         "openclaw tasks show task-coding-child",
-        "/srv/openclaw-next/artifacts/deploy-controller-promote-test.json",
+        payload.deployEvents[0].artifactSummary.path,
       ]),
     );
     expect(payload.signals.map((signal: { code: string }) => signal.code)).toEqual(
@@ -483,6 +537,8 @@ describe("runInsightsCommand", () => {
     expect(output).toContain("attention=validation_or_promotion");
     expect(output).toContain("Recent Deploy Events");
     expect(output).toContain("deploy.promote status=passed");
+    expect(output).toContain("duration=4m");
+    expect(output).toContain("slowest=openclaw-native-checks:2m");
     expect(output).toContain("openclaw tasks audit --json");
   });
 

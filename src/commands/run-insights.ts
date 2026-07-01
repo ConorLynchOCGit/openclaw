@@ -25,6 +25,7 @@ const TOOL_HEAVY_SESSION_WARN_CALLS = 50;
 const DELIVERY_ISSUE_STATUSES = new Set(["failed", "parent_missing", "session_queued"]);
 const DEPLOY_EVENT_TAIL_LINES = 200;
 const RECENT_DEPLOY_ATTENTION_MS = 30 * 60_000;
+const DEPLOY_ARTIFACT_READ_MAX_BYTES = 512 * 1024;
 const SUMMARY_TEXT_MAX_CHARS = 360;
 
 type AttentionSource = "session" | "task" | "deploy" | "status";
@@ -171,6 +172,23 @@ export type RunInsightDeployEvent = {
   artifactRefs: Array<{
     kind: string | null;
     path: string | null;
+  }>;
+  artifactSummary: RunInsightDeployArtifactSummary | null;
+};
+
+export type RunInsightDeployArtifactSummary = {
+  path: string | null;
+  readable: boolean;
+  skippedReason: string | null;
+  durationMs: number | null;
+  duration: string;
+  failedCount: number | null;
+  slowestChecks: Array<{
+    id: string;
+    durationMs: number | null;
+    duration: string;
+    status: string | null;
+    exitCode: number | null;
   }>;
 };
 
@@ -321,6 +339,115 @@ function compactSummaryText(value: string | null | undefined): string | null {
   }
   const suffix = "... [truncated; use pointer for full evidence]";
   return `${normalized.slice(0, SUMMARY_TEXT_MAX_CHARS - suffix.length).trimEnd()}${suffix}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function finiteNumberOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function deployArtifactDurationMs(artifact: Record<string, unknown>): number | null {
+  const timings = isRecord(artifact.timingsMs) ? artifact.timingsMs : null;
+  return (
+    finiteNumberOrNull(timings?.total) ??
+    finiteNumberOrNull(timings?.build) ??
+    finiteNumberOrNull(artifact.durationMs) ??
+    finiteNumberOrNull(artifact.timingMs)
+  );
+}
+
+function deployArtifactSlowestChecks(
+  artifact: Record<string, unknown>,
+): RunInsightDeployArtifactSummary["slowestChecks"] {
+  const timings = isRecord(artifact.timingsMs) ? artifact.timingsMs : null;
+  const rawChecks = Array.isArray(timings?.checks) ? timings.checks : [];
+  return rawChecks
+    .filter((check): check is Record<string, unknown> => isRecord(check))
+    .map((check) => {
+      const durationMs = finiteNumberOrNull(check.durationMs);
+      return {
+        id: stringOrNull(check.id) ?? "unknown",
+        durationMs,
+        duration: formatDurationMs(durationMs),
+        status: stringOrNull(check.status),
+        exitCode: finiteNumberOrNull(check.exitCode),
+      };
+    })
+    .toSorted((a, b) => (b.durationMs ?? -1) - (a.durationMs ?? -1))
+    .slice(0, 5);
+}
+
+function readDeployArtifactSummary(
+  artifactRefs: RunInsightDeployEvent["artifactRefs"],
+): RunInsightDeployArtifactSummary | null {
+  const pathRef = artifactRefs.find((ref) => ref.path)?.path ?? null;
+  if (!pathRef) {
+    return null;
+  }
+  try {
+    const stat = fs.statSync(pathRef);
+    if (!stat.isFile()) {
+      return {
+        path: pathRef,
+        readable: false,
+        skippedReason: "not_file",
+        durationMs: null,
+        duration: "unknown",
+        failedCount: null,
+        slowestChecks: [],
+      };
+    }
+    if (stat.size > DEPLOY_ARTIFACT_READ_MAX_BYTES) {
+      return {
+        path: pathRef,
+        readable: false,
+        skippedReason: "too_large",
+        durationMs: null,
+        duration: "unknown",
+        failedCount: null,
+        slowestChecks: [],
+      };
+    }
+    const artifact = JSON.parse(fs.readFileSync(pathRef, "utf8")) as unknown;
+    if (!isRecord(artifact)) {
+      return {
+        path: pathRef,
+        readable: false,
+        skippedReason: "not_object",
+        durationMs: null,
+        duration: "unknown",
+        failedCount: null,
+        slowestChecks: [],
+      };
+    }
+    const durationMs = deployArtifactDurationMs(artifact);
+    return {
+      path: pathRef,
+      readable: true,
+      skippedReason: null,
+      durationMs,
+      duration: formatDurationMs(durationMs),
+      failedCount: finiteNumberOrNull(artifact.failedCount),
+      slowestChecks: deployArtifactSlowestChecks(artifact),
+    };
+  } catch {
+    return {
+      path: pathRef,
+      readable: false,
+      skippedReason: "unreadable",
+      durationMs: null,
+      duration: "unknown",
+      failedCount: null,
+      slowestChecks: [],
+    };
+  }
 }
 
 function textMatchesRunStage(value: string | null | undefined): boolean {
@@ -608,6 +735,7 @@ function readRecentDeployEvents(limit: number): RunInsightDeployEvent[] {
         buildEpisodeId:
           buildEpisode && typeof buildEpisode.id === "string" ? buildEpisode.id : null,
         artifactRefs,
+        artifactSummary: readDeployArtifactSummary(artifactRefs),
       };
     });
 }
@@ -955,6 +1083,8 @@ function buildAttention(params: {
         eventType: event.eventType,
         status: event.status,
         ageMs: event.ageMs,
+        durationMs: event.artifactSummary?.durationMs ?? null,
+        slowestChecks: event.artifactSummary?.slowestChecks ?? [],
         buildEpisodeId: event.buildEpisodeId,
         artifactRefs: event.artifactRefs,
       },
@@ -1169,11 +1299,18 @@ function formatDeployEvents(events: RunInsightDeployEvent[]): string[] {
     const profile = event.buildProfile ? ` profile=${event.buildProfile}` : "";
     const digest = event.imageDigest ? ` image=${event.imageDigest.slice(0, 19)}...` : "";
     const commit = event.sourceCommit ? ` commit=${event.sourceCommit.slice(0, 12)}` : "";
+    const duration = event.artifactSummary?.durationMs
+      ? ` duration=${event.artifactSummary.duration}`
+      : "";
+    const slowest =
+      event.artifactSummary?.slowestChecks?.[0]?.id && event.artifactSummary.slowestChecks[0]
+        ? ` slowest=${event.artifactSummary.slowestChecks[0].id}:${event.artifactSummary.slowestChecks[0].duration}`
+        : "";
     const artifact =
       event.artifactRefs.length > 0 && event.artifactRefs[0]?.path
         ? ` artifact=${event.artifactRefs[0].path}`
         : "";
-    return `  ${event.eventType}${status} age=${event.age}${profile}${digest}${commit}${artifact}`;
+    return `  ${event.eventType}${status} age=${event.age}${duration}${slowest}${profile}${digest}${commit}${artifact}`;
   });
 }
 
