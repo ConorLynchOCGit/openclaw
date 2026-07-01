@@ -12,6 +12,7 @@ import type { CronModelSuggestionsState, CronState } from "./controllers/cron.ts
 import type { DevicePairingList } from "./controllers/devices.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "./controllers/exec-approvals.ts";
+import type { RunInsightsReport } from "./controllers/run-insights.ts";
 import type { SkillWorkshopState } from "./controllers/skill-workshop.ts";
 import type {
   ClawHubSearchResult,
@@ -443,6 +444,10 @@ export type AppViewState = {
     debugCallParams: string;
     debugCallResult: string | null;
     debugCallError: string | null;
+    runInsightsLoading: boolean;
+    runInsightsReport: RunInsightsReport | null;
+    runInsightsError: string | null;
+    runInsightsActiveMinutes: number;
     logsLoading: boolean;
     logsError: string | null;
     logsFile: string | null;

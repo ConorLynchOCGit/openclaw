@@ -52,6 +52,7 @@ import {
 } from "./controllers/model-auth-status.ts";
 import { loadNodes, type NodesState } from "./controllers/nodes.ts";
 import { loadPresence, type PresenceState } from "./controllers/presence.ts";
+import { loadRunInsights, type RunInsightsState } from "./controllers/run-insights.ts";
 import { loadSessions, type SessionsState } from "./controllers/sessions.ts";
 import {
   loadSkillWorkshopProposals,
@@ -155,6 +156,7 @@ type SettingsAppHost = SettingsHost &
   LogsState &
   NodesState &
   PresenceState &
+  RunInsightsState &
   SessionsState &
   SkillsState &
   SkillWorkshopState &
@@ -439,6 +441,9 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
         await loadOverview(host);
         break;
       case "activity":
+        break;
+      case "runInsights":
+        await loadRunInsights(app);
         break;
       case "workboard":
         await Promise.all([
