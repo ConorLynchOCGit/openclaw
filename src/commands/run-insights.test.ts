@@ -4,7 +4,10 @@ import type { StatusSummary } from "./status.types.js";
 
 const mocks = vi.hoisted(() => ({
   getStatusSummary: vi.fn(),
+  getRuntimeConfig: vi.fn(() => ({})),
   listTaskRecords: vi.fn(),
+  loadSessionCostSummaryFromCache: vi.fn(),
+  resolveExistingUsageSessionFile: vi.fn(),
   runtime: {
     log: vi.fn(),
     error: vi.fn(),
@@ -14,14 +17,25 @@ const mocks = vi.hoisted(() => ({
 
 const getStatusSummary = mocks.getStatusSummary;
 const listTaskRecords = mocks.listTaskRecords;
+const loadSessionCostSummaryFromCache = mocks.loadSessionCostSummaryFromCache;
+const resolveExistingUsageSessionFile = mocks.resolveExistingUsageSessionFile;
 const runtime = mocks.runtime;
 
 vi.mock("./status.summary.js", () => ({
   getStatusSummary: mocks.getStatusSummary,
 }));
 
+vi.mock("../config/config.js", () => ({
+  getRuntimeConfig: mocks.getRuntimeConfig,
+}));
+
 vi.mock("../tasks/task-registry.js", () => ({
   listTaskRecords: mocks.listTaskRecords,
+}));
+
+vi.mock("../infra/session-cost-usage.js", () => ({
+  loadSessionCostSummaryFromCache: mocks.loadSessionCostSummaryFromCache,
+  resolveExistingUsageSessionFile: mocks.resolveExistingUsageSessionFile,
 }));
 
 function buildSummary(): StatusSummary {
@@ -157,6 +171,45 @@ describe("runInsightsCommand", () => {
     vi.clearAllMocks();
     runtime.exit.mockImplementation(() => {});
     getStatusSummary.mockResolvedValue(buildSummary());
+    resolveExistingUsageSessionFile.mockReturnValue("/tmp/sess-coding.jsonl");
+    loadSessionCostSummaryFromCache.mockResolvedValue({
+      cacheStatus: {
+        status: "fresh",
+        cachedFiles: 1,
+        pendingFiles: 0,
+        staleFiles: 0,
+      },
+      summary: {
+        input: 10,
+        output: 5,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 15,
+        totalCost: 0.1234,
+        inputCost: 0,
+        outputCost: 0,
+        cacheReadCost: 0,
+        cacheWriteCost: 0,
+        missingCostEntries: 0,
+        durationMs: 7 * 60_000,
+        messageCounts: {
+          total: 4,
+          user: 1,
+          assistant: 1,
+          toolCalls: 55,
+          toolResults: 2,
+          errors: 1,
+        },
+        toolUsage: {
+          totalCalls: 55,
+          uniqueTools: 2,
+          tools: [
+            { name: "read", count: 40 },
+            { name: "grep", count: 15 },
+          ],
+        },
+      },
+    });
     const taskStartedAt = Date.now() - 11 * 60_000;
     listTaskRecords.mockReturnValue([
       {
@@ -238,6 +291,11 @@ describe("runInsightsCommand", () => {
     expect(payload.summary.tasks.deliveryIssues).toBe(1);
     expect(payload.sessions).toHaveLength(1);
     expect(payload.tasks).toHaveLength(2);
+    expect(payload.sessions[0].usage.toolCalls).toBe(55);
+    expect(payload.sessions[0].usage.topTools).toEqual([
+      { name: "read", count: 40 },
+      { name: "grep", count: 15 },
+    ]);
     expect(payload.sessions[0].pointer).toBe(
       "openclaw sessions show agent:coding:main --agent coding",
     );
@@ -250,6 +308,8 @@ describe("runInsightsCommand", () => {
         "task_delivery_issue",
         "session_aborted_last_run",
         "high_context_pressure",
+        "tool_heavy_session",
+        "session_usage_errors",
         "long_active_task",
       ]),
     );
@@ -261,6 +321,8 @@ describe("runInsightsCommand", () => {
     const output = runtime.log.mock.calls.map((call) => String(call[0])).join("\n");
     expect(output).toContain("Run Insights");
     expect(output).toContain("Derived readback over native status/session/task summaries");
+    expect(output).toContain("tools=55/2");
+    expect(output).toContain("cost=$0.1234");
     expect(output).toContain("Recent Tasks");
     expect(output).toContain("openclaw tasks audit --json");
   });
@@ -271,5 +333,6 @@ describe("runInsightsCommand", () => {
     expect(runtime.error).toHaveBeenCalledWith("--limit must be a positive integer.");
     expect(runtime.exit).toHaveBeenCalledWith(1);
     expect(getStatusSummary).not.toHaveBeenCalled();
+    expect(loadSessionCostSummaryFromCache).not.toHaveBeenCalled();
   });
 });

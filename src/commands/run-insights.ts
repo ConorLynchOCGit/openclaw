@@ -1,5 +1,11 @@
 // Operator-facing run performance readback derived from native status summaries.
 import { theme } from "../../packages/terminal-core/src/theme.js";
+import { getRuntimeConfig } from "../config/config.js";
+import {
+  loadSessionCostSummaryFromCache,
+  resolveExistingUsageSessionFile,
+} from "../infra/session-cost-usage.js";
+import type { SessionCostSummary, UsageCacheStatus } from "../infra/session-cost-usage.types.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { writeRuntimeJson } from "../runtime.js";
 import { listTaskRecords } from "../tasks/task-registry.js";
@@ -12,6 +18,7 @@ const MAX_LIMIT = 50;
 const HIGH_CONTEXT_WARN_PERCENT = 80;
 const HIGH_CONTEXT_ERROR_PERCENT = 90;
 const LONG_ACTIVE_TASK_WARN_MS = 10 * 60_000;
+const TOOL_HEAVY_SESSION_WARN_CALLS = 50;
 const DELIVERY_ISSUE_STATUSES = new Set(["failed", "parent_missing", "session_queued"]);
 
 export type RunInsightsOptions = {
@@ -28,6 +35,22 @@ export type RunInsightSignal = {
   code: string;
   message: string;
   evidence?: Record<string, unknown>;
+};
+
+export type RunInsightSessionUsage = {
+  cacheStatus: UsageCacheStatus["status"];
+  totalCost: number;
+  totalTokens: number;
+  durationMs: number | null;
+  duration: string;
+  messageCount: number | null;
+  toolCalls: number;
+  uniqueTools: number;
+  topTools: Array<{
+    name: string;
+    count: number;
+  }>;
+  errors: number;
 };
 
 export type RunInsightSession = {
@@ -47,6 +70,7 @@ export type RunInsightSession = {
   outputTokens: number | null;
   abortedLastRun: boolean;
   flags: string[];
+  usage: RunInsightSessionUsage | null;
   pointer: string;
 };
 
@@ -201,8 +225,69 @@ function toInsightSession(row: SessionStatus): RunInsightSession {
     outputTokens: row.outputTokens ?? null,
     abortedLastRun: Boolean(row.abortedLastRun || row.flags.includes("aborted")),
     flags: row.flags,
+    usage: null,
     pointer: `openclaw sessions show ${row.key}${agentPart}`,
   };
+}
+
+function toSessionUsageInsight(params: {
+  summary: SessionCostSummary | null;
+  cacheStatus: UsageCacheStatus;
+}): RunInsightSessionUsage | null {
+  if (!params.summary) {
+    return null;
+  }
+  const messageCounts = params.summary.messageCounts;
+  const toolUsage = params.summary.toolUsage;
+  return {
+    cacheStatus: params.cacheStatus.status,
+    totalCost: params.summary.totalCost,
+    totalTokens: params.summary.totalTokens,
+    durationMs: params.summary.durationMs ?? null,
+    duration: formatDurationMs(params.summary.durationMs ?? null),
+    messageCount: messageCounts?.total ?? null,
+    toolCalls: toolUsage?.totalCalls ?? 0,
+    uniqueTools: toolUsage?.uniqueTools ?? 0,
+    topTools: toolUsage?.tools.slice(0, 5) ?? [],
+    errors: messageCounts?.errors ?? 0,
+  };
+}
+
+async function loadCachedSessionUsage(
+  row: RunInsightSession,
+  config = getRuntimeConfig(),
+): Promise<RunInsightSessionUsage | null> {
+  if (!row.sessionId) {
+    return null;
+  }
+  const sessionFile = resolveExistingUsageSessionFile({
+    sessionId: row.sessionId,
+    agentId: row.agentId ?? undefined,
+  });
+  if (!sessionFile) {
+    return null;
+  }
+  const usage = await loadSessionCostSummaryFromCache({
+    sessionId: row.sessionId,
+    sessionFile,
+    agentId: row.agentId ?? undefined,
+    config,
+    requestRefresh: false,
+  });
+  return toSessionUsageInsight(usage);
+}
+
+async function attachCachedSessionUsage(
+  sessions: RunInsightSession[],
+): Promise<RunInsightSession[]> {
+  const config = getRuntimeConfig();
+  const usageRows = await Promise.all(
+    sessions.map((session) => loadCachedSessionUsage(session, config)),
+  );
+  return sessions.map((session, index) => ({
+    ...session,
+    usage: usageRows[index] ?? null,
+  }));
 }
 
 function taskReferenceAt(task: TaskRecord): number {
@@ -341,6 +426,33 @@ function buildSignals(
         },
       });
     }
+
+    if (session.usage?.toolCalls && session.usage.toolCalls >= TOOL_HEAVY_SESSION_WARN_CALLS) {
+      signals.push({
+        severity: "warn",
+        code: "tool_heavy_session",
+        message: `${session.key} has ${session.usage.toolCalls} cached tool call(s).`,
+        evidence: {
+          sessionKey: session.key,
+          toolCalls: session.usage.toolCalls,
+          topTools: session.usage.topTools,
+          pointer: session.pointer,
+        },
+      });
+    }
+
+    if (session.usage?.errors && session.usage.errors > 0) {
+      signals.push({
+        severity: "warn",
+        code: "session_usage_errors",
+        message: `${session.key} has ${session.usage.errors} cached usage/parsing error(s).`,
+        evidence: {
+          sessionKey: session.key,
+          errors: session.usage.errors,
+          pointer: session.pointer,
+        },
+      });
+    }
   }
 
   for (const task of tasks) {
@@ -407,12 +519,19 @@ export function buildRunInsightsReport(
     limit: number;
     now?: number;
     taskRecords?: TaskRecord[];
+    sessionUsage?: Map<string, RunInsightSessionUsage | null>;
   },
 ): RunInsightsReport {
   const now = options.now ?? Date.now();
   const recent = selectRecentSessions(summary, options.agent);
   const filtered = recent.filter((row) => sessionMatchesActiveFilter(row, options.activeMinutes));
-  const sessions = filtered.slice(0, options.limit).map(toInsightSession);
+  const sessions = filtered
+    .slice(0, options.limit)
+    .map(toInsightSession)
+    .map((session) => ({
+      ...session,
+      usage: options.sessionUsage?.get(session.key) ?? session.usage,
+    }));
   const taskRecords = options.taskRecords ?? listTaskRecords();
   const tasks = taskRecords
     .filter((task) => taskMatchesAgentFilter(task, options.agent))
@@ -482,7 +601,12 @@ function formatSessions(sessions: RunInsightSession[]): string[] {
     const agent = session.agentId ? ` agent=${session.agentId}` : "";
     const runtime = session.runtime ? ` runtime=${session.runtime}` : "";
     const aborted = session.abortedLastRun ? " aborted-last-run" : "";
-    return `  ${session.key}${agent}${runtime} age=${session.age} usage=${usage}${aborted}`;
+    const toolUsage =
+      session.usage && session.usage.toolCalls > 0
+        ? ` tools=${session.usage.toolCalls}/${session.usage.uniqueTools}`
+        : "";
+    const cost = session.usage ? ` cost=$${session.usage.totalCost.toFixed(4)}` : "";
+    return `  ${session.key}${agent}${runtime} age=${session.age} usage=${usage}${toolUsage}${cost}${aborted}`;
   });
 }
 
@@ -544,10 +668,21 @@ export async function runInsightsCommand(
     includeSensitive: true,
     includeChannelSummary: false,
   });
+  const parsedLimitValue = clampLimit(parsedLimit);
+  const initialReport = buildRunInsightsReport(summary, {
+    agent: options.agent,
+    activeMinutes: parsedActive,
+    limit: parsedLimitValue,
+  });
+  const sessionsWithUsage = await attachCachedSessionUsage(initialReport.sessions);
+  const sessionUsage = new Map(
+    sessionsWithUsage.map((session) => [session.key, session.usage] as const),
+  );
   const report = buildRunInsightsReport(summary, {
     agent: options.agent,
     activeMinutes: parsedActive,
-    limit: clampLimit(parsedLimit),
+    limit: parsedLimitValue,
+    sessionUsage,
   });
 
   if (options.json) {

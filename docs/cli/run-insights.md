@@ -38,14 +38,16 @@ The command uses the same bounded status/session/task summaries that power
 It displays:
 
 - recent sessions, token/context pressure, and session pointers;
+- cached session cost/usage, message count, tool-call count, and top tools when
+  the native usage cache is fresh;
 - recent task records, status, delivery status, age, elapsed time, labels, and
   latest task event summaries;
 - child task pointers when native task records expose child sessions;
 - task delivery friction such as failed, parent-missing, or queued-session
   delivery states.
 
-It does not crawl raw transcripts by default. It emits pointers to deeper
-surfaces when follow-up inspection is needed.
+It does not crawl raw transcripts or refresh usage caches. It emits pointers to
+deeper surfaces when follow-up inspection is needed.
 
 ## Signals
 
@@ -57,6 +59,8 @@ The command surfaces advisory signals such as:
 - task delivery issues;
 - sessions that report an aborted last run;
 - high context pressure;
+- tool-heavy sessions;
+- cached usage/parsing errors;
 - long-active tasks with no recent task-event movement;
 - stale token estimates.
 
