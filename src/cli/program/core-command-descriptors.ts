@@ -99,6 +99,11 @@ const coreCliCommandCatalog = defineCommandDescriptorCatalog([
     hasSubcommands: false,
   },
   {
+    name: "run-insights",
+    description: "Summarize recent run/session/task performance evidence",
+    hasSubcommands: false,
+  },
+  {
     name: "sessions",
     description: "List stored conversation sessions",
     hasSubcommands: true,
