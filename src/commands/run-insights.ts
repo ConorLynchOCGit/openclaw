@@ -38,6 +38,26 @@ export type RunInsightsOptions = {
   limit?: string | number;
 };
 
+export type RunInsightsRequest = Omit<RunInsightsOptions, "json">;
+
+export type ResolvedRunInsightsOptions = {
+  agent?: string;
+  session?: string;
+  task?: string;
+  activeMinutes?: number;
+  limit: number;
+};
+
+export type RunInsightsOptionsResult =
+  | {
+      ok: true;
+      value: ResolvedRunInsightsOptions;
+    }
+  | {
+      ok: false;
+      message: string;
+    };
+
 type SignalSeverity = "info" | "warn" | "error";
 
 export type RunInsightSignal = {
@@ -206,42 +226,66 @@ export type RunInsightsReport = {
   };
 };
 
-function parsePositiveInteger(
+function parsePositiveIntegerValue(
   value: string | number | undefined,
   name: string,
-  runtime: RuntimeEnv,
-): number | null | undefined {
+): { ok: true; value: number | undefined } | { ok: false; message: string } {
   if (value === undefined) {
-    return undefined;
+    return { ok: true, value: undefined };
   }
   const text = String(value).trim();
   if (!/^[1-9]\d*$/.test(text)) {
-    runtime.error(`${name} must be a positive integer.`);
-    runtime.exit(1);
-    return null;
+    return { ok: false, message: `${name} must be a positive integer.` };
   }
-  return Number(text);
+  return { ok: true, value: Number(text) };
 }
 
-function parseStringFilter(
+function parseStringFilterValue(
   value: string | undefined,
   name: string,
-  runtime: RuntimeEnv,
-): string | null | undefined {
+): { ok: true; value: string | undefined } | { ok: false; message: string } {
   if (value === undefined) {
-    return undefined;
+    return { ok: true, value: undefined };
   }
   const text = value.trim();
   if (!text) {
-    runtime.error(`${name} must not be empty.`);
-    runtime.exit(1);
-    return null;
+    return { ok: false, message: `${name} must not be empty.` };
   }
-  return text;
+  return { ok: true, value: text };
 }
 
 function clampLimit(limit: number | undefined): number {
   return Math.min(limit ?? DEFAULT_LIMIT, MAX_LIMIT);
+}
+
+export function resolveRunInsightsOptions(options: RunInsightsRequest): RunInsightsOptionsResult {
+  const parsedLimit = parsePositiveIntegerValue(options.limit, "limit");
+  if (!parsedLimit.ok) {
+    return parsedLimit;
+  }
+  const parsedActive = parsePositiveIntegerValue(options.active, "active");
+  if (!parsedActive.ok) {
+    return parsedActive;
+  }
+  const parsedSession = parseStringFilterValue(options.session, "session");
+  if (!parsedSession.ok) {
+    return parsedSession;
+  }
+  const parsedTask = parseStringFilterValue(options.task, "task");
+  if (!parsedTask.ok) {
+    return parsedTask;
+  }
+
+  return {
+    ok: true,
+    value: {
+      ...(options.agent ? { agent: options.agent } : {}),
+      ...(parsedSession.value ? { session: parsedSession.value } : {}),
+      ...(parsedTask.value ? { task: parsedTask.value } : {}),
+      ...(parsedActive.value !== undefined ? { activeMinutes: parsedActive.value } : {}),
+      limit: clampLimit(parsedLimit.value),
+    },
+  };
 }
 
 function formatDurationMs(ms: number | null): string {
@@ -1032,6 +1076,34 @@ export function buildRunInsightsReport(
   };
 }
 
+export async function loadRunInsightsReport(
+  options: ResolvedRunInsightsOptions,
+): Promise<RunInsightsReport> {
+  const summary = await getStatusSummary({
+    includeSensitive: true,
+    includeChannelSummary: false,
+  });
+  const initialReport = buildRunInsightsReport(summary, {
+    agent: options.agent,
+    session: options.session,
+    task: options.task,
+    activeMinutes: options.activeMinutes,
+    limit: options.limit,
+  });
+  const sessionsWithUsage = await attachCachedSessionUsage(initialReport.sessions);
+  const sessionUsage = new Map(
+    sessionsWithUsage.map((session) => [session.key, session.usage] as const),
+  );
+  return buildRunInsightsReport(summary, {
+    agent: options.agent,
+    session: options.session,
+    task: options.task,
+    activeMinutes: options.activeMinutes,
+    limit: options.limit,
+    sessionUsage,
+  });
+}
+
 function formatSignals(signals: RunInsightSignal[]): string[] {
   return signals.map((signal) => {
     const prefix =
@@ -1150,47 +1222,14 @@ export async function runInsightsCommand(
   options: RunInsightsOptions,
   runtime: RuntimeEnv,
 ): Promise<void> {
-  const parsedLimit = parsePositiveInteger(options.limit, "--limit", runtime);
-  if (parsedLimit === null) {
-    return;
-  }
-  const parsedActive = parsePositiveInteger(options.active, "--active", runtime);
-  if (parsedActive === null) {
-    return;
-  }
-  const parsedSession = parseStringFilter(options.session, "--session", runtime);
-  if (parsedSession === null) {
-    return;
-  }
-  const parsedTask = parseStringFilter(options.task, "--task", runtime);
-  if (parsedTask === null) {
+  const resolved = resolveRunInsightsOptions(options);
+  if (!resolved.ok) {
+    runtime.error(`--${resolved.message}`);
+    runtime.exit(1);
     return;
   }
 
-  const summary = await getStatusSummary({
-    includeSensitive: true,
-    includeChannelSummary: false,
-  });
-  const parsedLimitValue = clampLimit(parsedLimit);
-  const initialReport = buildRunInsightsReport(summary, {
-    agent: options.agent,
-    session: parsedSession,
-    task: parsedTask,
-    activeMinutes: parsedActive,
-    limit: parsedLimitValue,
-  });
-  const sessionsWithUsage = await attachCachedSessionUsage(initialReport.sessions);
-  const sessionUsage = new Map(
-    sessionsWithUsage.map((session) => [session.key, session.usage] as const),
-  );
-  const report = buildRunInsightsReport(summary, {
-    agent: options.agent,
-    session: parsedSession,
-    task: parsedTask,
-    activeMinutes: parsedActive,
-    limit: parsedLimitValue,
-    sessionUsage,
-  });
+  const report = await loadRunInsightsReport(resolved.value);
 
   if (options.json) {
     writeRuntimeJson(runtime, report);
