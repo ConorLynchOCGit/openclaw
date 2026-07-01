@@ -287,6 +287,12 @@ export async function modelsStatusCommand(
       let exitCode: number | undefined;
       const captureRuntime = {
         ...runtime,
+        writeStdout: (message: string) => {
+          logs.push(String(message));
+        },
+        writeJson: (value: unknown, space = 2) => {
+          logs.push(JSON.stringify(value, null, space > 0 ? space : undefined));
+        },
         log: (message: unknown) => {
           logs.push(String(message));
         },

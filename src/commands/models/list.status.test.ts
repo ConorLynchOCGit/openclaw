@@ -465,6 +465,38 @@ describe("modelsStatusCommand auth overview", () => {
     }
   });
 
+  it("emits one JSON payload for --all-agents when the runtime has native JSON output", async () => {
+    const localRuntime = {
+      ...createRuntime(),
+      writeStdout: vi.fn(),
+      writeJson: vi.fn(),
+    };
+    const originalListAgentIds = mocks.listAgentIds.getMockImplementation();
+    mocks.listAgentIds.mockReturnValue(["main", "planning"]);
+
+    try {
+      await modelsStatusCommand({ json: true, allAgents: true }, localRuntime as never);
+      expect(localRuntime.log).not.toHaveBeenCalled();
+      expect(localRuntime.writeStdout).not.toHaveBeenCalled();
+      expect(localRuntime.writeJson).toHaveBeenCalledTimes(1);
+      const payload = localRuntime.writeJson.mock.calls[0]?.[0] as {
+        ok?: boolean;
+        agentCount?: number;
+        agents?: Array<{ agentId: string; ok: boolean }>;
+      };
+      expect(payload.ok).toBe(true);
+      expect(payload.agentCount).toBe(2);
+      expect(payload.agents?.map((agent) => agent.agentId)).toEqual(["main", "planning"]);
+      expect(payload.agents?.every((agent) => agent.ok)).toBe(true);
+    } finally {
+      if (originalListAgentIds) {
+        mocks.listAgentIds.mockImplementation(originalListAgentIds);
+      } else {
+        mocks.listAgentIds.mockReturnValue(["main", "jeremiah"]);
+      }
+    }
+  });
+
   it("honors OPENCLAW_AGENT_DIR when no --agent override is provided", async () => {
     const localRuntime = createRuntime();
     mocks.resolveAgentDir.mockClear();
