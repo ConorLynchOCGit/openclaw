@@ -111,6 +111,15 @@ function resolveNativeSubagentSummaryField(
   return normalizeOptionalString(raw?.replace(/[.\s]+$/u, ""));
 }
 
+function resolveCodexPromptRole(value: string | undefined): string | undefined {
+  const text = normalizeOptionalString(value);
+  if (!text) {
+    return undefined;
+  }
+  const match = text.match(/(?:^|\n)\s*Role:\s*([A-Za-z0-9_.-]+)/u);
+  return normalizeOptionalString(match?.[1]?.replace(/[.\s]+$/u, ""));
+}
+
 function taskEventMetadataString(
   metadata: TaskEventMetadata | undefined,
   key: string,
@@ -161,6 +170,10 @@ function resolveCodexNativeChildRole(
   const fromNote = resolveNativeSubagentSummaryField(note, "role");
   if (fromNote) {
     return fromNote;
+  }
+  const fromTaskPrompt = resolveCodexPromptRole(task.task);
+  if (fromTaskPrompt) {
+    return fromTaskPrompt;
   }
   const label = normalizeOptionalString(task.label);
   if (!label || label === "Codex subagent") {
@@ -317,6 +330,7 @@ function resolveTaskRunEventProgressProjection(
     ref: `task-event:${task.taskId}:${latestEvent.at}:${latestEvent.kind}`,
     currentPhase: childPhase ?? (latestEvent.kind === "progress" ? task.status : latestEvent.kind),
     activeLabel:
+      childRole ??
       normalizeOptionalString(task.label) ??
       normalizeOptionalString(task.agentId) ??
       normalizeOptionalString(task.taskKind) ??

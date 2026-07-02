@@ -780,6 +780,79 @@ function resolveGatewaySessionRowsForInsights(params: {
   return resolvedRows;
 }
 
+function toSessionStatusFromGatewayRow(row: GatewaySessionRow, agentId?: string): SessionStatus {
+  return {
+    ...(agentId ? { agentId } : {}),
+    key: row.key,
+    kind: row.kind,
+    ...(row.sessionId ? { sessionId: row.sessionId } : {}),
+    updatedAt: row.updatedAt,
+    age: null,
+    ...(row.systemSent !== undefined ? { systemSent: row.systemSent } : {}),
+    ...(row.abortedLastRun !== undefined ? { abortedLastRun: row.abortedLastRun } : {}),
+    ...(row.inputTokens !== undefined ? { inputTokens: row.inputTokens } : {}),
+    ...(row.outputTokens !== undefined ? { outputTokens: row.outputTokens } : {}),
+    totalTokens: row.totalTokens ?? null,
+    totalTokensFresh: row.totalTokensFresh ?? false,
+    remainingTokens: null,
+    percentUsed: null,
+    model: row.model ?? null,
+    configuredModel: null,
+    selectedModel: row.model ?? null,
+    modelSelectionReason: null,
+    runtime: row.agentRuntime?.id ?? null,
+    contextTokens: row.contextTokens ?? null,
+    ...(row.promptContext ? { promptContext: row.promptContext } : {}),
+    flags: row.abortedLastRun ? ["aborted"] : [],
+  };
+}
+
+function resolveExactGatewaySessionFallbackForInsights(params: {
+  summary: StatusSummary;
+  options: Pick<ResolvedRunInsightsOptions, "activeMinutes" | "agent" | "limit" | "session">;
+}): { rows: SessionStatus[]; gatewayRows: Map<string, GatewaySessionRow> } {
+  const session = params.options.session?.trim();
+  if (!session) {
+    return { rows: [], gatewayRows: new Map() };
+  }
+  const cfg = getRuntimeConfig();
+  const rows: SessionStatus[] = [];
+  const gatewayRows = new Map<string, GatewaySessionRow>();
+  const seen = new Set<string>();
+  for (const storePath of uniqueStrings(params.summary.sessions.paths)) {
+    const store = readSessionStoreReadOnly(storePath);
+    const compactStore = Object.fromEntries(
+      Object.entries(store).filter((entry): entry is [string, NonNullable<(typeof entry)[1]>] =>
+        Boolean(entry[1]),
+      ),
+    );
+    const result = listSessionsFromStore({
+      cfg,
+      storePath,
+      store: compactStore,
+      opts: {
+        ...(params.options.agent ? { agentId: params.options.agent } : {}),
+        ...(params.options.activeMinutes ? { activeMinutes: params.options.activeMinutes } : {}),
+        includeLastMessage: true,
+        limit: Math.max(1, Math.min(params.options.limit, MAX_LIMIT)),
+        search: session,
+      },
+    });
+    for (const gatewayRow of result.sessions) {
+      if (!gatewaySessionKeyMatches(gatewayRow, session) || seen.has(gatewayRow.key)) {
+        continue;
+      }
+      seen.add(gatewayRow.key);
+      gatewayRows.set(gatewayRow.key, gatewayRow);
+      rows.push(toSessionStatusFromGatewayRow(gatewayRow, params.options.agent));
+      if (rows.length >= params.options.limit) {
+        return { rows, gatewayRows };
+      }
+    }
+  }
+  return { rows, gatewayRows };
+}
+
 function toInsightSession(row: SessionStatus, gatewayRow?: GatewaySessionRow): RunInsightSession {
   const agentId = row.agentId ?? null;
   const agentPart = agentId ? ` --agent ${agentId}` : "";
@@ -1979,16 +2052,24 @@ export function buildRunInsightsReport(
 ): RunInsightsReport {
   const now = options.now ?? Date.now();
   const recent = selectRecentSessions(summary, options.agent);
-  const filtered = recent
+  let filtered = recent
     .filter((row) => sessionMatchesSessionFilter(row, options.session))
     .filter((row) => sessionMatchesActiveFilter(row, options.activeMinutes));
-  const gatewaySessionRows =
+  let gatewaySessionRows =
     options.gatewaySessionRows ??
     resolveGatewaySessionRowsForInsights({
       summary,
       rows: filtered.slice(0, options.limit),
       options,
     });
+  if (!options.gatewaySessionRows && filtered.length === 0 && options.session) {
+    const fallback = resolveExactGatewaySessionFallbackForInsights({
+      summary,
+      options,
+    });
+    filtered = fallback.rows;
+    gatewaySessionRows = fallback.gatewayRows;
+  }
   const sessions = filtered
     .slice(0, options.limit)
     .map((row) => toInsightSession(row, gatewaySessionRows.get(row.key)))

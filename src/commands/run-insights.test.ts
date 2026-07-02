@@ -783,6 +783,61 @@ describe("runInsightsCommand", () => {
     });
   });
 
+  it("infers Codex-native child role from the role preamble when the task label is generic", () => {
+    const now = Date.UTC(2026, 6, 1, 6, 0, 0);
+    const codexChild: TaskRecord = {
+      taskId: "task-codex-role-preamble",
+      runtime: "subagent",
+      taskKind: "codex-native",
+      agentId: "coding",
+      runId: "codex-thread:project-explorer-1",
+      label: "Codex subagent",
+      requesterSessionKey: "agent:coding:main",
+      ownerKey: "agent:coding:main",
+      scopeKind: "session",
+      task: "Role: project_explorer.\n\nInspect source context without editing.",
+      status: "succeeded",
+      deliveryStatus: "delivered",
+      notifyPolicy: "silent",
+      createdAt: now - 90_000,
+      startedAt: now - 90_000,
+      endedAt: now - 15_000,
+      lastEventAt: now - 15_000,
+      executionReceipt: {
+        schema: "openclaw.task.execution_receipt.v1",
+        eventCount: 2,
+        updatedAt: now - 15_000,
+        latestEvent: {
+          at: now - 15_000,
+          kind: "progress",
+          summary: "Explorer packet complete.",
+        },
+      },
+    };
+
+    const payload = buildRunInsightsReport(buildSummary(), {
+      session: "agent:coding:main",
+      limit: 5,
+      now,
+      taskRecords: [codexChild],
+    });
+
+    expect(payload.tasks[0]).toMatchObject({
+      childRole: "project_explorer",
+      childPhase: "succeeded",
+    });
+    expect(payload.tasks[0].activeProgress).toMatchObject({
+      activeLabel: "project_explorer",
+      childRole: "project_explorer",
+      spawnReason: expect.stringContaining("Role: project_explorer"),
+    });
+    expect(payload.performanceProfile.childSessionEvidence[0]).toMatchObject({
+      taskId: "task-codex-role-preamble",
+      childRole: "project_explorer",
+      childPhase: "succeeded",
+    });
+  });
+
   it("uses gateway session row readback for scoped session status, final answer, and progress", () => {
     const now = Date.UTC(2026, 6, 1, 6, 0, 0);
     const payload = buildRunInsightsReport(buildSummary(), {
