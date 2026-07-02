@@ -57,6 +57,28 @@ type CodexBootstrapContext = {
 };
 /** System prompt accounting report attached to Codex attempt results. */
 export type CodexSystemPromptReport = NonNullable<EmbeddedRunAttemptResult["systemPromptReport"]>;
+export type CodexNativeSurfaceReport = {
+  owner: "codex_app_server";
+  nativeToolSurfaceConfigured: boolean;
+  nativeToolSurfaceReason:
+    | "enabled"
+    | "memory_flush"
+    | "node_exec_policy"
+    | "restricted_tools_allow"
+    | "sandbox_without_exec_server_policy";
+  codeModeConfigured: boolean;
+  codeModeOnlyConfigured: boolean;
+  nativeSubagents: {
+    expectedTool: "spawn_agent";
+    owner: "codex_app_server";
+    listedInOpenClawDynamicTools: false;
+    guidanceInjected: boolean;
+    disabledByOpenClawModelProfile: boolean;
+  };
+};
+export type CodexSystemPromptReportWithNativeSurface = CodexSystemPromptReport & {
+  codexNativeSurface?: CodexNativeSurfaceReport;
+};
 type CodexToolReportEntry = CodexSystemPromptReport["tools"]["entries"][number];
 type CodexWorkspaceBootstrapContext = CodexBootstrapContext & {
   promptContextFiles?: EmbeddedContextFile[];
@@ -278,7 +300,8 @@ export function buildCodexSystemPromptReport(params: {
   workspaceBootstrapContext: CodexWorkspaceBootstrapContext;
   skillsPrompt: string;
   tools: CodexDynamicToolSpec[];
-}): CodexSystemPromptReport {
+  codexNativeSurface?: CodexNativeSurfaceReport;
+}): CodexSystemPromptReportWithNativeSurface {
   const toolEntries = params.tools.map(buildCodexToolReportEntry);
   const schemaChars = toolEntries.reduce((sum, tool) => sum + tool.schemaChars, 0);
   const skillsPrompt = params.skillsPrompt.trim();
@@ -304,6 +327,7 @@ export function buildCodexSystemPromptReport(params: {
       nonProjectContextChars: params.developerInstructions.length,
       hash: sha256Text(params.developerInstructions),
     },
+    ...(params.codexNativeSurface ? { codexNativeSurface: params.codexNativeSurface } : {}),
     injectedWorkspaceFiles: buildCodexBootstrapInjectionStats({
       bootstrapFiles: params.workspaceBootstrapContext.bootstrapFiles,
       workspaceDir: params.workspaceDir,

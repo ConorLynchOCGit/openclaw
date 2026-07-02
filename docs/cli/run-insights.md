@@ -48,6 +48,9 @@ It displays:
 - recent sessions, token/context pressure, and session pointers;
 - cached session cost/usage, message count, tool-call count, and top tools when
   the native usage cache is fresh;
+- a diagnostic summary for current or last-known phase, known time spent,
+  parent wait state, child work contribution, validation/build/promote evidence,
+  evidence-quality counts, and the next native pointer to inspect;
 - V3 performance profile sections that explain expensive runs, child/session
   evidence, bounded timeline entries, retry/build/proof cost, validation/build
   bottleneck indicators, and advisory inefficiency flags;
@@ -56,9 +59,9 @@ It displays:
 - child task pointers when native task records expose child sessions;
 - task delivery friction such as failed, parent-missing, or queued-session
   delivery states.
-- recent deploy/build/smoke/gate/promote receipt events from the native
-  runtime-visible deploy journal, including image digest, source commit, build
-  profile, and artifact pointers when present.
+- recent global/unscoped deploy/build/smoke/gate/promote receipt events from
+  the native runtime-visible deploy journal, including image digest, source
+  commit, build profile, and artifact pointers when present.
 
 It does not crawl raw transcripts or refresh usage caches. It emits pointers to
 deeper surfaces when follow-up inspection is needed.
@@ -74,12 +77,15 @@ The workbench panels mirror bounded report fields:
 - summary metrics for sessions, tasks, attention, and deploy activity;
 - performance and cost profile for cached usage, token, tool, error, and
   promoted-image evidence;
+- diagnostic summary for phase, parent wait state, child work, confidence,
+  stale/heuristic/scoped/unknown evidence, and operator next action;
 - attention readback for slow-work, validation, and promotion signals;
 - timeline and phase readback from existing timeline entries only;
 - child and task evidence from native task rows, child-session pointers,
   progress summaries, and delivery state;
 - validation, build, and promote cost from deploy receipts, known durations,
-  bottlenecks, failed counts, and artifact summaries;
+  bottlenecks, failed counts, artifact summaries, and explicit
+  global/unscoped deploy receipt labeling;
 - pointers and debug fallback for task/session/deploy/audit commands, proof or
   artifact paths, and the raw bounded JSON report.
 
@@ -88,6 +94,12 @@ signals explain where to look, evidence rows and pointers name what was read,
 and runtime truth remains in native sessions, tasks, deploy receipts,
 transcripts, and bounded artifacts. Missing evidence should render as
 `unknown` or an empty bounded panel, not as inferred lifecycle state.
+
+Session, task, agent, and active-window filters scope only session and task
+readback. Deploy/build/promote receipts are labeled `global_unscoped` in JSON
+and rendered UI because the native deploy journal does not currently carry
+agent/session/task keys that would support honest scoped filtering. The deploy
+receipt `limit` still bounds the tail read.
 
 ## Signals
 
@@ -111,6 +123,25 @@ run.
 The performance profile is also advisory. It summarizes evidence already
 available from sessions, task records, usage caches, and deploy receipts; it
 does not execute proof, retry work, promote builds, or decide finality.
+
+## Evidence Labels
+
+`run-insights` uses evidence labels to separate what was read from what was
+inferred:
+
+- `evidence_backed`: a native session, task, deploy receipt, or artifact pointer
+  directly supports the row.
+- `heuristic`: the report used bounded text or timing cues, such as validation
+  wording or long-running task age. Treat it as a pointer to inspect, not truth.
+- `stale`: retained evidence exists but is explicitly not fresh, such as stale
+  token usage.
+- `scoped`: filters or bounded limits shaped what the report could see.
+- `unknown`: the report could not read enough evidence and should point to what
+  is missing.
+
+The `diagnosticSummary.operatorNextAction` field names the best next native
+pointer from the bounded evidence. It is advice for investigation, not a
+remediation command.
 
 ## Related
 

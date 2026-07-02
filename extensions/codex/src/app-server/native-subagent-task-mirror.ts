@@ -23,6 +23,8 @@ export type TaskLifecycleRuntime = Pick<
   "tryCreateRunningTaskRun" | "recordTaskRunProgressByRunId" | "finalizeTaskRunByRunId"
 >;
 
+type NativeSubagentTaskEventMetadata = Record<string, string | number | boolean | null>;
+
 /** Stable parent/session context used while mirroring native subagent tasks. */
 export type CodexNativeSubagentTaskMirrorParams = {
   parentThreadId: string;
@@ -36,6 +38,7 @@ export class CodexNativeSubagentTaskMirror {
   private readonly mirroredThreadIds = new Set<string>();
   private readonly failedMirrorThreadIds = new Set<string>();
   private readonly terminalRunIds = new Set<string>();
+  private readonly identityByThreadId = new Map<string, NativeSubagentIdentity>();
   private readonly latestCollabStatusDetailByThreadId = new Map<string, string>();
   private readonly latestCollabTerminalDetailByThreadId = new Map<string, string>();
   private readonly now: () => number;
@@ -81,11 +84,12 @@ export class CodexNativeSubagentTaskMirror {
     }
     this.mirroredThreadIds.add(threadId);
     const runId = codexNativeSubagentRunId(threadId);
-    const identity = resolveThreadSubagentIdentity(thread, spawn);
+    const spawnReason = trimOptional(thread.preview);
+    const identity = resolveThreadSubagentIdentity(thread, spawn, spawnReason);
+    this.identityByThreadId.set(threadId, identity);
     const label = formatNativeSubagentLabel(identity) ?? "Codex subagent";
     const task =
-      trimOptional(thread.preview) ??
-      `Codex native subagent${label === "Codex subagent" ? "" : ` ${label}`}`;
+      spawnReason ?? `Codex native subagent${label === "Codex subagent" ? "" : ` ${label}`}`;
     const createdAt = secondsToMillis(thread.createdAt) ?? this.now();
     const taskRecord = this.runtime.tryCreateRunningTaskRun({
       sourceId: runId,
@@ -99,10 +103,16 @@ export class CodexNativeSubagentTaskMirror {
       startedAt: createdAt,
       lastEventAt: this.now(),
       progressSummary: nativeSubagentStartSummary("started", identity),
+      eventMetadata: this.buildEventMetadata({
+        threadId,
+        identity,
+        phase: "child_spawned",
+      }),
     });
     if (!taskRecord) {
       this.mirroredThreadIds.delete(threadId);
       this.failedMirrorThreadIds.add(threadId);
+      this.identityByThreadId.delete(threadId);
       return;
     }
     this.failedMirrorThreadIds.delete(threadId);
@@ -142,6 +152,10 @@ export class CodexNativeSubagentTaskMirror {
         lastEventAt: eventAt,
         progressSummary,
         eventSummary: progressSummary,
+        eventMetadata: this.buildEventMetadata({
+          threadId,
+          phase: "child_active",
+        }),
       });
       return;
     }
@@ -157,6 +171,10 @@ export class CodexNativeSubagentTaskMirror {
         lastEventAt: eventAt,
         progressSummary: nativeSubagentSummary("Codex native subagent is idle", detail),
         terminalSummary: nativeSubagentSummary("Codex native subagent finished", detail),
+        eventMetadata: this.buildEventMetadata({
+          threadId,
+          phase: "child_completed",
+        }),
       });
       return;
     }
@@ -173,6 +191,10 @@ export class CodexNativeSubagentTaskMirror {
         error: "Codex app-server reported a system error for the native subagent thread.",
         progressSummary: nativeSubagentSummary("Codex native subagent hit a system error", detail),
         terminalSummary: nativeSubagentSummary("Codex native subagent failed", detail),
+        eventMetadata: this.buildEventMetadata({
+          threadId,
+          phase: "child_failed",
+        }),
       });
       return;
     }
@@ -186,6 +208,10 @@ export class CodexNativeSubagentTaskMirror {
         lastEventAt: eventAt,
         progressSummary,
         eventSummary: progressSummary,
+        eventMetadata: this.buildEventMetadata({
+          threadId,
+          phase: "child_not_loaded",
+        }),
       });
     }
   }
@@ -250,7 +276,11 @@ export class CodexNativeSubagentTaskMirror {
     }
     this.mirroredThreadIds.add(normalizedThreadId);
     const prompt = trimOptional(readString(item, "prompt"));
-    const identity = resolveCollabItemSubagentIdentity(item);
+    const identity = {
+      ...resolveCollabItemSubagentIdentity(item),
+      ...(prompt ? { spawnReason: prompt } : {}),
+    };
+    this.identityByThreadId.set(normalizedThreadId, identity);
     const label = formatNativeSubagentLabel(identity) ?? "Codex subagent";
     const runId = codexNativeSubagentRunId(normalizedThreadId);
     const createdAt = this.now();
@@ -266,10 +296,16 @@ export class CodexNativeSubagentTaskMirror {
       startedAt: createdAt,
       lastEventAt: createdAt,
       progressSummary: nativeSubagentStartSummary("spawned", identity),
+      eventMetadata: this.buildEventMetadata({
+        threadId: normalizedThreadId,
+        identity,
+        phase: "child_spawned",
+      }),
     });
     if (!taskRecord) {
       this.mirroredThreadIds.delete(normalizedThreadId);
       this.failedMirrorThreadIds.add(normalizedThreadId);
+      this.identityByThreadId.delete(normalizedThreadId);
       return;
     }
     this.failedMirrorThreadIds.delete(normalizedThreadId);
@@ -307,6 +343,10 @@ export class CodexNativeSubagentTaskMirror {
         lastEventAt: eventAt,
         progressSummary,
         eventSummary: progressSummary,
+        eventMetadata: this.buildEventMetadata({
+          threadId,
+          phase: normalizedStatus === "pendingInit" ? "child_initializing" : "child_running",
+        }),
       });
       return;
     }
@@ -321,6 +361,10 @@ export class CodexNativeSubagentTaskMirror {
         lastEventAt: eventAt,
         progressSummary: nativeSubagentSummary("Codex native subagent completed", detail),
         terminalSummary: nativeSubagentSummary("Codex native subagent finished", detail),
+        eventMetadata: this.buildEventMetadata({
+          threadId,
+          phase: "child_completed",
+        }),
       });
       return;
     }
@@ -336,6 +380,10 @@ export class CodexNativeSubagentTaskMirror {
         progressSummary: nativeSubagentSummary("Codex native subagent blocked", detail),
         terminalSummary: nativeSubagentSummary("Codex native subagent blocked", detail),
         terminalOutcome: "blocked",
+        eventMetadata: this.buildEventMetadata({
+          threadId,
+          phase: "child_blocked",
+        }),
       });
       return;
     }
@@ -353,7 +401,33 @@ export class CodexNativeSubagentTaskMirror {
       error: detail,
       progressSummary: nativeSubagentSummary(`Codex native subagent ${normalizedStatus}`, detail),
       terminalSummary: nativeSubagentSummary("Codex native subagent did not complete", detail),
+      eventMetadata: this.buildEventMetadata({
+        threadId,
+        phase:
+          normalizedStatus === "interrupted" || normalizedStatus === "shutdown"
+            ? "child_cancelled"
+            : "child_failed",
+      }),
     });
+  }
+
+  private buildEventMetadata(params: {
+    threadId: string;
+    identity?: NativeSubagentIdentity;
+    phase: string;
+  }): NativeSubagentTaskEventMetadata {
+    const identity = params.identity ?? this.identityByThreadId.get(params.threadId);
+    const spawnReason = trimOptional(identity?.spawnReason);
+    return {
+      codexNativeSubagent: true,
+      parentThreadId: this.params.parentThreadId,
+      childThreadId: params.threadId,
+      childPhase: params.phase,
+      ...(identity?.role ? { childRole: identity.role } : {}),
+      ...(identity?.agentPath ? { childAgentPath: identity.agentPath } : {}),
+      ...(identity?.nickname ? { childNickname: identity.nickname } : {}),
+      ...(spawnReason ? { spawnReason } : {}),
+    };
   }
 
   private rememberCollabStatusDetail(threadId: string, detail: string | undefined): void {
@@ -453,16 +527,20 @@ type NativeSubagentIdentity = {
   nickname?: string;
   role?: string;
   agentPath?: string;
+  spawnReason?: string;
 };
 
 function resolveThreadSubagentIdentity(
   thread: CodexThread,
   spawn: CodexSubAgentThreadSpawnSource,
+  spawnReason?: string,
 ): NativeSubagentIdentity {
+  const normalizedSpawnReason = trimOptional(spawnReason);
   return {
     nickname: trimOptional(spawn.agent_nickname) ?? trimOptional(thread.agentNickname),
     role: trimOptional(spawn.agent_role) ?? trimOptional(thread.agentRole),
     agentPath: trimOptional(spawn.agent_path),
+    ...(normalizedSpawnReason ? { spawnReason: normalizedSpawnReason } : {}),
   };
 }
 

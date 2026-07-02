@@ -18,7 +18,6 @@ type FindingCode =
   | "duplicate_skill_name"
   | "shared_agent_workspace"
   | "workspace_scope_unclear"
-  | "large_prompt_bootstrap"
   | "duplicate_canonical_surface"
   | "plugin_registry_diagnostic"
   | "configured_plugin_unknown";
@@ -286,22 +285,6 @@ function buildFindings(params: {
         evidence: { agentId: agent.agentId, workspaceDir: agent.workspaceDir },
       });
     }
-    if (
-      agent.promptBootstrap.configuredRuntimePromptFiles > 4 ||
-      (agent.promptBootstrap.bootstrapTotalMaxChars ?? 0) > 80_000
-    ) {
-      findings.push({
-        severity: "info",
-        code: "large_prompt_bootstrap",
-        message: `${agent.agentId} has a large prompt/bootstrap footprint; review whether all runtime prompt files remain canonical.`,
-        evidence: {
-          agentId: agent.agentId,
-          runtimePromptFileCount: agent.promptBootstrap.configuredRuntimePromptFiles,
-          bootstrapTotalMaxChars: agent.promptBootstrap.bootstrapTotalMaxChars,
-          contractPack: agent.promptBootstrap.contractPack,
-        },
-      });
-    }
     for (const promptFile of agent.promptBootstrap.runtimePromptFiles) {
       if (!promptFile.exists) {
         findings.push({
@@ -368,7 +351,7 @@ function buildFindings(params: {
     findings.push({
       severity: "info",
       code: "duplicate_canonical_surface",
-      message: `Multiple prompt/support files share canonical basename "${duplicate.surface}".`,
+      message: `Multiple prompt/support files share basename "${duplicate.surface}"; this is structural readback only, not content judgment.`,
       evidence: { surface: duplicate.surface, paths: duplicate.paths },
     });
   }
@@ -525,6 +508,8 @@ export function buildLifecycleAuditReport(params: {
       caveats: [
         "Skill visibility comes from skill discovery status, not from a lifecycle state machine.",
         "Plugin evidence is registry readback only; plugin runtime truth remains with the plugin loader/runtime.",
+        "Findings are advisory evidence only and must not decide agent routing, skill activation, proof pass/fail, or release eligibility.",
+        "This command does not judge skill or canonical-doc content quality; use model-reviewed GBrain/Reviewer/Skill Workshop flows for semantic review or mutation.",
       ],
     }),
     filters: {

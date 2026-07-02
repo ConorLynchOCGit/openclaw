@@ -148,6 +148,7 @@ import {
   formatCodexDynamicToolBuildStageSummary,
   includeForcedCodexDynamicToolAllow,
   isCodexNativeExecutionBlockedByNodeExecHost,
+  resolveCodexAppServerNativeToolSurfaceDecision,
   resolveCodexAppServerHookChannelId,
   resolveOpenClawCodingToolsSessionKeys,
   resetOpenClawCodingToolsFactoryForTests,
@@ -176,6 +177,7 @@ import {
 import {
   filterCodexDynamicTools,
   resolveCodexDynamicToolsLoadingForModel,
+  shouldDisableCodexToolSearchForModel,
 } from "./dynamic-tool-profile.js";
 import { createCodexDynamicToolBridge } from "./dynamic-tools.js";
 import { handleCodexAppServerElicitationRequest } from "./elicitation-bridge.js";
@@ -640,11 +642,16 @@ export async function runCodexAppServerAttempt(
   });
   preDynamicStartupStages.mark("bundle-mcp");
   const sandboxExecServerEnabled = isCodexSandboxExecServerEnabled(pluginConfig);
-  const nativeToolSurfaceEnabled = shouldEnableCodexAppServerNativeToolSurface(params, sandbox, {
-    agentId: sessionAgentId,
-    runtimeSessionKey: sandboxSessionKey,
-    sandboxExecServerEnabled,
-  });
+  const nativeToolSurfaceDecision = resolveCodexAppServerNativeToolSurfaceDecision(
+    params,
+    sandbox,
+    {
+      agentId: sessionAgentId,
+      runtimeSessionKey: sandboxSessionKey,
+      sandboxExecServerEnabled,
+    },
+  );
+  const nativeToolSurfaceEnabled = nativeToolSurfaceDecision.enabled;
   preDynamicStartupStages.mark("native-tool-surface");
   for (const diagnostic of bundleMcpThreadConfig.diagnostics) {
     embeddedAgentLog.warn(`bundle-mcp: ${diagnostic.pluginId}: ${diagnostic.message}`);
@@ -671,6 +678,7 @@ export async function runCodexAppServerAttempt(
         startupAuthProfileId: startupAuthProfileId ?? null,
         bundleMcpDiagnosticCount: bundleMcpThreadConfig.diagnostics.length,
         nativeToolSurfaceEnabled,
+        nativeToolSurfaceReason: nativeToolSurfaceDecision.reason,
       },
     );
   }
@@ -1088,19 +1096,35 @@ export async function runCodexAppServerAttempt(
     });
   };
   await rotateStartupBindingForProjectedTurn();
+  const renderedDeveloperInstructions = buildRenderedCodexDeveloperInstructions();
+  const codexNativeSurfaceReport = {
+    owner: "codex_app_server" as const,
+    nativeToolSurfaceConfigured: nativeToolSurfaceEnabled,
+    nativeToolSurfaceReason: nativeToolSurfaceDecision.reason,
+    codeModeConfigured: nativeToolSurfaceEnabled,
+    codeModeOnlyConfigured: nativeToolSurfaceEnabled && appServer.codeModeOnly === true,
+    nativeSubagents: {
+      expectedTool: "spawn_agent" as const,
+      owner: "codex_app_server" as const,
+      listedInOpenClawDynamicTools: false as const,
+      guidanceInjected: renderedDeveloperInstructions.includes("Codex native `spawn_agent`"),
+      disabledByOpenClawModelProfile: shouldDisableCodexToolSearchForModel(params.modelId),
+    },
+  };
   const systemPromptReport = buildCodexSystemPromptReport({
     attempt: params,
     sessionKey: contextSessionKey,
     workspaceDir: effectiveWorkspace,
-    developerInstructions: buildRenderedCodexDeveloperInstructions(),
+    developerInstructions: renderedDeveloperInstructions,
     workspaceBootstrapContext,
     skillsPrompt: skillsCollaborationInstructions ? (params.skillsSnapshot?.prompt ?? "") : "",
     tools: toolBridge.availableSpecs,
+    codexNativeSurface: codexNativeSurfaceReport,
   });
   const trajectoryRecorder = createCodexTrajectoryRecorder({
     attempt: params,
     cwd: effectiveCwd,
-    developerInstructions: buildRenderedCodexDeveloperInstructions(),
+    developerInstructions: renderedDeveloperInstructions,
     prompt: codexTurnPromptText,
     tools: toolBridge.availableSpecs,
   });
@@ -1177,7 +1201,10 @@ export async function runCodexAppServerAttempt(
   try {
     emitCodexAppServerEvent(params, {
       stream: "codex_app_server.lifecycle",
-      data: { phase: "startup" },
+      data: {
+        phase: "startup",
+        codexNativeSurface: codexNativeSurfaceReport,
+      },
     });
     const startupResult = await startCodexAttemptThread({
       attemptClientFactory,
@@ -1219,7 +1246,11 @@ export async function runCodexAppServerAttempt(
     restartContextEngineCodexThread = startupResult.restartContextEngineCodexThread;
     emitCodexAppServerEvent(params, {
       stream: "codex_app_server.lifecycle",
-      data: { phase: "thread_ready", threadId: thread.threadId },
+      data: {
+        phase: "thread_ready",
+        threadId: thread.threadId,
+        codexNativeSurface: codexNativeSurfaceReport,
+      },
     });
   } catch (error) {
     nativeHookRelay?.unregister();
@@ -1236,6 +1267,7 @@ export async function runCodexAppServerAttempt(
     authProfileId: startupAuthProfileId,
     workspaceDir: effectiveWorkspace,
     toolCount: toolBridge.specs.length,
+    codexNativeSurface: codexNativeSurfaceReport,
   });
   recordCodexTrajectoryContext(trajectoryRecorder, {
     attempt: params,

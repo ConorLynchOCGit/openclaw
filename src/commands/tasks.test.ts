@@ -443,7 +443,8 @@ describe("tasks commands", () => {
       expect(joined).toContain("Background tasks: 25");
       expect(joined).toContain("Showing 20 bounded rows");
       expect(joined).toContain("full list available with `openclaw tasks list --json`");
-      expect(joined).toContain("task-run-event running cli validating bounded human list summary");
+      expect(joined).toContain("task-run-event phase=running cli task.progress");
+      expect(joined).toContain("note=validating bounded human list");
       expect(joined).not.toContain("Summary task 9");
     });
   });
@@ -527,9 +528,7 @@ describe("tasks commands", () => {
         .mocked(runtime.log)
         .mock.calls.map(([line]) => String(line))
         .join("\n");
-      expect(joined).toContain(
-        "trajectory child-work spawn_agent project_explorer child is inspecting readback seams",
-      );
+      expect(joined).toContain("trajectory phase=child-work spawn_agent tool.result");
       expect(joined).not.toContain("Runtime liveness check for Phase 0Z");
     });
   });
@@ -561,9 +560,8 @@ describe("tasks commands", () => {
         .mocked(runtime.log)
         .mock.calls.map(([line]) => String(line))
         .join("\n");
-      expect(joined).toContain(
-        "task-run-event running project_explorer project_explorer is inspecting task registry readback.",
-      );
+      expect(joined).toContain("task-run-event phase=running project_explorer task.progress");
+      expect(joined).toContain("note=project_explorer");
       expect(joined).not.toContain("Child started.");
     });
   });
@@ -598,6 +596,42 @@ describe("tasks commands", () => {
       );
       expect(joined).toContain("note=running focused task readback regression");
       expect(joined).toContain(`pointer=task:${task.taskId}`);
+    });
+  });
+
+  it("shows Codex-native child role timing from task execution receipts", async () => {
+    await withTaskCommandStateDir(async () => {
+      const task = createTaskRecord({
+        runtime: "subagent",
+        taskKind: "codex-native",
+        sourceId: "codex-thread:child-readback",
+        ownerKey: "agent:coding:main",
+        scopeKind: "session",
+        agentId: "coding",
+        runId: "codex-thread:child-readback",
+        label: "project_explorer",
+        status: "running",
+        deliveryStatus: "not_applicable",
+        notifyPolicy: "silent",
+        task: "Inspect run intelligence owner files before implementation.",
+        progressSummary:
+          "Codex native subagent spawned (role: project_explorer; agent_path: agents/project_explorer.toml).",
+        startedAt: Date.now(),
+      });
+
+      const runtime = createRuntime();
+      await tasksShowCommand({ json: false, lookup: task.taskId }, runtime);
+
+      const joined = vi
+        .mocked(runtime.log)
+        .mock.calls.map(([line]) => String(line))
+        .join("\n");
+      expect(joined).toContain("childRole=project_explorer");
+      expect(joined).toContain("childAgentPath=agents/project_explorer.toml");
+      expect(joined).toContain("childPhase=child_spawned");
+      expect(joined).toContain(
+        "spawnReason=Inspect run intelligence owner files before implementation.",
+      );
     });
   });
 

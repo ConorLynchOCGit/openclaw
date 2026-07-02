@@ -2004,6 +2004,147 @@ function finiteNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function finiteInteger(value: unknown): number | undefined {
+  const number = finiteNumber(value);
+  return number !== undefined ? Math.trunc(number) : undefined;
+}
+
+function finiteNonNegativeInteger(value: unknown): number | undefined {
+  const number = finiteInteger(value);
+  return number !== undefined && number >= 0 ? number : undefined;
+}
+
+function activeProgressRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function activeProgressResultRecord(
+  data: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  return activeProgressRecord(data?.result);
+}
+
+function activeProgressToolName(data: Record<string, unknown> | undefined): string | undefined {
+  return (
+    boundedProgressText(data?.toolName, 96) ??
+    boundedProgressText(data?.name, 96) ??
+    boundedProgressText(data?.tool, 96)
+  );
+}
+
+function activeProgressCommand(data: Record<string, unknown> | undefined): string | undefined {
+  const direct =
+    boundedProgressText(data?.command, 240) ??
+    boundedProgressText(data?.cmd, 240) ??
+    boundedProgressText(data?.shellCommand, 240) ??
+    boundedProgressText(activeProgressRecord(data?.arguments)?.command, 240) ??
+    boundedProgressText(activeProgressRecord(data?.arguments)?.cmd, 240);
+  if (direct) {
+    return direct;
+  }
+  const argv = data?.argv ?? data?.args;
+  if (Array.isArray(argv) && argv.length > 0 && argv.every((entry) => typeof entry === "string")) {
+    return boundedProgressText(argv.join(" "), 240);
+  }
+  return undefined;
+}
+
+function activeProgressExitCode(data: Record<string, unknown> | undefined): number | undefined {
+  const result = activeProgressResultRecord(data);
+  return (
+    finiteInteger(data?.exitCode) ??
+    finiteInteger(data?.code) ??
+    finiteInteger(result?.exitCode) ??
+    finiteInteger(result?.code)
+  );
+}
+
+function activeProgressValidationClass(
+  data: Record<string, unknown> | undefined,
+): string | undefined {
+  const explicit =
+    boundedProgressText(data?.validationClass, 80) ??
+    boundedProgressText(data?.checkClass, 80) ??
+    boundedProgressText(data?.proofClass, 80);
+  if (explicit) {
+    return explicit;
+  }
+  const command = activeProgressCommand(data)?.toLowerCase();
+  if (!command) {
+    return undefined;
+  }
+  if (/\b(typecheck|tsc)\b/u.test(command)) {
+    return "typecheck";
+  }
+  if (/\b(test|vitest|jest|mocha|playwright)\b/u.test(command)) {
+    return "test";
+  }
+  if (/\b(lint|eslint|biome)\b/u.test(command)) {
+    return "lint";
+  }
+  if (/\b(format|prettier)\b/u.test(command)) {
+    return "format";
+  }
+  if (/\b(build|tsdown|vite|webpack|rollup)\b/u.test(command)) {
+    return "build";
+  }
+  return undefined;
+}
+
+function activeProgressOutputSummary(
+  data: Record<string, unknown> | undefined,
+): string | undefined {
+  const result = activeProgressResultRecord(data);
+  const error = activeProgressRecord(data?.error);
+  const resultError = activeProgressRecord(result?.error);
+  return (
+    boundedProgressText(data?.outputSummary, 500) ??
+    boundedProgressText(data?.stderr, 500) ??
+    boundedProgressText(data?.stdout, 500) ??
+    boundedProgressText(data?.output, 500) ??
+    boundedProgressText(data?.result, 500) ??
+    boundedProgressText(data?.error, 500) ??
+    boundedProgressText(error?.message, 500) ??
+    boundedProgressText(result?.outputSummary, 500) ??
+    boundedProgressText(result?.stderr, 500) ??
+    boundedProgressText(result?.stdout, 500) ??
+    boundedProgressText(result?.output, 500) ??
+    boundedProgressText(result?.message, 500) ??
+    boundedProgressText(result?.error, 500) ??
+    boundedProgressText(resultError?.message, 500)
+  );
+}
+
+function activeProgressRepairAction(data: Record<string, unknown> | undefined): string | undefined {
+  return (
+    boundedProgressText(data?.repairAction, 200) ??
+    boundedProgressText(data?.nextAction, 200) ??
+    boundedProgressText(data?.inspectNext, 200)
+  );
+}
+
+function activeProgressChildRole(data: Record<string, unknown> | undefined): string | undefined {
+  return (
+    boundedProgressText(data?.childRole, 96) ??
+    boundedProgressText(data?.subagentRole, 96) ??
+    boundedProgressText(data?.agentRole, 96) ??
+    boundedProgressText(data?.role, 96)
+  );
+}
+
+function activeProgressChildAgentPath(
+  data: Record<string, unknown> | undefined,
+): string | undefined {
+  return (
+    boundedProgressText(data?.childAgentPath, 160) ??
+    boundedProgressText(data?.agentPath, 160) ??
+    boundedProgressText(data?.agent_path, 160) ??
+    boundedProgressText(data?.subagentAgentPath, 160)
+  );
+}
+
 function activeProgressLabel(
   eventType: string,
   data: Record<string, unknown> | undefined,
@@ -2020,7 +2161,12 @@ function activeProgressLabel(
 }
 
 function activeProgressElapsedMs(data: Record<string, unknown> | undefined): number | undefined {
-  const elapsedMs = finiteNumber(data?.elapsedMs) ?? finiteNumber(data?.durationMs);
+  const result = activeProgressResultRecord(data);
+  const elapsedMs =
+    finiteNumber(data?.elapsedMs) ??
+    finiteNumber(data?.durationMs) ??
+    finiteNumber(result?.elapsedMs) ??
+    finiteNumber(result?.durationMs);
   if (elapsedMs !== undefined && elapsedMs >= 0) {
     return elapsedMs;
   }
@@ -2030,6 +2176,11 @@ function activeProgressElapsedMs(data: Record<string, unknown> | undefined): num
     return endedAt - startedAt;
   }
   return undefined;
+}
+
+function activeProgressDurationMs(data: Record<string, unknown> | undefined): number | undefined {
+  const result = activeProgressResultRecord(data);
+  return finiteNonNegativeInteger(data?.durationMs) ?? finiteNonNegativeInteger(result?.durationMs);
 }
 
 function activeProgressNote(
@@ -2080,6 +2231,7 @@ function trajectoryEventIsUsefulActiveProgress(
     !boundedProgressText(data?.summary) &&
     !boundedProgressText(data?.note) &&
     !boundedProgressText(data?.phase) &&
+    !activeProgressOutputSummary(data) &&
     !activeProgressPointer(data)
   ) {
     return false;
@@ -2087,6 +2239,10 @@ function trajectoryEventIsUsefulActiveProgress(
   return Boolean(
     activeProgressLabel(eventType, data) ??
     activeProgressNote(eventType, data) ??
+    activeProgressOutputSummary(data) ??
+    activeProgressCommand(data) ??
+    activeProgressChildRole(data) ??
+    activeProgressChildAgentPath(data) ??
     boundedProgressText(data?.phase) ??
     activeProgressPointer(data),
   );
@@ -2122,15 +2278,24 @@ function activeProgressProjectionFromTrajectoryEvent(params: {
   event: Record<string, unknown>;
   eventType: string;
 }): ReadbackProgressProjection {
-  const data =
-    params.event.data && typeof params.event.data === "object" && !Array.isArray(params.event.data)
-      ? (params.event.data as Record<string, unknown>)
-      : undefined;
+  const data = activeProgressRecord(params.event.data);
   const observedAt = boundedProgressText(params.event.ts, 64);
   const sourceEventSeq = finiteNumber(params.event.sourceSeq) ?? finiteNumber(params.event.seq);
   const currentPhase = boundedProgressText(data?.phase, 64);
   const activeLabel = activeProgressLabel(params.eventType, data);
   const elapsedMs = activeProgressElapsedMs(data);
+  const durationMs = activeProgressDurationMs(data);
+  const toolName = activeProgressToolName(data);
+  const command = activeProgressCommand(data);
+  const exitCode = activeProgressExitCode(data);
+  const validationClass = activeProgressValidationClass(data);
+  const outputSummary = activeProgressOutputSummary(data);
+  const repairAction = activeProgressRepairAction(data);
+  const childRole = activeProgressChildRole(data);
+  const childAgentPath = activeProgressChildAgentPath(data);
+  const childPhase = boundedProgressText(data?.childPhase, 80);
+  const spawnReason = boundedProgressText(data?.spawnReason, 200);
+  const diffReviewed = typeof data?.diffReviewed === "boolean" ? data.diffReviewed : undefined;
   const note = activeProgressNote(params.eventType, data);
   const pointer = activeProgressPointer(data);
   return {
@@ -2140,12 +2305,115 @@ function activeProgressProjectionFromTrajectoryEvent(params: {
     ...(activeLabel ? { activeLabel } : {}),
     ...(observedAt ? { observedAt } : {}),
     ...(elapsedMs !== undefined ? { elapsedMs } : {}),
+    ...(durationMs !== undefined ? { durationMs } : {}),
     sourceEventType: params.eventType,
     ...(sourceEventSeq !== undefined ? { sourceEventSeq } : {}),
+    ...(toolName ? { toolName } : {}),
+    ...(command ? { command } : {}),
+    ...(exitCode !== undefined ? { exitCode } : {}),
+    ...(validationClass ? { validationClass } : {}),
+    ...(outputSummary ? { outputSummary } : {}),
+    ...(repairAction ? { repairAction } : {}),
+    ...(childRole ? { childRole } : {}),
+    ...(childAgentPath ? { childAgentPath } : {}),
+    ...(childPhase ? { childPhase } : {}),
+    ...(spawnReason ? { spawnReason } : {}),
+    ...(diffReviewed !== undefined ? { diffReviewed } : {}),
     ...(note ? { note } : {}),
     ...(pointer ? { pointer } : {}),
     derivedBy: "readLatestTrajectoryProgressProjection",
     bounded: true,
+  };
+}
+
+type ParsedTrajectoryProgressEvent = {
+  event: Record<string, unknown>;
+  eventType: string;
+  data: Record<string, unknown> | undefined;
+};
+
+function parseTrajectoryProgressEvents(
+  lines: string[],
+  sessionId: string,
+): ParsedTrajectoryProgressEvent[] {
+  const events: ParsedTrajectoryProgressEvent[] = [];
+  for (const line of lines) {
+    try {
+      const parsed = JSON.parse(line) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        continue;
+      }
+      const event = parsed as Record<string, unknown>;
+      if (
+        event.traceSchema !== "openclaw-trajectory" ||
+        event.sessionId !== sessionId ||
+        typeof event.type !== "string"
+      ) {
+        continue;
+      }
+      events.push({
+        event,
+        eventType: event.type,
+        data: activeProgressRecord(event.data),
+      });
+    } catch {
+      continue;
+    }
+  }
+  return events;
+}
+
+function activeProgressToolCallId(data: Record<string, unknown> | undefined): string | undefined {
+  return (
+    boundedProgressText(data?.toolCallId, 160) ??
+    boundedProgressText(data?.itemId, 160) ??
+    boundedProgressText(data?.callId, 160)
+  );
+}
+
+function matchingPriorToolCallData(
+  events: ParsedTrajectoryProgressEvent[],
+  resultIndex: number,
+  resultData: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  const resultCallId = activeProgressToolCallId(resultData);
+  const resultName = activeProgressToolName(resultData);
+  for (let index = resultIndex - 1; index >= 0; index -= 1) {
+    const candidate = events[index];
+    if (!candidate || candidate.eventType !== "tool.call") {
+      continue;
+    }
+    const candidateCallId = activeProgressToolCallId(candidate.data);
+    if (resultCallId && candidateCallId === resultCallId) {
+      return candidate.data;
+    }
+    if (!resultCallId && resultName && resultName === activeProgressToolName(candidate.data)) {
+      return candidate.data;
+    }
+  }
+  return undefined;
+}
+
+function mergeToolResultWithPriorCallData(params: {
+  events: ParsedTrajectoryProgressEvent[];
+  eventIndex: number;
+  event: Record<string, unknown>;
+  data: Record<string, unknown> | undefined;
+}): Record<string, unknown> {
+  if (params.events[params.eventIndex]?.eventType !== "tool.result") {
+    return params.event;
+  }
+  const callData = matchingPriorToolCallData(params.events, params.eventIndex, params.data);
+  if (!callData) {
+    return params.event;
+  }
+  return {
+    ...params.event,
+    data: {
+      ...callData,
+      ...params.data,
+      arguments: params.data?.arguments ?? callData.arguments,
+    },
   };
 }
 
@@ -2165,35 +2433,27 @@ export function readLatestTrajectoryProgressProjection(
     return undefined;
   }
   const lines = readRecentTrajectoryLines(filePath, TRAJECTORY_PROGRESS_READ_BYTES);
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    try {
-      const parsed = JSON.parse(lines[index] ?? "") as unknown;
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        continue;
-      }
-      const event = parsed as Record<string, unknown>;
-      if (
-        event.traceSchema !== "openclaw-trajectory" ||
-        event.sessionId !== sessionId ||
-        typeof event.type !== "string"
-      ) {
-        continue;
-      }
-      const data =
-        event.data && typeof event.data === "object" && !Array.isArray(event.data)
-          ? (event.data as Record<string, unknown>)
-          : undefined;
-      if (!trajectoryEventIsUsefulActiveProgress(event.type, data)) {
-        continue;
-      }
-      return activeProgressProjectionFromTrajectoryEvent({
-        sessionId,
-        event,
-        eventType: event.type,
-      });
-    } catch {
+  const events = parseTrajectoryProgressEvents(lines, sessionId);
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (!event) {
       continue;
     }
+    const mergedEvent = mergeToolResultWithPriorCallData({
+      events,
+      eventIndex: index,
+      event: event.event,
+      data: event.data,
+    });
+    const data = activeProgressRecord(mergedEvent.data);
+    if (!trajectoryEventIsUsefulActiveProgress(event.eventType, data)) {
+      continue;
+    }
+    return activeProgressProjectionFromTrajectoryEvent({
+      sessionId,
+      event: mergedEvent,
+      eventType: event.eventType,
+    });
   }
   return {
     source: "trajectory",

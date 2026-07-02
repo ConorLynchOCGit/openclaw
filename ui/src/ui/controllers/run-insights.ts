@@ -1,5 +1,6 @@
 // Control UI controller manages run-insights readback state.
 import type { GatewayBrowserClient } from "../gateway.ts";
+import type { ReadbackProgressProjection } from "../types.ts";
 
 export type RunInsightsAttentionItem = {
   severity?: string;
@@ -80,6 +81,7 @@ export type RunInsightsTask = {
     kind?: string;
     summary?: string | null;
   } | null;
+  activeProgress?: ReadbackProgressProjection | null;
   progressSummary?: string | null;
   attention?: {
     waitClass?: string | null;
@@ -119,6 +121,12 @@ export type RunInsightsReport = {
     agent?: string | null;
     session?: string | null;
     task?: string | null;
+  };
+  deployEvidenceScope?: {
+    scope?: string;
+    filteredBy?: string[];
+    limitApplied?: number;
+    reason?: string;
   };
   summary?: {
     sessionCount?: number;
@@ -171,6 +179,59 @@ export type RunInsightsReport = {
       message?: string;
       evidence?: unknown;
     }>;
+  };
+  diagnosticSummary?: {
+    currentOrLastKnownPhase?: {
+      label?: string;
+      source?: string;
+      pointer?: string | null;
+      confidence?: string;
+      evidenceQuality?: string;
+      reason?: string;
+    };
+    timeSpent?: {
+      knownSessionDurationMs?: number | null;
+      activeTaskElapsedMs?: number | null;
+      deployReceiptKnownDurationMs?: number | null;
+      confidence?: string;
+      evidenceQuality?: string;
+    };
+    childWork?: {
+      displayedChildTasks?: number;
+      activeChildTasks?: number;
+      contribution?: string;
+      confidence?: string;
+      evidenceQuality?: string;
+      pointer?: string | null;
+    };
+    parentWaitState?: {
+      waitClass?: string | null;
+      reason?: string;
+      pointer?: string | null;
+      confidence?: string;
+      evidenceQuality?: string;
+    };
+    validationBuildPromotion?: {
+      attentionItems?: number;
+      bottlenecks?: number;
+      deployReceipts?: number;
+      artifactPointers?: string[];
+      confidence?: string;
+      evidenceQuality?: string;
+    };
+    evidenceQuality?: {
+      evidenceBacked?: number;
+      heuristic?: number;
+      stale?: number;
+      scoped?: number;
+      unknown?: number;
+      missingPointers?: string[];
+    };
+    operatorNextAction?: {
+      label?: string;
+      pointer?: string;
+      reason?: string;
+    };
   };
   deployEvents?: RunInsightsDeployEvent[];
   sessions?: RunInsightsSession[];

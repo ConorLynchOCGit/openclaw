@@ -75,6 +75,12 @@ describe("buildLifecycleAuditReport", () => {
     expect(payload.generatedAt).toBe("2026-07-01T05:30:00.000Z");
     expect(payload.advisory.semantics).toContain("not lifecycle truth");
     expect(payload.advisory.missingEvidenceLanguage).toContain("unknown");
+    expect(payload.advisory.caveats).toContain(
+      "Findings are advisory evidence only and must not decide agent routing, skill activation, proof pass/fail, or release eligibility.",
+    );
+    expect(payload.advisory.caveats).toContain(
+      "This command does not judge skill or canonical-doc content quality; use model-reviewed GBrain/Reviewer/Skill Workshop flows for semantic review or mutation.",
+    );
     expect(payload.summary).toMatchObject({
       agents: 1,
       skills: 2,
@@ -88,7 +94,6 @@ describe("buildLifecycleAuditReport", () => {
         "skill_agent_filter_missing",
         "duplicate_skill_name",
         "configured_plugin_unknown",
-        "large_prompt_bootstrap",
         "duplicate_canonical_surface",
       ]),
     );

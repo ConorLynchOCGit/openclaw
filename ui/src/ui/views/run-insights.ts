@@ -171,6 +171,7 @@ function renderRunHeadline(report: RunInsightsReport | null) {
   const summary = report?.summary;
   const tasks = summary?.tasks;
   const deploy = summary?.deploy;
+  const deployScope = report?.deployEvidenceScope;
   const attentionCount =
     (report?.attention?.whyWorkMayFeelSlow?.length ?? 0) +
     (report?.attention?.validationAndPromotion?.length ?? 0);
@@ -217,9 +218,15 @@ function renderRunHeadline(report: RunInsightsReport | null) {
         ${renderMetric(
           "Deploy",
           deploy?.lastEventType ?? "n/a",
-          `${formatCount(deploy?.recentFailures)} recent failures`,
+          `${formatCount(deploy?.recentFailures)} recent failures; ${deployScope?.scope ?? "global_unscoped"}`,
         )}
       </section>
+      ${deployScope?.reason
+        ? html`<div class="muted" style="margin-top: 10px;">
+            Deploy/build/promote evidence is ${deployScope.scope ?? "global_unscoped"}:
+            ${deployScope.reason}
+          </div>`
+        : nothing}
     </section>
   `;
 }
@@ -334,6 +341,77 @@ function renderAttentionPanel(report: RunInsightsReport) {
   `;
 }
 
+function renderDiagnosticSummary(report: RunInsightsReport) {
+  const summary = report.diagnosticSummary;
+  if (!summary) {
+    return html`
+      <section class="card">
+        ${renderSectionHeader(
+          "Diagnostic summary",
+          "Current phase, wait state, confidence, and next action when bounded evidence has it.",
+        )}
+        ${renderEmpty("No diagnostic summary in this bounded report.")}
+      </section>
+    `;
+  }
+  const phase = summary.currentOrLastKnownPhase;
+  const wait = summary.parentWaitState;
+  const evidence = summary.evidenceQuality;
+  const next = summary.operatorNextAction;
+  const validation = summary.validationBuildPromotion;
+  return html`
+    <section class="card">
+      ${renderSectionHeader(
+        "Diagnostic summary",
+        "Current or last-known phase, wait state, evidence quality, and operator next action.",
+      )}
+      <section class="grid" style="margin-top: 12px;">
+        ${renderMetric(
+          "Phase",
+          phase?.label ?? "unknown",
+          `${phase?.evidenceQuality ?? "unknown"}; confidence ${phase?.confidence ?? "unknown"}`,
+        )}
+        ${renderMetric(
+          "Parent wait",
+          wait?.waitClass ?? "unknown",
+          `${wait?.evidenceQuality ?? "unknown"}; ${wait?.reason ?? "no bounded wait evidence"}`,
+        )}
+        ${renderMetric(
+          "Child work",
+          formatCount(summary.childWork?.displayedChildTasks),
+          summary.childWork?.contribution,
+        )}
+        ${renderMetric(
+          "Validation/build",
+          formatCount(validation?.attentionItems),
+          `${formatCount(validation?.bottlenecks)} bottlenecks, ${formatCount(
+            validation?.deployReceipts,
+          )} receipts`,
+        )}
+      </section>
+      <div class="list" style="margin-top: 12px;">
+        <div class="list-item">
+          <div class="list-main">
+            <div class="list-title">Evidence quality</div>
+            <div class="list-sub">
+              backed ${formatCount(evidence?.evidenceBacked)}, heuristic
+              ${formatCount(evidence?.heuristic)}, stale ${formatCount(evidence?.stale)}, scoped
+              ${formatCount(evidence?.scoped)}, unknown ${formatCount(evidence?.unknown)}
+            </div>
+          </div>
+        </div>
+        <div class="list-item">
+          <div class="list-main">
+            <div class="list-title">${next?.label ?? "Next action unknown"}</div>
+            <div class="list-sub">${next?.reason ?? "No next action reason in report."}</div>
+          </div>
+          ${renderPointer(next?.pointer)}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 function renderTimeline(timeline: RunInsightsTimelineItem[] | undefined) {
   const rows = [...(timeline ?? [])]
     .toSorted((left, right) => (right.at ?? -1) - (left.at ?? -1))
@@ -396,6 +474,22 @@ function renderChildEvidence(rows: RunInsightsChildSessionEvidence[] | undefined
   `;
 }
 
+function renderTaskActiveProgress(task: RunInsightsTask) {
+  const progress = task.activeProgress;
+  if (!progress) {
+    return nothing;
+  }
+  const child = progress.childRole ? `child ${progress.childRole}` : null;
+  const phase = progress.currentPhase ? `phase ${progress.currentPhase}` : null;
+  const command = progress.command ? `command ${progress.command}` : null;
+  const output = progress.outputSummary ? `output ${progress.outputSummary}` : null;
+  const parts = [child, phase, command, output].filter((part): part is string => Boolean(part));
+  if (parts.length === 0) {
+    return nothing;
+  }
+  return html`<div class="list-sub">${parts.join("; ")}</div>`;
+}
+
 function renderTask(task: RunInsightsTask) {
   const waitClass = task.attention?.waitClass;
   return html`
@@ -416,6 +510,7 @@ function renderTask(task: RunInsightsTask) {
           : task.latestEvent?.summary
             ? html`<div class="list-sub">${task.latestEvent.summary}</div>`
             : nothing}
+        ${renderTaskActiveProgress(task)}
       </div>
       ${renderPointer(task.pointer)}
     </div>
@@ -472,12 +567,15 @@ function renderValidationCost(report: RunInsightsReport) {
   const retry = report.performanceProfile?.retryBuildProofCost;
   const bottlenecks = report.performanceProfile?.validationBuildBottlenecks ?? [];
   const events = report.deployEvents ?? [];
+  const deployScope = report.deployEvidenceScope;
 
   return html`
     <section class="card">
       ${renderSectionHeader(
         "Validation, build, and promote cost",
-        "Deploy receipts, retry/build/proof duration, bottlenecks, failed counts, and artifacts.",
+        `Deploy receipts, retry/build/proof duration, bottlenecks, failed counts, and artifacts. Scope: ${
+          deployScope?.scope ?? "global_unscoped"
+        }.`,
       )}
       <section class="grid" style="margin-top: 12px;">
         ${renderMetric("Deploy receipts", formatCount(retry?.deployReceiptCount))}
@@ -590,8 +688,8 @@ export function renderRunInsights(props: RunInsightsProps) {
       ${renderControls(props)} ${renderRunHeadline(report)}
       ${report
         ? html`
-            ${renderCostProfile(report)} ${renderAttentionPanel(report)}
-            ${renderTimeline(report.performanceProfile?.timeline)}
+            ${renderCostProfile(report)} ${renderDiagnosticSummary(report)}
+            ${renderAttentionPanel(report)} ${renderTimeline(report.performanceProfile?.timeline)}
             ${renderChildAndTaskEvidence(report)} ${renderValidationCost(report)}
             ${renderPointers(report)}
           `

@@ -49,6 +49,7 @@ import type {
   TaskDeliveryStatus,
   TaskExecutionReceipt,
   TaskEventKind,
+  TaskEventMetadata,
   TaskEventRecord,
   TaskNotifyPolicy,
   TaskRecord,
@@ -63,6 +64,8 @@ import { resolveTaskCleanupAfter } from "./task-retention.js";
 
 const log = createSubsystemLogger("tasks/registry");
 const TASK_FLOW_SYNC_RETRY_DELAYS_MS = [1_000, 5_000, 25_000, 120_000, 600_000] as const;
+const TASK_EVENT_METADATA_MAX_KEYS = 24;
+const TASK_EVENT_METADATA_STRING_MAX_CHARS = 512;
 
 const taskRegistryProcessState = getTaskRegistryProcessState();
 const tasks = taskRegistryProcessState.tasks;
@@ -199,7 +202,14 @@ function cloneTaskRecord(record: TaskRecord): TaskRecord {
           executionReceipt: {
             ...record.executionReceipt,
             ...(record.executionReceipt.latestEvent
-              ? { latestEvent: { ...record.executionReceipt.latestEvent } }
+              ? {
+                  latestEvent: {
+                    ...record.executionReceipt.latestEvent,
+                    ...(record.executionReceipt.latestEvent.metadata
+                      ? { metadata: { ...record.executionReceipt.latestEvent.metadata } }
+                      : {}),
+                  },
+                }
               : {}),
           },
         }
@@ -582,13 +592,52 @@ function appendTaskEvent(event: {
   at: number;
   kind: TaskEventKind;
   summary?: string | null;
+  metadata?: TaskEventMetadata | null;
 }): TaskEventRecord {
   const summary = normalizeTaskSummary(event.summary);
+  const metadata = normalizeTaskEventMetadata(event.metadata);
   return {
     at: event.at,
     kind: event.kind,
     ...(summary ? { summary } : {}),
+    ...(metadata ? { metadata } : {}),
   };
+}
+
+function normalizeTaskEventMetadata(
+  metadata: TaskEventMetadata | null | undefined,
+): TaskEventMetadata | undefined {
+  if (!metadata || typeof metadata !== "object") {
+    return undefined;
+  }
+  const normalized: TaskEventMetadata = {};
+  for (const [key, rawValue] of Object.entries(metadata)) {
+    if (Object.keys(normalized).length >= TASK_EVENT_METADATA_MAX_KEYS) {
+      break;
+    }
+    if (!/^[A-Za-z0-9_.:-]{1,80}$/u.test(key)) {
+      continue;
+    }
+    if (rawValue === null || typeof rawValue === "boolean") {
+      normalized[key] = rawValue;
+      continue;
+    }
+    if (typeof rawValue === "number" && Number.isFinite(rawValue)) {
+      normalized[key] = rawValue;
+      continue;
+    }
+    if (typeof rawValue === "string") {
+      const value = normalizeOptionalString(rawValue);
+      if (!value) {
+        continue;
+      }
+      normalized[key] =
+        value.length <= TASK_EVENT_METADATA_STRING_MAX_CHARS
+          ? value
+          : value.slice(0, TASK_EVENT_METADATA_STRING_MAX_CHARS);
+    }
+  }
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
 function appendTaskExecutionReceipt(
@@ -1530,6 +1579,7 @@ export function setTaskProgressById(params: {
   taskId: string;
   progressSummary?: string | null;
   eventSummary?: string | null;
+  eventMetadata?: TaskEventMetadata | null;
   lastEventAt?: number;
 }): TaskRecord | null {
   ensureTaskRegistryReady();
@@ -1554,6 +1604,7 @@ export function setTaskProgressById(params: {
         at: eventAt,
         kind: "progress",
         summary: eventSummary,
+        metadata: params.eventMetadata,
       }),
     );
   }
@@ -1759,6 +1810,7 @@ export function createTaskRecord(params: {
   lastEventAt?: number;
   cleanupAfter?: number;
   progressSummary?: string | null;
+  eventMetadata?: TaskEventMetadata | null;
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
 }): TaskRecord | null {
@@ -1822,6 +1874,7 @@ export function createTaskRecord(params: {
       status === "succeeded" || status === "failed" || status === "timed_out"
         ? (params.terminalSummary ?? params.progressSummary)
         : params.progressSummary,
+    metadata: params.eventMetadata,
   });
   const record: TaskRecord = normalizeTaskTimestamps({
     taskId,
@@ -1898,6 +1951,7 @@ function updateTaskStateByRunId(params: {
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
   eventSummary?: string | null;
+  eventMetadata?: TaskEventMetadata | null;
 }) {
   ensureTaskRegistryReady();
   const matches = getTasksByRunScope(params);
@@ -1972,6 +2026,7 @@ function updateTaskStateByRunId(params: {
                 ? normalizeTaskStatus(params.status)
                 : "progress",
             summary: eventSummary,
+            metadata: params.eventMetadata,
           })
         : undefined;
     const nextEvent = shouldAppendEvent
@@ -1982,6 +2037,7 @@ function updateTaskStateByRunId(params: {
               ? normalizeTaskStatus(params.status)
               : "progress",
           summary: eventSummary,
+          metadata: params.eventMetadata,
         })
       : undefined;
     if (receiptEvent) {
@@ -2027,6 +2083,7 @@ export function markTaskRunningByRunId(params: {
   lastEventAt?: number;
   progressSummary?: string | null;
   eventSummary?: string | null;
+  eventMetadata?: TaskEventMetadata | null;
 }) {
   return updateTaskStateByRunId({
     runId: params.runId,
@@ -2037,6 +2094,7 @@ export function markTaskRunningByRunId(params: {
     lastEventAt: params.lastEventAt,
     progressSummary: params.progressSummary,
     eventSummary: params.eventSummary,
+    eventMetadata: params.eventMetadata,
   });
 }
 
@@ -2047,6 +2105,7 @@ export function recordTaskProgressByRunId(params: {
   lastEventAt?: number;
   progressSummary?: string | null;
   eventSummary?: string | null;
+  eventMetadata?: TaskEventMetadata | null;
 }) {
   return updateTaskStateByRunId({
     runId: params.runId,
@@ -2055,6 +2114,7 @@ export function recordTaskProgressByRunId(params: {
     lastEventAt: params.lastEventAt,
     progressSummary: params.progressSummary,
     eventSummary: params.eventSummary,
+    eventMetadata: params.eventMetadata,
   });
 }
 
@@ -2070,6 +2130,7 @@ export function markTaskTerminalByRunId(params: {
   progressSummary?: string | null;
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
+  eventMetadata?: TaskEventMetadata | null;
 }) {
   return finalizeTaskRunByRunId(params);
 }
@@ -2086,6 +2147,7 @@ export function finalizeTaskRunByRunId(params: {
   progressSummary?: string | null;
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
+  eventMetadata?: TaskEventMetadata | null;
 }) {
   return updateTaskStateByRunId({
     runId: params.runId,
@@ -2099,6 +2161,7 @@ export function finalizeTaskRunByRunId(params: {
     progressSummary: params.progressSummary,
     terminalSummary: params.terminalSummary,
     terminalOutcome: params.terminalOutcome,
+    eventMetadata: params.eventMetadata,
   });
 }
 

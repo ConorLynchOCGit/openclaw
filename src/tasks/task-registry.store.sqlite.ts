@@ -18,6 +18,7 @@ import {
   parseTaskScopeKind,
   parseTaskStatus,
   type TaskDeliveryState,
+  type TaskEventMetadata,
   type TaskExecutionReceipt,
   type TaskEventKind,
   type TaskRecord,
@@ -69,6 +70,8 @@ type TaskRegistryDatabase = {
 };
 
 // SQLite-backed task store mirrors task records and delivery state into openclaw-state.db.
+const TASK_EVENT_METADATA_MAX_KEYS = 24;
+const TASK_EVENT_METADATA_STRING_MAX_CHARS = 512;
 const TASK_RUN_SELECT_COLUMNS = [
   "task_id",
   "runtime",
@@ -123,6 +126,39 @@ function parseTaskExecutionReceiptEventKind(value: unknown): TaskEventKind | und
   }
 }
 
+function parseTaskExecutionReceiptEventMetadata(value: unknown): TaskEventMetadata | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const metadata: TaskEventMetadata = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (Object.keys(metadata).length >= TASK_EVENT_METADATA_MAX_KEYS) {
+      break;
+    }
+    if (!/^[A-Za-z0-9_.:-]{1,80}$/u.test(key)) {
+      continue;
+    }
+    if (entry === null || typeof entry === "boolean") {
+      metadata[key] = entry;
+      continue;
+    }
+    if (typeof entry === "number" && Number.isFinite(entry)) {
+      metadata[key] = entry;
+      continue;
+    }
+    if (typeof entry === "string") {
+      const text = entry.trim();
+      if (text) {
+        metadata[key] =
+          text.length <= TASK_EVENT_METADATA_STRING_MAX_CHARS
+            ? text
+            : text.slice(0, TASK_EVENT_METADATA_STRING_MAX_CHARS);
+      }
+    }
+  }
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
+}
+
 function parseTaskExecutionReceiptJson(value: string | null): TaskExecutionReceipt | undefined {
   if (!value) {
     return undefined;
@@ -134,12 +170,14 @@ function parseTaskExecutionReceiptJson(value: string | null): TaskExecutionRecei
     }
     const event = parsed.latestEvent;
     const eventKind = parseTaskExecutionReceiptEventKind(event?.kind);
+    const eventMetadata = parseTaskExecutionReceiptEventMetadata(event?.metadata);
     const latestEvent =
       event && typeof event.at === "number" && Number.isFinite(event.at) && eventKind
         ? {
             at: event.at,
             kind: eventKind,
             ...(typeof event.summary === "string" ? { summary: event.summary } : {}),
+            ...(eventMetadata ? { metadata: eventMetadata } : {}),
           }
         : undefined;
     return {

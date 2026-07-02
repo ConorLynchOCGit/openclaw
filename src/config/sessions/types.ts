@@ -686,6 +686,25 @@ export type SessionSystemPromptReport = {
     mode?: string;
     sandboxed?: boolean;
   };
+  codexNativeSurface?: {
+    owner: "codex_app_server";
+    nativeToolSurfaceConfigured: boolean;
+    nativeToolSurfaceReason:
+      | "enabled"
+      | "memory_flush"
+      | "node_exec_policy"
+      | "restricted_tools_allow"
+      | "sandbox_without_exec_server_policy";
+    codeModeConfigured: boolean;
+    codeModeOnlyConfigured: boolean;
+    nativeSubagents: {
+      expectedTool: "spawn_agent";
+      owner: "codex_app_server";
+      listedInOpenClawDynamicTools: false;
+      guidanceInjected: boolean;
+      disabledByOpenClawModelProfile: boolean;
+    };
+  };
   systemPrompt: {
     chars: number;
     projectContextChars: number;

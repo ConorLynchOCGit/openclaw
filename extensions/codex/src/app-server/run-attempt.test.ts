@@ -409,6 +409,52 @@ function buildEmptyCodexToolTelemetry(): CodexAppServerToolTelemetry {
 setupRunAttemptTestHooks();
 
 describe("runCodexAppServerAttempt", () => {
+  it("records Codex-native subagent surface configuration in system prompt reports", () => {
+    const workspaceDir = path.join(tempDir, "workspace");
+    const params = createParams(path.join(tempDir, "session.jsonl"), workspaceDir);
+    const report = buildCodexSystemPromptReport({
+      attempt: params,
+      sessionKey: params.sessionKey ?? params.sessionId,
+      workspaceDir,
+      developerInstructions: "Use Codex native `spawn_agent` for Codex subagents.",
+      workspaceBootstrapContext: {
+        bootstrapFiles: [],
+        contextFiles: [],
+      },
+      skillsPrompt: "",
+      tools: [],
+      codexNativeSurface: {
+        owner: "codex_app_server",
+        nativeToolSurfaceConfigured: true,
+        nativeToolSurfaceReason: "enabled",
+        codeModeConfigured: true,
+        codeModeOnlyConfigured: false,
+        nativeSubagents: {
+          expectedTool: "spawn_agent",
+          owner: "codex_app_server",
+          listedInOpenClawDynamicTools: false,
+          guidanceInjected: true,
+          disabledByOpenClawModelProfile: false,
+        },
+      },
+    });
+
+    expect(report.codexNativeSurface).toEqual({
+      owner: "codex_app_server",
+      nativeToolSurfaceConfigured: true,
+      nativeToolSurfaceReason: "enabled",
+      codeModeConfigured: true,
+      codeModeOnlyConfigured: false,
+      nativeSubagents: {
+        expectedTool: "spawn_agent",
+        owner: "codex_app_server",
+        listedInOpenClawDynamicTools: false,
+        guidanceInjected: true,
+        disabledByOpenClawModelProfile: false,
+      },
+    });
+  });
+
   it("recreates cached Codex workspace directories after cleanup removes them", async () => {
     const workspaceDir = path.join(tempDir, "cached-workspace");
 

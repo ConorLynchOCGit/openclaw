@@ -8,8 +8,20 @@ export type ReadbackProgressProjection = {
   activeLabel?: string | null;
   observedAt?: string | null;
   elapsedMs?: number | null;
+  durationMs?: number | null;
   sourceEventType?: string;
   sourceEventSeq?: number;
+  toolName?: string | null;
+  command?: string | null;
+  exitCode?: number | null;
+  validationClass?: string | null;
+  outputSummary?: string | null;
+  repairAction?: string | null;
+  childRole?: string | null;
+  childAgentPath?: string | null;
+  childPhase?: string | null;
+  spawnReason?: string | null;
+  diffReviewed?: boolean | null;
   note?: string | null;
   pointer?: {
     kind: "artifact" | "inspect-next" | "session" | "task" | "trajectory";
@@ -74,10 +86,46 @@ export function normalizeReadbackProgressProjection(
     ...(typeof value.elapsedMs === "number" || value.elapsedMs === null
       ? { elapsedMs: value.elapsedMs }
       : {}),
+    ...(typeof value.durationMs === "number" || value.durationMs === null
+      ? { durationMs: value.durationMs }
+      : {}),
     ...(typeof value.sourceEventType === "string"
       ? { sourceEventType: value.sourceEventType }
       : {}),
     ...(typeof value.sourceEventSeq === "number" ? { sourceEventSeq: value.sourceEventSeq } : {}),
+    ...(typeof value.toolName === "string" || value.toolName === null
+      ? { toolName: value.toolName }
+      : {}),
+    ...(typeof value.command === "string" || value.command === null
+      ? { command: value.command }
+      : {}),
+    ...(typeof value.exitCode === "number" || value.exitCode === null
+      ? { exitCode: value.exitCode }
+      : {}),
+    ...(typeof value.validationClass === "string" || value.validationClass === null
+      ? { validationClass: value.validationClass }
+      : {}),
+    ...(typeof value.outputSummary === "string" || value.outputSummary === null
+      ? { outputSummary: value.outputSummary }
+      : {}),
+    ...(typeof value.repairAction === "string" || value.repairAction === null
+      ? { repairAction: value.repairAction }
+      : {}),
+    ...(typeof value.childRole === "string" || value.childRole === null
+      ? { childRole: value.childRole }
+      : {}),
+    ...(typeof value.childAgentPath === "string" || value.childAgentPath === null
+      ? { childAgentPath: value.childAgentPath }
+      : {}),
+    ...(typeof value.childPhase === "string" || value.childPhase === null
+      ? { childPhase: value.childPhase }
+      : {}),
+    ...(typeof value.spawnReason === "string" || value.spawnReason === null
+      ? { spawnReason: value.spawnReason }
+      : {}),
+    ...(typeof value.diffReviewed === "boolean" || value.diffReviewed === null
+      ? { diffReviewed: value.diffReviewed }
+      : {}),
     ...(typeof value.note === "string" || value.note === null ? { note: value.note } : {}),
     ...(pointer ? { pointer } : {}),
   };

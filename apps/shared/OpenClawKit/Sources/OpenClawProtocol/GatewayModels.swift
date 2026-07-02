@@ -2521,13 +2521,14 @@ public struct TaskSummary: Codable, Sendable {
     public let flowid: String?
     public let parenttaskid: String?
     public let sourceid: String?
+    public let deliverystatus: AnyCodable
     public let createdat: AnyCodable?
     public let updatedat: AnyCodable?
     public let startedat: AnyCodable?
     public let endedat: AnyCodable?
+    public let activeprogress: [String: AnyCodable]?
     public let progresssummary: String?
     public let terminalsummary: String?
-    public let executionreceipt: [String: AnyCodable]?
     public let error: String?
 
     public init(
@@ -2545,13 +2546,14 @@ public struct TaskSummary: Codable, Sendable {
         flowid: String?,
         parenttaskid: String?,
         sourceid: String?,
+        deliverystatus: AnyCodable,
         createdat: AnyCodable?,
         updatedat: AnyCodable?,
         startedat: AnyCodable?,
         endedat: AnyCodable?,
+        activeprogress: [String: AnyCodable]?,
         progresssummary: String?,
         terminalsummary: String?,
-        executionreceipt: [String: AnyCodable]?,
         error: String?)
     {
         self.id = id
@@ -2568,13 +2570,14 @@ public struct TaskSummary: Codable, Sendable {
         self.flowid = flowid
         self.parenttaskid = parenttaskid
         self.sourceid = sourceid
+        self.deliverystatus = deliverystatus
         self.createdat = createdat
         self.updatedat = updatedat
         self.startedat = startedat
         self.endedat = endedat
+        self.activeprogress = activeprogress
         self.progresssummary = progresssummary
         self.terminalsummary = terminalsummary
-        self.executionreceipt = executionreceipt
         self.error = error
     }
 
@@ -2593,13 +2596,14 @@ public struct TaskSummary: Codable, Sendable {
         case flowid = "flowId"
         case parenttaskid = "parentTaskId"
         case sourceid = "sourceId"
+        case deliverystatus = "deliveryStatus"
         case createdat = "createdAt"
         case updatedat = "updatedAt"
         case startedat = "startedAt"
         case endedat = "endedAt"
+        case activeprogress = "activeProgress"
         case progresssummary = "progressSummary"
         case terminalsummary = "terminalSummary"
-        case executionreceipt = "executionReceipt"
         case error
     }
 }

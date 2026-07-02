@@ -8,6 +8,7 @@ import type { StatusSummary } from "./status.types.js";
 const mocks = vi.hoisted(() => ({
   getStatusSummary: vi.fn(),
   getRuntimeConfig: vi.fn(() => ({})),
+  resolveConfigPath: vi.fn(),
   resolveStateDir: vi.fn(),
   listTaskRecords: vi.fn(),
   loadSessionCostSummaryFromCache: vi.fn(),
@@ -23,6 +24,7 @@ const getStatusSummary = mocks.getStatusSummary;
 const listTaskRecords = mocks.listTaskRecords;
 const loadSessionCostSummaryFromCache = mocks.loadSessionCostSummaryFromCache;
 const resolveExistingUsageSessionFile = mocks.resolveExistingUsageSessionFile;
+const resolveConfigPath = mocks.resolveConfigPath;
 const resolveStateDir = mocks.resolveStateDir;
 const runtime = mocks.runtime;
 
@@ -37,6 +39,7 @@ vi.mock("../config/config.js", () => ({
 }));
 
 vi.mock("../config/paths.js", () => ({
+  resolveConfigPath: mocks.resolveConfigPath,
   resolveStateDir: mocks.resolveStateDir,
 }));
 
@@ -286,6 +289,7 @@ describe("runInsightsCommand", () => {
         }),
       ].join("\n"),
     );
+    resolveConfigPath.mockReturnValue(path.join(stateDir, "openclaw.json"));
     resolveStateDir.mockReturnValue(stateDir);
     runtime.exit.mockImplementation(() => {});
     getStatusSummary.mockResolvedValue(buildSummary());
@@ -379,6 +383,44 @@ describe("runInsightsCommand", () => {
         startedAt: Date.now() - 2 * 60_000,
         endedAt: Date.now() - 60_000,
       },
+      {
+        taskId: "task-codex-native-child",
+        runtime: "subagent",
+        taskKind: "codex-native",
+        agentId: "coding",
+        runId: "codex-thread:project-explorer-1",
+        label: "project_explorer",
+        requesterSessionKey: "agent:coding:main",
+        ownerKey: "agent:coding:main",
+        scopeKind: "session",
+        task: "Inspect run intelligence readback owner files.",
+        status: "running",
+        deliveryStatus: "not_applicable",
+        notifyPolicy: "silent",
+        createdAt: taskStartedAt + 1_000,
+        startedAt: taskStartedAt + 1_000,
+        lastEventAt: taskStartedAt + 1_000,
+        progressSummary: "Codex native subagent spawned.",
+        executionReceipt: {
+          schema: "openclaw.task.execution_receipt.v1",
+          eventCount: 1,
+          updatedAt: taskStartedAt + 1_000,
+          latestEvent: {
+            at: taskStartedAt + 1_000,
+            kind: "running",
+            summary: "Codex native subagent spawned.",
+            metadata: {
+              codexNativeSubagent: true,
+              parentThreadId: "parent-thread",
+              childThreadId: "project-explorer-1",
+              childPhase: "child_spawned",
+              childRole: "project_explorer",
+              childAgentPath: "agents/project_explorer.toml",
+              spawnReason: "Inspect run intelligence readback owner files.",
+            },
+          },
+        },
+      },
     ]);
   });
 
@@ -416,8 +458,15 @@ describe("runInsightsCommand", () => {
       activeMinutes: 60,
       limit: 5,
     });
+    expect(payload.deployEvidenceScope).toEqual({
+      scope: "global_unscoped",
+      filteredBy: [],
+      limitApplied: 5,
+      reason:
+        "native deploy receipts do not carry agent/session/task keys, so run-insights applies only the bounded tail limit to deploy/build/promote evidence",
+    });
     expect(payload.summary.tasks.failures).toBe(1);
-    expect(payload.summary.tasks.childTasksDisplayed).toBe(1);
+    expect(payload.summary.tasks.childTasksDisplayed).toBe(2);
     expect(payload.summary.tasks.deliveryIssues).toBe(1);
     expect(payload.summary.deploy).toMatchObject({
       recentDisplayed: 2,
@@ -426,7 +475,12 @@ describe("runInsightsCommand", () => {
       recentFailures: 0,
     });
     expect(payload.sessions).toHaveLength(1);
-    expect(payload.tasks).toHaveLength(2);
+    expect(payload.tasks).toHaveLength(3);
+    expect(payload.tasks.map((task: { taskId: string }) => task.taskId)).toEqual([
+      "task-coding-child",
+      "task-delivery-watch",
+      "task-codex-native-child",
+    ]);
     expect(payload.deployEvents.map((event: { eventId: string }) => event.eventId)).toEqual([
       "deploy-promote-test",
       "deploy-build-test",
@@ -463,6 +517,34 @@ describe("runInsightsCommand", () => {
       ),
     ).toEqual(expect.arrayContaining(["high_context_pressure", "tool_heavy_session"]));
     expect(payload.performanceProfile.timeline.length).toBeGreaterThan(0);
+    expect(payload.diagnosticSummary.currentOrLastKnownPhase).toMatchObject({
+      source: "task",
+      evidenceQuality: "heuristic",
+      confidence: "medium",
+      pointer: "openclaw tasks show task-coding-child",
+    });
+    expect(payload.diagnosticSummary.parentWaitState).toMatchObject({
+      waitClass: "validation_or_promotion",
+      evidenceQuality: "heuristic",
+      pointer: "openclaw tasks show task-coding-child",
+    });
+    expect(payload.diagnosticSummary.childWork).toMatchObject({
+      displayedChildTasks: 2,
+      activeChildTasks: 2,
+      evidenceQuality: "evidence_backed",
+    });
+    expect(payload.diagnosticSummary.validationBuildPromotion).toMatchObject({
+      bottlenecks: 1,
+      deployReceipts: 2,
+    });
+    expect(payload.diagnosticSummary.evidenceQuality).toMatchObject({
+      heuristic: expect.any(Number),
+      scoped: 1,
+    });
+    expect(payload.diagnosticSummary.operatorNextAction).toMatchObject({
+      label: "Inspect native task evidence",
+      pointer: "openclaw tasks show task-coding-child",
+    });
     expect(payload.sessions[0].usage.toolCalls).toBe(55);
     expect(payload.sessions[0].usage.topTools).toEqual([
       { name: "read", count: 40 },
@@ -481,10 +563,30 @@ describe("runInsightsCommand", () => {
       "[truncated; use pointer for full evidence]",
     );
     expect(payload.tasks[0].latestEvent.summary.length).toBeLessThanOrEqual(360);
+    expect(payload.tasks[0].activeProgress).toMatchObject({
+      source: "task-run-event",
+      currentPhase: "running",
+      activeLabel: "codebase scout",
+      sourceEventType: "task.progress",
+      derivedBy: "resolveTaskReadbackProgressProjection",
+      bounded: true,
+    });
     expect(payload.tasks[0].attention).toMatchObject({
       waitClass: "validation_or_promotion",
       pointer: "openclaw tasks show task-coding-child",
     });
+    expect(payload.performanceProfile.childSessionEvidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          taskId: "task-codex-native-child",
+          childSessionKey: "",
+          childRole: "project_explorer",
+          childAgentPath: "agents/project_explorer.toml",
+          childPhase: "child_spawned",
+          spawnReason: "Inspect run intelligence readback owner files.",
+        }),
+      ]),
+    );
     expect(payload.attention.whyWorkMayFeelSlow.map((item: { code: string }) => item.code)).toEqual(
       expect.arrayContaining([
         "active_task_work",
@@ -544,6 +646,15 @@ describe("runInsightsCommand", () => {
     expect(payload.tasks.map((task: { taskId: string }) => task.taskId)).toEqual([
       "task-coding-child",
     ]);
+    expect(payload.deployEvents.map((event: { eventId: string }) => event.eventId)).toEqual([
+      "deploy-promote-test",
+      "deploy-build-test",
+    ]);
+    expect(payload.deployEvidenceScope).toMatchObject({
+      scope: "global_unscoped",
+      filteredBy: [],
+      limitApplied: 10,
+    });
   });
 
   it("uses injected time for deterministic report timestamps", () => {
@@ -565,8 +676,14 @@ describe("runInsightsCommand", () => {
     expect(output).toContain("Run Insights");
     expect(output).toContain("Run Insights is advisory readback over native evidence");
     expect(output).toContain("Missing Evidence");
+    expect(output).toContain("Deploy Evidence Scope: global_unscoped");
+    expect(output).toContain("native deploy receipts do not carry agent/session/task keys");
     expect(output).toContain("tools=55/2");
     expect(output).toContain("cost=$0.1234");
+    expect(output).toContain("Diagnostic Summary");
+    expect(output).toContain("Phase:");
+    expect(output).toContain("Evidence quality:");
+    expect(output).toContain("Next action: Inspect native task evidence");
     expect(output).toContain("Why Work May Feel Slow");
     expect(output).toContain("task_validation_or_promotion");
     expect(output).toContain("Validation / Promotion Watch");
@@ -576,6 +693,7 @@ describe("runInsightsCommand", () => {
     expect(output).toContain("BOTTLENECK task_validation_or_promotion");
     expect(output).toContain("Recent Tasks");
     expect(output).toContain("attention=validation_or_promotion");
+    expect(output).toContain("active=phase=running");
     expect(output).toContain("Recent Deploy Events");
     expect(output).toContain("deploy.promote status=passed");
     expect(output).toContain("duration=4m");

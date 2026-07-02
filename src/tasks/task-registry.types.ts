@@ -100,11 +100,14 @@ export type TaskRegistrySummary = {
 };
 
 export type TaskEventKind = TaskStatus | "progress";
+export type TaskEventMetadataValue = string | number | boolean | null;
+export type TaskEventMetadata = Record<string, TaskEventMetadataValue>;
 
 export type TaskEventRecord = {
   at: number;
   kind: TaskEventKind;
   summary?: string;
+  metadata?: TaskEventMetadata;
 };
 
 export type TaskExecutionReceipt = {

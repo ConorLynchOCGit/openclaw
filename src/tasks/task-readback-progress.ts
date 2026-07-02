@@ -20,20 +20,26 @@ import {
 import { readLatestTrajectoryProgressProjection } from "../gateway/session-utils.fs.js";
 import { resolveAgentIdFromSessionKey } from "../routing/session-key.js";
 import type { ReadbackProgressProjection } from "../shared/readback-progress.js";
-import type { TaskRecord } from "./task-registry.types.js";
+import type { TaskEventMetadata, TaskRecord } from "./task-registry.types.js";
 
 const TASK_PROGRESS_NOTE_MAX_CHARS = 240;
 const ALL_SESSION_TARGETS_CACHE_KEY = "__all__";
+const CODEX_NATIVE_SUBAGENT_TASK_KIND = "codex-native";
+const CODEX_NATIVE_SUBAGENT_RUN_ID_PREFIX = "codex-thread:";
 
 export type TaskReadbackProgressProjectionContext = {
   sessionStoreCache?: Map<string, Record<string, SessionEntry>>;
   sessionTargetCache?: Map<string, SessionStoreTarget[]>;
+  now?: number;
 };
 
-export function createTaskReadbackProgressProjectionContext(): TaskReadbackProgressProjectionContext {
+export function createTaskReadbackProgressProjectionContext(params?: {
+  now?: number;
+}): TaskReadbackProgressProjectionContext {
   return {
     sessionStoreCache: new Map(),
     sessionTargetCache: new Map(),
+    ...(typeof params?.now === "number" && Number.isFinite(params.now) ? { now: params.now } : {}),
   };
 }
 
@@ -81,19 +87,156 @@ function resolveElapsedMs(now: number, ...candidates: unknown[]): number | undef
   return undefined;
 }
 
+function isCodexNativeSubagentTask(task: TaskRecord): boolean {
+  return (
+    task.taskKind === CODEX_NATIVE_SUBAGENT_TASK_KIND ||
+    normalizeOptionalString(task.runId)?.startsWith(CODEX_NATIVE_SUBAGENT_RUN_ID_PREFIX) === true
+  );
+}
+
+function stripRoleParenthetical(value: string): string {
+  return value.replace(/\s+\([^)]*\)\s*$/u, "").trim();
+}
+
+function resolveNativeSubagentSummaryField(
+  value: string | undefined,
+  field: "role" | "agent_path" | "phase" | "spawn_reason",
+): string | undefined {
+  const text = normalizeOptionalString(value);
+  if (!text) {
+    return undefined;
+  }
+  const match = text.match(new RegExp(`\\b${field}:\\s*([^;)\\r\\n]+)`, "iu"));
+  const raw = normalizeOptionalString(match?.[1]);
+  return normalizeOptionalString(raw?.replace(/[.\s]+$/u, ""));
+}
+
+function taskEventMetadataString(
+  metadata: TaskEventMetadata | undefined,
+  key: string,
+): string | undefined {
+  const value = metadata?.[key];
+  return typeof value === "string" ? normalizeOptionalString(value) : undefined;
+}
+
+function resolveCodexNativeChildRole(
+  task: TaskRecord,
+  note: string | undefined,
+  metadata?: TaskEventMetadata,
+): string | undefined {
+  const fromMetadata = taskEventMetadataString(metadata, "childRole");
+  if (fromMetadata) {
+    return fromMetadata;
+  }
+  const fromNote = resolveNativeSubagentSummaryField(note, "role");
+  if (fromNote) {
+    return fromNote;
+  }
+  const label = normalizeOptionalString(task.label);
+  if (!label || label === "Codex subagent") {
+    return undefined;
+  }
+  return normalizeOptionalString(stripRoleParenthetical(label));
+}
+
+function resolveCodexNativeChildAgentPath(
+  note: string | undefined,
+  metadata?: TaskEventMetadata,
+): string | undefined {
+  const fromMetadata = taskEventMetadataString(metadata, "childAgentPath");
+  if (fromMetadata) {
+    return fromMetadata;
+  }
+  const fromNote = resolveNativeSubagentSummaryField(note, "agent_path");
+  return fromNote;
+}
+
+function resolveCodexNativeChildPhase(
+  latestEvent: NonNullable<TaskRecord["executionReceipt"]>["latestEvent"],
+  note: string | undefined,
+  task: TaskRecord,
+  metadata?: TaskEventMetadata,
+): string | undefined {
+  const fromMetadata = taskEventMetadataString(metadata, "childPhase");
+  if (fromMetadata) {
+    return fromMetadata;
+  }
+  const fromNote = resolveNativeSubagentSummaryField(note, "phase");
+  if (fromNote) {
+    return fromNote;
+  }
+  const normalized = note?.toLowerCase() ?? "";
+  if (normalized.includes("initializing")) {
+    return "pre_implementation_scout";
+  }
+  if (normalized.includes("running") || normalized.includes("active")) {
+    return task.status === "running" ? "active_child_work" : undefined;
+  }
+  if (normalized.includes("spawned") || normalized.includes("started")) {
+    return "child_spawned";
+  }
+  if (normalized.includes("finished") || normalized.includes("completed")) {
+    return "child_completed";
+  }
+  if (normalized.includes("blocked")) {
+    return "child_blocked";
+  }
+  if (latestEvent?.kind === "running") {
+    return "child_spawned";
+  }
+  return undefined;
+}
+
+function resolveCodexNativeSpawnReason(
+  task: TaskRecord,
+  note: string | undefined,
+  metadata?: TaskEventMetadata,
+): string | undefined {
+  const fromMetadata = taskEventMetadataString(metadata, "spawnReason");
+  if (fromMetadata) {
+    return truncateTaskProgressNote(fromMetadata);
+  }
+  const fromNote = resolveNativeSubagentSummaryField(note, "spawn_reason");
+  if (fromNote) {
+    return truncateTaskProgressNote(fromNote);
+  }
+  const taskText = normalizeOptionalString(task.task);
+  if (!taskText || /^Codex native subagent\b/u.test(taskText)) {
+    return undefined;
+  }
+  return truncateTaskProgressNote(taskText);
+}
+
 function resolveTaskRunEventProgressProjection(
   task: TaskRecord,
+  now = Date.now(),
 ): ReadbackProgressProjection | undefined {
   const latestEvent = task.executionReceipt?.latestEvent;
   const note = truncateTaskProgressNote(latestEvent?.summary);
-  if (!latestEvent || !note) {
+  if (!latestEvent) {
     return undefined;
   }
-  const now = Date.now();
+  const codexNativeChild = isCodexNativeSubagentTask(task);
+  if (!note && !codexNativeChild) {
+    return undefined;
+  }
+  const metadata = latestEvent.metadata;
+  const childRole = codexNativeChild
+    ? resolveCodexNativeChildRole(task, note, metadata)
+    : undefined;
+  const childAgentPath = codexNativeChild
+    ? resolveCodexNativeChildAgentPath(note, metadata)
+    : undefined;
+  const childPhase = codexNativeChild
+    ? resolveCodexNativeChildPhase(latestEvent, note, task, metadata)
+    : undefined;
+  const spawnReason = codexNativeChild
+    ? resolveCodexNativeSpawnReason(task, note, metadata)
+    : undefined;
   return {
     source: "task-run-event",
     ref: `task-event:${task.taskId}:${latestEvent.at}:${latestEvent.kind}`,
-    currentPhase: latestEvent.kind === "progress" ? task.status : latestEvent.kind,
+    currentPhase: childPhase ?? (latestEvent.kind === "progress" ? task.status : latestEvent.kind),
     activeLabel:
       normalizeOptionalString(task.label) ??
       normalizeOptionalString(task.agentId) ??
@@ -102,7 +245,11 @@ function resolveTaskRunEventProgressProjection(
     observedAt: formatTaskProgressObservedAt(latestEvent.at, task.lastEventAt),
     elapsedMs: resolveElapsedMs(now, task.startedAt, task.createdAt),
     sourceEventType: `task.${latestEvent.kind}`,
-    note,
+    ...(childRole ? { childRole } : {}),
+    ...(childAgentPath ? { childAgentPath } : {}),
+    ...(childPhase ? { childPhase } : {}),
+    ...(spawnReason ? { spawnReason } : {}),
+    ...(note ? { note } : {}),
     pointer: {
       kind: "task",
       ref: task.taskId,
@@ -220,8 +367,11 @@ function resolveFallbackTaskProgressProjection(
   context?: TaskReadbackProgressProjectionContext,
 ): ReadbackProgressProjection | undefined {
   const childSessionKey = normalizeOptionalString(task.childSessionKey);
-  const now = Date.now();
-  const taskRunEventProgress = resolveTaskRunEventProgressProjection(task);
+  const now = context?.now ?? Date.now();
+  const taskRunEventProgress = resolveTaskRunEventProgressProjection(task, now);
+  if (isCodexNativeSubagentTask(task) && taskRunEventProgress) {
+    return taskRunEventProgress;
+  }
   if (childSessionKey) {
     const subagentRun = getSessionDisplaySubagentRunByChildSessionKey(childSessionKey);
     if (subagentRun && isSubagentRunLive(subagentRun)) {

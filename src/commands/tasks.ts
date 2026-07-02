@@ -341,14 +341,7 @@ function formatTaskSummaryRows(tasks: TaskSummary[], rich: boolean) {
   const lines = [rich ? theme.heading(header) : header];
   for (const task of tasks) {
     const progress = task.activeProgress
-      ? [
-          task.activeProgress.source,
-          task.activeProgress.currentPhase,
-          task.activeProgress.activeLabel,
-          task.activeProgress.note,
-        ]
-          .filter(Boolean)
-          .join(" ")
+      ? formatTaskReadbackProgress(task.activeProgress)
       : (normalizeOptionalString(task.terminalSummary) ??
         normalizeOptionalString(task.progressSummary) ??
         normalizeOptionalString(task.error) ??
@@ -411,6 +404,23 @@ function formatTaskReadbackProgress(progress: TaskReadbackProgress | undefined):
     progress.elapsedMs !== undefined && progress.elapsedMs !== null
       ? `elapsedMs=${progress.elapsedMs}`
       : undefined,
+    progress.durationMs !== undefined && progress.durationMs !== null
+      ? `durationMs=${progress.durationMs}`
+      : undefined,
+    progress.childRole ? `childRole=${progress.childRole}` : undefined,
+    progress.childAgentPath
+      ? `childAgentPath=${truncate(progress.childAgentPath, 120)}`
+      : undefined,
+    progress.childPhase ? `childPhase=${progress.childPhase}` : undefined,
+    progress.spawnReason ? `spawnReason=${truncate(progress.spawnReason, 120)}` : undefined,
+    progress.toolName ? `tool=${progress.toolName}` : undefined,
+    progress.command ? `command=${truncate(progress.command, 120)}` : undefined,
+    progress.exitCode !== undefined && progress.exitCode !== null
+      ? `exitCode=${progress.exitCode}`
+      : undefined,
+    progress.validationClass ? `validation=${progress.validationClass}` : undefined,
+    progress.outputSummary ? `output=${truncate(progress.outputSummary, 120)}` : undefined,
+    progress.repairAction ? `repair=${truncate(progress.repairAction, 120)}` : undefined,
     progress.note ? `note=${truncate(progress.note, 120)}` : undefined,
     progress.pointer
       ? `pointer=${progress.pointer.kind}:${truncate(progress.pointer.ref, 120)}`

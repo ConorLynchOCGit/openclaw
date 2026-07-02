@@ -148,8 +148,20 @@ export type ReadbackProgressProjection = {
   activeLabel?: string | null;
   observedAt?: string | null;
   elapsedMs?: number | null;
+  durationMs?: number | null;
   sourceEventType?: string;
   sourceEventSeq?: number;
+  toolName?: string | null;
+  command?: string | null;
+  exitCode?: number | null;
+  validationClass?: string | null;
+  outputSummary?: string | null;
+  repairAction?: string | null;
+  childRole?: string | null;
+  childAgentPath?: string | null;
+  childPhase?: string | null;
+  spawnReason?: string | null;
+  diffReviewed?: boolean | null;
   note?: string | null;
   pointer?: {
     kind: "artifact" | "inspect-next" | "session" | "task" | "trajectory";

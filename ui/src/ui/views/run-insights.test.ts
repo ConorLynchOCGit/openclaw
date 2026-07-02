@@ -49,6 +49,13 @@ function createProps(overrides: Partial<RunInsightsProps> = {}): RunInsightsProp
       advisory: {
         missingEvidenceLanguage: "unknown",
       },
+      deployEvidenceScope: {
+        scope: "global_unscoped",
+        filteredBy: [],
+        limitApplied: 10,
+        reason:
+          "native deploy receipts do not carry agent/session/task keys, so run-insights applies only the bounded tail limit to deploy/build/promote evidence",
+      },
       performanceProfile: {
         expensiveRunExplanation: [
           {
@@ -103,6 +110,52 @@ function createProps(overrides: Partial<RunInsightsProps> = {}): RunInsightsProp
           },
         ],
       },
+      diagnosticSummary: {
+        currentOrLastKnownPhase: {
+          label: "validation task active",
+          source: "task",
+          pointer: "openclaw tasks show task-1",
+          confidence: "medium",
+          evidenceQuality: "heuristic",
+          reason: "derived from task readback",
+        },
+        parentWaitState: {
+          waitClass: "validation_or_promotion",
+          reason: "Validation task is active.",
+          pointer: "openclaw tasks show task-1",
+          confidence: "medium",
+          evidenceQuality: "heuristic",
+        },
+        childWork: {
+          displayedChildTasks: 1,
+          activeChildTasks: 1,
+          contribution: "1 active child task(s), 1 child task(s) displayed",
+          confidence: "high",
+          evidenceQuality: "evidence_backed",
+          pointer: "openclaw tasks show task-1",
+        },
+        validationBuildPromotion: {
+          attentionItems: 2,
+          bottlenecks: 1,
+          deployReceipts: 2,
+          artifactPointers: ["/srv/openclaw-next/artifacts/deploy-controller-promote-test.json"],
+          confidence: "medium",
+          evidenceQuality: "heuristic",
+        },
+        evidenceQuality: {
+          evidenceBacked: 4,
+          heuristic: 3,
+          stale: 0,
+          scoped: 1,
+          unknown: 1,
+          missingPointers: ["native session usage cache"],
+        },
+        operatorNextAction: {
+          label: "Inspect native task evidence",
+          pointer: "openclaw tasks show task-1",
+          reason: "task readback has the most specific wait evidence",
+        },
+      },
       sessions: [
         {
           key: "agent:coding:main",
@@ -137,6 +190,17 @@ function createProps(overrides: Partial<RunInsightsProps> = {}): RunInsightsProp
           childSessionKey: "agent:coding:child:1",
           elapsed: "11m",
           progressSummary: "Running validation proof over source refs",
+          activeProgress: {
+            source: "task-run-event",
+            ref: "task-event:task-1:2:progress",
+            currentPhase: "running",
+            activeLabel: "codebase scout",
+            toolName: "bash",
+            command: "pnpm vitest run src/commands/run-insights.test.ts",
+            childRole: "test_engineer",
+            derivedBy: "resolveTaskReadbackProgressProjection",
+            bounded: true,
+          },
           attention: {
             waitClass: "validation_or_promotion",
             pointer: "openclaw tasks show task-1",
@@ -193,6 +257,10 @@ describe("renderRunInsights", () => {
     expect(container.textContent).toContain("Run insights");
     expect(container.textContent).toContain("advisory only, not lifecycle truth");
     expect(container.textContent).toContain("Missing evidence: unknown");
+    expect(container.textContent).toContain("Deploy/build/promote evidence is global_unscoped");
+    expect(container.textContent).toContain(
+      "native deploy receipts do not carry agent/session/task keys",
+    );
     expect(container.textContent).toContain("Performance and cost profile");
     expect(container.textContent).toContain("$0.1234");
     expect(container.textContent).toContain("read");
@@ -200,6 +268,11 @@ describe("renderRunInsights", () => {
     expect(container.textContent).toContain("tool_heavy_session");
     expect(container.textContent).toContain("Advisory inefficiency flags");
     expect(container.textContent).toContain("high_context_pressure");
+    expect(container.textContent).toContain("Diagnostic summary");
+    expect(container.textContent).toContain("Parent wait");
+    expect(container.textContent).toContain("validation_or_promotion");
+    expect(container.textContent).toContain("Evidence quality");
+    expect(container.textContent).toContain("Inspect native task evidence");
     expect(container.textContent).toContain("Attention readback");
     expect(container.textContent).toContain("Recent deploy receipt activity is present.");
     expect(container.textContent).toContain("Timeline and phase readback");
@@ -207,7 +280,12 @@ describe("renderRunInsights", () => {
     expect(container.textContent).toContain("Child and task evidence");
     expect(container.textContent).toContain("agent:coding:child:1");
     expect(container.textContent).toContain("Running validation proof over source refs");
+    expect(container.textContent).toContain("child test_engineer");
+    expect(container.textContent).toContain(
+      "command pnpm vitest run src/commands/run-insights.test.ts",
+    );
     expect(container.textContent).toContain("Validation, build, and promote cost");
+    expect(container.textContent).toContain("Scope: global_unscoped");
     expect(container.textContent).toContain("bottleneck");
     expect(container.textContent).toContain("Known duration");
     expect(container.textContent).toContain("7m");

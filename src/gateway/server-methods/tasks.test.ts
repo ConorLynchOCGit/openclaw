@@ -206,6 +206,124 @@ describe("tasks gateway handlers", () => {
     });
   });
 
+  it("gets Codex-native child role timing from task execution receipts", async () => {
+    const startedAt = Date.UTC(2026, 6, 1, 1, 10, 0);
+    const task = createTaskRecord({
+      runtime: "subagent",
+      taskKind: "codex-native",
+      requesterSessionKey: "agent:coding:main",
+      ownerKey: "agent:coding:main",
+      scopeKind: "session",
+      sourceId: "codex-thread:child-readback",
+      agentId: "coding",
+      runId: "codex-thread:child-readback",
+      label: "project_explorer",
+      task: "Inspect run intelligence owner files before implementation.",
+      status: "running",
+      deliveryStatus: "not_applicable",
+      notifyPolicy: "silent",
+      startedAt,
+      progressSummary:
+        "Codex native subagent spawned (role: project_explorer; agent_path: agents/project_explorer.toml).",
+    });
+
+    const { payload } = await getTaskPayload(task.taskId);
+
+    expect(payload?.task?.activeProgress).toMatchObject({
+      source: "task-run-event",
+      ref: `task-event:${task.taskId}:${task.lastEventAt}:running`,
+      currentPhase: "child_spawned",
+      activeLabel: "project_explorer",
+      sourceEventType: "task.running",
+      note: "Codex native subagent spawned (role: project_explorer; agent_path: agents/project_explorer.toml).",
+      childRole: "project_explorer",
+      childAgentPath: "agents/project_explorer.toml",
+      childPhase: "child_spawned",
+      spawnReason: "Inspect run intelligence owner files before implementation.",
+      pointer: {
+        kind: "task",
+        ref: task.taskId,
+        label: "task run receipt",
+      },
+      derivedBy: "resolveTaskReadbackProgressProjection",
+      bounded: true,
+    });
+  });
+
+  it("prefers Codex-native child task receipts before requester trajectory progress", async () => {
+    const sessionKey = "agent:coding:main";
+    const sessionId = "gateway-codex-child-parent-trajectory";
+    const sessionsDir = path.join(stateDir, "agents", "coding", "sessions");
+    await fs.mkdir(sessionsDir, { recursive: true });
+    await fs.writeFile(
+      path.join(sessionsDir, "sessions.json"),
+      JSON.stringify(
+        {
+          [sessionKey]: {
+            sessionId,
+            sessionFile: path.join(sessionsDir, `${sessionId}.jsonl`),
+            updatedAt: Date.UTC(2026, 6, 1, 1, 20, 0),
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(sessionsDir, `${sessionId}.trajectory.jsonl`),
+      `${JSON.stringify({
+        traceSchema: "openclaw-trajectory",
+        schemaVersion: 1,
+        traceId: sessionId,
+        source: "runtime",
+        type: "tool.call",
+        ts: "2026-07-01T01:20:00.000Z",
+        seq: 4,
+        sourceSeq: 9,
+        sessionId,
+        sessionKey,
+        data: {
+          name: "bash",
+          phase: "validation",
+          summary: "parent is running validation",
+        },
+      })}\n`,
+      "utf8",
+    );
+    const task = createTaskRecord({
+      runtime: "subagent",
+      taskKind: "codex-native",
+      requesterSessionKey: sessionKey,
+      ownerKey: sessionKey,
+      scopeKind: "session",
+      sourceId: "codex-thread:child-self-progress",
+      agentId: "coding",
+      runId: "codex-thread:child-self-progress",
+      label: "project_explorer",
+      task: "Inspect lifecycle auditor surfaces.",
+      status: "running",
+      deliveryStatus: "not_applicable",
+      notifyPolicy: "silent",
+      progressSummary:
+        "Codex native subagent spawned (role: project_explorer; agent_path: agents/project_explorer.toml).",
+    });
+
+    const { payload } = await getTaskPayload(task.taskId);
+
+    expect(payload?.task?.activeProgress).toMatchObject({
+      source: "task-run-event",
+      ref: `task-event:${task.taskId}:${task.lastEventAt}:running`,
+      activeLabel: "project_explorer",
+      childRole: "project_explorer",
+      childAgentPath: "agents/project_explorer.toml",
+    });
+    expect(payload?.task?.activeProgress).not.toMatchObject({
+      source: "trajectory",
+      activeLabel: "bash",
+    });
+  });
+
   it("lists active task progress from requester session trajectory before stale task text", async () => {
     const sessionKey = "agent:coding:phase0z-event-spine";
     const sessionId = "gateway-task-requester-trajectory";
@@ -291,16 +409,100 @@ describe("tasks gateway handlers", () => {
       ref: `session:${sessionId}`,
       currentPhase: "child-work",
       activeLabel: "spawn_agent",
-      observedAt: "2026-06-30T20:00:00.000Z",
+      observedAt: "2026-06-30T20:00:01.000Z",
       elapsedMs: 5000,
-      sourceEventType: "tool.call",
-      sourceEventSeq: 21,
+      sourceEventType: "tool.result",
+      sourceEventSeq: 22,
       note: "project_explorer child is inspecting readback seams",
       pointer: {
         kind: "trajectory",
         ref: `session:${sessionId}`,
         label: "requester session trajectory",
       },
+      derivedBy: "readLatestTrajectoryProgressProjection",
+      bounded: true,
+    });
+  });
+
+  it("lists bounded validation failure evidence from requester session trajectory", async () => {
+    const sessionKey = "agent:coding:phase0z-validation";
+    const sessionId = "gateway-task-requester-validation";
+    const sessionsDir = path.join(stateDir, "agents", "coding", "sessions");
+    await fs.mkdir(sessionsDir, { recursive: true });
+    await fs.writeFile(
+      path.join(sessionsDir, "sessions.json"),
+      JSON.stringify(
+        {
+          [sessionKey]: {
+            sessionId,
+            sessionFile: path.join(sessionsDir, `${sessionId}.jsonl`),
+            updatedAt: Date.UTC(2026, 6, 1, 0, 1, 0),
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(sessionsDir, `${sessionId}.trajectory.jsonl`),
+      `${JSON.stringify({
+        traceSchema: "openclaw-trajectory",
+        schemaVersion: 1,
+        traceId: sessionId,
+        source: "runtime",
+        type: "tool.result",
+        ts: "2026-07-01T00:01:00.000Z",
+        seq: 12,
+        sourceSeq: 31,
+        sessionId,
+        sessionKey,
+        data: {
+          name: "bash",
+          command: "pnpm vitest run src/gateway/session-utils.test.ts",
+          exitCode: 1,
+          durationMs: 2200,
+          output: "FAIL src/gateway/session-utils.test.ts > readback projection evidence",
+          repairAction: "Patch projection extractor and rerun focused test.",
+        },
+      })}\n`,
+      "utf8",
+    );
+    const task = createTaskRecord({
+      runtime: "cli",
+      taskKind: "coding",
+      requesterSessionKey: sessionKey,
+      ownerKey: sessionKey,
+      scopeKind: "session",
+      agentId: "coding",
+      runId: "run-gateway-requester-validation",
+      task: "Fix validation readback evidence",
+      status: "running",
+      deliveryStatus: "pending",
+      progressSummary: "stale progress text",
+    });
+
+    const { payload } = await runTaskHandler("tasks.list", {
+      status: "running",
+      agentId: "coding",
+      sessionKey,
+    });
+
+    expect(payload?.tasks?.[0]?.id).toBe(task.taskId);
+    expect(payload?.tasks?.[0]?.activeProgress).toMatchObject({
+      source: "trajectory",
+      ref: `session:${sessionId}`,
+      activeLabel: "bash",
+      observedAt: "2026-07-01T00:01:00.000Z",
+      durationMs: 2200,
+      sourceEventType: "tool.result",
+      sourceEventSeq: 31,
+      toolName: "bash",
+      command: "pnpm vitest run src/gateway/session-utils.test.ts",
+      exitCode: 1,
+      validationClass: "test",
+      outputSummary: "FAIL src/gateway/session-utils.test.ts > readback projection evidence",
+      repairAction: "Patch projection extractor and rerun focused test.",
       derivedBy: "readLatestTrajectoryProgressProjection",
       bounded: true,
     });

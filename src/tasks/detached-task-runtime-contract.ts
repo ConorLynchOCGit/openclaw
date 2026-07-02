@@ -3,6 +3,7 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type {
   TaskDeliveryState,
   TaskDeliveryStatus,
+  TaskEventMetadata,
   TaskNotifyPolicy,
   TaskRecord,
   TaskRuntime,
@@ -35,6 +36,7 @@ export type DetachedRunningTaskCreateParams = DetachedTaskCreateParams & {
   startedAt?: number;
   lastEventAt?: number;
   progressSummary?: string | null;
+  eventMetadata?: TaskEventMetadata | null;
 };
 
 export type DetachedTaskStartParams = {
@@ -45,6 +47,7 @@ export type DetachedTaskStartParams = {
   lastEventAt?: number;
   progressSummary?: string | null;
   eventSummary?: string | null;
+  eventMetadata?: TaskEventMetadata | null;
 };
 
 export type DetachedTaskProgressParams = {
@@ -54,6 +57,7 @@ export type DetachedTaskProgressParams = {
   lastEventAt?: number;
   progressSummary?: string | null;
   eventSummary?: string | null;
+  eventMetadata?: TaskEventMetadata | null;
 };
 
 export type DetachedTaskCompleteParams = {
@@ -65,6 +69,7 @@ export type DetachedTaskCompleteParams = {
   progressSummary?: string | null;
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
+  eventMetadata?: TaskEventMetadata | null;
 };
 
 export type DetachedTaskFailParams = {
@@ -77,6 +82,7 @@ export type DetachedTaskFailParams = {
   error?: string;
   progressSummary?: string | null;
   terminalSummary?: string | null;
+  eventMetadata?: TaskEventMetadata | null;
 };
 
 export type DetachedTaskFinalizeParams = {
@@ -90,6 +96,7 @@ export type DetachedTaskFinalizeParams = {
   progressSummary?: string | null;
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
+  eventMetadata?: TaskEventMetadata | null;
 };
 
 export type DetachedTaskDeliveryStatusParams = {

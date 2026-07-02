@@ -121,6 +121,18 @@ type CodexDynamicToolBuildStageSummary = {
   stages: CodexDynamicToolBuildStageTiming[];
 };
 
+export type CodexNativeToolSurfaceDecisionReason =
+  | "enabled"
+  | "memory_flush"
+  | "node_exec_policy"
+  | "restricted_tools_allow"
+  | "sandbox_without_exec_server_policy";
+
+export type CodexNativeToolSurfaceDecision = {
+  enabled: boolean;
+  reason: CodexNativeToolSurfaceDecisionReason;
+};
+
 const CODEX_DYNAMIC_TOOL_BUILD_WARN_TOTAL_MS = 1_000;
 const CODEX_DYNAMIC_TOOL_BUILD_WARN_STAGE_MS = 500;
 
@@ -384,6 +396,47 @@ export function includeForcedCodexDynamicToolAllow(
 }
 
 /** Decides whether Codex native code mode can own shell/file tools for this turn. */
+export function resolveCodexAppServerNativeToolSurfaceDecision(
+  params: EmbeddedRunAttemptParams,
+  sandbox?: OpenClawSandboxContext,
+  options: {
+    agentId?: string;
+    runtimeSessionKey?: string;
+    sandboxExecServerEnabled?: boolean;
+  } = {},
+): CodexNativeToolSurfaceDecision {
+  if (isCodexMemoryFlushRun(params)) {
+    return { enabled: false, reason: "memory_flush" };
+  }
+  if (
+    isCodexNativeExecutionBlockedByNodeExecHost(params, {
+      agentId: options.agentId,
+      runtimeSessionKey: options.runtimeSessionKey,
+      sandbox,
+    })
+  ) {
+    return { enabled: false, reason: "node_exec_policy" };
+  }
+  const toolsAllow = includeForcedCodexDynamicToolAllow(params.toolsAllow, params);
+  const sandboxHonored = canCodexAppServerNativeToolSurfaceHonorSandbox(sandbox, options);
+  if (!sandboxHonored) {
+    return {
+      enabled: false,
+      reason: "sandbox_without_exec_server_policy",
+    };
+  }
+  if (toolsAllow === undefined) {
+    return { enabled: true, reason: "enabled" };
+  }
+  // Codex native code mode exposes its shell/file surface as one app-server
+  // capability, so narrow OpenClaw allowlists must fail closed rather than
+  // widening `message` or `web_search` into shell access.
+  return hasWildcardCodexToolsAllow(toolsAllow)
+    ? { enabled: true, reason: "enabled" }
+    : { enabled: false, reason: "restricted_tools_allow" };
+}
+
+/** Decides whether Codex native code mode can own shell/file tools for this turn. */
 export function shouldEnableCodexAppServerNativeToolSurface(
   params: EmbeddedRunAttemptParams,
   sandbox?: OpenClawSandboxContext,
@@ -393,29 +446,7 @@ export function shouldEnableCodexAppServerNativeToolSurface(
     sandboxExecServerEnabled?: boolean;
   } = {},
 ): boolean {
-  if (isCodexMemoryFlushRun(params)) {
-    return false;
-  }
-  if (
-    isCodexNativeExecutionBlockedByNodeExecHost(params, {
-      agentId: options.agentId,
-      runtimeSessionKey: options.runtimeSessionKey,
-      sandbox,
-    })
-  ) {
-    return false;
-  }
-  const toolsAllow = includeForcedCodexDynamicToolAllow(params.toolsAllow, params);
-  if (toolsAllow === undefined) {
-    return canCodexAppServerNativeToolSurfaceHonorSandbox(sandbox, options);
-  }
-  // Codex native code mode exposes its shell/file surface as one app-server
-  // capability, so narrow OpenClaw allowlists must fail closed rather than
-  // widening `message` or `web_search` into shell access.
-  return (
-    hasWildcardCodexToolsAllow(toolsAllow) &&
-    canCodexAppServerNativeToolSurfaceHonorSandbox(sandbox, options)
-  );
+  return resolveCodexAppServerNativeToolSurfaceDecision(params, sandbox, options).enabled;
 }
 
 /** Returns true when OpenClaw policy requires the Node-owned exec/process tools instead. */

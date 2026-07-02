@@ -445,8 +445,11 @@ describe("sessionsCommand", () => {
           data: {
             name: "exec_command",
             phase: "validation",
+            command: "pnpm vitest run src/commands/sessions.test.ts",
             durationMs: 1250,
             summary: "running focused regression",
+            childRole: "test_engineer",
+            childPhase: "post-diff validation",
             artifactPath: ".openclaw/trajectory-exports/proof",
           },
         }),
@@ -492,6 +495,9 @@ describe("sessionsCommand", () => {
           observedAt?: string;
           sourceEventType?: string;
           sourceEventSeq?: number;
+          command?: string;
+          childRole?: string;
+          childPhase?: string;
           derivedBy?: string;
           bounded?: boolean;
           note?: string;
@@ -507,6 +513,9 @@ describe("sessionsCommand", () => {
             observedAt?: string;
             sourceEventType?: string;
             sourceEventSeq?: number;
+            command?: string;
+            childRole?: string;
+            childPhase?: string;
             derivedBy?: string;
             bounded?: boolean;
             note?: string;
@@ -522,6 +531,9 @@ describe("sessionsCommand", () => {
         observedAt?: string;
         sourceEventType?: string;
         sourceEventSeq?: number;
+        command?: string;
+        childRole?: string;
+        childPhase?: string;
         derivedBy?: string;
         bounded?: boolean;
         note?: string;
@@ -540,9 +552,12 @@ describe("sessionsCommand", () => {
       currentPhase: "validation",
       activeLabel: "exec_command",
       elapsedMs: 1250,
-      observedAt: "2025-12-05T23:59:00.000Z",
-      sourceEventType: "tool.call",
-      sourceEventSeq: 12,
+      observedAt: "2025-12-05T23:59:01.000Z",
+      sourceEventType: "tool.result",
+      sourceEventSeq: 13,
+      command: "pnpm vitest run src/commands/sessions.test.ts",
+      childRole: "test_engineer",
+      childPhase: "post-diff validation",
       derivedBy: "readLatestTrajectoryProgressProjection",
       bounded: true,
       note: "running focused regression",
@@ -555,8 +570,10 @@ describe("sessionsCommand", () => {
       source: "trajectory",
       currentPhase: "validation",
       activeLabel: "exec_command",
-      sourceEventType: "tool.call",
-      sourceEventSeq: 12,
+      sourceEventType: "tool.result",
+      sourceEventSeq: 13,
+      command: "pnpm vitest run src/commands/sessions.test.ts",
+      childRole: "test_engineer",
       derivedBy: "readLatestTrajectoryProgressProjection",
       bounded: true,
     });
@@ -564,8 +581,10 @@ describe("sessionsCommand", () => {
       source: "trajectory",
       currentPhase: "validation",
       activeLabel: "exec_command",
-      sourceEventType: "tool.call",
-      sourceEventSeq: 12,
+      sourceEventType: "tool.result",
+      sourceEventSeq: 13,
+      command: "pnpm vitest run src/commands/sessions.test.ts",
+      childRole: "test_engineer",
       derivedBy: "readLatestTrajectoryProgressProjection",
       bounded: true,
     });
@@ -585,7 +604,11 @@ describe("sessionsCommand", () => {
       fs.rmSync(trajectory, { force: true });
     }
     expect(compact.logs.join("\n")).toContain(
-      "activeProgress: trajectory phase=validation exec_command tool.call seq=12 elapsedMs=1250",
+      "activeProgress: trajectory phase=validation exec_command tool.result seq=13 elapsedMs=1250",
+    );
+    expect(compact.logs.join("\n")).toContain("childRole=test_engineer");
+    expect(compact.logs.join("\n")).toContain(
+      "command=pnpm vitest run src/commands/sessions.test.ts",
     );
   });
 

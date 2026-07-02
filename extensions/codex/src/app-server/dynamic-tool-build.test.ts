@@ -13,6 +13,7 @@ import {
   filterCodexDynamicToolsForAllowlist,
   hasWildcardCodexToolsAllow,
   includeForcedCodexDynamicToolAllow,
+  resolveCodexAppServerNativeToolSurfaceDecision,
   resetOpenClawCodingToolsFactoryForTests,
   resolveOpenClawCodingToolsSessionKeys,
   setOpenClawCodingToolsFactoryForTests,
@@ -725,15 +726,31 @@ describe("Codex app-server dynamic tool build", () => {
     params.disableTools = false;
 
     expect(shouldEnableCodexAppServerNativeToolSurface(params)).toBe(true);
+    expect(resolveCodexAppServerNativeToolSurfaceDecision(params)).toEqual({
+      enabled: true,
+      reason: "enabled",
+    });
 
     params.toolsAllow = ["*"];
     expect(shouldEnableCodexAppServerNativeToolSurface(params)).toBe(true);
+    expect(resolveCodexAppServerNativeToolSurfaceDecision(params)).toEqual({
+      enabled: true,
+      reason: "enabled",
+    });
 
     params.toolsAllow = [];
     expect(shouldEnableCodexAppServerNativeToolSurface(params)).toBe(false);
+    expect(resolveCodexAppServerNativeToolSurfaceDecision(params)).toEqual({
+      enabled: false,
+      reason: "restricted_tools_allow",
+    });
 
     params.toolsAllow = ["message"];
     expect(shouldEnableCodexAppServerNativeToolSurface(params)).toBe(false);
+    expect(resolveCodexAppServerNativeToolSurfaceDecision(params)).toEqual({
+      enabled: false,
+      reason: "restricted_tools_allow",
+    });
   });
 
   it("disables Codex native tool surfaces when the effective exec target is node", () => {
@@ -748,6 +765,10 @@ describe("Codex app-server dynamic tool build", () => {
     };
 
     expect(shouldEnableCodexAppServerNativeToolSurface(sessionParams)).toBe(false);
+    expect(resolveCodexAppServerNativeToolSurfaceDecision(sessionParams)).toEqual({
+      enabled: false,
+      reason: "node_exec_policy",
+    });
 
     sessionParams.toolsAllow = ["*"];
     expect(shouldEnableCodexAppServerNativeToolSurface(sessionParams)).toBe(false);
@@ -813,6 +834,16 @@ describe("Codex app-server dynamic tool build", () => {
         docker: { binds: [] },
       } as never),
     ).toBe(false);
+    expect(
+      resolveCodexAppServerNativeToolSurfaceDecision(params, {
+        enabled: true,
+        backendId: "docker",
+        docker: { binds: [] },
+      } as never),
+    ).toEqual({
+      enabled: false,
+      reason: "sandbox_without_exec_server_policy",
+    });
 
     expect(
       shouldEnableCodexAppServerNativeToolSurface(params, {
@@ -870,6 +901,14 @@ describe("Codex app-server dynamic tool build", () => {
         sandboxExecServerEnabled: true,
       }),
     ).toBe(true);
+    expect(
+      resolveCodexAppServerNativeToolSurfaceDecision(params, sandbox as never, {
+        sandboxExecServerEnabled: true,
+      }),
+    ).toEqual({
+      enabled: true,
+      reason: "enabled",
+    });
 
     expect(
       shouldEnableCodexAppServerNativeToolSurface(

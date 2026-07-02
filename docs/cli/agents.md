@@ -39,7 +39,9 @@ If you also want different visible skills per agent, configure `agents.defaults.
 To audit the read-only relationship between configured agents, visible skills,
 runtime prompt files, workspace docs, and plugin registry evidence, run
 `openclaw skills audit-lifecycle --agent <id> --json`. The audit is advisory
-readback only and reports missing evidence as unknown.
+readback only and reports missing evidence as unknown. It does not judge skill
+or canonical-doc content quality; route semantic review through model-reviewed
+GBrain/Reviewer flows and route skill mutations through Skill Workshop.
 
 List bindings:
 

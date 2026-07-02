@@ -126,11 +126,14 @@ Notes:
 - `audit-lifecycle` is a read-only advisory report that composes existing
   skill discovery, agent config, workspace prompt-file, and plugin registry
   evidence. It reports stale references, duplication risks, missing
-  docs/registry mismatches, prompt/bootstrap footprint, selected/default
-  workspace clarity, duplicate canonical prompt/support surfaces, cleanup
-  suggestions, and per-agent summaries.
+  docs/registry mismatches, prompt/bootstrap footprint metrics,
+  selected/default workspace clarity, duplicate canonical prompt/support
+  basenames, cleanup suggestions, and per-agent summaries.
   It is not lifecycle truth, a state machine, a parser gate, or a skill/plugin
   approval surface; missing evidence is reported as unknown with a pointer.
+  It does not judge skill or canonical-doc content quality. Use
+  model-reviewed GBrain/Reviewer flows for semantic review and Skill Workshop
+  for proposed skill mutations.
 - `list` is the default action when no subcommand is provided.
 - `list`, `info`, and `check` write their rendered output to stdout. With
   `--json`, that means the machine-readable payload stays on stdout for pipes

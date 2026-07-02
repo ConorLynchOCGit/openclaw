@@ -30,6 +30,7 @@ import { type RuntimeEnv, writeRuntimeJson } from "../runtime.js";
 import { classifySessionKind, type SessionKind } from "../sessions/classify-session-kind.js";
 import { isAcpSessionKey } from "../sessions/session-key-utils.js";
 import { createLazyImportLoader } from "../shared/lazy-promise.js";
+import type { ReadbackProgressProjection } from "../shared/readback-progress.js";
 import { resolveAgentRuntimeLabel } from "../status/agent-runtime-label.js";
 import { resolveSessionStoreTargetsOrExit } from "./session-store-targets.js";
 import {
@@ -305,6 +306,44 @@ function truncate(value: string, maxChars: number): string {
   return `${value.slice(0, maxChars - 1)}...`;
 }
 
+function formatSessionActiveProgress(progress: ReadbackProgressProjection | undefined): string {
+  if (!progress) {
+    return "n/a";
+  }
+  const parts = [
+    progress.source,
+    progress.currentPhase ? `phase=${progress.currentPhase}` : undefined,
+    progress.activeLabel,
+    progress.sourceEventType,
+    progress.sourceEventSeq !== undefined ? `seq=${progress.sourceEventSeq}` : undefined,
+    progress.elapsedMs !== undefined && progress.elapsedMs !== null
+      ? `elapsedMs=${progress.elapsedMs}`
+      : undefined,
+    progress.durationMs !== undefined && progress.durationMs !== null
+      ? `durationMs=${progress.durationMs}`
+      : undefined,
+    progress.childRole ? `childRole=${progress.childRole}` : undefined,
+    progress.childAgentPath
+      ? `childAgentPath=${truncate(progress.childAgentPath, 120)}`
+      : undefined,
+    progress.childPhase ? `childPhase=${progress.childPhase}` : undefined,
+    progress.spawnReason ? `spawnReason=${truncate(progress.spawnReason, 120)}` : undefined,
+    progress.toolName ? `tool=${progress.toolName}` : undefined,
+    progress.command ? `command=${truncate(progress.command, 120)}` : undefined,
+    progress.exitCode !== undefined && progress.exitCode !== null
+      ? `exitCode=${progress.exitCode}`
+      : undefined,
+    progress.validationClass ? `validation=${progress.validationClass}` : undefined,
+    progress.outputSummary ? `output=${truncate(progress.outputSummary, 120)}` : undefined,
+    progress.repairAction ? `repair=${truncate(progress.repairAction, 120)}` : undefined,
+    progress.note ? `note=${truncate(progress.note, 120)}` : undefined,
+    progress.pointer
+      ? `pointer=${progress.pointer.kind}:${truncate(progress.pointer.ref, 120)}`
+      : undefined,
+  ];
+  return parts.filter(Boolean).join(" ");
+}
+
 function toJsonSessionRow(row: SessionRow): Omit<SessionRow, "runtimeLabel"> {
   const { runtimeLabel, ...jsonRow } = row;
   void runtimeLabel;
@@ -443,35 +482,7 @@ export async function sessionsShowCommand(
     `updatedAt: ${row.updatedAt ? new Date(row.updatedAt).toISOString() : "n/a"}`,
     `startedAt: ${row.startedAt ? new Date(row.startedAt).toISOString() : "n/a"}`,
     `endedAt: ${row.endedAt ? new Date(row.endedAt).toISOString() : "n/a"}`,
-    `activeProgress: ${
-      row.readbackProvenance?.activeProgress
-        ? [
-            row.readbackProvenance.activeProgress.source,
-            row.readbackProvenance.activeProgress.currentPhase
-              ? `phase=${row.readbackProvenance.activeProgress.currentPhase}`
-              : undefined,
-            row.readbackProvenance.activeProgress.activeLabel,
-            row.readbackProvenance.activeProgress.sourceEventType,
-            row.readbackProvenance.activeProgress.sourceEventSeq !== undefined
-              ? `seq=${row.readbackProvenance.activeProgress.sourceEventSeq}`
-              : undefined,
-            row.readbackProvenance.activeProgress.elapsedMs !== undefined
-              ? `elapsedMs=${row.readbackProvenance.activeProgress.elapsedMs}`
-              : undefined,
-            row.readbackProvenance.activeProgress.note
-              ? `note=${truncate(row.readbackProvenance.activeProgress.note, 120)}`
-              : undefined,
-            row.readbackProvenance.activeProgress.pointer
-              ? `pointer=${row.readbackProvenance.activeProgress.pointer.kind}:${truncate(
-                  row.readbackProvenance.activeProgress.pointer.ref,
-                  120,
-                )}`
-              : undefined,
-          ]
-            .filter(Boolean)
-            .join(" ")
-        : "n/a"
-    }`,
+    `activeProgress: ${formatSessionActiveProgress(row.readbackProvenance?.activeProgress)}`,
     `childSessions: ${(row.childSessions ?? []).length}`,
   ];
   for (const line of lines) {

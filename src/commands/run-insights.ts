@@ -12,6 +12,12 @@ import type { SessionCostSummary, UsageCacheStatus } from "../infra/session-cost
 import { buildAdvisoryReadback, type AdvisoryReadback } from "../readback/advisory.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { writeRuntimeJson } from "../runtime.js";
+import type { ReadbackProgressProjection } from "../shared/readback-progress.js";
+import {
+  createTaskReadbackProgressProjectionContext,
+  resolveTaskReadbackProgressProjection,
+  type TaskReadbackProgressProjectionContext,
+} from "../tasks/task-readback-progress.js";
 import { listTaskRecords } from "../tasks/task-registry.js";
 import type { TaskRecord } from "../tasks/task-registry.types.js";
 import { getStatusSummary } from "./status.summary.js";
@@ -33,6 +39,9 @@ const LONG_SESSION_DURATION_WARN_MS = 30 * 60_000;
 const SLOW_DEPLOY_RECEIPT_WARN_MS = 5 * 60_000;
 
 type AttentionSource = "session" | "task" | "deploy" | "status";
+type EvidenceQuality = "evidence_backed" | "heuristic" | "stale" | "scoped" | "unknown";
+type DiagnosticConfidence = "high" | "medium" | "low" | "unknown";
+type DeployEvidenceScope = "global_unscoped";
 
 export type RunInsightsOptions = {
   json?: boolean;
@@ -69,6 +78,8 @@ export type RunInsightSignal = {
   severity: SignalSeverity;
   code: string;
   message: string;
+  evidenceQuality?: EvidenceQuality;
+  confidence?: DiagnosticConfidence;
   evidence?: Record<string, unknown>;
 };
 
@@ -78,6 +89,8 @@ export type RunInsightAttentionItem = {
   message: string;
   source: AttentionSource;
   pointer: string;
+  evidenceQuality?: EvidenceQuality;
+  confidence?: DiagnosticConfidence;
   evidence: Record<string, unknown>;
 };
 
@@ -145,6 +158,7 @@ export type RunInsightTask = {
     at: number;
     summary: string | null;
   } | null;
+  activeProgress: ReadbackProgressProjection | null;
   progressSummary: string | null;
   attention: {
     waitClass:
@@ -208,6 +222,12 @@ export type RunInsightsReport = {
     activeMinutes: number | null;
     limit: number;
   };
+  deployEvidenceScope: {
+    scope: DeployEvidenceScope;
+    filteredBy: [];
+    limitApplied: number;
+    reason: string;
+  };
   summary: {
     sessionCount: number;
     recentSessionsConsidered: number;
@@ -255,7 +275,15 @@ export type RunInsightsReport = {
     childSessionEvidence: Array<{
       taskId: string;
       childSessionKey: string;
+      childRole: string | null;
+      childAgentPath: string | null;
+      childPhase: string | null;
+      spawnReason: string | null;
+      createdAt: number;
+      startedAt: number | null;
+      endedAt: number | null;
       status: string;
+      elapsedMs: number | null;
       elapsed: string;
       pointer: string;
     }>;
@@ -278,6 +306,59 @@ export type RunInsightsReport = {
       evidence: Record<string, unknown>;
     }>;
     advisoryInefficiencyFlags: RunInsightSignal[];
+  };
+  diagnosticSummary: {
+    currentOrLastKnownPhase: {
+      label: string;
+      source: AttentionSource | "none";
+      pointer: string | null;
+      confidence: DiagnosticConfidence;
+      evidenceQuality: EvidenceQuality;
+      reason: string;
+    };
+    timeSpent: {
+      knownSessionDurationMs: number | null;
+      activeTaskElapsedMs: number | null;
+      deployReceiptKnownDurationMs: number;
+      confidence: DiagnosticConfidence;
+      evidenceQuality: EvidenceQuality;
+    };
+    childWork: {
+      displayedChildTasks: number;
+      activeChildTasks: number;
+      contribution: string;
+      confidence: DiagnosticConfidence;
+      evidenceQuality: EvidenceQuality;
+      pointer: string | null;
+    };
+    parentWaitState: {
+      waitClass: RunInsightTask["attention"]["waitClass"] | "unknown";
+      reason: string;
+      pointer: string | null;
+      confidence: DiagnosticConfidence;
+      evidenceQuality: EvidenceQuality;
+    };
+    validationBuildPromotion: {
+      attentionItems: number;
+      bottlenecks: number;
+      deployReceipts: number;
+      artifactPointers: string[];
+      confidence: DiagnosticConfidence;
+      evidenceQuality: EvidenceQuality;
+    };
+    evidenceQuality: {
+      evidenceBacked: number;
+      heuristic: number;
+      stale: number;
+      scoped: number;
+      unknown: number;
+      missingPointers: string[];
+    };
+    operatorNextAction: {
+      label: string;
+      pointer: string;
+      reason: string;
+    };
   };
   signals: RunInsightSignal[];
   sessions: RunInsightSession[];
@@ -399,6 +480,10 @@ function finiteNumberOrNull(value: unknown): number | null {
 
 function stringOrNull(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function uniqueStrings(values: Array<string | undefined | null>): string[] {
+  return [...new Set(values.filter((value): value is string => Boolean(value)))];
 }
 
 function deployArtifactDurationMs(artifact: Record<string, unknown>): number | null {
@@ -543,6 +628,27 @@ function textMatchesRunStage(value: string | null | undefined): boolean {
   return /\b(?:validation|validate|test|smoke|build|deploy|promotion|promote|candidate|proof)\b/i.test(
     value,
   );
+}
+
+function qualityLabelForUsage(session: RunInsightSession): EvidenceQuality {
+  if (!session.usage) {
+    return session.totalTokens !== null && !session.totalTokensFresh ? "stale" : "unknown";
+  }
+  return session.usage.cacheStatus === "fresh" ? "evidence_backed" : "stale";
+}
+
+function confidenceForQuality(quality: EvidenceQuality): DiagnosticConfidence {
+  switch (quality) {
+    case "evidence_backed":
+      return "high";
+    case "scoped":
+    case "heuristic":
+      return "medium";
+    case "stale":
+      return "low";
+    case "unknown":
+      return "unknown";
+  }
 }
 
 function selectRecentSessions(summary: StatusSummary, agent: string | undefined): SessionStatus[] {
@@ -700,20 +806,51 @@ function taskMatchesTaskFilter(task: TaskRecord, taskId: string | undefined): bo
   return task.taskId === taskId;
 }
 
+function isCodexNativeChildTask(task: Pick<RunInsightTask, "runId" | "taskKind">): boolean {
+  return task.taskKind === "codex-native" || task.runId?.startsWith("codex-thread:") === true;
+}
+
+function taskHasChildEvidence(
+  task: Pick<RunInsightTask, "activeProgress" | "childSessionKey" | "runId" | "taskKind">,
+): boolean {
+  return Boolean(
+    task.childSessionKey ||
+    isCodexNativeChildTask(task) ||
+    task.activeProgress?.childRole ||
+    task.activeProgress?.childAgentPath,
+  );
+}
+
 function classifyTaskAttention(
   task: TaskRecord,
   insight: Pick<
     RunInsightTask,
-    "ageMs" | "childSessionKey" | "deliveryStatus" | "status" | "latestEvent"
+    "activeProgress" | "ageMs" | "childSessionKey" | "deliveryStatus" | "status" | "latestEvent"
   >,
 ): RunInsightTask["attention"] {
   const pointer = `openclaw tasks show ${task.taskId}`;
+  const activeProgressText =
+    insight.activeProgress?.outputSummary ??
+    insight.activeProgress?.command ??
+    insight.activeProgress?.note ??
+    insight.activeProgress?.currentPhase ??
+    insight.activeProgress?.activeLabel ??
+    undefined;
   const progressText =
+    activeProgressText ??
     task.progressSummary ??
     task.executionReceipt?.latestEvent?.summary ??
     task.label ??
     task.taskKind;
   const compactProgressText = compactSummaryText(progressText);
+  const stageText = [
+    activeProgressText,
+    task.progressSummary,
+    task.executionReceipt?.latestEvent?.summary,
+    task.label,
+    task.taskKind,
+    task.task,
+  ].find(textMatchesRunStage);
   if (DELIVERY_ISSUE_STATUSES.has(insight.deliveryStatus)) {
     return {
       waitClass: "delivery",
@@ -721,12 +858,23 @@ function classifyTaskAttention(
       pointer,
     };
   }
-  if (textMatchesRunStage(progressText) || textMatchesRunStage(task.task)) {
+  if (stageText) {
     return {
       waitClass: "validation_or_promotion",
       reason:
+        compactSummaryText(stageText) ??
         compactProgressText ??
         "task text references validation, build, deploy, proof, or promotion work",
+      pointer,
+    };
+  }
+  if (
+    insight.activeProgress?.childRole &&
+    (insight.status === "queued" || insight.status === "running")
+  ) {
+    return {
+      waitClass: "active_child",
+      reason: `active Codex child ${insight.activeProgress.childRole}`,
       pointer,
     };
   }
@@ -826,10 +974,15 @@ function readRecentDeployEvents(limit: number): RunInsightDeployEvent[] {
     });
 }
 
-function toInsightTask(task: TaskRecord, now: number): RunInsightTask {
+function toInsightTask(
+  task: TaskRecord,
+  now: number,
+  progressContext?: TaskReadbackProgressProjectionContext,
+): RunInsightTask {
   const referenceAt = taskReferenceAt(task);
   const elapsedMs = taskElapsedMs(task, now);
   const latestEvent = task.executionReceipt?.latestEvent;
+  const activeProgress = resolveTaskReadbackProgressProjection(task, progressContext) ?? null;
   const insight = {
     taskId: task.taskId,
     runtime: task.runtime,
@@ -859,6 +1012,7 @@ function toInsightTask(task: TaskRecord, now: number): RunInsightTask {
           summary: compactSummaryText(latestEvent.summary),
         }
       : null,
+    activeProgress,
     progressSummary: compactSummaryText(task.progressSummary),
     attention: {
       waitClass: null,
@@ -925,6 +1079,8 @@ function buildSignals(
           severity,
           code: "high_context_pressure",
           message: `${session.key} is at ${session.percentUsed}% of configured context.`,
+          evidenceQuality: session.totalTokensFresh ? "evidence_backed" : "stale",
+          confidence: session.totalTokensFresh ? "high" : "low",
           evidence: {
             sessionKey: session.key,
             percentUsed: session.percentUsed,
@@ -941,6 +1097,8 @@ function buildSignals(
         severity: "info",
         code: "stale_token_estimate",
         message: `${session.key} token usage is retained but not fresh.`,
+        evidenceQuality: "stale",
+        confidence: "low",
         evidence: {
           sessionKey: session.key,
           totalTokens: session.totalTokens,
@@ -954,6 +1112,8 @@ function buildSignals(
         severity: "warn",
         code: "tool_heavy_session",
         message: `${session.key} has ${session.usage.toolCalls} cached tool call(s).`,
+        evidenceQuality: qualityLabelForUsage(session),
+        confidence: confidenceForQuality(qualityLabelForUsage(session)),
         evidence: {
           sessionKey: session.key,
           toolCalls: session.usage.toolCalls,
@@ -968,6 +1128,8 @@ function buildSignals(
         severity: "warn",
         code: "session_usage_errors",
         message: `${session.key} has ${session.usage.errors} cached usage/parsing error(s).`,
+        evidenceQuality: qualityLabelForUsage(session),
+        confidence: confidenceForQuality(qualityLabelForUsage(session)),
         evidence: {
           sessionKey: session.key,
           errors: session.usage.errors,
@@ -983,6 +1145,8 @@ function buildSignals(
         severity: "info",
         code: "active_child_task",
         message: `${task.taskId} is active child work for ${task.childSessionKey}.`,
+        evidenceQuality: "evidence_backed",
+        confidence: "high",
         evidence: {
           taskId: task.taskId,
           childSessionKey: task.childSessionKey,
@@ -996,6 +1160,8 @@ function buildSignals(
         severity: task.deliveryStatus === "failed" ? "error" : "warn",
         code: "task_delivery_issue",
         message: `${task.taskId} has deliveryStatus=${task.deliveryStatus}.`,
+        evidenceQuality: "evidence_backed",
+        confidence: "high",
         evidence: {
           taskId: task.taskId,
           deliveryStatus: task.deliveryStatus,
@@ -1012,6 +1178,8 @@ function buildSignals(
         severity: "warn",
         code: "long_active_task",
         message: `${task.taskId} has been ${task.status} for ${task.age}.`,
+        evidenceQuality: "heuristic",
+        confidence: "medium",
         evidence: {
           taskId: task.taskId,
           status: task.status,
@@ -1030,6 +1198,8 @@ function buildSignals(
       severity: "warn",
       code: "recent_deploy_event_failure",
       message: `${failedDeployEvents.length} recent deploy event(s) are not successful/prepared.`,
+      evidenceQuality: "evidence_backed",
+      confidence: "high",
       evidence: {
         eventIds: failedDeployEvents.map((event) => event.eventId),
         pointer: "openclaw run-insights --json",
@@ -1042,6 +1212,8 @@ function buildSignals(
       severity: "info",
       code: "no_immediate_run_pressure",
       message: "No immediate run-pressure signals appeared in bounded status readback.",
+      evidenceQuality: "scoped",
+      confidence: "medium",
     });
   }
 
@@ -1075,6 +1247,8 @@ function buildAttention(params: {
         active: params.summary.tasks.active,
         byRuntime: params.summary.tasks.byRuntime,
       },
+      evidenceQuality: "evidence_backed",
+      confidence: "high",
     });
   }
 
@@ -1095,6 +1269,8 @@ function buildAttention(params: {
           totalTokens: session.totalTokens,
           totalTokensFresh: session.totalTokensFresh,
         },
+        evidenceQuality: session.totalTokensFresh ? "evidence_backed" : "stale",
+        confidence: session.totalTokensFresh ? "high" : "low",
       });
       evidencePointers.add(session.pointer);
     }
@@ -1113,6 +1289,8 @@ function buildAttention(params: {
           topTools: session.usage.topTools,
           durationMs: session.usage.durationMs,
         },
+        evidenceQuality: qualityLabelForUsage(session),
+        confidence: confidenceForQuality(qualityLabelForUsage(session)),
       });
       evidencePointers.add(session.pointer);
     }
@@ -1137,8 +1315,19 @@ function buildAttention(params: {
           elapsedMs: task.elapsedMs,
           childSessionKey: task.childSessionKey,
           latestEvent: task.latestEvent,
+          activeProgress: task.activeProgress,
           progressSummary: task.progressSummary,
         },
+        evidenceQuality:
+          task.attention.waitClass === "long_running" ||
+          task.attention.waitClass === "validation_or_promotion"
+            ? "heuristic"
+            : "evidence_backed",
+        confidence:
+          task.attention.waitClass === "long_running" ||
+          task.attention.waitClass === "validation_or_promotion"
+            ? "medium"
+            : "high",
       };
       whyWorkMayFeelSlow.push(item);
       evidencePointers.add(task.pointer);
@@ -1174,6 +1363,8 @@ function buildAttention(params: {
         buildEpisodeId: event.buildEpisodeId,
         artifactRefs: event.artifactRefs,
       },
+      evidenceQuality: event.artifactSummary?.readable === false ? "unknown" : "evidence_backed",
+      confidence: event.artifactSummary?.readable === false ? "unknown" : "high",
     };
     validationAndPromotion.push(item);
     evidencePointers.add("openclaw run-insights --json");
@@ -1188,6 +1379,195 @@ function buildAttention(params: {
     whyWorkMayFeelSlow,
     validationAndPromotion,
     evidencePointers: [...evidencePointers],
+  };
+}
+
+function buildDiagnosticSummary(params: {
+  filters: RunInsightsReport["filters"];
+  attention: RunInsightsReport["attention"];
+  performanceProfile: RunInsightsReport["performanceProfile"];
+  sessions: RunInsightSession[];
+  tasks: RunInsightTask[];
+  deployEvents: RunInsightDeployEvent[];
+  signals: RunInsightSignal[];
+}): RunInsightsReport["diagnosticSummary"] {
+  const activeTasks = params.tasks.filter(
+    (task) => task.status === "queued" || task.status === "running",
+  );
+  const phaseTask =
+    activeTasks.find((task) => task.attention.waitClass === "validation_or_promotion") ??
+    activeTasks.find((task) => task.attention.waitClass) ??
+    params.tasks.find((task) => task.latestEvent);
+  const phaseDeploy = params.deployEvents[0] ?? null;
+  const currentOrLastKnownPhase = phaseTask
+    ? {
+        label:
+          phaseTask.attention.reason ??
+          phaseTask.progressSummary ??
+          phaseTask.latestEvent?.summary ??
+          phaseTask.status,
+        source: "task" as const,
+        pointer: phaseTask.pointer,
+        confidence:
+          phaseTask.attention.waitClass === "validation_or_promotion"
+            ? ("medium" as const)
+            : ("high" as const),
+        evidenceQuality:
+          phaseTask.attention.waitClass === "validation_or_promotion"
+            ? ("heuristic" as const)
+            : ("evidence_backed" as const),
+        reason: "derived from the newest bounded native task row in scope",
+      }
+    : phaseDeploy
+      ? {
+          label: `${phaseDeploy.eventType}${phaseDeploy.status ? ` ${phaseDeploy.status}` : ""}`,
+          source: "deploy" as const,
+          pointer:
+            phaseDeploy.artifactRefs.find((ref) => ref.path)?.path ??
+            "openclaw run-insights --json",
+          confidence: "high" as const,
+          evidenceQuality: "evidence_backed" as const,
+          reason: "derived from the newest global/unscoped deploy receipt in the bounded tail",
+        }
+      : {
+          label: "unknown",
+          source: "none" as const,
+          pointer: null,
+          confidence: "unknown" as const,
+          evidenceQuality: "unknown" as const,
+          reason:
+            "no active task, latest task event, or deploy receipt appeared in bounded readback",
+        };
+
+  const knownSessionDurationMs =
+    params.sessions.reduce<number | null>((max, session) => {
+      const duration = session.usage?.durationMs ?? null;
+      if (duration === null) {
+        return max;
+      }
+      return Math.max(max ?? 0, duration);
+    }, null) ?? null;
+  const activeTaskElapsedMs =
+    activeTasks.reduce<number | null>((max, task) => {
+      if (task.elapsedMs === null) {
+        return max;
+      }
+      return Math.max(max ?? 0, task.elapsedMs);
+    }, null) ?? null;
+  const childTasks = params.tasks.filter(taskHasChildEvidence);
+  const activeChildTasks = childTasks.filter(
+    (task) => task.status === "queued" || task.status === "running",
+  );
+  const parentWaitTask =
+    activeTasks.find((task) => task.attention.waitClass) ??
+    params.tasks.find((task) => task.attention.waitClass);
+  const artifactPointers = uniqueStrings(
+    params.deployEvents.flatMap((event) => event.artifactRefs.map((ref) => ref.path)),
+  );
+  const missingPointers = uniqueStrings([
+    params.sessions.some((session) => !session.usage) ? "native session usage cache" : undefined,
+    params.deployEvents.some((event) => event.artifactSummary?.readable === false)
+      ? "deploy artifact summary"
+      : undefined,
+    params.tasks.length === 0 ? "openclaw tasks list --summary" : undefined,
+  ]);
+  const qualities: EvidenceQuality[] = [
+    ...params.signals.map((signal) => signal.evidenceQuality ?? "unknown"),
+    ...params.attention.whyWorkMayFeelSlow.map((item) => item.evidenceQuality ?? "unknown"),
+    ...params.attention.validationAndPromotion.map((item) => item.evidenceQuality ?? "unknown"),
+    currentOrLastKnownPhase.evidenceQuality,
+    params.filters.agent ||
+    params.filters.session ||
+    params.filters.task ||
+    params.filters.activeMinutes
+      ? "scoped"
+      : "evidence_backed",
+    ...missingPointers.map(() => "unknown" as const),
+  ];
+  const countQuality = (quality: EvidenceQuality) =>
+    qualities.filter((candidate) => candidate === quality).length;
+  return {
+    currentOrLastKnownPhase,
+    timeSpent: {
+      knownSessionDurationMs,
+      activeTaskElapsedMs,
+      deployReceiptKnownDurationMs:
+        params.performanceProfile.retryBuildProofCost.totalKnownDurationMs,
+      confidence:
+        knownSessionDurationMs !== null || activeTaskElapsedMs !== null
+          ? "high"
+          : params.performanceProfile.retryBuildProofCost.deployReceiptCount > 0
+            ? "medium"
+            : "unknown",
+      evidenceQuality:
+        knownSessionDurationMs !== null || activeTaskElapsedMs !== null
+          ? "evidence_backed"
+          : params.performanceProfile.retryBuildProofCost.deployReceiptCount > 0
+            ? "scoped"
+            : "unknown",
+    },
+    childWork: {
+      displayedChildTasks: childTasks.length,
+      activeChildTasks: activeChildTasks.length,
+      contribution:
+        childTasks.length > 0
+          ? `${activeChildTasks.length} active child task(s), ${childTasks.length} child task(s) displayed`
+          : "no child task evidence in bounded scope",
+      confidence: childTasks.length > 0 ? "high" : "unknown",
+      evidenceQuality: childTasks.length > 0 ? "evidence_backed" : "unknown",
+      pointer: childTasks[0]?.pointer ?? null,
+    },
+    parentWaitState: {
+      waitClass: parentWaitTask?.attention.waitClass ?? "unknown",
+      reason:
+        parentWaitTask?.attention.reason ??
+        (activeTasks.length > 0
+          ? "active native task(s) are present, but no more specific wait class was derived"
+          : "no active parent wait evidence in bounded scope"),
+      pointer: parentWaitTask?.pointer ?? null,
+      confidence: parentWaitTask?.attention.waitClass ? "medium" : "unknown",
+      evidenceQuality: parentWaitTask?.attention.waitClass ? "heuristic" : "unknown",
+    },
+    validationBuildPromotion: {
+      attentionItems: params.attention.validationAndPromotion.length,
+      bottlenecks: params.performanceProfile.validationBuildBottlenecks.length,
+      deployReceipts: params.performanceProfile.retryBuildProofCost.deployReceiptCount,
+      artifactPointers,
+      confidence:
+        params.attention.validationAndPromotion.length > 0 || artifactPointers.length > 0
+          ? "medium"
+          : "unknown",
+      evidenceQuality:
+        params.attention.validationAndPromotion.length > 0 || artifactPointers.length > 0
+          ? "heuristic"
+          : "unknown",
+    },
+    evidenceQuality: {
+      evidenceBacked: countQuality("evidence_backed"),
+      heuristic: countQuality("heuristic"),
+      stale: countQuality("stale"),
+      scoped: countQuality("scoped"),
+      unknown: countQuality("unknown"),
+      missingPointers,
+    },
+    operatorNextAction: parentWaitTask?.pointer
+      ? {
+          label: "Inspect native task evidence",
+          pointer: parentWaitTask.pointer,
+          reason:
+            parentWaitTask.attention.reason ?? "task readback has the most specific wait evidence",
+        }
+      : artifactPointers[0]
+        ? {
+            label: "Inspect deploy/proof artifact",
+            pointer: artifactPointers[0],
+            reason: "deploy receipt artifact is the most specific bounded pointer in this report",
+          }
+        : {
+            label: "Refresh bounded native readback",
+            pointer: "openclaw run-insights --json",
+            reason: "the report has unknown evidence and no more specific task or artifact pointer",
+          },
   };
 }
 
@@ -1322,15 +1702,21 @@ function buildPerformanceProfile(params: {
 
   const totalKnownDurationMs = deployDurations.reduce((sum, entry) => sum + entry.durationMs, 0);
   const slowestDeploy = deployDurations.toSorted((a, b) => b.durationMs - a.durationMs)[0] ?? null;
-  const childSessionEvidence = params.tasks
-    .filter((task) => task.childSessionKey)
-    .map((task) => ({
-      taskId: task.taskId,
-      childSessionKey: task.childSessionKey ?? "",
-      status: task.status,
-      elapsed: task.elapsed,
-      pointer: task.pointer,
-    }));
+  const childSessionEvidence = params.tasks.filter(taskHasChildEvidence).map((task) => ({
+    taskId: task.taskId,
+    childSessionKey: task.childSessionKey ?? "",
+    childRole: task.activeProgress?.childRole ?? null,
+    childAgentPath: task.activeProgress?.childAgentPath ?? null,
+    childPhase: task.activeProgress?.childPhase ?? null,
+    spawnReason: task.activeProgress?.spawnReason ?? null,
+    createdAt: task.createdAt,
+    startedAt: task.startedAt,
+    endedAt: task.endedAt,
+    status: task.status,
+    elapsedMs: task.elapsedMs,
+    elapsed: task.elapsed,
+    pointer: task.pointer,
+  }));
 
   const advisoryInefficiencyFlags = params.signals.filter((signal) =>
     [
@@ -1394,13 +1780,14 @@ export function buildRunInsightsReport(
       usage: options.sessionUsage?.get(session.key) ?? session.usage,
     }));
   const taskRecords = options.taskRecords ?? listTaskRecords();
+  const progressContext = createTaskReadbackProgressProjectionContext({ now });
   const tasks = taskRecords
     .filter((task) => taskMatchesAgentFilter(task, options.agent))
     .filter((task) => taskMatchesSessionFilter(task, options.session))
     .filter((task) => taskMatchesTaskFilter(task, options.task))
     .filter((task) => taskMatchesActiveFilter(task, options.activeMinutes, now))
     .slice(0, options.limit)
-    .map((task) => toInsightTask(task, now));
+    .map((task) => toInsightTask(task, now, progressContext));
   const deployEvents = readRecentDeployEvents(options.limit);
   const lastPromotedEvent = deployEvents.find(
     (event) => event.eventType === "deploy.promote" && event.status === "passed",
@@ -1422,13 +1809,29 @@ export function buildRunInsightsReport(
     deployEvents,
     signals,
   });
+  const filters = {
+    agent: options.agent ?? null,
+    session: options.session ?? null,
+    task: options.task ?? null,
+    activeMinutes: options.activeMinutes ?? null,
+    limit: options.limit,
+  };
+  const diagnosticSummary = buildDiagnosticSummary({
+    filters,
+    attention,
+    performanceProfile,
+    sessions,
+    tasks,
+    deployEvents,
+    signals,
+  });
 
   const advisory = buildAdvisoryReadback({
     surface: "Run Insights",
     pointers: attention.evidencePointers,
     caveats: [
       "Session usage comes from the native usage cache and may be absent or stale.",
-      "Deploy/build/promote details are receipt pointers, not deployment authority.",
+      "Deploy/build/promote details are global/unscoped receipt pointers, not deployment authority.",
     ],
   });
 
@@ -1437,12 +1840,13 @@ export function buildRunInsightsReport(
     generatedAt: new Date(now).toISOString(),
     authority: advisory.semantics,
     advisory,
-    filters: {
-      agent: options.agent ?? null,
-      session: options.session ?? null,
-      task: options.task ?? null,
-      activeMinutes: options.activeMinutes ?? null,
-      limit: options.limit,
+    filters,
+    deployEvidenceScope: {
+      scope: "global_unscoped",
+      filteredBy: [],
+      limitApplied: options.limit,
+      reason:
+        "native deploy receipts do not carry agent/session/task keys, so run-insights applies only the bounded tail limit to deploy/build/promote evidence",
     },
     summary: {
       sessionCount: summary.sessions.count,
@@ -1457,7 +1861,7 @@ export function buildRunInsightsReport(
         activeDisplayed: tasks.filter(
           (task) => task.status === "queued" || task.status === "running",
         ).length,
-        childTasksDisplayed: tasks.filter((task) => task.childSessionKey !== null).length,
+        childTasksDisplayed: tasks.filter(taskHasChildEvidence).length,
         deliveryIssues: tasks.filter((task) => DELIVERY_ISSUE_STATUSES.has(task.deliveryStatus))
           .length,
         byStatus: summary.tasks.byStatus,
@@ -1472,6 +1876,7 @@ export function buildRunInsightsReport(
     },
     attention,
     performanceProfile,
+    diagnosticSummary,
     signals,
     sessions,
     tasks,
@@ -1553,6 +1958,20 @@ function formatSessions(sessions: RunInsightSession[]): string[] {
   });
 }
 
+function formatTaskActiveProgress(progress: ReadbackProgressProjection | null): string {
+  if (!progress) {
+    return "";
+  }
+  const child = progress.childRole ? `child=${progress.childRole}` : "";
+  const phase = progress.currentPhase ? `phase=${progress.currentPhase}` : "";
+  const command = progress.command ? `cmd="${compactSummaryText(progress.command)}"` : "";
+  const output = progress.outputSummary
+    ? `output="${compactSummaryText(progress.outputSummary)}"`
+    : "";
+  const parts = [child, phase, command, output].filter(Boolean);
+  return parts.length > 0 ? ` active=${parts.join(" ")}` : "";
+}
+
 function formatTasks(tasks: RunInsightTask[]): string[] {
   if (tasks.length === 0) {
     return ["  No recent tasks matched the filters."];
@@ -1566,7 +1985,8 @@ function formatTasks(tasks: RunInsightTask[]): string[] {
       task.deliveryStatus === "delivered" || task.deliveryStatus === "not_applicable"
         ? ""
         : ` delivery=${task.deliveryStatus}`;
-    return `  ${task.taskId} runtime=${task.runtime} status=${task.status}${delivery} age=${task.age} elapsed=${task.elapsed}${label}${child}${latest}${attention}`;
+    const active = formatTaskActiveProgress(task.activeProgress);
+    return `  ${task.taskId} runtime=${task.runtime} status=${task.status}${delivery} age=${task.age} elapsed=${task.elapsed}${label}${child}${latest}${active}${attention}`;
   });
 }
 
@@ -1613,10 +2033,29 @@ function formatPerformanceProfile(profile: RunInsightsReport["performanceProfile
   for (const event of profile.timeline.slice(0, 4)) {
     lines.push(`  Timeline ${event.source}: ${event.label} age=${event.age} (${event.pointer})`);
   }
+  for (const child of profile.childSessionEvidence.slice(0, 6)) {
+    const role = child.childRole ? ` role=${child.childRole}` : "";
+    const phase = child.childPhase ? ` phase="${compactSummaryText(child.childPhase)}"` : "";
+    const reason = child.spawnReason ? ` reason="${compactSummaryText(child.spawnReason)}"` : "";
+    lines.push(
+      `  Child ${child.taskId}${role} status=${child.status} elapsed=${child.elapsed}${phase}${reason} (${child.pointer})`,
+    );
+  }
   if (lines.length === 2) {
     lines.push("  No expensive-run, bottleneck, or timeline details found in bounded readback.");
   }
   return lines;
+}
+
+function formatDiagnosticSummary(summary: RunInsightsReport["diagnosticSummary"]): string[] {
+  return [
+    `  Phase: ${summary.currentOrLastKnownPhase.label} (${summary.currentOrLastKnownPhase.evidenceQuality}; confidence=${summary.currentOrLastKnownPhase.confidence})`,
+    `  Parent wait: ${summary.parentWaitState.waitClass} (${summary.parentWaitState.evidenceQuality}; ${summary.parentWaitState.reason})`,
+    `  Child work: ${summary.childWork.contribution} (${summary.childWork.evidenceQuality})`,
+    `  Time spent: session=${formatDurationMs(summary.timeSpent.knownSessionDurationMs)} activeTask=${formatDurationMs(summary.timeSpent.activeTaskElapsedMs)} deployReceipts=${formatDurationMs(summary.timeSpent.deployReceiptKnownDurationMs)}`,
+    `  Evidence quality: backed=${summary.evidenceQuality.evidenceBacked} heuristic=${summary.evidenceQuality.heuristic} stale=${summary.evidenceQuality.stale} scoped=${summary.evidenceQuality.scoped} unknown=${summary.evidenceQuality.unknown}`,
+    `  Next action: ${summary.operatorNextAction.label} (${summary.operatorNextAction.pointer})`,
+  ];
 }
 
 function formatHumanReport(report: RunInsightsReport): string[] {
@@ -1624,11 +2063,15 @@ function formatHumanReport(report: RunInsightsReport): string[] {
     theme.heading("Run Insights"),
     `Authority: ${report.authority}`,
     `Missing Evidence: ${report.advisory.missingEvidenceLanguage}`,
+    `Deploy Evidence Scope: ${report.deployEvidenceScope.scope} (limit=${report.deployEvidenceScope.limitApplied}; ${report.deployEvidenceScope.reason})`,
     `Sessions: ${report.summary.sessionsDisplayed} shown of ${report.summary.recentSessionsConsidered} matching recent session(s); ${report.summary.sessionCount} total stored.`,
     `Tasks: ${report.summary.tasks.active} active, ${report.summary.tasks.failures} failure(s), ${report.summary.tasks.deliveryIssues} delivery issue(s), ${report.summary.tasks.terminal} terminal of ${report.summary.tasks.total} total.`,
     "",
     theme.heading("Signals"),
     ...formatSignals(report.signals),
+    "",
+    theme.heading("Diagnostic Summary"),
+    ...formatDiagnosticSummary(report.diagnosticSummary),
     "",
     theme.heading("Why Work May Feel Slow"),
     ...formatAttentionItems(

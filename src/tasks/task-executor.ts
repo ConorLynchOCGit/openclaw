@@ -34,6 +34,7 @@ import { summarizeTaskRecords } from "./task-registry.summary.js";
 import type {
   TaskDeliveryState,
   TaskDeliveryStatus,
+  TaskEventMetadata,
   TaskNotifyPolicy,
   TaskRecord,
   TaskRegistrySummary,
@@ -145,6 +146,7 @@ type RunTaskInFlowParams = {
   startedAt?: number;
   lastEventAt?: number;
   progressSummary?: string | null;
+  eventMetadata?: TaskEventMetadata | null;
 };
 
 export function startTaskRunByRunId(params: {
@@ -155,6 +157,7 @@ export function startTaskRunByRunId(params: {
   lastEventAt?: number;
   progressSummary?: string | null;
   eventSummary?: string | null;
+  eventMetadata?: TaskEventMetadata | null;
 }) {
   return markTaskRunningByRunId(params);
 }
@@ -166,6 +169,7 @@ export function recordTaskRunProgressByRunId(params: {
   lastEventAt?: number;
   progressSummary?: string | null;
   eventSummary?: string | null;
+  eventMetadata?: TaskEventMetadata | null;
 }) {
   return recordTaskProgressByRunId(params);
 }
@@ -179,6 +183,7 @@ export function completeTaskRunByRunId(params: {
   progressSummary?: string | null;
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
+  eventMetadata?: TaskEventMetadata | null;
 }) {
   return finalizeTaskRunByRunId({
     ...params,
@@ -200,6 +205,7 @@ export function failTaskRunByRunId(params: {
   error?: string;
   progressSummary?: string | null;
   terminalSummary?: string | null;
+  eventMetadata?: TaskEventMetadata | null;
 }) {
   return finalizeTaskRunByRunId({
     ...params,
@@ -553,6 +559,7 @@ export function runTaskInFlow(params: RunTaskInFlowParams): RunTaskInFlowResult 
             startedAt: params.startedAt,
             lastEventAt: params.lastEventAt,
             progressSummary: params.progressSummary,
+            eventMetadata: params.eventMetadata,
           })
         : createQueuedTaskRun(common);
   } catch (error) {
@@ -618,6 +625,7 @@ export function runTaskInFlowForOwner(
     startedAt: params.startedAt,
     lastEventAt: params.lastEventAt,
     progressSummary: params.progressSummary,
+    eventMetadata: params.eventMetadata,
   });
 }
 

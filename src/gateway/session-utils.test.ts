@@ -611,6 +611,93 @@ describe("gateway session utils", () => {
     }
   });
 
+  test("session rows expose bounded validation failure evidence from trajectory tool results", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "session-utils-validation-progress-"));
+    try {
+      const sessionId = "session-validation-progress";
+      const sessionFile = path.join(dir, `${sessionId}.jsonl`);
+      const trajectoryFile = path.join(dir, `${sessionId}.trajectory.jsonl`);
+      fs.writeFileSync(sessionFile, "", "utf8");
+      fs.writeFileSync(
+        trajectoryFile,
+        [
+          JSON.stringify({
+            traceSchema: "openclaw-trajectory",
+            sessionId,
+            type: "tool.call",
+            ts: "2026-07-01T00:00:59.000Z",
+            seq: 3,
+            sourceSeq: 11,
+            data: {
+              name: "bash",
+              toolCallId: "call-validation-progress",
+              arguments: {
+                command: "pnpm vitest run src/gateway/session-utils.test.ts",
+                cwd: "/workspace/src/openclaw",
+              },
+            },
+          }),
+          JSON.stringify({
+            traceSchema: "openclaw-trajectory",
+            sessionId,
+            type: "tool.result",
+            ts: "2026-07-01T00:01:00.000Z",
+            seq: 4,
+            sourceSeq: 13,
+            data: {
+              name: "bash",
+              toolCallId: "call-validation-progress",
+              status: "failed",
+              result: {
+                status: "failed",
+                exitCode: 1,
+                durationMs: 1275,
+              },
+              output: "FAIL src/gateway/session-utils.test.ts > expected active progress evidence",
+              repairAction: "Inspect active progress projection output fields.",
+            },
+          }),
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+
+      const row = buildGatewaySessionRow({
+        cfg: createModelDefaultsConfig({ primary: "openai/gpt-5.5" }),
+        storePath: path.join(dir, "sessions.json"),
+        store: {},
+        key: "agent:coding:main",
+        entry: {
+          sessionId,
+          sessionFile,
+          status: "running",
+          updatedAt: 1,
+        },
+      });
+
+      expect(row.activeProgress).toMatchObject({
+        source: "trajectory",
+        ref: `session:${sessionId}`,
+        activeLabel: "bash",
+        observedAt: "2026-07-01T00:01:00.000Z",
+        elapsedMs: 1275,
+        durationMs: 1275,
+        sourceEventType: "tool.result",
+        sourceEventSeq: 13,
+        toolName: "bash",
+        command: "pnpm vitest run src/gateway/session-utils.test.ts",
+        exitCode: 1,
+        validationClass: "test",
+        outputSummary: "FAIL src/gateway/session-utils.test.ts > expected active progress evidence",
+        repairAction: "Inspect active progress projection output fields.",
+        derivedBy: "readLatestTrajectoryProgressProjection",
+        bounded: true,
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("session defaults use configured thinking default", () => {
     const defaults = getSessionDefaults({
       agents: {

@@ -599,6 +599,15 @@ describe("task-registry store runtime", () => {
       runtime: "subagent",
       lastEventAt: created.createdAt + 1_000,
       progressSummary: "Codex native subagent is running: inspecting readback source.",
+      eventMetadata: {
+        codexNativeSubagent: true,
+        parentThreadId: "parent-thread",
+        childThreadId: "child-thread",
+        childPhase: "child_running",
+        childRole: "project_explorer",
+        childAgentPath: "agents/project_explorer.toml",
+        spawnReason: "Inspect readback source.",
+      },
     });
 
     resetTaskRegistryForTests({ persist: false });
@@ -613,6 +622,15 @@ describe("task-registry store runtime", () => {
           at: created.createdAt + 1_000,
           kind: "progress",
           summary: "Codex native subagent is running: inspecting readback source.",
+          metadata: {
+            codexNativeSubagent: true,
+            parentThreadId: "parent-thread",
+            childThreadId: "child-thread",
+            childPhase: "child_running",
+            childRole: "project_explorer",
+            childAgentPath: "agents/project_explorer.toml",
+            spawnReason: "Inspect readback source.",
+          },
         },
       },
     });
