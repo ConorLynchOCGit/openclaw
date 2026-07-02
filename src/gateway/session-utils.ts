@@ -89,6 +89,14 @@ import {
   isWorkspaceRelativeAvatarPath,
   resolveAvatarMime,
 } from "../shared/avatar-policy.js";
+import type { ReadbackProgressProjection } from "../shared/readback-progress.js";
+import {
+  createTaskReadbackProgressProjectionContext,
+  resolveTaskReadbackProgressProjection,
+  type TaskReadbackProgressProjectionContext,
+} from "../tasks/task-readback-progress.js";
+import { listTasksForRelatedSessionKey } from "../tasks/task-registry.js";
+import type { TaskRecord } from "../tasks/task-registry.types.js";
 import { normalizeSessionDeliveryFields } from "../utils/delivery-context.shared.js";
 import type { ModelCostConfig } from "../utils/usage-format.js";
 import { estimateUsageCost, resolveModelCostConfig } from "../utils/usage-format.js";
@@ -444,6 +452,8 @@ function shouldKeepStoreOnlyChildLink(entry: SessionEntry, now: number): boolean
 type SessionListRowContext = {
   subagentRuns: ReturnType<typeof buildSubagentRunReadIndex>;
   storeChildSessionsByKey: Map<string, string[]>;
+  taskReadbackBySessionKey: Map<string, SessionTaskReadbackProjection | null>;
+  taskReadbackProgressContext: TaskReadbackProgressProjectionContext;
   selectedModelByOverrideRef: Map<string, ReturnType<typeof resolveSessionModelRef>>;
   // Per-list memoization for deterministic resolvers that scale linearly with
   // session count but only depend on (provider, model[, agentId]). Sessions
@@ -461,6 +471,11 @@ type SessionListRowContext = {
 };
 
 type SessionListRowContextProvider = () => SessionListRowContext;
+
+type SessionTaskReadbackProjection = {
+  task: TaskRecord;
+  activeProgress: ReadbackProgressProjection;
+};
 
 type SingleRowChildSessionCandidateCacheEntry = {
   store: Record<string, SessionEntry>;
@@ -697,16 +712,20 @@ function buildSessionListRowContext(params: {
   return buildSessionListRowContextFromParts({
     subagentRuns,
     storeChildSessionsByKey: buildStoreChildSessionIndex(params.store, params.now, subagentRuns),
+    now: params.now,
   });
 }
 
 function buildSessionListRowContextFromParts(params: {
   subagentRuns: ReturnType<typeof buildSubagentRunReadIndex>;
   storeChildSessionsByKey: Map<string, string[]>;
+  now?: number;
 }): SessionListRowContext {
   return {
     subagentRuns: params.subagentRuns,
     storeChildSessionsByKey: params.storeChildSessionsByKey,
+    taskReadbackBySessionKey: new Map(),
+    taskReadbackProgressContext: createTaskReadbackProgressProjectionContext({ now: params.now }),
     selectedModelByOverrideRef: new Map(),
     thinkingMetadataByModelRef: new Map(),
     displayModelIdentityByKey: new Map(),
@@ -718,7 +737,105 @@ function buildSessionListRowMetadataContext(params: { now: number }): SessionLis
   return buildSessionListRowContextFromParts({
     subagentRuns: buildSubagentRunReadIndex(params.now),
     storeChildSessionsByKey: new Map(),
+    now: params.now,
   });
+}
+
+function isActiveTaskStatus(status: string | undefined): boolean {
+  return status === "queued" || status === "running";
+}
+
+function readbackObservedAtMs(progress: ReadbackProgressProjection): number {
+  const observedAt = progress.observedAt ? Date.parse(progress.observedAt) : Number.NaN;
+  return Number.isFinite(observedAt) ? observedAt : 0;
+}
+
+function taskReadbackSortTime(task: TaskRecord, progress: ReadbackProgressProjection): number {
+  return Math.max(
+    readbackObservedAtMs(progress),
+    task.lastEventAt ?? 0,
+    task.endedAt ?? 0,
+    task.startedAt ?? 0,
+    task.createdAt ?? 0,
+  );
+}
+
+function selectBestSessionTaskReadbackProjection(
+  candidates: SessionTaskReadbackProjection[],
+): SessionTaskReadbackProjection | undefined {
+  const sorted = candidates.toSorted((left, right) => {
+    const leftActive = isActiveTaskStatus(left.task.status) ? 1 : 0;
+    const rightActive = isActiveTaskStatus(right.task.status) ? 1 : 0;
+    if (leftActive !== rightActive) {
+      return rightActive - leftActive;
+    }
+    return (
+      taskReadbackSortTime(right.task, right.activeProgress) -
+      taskReadbackSortTime(left.task, left.activeProgress)
+    );
+  });
+  return sorted[0];
+}
+
+function resolveSessionTaskReadbackProjection(params: {
+  sessionKey: string;
+  rowContext?: SessionListRowContext;
+  now: number;
+}): SessionTaskReadbackProjection | undefined {
+  const sessionKey = normalizeOptionalString(params.sessionKey);
+  if (!sessionKey) {
+    return undefined;
+  }
+  const cached = params.rowContext?.taskReadbackBySessionKey.get(sessionKey);
+  if (cached !== undefined) {
+    return cached ?? undefined;
+  }
+  const progressContext =
+    params.rowContext?.taskReadbackProgressContext ??
+    createTaskReadbackProgressProjectionContext({ now: params.now });
+  const candidates = listTasksForRelatedSessionKey(sessionKey)
+    .map((task): SessionTaskReadbackProjection | undefined => {
+      const activeProgress = resolveTaskReadbackProgressProjection(task, progressContext);
+      return activeProgress ? { task, activeProgress } : undefined;
+    })
+    .filter((value): value is SessionTaskReadbackProjection => Boolean(value));
+  const selected = selectBestSessionTaskReadbackProjection(candidates);
+  params.rowContext?.taskReadbackBySessionKey.set(sessionKey, selected ?? null);
+  return selected;
+}
+
+function trajectoryProgressIsLowSignal(progress: ReadbackProgressProjection): boolean {
+  return (
+    progress.source === "trajectory" &&
+    !progress.sourceEventType &&
+    !progress.toolName &&
+    !progress.command &&
+    !progress.outputSummary &&
+    normalizeOptionalString(progress.note)?.includes("no valid recent event") === true
+  );
+}
+
+function chooseSessionActiveProgress(params: {
+  trajectoryProgress?: ReadbackProgressProjection;
+  taskReadback?: SessionTaskReadbackProjection;
+}): ReadbackProgressProjection | undefined {
+  if (!params.taskReadback) {
+    return params.trajectoryProgress;
+  }
+  if (!params.trajectoryProgress || trajectoryProgressIsLowSignal(params.trajectoryProgress)) {
+    return params.taskReadback.activeProgress;
+  }
+  if (
+    isActiveTaskStatus(params.taskReadback.task.status) &&
+    !params.trajectoryProgress.sourceEventType &&
+    params.taskReadback.activeProgress.sourceEventType
+  ) {
+    return params.taskReadback.activeProgress;
+  }
+  return readbackObservedAtMs(params.taskReadback.activeProgress) >
+    readbackObservedAtMs(params.trajectoryProgress)
+    ? params.taskReadback.activeProgress
+    : params.trajectoryProgress;
 }
 
 function buildSingleRowStoreChildSessionsByKey(params: {
@@ -2190,7 +2307,8 @@ export function buildGatewaySessionRow(params: {
   let lastMessagePreview: string | undefined;
   let finalAssistantText: string | null | undefined;
   let readbackProvenance: GatewaySessionRow["readbackProvenance"] | undefined;
-  const rowStatus = subagentRun ? subagentStatus : entry?.status;
+  let rowStatus = subagentRun ? subagentStatus : entry?.status;
+  const originalRowStatus = rowStatus;
   if (rowStatus) {
     readbackProvenance = {
       ...readbackProvenance,
@@ -2208,19 +2326,29 @@ export function buildGatewaySessionRow(params: {
   const shouldReadActiveTrajectoryProgress =
     entry?.sessionId &&
     (rowStatus === "running" || liveSubagentRunActive || (!rowStatus && !entry.endedAt));
+  let trajectoryActiveProgress: ReadbackProgressProjection | undefined;
   if (shouldReadActiveTrajectoryProgress && entry?.sessionId) {
-    const activeProgress = readLatestTrajectoryProgressProjection(
+    trajectoryActiveProgress = readLatestTrajectoryProgressProjection(
       entry.sessionId,
       storePath,
       entry.sessionFile,
       sessionAgentId,
     );
-    if (activeProgress) {
-      readbackProvenance = {
-        ...readbackProvenance,
-        activeProgress,
-      };
-    }
+  }
+  const taskReadback = resolveSessionTaskReadbackProjection({
+    sessionKey: key,
+    rowContext,
+    now,
+  });
+  const selectedActiveProgress = chooseSessionActiveProgress({
+    trajectoryProgress: trajectoryActiveProgress,
+    taskReadback,
+  });
+  if (selectedActiveProgress) {
+    readbackProvenance = {
+      ...readbackProvenance,
+      activeProgress: selectedActiveProgress,
+    };
   }
   if (entry?.sessionId && (params.includeDerivedTitles || params.includeLastMessage)) {
     const fields = readSessionTitleFieldsFromTranscript(
@@ -2248,6 +2376,34 @@ export function buildGatewaySessionRow(params: {
         finalAssistantText: finalAssistantRead.provenance,
       };
     }
+  }
+  if (
+    finalAssistantText &&
+    (!rowStatus || rowStatus === "failed" || rowStatus === "killed" || rowStatus === "timeout")
+  ) {
+    rowStatus = "done";
+    readbackProvenance = {
+      ...readbackProvenance,
+      status: {
+        source: "session-transcript",
+        ref: `session:${entry?.sessionId ?? key}`,
+        derivedBy: "buildGatewaySessionRow",
+        bounded: true,
+        note: `final assistant text exists; ${originalRowStatus ? `session-store status=${originalRowStatus}` : "session-store status missing"} is lower-confidence readback`,
+      },
+    };
+  } else if (taskReadback && !rowStatus && isActiveTaskStatus(taskReadback.task.status)) {
+    rowStatus = "running";
+    readbackProvenance = {
+      ...readbackProvenance,
+      status: {
+        source: "task-registry",
+        ref: `task:${taskReadback.task.taskId}`,
+        derivedBy: "buildGatewaySessionRow",
+        bounded: true,
+        note: "related native task is active; projected from task registry wait-chain",
+      },
+    };
   }
 
   const thinkingProvider = rowModelProvider ?? DEFAULT_PROVIDER;

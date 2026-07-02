@@ -127,6 +127,28 @@ function taskEventMetadataNumber(
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function taskEventMetadataHasReadbackSignal(metadata: TaskEventMetadata | undefined): boolean {
+  if (!metadata) {
+    return false;
+  }
+  for (const key of [
+    "toolName",
+    "command",
+    "validationClass",
+    "outputSummary",
+    "repairAction",
+    "childRole",
+    "childAgentPath",
+    "childPhase",
+    "spawnReason",
+  ]) {
+    if (taskEventMetadataString(metadata, key)) {
+      return true;
+    }
+  }
+  return typeof metadata.exitCode === "number" && Number.isFinite(metadata.exitCode);
+}
+
 function resolveCodexNativeChildRole(
   task: TaskRecord,
   note: string | undefined,
@@ -224,11 +246,11 @@ function resolveTaskRunEventProgressProjection(
   if (!latestEvent) {
     return undefined;
   }
+  const metadata = latestEvent.metadata;
   const codexNativeChild = isCodexNativeSubagentTask(task);
-  if (!note && !codexNativeChild) {
+  if (!note && !codexNativeChild && !taskEventMetadataHasReadbackSignal(metadata)) {
     return undefined;
   }
-  const metadata = latestEvent.metadata;
   const childRole = codexNativeChild
     ? resolveCodexNativeChildRole(task, note, metadata)
     : undefined;
@@ -445,8 +467,14 @@ export function resolveTaskReadbackProgressProjection(
   task: TaskRecord,
   context?: TaskReadbackProgressProjectionContext,
 ): ReadbackProgressProjection | undefined {
-  if (task.status !== "running" && task.status !== "queued") {
-    return undefined;
+  if (task.status === "running" || task.status === "queued") {
+    return resolveFallbackTaskProgressProjection(task, context);
   }
-  return resolveFallbackTaskProgressProjection(task, context);
+  const taskRunEventProgress = resolveTaskRunEventProgressProjection(
+    task,
+    context?.now ?? Date.now(),
+  );
+  return taskRunEventProgress && progressHasUsefulSignal(taskRunEventProgress)
+    ? taskRunEventProgress
+    : undefined;
 }

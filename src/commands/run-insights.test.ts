@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { TaskRecord } from "../tasks/task-registry.types.js";
 import { buildRunInsightsReport, runInsightsCommand } from "./run-insights.js";
 import type { StatusSummary } from "./status.types.js";
 
@@ -506,11 +507,7 @@ describe("runInsightsCommand", () => {
       eventType: "deploy.promote",
       durationMs: 240_000,
     });
-    expect(
-      payload.performanceProfile.validationBuildBottlenecks.map(
-        (item: { code: string }) => item.code,
-      ),
-    ).toEqual(expect.arrayContaining(["task_validation_or_promotion"]));
+    expect(payload.performanceProfile.validationBuildBottlenecks).toEqual([]);
     expect(
       payload.performanceProfile.advisoryInefficiencyFlags.map(
         (item: { code: string }) => item.code,
@@ -524,8 +521,8 @@ describe("runInsightsCommand", () => {
       pointer: "openclaw tasks show task-coding-child",
     });
     expect(payload.diagnosticSummary.parentWaitState).toMatchObject({
-      waitClass: "validation_or_promotion",
-      evidenceQuality: "heuristic",
+      waitClass: "active_child",
+      evidenceQuality: "evidence_backed",
       pointer: "openclaw tasks show task-coding-child",
     });
     expect(payload.diagnosticSummary.childWork).toMatchObject({
@@ -572,7 +569,7 @@ describe("runInsightsCommand", () => {
       bounded: true,
     });
     expect(payload.tasks[0].attention).toMatchObject({
-      waitClass: "validation_or_promotion",
+      waitClass: "active_child",
       pointer: "openclaw tasks show task-coding-child",
     });
     expect(payload.performanceProfile.childSessionEvidence).toEqual(
@@ -592,13 +589,13 @@ describe("runInsightsCommand", () => {
         "active_task_work",
         "context_pressure",
         "tool_volume",
-        "task_validation_or_promotion",
+        "task_active_child",
         "task_delivery",
       ]),
     );
     expect(
       payload.attention.validationAndPromotion.map((item: { code: string }) => item.code),
-    ).toEqual(expect.arrayContaining(["task_validation_or_promotion", "deploy_receipt_activity"]));
+    ).toEqual(expect.arrayContaining(["deploy_receipt_activity"]));
     expect(payload.attention.evidencePointers).toEqual(
       expect.arrayContaining([
         "openclaw sessions show agent:coding:main --agent coding",
@@ -618,6 +615,127 @@ describe("runInsightsCommand", () => {
         "session_usage_errors",
         "long_active_task",
       ]),
+    );
+  });
+
+  it("keeps terminal child failure receipts visible without transcript archaeology", () => {
+    const now = Date.UTC(2026, 6, 1, 6, 0, 0);
+    const terminalChild: TaskRecord = {
+      taskId: "task-terminal-child",
+      runtime: "subagent",
+      taskKind: "codex-native",
+      agentId: "coding",
+      runId: "codex-thread:test-engineer-1",
+      label: "test_engineer",
+      requesterSessionKey: "agent:coding:main",
+      ownerKey: "agent:coding:main",
+      scopeKind: "session",
+      task: "Codex native subagent role: test_engineer",
+      status: "failed",
+      deliveryStatus: "delivered",
+      notifyPolicy: "silent",
+      createdAt: now - 90_000,
+      startedAt: now - 90_000,
+      endedAt: now - 15_000,
+      lastEventAt: now - 15_000,
+      executionReceipt: {
+        schema: "openclaw.task.execution_receipt.v1",
+        eventCount: 3,
+        updatedAt: now - 15_000,
+        latestEvent: {
+          at: now - 15_000,
+          kind: "failed",
+          summary: "context overflow before post-patch validation closeout",
+          metadata: {
+            childRole: "test_engineer",
+            childAgentPath: "agents/test_engineer.toml",
+            childPhase: "context_overflow",
+            spawnReason: "Review validation strategy for the implementation batch.",
+            outputSummary: "Context overflow before final validation packet.",
+          },
+        },
+      },
+    };
+
+    const payload = buildRunInsightsReport(buildSummary(), {
+      limit: 5,
+      now,
+      taskRecords: [terminalChild],
+    });
+
+    expect(payload.tasks[0].activeProgress).toMatchObject({
+      source: "task-run-event",
+      currentPhase: "context_overflow",
+      activeLabel: "test_engineer",
+      sourceEventType: "task.failed",
+      childRole: "test_engineer",
+      childAgentPath: "agents/test_engineer.toml",
+      childPhase: "context_overflow",
+      spawnReason: "Review validation strategy for the implementation batch.",
+      outputSummary: "Context overflow before final validation packet.",
+      derivedBy: "resolveTaskReadbackProgressProjection",
+      bounded: true,
+    });
+    expect(payload.performanceProfile.childSessionEvidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          taskId: "task-terminal-child",
+          childRole: "test_engineer",
+          childPhase: "context_overflow",
+          status: "failed",
+        }),
+      ]),
+    );
+  });
+
+  it("does not classify successful terminal planning proof tasks as active validation work", () => {
+    const now = Date.UTC(2026, 6, 1, 6, 0, 0);
+    const completedPlanningTask: TaskRecord = {
+      taskId: "task-completed-planning-proof",
+      runtime: "subagent",
+      taskKind: "openclaw-agent",
+      agentId: "planning",
+      runId: "planning-proof-finished",
+      label: "Planning proof plan",
+      requesterSessionKey: "agent:main:main",
+      ownerKey: "agent:main:main",
+      scopeKind: "session",
+      task: "Plan proof work and produce a validation-ready execution brief.",
+      status: "succeeded",
+      deliveryStatus: "delivered",
+      notifyPolicy: "silent",
+      createdAt: now - 180_000,
+      startedAt: now - 170_000,
+      endedAt: now - 60_000,
+      lastEventAt: now - 60_000,
+      terminalSummary: "Planning proof artifact completed.",
+      executionReceipt: {
+        schema: "openclaw.task.execution_receipt.v1",
+        eventCount: 2,
+        updatedAt: now - 60_000,
+        latestEvent: {
+          at: now - 60_000,
+          kind: "succeeded",
+          summary: "Planning proof artifact completed.",
+        },
+      },
+    };
+
+    const payload = buildRunInsightsReport(buildSummary(), {
+      limit: 5,
+      now,
+      taskRecords: [completedPlanningTask],
+    });
+
+    expect(payload.tasks[0].attention).toMatchObject({
+      waitClass: null,
+      reason: null,
+    });
+    expect(
+      payload.performanceProfile.validationBuildBottlenecks.map((item) => item.code),
+    ).not.toContain("task_validation_or_promotion");
+    expect(payload.attention.validationAndPromotion.map((item) => item.code)).not.toContain(
+      "task_validation_or_promotion",
     );
   });
 
@@ -707,14 +825,13 @@ describe("runInsightsCommand", () => {
     expect(output).toContain("Evidence quality:");
     expect(output).toContain("Next action: Inspect native task evidence");
     expect(output).toContain("Why Work May Feel Slow");
-    expect(output).toContain("task_validation_or_promotion");
+    expect(output).toContain("task_active_child");
     expect(output).toContain("Validation / Promotion Watch");
     expect(output).toContain("deploy_receipt_activity");
     expect(output).toContain("Performance Profile");
     expect(output).toContain("Retry/build/proof cost: receipts=2 knownDuration=7m");
-    expect(output).toContain("BOTTLENECK task_validation_or_promotion");
     expect(output).toContain("Recent Tasks");
-    expect(output).toContain("attention=validation_or_promotion");
+    expect(output).toContain("attention=active_child");
     expect(output).toContain("active=phase=running");
     expect(output).toContain("Recent Deploy Events");
     expect(output).toContain("deploy.promote status=passed");

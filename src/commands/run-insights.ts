@@ -889,16 +889,6 @@ function classifyTaskAttention(
       pointer,
     };
   }
-  if (stageText) {
-    return {
-      waitClass: "validation_or_promotion",
-      reason:
-        compactSummaryText(stageText) ??
-        compactProgressText ??
-        "task text references validation, build, deploy, proof, or promotion work",
-      pointer,
-    };
-  }
   if (
     insight.activeProgress?.childRole &&
     (insight.status === "queued" || insight.status === "running")
@@ -913,6 +903,24 @@ function classifyTaskAttention(
     return {
       waitClass: "active_child",
       reason: `active child session ${insight.childSessionKey}`,
+      pointer,
+    };
+  }
+  if (
+    stageText &&
+    (insight.status === "queued" ||
+      insight.status === "running" ||
+      insight.status === "failed" ||
+      insight.status === "timed_out" ||
+      insight.status === "cancelled" ||
+      insight.status === "lost")
+  ) {
+    return {
+      waitClass: "validation_or_promotion",
+      reason:
+        compactSummaryText(stageText) ??
+        compactProgressText ??
+        "task text references validation, build, deploy, proof, or promotion work",
       pointer,
     };
   }

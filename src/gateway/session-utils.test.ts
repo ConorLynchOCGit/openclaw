@@ -11,6 +11,7 @@ import { loadSessionStore, type SessionEntry } from "../config/sessions.js";
 import { writeSessionStoreForTest } from "../config/sessions/test-helpers.js";
 import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
 import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../plugins/runtime.js";
+import { createTaskRecord, resetTaskRegistryForTests } from "../tasks/task-registry.js";
 import { withStateDirEnv } from "../test-helpers/state-dir-env.js";
 import {
   canonicalizeSpawnedByForAgent,
@@ -103,6 +104,7 @@ describe("gateway session utils", () => {
   afterEach(() => {
     resetConfigRuntimeState();
     resetPluginRuntimeStateForTest();
+    resetTaskRegistryForTests({ persist: false });
   });
 
   test("capArrayByJsonBytes trims from the front", () => {
@@ -693,6 +695,122 @@ describe("gateway session utils", () => {
         derivedBy: "readLatestTrajectoryProgressProjection",
         bounded: true,
       });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("session rows project related task wait-chain progress when trajectory has no useful event", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "session-utils-task-progress-"));
+    try {
+      const now = Date.UTC(2026, 6, 1, 0, 2, 0);
+      const taskStartedAt = now - 45_000;
+      createTaskRecord({
+        runtime: "subagent",
+        taskKind: "openclaw-agent",
+        requesterSessionKey: "agent:main:main",
+        ownerKey: "agent:main:main",
+        scopeKind: "session",
+        agentId: "planning",
+        runId: "planning-task-progress",
+        label: "Planning",
+        task: "Produce the plan and wait for source scout evidence.",
+        status: "running",
+        deliveryStatus: "delivered",
+        notifyPolicy: "silent",
+        startedAt: taskStartedAt,
+        lastEventAt: now - 5_000,
+        progressSummary: "Planning child is waiting on codebase-researcher source evidence.",
+      });
+
+      const sessionId = "session-task-progress";
+      const sessionFile = path.join(dir, `${sessionId}.jsonl`);
+      const trajectoryFile = path.join(dir, `${sessionId}.trajectory.jsonl`);
+      fs.writeFileSync(sessionFile, "", "utf8");
+      fs.writeFileSync(
+        trajectoryFile,
+        [
+          JSON.stringify({
+            traceSchema: "openclaw-trajectory",
+            sessionId,
+            type: "session.ended",
+            ts: "2026-07-01T00:00:00.000Z",
+            data: {},
+          }),
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+
+      const row = buildGatewaySessionRow({
+        cfg: createModelDefaultsConfig({ primary: "openai/gpt-5.5" }),
+        storePath: path.join(dir, "sessions.json"),
+        store: {},
+        key: "agent:main:main",
+        entry: {
+          sessionId,
+          sessionFile,
+          status: "running",
+          updatedAt: now,
+        },
+        now,
+      });
+
+      expect(row.activeProgress).toMatchObject({
+        source: "task-run-event",
+        currentPhase: "running",
+        activeLabel: "Planning",
+        note: "Planning child is waiting on codebase-researcher source evidence.",
+        pointer: expect.objectContaining({
+          kind: "task",
+          label: "task run receipt",
+        }),
+        derivedBy: "resolveTaskReadbackProgressProjection",
+        bounded: true,
+      });
+      expect(row.readbackProvenance?.activeProgress).toBe(row.activeProgress);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("session rows prefer final assistant transcript truth over stale failed status metadata", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "session-utils-final-status-"));
+    try {
+      const sessionId = "session-final-status";
+      const sessionFile = path.join(dir, `${sessionId}.jsonl`);
+      fs.writeFileSync(
+        sessionFile,
+        [
+          JSON.stringify({ type: "session", version: 1, id: sessionId }),
+          JSON.stringify({ message: { role: "assistant", content: "Visible final closeout." } }),
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+
+      const row = buildGatewaySessionRow({
+        cfg: createModelDefaultsConfig({ primary: "openai/gpt-5.5" }),
+        storePath: path.join(dir, "sessions.json"),
+        store: {},
+        key: "agent:main:main",
+        entry: {
+          sessionId,
+          sessionFile,
+          status: "failed",
+          updatedAt: 1,
+        },
+        includeLastMessage: true,
+      });
+
+      expect(row.status).toBe("done");
+      expect(row.finalAssistantText).toBe("Visible final closeout.");
+      expect(row.readbackProvenance?.status).toMatchObject({
+        source: "session-transcript",
+        ref: `session:${sessionId}`,
+        bounded: true,
+      });
+      expect(row.readbackProvenance?.status?.note).toContain("session-store status=failed");
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
