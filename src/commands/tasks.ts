@@ -574,9 +574,10 @@ export async function tasksShowCommand(
     return;
   }
 
-  const activeProgress = resolveTaskReadbackProgressProjection(task);
+  const summary = mapTaskSummary(task);
+  const activeProgress = summary.activeProgress;
   if (opts.json) {
-    runtime.log(JSON.stringify(mapTaskSummary(task), null, 2));
+    runtime.log(JSON.stringify(summary, null, 2));
     return;
   }
 
@@ -591,6 +592,9 @@ export async function tasksShowCommand(
     `notify: ${task.notifyPolicy}`,
     `ownerKey: ${task.ownerKey}`,
     `childSessionKey: ${task.childSessionKey ?? "n/a"}`,
+    `childRole: ${summary.childRole ?? "n/a"}`,
+    `childPhase: ${summary.childPhase ?? "n/a"}`,
+    `spawnReason: ${summary.spawnReason ?? "n/a"}`,
     `parentTaskId: ${task.parentTaskId ?? "n/a"}`,
     `agentId: ${task.agentId ?? "n/a"}`,
     `runId: ${task.runId ?? "n/a"}`,

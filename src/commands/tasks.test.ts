@@ -678,6 +678,40 @@ describe("tasks commands", () => {
     });
   });
 
+  it("infers OpenClaw child role timing in task show JSON from child session keys", async () => {
+    await withTaskCommandStateDir(async () => {
+      const task = createTaskRecord({
+        runtime: "subagent",
+        taskKind: "openclaw-agent",
+        ownerKey: "agent:planning:main",
+        requesterSessionKey: "agent:planning:main",
+        childSessionKey: "agent:codebase-researcher:subagent:child-1",
+        scopeKind: "session",
+        label: "current-state scout",
+        status: "succeeded",
+        deliveryStatus: "not_applicable",
+        notifyPolicy: "silent",
+        task: "Read bounded source refs and return a Context Pack.",
+        startedAt: Date.now() - 5_000,
+        progressSummary: "Context Pack returned.",
+      });
+
+      const runtime = createRuntime();
+      await tasksShowCommand({ json: true, lookup: task.taskId }, runtime);
+
+      const payload = readFirstJsonLog(runtime) as {
+        childRole?: string;
+        childPhase?: string;
+        spawnReason?: string;
+      };
+      expect(payload).toMatchObject({
+        childRole: "codebase-researcher",
+        childPhase: "succeeded",
+        spawnReason: "Read bounded source refs and return a Context Pack.",
+      });
+    });
+  });
+
   it("explains retained lost task cleanup timing in maintenance text output", async () => {
     await withTaskCommandStateDir(async () => {
       const cleanupAfter = Date.now() + 60_000;

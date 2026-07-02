@@ -65,6 +65,47 @@ function sanitizeOptionalTaskText(
   return sanitized || undefined;
 }
 
+function inferAgentRoleFromSessionKey(sessionKey: string | undefined): string | undefined {
+  const match = sessionKey?.match(/^agent:([^:]+):/);
+  return match?.[1];
+}
+
+function inferTaskChildRole(
+  task: TaskRecord,
+  activeProgress: ReturnType<typeof resolveTaskReadbackProgressProjection>,
+): string | undefined {
+  return (
+    activeProgress?.childRole ??
+    inferAgentRoleFromSessionKey(task.childSessionKey) ??
+    (task.taskKind === "codex-native" ? sanitizeOptionalTaskText(task.label) : undefined)
+  );
+}
+
+function inferTaskChildPhase(
+  task: TaskRecord,
+  activeProgress: ReturnType<typeof resolveTaskReadbackProgressProjection>,
+  childRole: string | undefined,
+): string | undefined {
+  return (
+    activeProgress?.childPhase ??
+    activeProgress?.currentPhase ??
+    (childRole ? task.status : undefined)
+  );
+}
+
+function inferTaskSpawnReason(
+  task: TaskRecord,
+  activeProgress: ReturnType<typeof resolveTaskReadbackProgressProjection>,
+  childRole: string | undefined,
+): string | undefined {
+  return (
+    activeProgress?.spawnReason ??
+    (childRole
+      ? sanitizeOptionalTaskText(task.task, { maxChars: TASK_LIST_SUMMARY_TEXT_MAX_CHARS })
+      : undefined)
+  );
+}
+
 export function mapTaskSummary(
   task: TaskRecord,
   opts: TaskSummaryProjectionOptions = {},
@@ -78,6 +119,9 @@ export function mapTaskSummary(
   const terminalSummary = sanitizeOptionalTaskText(task.terminalSummary, { errorContext: true });
   const error = sanitizeOptionalTaskText(task.error, { errorContext: true });
   const activeProgress = resolveTaskReadbackProgressProjection(task, opts.readbackContext);
+  const childRole = inferTaskChildRole(task, activeProgress);
+  const childPhase = inferTaskChildPhase(task, activeProgress, childRole);
+  const spawnReason = inferTaskSpawnReason(task, activeProgress, childRole);
   return {
     id: task.taskId,
     taskId: task.taskId,
@@ -89,6 +133,9 @@ export function mapTaskSummary(
     ...(task.agentId ? { agentId: task.agentId } : {}),
     sessionKey: task.requesterSessionKey,
     ...(task.childSessionKey ? { childSessionKey: task.childSessionKey } : {}),
+    ...(childRole ? { childRole } : {}),
+    ...(childPhase ? { childPhase } : {}),
+    ...(spawnReason ? { spawnReason } : {}),
     ownerKey: task.ownerKey,
     ...(task.runId ? { runId: task.runId } : {}),
     ...(task.parentFlowId ? { flowId: task.parentFlowId } : {}),
