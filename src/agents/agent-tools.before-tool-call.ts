@@ -380,24 +380,6 @@ function findSkillUsageMatch(params: {
     }
   }
 
-  if (params.toolName === "skill_read" && params.ctx?.skillsSnapshot?.resolvedSkills?.length) {
-    const toolParams =
-      params.toolParams && typeof params.toolParams === "object"
-        ? (params.toolParams as Record<string, unknown>)
-        : {};
-    const requestedName = typeof toolParams.name === "string" ? toolParams.name.trim() : "";
-    const match = params.ctx.skillsSnapshot.resolvedSkills.find(
-      (skill) => skill.name.toLowerCase() === requestedName.toLowerCase(),
-    );
-    if (match) {
-      return {
-        skillName: match.name,
-        skillSource: resolveSkillTelemetrySourceValue(match.source),
-        activation: "read",
-      };
-    }
-  }
-
   if (params.toolName !== "read" || !params.ctx?.skillsSnapshot?.resolvedSkills?.length) {
     return undefined;
   }

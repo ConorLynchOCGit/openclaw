@@ -53,7 +53,6 @@ describe("tool-catalog", () => {
       "create_goal",
       "update_goal",
       "update_plan",
-      "skill_read",
       "skill_workshop",
       "image",
       "image_generate",

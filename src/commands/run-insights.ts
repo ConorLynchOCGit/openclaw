@@ -42,6 +42,9 @@ type AttentionSource = "session" | "task" | "deploy" | "status";
 type EvidenceQuality = "evidence_backed" | "heuristic" | "stale" | "scoped" | "unknown";
 type DiagnosticConfidence = "high" | "medium" | "low" | "unknown";
 type DeployEvidenceScope = "global_unscoped";
+type RunInsightSkillPromptRef = NonNullable<
+  NonNullable<SessionStatus["promptContext"]>["skills"]
+>["promptRef"];
 
 export type RunInsightsOptions = {
   json?: boolean;
@@ -127,6 +130,7 @@ export type RunInsightSession = {
   outputTokens: number | null;
   abortedLastRun: boolean;
   flags: string[];
+  promptContext: SessionStatus["promptContext"] | null;
   usage: RunInsightSessionUsage | null;
   pointer: string;
 };
@@ -285,6 +289,19 @@ export type RunInsightsReport = {
       status: string;
       elapsedMs: number | null;
       elapsed: string;
+      pointer: string;
+    }>;
+    skillActivationEvidence: Array<{
+      sessionKey: string;
+      agentId: string | null;
+      visibleSkillCount: number | null;
+      visibleSkillNames: string[];
+      skillFilter: string[] | null;
+      promptChars: number | null;
+      promptHash: string | null;
+      promptRef: RunInsightSkillPromptRef | null;
+      activationEvidence: "visible_skill_catalog";
+      actualUsePointer: string;
       pointer: string;
     }>;
     retryBuildProofCost: {
@@ -711,6 +728,7 @@ function toInsightSession(row: SessionStatus): RunInsightSession {
     outputTokens: row.outputTokens ?? null,
     abortedLastRun: Boolean(row.abortedLastRun || row.flags.includes("aborted")),
     flags: row.flags,
+    promptContext: row.promptContext ?? null,
     usage: null,
     pointer: `openclaw sessions show ${row.key}${agentPart}`,
   };
@@ -1730,6 +1748,25 @@ function buildPerformanceProfile(params: {
     elapsed: task.elapsed,
     pointer: task.pointer,
   }));
+  const skillActivationEvidence = params.sessions
+    .filter((session) => session.promptContext?.skills)
+    .map((session) => {
+      const skills = session.promptContext?.skills;
+      return {
+        sessionKey: session.key,
+        agentId: session.agentId,
+        visibleSkillCount: skills?.skillCount ?? null,
+        visibleSkillNames: skills?.skillNames?.slice(0, 12) ?? [],
+        skillFilter: skills?.skillFilter ?? null,
+        promptChars: skills?.promptChars ?? null,
+        promptHash: skills?.promptHash ?? null,
+        promptRef: skills?.promptRef ?? null,
+        activationEvidence: "visible_skill_catalog" as const,
+        actualUsePointer:
+          "openclaw trajectory export marks invoked skills when SKILL.md is read via native read",
+        pointer: session.pointer,
+      };
+    });
 
   const advisoryInefficiencyFlags = params.signals.filter((signal) =>
     [
@@ -1746,6 +1783,7 @@ function buildPerformanceProfile(params: {
     expensiveRunExplanation,
     timeline: timeline.toSorted((a, b) => (b.at ?? 0) - (a.at ?? 0)).slice(0, 12),
     childSessionEvidence,
+    skillActivationEvidence,
     retryBuildProofCost: {
       deployReceiptCount: deployDurations.length,
       totalKnownDurationMs,
@@ -1967,7 +2005,11 @@ function formatSessions(sessions: RunInsightSession[]): string[] {
         ? ` tools=${session.usage.toolCalls}/${session.usage.uniqueTools}`
         : "";
     const cost = session.usage ? ` cost=$${session.usage.totalCost.toFixed(4)}` : "";
-    return `  ${session.key}${agent}${runtime} age=${session.age} usage=${usage}${toolUsage}${cost}${aborted}`;
+    const skills =
+      session.promptContext?.skills?.skillCount != null
+        ? ` skills=${session.promptContext.skills.skillCount}`
+        : "";
+    return `  ${session.key}${agent}${runtime} age=${session.age} usage=${usage}${toolUsage}${cost}${skills}${aborted}`;
   });
 }
 
@@ -1977,11 +2019,13 @@ function formatTaskActiveProgress(progress: ReadbackProgressProjection | null): 
   }
   const child = progress.childRole ? `child=${progress.childRole}` : "";
   const phase = progress.currentPhase ? `phase=${progress.currentPhase}` : "";
+  const tool = progress.toolName ? `tool=${progress.toolName}` : "";
   const command = progress.command ? `cmd="${compactSummaryText(progress.command)}"` : "";
+  const exit = typeof progress.exitCode === "number" ? `exit=${String(progress.exitCode)}` : "";
   const output = progress.outputSummary
     ? `output="${compactSummaryText(progress.outputSummary)}"`
     : "";
-  const parts = [child, phase, command, output].filter(Boolean);
+  const parts = [child, phase, tool, command, exit, output].filter(Boolean);
   return parts.length > 0 ? ` active=${parts.join(" ")}` : "";
 }
 
@@ -2052,6 +2096,19 @@ function formatPerformanceProfile(profile: RunInsightsReport["performanceProfile
     const reason = child.spawnReason ? ` reason="${compactSummaryText(child.spawnReason)}"` : "";
     lines.push(
       `  Child ${child.taskId}${role} status=${child.status} elapsed=${child.elapsed}${phase}${reason} (${child.pointer})`,
+    );
+  }
+  for (const skillEvidence of profile.skillActivationEvidence.slice(0, 6)) {
+    const agent = skillEvidence.agentId ? ` agent=${skillEvidence.agentId}` : "";
+    const prompt =
+      skillEvidence.promptChars != null ? ` promptChars=${skillEvidence.promptChars}` : "";
+    const hash = skillEvidence.promptHash ? ` hash=${skillEvidence.promptHash}` : "";
+    const names =
+      skillEvidence.visibleSkillNames.length > 0
+        ? ` names=${skillEvidence.visibleSkillNames.map((name) => JSON.stringify(name)).join(",")}`
+        : "";
+    lines.push(
+      `  Skills ${skillEvidence.sessionKey}${agent} visible=${skillEvidence.visibleSkillCount ?? "unknown"}${prompt}${hash}${names} (${skillEvidence.pointer})`,
     );
   }
   if (lines.length === 2) {

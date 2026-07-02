@@ -119,6 +119,14 @@ function taskEventMetadataString(
   return typeof value === "string" ? normalizeOptionalString(value) : undefined;
 }
 
+function taskEventMetadataNumber(
+  metadata: TaskEventMetadata | undefined,
+  key: string,
+): number | undefined {
+  const value = metadata?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 function resolveCodexNativeChildRole(
   task: TaskRecord,
   note: string | undefined,
@@ -233,6 +241,12 @@ function resolveTaskRunEventProgressProjection(
   const spawnReason = codexNativeChild
     ? resolveCodexNativeSpawnReason(task, note, metadata)
     : undefined;
+  const toolName = taskEventMetadataString(metadata, "toolName");
+  const command = taskEventMetadataString(metadata, "command");
+  const validationClass = taskEventMetadataString(metadata, "validationClass");
+  const outputSummary = taskEventMetadataString(metadata, "outputSummary");
+  const repairAction = taskEventMetadataString(metadata, "repairAction");
+  const exitCode = taskEventMetadataNumber(metadata, "exitCode");
   return {
     source: "task-run-event",
     ref: `task-event:${task.taskId}:${latestEvent.at}:${latestEvent.kind}`,
@@ -245,6 +259,12 @@ function resolveTaskRunEventProgressProjection(
     observedAt: formatTaskProgressObservedAt(latestEvent.at, task.lastEventAt),
     elapsedMs: resolveElapsedMs(now, task.startedAt, task.createdAt),
     sourceEventType: `task.${latestEvent.kind}`,
+    ...(toolName ? { toolName } : {}),
+    ...(command ? { command } : {}),
+    ...(typeof exitCode === "number" ? { exitCode } : {}),
+    ...(validationClass ? { validationClass } : {}),
+    ...(outputSummary ? { outputSummary: truncateTaskProgressNote(outputSummary) } : {}),
+    ...(repairAction ? { repairAction: truncateTaskProgressNote(repairAction) } : {}),
     ...(childRole ? { childRole } : {}),
     ...(childAgentPath ? { childAgentPath } : {}),
     ...(childPhase ? { childPhase } : {}),
@@ -265,6 +285,9 @@ function progressHasUsefulSignal(progress: ReadbackProgressProjection): boolean 
     normalizeOptionalString(progress.sourceEventType) ??
     normalizeOptionalString(progress.activeLabel) ??
     normalizeOptionalString(progress.currentPhase) ??
+    normalizeOptionalString(progress.toolName) ??
+    normalizeOptionalString(progress.command) ??
+    normalizeOptionalString(progress.outputSummary) ??
     normalizeOptionalString(progress.note),
   );
 }

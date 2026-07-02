@@ -322,6 +322,36 @@ export async function getStatusSummary(
         agentId,
         sessionKey: key,
       });
+      const skillsPromptChars =
+        entry?.systemPromptReport?.skills?.promptChars ??
+        entry?.skillsSnapshot?.prompt?.length ??
+        entry?.skillsSnapshot?.promptRef?.bytes;
+      const skillsPromptHash =
+        entry?.systemPromptReport?.skills?.hash ?? entry?.skillsSnapshot?.promptRef?.hash;
+      const skillNames =
+        entry?.systemPromptReport?.skills?.entries?.map((skill) => skill.name) ??
+        entry?.skillsSnapshot?.skills?.map((skill) => skill.name);
+      const skillCount =
+        entry?.systemPromptReport?.skills?.entries?.length ?? entry?.skillsSnapshot?.skills?.length;
+      const promptContext =
+        entry?.skillsSnapshot || entry?.systemPromptReport?.skills
+          ? {
+              skills: {
+                ...(typeof skillsPromptChars === "number"
+                  ? { promptChars: skillsPromptChars }
+                  : {}),
+                ...(skillsPromptHash ? { promptHash: skillsPromptHash } : {}),
+                ...(entry?.skillsSnapshot?.promptRef
+                  ? { promptRef: entry.skillsSnapshot.promptRef }
+                  : {}),
+                ...(typeof skillCount === "number" ? { skillCount } : {}),
+                ...(skillNames ? { skillNames } : {}),
+                ...(entry?.skillsSnapshot?.skillFilter
+                  ? { skillFilter: entry.skillsSnapshot.skillFilter }
+                  : {}),
+              },
+            }
+          : undefined;
 
       return {
         agentId,
@@ -352,6 +382,7 @@ export async function getStatusSummary(
         modelSelectionReason: modelSelectionDiffers ? "session override" : null,
         runtime,
         contextTokens,
+        ...(promptContext ? { promptContext } : {}),
         flags: buildFlags(entry),
       } satisfies SessionStatus;
     });

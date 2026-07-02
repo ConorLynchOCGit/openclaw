@@ -280,18 +280,12 @@ function buildExecApprovalPromptGuidance(params: {
   return 'If exec returns approval-pending, send the exact /approve command from "Reply with:"; do not ask for another code.';
 }
 
-function buildSkillsSection(params: {
-  skillsPrompt?: string;
-  readToolName: string;
-  skillReadToolName?: string;
-}) {
+function buildSkillsSection(params: { skillsPrompt?: string; readToolName: string }) {
   const trimmed = params.skillsPrompt?.trim();
   if (!trimmed) {
     return [];
   }
-  const skillLoadInstruction = params.skillReadToolName
-    ? `Scan <available_skills>. If one clearly applies, call \`${params.skillReadToolName}\` with its <name>, then follow it. If \`${params.skillReadToolName}\` is unavailable but \`${params.readToolName}\` is available, read SKILL.md at exact <location>.`
-    : `Scan <available_skills>. If one clearly applies, read its SKILL.md at exact <location> with \`${params.readToolName}\`, then follow it.`;
+  const skillLoadInstruction = `Scan <available_skills>. If one clearly applies, read its SKILL.md at exact <location> with \`${params.readToolName}\`, then follow it.`;
   return [
     "## Skills",
     skillLoadInstruction,
@@ -797,8 +791,6 @@ export function buildAgentSystemPrompt(params: {
       "On-demand list/status visibility for sub-agent runs in this requester session; do not use for wait loops",
     session_status:
       "Show a /status-equivalent status card (usage + time + Reasoning/Verbose/Elevated); use for model-use questions (📊 session_status); optional per-session model override",
-    skill_read:
-      "Read instructions for one model-visible skill from the active skill snapshot; use instead of file read when broad read is unavailable",
     skill_workshop:
       "Create, update, revise, list, inspect, apply, reject, or quarantine Skill Workshop proposals",
     image: "Analyze an image with the configured image model",
@@ -832,7 +824,6 @@ export function buildAgentSystemPrompt(params: {
     "sessions_yield",
     "subagents",
     "session_status",
-    "skill_read",
     "skill_workshop",
     "image",
     "image_generate",
@@ -887,9 +878,6 @@ export function buildAgentSystemPrompt(params: {
 
   const hasGateway = availableTools.has("gateway");
   const readToolName = resolveToolName("read");
-  const skillReadToolName = availableTools.has("skill_read")
-    ? resolveToolName("skill_read")
-    : undefined;
   const execToolName = resolveToolName("exec");
   const processToolName = resolveToolName("process");
   const extraSystemPrompt = params.extraSystemPrompt?.trim();
@@ -977,7 +965,6 @@ export function buildAgentSystemPrompt(params: {
   const skillsSection = buildSkillsSection({
     skillsPrompt,
     readToolName,
-    skillReadToolName,
   });
   const skillWorkshopSection = availableTools.has(SKILL_WORKSHOP_TOOL_NAME)
     ? buildSkillWorkshopPromptSection()

@@ -323,21 +323,6 @@ describe("resolveEmbeddedAttemptToolConstructionPlan", () => {
       },
     );
     expectConstructionPlan(
-      resolveEmbeddedAttemptToolConstructionPlan({ toolsAllow: ["skill_read"] }),
-      {
-        constructTools: true,
-        includeCoreTools: true,
-        runtimeToolAllowlist: ["skill_read"],
-        coding: {
-          includeBaseCodingTools: false,
-          includeShellTools: false,
-          includeChannelTools: false,
-          includeOpenClawTools: true,
-          includePluginTools: false,
-        },
-      },
-    );
-    expectConstructionPlan(
       resolveEmbeddedAttemptToolConstructionPlan({ toolsAllow: ["skill_workshop"] }),
       {
         constructTools: true,

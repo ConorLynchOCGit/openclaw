@@ -18,6 +18,10 @@ export type DiagnosticStabilityEventRecord = {
   seq: number;
   ts: number;
   type: DiagnosticEventPayload["type"];
+  runId?: string;
+  sessionKey?: string;
+  sessionId?: string;
+  agentId?: string;
   channel?: string;
   pluginId?: string;
   source?: string;
@@ -415,6 +419,10 @@ function sanitizeDiagnosticEvent(event: DiagnosticEventPayload): DiagnosticStabi
       assignReasonCode(record, event.deniedReason);
       break;
     case "skill.used":
+      record.runId = event.runId;
+      record.sessionKey = event.sessionKey;
+      record.sessionId = event.sessionId;
+      record.agentId = event.agentId;
       record.toolName = event.toolName;
       record.source = event.skillSource;
       record.action = event.activation;

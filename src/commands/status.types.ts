@@ -38,6 +38,21 @@ export type SessionStatus = {
   modelSelectionReason: string | null;
   runtime?: string | null;
   contextTokens: number | null;
+  promptContext?: {
+    skills?: {
+      promptChars?: number;
+      promptHash?: string;
+      promptRef?: {
+        version: 1;
+        algorithm: "sha256";
+        hash: string;
+        bytes: number;
+      };
+      skillCount?: number;
+      skillNames?: string[];
+      skillFilter?: string[];
+    };
+  };
   flags: string[];
 };
 

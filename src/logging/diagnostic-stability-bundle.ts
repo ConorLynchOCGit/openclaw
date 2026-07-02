@@ -687,6 +687,10 @@ function readStabilityEventRecord(
     ) as DiagnosticStabilitySnapshot["events"][number]["type"],
   };
 
+  assignOptionalCodeString(sanitized, "runId", record.runId, `${label}.runId`);
+  assignOptionalCodeString(sanitized, "sessionKey", record.sessionKey, `${label}.sessionKey`);
+  assignOptionalCodeString(sanitized, "sessionId", record.sessionId, `${label}.sessionId`);
+  assignOptionalCodeString(sanitized, "agentId", record.agentId, `${label}.agentId`);
   assignOptionalCodeString(sanitized, "channel", record.channel, `${label}.channel`);
   assignOptionalCodeString(sanitized, "pluginId", record.pluginId, `${label}.pluginId`);
   assignOptionalCodeString(sanitized, "source", record.source, `${label}.source`);
