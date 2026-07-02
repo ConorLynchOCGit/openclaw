@@ -4,6 +4,8 @@ import path from "node:path";
 import { theme } from "../../packages/terminal-core/src/theme.js";
 import { getRuntimeConfig } from "../config/config.js";
 import { resolveStateDir } from "../config/paths.js";
+import { readSessionStoreReadOnly } from "../config/sessions/store-read.js";
+import { listSessionsFromStore, type GatewaySessionRow } from "../gateway/session-utils.js";
 import {
   loadSessionCostSummaryFromCache,
   resolveExistingUsageSessionFile,
@@ -131,6 +133,10 @@ export type RunInsightSession = {
   abortedLastRun: boolean;
   flags: string[];
   promptContext: SessionStatus["promptContext"] | null;
+  status: string | null;
+  hasFinalAssistantText: boolean;
+  activeProgress: ReadbackProgressProjection | null;
+  readbackProvenance: GatewaySessionRow["readbackProvenance"] | null;
   usage: RunInsightSessionUsage | null;
   pointer: string;
 };
@@ -147,6 +153,9 @@ export type RunInsightTask = {
   ownerKey: string;
   requesterSessionKey: string;
   childSessionKey: string | null;
+  childRole: string | null;
+  childPhase: string | null;
+  spawnReason: string | null;
   parentTaskId: string | null;
   parentFlowId: string | null;
   createdAt: number;
@@ -247,6 +256,7 @@ export type RunInsightsReport = {
       deliveryIssues: number;
       byStatus: StatusSummary["tasks"]["byStatus"];
       byRuntime: StatusSummary["tasks"]["byRuntime"];
+      matching: number;
     };
     deploy: {
       recentDisplayed: number;
@@ -708,7 +718,69 @@ function sessionReferenceMatches(value: string | null | undefined, filter: strin
   return Boolean(canonicalValue && canonicalFilter && canonicalValue === canonicalFilter);
 }
 
-function toInsightSession(row: SessionStatus): RunInsightSession {
+function gatewaySessionKeyMatches(row: GatewaySessionRow, session: string | undefined): boolean {
+  if (!session) {
+    return true;
+  }
+  return (
+    sessionReferenceMatches(row.key, session) || sessionReferenceMatches(row.sessionId, session)
+  );
+}
+
+function resolveGatewaySessionRowsForInsights(params: {
+  summary: StatusSummary;
+  rows: SessionStatus[];
+  options: Pick<ResolvedRunInsightsOptions, "activeMinutes" | "agent" | "limit" | "session">;
+}): Map<string, GatewaySessionRow> {
+  if (params.rows.length === 0) {
+    return new Map();
+  }
+  const cfg = getRuntimeConfig();
+  const storeCache = new Map<string, ReturnType<typeof readSessionStoreReadOnly>>();
+  const resolvedRows = new Map<string, GatewaySessionRow>();
+  const storePaths = uniqueStrings(params.summary.sessions.paths);
+  for (const row of params.rows) {
+    for (const storePath of storePaths) {
+      let store = storeCache.get(storePath);
+      if (!store) {
+        store = readSessionStoreReadOnly(storePath);
+        storeCache.set(storePath, store);
+      }
+      if (!Object.prototype.hasOwnProperty.call(store, row.key)) {
+        continue;
+      }
+      const compactStore = Object.fromEntries(
+        Object.entries(store).filter((entry): entry is [string, NonNullable<(typeof entry)[1]>] =>
+          Boolean(entry[1]),
+        ),
+      );
+      const result = listSessionsFromStore({
+        cfg,
+        storePath,
+        store: compactStore,
+        opts: {
+          ...(params.options.agent ? { agentId: params.options.agent } : {}),
+          ...(params.options.activeMinutes ? { activeMinutes: params.options.activeMinutes } : {}),
+          includeLastMessage: true,
+          limit: Math.max(1, Math.min(params.options.limit, MAX_LIMIT)),
+          search: row.key,
+        },
+      });
+      const gatewayRow = result.sessions.find(
+        (candidate) =>
+          sessionReferenceMatches(candidate.key, row.key) &&
+          gatewaySessionKeyMatches(candidate, params.options.session),
+      );
+      if (gatewayRow) {
+        resolvedRows.set(row.key, gatewayRow);
+      }
+      break;
+    }
+  }
+  return resolvedRows;
+}
+
+function toInsightSession(row: SessionStatus, gatewayRow?: GatewaySessionRow): RunInsightSession {
   const agentId = row.agentId ?? null;
   const agentPart = agentId ? ` --agent ${agentId}` : "";
   return {
@@ -716,19 +788,27 @@ function toInsightSession(row: SessionStatus): RunInsightSession {
     agentId,
     kind: row.kind,
     sessionId: row.sessionId ?? null,
-    updatedAt: row.updatedAt,
+    updatedAt: gatewayRow?.updatedAt ?? row.updatedAt,
     ageMs: row.age,
     age: formatDurationMs(row.age),
-    model: row.model,
+    model: gatewayRow?.model ?? row.model,
     runtime: row.runtime ?? null,
-    totalTokens: row.totalTokens,
-    totalTokensFresh: row.totalTokensFresh,
+    totalTokens: gatewayRow?.totalTokens ?? row.totalTokens,
+    totalTokensFresh: gatewayRow?.totalTokensFresh ?? row.totalTokensFresh,
     percentUsed: row.percentUsed,
-    inputTokens: row.inputTokens ?? null,
-    outputTokens: row.outputTokens ?? null,
-    abortedLastRun: Boolean(row.abortedLastRun || row.flags.includes("aborted")),
+    inputTokens: gatewayRow?.inputTokens ?? row.inputTokens ?? null,
+    outputTokens: gatewayRow?.outputTokens ?? row.outputTokens ?? null,
+    abortedLastRun: Boolean(
+      gatewayRow?.abortedLastRun || row.abortedLastRun || row.flags.includes("aborted"),
+    ),
     flags: row.flags,
-    promptContext: row.promptContext ?? null,
+    promptContext: gatewayRow?.promptContext ?? row.promptContext ?? null,
+    status: gatewayRow?.status ?? null,
+    hasFinalAssistantText:
+      typeof gatewayRow?.finalAssistantText === "string" &&
+      gatewayRow.finalAssistantText.length > 0,
+    activeProgress: gatewayRow?.activeProgress ?? null,
+    readbackProvenance: gatewayRow?.readbackProvenance ?? null,
     usage: null,
     pointer: `openclaw sessions show ${row.key}${agentPart}`,
   };
@@ -841,10 +921,51 @@ function isCodexNativeChildTask(task: Pick<RunInsightTask, "runId" | "taskKind">
   return task.taskKind === "codex-native" || task.runId?.startsWith("codex-thread:") === true;
 }
 
+function inferAgentRoleFromSessionKey(sessionKey: string | null | undefined): string | null {
+  const match = sessionKey?.match(/^agent:([^:]+):/);
+  return match?.[1] ?? null;
+}
+
+function inferChildRole(params: {
+  taskKind?: string | null;
+  label?: string | null;
+  childSessionKey?: string | null;
+  activeProgress?: ReadbackProgressProjection | null;
+}): string | null {
+  return (
+    params.activeProgress?.childRole ??
+    inferAgentRoleFromSessionKey(params.childSessionKey) ??
+    (params.taskKind === "codex-native" ? (params.label ?? null) : null)
+  );
+}
+
+function inferChildPhase(params: {
+  status: string;
+  activeProgress?: ReadbackProgressProjection | null;
+}): string | null {
+  return params.activeProgress?.childPhase ?? params.activeProgress?.currentPhase ?? params.status;
+}
+
+function inferSpawnReason(params: {
+  activeProgress?: ReadbackProgressProjection | null;
+  task?: string | null;
+  label?: string | null;
+}): string | null {
+  return (
+    params.activeProgress?.spawnReason ??
+    compactSummaryText(params.task) ??
+    compactSummaryText(params.label)
+  );
+}
+
 function taskHasChildEvidence(
-  task: Pick<RunInsightTask, "activeProgress" | "childSessionKey" | "runId" | "taskKind">,
+  task: Pick<
+    RunInsightTask,
+    "activeProgress" | "childRole" | "childSessionKey" | "runId" | "taskKind"
+  >,
 ): boolean {
   return Boolean(
+    task.childRole ||
     task.childSessionKey ||
     isCodexNativeChildTask(task) ||
     task.activeProgress?.childRole ||
@@ -1022,6 +1143,12 @@ function toInsightTask(
   const elapsedMs = taskElapsedMs(task, now);
   const latestEvent = task.executionReceipt?.latestEvent;
   const activeProgress = resolveTaskReadbackProgressProjection(task, progressContext) ?? null;
+  const childRole = inferChildRole({
+    taskKind: task.taskKind,
+    label: task.label,
+    childSessionKey: task.childSessionKey,
+    activeProgress,
+  });
   const insight = {
     taskId: task.taskId,
     runtime: task.runtime,
@@ -1034,6 +1161,15 @@ function toInsightTask(
     ownerKey: task.ownerKey,
     requesterSessionKey: task.requesterSessionKey,
     childSessionKey: task.childSessionKey ?? null,
+    childRole,
+    childPhase: childRole ? inferChildPhase({ status: task.status, activeProgress }) : null,
+    spawnReason: childRole
+      ? inferSpawnReason({
+          activeProgress,
+          task: task.task,
+          label: task.label,
+        })
+      : null,
     parentTaskId: task.parentTaskId ?? null,
     parentFlowId: task.parentFlowId ?? null,
     createdAt: task.createdAt,
@@ -1500,6 +1636,17 @@ function buildDiagnosticSummary(params: {
   const parentWaitTask =
     activeTasks.find((task) => task.attention.waitClass) ??
     params.tasks.find((task) => task.attention.waitClass);
+  const parentWaitEvidenceQuality: EvidenceQuality = parentWaitTask?.attention.waitClass
+    ? parentWaitTask.attention.waitClass === "long_running" ||
+      parentWaitTask.attention.waitClass === "validation_or_promotion"
+      ? "heuristic"
+      : "evidence_backed"
+    : "unknown";
+  const parentWaitConfidence: DiagnosticConfidence = parentWaitTask?.attention.waitClass
+    ? parentWaitEvidenceQuality === "evidence_backed"
+      ? "high"
+      : "medium"
+    : "unknown";
   const artifactPointers = uniqueStrings(
     params.deployEvents.flatMap((event) => event.artifactRefs.map((ref) => ref.path)),
   );
@@ -1564,8 +1711,8 @@ function buildDiagnosticSummary(params: {
           ? "active native task(s) are present, but no more specific wait class was derived"
           : "no active parent wait evidence in bounded scope"),
       pointer: parentWaitTask?.pointer ?? null,
-      confidence: parentWaitTask?.attention.waitClass ? "medium" : "unknown",
-      evidenceQuality: parentWaitTask?.attention.waitClass ? "heuristic" : "unknown",
+      confidence: parentWaitConfidence,
+      evidenceQuality: parentWaitEvidenceQuality,
     },
     validationBuildPromotion: {
       attentionItems: params.attention.validationAndPromotion.length,
@@ -1744,10 +1891,10 @@ function buildPerformanceProfile(params: {
   const childSessionEvidence = params.tasks.filter(taskHasChildEvidence).map((task) => ({
     taskId: task.taskId,
     childSessionKey: task.childSessionKey ?? "",
-    childRole: task.activeProgress?.childRole ?? null,
+    childRole: task.childRole,
     childAgentPath: task.activeProgress?.childAgentPath ?? null,
-    childPhase: task.activeProgress?.childPhase ?? null,
-    spawnReason: task.activeProgress?.spawnReason ?? null,
+    childPhase: task.childPhase,
+    spawnReason: task.spawnReason,
     createdAt: task.createdAt,
     startedAt: task.startedAt,
     endedAt: task.endedAt,
@@ -1824,6 +1971,7 @@ export function buildRunInsightsReport(
     now?: number;
     taskRecords?: TaskRecord[];
     sessionUsage?: Map<string, RunInsightSessionUsage | null>;
+    gatewaySessionRows?: Map<string, GatewaySessionRow>;
   },
 ): RunInsightsReport {
   const now = options.now ?? Date.now();
@@ -1831,20 +1979,28 @@ export function buildRunInsightsReport(
   const filtered = recent
     .filter((row) => sessionMatchesSessionFilter(row, options.session))
     .filter((row) => sessionMatchesActiveFilter(row, options.activeMinutes));
+  const gatewaySessionRows =
+    options.gatewaySessionRows ??
+    resolveGatewaySessionRowsForInsights({
+      summary,
+      rows: filtered.slice(0, options.limit),
+      options,
+    });
   const sessions = filtered
     .slice(0, options.limit)
-    .map(toInsightSession)
+    .map((row) => toInsightSession(row, gatewaySessionRows.get(row.key)))
     .map((session) => ({
       ...session,
       usage: options.sessionUsage?.get(session.key) ?? session.usage,
     }));
   const taskRecords = options.taskRecords ?? listTaskRecords();
   const progressContext = createTaskReadbackProgressProjectionContext({ now });
-  const tasks = taskRecords
+  const matchingTaskRecords = taskRecords
     .filter((task) => taskMatchesAgentFilter(task, options.agent))
     .filter((task) => taskMatchesSessionFilter(task, options.session))
     .filter((task) => taskMatchesTaskFilter(task, options.task))
-    .filter((task) => taskMatchesActiveFilter(task, options.activeMinutes, now))
+    .filter((task) => taskMatchesActiveFilter(task, options.activeMinutes, now));
+  const tasks = matchingTaskRecords
     .slice(0, options.limit)
     .map((task) => toInsightTask(task, now, progressContext));
   const deployEvents = readRecentDeployEvents(options.limit);
@@ -1925,6 +2081,7 @@ export function buildRunInsightsReport(
           .length,
         byStatus: summary.tasks.byStatus,
         byRuntime: summary.tasks.byRuntime,
+        matching: matchingTaskRecords.length,
       },
       deploy: {
         recentDisplayed: deployEvents.length,
@@ -1957,12 +2114,22 @@ export async function loadRunInsightsReport(
     includeSensitive: true,
     includeChannelSummary: false,
   });
+  const recent = selectRecentSessions(summary, options.agent);
+  const filteredSessions = recent
+    .filter((row) => sessionMatchesSessionFilter(row, options.session))
+    .filter((row) => sessionMatchesActiveFilter(row, options.activeMinutes));
+  const gatewaySessionRows = resolveGatewaySessionRowsForInsights({
+    summary,
+    rows: filteredSessions.slice(0, options.limit),
+    options,
+  });
   const initialReport = buildRunInsightsReport(summary, {
     agent: options.agent,
     session: options.session,
     task: options.task,
     activeMinutes: options.activeMinutes,
     limit: options.limit,
+    gatewaySessionRows,
   });
   const sessionsWithUsage = await attachCachedSessionUsage(initialReport.sessions);
   const sessionUsage = new Map(
@@ -1975,6 +2142,7 @@ export async function loadRunInsightsReport(
     activeMinutes: options.activeMinutes,
     limit: options.limit,
     sessionUsage,
+    gatewaySessionRows,
   });
 }
 
@@ -2017,7 +2185,10 @@ function formatSessions(sessions: RunInsightSession[]): string[] {
       session.promptContext?.skills?.skillCount != null
         ? ` skills=${session.promptContext.skills.skillCount}`
         : "";
-    return `  ${session.key}${agent}${runtime} age=${session.age} usage=${usage}${toolUsage}${cost}${skills}${aborted}`;
+    const status = session.status ? ` status=${session.status}` : "";
+    const final = session.hasFinalAssistantText ? " final=present" : "";
+    const active = formatTaskActiveProgress(session.activeProgress);
+    return `  ${session.key}${agent}${runtime}${status} age=${session.age} usage=${usage}${toolUsage}${cost}${skills}${final}${aborted}${active}`;
   });
 }
 
@@ -2043,7 +2214,7 @@ function formatTasks(tasks: RunInsightTask[]): string[] {
   }
   return tasks.map((task) => {
     const label = task.label ? ` label="${task.label}"` : "";
-    const child = task.childSessionKey ? ` child=${task.childSessionKey}` : "";
+    const child = task.childRole ? ` child=${task.childRole}` : "";
     const latest = task.latestEvent?.summary ? ` latest="${task.latestEvent.summary}"` : "";
     const attention = task.attention.waitClass ? ` attention=${task.attention.waitClass}` : "";
     const delivery =

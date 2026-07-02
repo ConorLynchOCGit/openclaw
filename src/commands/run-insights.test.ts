@@ -516,8 +516,8 @@ describe("runInsightsCommand", () => {
     expect(payload.performanceProfile.timeline.length).toBeGreaterThan(0);
     expect(payload.diagnosticSummary.currentOrLastKnownPhase).toMatchObject({
       source: "task",
-      evidenceQuality: "heuristic",
-      confidence: "medium",
+      evidenceQuality: "evidence_backed",
+      confidence: "high",
       pointer: "openclaw tasks show task-coding-child",
     });
     expect(payload.diagnosticSummary.parentWaitState).toMatchObject({
@@ -531,7 +531,7 @@ describe("runInsightsCommand", () => {
       evidenceQuality: "evidence_backed",
     });
     expect(payload.diagnosticSummary.validationBuildPromotion).toMatchObject({
-      bottlenecks: 1,
+      bottlenecks: 0,
       deployReceipts: 2,
     });
     expect(payload.diagnosticSummary.evidenceQuality).toMatchObject({
@@ -686,6 +686,87 @@ describe("runInsightsCommand", () => {
         }),
       ]),
     );
+  });
+
+  it("uses gateway session row readback for scoped session status, final answer, and progress", () => {
+    const now = Date.UTC(2026, 6, 1, 6, 0, 0);
+    const payload = buildRunInsightsReport(buildSummary(), {
+      agent: "coding",
+      session: "agent:coding:main",
+      limit: 5,
+      now,
+      taskRecords: [],
+      gatewaySessionRows: new Map([
+        [
+          "agent:coding:main",
+          {
+            key: "agent:coding:main",
+            kind: "direct",
+            updatedAt: now - 1_000,
+            status: "done",
+            model: "gpt-5.5",
+            inputTokens: 12,
+            outputTokens: 3,
+            totalTokens: 15,
+            totalTokensFresh: true,
+            finalAssistantText: "Final closeout exists.",
+            activeProgress: {
+              source: "task-run-event",
+              ref: "task-event:task-coding-main:1:progress",
+              currentPhase: "succeeded",
+              activeLabel: "coding",
+              observedAt: new Date(now - 1_000).toISOString(),
+              sourceEventType: "task.progress",
+              pointer: {
+                kind: "task",
+                ref: "task-coding-main",
+                label: "task run receipt",
+              },
+              derivedBy: "resolveTaskReadbackProgressProjection",
+              bounded: true,
+            },
+            readbackProvenance: {
+              status: {
+                source: "session-transcript",
+                ref: "session:sess-coding",
+                derivedBy: "buildGatewaySessionRow",
+                bounded: true,
+              },
+              finalAssistantText: {
+                source: "session-transcript",
+                ref: "session:sess-coding",
+                derivedBy: "readLastAssistantTextFromTranscript",
+                bounded: true,
+              },
+            },
+          },
+        ],
+      ]),
+    });
+
+    expect(payload.sessions).toHaveLength(1);
+    expect(payload.sessions[0]).toMatchObject({
+      key: "agent:coding:main",
+      status: "done",
+      hasFinalAssistantText: true,
+      inputTokens: 12,
+      outputTokens: 3,
+      totalTokens: 15,
+    });
+    expect(payload.sessions[0].activeProgress).toMatchObject({
+      source: "task-run-event",
+      currentPhase: "succeeded",
+    });
+    expect(payload.sessions[0].readbackProvenance).toMatchObject({
+      status: {
+        source: "session-transcript",
+        bounded: true,
+      },
+      finalAssistantText: {
+        source: "session-transcript",
+        bounded: true,
+      },
+    });
   });
 
   it("does not classify successful terminal planning proof tasks as active validation work", () => {
