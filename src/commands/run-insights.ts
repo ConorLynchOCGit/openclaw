@@ -2062,13 +2062,13 @@ export function buildRunInsightsReport(
       rows: filtered.slice(0, options.limit),
       options,
     });
-  if (!options.gatewaySessionRows && filtered.length === 0 && options.session) {
+  if (filtered.length === 0 && options.session) {
     const fallback = resolveExactGatewaySessionFallbackForInsights({
       summary,
       options,
     });
     filtered = fallback.rows;
-    gatewaySessionRows = fallback.gatewayRows;
+    gatewaySessionRows = new Map([...gatewaySessionRows, ...fallback.gatewayRows]);
   }
   const sessions = filtered
     .slice(0, options.limit)

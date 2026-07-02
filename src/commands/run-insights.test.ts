@@ -10,8 +10,10 @@ const mocks = vi.hoisted(() => ({
   getStatusSummary: vi.fn(),
   getRuntimeConfig: vi.fn(() => ({})),
   resolveConfigPath: vi.fn(),
+  resolveIsNixMode: vi.fn(() => false),
   resolveStateDir: vi.fn(),
   listTaskRecords: vi.fn(),
+  listTasksForRelatedSessionKey: vi.fn(() => []),
   loadSessionCostSummaryFromCache: vi.fn(),
   resolveExistingUsageSessionFile: vi.fn(),
   runtime: {
@@ -41,11 +43,13 @@ vi.mock("../config/config.js", () => ({
 
 vi.mock("../config/paths.js", () => ({
   resolveConfigPath: mocks.resolveConfigPath,
+  resolveIsNixMode: mocks.resolveIsNixMode,
   resolveStateDir: mocks.resolveStateDir,
 }));
 
 vi.mock("../tasks/task-registry.js", () => ({
   listTaskRecords: mocks.listTaskRecords,
+  listTasksForRelatedSessionKey: mocks.listTasksForRelatedSessionKey,
 }));
 
 vi.mock("../infra/session-cost-usage.js", () => ({
@@ -686,6 +690,55 @@ describe("runInsightsCommand", () => {
         }),
       ]),
     );
+  });
+
+  it("hydrates exact session filters from native stores when recent rows miss", () => {
+    expect(stateDir).toBeDefined();
+    const storePath = path.join(stateDir!, "old-coding-sessions.json");
+    fs.writeFileSync(
+      storePath,
+      JSON.stringify(
+        {
+          "agent:coding:old-proof-session": {
+            sessionId: "old-proof-session-id",
+            updatedAt: 1_234_567,
+            model: "gpt-5.5",
+            modelProvider: "openai",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    const summary = buildSummary();
+    summary.sessions.paths = [storePath];
+    summary.sessions.count = 1;
+    summary.sessions.recent = [];
+    summary.sessions.byAgent = [
+      {
+        agentId: "coding",
+        path: storePath,
+        count: 1,
+        recent: [],
+      },
+    ];
+
+    const payload = buildRunInsightsReport(summary, {
+      session: "agent:coding:old-proof-session",
+      limit: 5,
+      taskRecords: [],
+      gatewaySessionRows: new Map(),
+    });
+
+    expect(payload.sessions).toHaveLength(1);
+    expect(payload.sessions[0]).toMatchObject({
+      key: "agent:coding:old-proof-session",
+      agentId: null,
+      sessionId: "old-proof-session-id",
+      model: "gpt-5.5",
+    });
+    expect(payload.summary.recentSessionsConsidered).toBe(1);
+    expect(payload.summary.sessionsDisplayed).toBe(1);
   });
 
   it("projects terminal child task errors when no execution receipt is present", () => {
