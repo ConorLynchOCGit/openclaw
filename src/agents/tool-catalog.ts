@@ -330,6 +330,14 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     includeInOpenClawGroup: true,
   },
   {
+    id: "skill_read",
+    label: "skill_read",
+    description: "Read active skill instructions",
+    sectionId: "agents",
+    profiles: ["coding"],
+    includeInOpenClawGroup: true,
+  },
+  {
     id: "skill_workshop",
     label: "skill_workshop",
     description:

@@ -78,6 +78,27 @@ export type GatewaySessionRow = {
   finalAssistantText?: string | null;
   activeProgress?: ReadbackProgressProjection | null;
   readbackProvenance?: SessionReadbackProvenance;
+  promptContext?: {
+    skills?: {
+      promptChars?: number;
+      promptHash?: string;
+      promptRef?: NonNullable<SessionEntry["skillsSnapshot"]>["promptRef"];
+      skillCount?: number;
+      skillNames?: string[];
+      skillFilter?: string[];
+    };
+    systemPrompt?: {
+      chars?: number;
+      hash?: string;
+      source?: NonNullable<SessionEntry["systemPromptReport"]>["source"];
+      generatedAt?: number;
+    };
+    tools?: {
+      count?: number;
+      names?: string[];
+      schemaChars?: number;
+    };
+  };
   channel?: string;
   subject?: string;
   groupChannel?: string;

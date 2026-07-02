@@ -657,6 +657,28 @@ describe("runInsightsCommand", () => {
     });
   });
 
+  it("matches session filters case-insensitively without changing readback keys", async () => {
+    await runInsightsCommand(
+      {
+        json: true,
+        session: "AGENT:CODING:MAIN",
+        limit: "10",
+      },
+      runtime,
+    );
+
+    const payload = JSON.parse(String(runtime.log.mock.calls[0]?.[0]));
+    expect(payload.filters.session).toBe("AGENT:CODING:MAIN");
+    expect(payload.sessions.map((session: { key: string }) => session.key)).toEqual([
+      "agent:coding:main",
+    ]);
+    expect(payload.tasks.map((task: { taskId: string }) => task.taskId)).toEqual([
+      "task-coding-child",
+      "task-delivery-watch",
+      "task-codex-native-child",
+    ]);
+  });
+
   it("uses injected time for deterministic report timestamps", () => {
     const now = Date.UTC(2026, 6, 1, 5, 30, 0);
     const payload = buildRunInsightsReport(buildSummary(), {

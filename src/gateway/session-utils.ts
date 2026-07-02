@@ -2265,6 +2265,50 @@ export function buildGatewaySessionRow(params: {
   const pluginExtensions =
     !lightweight && entry ? projectPluginSessionExtensionsSync({ sessionKey: key, entry }) : [];
   const activeProgress = readbackProvenance?.activeProgress ?? null;
+  const promptContext =
+    entry?.skillsSnapshot || entry?.systemPromptReport
+      ? {
+          ...(entry.skillsSnapshot || entry.systemPromptReport?.skills
+            ? {
+                skills: {
+                  promptChars:
+                    entry.systemPromptReport?.skills?.promptChars ??
+                    entry.skillsSnapshot?.prompt?.length ??
+                    entry.skillsSnapshot?.promptRef?.bytes,
+                  promptHash:
+                    entry.systemPromptReport?.skills?.hash ?? entry.skillsSnapshot?.promptRef?.hash,
+                  promptRef: entry.skillsSnapshot?.promptRef,
+                  skillCount:
+                    entry.systemPromptReport?.skills?.entries?.length ??
+                    entry.skillsSnapshot?.skills?.length,
+                  skillNames:
+                    entry.systemPromptReport?.skills?.entries?.map((skill) => skill.name) ??
+                    entry.skillsSnapshot?.skills?.map((skill) => skill.name),
+                  skillFilter: entry.skillsSnapshot?.skillFilter,
+                },
+              }
+            : {}),
+          ...(entry.systemPromptReport?.systemPrompt
+            ? {
+                systemPrompt: {
+                  chars: entry.systemPromptReport.systemPrompt.chars,
+                  hash: entry.systemPromptReport.systemPrompt.hash,
+                  source: entry.systemPromptReport.source,
+                  generatedAt: entry.systemPromptReport.generatedAt,
+                },
+              }
+            : {}),
+          ...(entry.systemPromptReport?.tools
+            ? {
+                tools: {
+                  count: entry.systemPromptReport.tools.entries.length,
+                  names: entry.systemPromptReport.tools.entries.map((tool) => tool.name),
+                  schemaChars: entry.systemPromptReport.tools.schemaChars,
+                },
+              }
+            : {}),
+        }
+      : undefined;
 
   return {
     key,
@@ -2283,6 +2327,7 @@ export function buildGatewaySessionRow(params: {
     finalAssistantText,
     activeProgress,
     readbackProvenance,
+    promptContext,
     channel,
     subject,
     groupChannel,

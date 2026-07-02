@@ -40,6 +40,7 @@ const OPENCLAW_TOOL_FACTORY_NAMES = new Set([
   "task",
   "sessions_spawn",
   "sessions_yield",
+  "skill_read",
   "skill_workshop",
   "create_goal",
   "subagents",

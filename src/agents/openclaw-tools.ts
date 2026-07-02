@@ -15,6 +15,7 @@ import { getActiveSecretsRuntimeConfigSnapshot } from "../secrets/runtime-state.
 import { getActiveRuntimeWebToolsMetadata } from "../secrets/runtime-web-tools-state.js";
 import { isCronRunSessionKey } from "../sessions/session-key-utils.js";
 import { notifyLlmRequestActivity } from "../shared/llm-request-activity.js";
+import type { SkillSnapshot } from "../skills/types.js";
 import { resolveTranscriptsConfig } from "../transcripts/config.js";
 import { normalizeDeliveryContext } from "../utils/delivery-context.js";
 import type { GatewayMessageChannel } from "../utils/message-channel.js";
@@ -64,6 +65,7 @@ import { createSessionsListTool } from "./tools/sessions-list-tool.js";
 import { createSessionsSendTool } from "./tools/sessions-send-tool.js";
 import { createSessionsSpawnTool } from "./tools/sessions-spawn-tool.js";
 import { createSessionsYieldTool } from "./tools/sessions-yield-tool.js";
+import { createSkillReadTool } from "./tools/skill-read-tool.js";
 import { createSkillWorkshopTool } from "./tools/skill-workshop-tool.js";
 import { createSubagentsTool } from "./tools/subagents-tool.js";
 import { createTaskTool } from "./tools/task-tool.js";
@@ -179,6 +181,8 @@ export function createOpenClawTools(
     onYield?: (message: string) => Promise<void> | void;
     /** Allow plugin tools for this tool set to late-bind the gateway subagent. */
     allowGatewaySubagentBinding?: boolean;
+    /** Active skill snapshot; lets skill_read load only model-visible skills. */
+    skillsSnapshot?: SkillSnapshot;
   } & SpawnedToolContext,
 ): AnyAgentTool[] {
   const resolvedConfig = options?.config ?? openClawToolsDeps.config;
@@ -473,6 +477,7 @@ export function createOpenClawTools(
       sessionAgentId,
       config: resolvedConfig,
     }),
+    createSkillReadTool({ skillsSnapshot: options?.skillsSnapshot }),
     ...(options?.sandboxed
       ? []
       : [

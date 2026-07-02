@@ -675,7 +675,20 @@ function sessionMatchesSessionFilter(row: SessionStatus, session: string | undef
   if (!session) {
     return true;
   }
-  return row.key === session || row.sessionId === session;
+  return (
+    sessionReferenceMatches(row.key, session) || sessionReferenceMatches(row.sessionId, session)
+  );
+}
+
+function canonicalSessionReference(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed.toLocaleLowerCase("en-US") : null;
+}
+
+function sessionReferenceMatches(value: string | null | undefined, filter: string): boolean {
+  const canonicalValue = canonicalSessionReference(value);
+  const canonicalFilter = canonicalSessionReference(filter);
+  return Boolean(canonicalValue && canonicalFilter && canonicalValue === canonicalFilter);
 }
 
 function toInsightSession(row: SessionStatus): RunInsightSession {
@@ -793,9 +806,9 @@ function taskMatchesSessionFilter(task: TaskRecord, session: string | undefined)
     return true;
   }
   return (
-    task.requesterSessionKey === session ||
-    task.ownerKey === session ||
-    task.childSessionKey === session
+    sessionReferenceMatches(task.requesterSessionKey, session) ||
+    sessionReferenceMatches(task.ownerKey, session) ||
+    sessionReferenceMatches(task.childSessionKey, session)
   );
 }
 
