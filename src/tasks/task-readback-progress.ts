@@ -237,6 +237,49 @@ function resolveCodexNativeSpawnReason(
   return truncateTaskProgressNote(taskText);
 }
 
+function inferAgentRoleFromSessionKey(sessionKey: string | undefined): string | undefined {
+  const match = sessionKey?.match(/^agent:([^:]+):/u);
+  return normalizeOptionalString(match?.[1]);
+}
+
+function resolveTaskTerminalErrorProgressProjection(
+  task: TaskRecord,
+  now = Date.now(),
+): ReadbackProgressProjection | undefined {
+  if (task.status !== "failed" && task.status !== "timed_out" && task.status !== "lost") {
+    return undefined;
+  }
+  const outputSummary =
+    truncateTaskProgressNote(task.terminalSummary) ?? truncateTaskProgressNote(task.error);
+  if (!outputSummary) {
+    return undefined;
+  }
+  const childRole = inferAgentRoleFromSessionKey(task.childSessionKey);
+  return {
+    source: "task-run-event",
+    ref: `task-event:${task.taskId}:${task.endedAt ?? task.lastEventAt ?? task.startedAt ?? task.createdAt}:terminal`,
+    currentPhase: childRole ? task.status : `task_${task.status}`,
+    activeLabel:
+      normalizeOptionalString(task.label) ??
+      normalizeOptionalString(task.agentId) ??
+      normalizeOptionalString(task.taskKind) ??
+      normalizeOptionalString(task.runtime),
+    observedAt: formatTaskProgressObservedAt(task.endedAt, task.lastEventAt, task.startedAt),
+    elapsedMs: resolveElapsedMs(now, task.startedAt, task.createdAt),
+    sourceEventType: `task.${task.status}`,
+    outputSummary,
+    ...(childRole ? { childRole, childPhase: task.status } : {}),
+    note: outputSummary,
+    pointer: {
+      kind: "task",
+      ref: task.taskId,
+      label: "terminal task error",
+    },
+    derivedBy: "resolveTaskReadbackProgressProjection",
+    bounded: true,
+  };
+}
+
 function resolveTaskRunEventProgressProjection(
   task: TaskRecord,
   now = Date.now(),
@@ -474,7 +517,14 @@ export function resolveTaskReadbackProgressProjection(
     task,
     context?.now ?? Date.now(),
   );
-  return taskRunEventProgress && progressHasUsefulSignal(taskRunEventProgress)
-    ? taskRunEventProgress
+  if (taskRunEventProgress && progressHasUsefulSignal(taskRunEventProgress)) {
+    return taskRunEventProgress;
+  }
+  const terminalErrorProgress = resolveTaskTerminalErrorProgressProjection(
+    task,
+    context?.now ?? Date.now(),
+  );
+  return terminalErrorProgress && progressHasUsefulSignal(terminalErrorProgress)
+    ? terminalErrorProgress
     : undefined;
 }

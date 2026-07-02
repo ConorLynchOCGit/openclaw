@@ -1572,7 +1572,10 @@ function buildDiagnosticSummary(params: {
   const phaseTask =
     activeTasks.find((task) => task.attention.waitClass === "validation_or_promotion") ??
     activeTasks.find((task) => task.attention.waitClass) ??
-    params.tasks.find((task) => task.latestEvent);
+    params.tasks.find((task) => task.latestEvent) ??
+    (params.filters.agent || params.filters.session || params.filters.task
+      ? params.tasks[0]
+      : undefined);
   const phaseDeploy = params.deployEvents[0] ?? null;
   const currentOrLastKnownPhase = phaseTask
     ? {

@@ -688,6 +688,101 @@ describe("runInsightsCommand", () => {
     );
   });
 
+  it("projects terminal child task errors when no execution receipt is present", () => {
+    const now = Date.UTC(2026, 6, 1, 6, 0, 0);
+    const failedChild: TaskRecord = {
+      taskId: "task-failed-child-no-receipt",
+      runtime: "cli",
+      taskKind: "cli",
+      agentId: "codebase-researcher",
+      runId: "child-run-1",
+      label: "repo scout",
+      requesterSessionKey: "agent:codebase-researcher:subagent:child-1",
+      childSessionKey: "agent:codebase-researcher:subagent:child-1",
+      ownerKey: "agent:planning:main",
+      scopeKind: "session",
+      task: "Inspect repo current state.",
+      status: "failed",
+      deliveryStatus: "not_applicable",
+      notifyPolicy: "silent",
+      createdAt: now - 120_000,
+      startedAt: now - 110_000,
+      endedAt: now - 10_000,
+      lastEventAt: now - 10_000,
+      error:
+        "Context overflow: prompt too large for the model. Try /reset (or /new) to start a fresh session.",
+    };
+
+    const payload = buildRunInsightsReport(buildSummary(), {
+      session: "agent:codebase-researcher:subagent:child-1",
+      limit: 5,
+      now,
+      taskRecords: [failedChild],
+    });
+
+    expect(payload.tasks[0].activeProgress).toMatchObject({
+      source: "task-run-event",
+      currentPhase: "failed",
+      activeLabel: "repo scout",
+      sourceEventType: "task.failed",
+      childRole: "codebase-researcher",
+      childPhase: "failed",
+      outputSummary: expect.stringContaining("Context overflow"),
+      note: expect.stringContaining("Context overflow"),
+      pointer: {
+        kind: "task",
+        ref: "task-failed-child-no-receipt",
+        label: "terminal task error",
+      },
+      derivedBy: "resolveTaskReadbackProgressProjection",
+      bounded: true,
+    });
+    expect(payload.diagnosticSummary.currentOrLastKnownPhase).toMatchObject({
+      source: "task",
+      pointer: "openclaw tasks show task-failed-child-no-receipt",
+      evidenceQuality: "evidence_backed",
+    });
+  });
+
+  it("uses scoped terminal task evidence before unscoped deploy receipts for phase readback", () => {
+    const now = Date.UTC(2026, 6, 1, 6, 0, 0);
+    const completedCodingTask: TaskRecord = {
+      taskId: "task-completed-coding-no-receipt",
+      runtime: "subagent",
+      taskKind: "openclaw-agent",
+      agentId: "coding",
+      requesterSessionKey: "agent:coding:old-proof",
+      childSessionKey: "agent:coding:old-proof",
+      ownerKey: "agent:main:old-proof",
+      scopeKind: "session",
+      task: "Implement bounded readback feature.",
+      status: "succeeded",
+      deliveryStatus: "delivered",
+      notifyPolicy: "silent",
+      createdAt: now - 240_000,
+      startedAt: now - 230_000,
+      endedAt: now - 30_000,
+      lastEventAt: now - 30_000,
+    };
+
+    const payload = buildRunInsightsReport(buildSummary(), {
+      session: "agent:coding:old-proof",
+      limit: 5,
+      now,
+      taskRecords: [completedCodingTask],
+    });
+
+    expect(payload.tasks).toHaveLength(1);
+    expect(payload.deployEvents.length).toBeGreaterThan(0);
+    expect(payload.diagnosticSummary.currentOrLastKnownPhase).toMatchObject({
+      label: "succeeded",
+      source: "task",
+      pointer: "openclaw tasks show task-completed-coding-no-receipt",
+      evidenceQuality: "evidence_backed",
+      confidence: "high",
+    });
+  });
+
   it("uses gateway session row readback for scoped session status, final answer, and progress", () => {
     const now = Date.UTC(2026, 6, 1, 6, 0, 0);
     const payload = buildRunInsightsReport(buildSummary(), {
