@@ -421,7 +421,7 @@ describe("preemptive-compaction", () => {
   });
 
   it("treats mixed oversized-plus-aggregate tool tails as cumulative recovery potential", () => {
-    const oversized = "x".repeat(45_000);
+    const oversized = "x".repeat(80_000);
     const medium = "alpha beta gamma delta epsilon ".repeat(500);
     const messages: AgentMessage[] = [
       makeAssistantHistory("short history"),

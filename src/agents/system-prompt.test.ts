@@ -502,7 +502,7 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("- Read: Read file contents");
     expect(prompt).toContain("- Exec: Run shell commands");
     expect(prompt).toContain(
-      "Scan <available_skills>. If one clearly applies, read its SKILL.md at exact <location> with `Read`, then follow it.",
+      "Scan <available_skills>. If one clearly applies or your agent docs/brief require one, read its SKILL.md at exact <location> with `Read` before using it, then follow it. The skill list is discovery only, not activation.",
     );
     expect(prompt).toContain("If a skill's <version> differs from a previous turn");
     expect(prompt).toContain("If several apply, choose the most specific.");
@@ -682,7 +682,7 @@ describe("buildAgentSystemPrompt", () => {
 
     expect(prompt).toContain("## Skills");
     expect(prompt).toContain(
-      "Scan <available_skills>. If one clearly applies, read its SKILL.md at exact <location> with `read`, then follow it.",
+      "Scan <available_skills>. If one clearly applies or your agent docs/brief require one, read its SKILL.md at exact <location> with `read` before using it, then follow it. The skill list is discovery only, not activation.",
     );
     expect(prompt).toContain("If a skill's <version> differs from a previous turn");
     expect(prompt).toContain("If several apply, choose the most specific.");

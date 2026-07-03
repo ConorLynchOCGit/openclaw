@@ -5,6 +5,7 @@
  */
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { addTimerTimeoutGraceMs } from "@openclaw/normalization-core/number-coercion";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { ToolLoopDetectionConfig } from "../config/types.tools.js";
@@ -311,8 +312,20 @@ type SkillUsageMatch = {
   activation: "command" | "read";
 };
 
-function resolveRelativeToolPath(candidate: string, ctx?: HookContext): string | undefined {
+function normalizeReadToolPath(candidate: string): string {
   const trimmed = candidate.trim();
+  if (trimmed.startsWith("file://")) {
+    try {
+      return fileURLToPath(trimmed);
+    } catch {
+      return trimmed;
+    }
+  }
+  return trimmed;
+}
+
+function resolveRelativeToolPath(candidate: string, ctx?: HookContext): string | undefined {
+  const trimmed = normalizeReadToolPath(candidate);
   if (!trimmed) {
     return undefined;
   }
@@ -333,10 +346,32 @@ function readToolPathCandidates(params: unknown, ctx?: HookContext): string[] {
   if (!isPlainObject(params)) {
     return [];
   }
-  const candidates = typeof params.path === "string" ? [params.path] : [];
-  return candidates
-    .map((candidate) => resolveRelativeToolPath(candidate, ctx))
-    .filter((candidate): candidate is string => Boolean(candidate));
+  const rawCandidates = typeof params.path === "string" ? [params.path] : [];
+  const candidates = new Set<string>();
+  for (const rawCandidate of rawCandidates) {
+    const normalizedCandidate = normalizeReadToolPath(rawCandidate);
+    const resolved = resolveRelativeToolPath(normalizedCandidate, ctx);
+    if (resolved) {
+      candidates.add(resolved);
+    }
+    if (ctx?.sandbox?.bridge) {
+      try {
+        const sandboxResolved = ctx.sandbox.bridge.resolvePath({
+          filePath: normalizedCandidate,
+          ...(ctx.cwd ? { cwd: ctx.cwd } : {}),
+        });
+        if (sandboxResolved.hostPath) {
+          candidates.add(path.resolve(sandboxResolved.hostPath));
+        }
+        if (sandboxResolved.containerPath) {
+          candidates.add(path.resolve(sandboxResolved.containerPath));
+        }
+      } catch {
+        // Some read paths are intentionally outside the sandbox bridge's view.
+      }
+    }
+  }
+  return [...candidates];
 }
 
 function skillInstructionPaths(snapshot: SkillSnapshot | undefined): Map<string, SkillUsageMatch> {

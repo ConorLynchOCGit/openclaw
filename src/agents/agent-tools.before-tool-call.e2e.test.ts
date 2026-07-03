@@ -670,6 +670,76 @@ describe("before_tool_call loop detection behavior", () => {
     });
   });
 
+  it("forces sandbox-visible skill instruction reads to load the complete SKILL.md despite line limits", async () => {
+    const workspaceDir = path.join("/tmp", "openclaw-sandbox-skill-full-read");
+    const skillBaseDir = path.join(workspaceDir, ".agents", "skills", "demo-skill");
+    const skillFilePath = path.join(skillBaseDir, "SKILL.md");
+    const sandboxSkillPath = "/workspace/.openclaw/sandbox-skills/skills/demo-skill/SKILL.md";
+    const execute = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "full skill" }] });
+    const bridge = {
+      resolvePath: vi.fn(({ filePath }: { filePath: string }) => ({
+        hostPath: filePath === sandboxSkillPath ? skillFilePath : path.join(workspaceDir, filePath),
+        relativePath: ".openclaw/sandbox-skills/skills/demo-skill/SKILL.md",
+        containerPath: filePath,
+      })),
+    };
+    const tool = wrapToolWithBeforeToolCallHook({ name: "read", execute } as any, {
+      agentId: "codebase-researcher",
+      sessionKey: "session-key",
+      workspaceDir,
+      cwd: "/workspace",
+      sandbox: { root: workspaceDir, bridge: bridge as any },
+      skillsSnapshot: {
+        prompt: "",
+        skills: [{ name: "demo-skill" }],
+        resolvedSkills: [
+          createCanonicalFixtureSkill({
+            name: "demo-skill",
+            description: "Demo",
+            filePath: skillFilePath,
+            baseDir: skillBaseDir,
+            source: "workspace",
+          }),
+        ],
+      },
+      loopDetection: { enabled: false },
+    });
+
+    await withDiagnosticEvents(async (emitted, flush) => {
+      await tool.execute(
+        "tool-call-sandbox-limited-skill-read",
+        {
+          path: sandboxSkillPath,
+          offset: 1,
+          limit: 220,
+        },
+        undefined,
+        undefined,
+      );
+      await flush();
+
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute.mock.calls[0]?.[1]).toEqual({
+        path: sandboxSkillPath,
+      });
+      expect(emitted.map((evt) => evt.type)).toEqual([
+        "tool.execution.started",
+        "skill.used",
+        "tool.execution.completed",
+      ]);
+      expectEventFields(emitted[1], {
+        type: "skill.used",
+        agentId: "codebase-researcher",
+        sessionKey: "session-key",
+        skillName: "demo-skill",
+        skillSource: "workspace",
+        activation: "read",
+        toolName: "read",
+        toolCallId: "tool-call-sandbox-limited-skill-read",
+      });
+    });
+  });
+
   it("continues honoring read limits for ordinary non-skill files", async () => {
     const workspaceDir = path.join("/tmp", "openclaw-non-skill-limited-read");
     const skillBaseDir = path.join(workspaceDir, ".agents", "skills", "demo-skill");

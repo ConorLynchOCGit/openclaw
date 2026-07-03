@@ -4,7 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { createSyntheticSourceInfo } from "../../skills/loading/skill-contract.js";
-import { resolveSkillsPromptForRun } from "../../skills/loading/workspace.js";
+import {
+  buildWorkspaceSkillSnapshot,
+  resolveSkillsPromptForRun,
+} from "../../skills/loading/workspace.js";
 import { resolveEmbeddedRunSkillEntries } from "../../skills/runtime/embedded-run-entries.js";
 import type { SkillSnapshot } from "../../skills/types.js";
 import {
@@ -152,8 +155,12 @@ describe("resolveSandboxSkillRuntimeInputs", () => {
         skillsWorkspaceDir,
         skillsPromptWorkspaceDir,
       });
+      const promptSkillsSnapshot = buildWorkspaceSkillSnapshot(skillsPromptWorkspaceDir, {
+        entries: promptSkillEntries,
+        eligibility: skillsEligibilityForRun,
+      });
       const prompt = resolveSkillsPromptForRun({
-        skillsSnapshot: skillsSnapshotForRun,
+        skillsSnapshot: promptSkillsSnapshot,
         entries: promptSkillEntries,
         workspaceDir: skillsPromptWorkspaceDir,
         eligibility: skillsEligibilityForRun,
@@ -166,6 +173,15 @@ describe("resolveSandboxSkillRuntimeInputs", () => {
       expect(prompt).not.toContain(hostSkillPath);
       expect(prompt).not.toContain("plugin-skills");
       expect(prompt.replaceAll("\\", "/")).not.toContain("/skills/canvas/SKILL.md");
+      expect(promptSkillsSnapshot.resolvedSkills?.[0]?.filePath).toBe(
+        "/workspace/.openclaw/sandbox-skills/skills/demo/SKILL.md",
+      );
+      expect(promptSkillsSnapshot.resolvedSkills?.[0]?.baseDir).toBe(
+        "/workspace/.openclaw/sandbox-skills/skills/demo",
+      );
+      expect(JSON.stringify(promptSkillsSnapshot)).not.toContain(
+        materializedWorkspace.replaceAll("\\", "/"),
+      );
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }

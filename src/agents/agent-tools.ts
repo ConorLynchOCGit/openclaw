@@ -1166,7 +1166,7 @@ export function createOpenClawCodingTools(options?: {
         cwd: codingRoot,
         workspaceDir: workspaceRoot,
         ...(options?.skillsSnapshot ? { skillsSnapshot: options.skillsSnapshot } : {}),
-        ...(sandboxRoot && allowWorkspaceWrites
+        ...(sandboxRoot && sandboxFsBridge
           ? { sandbox: { root: sandboxRoot, bridge: sandboxFsBridge! } }
           : {}),
         sessionKey: options?.sessionKey,

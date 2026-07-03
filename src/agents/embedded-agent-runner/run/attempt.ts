@@ -63,7 +63,10 @@ import {
 import { getPluginToolMeta } from "../../../plugins/tools.js";
 import { isSubagentSessionKey } from "../../../routing/session-key.js";
 import { annotateInterSessionPromptText } from "../../../sessions/input-provenance.js";
-import { resolveSkillsPromptForRun } from "../../../skills/loading/workspace.js";
+import {
+  buildWorkspaceSkillSnapshot,
+  resolveSkillsPromptForRun,
+} from "../../../skills/loading/workspace.js";
 import { resolveEmbeddedRunSkillEntries } from "../../../skills/runtime/embedded-run-entries.js";
 import {
   applySkillEnvOverrides,
@@ -1087,9 +1090,18 @@ export async function runEmbeddedAttempt(
       skillsWorkspaceDir: effectiveSkillsWorkspace,
       skillsPromptWorkspaceDir: effectiveSkillsPromptWorkspace,
     });
+    const promptSkillsSnapshot =
+      promptSkillEntries && promptSkillEntries.length > 0
+        ? buildWorkspaceSkillSnapshot(effectiveSkillsPromptWorkspace, {
+            entries: promptSkillEntries,
+            config: params.config,
+            agentId: sessionAgentId,
+            ...(skillsEligibility ? { eligibility: skillsEligibility } : {}),
+          })
+        : skillsSnapshotForRun;
 
     const skillsPrompt = resolveSkillsPromptForRun({
-      skillsSnapshot: skillsSnapshotForRun,
+      skillsSnapshot: promptSkillsSnapshot,
       entries: promptSkillEntries,
       config: params.config,
       workspaceDir: effectiveSkillsPromptWorkspace,
@@ -1304,7 +1316,7 @@ export async function runEmbeddedAttempt(
             authProfileStore: params.authProfileStore,
             recordToolPrepStage: (name) => corePluginToolStages.mark(name),
             onToolOutcome: params.onToolOutcome,
-            skillsSnapshot: skillsSnapshotForRun,
+            skillsSnapshot: promptSkillsSnapshot,
             onYield: (message) => {
               yieldDetected = true;
               yieldMessage = message;
@@ -2581,7 +2593,7 @@ export async function runEmbeddedAttempt(
           toolResultFormat: params.toolResultFormat,
           disableTools: params.disableTools,
           toolsAllow: params.toolsAllow,
-          skillsSnapshot: params.skillsSnapshot,
+          skillsSnapshot: promptSkillsSnapshot,
           systemPromptReport,
         }),
       );

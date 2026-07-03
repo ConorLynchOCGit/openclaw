@@ -285,7 +285,7 @@ function buildSkillsSection(params: { skillsPrompt?: string; readToolName: strin
   if (!trimmed) {
     return [];
   }
-  const skillLoadInstruction = `Scan <available_skills>. If one clearly applies, read its SKILL.md at exact <location> with \`${params.readToolName}\`, then follow it.`;
+  const skillLoadInstruction = `Scan <available_skills>. If one clearly applies or your agent docs/brief require one, read its SKILL.md at exact <location> with \`${params.readToolName}\` before using it, then follow it. The skill list is discovery only, not activation.`;
   return [
     "## Skills",
     skillLoadInstruction,
