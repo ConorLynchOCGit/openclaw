@@ -919,6 +919,75 @@ describe("tasks gateway handlers", () => {
     ]);
   });
 
+  it("projects nested child failure as parent recovery instead of stale child-start progress", async () => {
+    addSubagentRunForTests({
+      runId: "run-planning-active",
+      childSessionKey: "agent:planning:subagent:plan",
+      requesterSessionKey: "agent:main:phase0z",
+      requesterDisplayKey: "main",
+      task: "Plan native skill wiring",
+      cleanup: "keep",
+      createdAt: 120,
+      startedAt: 120,
+      delivery: { status: "pending" },
+    });
+    addSubagentRunForTests({
+      runId: "run-codebase-failed",
+      childSessionKey: "agent:codebase-researcher:subagent:source-overflow",
+      requesterSessionKey: "agent:planning:subagent:plan",
+      requesterDisplayKey: "planning",
+      task: "Inspect skill and readback source surfaces",
+      cleanup: "keep",
+      createdAt: 140,
+      startedAt: 140,
+      endedAt: 240,
+      outcome: { status: "error", error: "Context overflow while reading source." },
+      expectsCompletionMessage: true,
+      completion: {
+        required: true,
+        resultText: "Partial Context Pack captured source/readback refs.",
+        capturedAt: 245,
+      },
+      delivery: { status: "failed", lastError: "Context overflow while reading source." },
+    });
+    const task = createTaskRecord({
+      runtime: "subagent",
+      taskKind: "planning",
+      requesterSessionKey: "agent:main:phase0z",
+      ownerKey: "agent:main:phase0z",
+      scopeKind: "session",
+      childSessionKey: "agent:planning:subagent:plan",
+      agentId: "planning",
+      runId: "run-planning-active",
+      task: "Plan native skill wiring",
+      status: "running",
+      deliveryStatus: "pending",
+      startedAt: 110,
+      progressSummary: "Child run started.",
+    });
+
+    const { payload } = await getTaskPayload(task.taskId);
+
+    expect(payload?.task?.activeProgress).toMatchObject({
+      source: "subagent-registry",
+      ref: "subagent-run:run-codebase-failed",
+      currentPhase: "recovering_from_failed_child",
+      activeLabel: "codebase-researcher",
+      sourceEventType: "subagent.descendant",
+      childRole: "codebase-researcher",
+      childPhase: "failed",
+      spawnReason: "Inspect skill and readback source surfaces",
+      note: "Child run is failed; parent is recovering from failed child.",
+      pointer: {
+        kind: "session",
+        ref: "agent:codebase-researcher:subagent:source-overflow",
+        label: "descendant child session",
+      },
+      derivedBy: "resolveTaskReadbackProgressProjection",
+      bounded: true,
+    });
+  });
+
   it("shows settled child state instead of stale running task text", async () => {
     addSubagentRunForTests({
       runId: "run-settled-child",

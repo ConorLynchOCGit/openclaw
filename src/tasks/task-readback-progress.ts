@@ -6,8 +6,10 @@ import {
   getSubagentSessionRuntimeMs,
   getSubagentSessionStartedAt,
   isSubagentRunLive,
+  listDescendantRunsForRequester,
   resolveSubagentSessionStatus,
 } from "../agents/subagent-registry-read.js";
+import type { SubagentRunRecord } from "../agents/subagent-registry.types.js";
 import { getRuntimeConfig } from "../config/io.js";
 import {
   loadSessionStore,
@@ -253,6 +255,155 @@ function inferAgentRoleFromSessionKey(sessionKey: string | undefined): string | 
   return normalizeOptionalString(match?.[1]);
 }
 
+function candidateTaskChildRunRoots(task: TaskRecord): string[] {
+  const roots = [task.childSessionKey, task.requesterSessionKey, task.ownerKey]
+    .map((value) => normalizeOptionalString(value))
+    .filter((value): value is string => Boolean(value));
+  return [...new Set(roots)];
+}
+
+function childRunFallsWithinTaskWindow(task: TaskRecord, run: SubagentRunRecord): boolean {
+  const lowerBound = task.startedAt ?? task.createdAt;
+  const upperBound = task.endedAt;
+  if (typeof lowerBound === "number" && run.createdAt < lowerBound) {
+    return false;
+  }
+  if (typeof upperBound === "number" && run.createdAt > upperBound) {
+    return false;
+  }
+  return true;
+}
+
+function collectDescendantRunsForTask(task: TaskRecord): SubagentRunRecord[] {
+  const byRunId = new Map<string, SubagentRunRecord>();
+  for (const root of candidateTaskChildRunRoots(task)) {
+    for (const run of listDescendantRunsForRequester(root)) {
+      if (!childRunFallsWithinTaskWindow(task, run)) {
+        continue;
+      }
+      const existing = byRunId.get(run.runId);
+      if (!existing || run.createdAt > existing.createdAt) {
+        byRunId.set(run.runId, run);
+      }
+    }
+  }
+  return [...byRunId.values()].sort((a, b) => a.createdAt - b.createdAt);
+}
+
+function isIssueChildRunStatus(status: string | undefined): boolean {
+  return status === "failed" || status === "timeout" || status === "killed";
+}
+
+function resolveChildRunRole(run: SubagentRunRecord): string | undefined {
+  return (
+    inferAgentRoleFromSessionKey(run.childSessionKey) ??
+    truncateTaskProgressNote(run.label) ??
+    truncateTaskProgressNote(run.taskName)
+  );
+}
+
+function childRunLooksLikeReviewer(run: SubagentRunRecord): boolean {
+  const haystack = [resolveChildRunRole(run), run.label, run.taskName]
+    .map((value) => normalizeOptionalString(value)?.toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+  return /\breviewer\b|\breview\b/u.test(haystack);
+}
+
+function resolveDescendantChildRunPhase(run: SubagentRunRecord): string | undefined {
+  return resolveSubagentSessionStatus(run);
+}
+
+function selectMostUsefulDescendantRun(
+  task: TaskRecord,
+  runs: readonly SubagentRunRecord[],
+): SubagentRunRecord | undefined {
+  if (runs.length === 0) {
+    return undefined;
+  }
+  const directChildSessionKey = normalizeOptionalString(task.childSessionKey);
+  const candidateRuns = directChildSessionKey
+    ? runs.filter((run) => normalizeOptionalString(run.childSessionKey) !== directChildSessionKey)
+    : runs;
+  if (candidateRuns.length === 0) {
+    return undefined;
+  }
+  const newestFirst = [...candidateRuns].sort((a, b) => b.createdAt - a.createdAt);
+  return (
+    newestFirst.find((run) => resolveDescendantChildRunPhase(run) === "running") ??
+    newestFirst.find((run) => isIssueChildRunStatus(resolveDescendantChildRunPhase(run))) ??
+    newestFirst[0]
+  );
+}
+
+function resolveParentPhaseFromDescendantRun(run: SubagentRunRecord): string {
+  const childPhase = resolveDescendantChildRunPhase(run);
+  if (childPhase === "running") {
+    return "waiting_on_child";
+  }
+  if (isIssueChildRunStatus(childPhase)) {
+    return "recovering_from_failed_child";
+  }
+  if (childRunLooksLikeReviewer(run)) {
+    return "handling_reviewer_delta";
+  }
+  return "synthesizing_after_child_work";
+}
+
+function resolveDescendantChildRunProgressProjection(
+  task: TaskRecord,
+  now = Date.now(),
+): ReadbackProgressProjection | undefined {
+  if (task.status !== "running" && task.status !== "queued") {
+    return undefined;
+  }
+  const runs = collectDescendantRunsForTask(task);
+  const selected = selectMostUsefulDescendantRun(task, runs);
+  if (!selected) {
+    return undefined;
+  }
+  const childPhase = resolveDescendantChildRunPhase(selected);
+  const role = resolveChildRunRole(selected);
+  const currentPhase = resolveParentPhaseFromDescendantRun(selected);
+  const spawnReason = truncateTaskProgressNote(selected.task);
+  const childLabel =
+    role ?? truncateTaskProgressNote(selected.label) ?? truncateTaskProgressNote(selected.taskName);
+  const note =
+    childPhase === "running"
+      ? `Child run is active; parent is waiting on ${childLabel ?? "child work"}.`
+      : `Child run is ${childPhase ?? "settled"}; parent is ${currentPhase.replace(/_/gu, " ")}.`;
+  return {
+    source: "subagent-registry",
+    ref: `subagent-run:${selected.runId}`,
+    currentPhase,
+    activeLabel:
+      childLabel ??
+      truncateTaskProgressNote(task.label) ??
+      normalizeOptionalString(task.agentId) ??
+      normalizeOptionalString(task.runtime),
+    observedAt: formatTaskProgressObservedAt(
+      selected.endedAt,
+      selected.startedAt,
+      selected.createdAt,
+      task.lastEventAt,
+    ),
+    elapsedMs: resolveElapsedMs(now, task.startedAt, task.createdAt),
+    durationMs: getSubagentSessionRuntimeMs(selected, now),
+    sourceEventType: "subagent.descendant",
+    ...(role ? { childRole: role } : {}),
+    ...(childPhase ? { childPhase } : {}),
+    ...(spawnReason ? { spawnReason } : {}),
+    note,
+    pointer: {
+      kind: "session",
+      ref: selected.childSessionKey,
+      label: "descendant child session",
+    },
+    derivedBy: "resolveTaskReadbackProgressProjection",
+    bounded: true,
+  };
+}
+
 function resolveTaskTerminalErrorProgressProjection(
   task: TaskRecord,
   now = Date.now(),
@@ -471,6 +622,10 @@ function resolveFallbackTaskProgressProjection(
   const taskRunEventProgress = resolveTaskRunEventProgressProjection(task, now);
   if (isCodexNativeSubagentTask(task) && taskRunEventProgress) {
     return taskRunEventProgress;
+  }
+  const descendantChildProgress = resolveDescendantChildRunProgressProjection(task, now);
+  if (descendantChildProgress) {
+    return descendantChildProgress;
   }
   if (childSessionKey) {
     const subagentRun = getSessionDisplaySubagentRunByChildSessionKey(childSessionKey);
