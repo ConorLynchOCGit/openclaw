@@ -972,6 +972,215 @@ describe("runInsightsCommand", () => {
     });
   });
 
+  it("prefers terminal final-answer session evidence over a later reviewer task", () => {
+    const now = Date.UTC(2026, 6, 1, 6, 0, 0);
+    const latestReviewerTask: TaskRecord = {
+      taskId: "task-latest-reviewer",
+      runtime: "subagent",
+      taskKind: "openclaw-agent",
+      agentId: "reviewer",
+      runId: "reviewer-after-planning",
+      label: "Reviewer pass",
+      requesterSessionKey: "agent:planning:main",
+      ownerKey: "agent:planning:main",
+      scopeKind: "session",
+      task: "Review final approval packet.",
+      status: "succeeded",
+      deliveryStatus: "delivered",
+      notifyPolicy: "silent",
+      createdAt: now - 120_000,
+      startedAt: now - 110_000,
+      endedAt: now - 1_000,
+      lastEventAt: now - 1_000,
+      executionReceipt: {
+        schema: "openclaw.task.execution_receipt.v1",
+        eventCount: 2,
+        updatedAt: now - 1_000,
+        latestEvent: {
+          at: now - 1_000,
+          kind: "succeeded",
+          summary: "Reviewer approved the plan.",
+        },
+      },
+    };
+
+    const payload = buildRunInsightsReport(buildSummary(), {
+      session: "agent:planning:main",
+      limit: 5,
+      now,
+      taskRecords: [latestReviewerTask],
+      gatewaySessionRows: new Map([
+        [
+          "agent:planning:main",
+          {
+            key: "agent:planning:main",
+            kind: "direct",
+            updatedAt: now,
+            status: "done",
+            model: "gpt-5.5",
+            totalTokens: 25,
+            totalTokensFresh: true,
+            finalAssistantText: "Final approval packet is ready.",
+            readbackProvenance: {
+              status: {
+                source: "session-transcript",
+                ref: "session:sess-planning",
+                derivedBy: "buildGatewaySessionRow",
+                bounded: true,
+              },
+              finalAssistantText: {
+                source: "session-transcript",
+                ref: "session:sess-planning",
+                derivedBy: "readLastAssistantTextFromTranscript",
+                bounded: true,
+              },
+            },
+          },
+        ],
+      ]),
+    });
+
+    expect(payload.diagnosticSummary.currentOrLastKnownPhase).toMatchObject({
+      label: "final assistant answer present",
+      source: "session",
+      pointer: "openclaw sessions show agent:planning:main --agent planning",
+      confidence: "high",
+      evidenceQuality: "evidence_backed",
+    });
+    expect(payload.diagnosticSummary.parentWaitState).toMatchObject({
+      waitClass: null,
+      reason: "session is terminal with final assistant readback; no active parent wait remains",
+      pointer: "openclaw sessions show agent:planning:main --agent planning",
+    });
+    expect(payload.diagnosticSummary.operatorNextAction).toMatchObject({
+      label: "Inspect final assistant readback",
+      pointer: "openclaw sessions show agent:planning:main --agent planning",
+    });
+  });
+
+  it("labels active parent synthesis after terminal child work instead of latest child output", () => {
+    const now = Date.UTC(2026, 6, 1, 6, 0, 0);
+    const terminalChildTask: TaskRecord = {
+      taskId: "task-terminal-scout",
+      runtime: "subagent",
+      taskKind: "codex-native",
+      agentId: "planning",
+      runId: "codex-thread:source-scout",
+      label: "source_scout",
+      requesterSessionKey: "agent:planning:main",
+      ownerKey: "agent:planning:main",
+      scopeKind: "session",
+      task: "Role: source_scout.\n\nInspect native skill wiring refs.",
+      status: "succeeded",
+      deliveryStatus: "delivered",
+      notifyPolicy: "silent",
+      createdAt: now - 180_000,
+      startedAt: now - 175_000,
+      endedAt: now - 60_000,
+      lastEventAt: now - 60_000,
+      executionReceipt: {
+        schema: "openclaw.task.execution_receipt.v1",
+        eventCount: 2,
+        updatedAt: now - 60_000,
+        latestEvent: {
+          at: now - 60_000,
+          kind: "succeeded",
+          summary: "Source scout packet complete.",
+        },
+      },
+    };
+
+    const payload = buildRunInsightsReport(buildSummary(), {
+      session: "agent:planning:main",
+      limit: 5,
+      now,
+      taskRecords: [terminalChildTask],
+      gatewaySessionRows: new Map([
+        [
+          "agent:planning:main",
+          {
+            key: "agent:planning:main",
+            kind: "direct",
+            updatedAt: now,
+            status: "running",
+            model: "gpt-5.5",
+            totalTokens: 25,
+            totalTokensFresh: true,
+          },
+        ],
+      ]),
+    });
+
+    expect(payload.performanceProfile.childSessionEvidence[0]).toMatchObject({
+      taskId: "task-terminal-scout",
+      childRole: "source_scout",
+      childPhase: "succeeded",
+      status: "succeeded",
+    });
+    expect(payload.diagnosticSummary.currentOrLastKnownPhase).toMatchObject({
+      label: "parent synthesis/finalization after child work",
+      source: "session",
+      pointer: "openclaw sessions show agent:planning:main --agent planning",
+      confidence: "medium",
+      evidenceQuality: "heuristic",
+    });
+    expect(payload.diagnosticSummary.parentWaitState).toMatchObject({
+      waitClass: "unknown",
+      reason:
+        "derived from active parent session status with terminal child task evidence in scope",
+      pointer: "openclaw sessions show agent:planning:main --agent planning",
+    });
+  });
+
+  it("projects active task-registry progress when no richer task receipt exists yet", () => {
+    const now = Date.UTC(2026, 6, 1, 6, 0, 0);
+    const activeTask: TaskRecord = {
+      taskId: "task-active-no-receipt",
+      runtime: "subagent",
+      taskKind: "openclaw-agent",
+      agentId: "planning",
+      runId: "planning-active-no-receipt",
+      label: "Planning synthesis",
+      requesterSessionKey: "agent:planning:main",
+      ownerKey: "agent:main:main",
+      scopeKind: "session",
+      task: "Produce approval packet.",
+      status: "running",
+      deliveryStatus: "pending",
+      notifyPolicy: "done_only",
+      createdAt: now - 12 * 60_000,
+      startedAt: now - 11 * 60_000,
+      lastEventAt: now - 11 * 60_000,
+    };
+
+    const payload = buildRunInsightsReport(buildSummary(), {
+      agent: "planning",
+      session: "agent:planning:main",
+      limit: 5,
+      now,
+      taskRecords: [activeTask],
+    });
+
+    expect(payload.tasks[0].activeProgress).toMatchObject({
+      source: "task-registry",
+      ref: "task:task-active-no-receipt",
+      currentPhase: "running",
+      activeLabel: "Planning synthesis",
+      sourceEventType: "task.registry",
+      pointer: {
+        kind: "task",
+        ref: "task-active-no-receipt",
+        label: "native task registry row",
+      },
+      derivedBy: "resolveTaskReadbackProgressProjection",
+      bounded: true,
+    });
+    expect(payload.tasks[0].attention).toMatchObject({
+      waitClass: "long_running",
+      pointer: "openclaw tasks show task-active-no-receipt",
+    });
+  });
+
   it("does not classify successful terminal planning proof tasks as active validation work", () => {
     const now = Date.UTC(2026, 6, 1, 6, 0, 0);
     const completedPlanningTask: TaskRecord = {

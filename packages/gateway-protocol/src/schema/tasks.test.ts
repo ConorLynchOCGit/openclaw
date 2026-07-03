@@ -103,6 +103,31 @@ describe("TaskSummarySchema", () => {
         },
       }),
     ).toBe(true);
+
+    expect(
+      validateTaskSummary.Check({
+        id: "task-3",
+        status: "running",
+        deliveryStatus: "pending",
+        activeProgress: {
+          source: "task-registry",
+          ref: "task:task-3",
+          currentPhase: "running",
+          activeLabel: "planning",
+          observedAt: "2026-06-30T20:07:00.000Z",
+          elapsedMs: 1500,
+          sourceEventType: "task.registry",
+          note: "Native task row is active; no richer task receipt or trajectory progress is available yet.",
+          pointer: {
+            kind: "task",
+            ref: "task-3",
+            label: "native task registry row",
+          },
+          derivedBy: "resolveTaskReadbackProgressProjection",
+          bounded: true,
+        },
+      }),
+    ).toBe(true);
   });
 
   it("requires closed deliveryStatus values", () => {

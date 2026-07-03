@@ -51,6 +51,7 @@ const TaskReadbackProgressProjectionSchema = Type.Object(
       Type.Literal("trajectory"),
       Type.Literal("subagent-registry"),
       Type.Literal("task-run-event"),
+      Type.Literal("task-registry"),
     ]),
     ref: NonEmptyString,
     currentPhase: Type.Optional(Type.Union([Type.String(), Type.Null()])),

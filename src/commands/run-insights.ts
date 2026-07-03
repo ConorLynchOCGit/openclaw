@@ -501,6 +501,25 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isTerminalFinalSession(session: RunInsightSession): boolean {
+  return session.status === "done" && session.hasFinalAssistantText;
+}
+
+function isActiveSession(session: RunInsightSession): boolean {
+  return session.status === "running";
+}
+
+function activeSessionProgressLabel(session: RunInsightSession): string | null {
+  const progress = session.activeProgress;
+  return (
+    compactSummaryText(progress?.outputSummary) ??
+    compactSummaryText(progress?.command) ??
+    compactSummaryText(progress?.note) ??
+    compactSummaryText(progress?.currentPhase) ??
+    compactSummaryText(progress?.activeLabel)
+  );
+}
+
 function finiteNumberOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -1639,9 +1658,37 @@ function buildDiagnosticSummary(params: {
   deployEvents: RunInsightDeployEvent[];
   signals: RunInsightSignal[];
 }): RunInsightsReport["diagnosticSummary"] {
+  const terminalFinalSession = params.sessions.find(isTerminalFinalSession) ?? null;
+  const activeSession = params.sessions.find(isActiveSession) ?? null;
   const activeTasks = params.tasks.filter(
     (task) => task.status === "queued" || task.status === "running",
   );
+  const childTasks = params.tasks.filter(taskHasChildEvidence);
+  const activeChildTasks = childTasks.filter(
+    (task) => task.status === "queued" || task.status === "running",
+  );
+  const terminalChildTasks = childTasks.filter(
+    (task) => task.status !== "queued" && task.status !== "running",
+  );
+  const activeSessionLabel = activeSession ? activeSessionProgressLabel(activeSession) : null;
+  const activeParentSynthesis =
+    activeSession &&
+    activeTasks.length === 0 &&
+    activeChildTasks.length === 0 &&
+    terminalChildTasks.length > 0
+      ? {
+          label: activeSessionLabel ?? "parent synthesis/finalization after child work",
+          source: "session" as const,
+          pointer: activeSession.pointer,
+          confidence: activeSessionLabel ? ("high" as const) : ("medium" as const),
+          evidenceQuality: activeSessionLabel
+            ? ("evidence_backed" as const)
+            : ("heuristic" as const),
+          reason: activeSessionLabel
+            ? "derived from active parent session progress after terminal child work"
+            : "derived from active parent session status with terminal child task evidence in scope",
+        }
+      : null;
   const phaseTask =
     activeTasks.find((task) => task.attention.waitClass === "validation_or_promotion") ??
     activeTasks.find((task) => task.attention.waitClass) ??
@@ -1650,45 +1697,56 @@ function buildDiagnosticSummary(params: {
       ? params.tasks[0]
       : undefined);
   const phaseDeploy = params.deployEvents[0] ?? null;
-  const currentOrLastKnownPhase = phaseTask
+  const currentOrLastKnownPhase = terminalFinalSession
     ? {
-        label:
-          phaseTask.attention.reason ??
-          phaseTask.progressSummary ??
-          phaseTask.latestEvent?.summary ??
-          phaseTask.status,
-        source: "task" as const,
-        pointer: phaseTask.pointer,
-        confidence:
-          phaseTask.attention.waitClass === "validation_or_promotion"
-            ? ("medium" as const)
-            : ("high" as const),
-        evidenceQuality:
-          phaseTask.attention.waitClass === "validation_or_promotion"
-            ? ("heuristic" as const)
-            : ("evidence_backed" as const),
-        reason: "derived from the newest bounded native task row in scope",
+        label: "final assistant answer present",
+        source: "session" as const,
+        pointer: terminalFinalSession.pointer,
+        confidence: "high" as const,
+        evidenceQuality: "evidence_backed" as const,
+        reason: "derived from terminal session status plus final assistant readback",
       }
-    : phaseDeploy
-      ? {
-          label: `${phaseDeploy.eventType}${phaseDeploy.status ? ` ${phaseDeploy.status}` : ""}`,
-          source: "deploy" as const,
-          pointer:
-            phaseDeploy.artifactRefs.find((ref) => ref.path)?.path ??
-            "openclaw run-insights --json",
-          confidence: "high" as const,
-          evidenceQuality: "evidence_backed" as const,
-          reason: "derived from the newest global/unscoped deploy receipt in the bounded tail",
-        }
-      : {
-          label: "unknown",
-          source: "none" as const,
-          pointer: null,
-          confidence: "unknown" as const,
-          evidenceQuality: "unknown" as const,
-          reason:
-            "no active task, latest task event, or deploy receipt appeared in bounded readback",
-        };
+    : activeParentSynthesis
+      ? activeParentSynthesis
+      : phaseTask
+        ? {
+            label:
+              phaseTask.attention.reason ??
+              phaseTask.progressSummary ??
+              phaseTask.latestEvent?.summary ??
+              phaseTask.status,
+            source: "task" as const,
+            pointer: phaseTask.pointer,
+            confidence:
+              phaseTask.attention.waitClass === "validation_or_promotion"
+                ? ("medium" as const)
+                : ("high" as const),
+            evidenceQuality:
+              phaseTask.attention.waitClass === "validation_or_promotion"
+                ? ("heuristic" as const)
+                : ("evidence_backed" as const),
+            reason: "derived from the newest bounded native task row in scope",
+          }
+        : phaseDeploy
+          ? {
+              label: `${phaseDeploy.eventType}${phaseDeploy.status ? ` ${phaseDeploy.status}` : ""}`,
+              source: "deploy" as const,
+              pointer:
+                phaseDeploy.artifactRefs.find((ref) => ref.path)?.path ??
+                "openclaw run-insights --json",
+              confidence: "high" as const,
+              evidenceQuality: "evidence_backed" as const,
+              reason: "derived from the newest global/unscoped deploy receipt in the bounded tail",
+            }
+          : {
+              label: "unknown",
+              source: "none" as const,
+              pointer: null,
+              confidence: "unknown" as const,
+              evidenceQuality: "unknown" as const,
+              reason:
+                "no active task, latest task event, or deploy receipt appeared in bounded readback",
+            };
 
   const knownSessionDurationMs =
     params.sessions.reduce<number | null>((max, session) => {
@@ -1705,10 +1763,6 @@ function buildDiagnosticSummary(params: {
       }
       return Math.max(max ?? 0, task.elapsedMs);
     }, null) ?? null;
-  const childTasks = params.tasks.filter(taskHasChildEvidence);
-  const activeChildTasks = childTasks.filter(
-    (task) => task.status === "queued" || task.status === "running",
-  );
   const parentWaitTask =
     activeTasks.find((task) => task.attention.waitClass) ??
     params.tasks.find((task) => task.attention.waitClass);
@@ -1779,17 +1833,34 @@ function buildDiagnosticSummary(params: {
       evidenceQuality: childTasks.length > 0 ? "evidence_backed" : "unknown",
       pointer: childTasks[0]?.pointer ?? null,
     },
-    parentWaitState: {
-      waitClass: parentWaitTask?.attention.waitClass ?? "unknown",
-      reason:
-        parentWaitTask?.attention.reason ??
-        (activeTasks.length > 0
-          ? "active native task(s) are present, but no more specific wait class was derived"
-          : "no active parent wait evidence in bounded scope"),
-      pointer: parentWaitTask?.pointer ?? null,
-      confidence: parentWaitConfidence,
-      evidenceQuality: parentWaitEvidenceQuality,
-    },
+    parentWaitState: terminalFinalSession
+      ? {
+          waitClass: null,
+          reason:
+            "session is terminal with final assistant readback; no active parent wait remains",
+          pointer: terminalFinalSession.pointer,
+          confidence: "high",
+          evidenceQuality: "evidence_backed",
+        }
+      : activeParentSynthesis
+        ? {
+            waitClass: "unknown",
+            reason: activeParentSynthesis.reason,
+            pointer: activeParentSynthesis.pointer,
+            confidence: activeParentSynthesis.confidence,
+            evidenceQuality: activeParentSynthesis.evidenceQuality,
+          }
+        : {
+            waitClass: parentWaitTask?.attention.waitClass ?? "unknown",
+            reason:
+              parentWaitTask?.attention.reason ??
+              (activeTasks.length > 0
+                ? "active native task(s) are present, but no more specific wait class was derived"
+                : "no active parent wait evidence in bounded scope"),
+            pointer: parentWaitTask?.pointer ?? null,
+            confidence: parentWaitConfidence,
+            evidenceQuality: parentWaitEvidenceQuality,
+          },
     validationBuildPromotion: {
       attentionItems: params.attention.validationAndPromotion.length,
       bottlenecks: params.performanceProfile.validationBuildBottlenecks.length,
@@ -1812,24 +1883,39 @@ function buildDiagnosticSummary(params: {
       unknown: countQuality("unknown"),
       missingPointers,
     },
-    operatorNextAction: parentWaitTask?.pointer
+    operatorNextAction: terminalFinalSession
       ? {
-          label: "Inspect native task evidence",
-          pointer: parentWaitTask.pointer,
-          reason:
-            parentWaitTask.attention.reason ?? "task readback has the most specific wait evidence",
+          label: "Inspect final assistant readback",
+          pointer: terminalFinalSession.pointer,
+          reason: "terminal session final answer is the strongest current-state evidence",
         }
-      : artifactPointers[0]
+      : activeParentSynthesis
         ? {
-            label: "Inspect deploy/proof artifact",
-            pointer: artifactPointers[0],
-            reason: "deploy receipt artifact is the most specific bounded pointer in this report",
+            label: "Inspect active parent session",
+            pointer: activeParentSynthesis.pointer ?? "openclaw sessions --json",
+            reason: activeParentSynthesis.reason,
           }
-        : {
-            label: "Refresh bounded native readback",
-            pointer: "openclaw run-insights --json",
-            reason: "the report has unknown evidence and no more specific task or artifact pointer",
-          },
+        : parentWaitTask?.pointer
+          ? {
+              label: "Inspect native task evidence",
+              pointer: parentWaitTask.pointer,
+              reason:
+                parentWaitTask.attention.reason ??
+                "task readback has the most specific wait evidence",
+            }
+          : artifactPointers[0]
+            ? {
+                label: "Inspect deploy/proof artifact",
+                pointer: artifactPointers[0],
+                reason:
+                  "deploy receipt artifact is the most specific bounded pointer in this report",
+              }
+            : {
+                label: "Refresh bounded native readback",
+                pointer: "openclaw run-insights --json",
+                reason:
+                  "the report has unknown evidence and no more specific task or artifact pointer",
+              },
   };
 }
 

@@ -520,12 +520,50 @@ function resolveFallbackTaskProgressProjection(
   return taskRunEventProgress;
 }
 
+function resolveTaskRegistryProgressProjection(
+  task: TaskRecord,
+  context?: TaskReadbackProgressProjectionContext,
+): ReadbackProgressProjection | undefined {
+  if (task.status !== "running" && task.status !== "queued") {
+    return undefined;
+  }
+  const now = context?.now ?? Date.now();
+  const note =
+    truncateTaskProgressNote(task.progressSummary) ??
+    truncateTaskProgressNote(task.terminalSummary) ??
+    "Native task row is active; no richer task receipt or trajectory progress is available yet.";
+  return {
+    source: "task-registry",
+    ref: `task:${task.taskId}`,
+    currentPhase: task.status,
+    activeLabel:
+      normalizeOptionalString(task.label) ??
+      normalizeOptionalString(task.agentId) ??
+      normalizeOptionalString(task.taskKind) ??
+      normalizeOptionalString(task.runtime),
+    observedAt: formatTaskProgressObservedAt(task.lastEventAt, task.startedAt, task.createdAt),
+    elapsedMs: resolveElapsedMs(now, task.startedAt, task.createdAt),
+    sourceEventType: "task.registry",
+    note,
+    pointer: {
+      kind: "task",
+      ref: task.taskId,
+      label: "native task registry row",
+    },
+    derivedBy: "resolveTaskReadbackProgressProjection",
+    bounded: true,
+  };
+}
+
 export function resolveTaskReadbackProgressProjection(
   task: TaskRecord,
   context?: TaskReadbackProgressProjectionContext,
 ): ReadbackProgressProjection | undefined {
   if (task.status === "running" || task.status === "queued") {
-    return resolveFallbackTaskProgressProjection(task, context);
+    return (
+      resolveFallbackTaskProgressProjection(task, context) ??
+      resolveTaskRegistryProgressProjection(task, context)
+    );
   }
   const taskRunEventProgress = resolveTaskRunEventProgressProjection(
     task,
