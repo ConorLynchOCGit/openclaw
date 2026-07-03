@@ -2,6 +2,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  addSubagentRunForTests,
+  resetSubagentRegistryForTests,
+} from "../agents/subagent-registry.js";
 import type { TaskRecord } from "../tasks/task-registry.types.js";
 import { buildRunInsightsReport, runInsightsCommand } from "./run-insights.js";
 import type { StatusSummary } from "./status.types.js";
@@ -10,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   getStatusSummary: vi.fn(),
   getRuntimeConfig: vi.fn(() => ({})),
   resolveConfigPath: vi.fn(),
+  resolveGatewayPort: vi.fn(() => 0),
   resolveIsNixMode: vi.fn(() => false),
   resolveStateDir: vi.fn(),
   listTaskRecords: vi.fn(),
@@ -43,6 +48,7 @@ vi.mock("../config/config.js", () => ({
 
 vi.mock("../config/paths.js", () => ({
   resolveConfigPath: mocks.resolveConfigPath,
+  resolveGatewayPort: mocks.resolveGatewayPort,
   resolveIsNixMode: mocks.resolveIsNixMode,
   resolveStateDir: mocks.resolveStateDir,
 }));
@@ -188,6 +194,7 @@ function buildSummary(): StatusSummary {
 describe("runInsightsCommand", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetSubagentRegistryForTests({ persist: false });
     stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-run-insights-"));
     fs.mkdirSync(path.join(stateDir, "deploy"), { recursive: true });
     const buildArtifactPath = path.join(stateDir, "deploy-controller-build-test.json");
@@ -430,6 +437,7 @@ describe("runInsightsCommand", () => {
   });
 
   afterEach(() => {
+    resetSubagentRegistryForTests({ persist: false });
     if (stateDir) {
       fs.rmSync(stateDir, { recursive: true, force: true });
       stateDir = undefined;
@@ -690,6 +698,123 @@ describe("runInsightsCommand", () => {
         }),
       ]),
     );
+  });
+
+  it("surfaces parent-owned registry child runs in run insights without transcript archaeology", () => {
+    const now = Date.UTC(2026, 6, 3, 4, 30, 0);
+    const parentSessionKey = "agent:planning:phase0z-proof";
+    addSubagentRunForTests({
+      runId: "run-repo-scout",
+      childSessionKey: "agent:codebase-researcher:subagent:repo-scout",
+      requesterSessionKey: parentSessionKey,
+      requesterDisplayKey: "planning",
+      task: "Inspect repo skill wiring state",
+      taskName: "repo_skill_wiring_state",
+      label: "Phase 0Z repo/source current-state scout",
+      cleanup: "keep",
+      createdAt: now - 8 * 60_000,
+      startedAt: now - 8 * 60_000,
+      endedAt: now - 6 * 60_000,
+      outcome: { status: "ok" },
+      expectsCompletionMessage: true,
+      completion: {
+        required: true,
+        resultText: `${"Scout packet should appear as a bounded summary. ".repeat(60)}SCOUT_RAW_END`,
+        capturedAt: now - 6 * 60_000,
+      },
+      delivery: { status: "delivered" },
+    });
+    addSubagentRunForTests({
+      runId: "run-docs-scout",
+      childSessionKey: "agent:docs-standards-researcher:subagent:docs-scout",
+      requesterSessionKey: parentSessionKey,
+      requesterDisplayKey: "planning",
+      task: "Inspect native docs skill surfaces",
+      taskName: "native_docs_skill_surfaces",
+      label: "Phase 0Z official/native docs scout",
+      cleanup: "keep",
+      createdAt: now - 7 * 60_000,
+      startedAt: now - 7 * 60_000,
+      endedAt: now - 5 * 60_000,
+      outcome: { status: "ok" },
+      expectsCompletionMessage: true,
+      completion: {
+        required: true,
+        resultText: `${"Docs packet should appear as a bounded summary. ".repeat(60)}DOCS_RAW_END`,
+        capturedAt: now - 5 * 60_000,
+      },
+      delivery: { status: "delivered" },
+    });
+    const parentTask: TaskRecord = {
+      taskId: "task-planning-parent",
+      runtime: "subagent",
+      taskKind: "planning",
+      agentId: "planning",
+      runId: "run-planning-parent",
+      label: "Planning proof",
+      requesterSessionKey: "agent:main:phase0z-proof",
+      ownerKey: parentSessionKey,
+      scopeKind: "session",
+      childSessionKey: parentSessionKey,
+      task: "Plan GBrain/OpenClaw skill wiring work",
+      status: "running",
+      deliveryStatus: "pending",
+      notifyPolicy: "done_only",
+      createdAt: now - 9 * 60_000,
+      startedAt: now - 9 * 60_000,
+      lastEventAt: now - 4 * 60_000,
+    };
+
+    const payload = buildRunInsightsReport(buildSummary(), {
+      limit: 5,
+      now,
+      taskRecords: [parentTask],
+    });
+
+    expect(payload.tasks[0]).toMatchObject({
+      taskId: "task-planning-parent",
+      childRunCount: 2,
+      childRuns: [
+        expect.objectContaining({
+          runId: "run-repo-scout",
+          childSessionKey: "agent:codebase-researcher:subagent:repo-scout",
+          agentId: "codebase-researcher",
+          taskName: "repo_skill_wiring_state",
+          status: "done",
+          terminalSummary: expect.stringContaining("Scout packet should appear"),
+        }),
+        expect.objectContaining({
+          runId: "run-docs-scout",
+          childSessionKey: "agent:docs-standards-researcher:subagent:docs-scout",
+          agentId: "docs-standards-researcher",
+          taskName: "native_docs_skill_surfaces",
+          status: "done",
+          terminalSummary: expect.stringContaining("Docs packet should appear"),
+        }),
+      ],
+    });
+    expect(payload.performanceProfile.childSessionEvidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          taskId: "task-planning-parent",
+          childSessionKey: "agent:codebase-researcher:subagent:repo-scout",
+          childRole: "codebase-researcher",
+          childPhase: "done",
+          terminalSummary: expect.stringContaining("Scout packet should appear"),
+          pointer: "openclaw sessions show agent:codebase-researcher:subagent:repo-scout",
+        }),
+        expect.objectContaining({
+          taskId: "task-planning-parent",
+          childSessionKey: "agent:docs-standards-researcher:subagent:docs-scout",
+          childRole: "docs-standards-researcher",
+          childPhase: "done",
+          terminalSummary: expect.stringContaining("Docs packet should appear"),
+          pointer: "openclaw sessions show agent:docs-standards-researcher:subagent:docs-scout",
+        }),
+      ]),
+    );
+    expect(JSON.stringify(payload)).not.toContain("SCOUT_RAW_END");
+    expect(JSON.stringify(payload)).not.toContain("DOCS_RAW_END");
   });
 
   it("hydrates exact session filters from native stores when recent rows miss", () => {

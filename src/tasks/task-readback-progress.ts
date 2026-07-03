@@ -21,6 +21,7 @@ import { readLatestTrajectoryProgressProjection } from "../gateway/session-utils
 import { resolveAgentIdFromSessionKey } from "../routing/session-key.js";
 import type { ReadbackProgressProjection } from "../shared/readback-progress.js";
 import type { TaskEventMetadata, TaskRecord } from "./task-registry.types.js";
+import { sanitizeTaskStatusText } from "./task-status.js";
 
 const TASK_PROGRESS_NOTE_MAX_CHARS = 240;
 const ALL_SESSION_TARGETS_CACHE_KEY = "__all__";
@@ -44,14 +45,11 @@ export function createTaskReadbackProgressProjectionContext(params?: {
 }
 
 function truncateTaskProgressNote(value: string | undefined): string | undefined {
-  const text = normalizeOptionalString(value);
+  const text = sanitizeTaskStatusText(value, { maxChars: TASK_PROGRESS_NOTE_MAX_CHARS });
   if (!text) {
     return undefined;
   }
-  if (text.length <= TASK_PROGRESS_NOTE_MAX_CHARS) {
-    return text;
-  }
-  return `${text.slice(0, TASK_PROGRESS_NOTE_MAX_CHARS - 1)}…`;
+  return text;
 }
 
 function normalizeTimestampMs(value: unknown): number | undefined {
@@ -125,7 +123,7 @@ function taskEventMetadataString(
   key: string,
 ): string | undefined {
   const value = metadata?.[key];
-  return typeof value === "string" ? normalizeOptionalString(value) : undefined;
+  return typeof value === "string" ? truncateTaskProgressNote(value) : undefined;
 }
 
 function taskEventMetadataNumber(
@@ -175,7 +173,7 @@ function resolveCodexNativeChildRole(
   if (fromTaskPrompt) {
     return fromTaskPrompt;
   }
-  const label = normalizeOptionalString(task.label);
+  const label = truncateTaskProgressNote(task.label);
   if (!label || label === "Codex subagent") {
     return undefined;
   }
@@ -273,7 +271,7 @@ function resolveTaskTerminalErrorProgressProjection(
     ref: `task-event:${task.taskId}:${task.endedAt ?? task.lastEventAt ?? task.startedAt ?? task.createdAt}:terminal`,
     currentPhase: childRole ? task.status : `task_${task.status}`,
     activeLabel:
-      normalizeOptionalString(task.label) ??
+      truncateTaskProgressNote(task.label) ??
       normalizeOptionalString(task.agentId) ??
       normalizeOptionalString(task.taskKind) ??
       normalizeOptionalString(task.runtime),
@@ -331,7 +329,7 @@ function resolveTaskRunEventProgressProjection(
     currentPhase: childPhase ?? (latestEvent.kind === "progress" ? task.status : latestEvent.kind),
     activeLabel:
       childRole ??
-      normalizeOptionalString(task.label) ??
+      truncateTaskProgressNote(task.label) ??
       normalizeOptionalString(task.agentId) ??
       normalizeOptionalString(task.taskKind) ??
       normalizeOptionalString(task.runtime),
@@ -483,8 +481,8 @@ function resolveFallbackTaskProgressProjection(
         ref: `subagent-run:${subagentRun.runId}`,
         currentPhase: resolveSubagentSessionStatus(subagentRun),
         activeLabel:
-          normalizeOptionalString(subagentRun.label) ??
-          normalizeOptionalString(subagentRun.taskName) ??
+          truncateTaskProgressNote(subagentRun.label) ??
+          truncateTaskProgressNote(subagentRun.taskName) ??
           normalizeOptionalString(task.agentId) ??
           normalizeOptionalString(task.runtime),
         observedAt: formatTaskProgressObservedAt(
@@ -537,7 +535,7 @@ function resolveTaskRegistryProgressProjection(
     ref: `task:${task.taskId}`,
     currentPhase: task.status,
     activeLabel:
-      normalizeOptionalString(task.label) ??
+      truncateTaskProgressNote(task.label) ??
       normalizeOptionalString(task.agentId) ??
       normalizeOptionalString(task.taskKind) ??
       normalizeOptionalString(task.runtime),

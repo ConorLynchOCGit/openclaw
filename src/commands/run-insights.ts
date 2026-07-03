@@ -6,6 +6,7 @@ import { getRuntimeConfig } from "../config/config.js";
 import { resolveStateDir } from "../config/paths.js";
 import { readSessionStoreReadOnly } from "../config/sessions/store-read.js";
 import { listSessionsFromStore, type GatewaySessionRow } from "../gateway/session-utils.js";
+import { buildTaskChildRunReadback } from "../gateway/task-summary-projection.js";
 import {
   loadSessionCostSummaryFromCache,
   resolveExistingUsageSessionFile,
@@ -156,6 +157,24 @@ export type RunInsightTask = {
   childRole: string | null;
   childPhase: string | null;
   spawnReason: string | null;
+  childRunCount: number;
+  childRuns: Array<{
+    runId: string;
+    childSessionKey: string;
+    requesterSessionKey?: string;
+    agentId?: string;
+    taskName?: string;
+    label?: string;
+    status?: string;
+    deliveryStatus?: string;
+    createdAt?: number | string;
+    startedAt?: number | string;
+    endedAt?: number | string;
+    durationMs?: number;
+    spawnReason?: string;
+    terminalSummary?: string;
+    errorSummary?: string;
+  }>;
   parentTaskId: string | null;
   parentFlowId: string | null;
   createdAt: number;
@@ -299,6 +318,8 @@ export type RunInsightsReport = {
       status: string;
       elapsedMs: number | null;
       elapsed: string;
+      terminalSummary: string | null;
+      errorSummary: string | null;
       pointer: string;
     }>;
     skillActivationEvidence: Array<{
@@ -1053,10 +1074,11 @@ function inferSpawnReason(params: {
 function taskHasChildEvidence(
   task: Pick<
     RunInsightTask,
-    "activeProgress" | "childRole" | "childSessionKey" | "runId" | "taskKind"
+    "activeProgress" | "childRole" | "childRuns" | "childSessionKey" | "runId" | "taskKind"
   >,
 ): boolean {
   return Boolean(
+    task.childRuns.length > 0 ||
     task.childRole ||
     task.childSessionKey ||
     isCodexNativeChildTask(task) ||
@@ -1235,6 +1257,7 @@ function toInsightTask(
   const elapsedMs = taskElapsedMs(task, now);
   const latestEvent = task.executionReceipt?.latestEvent;
   const activeProgress = resolveTaskReadbackProgressProjection(task, progressContext) ?? null;
+  const childRunReadback = buildTaskChildRunReadback(task, now);
   const childRole = inferChildRole({
     taskKind: task.taskKind,
     label: task.label,
@@ -1262,6 +1285,8 @@ function toInsightTask(
           label: task.label,
         })
       : null,
+    childRunCount: childRunReadback?.childRunCount ?? 0,
+    childRuns: childRunReadback?.childRuns ?? [],
     parentTaskId: task.parentTaskId ?? null,
     parentFlowId: task.parentFlowId ?? null,
     createdAt: task.createdAt,
@@ -2050,21 +2075,52 @@ function buildPerformanceProfile(params: {
 
   const totalKnownDurationMs = deployDurations.reduce((sum, entry) => sum + entry.durationMs, 0);
   const slowestDeploy = deployDurations.toSorted((a, b) => b.durationMs - a.durationMs)[0] ?? null;
-  const childSessionEvidence = params.tasks.filter(taskHasChildEvidence).map((task) => ({
-    taskId: task.taskId,
-    childSessionKey: task.childSessionKey ?? "",
-    childRole: task.childRole,
-    childAgentPath: task.activeProgress?.childAgentPath ?? null,
-    childPhase: task.childPhase,
-    spawnReason: task.spawnReason,
-    createdAt: task.createdAt,
-    startedAt: task.startedAt,
-    endedAt: task.endedAt,
-    status: task.status,
-    elapsedMs: task.elapsedMs,
-    elapsed: task.elapsed,
-    pointer: task.pointer,
-  }));
+  const childSessionEvidence = params.tasks.flatMap((task) => {
+    const nested = task.childRuns.map((child) => ({
+      taskId: task.taskId,
+      childSessionKey: child.childSessionKey,
+      childRole: child.agentId ?? null,
+      childAgentPath: null,
+      childPhase: child.status ?? null,
+      spawnReason: child.spawnReason ?? null,
+      createdAt: typeof child.createdAt === "number" ? child.createdAt : task.createdAt,
+      startedAt: typeof child.startedAt === "number" ? child.startedAt : null,
+      endedAt: typeof child.endedAt === "number" ? child.endedAt : null,
+      status: child.status ?? "unknown",
+      elapsedMs: typeof child.durationMs === "number" ? child.durationMs : null,
+      elapsed: formatDurationMs(typeof child.durationMs === "number" ? child.durationMs : null),
+      terminalSummary: compactSummaryText(child.terminalSummary),
+      errorSummary: compactSummaryText(child.errorSummary),
+      pointer: child.childSessionKey
+        ? `openclaw sessions show ${child.childSessionKey}`
+        : task.pointer,
+    }));
+    if (nested.length > 0) {
+      return nested;
+    }
+    if (!taskHasChildEvidence(task)) {
+      return [];
+    }
+    return [
+      {
+        taskId: task.taskId,
+        childSessionKey: task.childSessionKey ?? "",
+        childRole: task.childRole,
+        childAgentPath: task.activeProgress?.childAgentPath ?? null,
+        childPhase: task.childPhase,
+        spawnReason: task.spawnReason,
+        createdAt: task.createdAt,
+        startedAt: task.startedAt,
+        endedAt: task.endedAt,
+        status: task.status,
+        elapsedMs: task.elapsedMs,
+        elapsed: task.elapsed,
+        terminalSummary: task.progressSummary,
+        errorSummary: task.activeProgress?.outputSummary ?? null,
+        pointer: task.pointer,
+      },
+    ];
+  });
   const skillActivationEvidence = params.sessions
     .filter((session) => session.promptContext?.skills)
     .map((session) => {

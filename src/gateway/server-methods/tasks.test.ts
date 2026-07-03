@@ -695,7 +695,8 @@ describe("tasks gateway handlers", () => {
     expect(String(payload?.task?.progressSummary)).not.toContain("…");
   });
 
-  it("does not project descendant child-run state into parent task summaries", async () => {
+  it("projects descendant child-run status and bounded terminal summaries into parent task summaries", async () => {
+    const longReviewerPacket = `${"Reviewer B found a proof-finality risk. ".repeat(80)}FULL_END`;
     addSubagentRunForTests({
       runId: "run-child-a",
       childSessionKey: "agent:planning:main:subagent:researcher-a",
@@ -729,7 +730,7 @@ describe("tasks gateway handlers", () => {
       expectsCompletionMessage: true,
       completion: {
         required: true,
-        resultText: "Reviewer B found a proof-finality risk.",
+        resultText: longReviewerPacket,
         capturedAt: 235,
       },
       delivery: { status: "pending" },
@@ -750,6 +751,24 @@ describe("tasks gateway handlers", () => {
         resultText: "stale child should not appear",
       },
       delivery: { status: "delivered" },
+    });
+    addSubagentRunForTests({
+      runId: "run-child-c",
+      childSessionKey: "agent:planning:main:subagent:failed-c",
+      requesterSessionKey: "agent:planning:main",
+      requesterDisplayKey: "planning",
+      task: "Research external docs",
+      cleanup: "keep",
+      createdAt: 140,
+      startedAt: 140,
+      endedAt: 240,
+      outcome: { status: "error", error: "Context overflow while reading docs." },
+      expectsCompletionMessage: true,
+      completion: {
+        required: true,
+        resultText: null,
+      },
+      delivery: { status: "failed", lastError: "Delivery failed after context overflow." },
     });
     const task = createTaskRecord({
       runtime: "cli",
@@ -772,10 +791,45 @@ describe("tasks gateway handlers", () => {
       childSessionKey: "agent:planning:main",
       runId: "run-parent-planning",
       agentId: "planning",
+      childRunCount: 3,
     });
-    expect(payload?.task?.childRuns).toBeUndefined();
-    expect(JSON.stringify(payload?.task)).not.toContain("Researcher A found a routing gap.");
-    expect(JSON.stringify(payload?.task)).not.toContain("Reviewer B found a proof-finality risk.");
+    expect(payload?.task?.childRuns).toEqual([
+      expect.objectContaining({
+        runId: "run-child-a",
+        childSessionKey: "agent:planning:main:subagent:researcher-a",
+        requesterSessionKey: "agent:planning:main",
+        agentId: "planning",
+        status: "done",
+        deliveryStatus: "delivered",
+        createdAt: 120,
+        startedAt: 120,
+        endedAt: 220,
+        spawnReason: "Research local gaps",
+        terminalSummary: "Researcher A found a routing gap.",
+      }),
+      expect.objectContaining({
+        runId: "run-child-b",
+        childSessionKey: "agent:planning:main:subagent:reviewer-b",
+        requesterSessionKey: "agent:planning:main",
+        agentId: "planning",
+        status: "done",
+        deliveryStatus: "pending",
+        createdAt: 130,
+        startedAt: 130,
+        endedAt: 230,
+        spawnReason: "Review plan",
+        terminalSummary: expect.stringContaining("Reviewer B found a proof-finality risk."),
+      }),
+      expect.objectContaining({
+        runId: "run-child-c",
+        childSessionKey: "agent:planning:main:subagent:failed-c",
+        status: "failed",
+        deliveryStatus: "failed",
+        errorSummary: "Context overflow while reading docs.",
+      }),
+    ]);
+    expect(JSON.stringify(payload?.task)).toContain("Researcher A found a routing gap.");
+    expect(JSON.stringify(payload?.task)).not.toContain("FULL_END");
     expect(JSON.stringify(payload?.task)).not.toContain("stale child should not appear");
   });
 

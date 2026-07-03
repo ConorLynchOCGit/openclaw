@@ -628,6 +628,87 @@ describe("before_tool_call loop detection behavior", () => {
     });
   });
 
+  it("forces known skill instruction reads to load the complete SKILL.md despite line limits", async () => {
+    const workspaceDir = path.join("/tmp", "openclaw-skill-full-read");
+    const skillBaseDir = path.join(workspaceDir, ".agents", "skills", "demo-skill");
+    const skillFilePath = path.join(skillBaseDir, "SKILL.md");
+    const execute = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "full skill" }] });
+    const tool = wrapToolWithBeforeToolCallHook({ name: "read", execute } as any, {
+      agentId: "planning",
+      sessionKey: "session-key",
+      workspaceDir,
+      skillsSnapshot: {
+        prompt: "",
+        skills: [{ name: "demo-skill" }],
+        resolvedSkills: [
+          createCanonicalFixtureSkill({
+            name: "demo-skill",
+            description: "Demo",
+            filePath: skillFilePath,
+            baseDir: skillBaseDir,
+            source: "workspace",
+          }),
+        ],
+      },
+      loopDetection: { enabled: false },
+    });
+
+    await tool.execute(
+      "tool-call-limited-skill-read",
+      {
+        path: path.join(".agents", "skills", "demo-skill", "SKILL.md"),
+        offset: 1,
+        limit: 220,
+      },
+      undefined,
+      undefined,
+    );
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0]?.[1]).toEqual({
+      path: path.join(".agents", "skills", "demo-skill", "SKILL.md"),
+    });
+  });
+
+  it("continues honoring read limits for ordinary non-skill files", async () => {
+    const workspaceDir = path.join("/tmp", "openclaw-non-skill-limited-read");
+    const skillBaseDir = path.join(workspaceDir, ".agents", "skills", "demo-skill");
+    const execute = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "readme" }] });
+    const tool = wrapToolWithBeforeToolCallHook({ name: "read", execute } as any, {
+      agentId: "planning",
+      sessionKey: "session-key",
+      workspaceDir,
+      skillsSnapshot: {
+        prompt: "",
+        skills: [{ name: "demo-skill" }],
+        resolvedSkills: [
+          createCanonicalFixtureSkill({
+            name: "demo-skill",
+            description: "Demo",
+            filePath: path.join(skillBaseDir, "SKILL.md"),
+            baseDir: skillBaseDir,
+            source: "workspace",
+          }),
+        ],
+      },
+      loopDetection: { enabled: false },
+    });
+
+    await tool.execute(
+      "tool-call-limited-ordinary-read",
+      { path: "README.md", offset: 1, limit: 220 },
+      undefined,
+      undefined,
+    );
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(execute.mock.calls[0]?.[1]).toEqual({
+      path: "README.md",
+      offset: 1,
+      limit: 220,
+    });
+  });
+
   it("matches home-compacted skill instruction paths from prompts", async () => {
     const skillBaseDir = path.join(os.homedir(), ".openclaw", "skills", "home-skill");
     const skillFilePath = path.join(skillBaseDir, "SKILL.md");

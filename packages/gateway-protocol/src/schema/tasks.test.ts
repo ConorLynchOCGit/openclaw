@@ -130,6 +130,35 @@ describe("TaskSummarySchema", () => {
     ).toBe(true);
   });
 
+  it("accepts bounded child-run pointers on task summaries", () => {
+    expect(
+      validateTaskSummary.Check({
+        id: "task-parent",
+        status: "running",
+        deliveryStatus: "pending",
+        childRunCount: 2,
+        childRuns: [
+          {
+            runId: "run-child-1",
+            childSessionKey: "agent:planning:subagent:child-1",
+            requesterSessionKey: "agent:planning:main",
+            agentId: "planning",
+            taskName: "repo_state",
+            label: "Repo state scout",
+            status: "running",
+            deliveryStatus: "pending",
+            createdAt: Date.UTC(2026, 6, 3, 4, 21, 51),
+            startedAt: Date.UTC(2026, 6, 3, 4, 21, 52),
+            durationMs: 42_000,
+            spawnReason: "Inspect repo state.",
+            terminalSummary: "Scout returned a bounded Context Pack.",
+            errorSummary: "Context overflow before final synthesis.",
+          },
+        ],
+      }),
+    ).toBe(true);
+  });
+
   it("requires closed deliveryStatus values", () => {
     expect(
       validateTaskSummary.Check({

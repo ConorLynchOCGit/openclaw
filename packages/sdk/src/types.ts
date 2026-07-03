@@ -142,7 +142,7 @@ export type TaskDeliveryStatus =
 
 /** Bounded native progress evidence projected onto readback rows. */
 export type ReadbackProgressProjection = {
-  source: "trajectory" | "subagent-registry" | "task-run-event";
+  source: "trajectory" | "subagent-registry" | "task-run-event" | "task-registry";
   ref: string;
   currentPhase?: string | null;
   activeLabel?: string | null;
@@ -172,6 +172,24 @@ export type ReadbackProgressProjection = {
   bounded: true;
 };
 
+export type TaskChildRunSummary = {
+  runId: string;
+  childSessionKey: string;
+  requesterSessionKey?: string;
+  agentId?: string;
+  taskName?: string;
+  label?: string;
+  status?: "running" | "done" | "failed" | "timeout" | "killed";
+  deliveryStatus?: string;
+  createdAt?: RunTimestamp;
+  startedAt?: RunTimestamp;
+  endedAt?: RunTimestamp;
+  durationMs?: number;
+  spawnReason?: string;
+  terminalSummary?: string;
+  errorSummary?: string;
+};
+
 /** Gateway task summary returned by task list/get calls. */
 export type TaskSummary = {
   id: string;
@@ -194,6 +212,8 @@ export type TaskSummary = {
   startedAt?: RunTimestamp;
   endedAt?: RunTimestamp;
   activeProgress?: ReadbackProgressProjection;
+  childRunCount?: number;
+  childRuns?: TaskChildRunSummary[];
   progressSummary?: string;
   terminalSummary?: string;
   error?: string;

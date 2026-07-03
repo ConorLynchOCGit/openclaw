@@ -80,6 +80,35 @@ const TaskReadbackProgressProjectionSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const TaskChildRunSummarySchema = Type.Object(
+  {
+    runId: NonEmptyString,
+    childSessionKey: NonEmptyString,
+    requesterSessionKey: Type.Optional(Type.String()),
+    agentId: Type.Optional(Type.String()),
+    taskName: Type.Optional(Type.String()),
+    label: Type.Optional(Type.String()),
+    status: Type.Optional(
+      Type.Union([
+        Type.Literal("running"),
+        Type.Literal("done"),
+        Type.Literal("failed"),
+        Type.Literal("timeout"),
+        Type.Literal("killed"),
+      ]),
+    ),
+    deliveryStatus: Type.Optional(Type.String()),
+    createdAt: Type.Optional(TimestampSchema),
+    startedAt: Type.Optional(TimestampSchema),
+    endedAt: Type.Optional(TimestampSchema),
+    durationMs: Type.Optional(Type.Integer({ minimum: 0 })),
+    spawnReason: Type.Optional(Type.String()),
+    terminalSummary: Type.Optional(Type.String()),
+    errorSummary: Type.Optional(Type.String()),
+  },
+  { additionalProperties: false },
+);
+
 /** Public task summary returned by task list/get/cancel responses. */
 export const TaskSummarySchema = Type.Object(
   {
@@ -106,6 +135,8 @@ export const TaskSummarySchema = Type.Object(
     startedAt: Type.Optional(TimestampSchema),
     endedAt: Type.Optional(TimestampSchema),
     activeProgress: Type.Optional(TaskReadbackProgressProjectionSchema),
+    childRunCount: Type.Optional(Type.Integer({ minimum: 0 })),
+    childRuns: Type.Optional(Type.Array(TaskChildRunSummarySchema)),
     progressSummary: Type.Optional(Type.String()),
     terminalSummary: Type.Optional(Type.String()),
     error: Type.Optional(Type.String()),

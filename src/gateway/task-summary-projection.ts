@@ -1,6 +1,13 @@
 // Shared public task readback projection for gateway APIs and CLI JSON.
 import { type TaskSummary } from "../../packages/gateway-protocol/src/index.js";
 import {
+  getSubagentSessionRuntimeMs,
+  getSubagentSessionStartedAt,
+  listDescendantRunsForRequester,
+  resolveSubagentSessionStatus,
+} from "../agents/subagent-registry-read.js";
+import type { SubagentRunRecord } from "../agents/subagent-registry.types.js";
+import {
   createTaskReadbackProgressProjectionContext,
   resolveTaskReadbackProgressProjection,
   type TaskReadbackProgressProjectionContext,
@@ -19,8 +26,11 @@ import {
 const SUBAGENT_PROGRESS_READBACK_MAX_CHARS = 32_000;
 const TASK_LIST_SUMMARY_LIMIT = 20;
 const TASK_LIST_SUMMARY_TEXT_MAX_CHARS = 1_000;
+const TASK_CHILD_RUN_OUTPUT_MAX_CHARS = 800;
+const TASK_CHILD_RUN_LIMIT = 12;
 
 type TaskLedgerStatus = TaskSummary["status"];
+type TaskChildRunSummary = NonNullable<TaskSummary["childRuns"]>[number];
 type TaskSummaryProjectionOptions = {
   progressMaxChars?: number;
   subagentProgressMaxChars?: number;
@@ -68,6 +78,89 @@ function sanitizeOptionalTaskText(
 function inferAgentRoleFromSessionKey(sessionKey: string | undefined): string | undefined {
   const match = sessionKey?.match(/^agent:([^:]+):/);
   return match?.[1];
+}
+
+function candidateTaskChildRunRoots(task: TaskRecord): string[] {
+  const roots = [task.childSessionKey, task.requesterSessionKey, task.ownerKey]
+    .map((value) => sanitizeOptionalTaskText(value))
+    .filter((value): value is string => Boolean(value));
+  return [...new Set(roots)];
+}
+
+function childRunFallsWithinTaskWindow(task: TaskRecord, run: SubagentRunRecord): boolean {
+  const lowerBound = task.startedAt ?? task.createdAt;
+  const upperBound = task.endedAt;
+  if (typeof lowerBound === "number" && run.createdAt < lowerBound) {
+    return false;
+  }
+  if (typeof upperBound === "number" && run.createdAt > upperBound) {
+    return false;
+  }
+  return true;
+}
+
+function mapTaskChildRun(run: SubagentRunRecord, now = Date.now()): TaskChildRunSummary {
+  const startedAt = getSubagentSessionStartedAt(run);
+  const durationMs = getSubagentSessionRuntimeMs(run, now);
+  const agentId = inferAgentRoleFromSessionKey(run.childSessionKey);
+  const status = resolveSubagentSessionStatus(run);
+  const spawnReason = sanitizeOptionalTaskText(run.task, {
+    maxChars: TASK_LIST_SUMMARY_TEXT_MAX_CHARS,
+  });
+  const terminalSummary = sanitizeOptionalTaskText(
+    run.completion?.resultText ??
+      run.completion?.fallbackResultText ??
+      run.delivery?.payload?.frozenResultText ??
+      run.delivery?.payload?.fallbackFrozenResultText,
+    { maxChars: TASK_CHILD_RUN_OUTPUT_MAX_CHARS },
+  );
+  const errorSummary = sanitizeOptionalTaskText(
+    run.outcome?.error ?? run.execution?.outcome?.error ?? run.delivery?.lastError,
+    { errorContext: true, maxChars: TASK_CHILD_RUN_OUTPUT_MAX_CHARS },
+  );
+  return {
+    runId: run.runId,
+    childSessionKey: run.childSessionKey,
+    requesterSessionKey: run.requesterSessionKey,
+    ...(agentId ? { agentId } : {}),
+    ...(run.taskName ? { taskName: run.taskName } : {}),
+    ...(run.label ? { label: run.label } : {}),
+    ...(status ? { status } : {}),
+    ...(run.delivery?.status ? { deliveryStatus: run.delivery.status } : {}),
+    createdAt: run.createdAt,
+    ...(startedAt !== undefined ? { startedAt } : {}),
+    ...(run.endedAt !== undefined ? { endedAt: run.endedAt } : {}),
+    ...(durationMs !== undefined ? { durationMs } : {}),
+    ...(spawnReason ? { spawnReason } : {}),
+    ...(terminalSummary ? { terminalSummary } : {}),
+    ...(errorSummary ? { errorSummary } : {}),
+  };
+}
+
+export function buildTaskChildRunReadback(
+  task: TaskRecord,
+  now = Date.now(),
+): { childRunCount: number; childRuns: TaskChildRunSummary[] } | undefined {
+  const byRunId = new Map<string, SubagentRunRecord>();
+  for (const root of candidateTaskChildRunRoots(task)) {
+    for (const run of listDescendantRunsForRequester(root)) {
+      if (!childRunFallsWithinTaskWindow(task, run)) {
+        continue;
+      }
+      const existing = byRunId.get(run.runId);
+      if (!existing || run.createdAt > existing.createdAt) {
+        byRunId.set(run.runId, run);
+      }
+    }
+  }
+  if (byRunId.size === 0) {
+    return undefined;
+  }
+  const sorted = [...byRunId.values()].sort((a, b) => a.createdAt - b.createdAt);
+  return {
+    childRunCount: sorted.length,
+    childRuns: sorted.slice(0, TASK_CHILD_RUN_LIMIT).map((run) => mapTaskChildRun(run, now)),
+  };
 }
 
 function inferTaskChildRole(
@@ -122,6 +215,7 @@ export function mapTaskSummary(
   const childRole = inferTaskChildRole(task, activeProgress);
   const childPhase = inferTaskChildPhase(task, activeProgress, childRole);
   const spawnReason = inferTaskSpawnReason(task, activeProgress, childRole);
+  const childRunReadback = buildTaskChildRunReadback(task);
   return {
     id: task.taskId,
     taskId: task.taskId,
@@ -146,6 +240,8 @@ export function mapTaskSummary(
     ...(task.startedAt !== undefined ? { startedAt: task.startedAt } : {}),
     ...(task.endedAt !== undefined ? { endedAt: task.endedAt } : {}),
     ...(activeProgress ? { activeProgress } : {}),
+    ...(childRunReadback ? { childRunCount: childRunReadback.childRunCount } : {}),
+    ...(childRunReadback ? { childRuns: childRunReadback.childRuns } : {}),
     ...(progressSummary ? { progressSummary } : {}),
     ...(terminalSummary ? { terminalSummary } : {}),
     ...(error ? { error } : {}),

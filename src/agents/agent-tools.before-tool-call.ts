@@ -393,6 +393,24 @@ function findSkillUsageMatch(params: {
   return undefined;
 }
 
+function forceCompleteSkillInstructionReadParams(params: {
+  toolName: string;
+  toolParams: unknown;
+  ctx?: HookContext;
+}): unknown {
+  const match = findSkillUsageMatch(params);
+  if (!match || match.activation !== "read" || !isPlainObject(params.toolParams)) {
+    return params.toolParams;
+  }
+  if (!Object.hasOwn(params.toolParams, "limit") && !Object.hasOwn(params.toolParams, "offset")) {
+    return params.toolParams;
+  }
+  const next = { ...params.toolParams };
+  delete next.limit;
+  delete next.offset;
+  return next;
+}
+
 function emitSkillUsedDiagnostic(params: {
   ctx?: HookContext;
   match: SkillUsageMatch;
@@ -1219,6 +1237,11 @@ export function wrapToolWithBeforeToolCallHook(
           executeParams,
           preparedParams,
         ) ?? executeParams;
+      executeParams = forceCompleteSkillInstructionReadParams({
+        toolName: normalizeToolName(toolName || "tool"),
+        toolParams: executeParams,
+        ctx,
+      });
       recordAdjustedParamsForToolCall(toolCallId, executeParams, ctx?.runId);
       const normalizedToolName = normalizeToolName(toolName || "tool");
       const trace = ctx?.trace

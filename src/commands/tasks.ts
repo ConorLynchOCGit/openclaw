@@ -429,6 +429,35 @@ function formatTaskReadbackProgress(progress: TaskReadbackProgress | undefined):
   return parts.filter(Boolean).join(" ");
 }
 
+function formatTaskChildRunReadback(task: TaskSummary): string {
+  const children = task.childRuns ?? [];
+  if (children.length === 0) {
+    return "n/a";
+  }
+  const rendered = children.map((child) => {
+    const label =
+      normalizeOptionalString(child.taskName) ??
+      normalizeOptionalString(child.label) ??
+      normalizeOptionalString(child.agentId) ??
+      "child";
+    const status = child.status ?? "unknown";
+    const duration =
+      typeof child.durationMs === "number" && Number.isFinite(child.durationMs)
+        ? ` durationMs=${child.durationMs}`
+        : "";
+    const terminal = normalizeOptionalString(child.terminalSummary)
+      ? ` terminal=${truncate(String(child.terminalSummary), 120)}`
+      : "";
+    const error = normalizeOptionalString(child.errorSummary)
+      ? ` error=${truncate(String(child.errorSummary), 120)}`
+      : "";
+    return `${label}:${status}:${shortToken(child.runId, RUN_PAD)}${duration}${terminal}${error}`;
+  });
+  const count = task.childRunCount ?? children.length;
+  const truncatedSuffix = count > children.length ? ` (+${count - children.length} more)` : "";
+  return `${rendered.join("; ")}${truncatedSuffix}`;
+}
+
 function formatAuditRows(findings: TaskSystemAuditFinding[], rich: boolean) {
   const header = [
     "Scope".padEnd(8),
@@ -595,6 +624,8 @@ export async function tasksShowCommand(
     `childRole: ${summary.childRole ?? "n/a"}`,
     `childPhase: ${summary.childPhase ?? "n/a"}`,
     `spawnReason: ${summary.spawnReason ?? "n/a"}`,
+    `childRunCount: ${summary.childRunCount ?? 0}`,
+    `childRuns: ${formatTaskChildRunReadback(summary)}`,
     `parentTaskId: ${task.parentTaskId ?? "n/a"}`,
     `agentId: ${task.agentId ?? "n/a"}`,
     `runId: ${task.runId ?? "n/a"}`,
