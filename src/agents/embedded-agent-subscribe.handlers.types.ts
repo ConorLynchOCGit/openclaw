@@ -148,6 +148,7 @@ export type EmbeddedAgentSubscribeState = {
   replayState: EmbeddedRunReplayState;
   livenessState?: EmbeddedRunLivenessState;
   terminalStopReason?: string;
+  terminalTaskEventMetadata?: Record<string, string | number | boolean | null>;
   yielded?: boolean;
   timeoutPhase?: AgentRunTimeoutPhase;
   providerStarted?: boolean;

@@ -215,6 +215,7 @@ export type EmbeddedRunAttemptResult = {
     replayInvalid?: boolean;
     livenessState?: EmbeddedRunLivenessState;
     stopReason?: string;
+    taskEventMetadata?: Record<string, string | number | boolean | null>;
     yielded?: boolean;
     timeoutPhase?: AgentRunTimeoutPhase;
     providerStarted?: boolean;

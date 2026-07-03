@@ -174,6 +174,65 @@ describe("task domain view mappers", () => {
     });
   });
 
+  it("projects overflow recovery metadata onto terminal task run views", () => {
+    const task = makeTask({
+      taskId: "task-overflow",
+      agentId: "codebase-researcher",
+      runId: "run-overflow",
+      label: "source scout",
+      status: "failed",
+      startedAt: 100,
+      endedAt: 180,
+      lastEventAt: 180,
+      error: "Context overflow: prompt too large for the model",
+      executionReceipt: {
+        schema: "openclaw.task.execution_receipt.v1",
+        latestEvent: {
+          at: 180,
+          kind: "failed",
+          summary: "Context overflow: prompt too large for the model",
+          metadata: {
+            recoveryKind: "context_overflow",
+            recoveryAction: "reset_or_new",
+            recoveryReason: "context_overflow_exhausted",
+            recoveryAttempts: 3,
+            recoveryMaxAttempts: 3,
+            compactionCount: 1,
+            compactionTokensAfter: 80_000,
+            toolResultTruncationAttempted: true,
+          },
+        },
+        eventCount: 2,
+        updatedAt: 180,
+      },
+    });
+
+    expect(mapTaskRunView(task).activeProgress).toMatchObject({
+      source: "task-run-event",
+      ref: "task-event:task-overflow:180:failed",
+      currentPhase: "failed",
+      activeLabel: "source scout",
+      observedAt: "1970-01-01T00:00:00.180Z",
+      sourceEventType: "task.failed",
+      recoveryKind: "context_overflow",
+      recoveryAction: "reset_or_new",
+      recoveryReason: "context_overflow_exhausted",
+      recoveryAttempts: 3,
+      recoveryMaxAttempts: 3,
+      compactionCount: 1,
+      compactionTokensAfter: 80_000,
+      toolResultTruncationAttempted: true,
+      note: "Context overflow: prompt too large for the model Recovery context_overflow. attempts=3/3 compactions=1 tool_truncation=attempted reason=context_overflow_exhausted action=reset_or_new",
+      pointer: {
+        kind: "task",
+        ref: "task-overflow",
+        label: "task run receipt",
+      },
+      derivedBy: "resolveTaskReadbackProgressProjection",
+      bounded: true,
+    });
+  });
+
   it("keeps task run detail aligned with the task run view shape", () => {
     const task = makeTask({ taskId: "task-detail", runId: "run-detail" });
 

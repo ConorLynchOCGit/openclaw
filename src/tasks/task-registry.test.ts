@@ -523,6 +523,59 @@ describe("task-registry", () => {
     });
   });
 
+  it("preserves lifecycle task event metadata in task execution receipts", async () => {
+    await withTaskRegistryTempDir(async () => {
+      resetTaskRegistryMemoryForTest();
+
+      createTaskRecord({
+        runtime: "subagent",
+        ownerKey: "agent:planning:main",
+        scopeKind: "session",
+        childSessionKey: "agent:codebase-researcher:subagent:overflow",
+        runId: "run-overflow-metadata",
+        task: "Inspect source",
+        status: "running",
+        deliveryStatus: "not_applicable",
+        startedAt: 100,
+      });
+
+      emitAgentEvent({
+        runId: "run-overflow-metadata",
+        stream: "lifecycle",
+        data: {
+          phase: "error",
+          error: "Context overflow: prompt too large for the model",
+          endedAt: 250,
+          taskEventMetadata: {
+            recoveryKind: "context_overflow",
+            recoveryAction: "reset_or_new",
+            recoveryReason: "context_overflow_exhausted",
+            recoveryAttempts: 3,
+            recoveryMaxAttempts: 3,
+            compactionCount: 1,
+            toolResultTruncationAttempted: true,
+          },
+        },
+      });
+
+      const task = requireTaskByRunId("run-overflow-metadata");
+      expect(task.executionReceipt?.latestEvent).toMatchObject({
+        at: expect.any(Number),
+        kind: "failed",
+        summary: "Context overflow: prompt too large for the model",
+        metadata: {
+          recoveryKind: "context_overflow",
+          recoveryAction: "reset_or_new",
+          recoveryReason: "context_overflow_exhausted",
+          recoveryAttempts: 3,
+          recoveryMaxAttempts: 3,
+          compactionCount: 1,
+          toolResultTruncationAttempted: true,
+        },
+      });
+    });
+  });
+
   it("ignores late agent events for operator-cancelled tasks", async () => {
     await withTaskRegistryTempDir(async () => {
       resetTaskRegistryMemoryForTest();

@@ -588,6 +588,16 @@ function buildTaskLifecycleTerminalOutcome(params: {
   });
 }
 
+function resolveLifecycleTaskEventMetadata(
+  data: Record<string, unknown> | undefined,
+): TaskEventMetadata | undefined {
+  const metadata = data?.taskEventMetadata;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+    return undefined;
+  }
+  return normalizeTaskEventMetadata(metadata as TaskEventMetadata);
+}
+
 function appendTaskEvent(event: {
   at: number;
   kind: TaskEventKind;
@@ -1731,6 +1741,7 @@ function ensureListener() {
       };
       if (evt.stream === "lifecycle") {
         const phase = typeof evt.data?.phase === "string" ? evt.data.phase : undefined;
+        const eventMetadata = resolveLifecycleTaskEventMetadata(evt.data);
         const startedAt =
           typeof evt.data?.startedAt === "number" ? evt.data.startedAt : current.startedAt;
         const endedAt = typeof evt.data?.endedAt === "number" ? evt.data.endedAt : undefined;
@@ -1746,11 +1757,26 @@ function ensureListener() {
             startedAt,
             endedAt: endedAt ?? now,
           });
-          patch.status = mapAgentRunTerminalOutcomeToTaskStatus(terminal);
+          const nextStatus = mapAgentRunTerminalOutcomeToTaskStatus(terminal);
+          patch.status = nextStatus;
           patch.endedAt = terminal.endedAt ?? now;
           if (terminal.error) {
             patch.error = terminal.error;
           }
+          patch.executionReceipt = appendTaskExecutionReceipt(
+            current.executionReceipt,
+            appendTaskEvent({
+              at: now,
+              kind: nextStatus,
+              summary:
+                nextStatus === "failed"
+                  ? (patch.error ?? current.error)
+                  : nextStatus === "succeeded"
+                    ? current.terminalSummary
+                    : undefined,
+              metadata: eventMetadata,
+            }),
+          );
         } else if (phase === "error") {
           const terminal = buildTaskLifecycleTerminalOutcome({
             phase,
@@ -1758,9 +1784,24 @@ function ensureListener() {
             startedAt,
             endedAt: endedAt ?? now,
           });
-          patch.status = mapAgentRunTerminalOutcomeToTaskStatus(terminal);
+          const nextStatus = mapAgentRunTerminalOutcomeToTaskStatus(terminal);
+          patch.status = nextStatus;
           patch.endedAt = terminal.endedAt ?? now;
           patch.error = terminal.error ?? current.error;
+          patch.executionReceipt = appendTaskExecutionReceipt(
+            current.executionReceipt,
+            appendTaskEvent({
+              at: now,
+              kind: nextStatus,
+              summary:
+                nextStatus === "failed"
+                  ? (patch.error ?? current.error)
+                  : nextStatus === "succeeded"
+                    ? current.terminalSummary
+                    : undefined,
+              metadata: eventMetadata,
+            }),
+          );
         }
       } else if (evt.stream === "error") {
         patch.error = typeof evt.data?.error === "string" ? evt.data.error : current.error;

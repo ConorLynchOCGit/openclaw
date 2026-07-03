@@ -2470,6 +2470,20 @@ export async function runEmbeddedAgent(
               );
             }
             const kind = isCompactionFailure ? "compaction_failure" : "context_overflow";
+            const overflowTaskEventMetadata = {
+              recoveryKind: kind,
+              recoveryAction: "reset_or_new",
+              recoveryReason: isCompactionFailure
+                ? "compaction_failed"
+                : "context_overflow_exhausted",
+              recoveryAttempts: overflowCompactionAttempts,
+              recoveryMaxAttempts: MAX_OVERFLOW_COMPACTION_ATTEMPTS,
+              compactionCount: autoCompactionCount,
+              toolResultTruncationAttempted,
+              ...(typeof lastCompactionTokensAfter === "number"
+                ? { compactionTokensAfter: lastCompactionTokensAfter }
+                : {}),
+            } satisfies Record<string, string | number | boolean | null>;
             const overflowRecoveryText =
               "Context overflow: prompt too large for the model. " +
               "Try /reset (or /new) to start a fresh session, or use a larger-context model.";
@@ -2480,6 +2494,7 @@ export async function runEmbeddedAgent(
             setTerminalLifecycleMeta({
               replayInvalid: resolveReplayInvalidForAttempt(),
               livenessState: "blocked",
+              taskEventMetadata: overflowTaskEventMetadata,
             });
             return {
               payloads: [
@@ -2490,17 +2505,23 @@ export async function runEmbeddedAgent(
               ],
               meta: {
                 durationMs: Date.now() - started,
-                agentMeta: buildErrorAgentMeta({
-                  sessionId: sessionIdUsed,
-                  sessionFile: activeSessionFile,
-                  provider,
-                  model: model.id,
-                  contextTokens: ctxInfo.tokens,
-                  usageAccumulator,
-                  lastRunPromptUsage,
-                  lastAssistant: sessionLastAssistant,
-                  lastTurnTotal,
-                }),
+                agentMeta: {
+                  ...buildErrorAgentMeta({
+                    sessionId: sessionIdUsed,
+                    sessionFile: activeSessionFile,
+                    provider,
+                    model: model.id,
+                    contextTokens: ctxInfo.tokens,
+                    usageAccumulator,
+                    lastRunPromptUsage,
+                    lastAssistant: sessionLastAssistant,
+                    lastTurnTotal,
+                  }),
+                  compactionCount: autoCompactionCount,
+                  ...(typeof lastCompactionTokensAfter === "number"
+                    ? { compactionTokensAfter: lastCompactionTokensAfter }
+                    : {}),
+                },
                 systemPromptReport: attempt.systemPromptReport,
                 finalAssistantVisibleText: overflowRecoveryText,
                 finalAssistantRawText: overflowRecoveryText,

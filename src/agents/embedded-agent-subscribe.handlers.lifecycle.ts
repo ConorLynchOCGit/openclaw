@@ -145,6 +145,9 @@ export function handleAgentEnd(
         ? { providerStarted: ctx.state.providerStarted }
         : {}),
       ...(typeof terminalAborted === "boolean" ? { aborted: terminalAborted } : {}),
+      ...(ctx.state.terminalTaskEventMetadata
+        ? { taskEventMetadata: ctx.state.terminalTaskEventMetadata }
+        : {}),
     };
     if (isError) {
       emitAgentEvent({

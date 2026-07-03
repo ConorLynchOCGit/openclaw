@@ -136,6 +136,14 @@ function taskEventMetadataNumber(
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function taskEventMetadataBoolean(
+  metadata: TaskEventMetadata | undefined,
+  key: string,
+): boolean | undefined {
+  const value = metadata?.[key];
+  return typeof value === "boolean" ? value : undefined;
+}
+
 function taskEventMetadataHasReadbackSignal(metadata: TaskEventMetadata | undefined): boolean {
   if (!metadata) {
     return false;
@@ -146,6 +154,9 @@ function taskEventMetadataHasReadbackSignal(metadata: TaskEventMetadata | undefi
     "validationClass",
     "outputSummary",
     "repairAction",
+    "recoveryKind",
+    "recoveryAction",
+    "recoveryReason",
     "childRole",
     "childAgentPath",
     "childPhase",
@@ -155,7 +166,41 @@ function taskEventMetadataHasReadbackSignal(metadata: TaskEventMetadata | undefi
       return true;
     }
   }
-  return typeof metadata.exitCode === "number" && Number.isFinite(metadata.exitCode);
+  return (
+    typeof metadata.exitCode === "number" ||
+    typeof metadata.recoveryAttempts === "number" ||
+    typeof metadata.compactionCount === "number" ||
+    typeof metadata.toolResultTruncationAttempted === "boolean"
+  );
+}
+
+function formatRecoveryNote(params: {
+  recoveryKind?: string;
+  recoveryAction?: string;
+  recoveryReason?: string;
+  recoveryAttempts?: number;
+  recoveryMaxAttempts?: number;
+  compactionCount?: number;
+  toolResultTruncationAttempted?: boolean;
+}): string | undefined {
+  if (!params.recoveryKind) {
+    return undefined;
+  }
+  const attemptText =
+    typeof params.recoveryAttempts === "number"
+      ? ` attempts=${params.recoveryAttempts}/${params.recoveryMaxAttempts ?? "unknown"}`
+      : "";
+  const compactionText =
+    typeof params.compactionCount === "number" ? ` compactions=${params.compactionCount}` : "";
+  const truncationText =
+    typeof params.toolResultTruncationAttempted === "boolean"
+      ? ` tool_truncation=${params.toolResultTruncationAttempted ? "attempted" : "not_attempted"}`
+      : "";
+  const reasonText = params.recoveryReason ? ` reason=${params.recoveryReason}` : "";
+  const actionText = params.recoveryAction ? ` action=${params.recoveryAction}` : "";
+  return truncateTaskProgressNote(
+    `Recovery ${params.recoveryKind}.${attemptText}${compactionText}${truncationText}${reasonText}${actionText}`,
+  );
 }
 
 function resolveCodexNativeChildRole(
@@ -474,6 +519,29 @@ function resolveTaskRunEventProgressProjection(
   const outputSummary = taskEventMetadataString(metadata, "outputSummary");
   const repairAction = taskEventMetadataString(metadata, "repairAction");
   const exitCode = taskEventMetadataNumber(metadata, "exitCode");
+  const recoveryKind = taskEventMetadataString(metadata, "recoveryKind");
+  const recoveryAction = taskEventMetadataString(metadata, "recoveryAction");
+  const recoveryReason = taskEventMetadataString(metadata, "recoveryReason");
+  const recoveryAttempts = taskEventMetadataNumber(metadata, "recoveryAttempts");
+  const recoveryMaxAttempts = taskEventMetadataNumber(metadata, "recoveryMaxAttempts");
+  const compactionCount = taskEventMetadataNumber(metadata, "compactionCount");
+  const compactionTokensAfter = taskEventMetadataNumber(metadata, "compactionTokensAfter");
+  const toolResultTruncationAttempted = taskEventMetadataBoolean(
+    metadata,
+    "toolResultTruncationAttempted",
+  );
+  const recoveryNote = formatRecoveryNote({
+    recoveryKind,
+    recoveryAction,
+    recoveryReason,
+    recoveryAttempts,
+    recoveryMaxAttempts,
+    compactionCount,
+    toolResultTruncationAttempted,
+  });
+  const projectedNote = truncateTaskProgressNote(
+    [note, recoveryNote].filter(Boolean).join(" ") || undefined,
+  );
   return {
     source: "task-run-event",
     ref: `task-event:${task.taskId}:${latestEvent.at}:${latestEvent.kind}`,
@@ -493,11 +561,21 @@ function resolveTaskRunEventProgressProjection(
     ...(validationClass ? { validationClass } : {}),
     ...(outputSummary ? { outputSummary: truncateTaskProgressNote(outputSummary) } : {}),
     ...(repairAction ? { repairAction: truncateTaskProgressNote(repairAction) } : {}),
+    ...(recoveryKind ? { recoveryKind } : {}),
+    ...(recoveryAction ? { recoveryAction } : {}),
+    ...(recoveryReason ? { recoveryReason } : {}),
+    ...(typeof recoveryAttempts === "number" ? { recoveryAttempts } : {}),
+    ...(typeof recoveryMaxAttempts === "number" ? { recoveryMaxAttempts } : {}),
+    ...(typeof compactionCount === "number" ? { compactionCount } : {}),
+    ...(typeof compactionTokensAfter === "number" ? { compactionTokensAfter } : {}),
+    ...(typeof toolResultTruncationAttempted === "boolean"
+      ? { toolResultTruncationAttempted }
+      : {}),
     ...(childRole ? { childRole } : {}),
     ...(childAgentPath ? { childAgentPath } : {}),
     ...(childPhase ? { childPhase } : {}),
     ...(spawnReason ? { spawnReason } : {}),
-    ...(note ? { note } : {}),
+    ...(projectedNote ? { note: projectedNote } : {}),
     pointer: {
       kind: "task",
       ref: task.taskId,

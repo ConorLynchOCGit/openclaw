@@ -17,6 +17,14 @@ export type ReadbackProgressProjection = {
   validationClass?: string | null;
   outputSummary?: string | null;
   repairAction?: string | null;
+  recoveryKind?: string | null;
+  recoveryAction?: string | null;
+  recoveryReason?: string | null;
+  recoveryAttempts?: number | null;
+  recoveryMaxAttempts?: number | null;
+  compactionCount?: number | null;
+  compactionTokensAfter?: number | null;
+  toolResultTruncationAttempted?: boolean | null;
   childRole?: string | null;
   childAgentPath?: string | null;
   childPhase?: string | null;
@@ -59,6 +67,10 @@ function normalizePointer(value: unknown): ReadbackProgressProjection["pointer"]
     ref: value.ref,
     ...(typeof value.label === "string" ? { label: value.label } : {}),
   };
+}
+
+function normalizeBooleanOrNullField(value: unknown): boolean | null | undefined {
+  return typeof value === "boolean" || value === null ? value : undefined;
 }
 
 export function normalizeReadbackProgressProjection(
@@ -113,6 +125,34 @@ export function normalizeReadbackProgressProjection(
       : {}),
     ...(typeof value.repairAction === "string" || value.repairAction === null
       ? { repairAction: value.repairAction }
+      : {}),
+    ...(typeof value.recoveryKind === "string" || value.recoveryKind === null
+      ? { recoveryKind: value.recoveryKind }
+      : {}),
+    ...(typeof value.recoveryAction === "string" || value.recoveryAction === null
+      ? { recoveryAction: value.recoveryAction }
+      : {}),
+    ...(typeof value.recoveryReason === "string" || value.recoveryReason === null
+      ? { recoveryReason: value.recoveryReason }
+      : {}),
+    ...(typeof value.recoveryAttempts === "number" || value.recoveryAttempts === null
+      ? { recoveryAttempts: value.recoveryAttempts }
+      : {}),
+    ...(typeof value.recoveryMaxAttempts === "number" || value.recoveryMaxAttempts === null
+      ? { recoveryMaxAttempts: value.recoveryMaxAttempts }
+      : {}),
+    ...(typeof value.compactionCount === "number" || value.compactionCount === null
+      ? { compactionCount: value.compactionCount }
+      : {}),
+    ...(typeof value.compactionTokensAfter === "number" || value.compactionTokensAfter === null
+      ? { compactionTokensAfter: value.compactionTokensAfter }
+      : {}),
+    ...(normalizeBooleanOrNullField(value.toolResultTruncationAttempted) !== undefined
+      ? {
+          toolResultTruncationAttempted: normalizeBooleanOrNullField(
+            value.toolResultTruncationAttempted,
+          ),
+        }
       : {}),
     ...(typeof value.childRole === "string" || value.childRole === null
       ? { childRole: value.childRole }
