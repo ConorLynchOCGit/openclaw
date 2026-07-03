@@ -68,6 +68,7 @@ describe("task tool", () => {
         cleanup: "keep",
         sandbox: "inherit",
         context: "isolated",
+        lightContext: true,
         expectsCompletionMessage: false,
       }),
       expect.objectContaining({
@@ -167,6 +168,76 @@ describe("task tool", () => {
       }),
       expect.any(Object),
     );
+  });
+
+  it("defaults source-shaped foreground children to lightweight context", async () => {
+    const result = await createTaskTool().execute("call-1", {
+      agentId: "web-researcher",
+      task: "Inspect current public examples and return a bounded Context Pack.",
+    });
+
+    expect(result.details).toMatchObject({
+      status: "ok",
+      agentId: "web-researcher",
+    });
+    expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "web-researcher",
+        lightContext: true,
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it("lets callers disable lightweight context when a child needs full context", async () => {
+    await createTaskTool().execute("call-1", {
+      agentId: "codebase-researcher",
+      task: "Inspect source and return a Context Pack.",
+      lightContext: false,
+    });
+
+    expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "codebase-researcher",
+        lightContext: false,
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it("returns latest child assistant text as partial evidence when the child terminal run fails", async () => {
+    hoisted.waitForAgentRunMock.mockResolvedValue({
+      status: "error",
+      error: "Context overflow: prompt too large for the model.",
+    });
+    hoisted.readLatestAssistantReplyMock.mockResolvedValue(
+      "Context Pack\n\nP1. Useful evidence before overflow.",
+    );
+
+    const result = await createTaskTool().execute("call-1", {
+      agentId: "codebase-researcher",
+      task: "Inspect source and return a Context Pack.",
+    });
+
+    expect(hoisted.readLatestAssistantReplyMock).toHaveBeenCalledWith({
+      sessionKey: "agent:codebase-researcher:subagent:child",
+      maxChars: 32_000,
+    });
+    expect(result.details).toMatchObject({
+      status: "error",
+      error: "Context overflow: prompt too large for the model.",
+      partialResultChars: "Context Pack\n\nP1. Useful evidence before overflow.".length,
+      partialResultTruncated: false,
+    });
+    const content = result.content[0];
+    expect(content?.type).toBe("text");
+    if (!content || content.type !== "text") {
+      throw new Error("Expected text tool result");
+    }
+    expect(content.text).toContain("<task_error>");
+    expect(content.text).toContain("Context overflow");
+    expect(content.text).toContain("<partial_task_result>");
+    expect(content.text).toContain("Useful evidence before overflow");
   });
 
   it("does not duplicate long child output in both model text and details", async () => {

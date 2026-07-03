@@ -505,6 +505,36 @@ function resolveFallbackTaskProgressProjection(
         bounded: true,
       };
     }
+    const settledChildStatus = resolveSubagentSessionStatus(subagentRun);
+    if (subagentRun && settledChildStatus && settledChildStatus !== "running") {
+      const startedAt = getSubagentSessionStartedAt(subagentRun) ?? subagentRun.createdAt;
+      return {
+        source: "subagent-registry",
+        ref: `subagent-run:${subagentRun.runId}`,
+        currentPhase: settledChildStatus,
+        activeLabel:
+          truncateTaskProgressNote(subagentRun.label) ??
+          truncateTaskProgressNote(subagentRun.taskName) ??
+          normalizeOptionalString(task.agentId) ??
+          normalizeOptionalString(task.runtime),
+        observedAt: formatTaskProgressObservedAt(
+          subagentRun.endedAt,
+          task.lastEventAt,
+          subagentRun.startedAt,
+          subagentRun.createdAt,
+        ),
+        elapsedMs:
+          getSubagentSessionRuntimeMs(subagentRun, now) ?? resolveElapsedMs(now, startedAt),
+        note: `Child run is ${settledChildStatus}; task row has not finalized.`,
+        pointer: {
+          kind: "session",
+          ref: childSessionKey,
+          label: "settled child session",
+        },
+        derivedBy: "resolveTaskReadbackProgressProjection",
+        bounded: true,
+      };
+    }
   }
 
   const requesterSessionProgress = resolveRequesterSessionTrajectoryProgressProjection(

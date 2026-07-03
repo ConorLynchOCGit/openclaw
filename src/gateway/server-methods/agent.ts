@@ -105,6 +105,7 @@ import {
   parseThreadSessionSuffix,
 } from "../../sessions/session-key-utils.js";
 import { createRunningTaskRun, finalizeTaskRunByRunId } from "../../tasks/detached-task-runtime.js";
+import { findTaskByRunId } from "../../tasks/runtime-internal.js";
 import type { TaskStatus } from "../../tasks/task-registry.types.js";
 import {
   mergeDeliveryContext,
@@ -703,6 +704,25 @@ function tryFinalizeTrackedAgentTask(params: {
   }
 }
 
+function resolveParentTaskIdForTrackedAgentTask(params: {
+  runId: string;
+  childSessionKey: string;
+}): string | undefined {
+  const runId = params.runId.trim();
+  const childSessionKey = params.childSessionKey.trim();
+  if (!runId || !childSessionKey) {
+    return undefined;
+  }
+  const parentTask = findTaskByRunId(runId);
+  if (
+    parentTask?.runtime === "subagent" &&
+    normalizeOptionalString(parentTask.childSessionKey) === childSessionKey
+  ) {
+    return parentTask.taskId;
+  }
+  return undefined;
+}
+
 function resolveAgentDedupeKeys(params: {
   idempotencyKey: string;
   execApprovalFollowupApprovalId?: string;
@@ -897,6 +917,10 @@ function dispatchAgentRunFromGateway(params: {
   let taskTracked = false;
   if (shouldTrackTask) {
     try {
+      const parentTaskId = resolveParentTaskIdForTrackedAgentTask({
+        runId: params.runId,
+        childSessionKey: params.ingressOpts.sessionKey ?? "",
+      });
       taskTracked = Boolean(
         createRunningTaskRun({
           runtime: "cli",
@@ -910,6 +934,7 @@ function dispatchAgentRunFromGateway(params: {
             threadId: params.ingressOpts.threadId,
           }),
           childSessionKey: params.ingressOpts.sessionKey,
+          ...(parentTaskId ? { parentTaskId } : {}),
           runId: params.runId,
           task: params.ingressOpts.message,
           deliveryStatus: "not_applicable",

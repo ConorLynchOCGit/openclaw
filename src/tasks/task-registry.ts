@@ -2280,7 +2280,7 @@ export async function cancelTaskById(params: {
           cfg: params.cfg,
           sessionKey: childSessionKey,
         });
-        if (!result.found || !result.killed) {
+        if (!result.found || (!result.killed && result.alreadyEnded !== true)) {
           return {
             found: true,
             cancelled: false,

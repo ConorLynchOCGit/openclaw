@@ -833,6 +833,139 @@ describe("tasks gateway handlers", () => {
     expect(JSON.stringify(payload?.task)).not.toContain("stale child should not appear");
   });
 
+  it("projects linked execution-task failure through an otherwise completed child run", async () => {
+    addSubagentRunForTests({
+      runId: "run-child-overflow",
+      childSessionKey: "agent:codebase-researcher:subagent:overflow-child",
+      requesterSessionKey: "agent:planning:main",
+      requesterDisplayKey: "planning",
+      task: "Inspect source surfaces",
+      cleanup: "keep",
+      createdAt: 120,
+      startedAt: 120,
+      endedAt: 220,
+      outcome: { status: "ok" },
+      expectsCompletionMessage: true,
+      completion: {
+        required: true,
+        resultText: "Context Pack is available for parent synthesis.",
+        capturedAt: 225,
+      },
+      delivery: { status: "delivered" },
+    });
+    const wrapper = createTaskRecord({
+      runtime: "subagent",
+      taskKind: "source-scout",
+      requesterSessionKey: "agent:planning:main",
+      ownerKey: "agent:planning:main",
+      scopeKind: "session",
+      childSessionKey: "agent:codebase-researcher:subagent:overflow-child",
+      agentId: "codebase-researcher",
+      runId: "run-child-overflow",
+      task: "Inspect source surfaces",
+      status: "succeeded",
+      deliveryStatus: "not_applicable",
+      startedAt: 120,
+      endedAt: 220,
+    });
+    const execution = createTaskRecord({
+      runtime: "cli",
+      taskKind: "cli",
+      requesterSessionKey: "agent:codebase-researcher:subagent:overflow-child",
+      ownerKey: "agent:codebase-researcher:subagent:overflow-child",
+      scopeKind: "session",
+      childSessionKey: "agent:codebase-researcher:subagent:overflow-child",
+      parentTaskId: wrapper.taskId,
+      agentId: "codebase-researcher",
+      runId: "run-child-overflow",
+      task: "Inspect source surfaces",
+      status: "failed",
+      deliveryStatus: "not_applicable",
+      startedAt: 125,
+      endedAt: 210,
+    });
+    markTaskTerminalById({
+      taskId: execution.taskId,
+      status: "failed",
+      endedAt: 210,
+      error: "Context overflow: prompt too large for the model.",
+    });
+    const parent = createTaskRecord({
+      runtime: "cli",
+      taskKind: "planning-activation",
+      requesterSessionKey: "agent:planning:main",
+      ownerKey: "agent:planning:main",
+      scopeKind: "session",
+      childSessionKey: "agent:planning:main",
+      agentId: "planning",
+      runId: "run-parent-planning-overflow",
+      task: "Plan skill wiring",
+      status: "running",
+      deliveryStatus: "not_applicable",
+      startedAt: 110,
+    });
+
+    const { payload } = await getTaskPayload(parent.taskId);
+
+    expect(payload?.task?.childRuns).toEqual([
+      expect.objectContaining({
+        runId: "run-child-overflow",
+        executionTaskId: execution.taskId,
+        childSessionKey: "agent:codebase-researcher:subagent:overflow-child",
+        status: "failed",
+        terminalSummary: "Context Pack is available for parent synthesis.",
+        errorSummary: expect.stringContaining("Context overflow: prompt too large for the model."),
+      }),
+    ]);
+  });
+
+  it("shows settled child state instead of stale running task text", async () => {
+    addSubagentRunForTests({
+      runId: "run-settled-child",
+      childSessionKey: "agent:planning:subagent:settled",
+      requesterSessionKey: "agent:main:phase0z",
+      requesterDisplayKey: "main",
+      task: "Plan skill wiring",
+      cleanup: "keep",
+      createdAt: 120,
+      startedAt: 120,
+      endedAt: 220,
+      outcome: { status: "ok" },
+      delivery: { status: "delivered" },
+    });
+    const task = createTaskRecord({
+      runtime: "subagent",
+      taskKind: "planning",
+      requesterSessionKey: "agent:main:phase0z",
+      ownerKey: "agent:main:phase0z",
+      scopeKind: "session",
+      childSessionKey: "agent:planning:subagent:settled",
+      agentId: "planning",
+      runId: "run-settled-child",
+      task: "Plan skill wiring",
+      status: "running",
+      deliveryStatus: "pending",
+      startedAt: 120,
+      progressSummary: "Child run started.",
+    });
+
+    const { payload } = await getTaskPayload(task.taskId);
+
+    expect(payload?.task?.activeProgress).toMatchObject({
+      source: "subagent-registry",
+      ref: "subagent-run:run-settled-child",
+      currentPhase: "done",
+      note: "Child run is done; task row has not finalized.",
+      pointer: {
+        kind: "session",
+        ref: "agent:planning:subagent:settled",
+        label: "settled child session",
+      },
+      derivedBy: "resolveTaskReadbackProgressProjection",
+      bounded: true,
+    });
+  });
+
   it("sanitizes task text before exposing SDK summaries", async () => {
     const task = createTaskRecord({
       runtime: "cli",

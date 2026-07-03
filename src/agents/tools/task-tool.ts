@@ -18,6 +18,14 @@ import { jsonResult, readStringParam, textResult } from "./common.js";
 
 const TASK_WAIT_POLL_MS = 60_000;
 const TASK_CHILD_REPLY_MAX_CHARS = 32_000;
+const DEFAULT_LIGHT_CONTEXT_AGENT_IDS = new Set([
+  "codebase-researcher",
+  "docs-standards-researcher",
+  "researcher",
+  "reviewer",
+  "web-researcher",
+  "x-researcher",
+]);
 
 const TaskToolSchema = Type.Object({
   agentId: Type.String({
@@ -102,7 +110,13 @@ async function waitForForegroundTaskResult(params: {
       };
     }
     if (wait.status === "error") {
-      return wait;
+      return {
+        ...wait,
+        replyText: await readLatestAssistantReply({
+          sessionKey: params.sessionKey,
+          maxChars: TASK_CHILD_REPLY_MAX_CHARS,
+        }),
+      };
     }
     // `timeout` and `pending` are wait-RPC states, not child task failure.
     // The child run's native liveness/timeout policy owns termination.
@@ -120,19 +134,37 @@ function formatTaskError(params: {
   agentId: string;
   taskName?: string;
   error: string;
+  partialReplyText?: string;
 }): string {
   const id = params.childSessionKey ?? params.runId ?? params.agentId;
   const runIdAttr = params.runId ? ` runId="${escapeXmlText(params.runId)}"` : "";
   const taskNameAttr = params.taskName ? ` taskName="${escapeXmlText(params.taskName)}"` : "";
-  return [
+  const partialReplyText = params.partialReplyText?.trim();
+  const lines = [
     `<task id="${escapeXmlText(id)}"${runIdAttr} agentId="${escapeXmlText(
       params.agentId,
     )}"${taskNameAttr} state="${params.state}">`,
     "  <task_error>",
     escapeXmlText(params.error.trim() || "child task failed"),
     "  </task_error>",
-    "</task>",
-  ].join("\n");
+  ];
+  if (partialReplyText) {
+    lines.push("  <partial_task_result>");
+    lines.push(escapeXmlText(partialReplyText));
+    lines.push("  </partial_task_result>");
+  }
+  lines.push("</task>");
+  return lines.join("\n");
+}
+
+function resolveTaskToolLightContext(agentId: string, value: unknown): boolean {
+  if (value === true) {
+    return true;
+  }
+  if (value === false) {
+    return false;
+  }
+  return DEFAULT_LIGHT_CONTEXT_AGENT_IDS.has(agentId);
 }
 
 export function createTaskTool(
@@ -176,6 +208,7 @@ export function createTaskTool(
       const taskName = taskNameResult.taskName;
       const context =
         params.context === "fork" || params.context === "isolated" ? params.context : undefined;
+      const lightContext = resolveTaskToolLightContext(agentId, params.lightContext);
 
       const spawn = await spawnSubagentDirect(
         {
@@ -189,7 +222,7 @@ export function createTaskTool(
           cleanup: "keep",
           sandbox: "inherit",
           context,
-          lightContext: params.lightContext === true,
+          lightContext,
           expectsCompletionMessage: false,
         },
         {
@@ -248,6 +281,7 @@ export function createTaskTool(
           agentId,
           taskName,
           error,
+          partialReplyText: wait.replyText,
         });
         return jsonResult({
           status: "error",
@@ -256,6 +290,12 @@ export function createTaskTool(
           runId: spawn.runId,
           agentId,
           taskName,
+          ...(wait.replyText?.trim()
+            ? {
+                partialResultChars: wait.replyText.trim().length,
+                partialResultTruncated: wait.replyText.includes("...(truncated)..."),
+              }
+            : {}),
           text,
         });
       }

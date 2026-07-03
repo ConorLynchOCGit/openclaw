@@ -13,6 +13,7 @@ export type KillSubagentRunAdminResult = {
   killed: boolean;
   runId?: string;
   sessionKey?: string;
+  alreadyEnded?: boolean;
   cascadeKilled?: number;
   cascadeLabels?: string[];
 };

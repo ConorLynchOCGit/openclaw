@@ -83,6 +83,7 @@ const TaskReadbackProgressProjectionSchema = Type.Object(
 const TaskChildRunSummarySchema = Type.Object(
   {
     runId: NonEmptyString,
+    executionTaskId: Type.Optional(Type.String()),
     childSessionKey: NonEmptyString,
     requesterSessionKey: Type.Optional(Type.String()),
     agentId: Type.Optional(Type.String()),

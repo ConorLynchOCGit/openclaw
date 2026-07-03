@@ -174,6 +174,7 @@ export type ReadbackProgressProjection = {
 
 export type TaskChildRunSummary = {
   runId: string;
+  executionTaskId?: string;
   childSessionKey: string;
   requesterSessionKey?: string;
   agentId?: string;
