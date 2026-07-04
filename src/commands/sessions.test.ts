@@ -357,7 +357,21 @@ describe("sessionsCommand", () => {
     }
 
     const payload = JSON.parse(logs[0] ?? "{}") as {
+      sessionKey?: string | null;
+      status?: string | null;
       finalAssistantText?: string | null;
+      readbackSubject?: {
+        scope?: string;
+        sessionKey?: string | null;
+        agentId?: string | null;
+      };
+      finality?: {
+        status?: string | null;
+        finalAssistantTextPresent?: boolean;
+        finalAssistantTextChars?: number | null;
+        finalAssistantTextDigest?: string | null;
+        finalAssistantTextPointer?: string | null;
+      };
       readbackProvenance?: {
         finalAssistantText?: {
           source?: string;
@@ -382,6 +396,20 @@ describe("sessionsCommand", () => {
       };
     };
     expect(payload.session?.lastMessagePreview).toBe("Trailing operator readback request.");
+    expect(payload.sessionKey).toBe("agent:main:main");
+    expect(payload.status).toBe("done");
+    expect(payload.readbackSubject).toMatchObject({
+      scope: "session",
+      sessionKey: "agent:main:main",
+      agentId: "main",
+    });
+    expect(payload.finality).toMatchObject({
+      status: "done",
+      finalAssistantTextPresent: true,
+      finalAssistantTextChars: "PHASE0W_FINAL_POSTFIX_PROOF_DONE".length,
+      finalAssistantTextPointer: "openclaw sessions show agent:main:main --agent main",
+    });
+    expect(payload.finality?.finalAssistantTextDigest).toMatch(/^[a-f0-9]{64}$/);
     expect(payload.finalAssistantText).toBe("PHASE0W_FINAL_POSTFIX_PROOF_DONE");
     expect(payload.session?.finalAssistantText).toBe("PHASE0W_FINAL_POSTFIX_PROOF_DONE");
     expect(payload.readbackProvenance?.finalAssistantText).toMatchObject({
@@ -680,6 +708,8 @@ describe("sessionsCommand", () => {
     }
 
     const payload = JSON.parse(logs[0] ?? "{}") as {
+      sessionKey?: string | null;
+      status?: string | null;
       activeProgress?: {
         source?: string;
         currentPhase?: string;
@@ -699,7 +729,31 @@ describe("sessionsCommand", () => {
           bounded?: boolean;
         } | null;
       };
+      readbackSubject?: {
+        sessionKey?: string | null;
+      };
+      finality?: {
+        status?: string | null;
+        finalAssistantTextPresent?: boolean;
+      };
+      activeWork?: {
+        phase?: string | null;
+        activeTool?: string | null;
+        source?: string | null;
+      };
     };
+    expect(payload.sessionKey).toBe(sessionKey);
+    expect(payload.status).toBe("unknown");
+    expect(payload.readbackSubject?.sessionKey).toBe(sessionKey);
+    expect(payload.finality).toMatchObject({
+      status: "unknown",
+      finalAssistantTextPresent: false,
+    });
+    expect(payload.activeWork).toMatchObject({
+      phase: "source-inspection",
+      activeTool: "read",
+      source: "trajectory",
+    });
     expect(payload.session?.status).toBeUndefined();
     expect(payload.activeProgress).toMatchObject({
       source: "trajectory",

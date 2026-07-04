@@ -769,6 +769,27 @@ describe("runInsightsCommand", () => {
       limit: 5,
       now,
       taskRecords: [parentTask],
+      childSessionUsage: new Map([
+        [
+          "agent:codebase-researcher:subagent:repo-scout",
+          {
+            cacheStatus: "fresh",
+            totalCost: 0.04,
+            totalTokens: 12_000,
+            durationMs: 73_000,
+            duration: "1m 13s",
+            messageCount: 14,
+            toolCalls: 9,
+            uniqueTools: 3,
+            topTools: [
+              { name: "rg", count: 4 },
+              { name: "read", count: 3 },
+              { name: "find", count: 2 },
+            ],
+            errors: 0,
+          },
+        ],
+      ]),
     });
 
     expect(payload.tasks[0]).toMatchObject({
@@ -813,6 +834,15 @@ describe("runInsightsCommand", () => {
           contentChars: expect.any(Number),
           contentDigest: expect.any(String),
           terminalSummary: expect.stringContaining("Scout packet should appear"),
+          trajectory: expect.objectContaining({
+            available: true,
+            source: "session_usage_cache",
+            durationMs: 73_000,
+            toolCalls: 9,
+            readCalls: 3,
+            searchCalls: 6,
+            failedToolCalls: 0,
+          }),
           pointer: "openclaw sessions show agent:codebase-researcher:subagent:repo-scout",
         }),
         expect.objectContaining({
@@ -825,6 +855,11 @@ describe("runInsightsCommand", () => {
           contentChars: expect.any(Number),
           contentDigest: expect.any(String),
           terminalSummary: expect.stringContaining("Docs packet should appear"),
+          trajectory: expect.objectContaining({
+            available: false,
+            source: "not_available",
+            reason: expect.stringContaining("no child session usage cache"),
+          }),
           pointer: "openclaw sessions show agent:docs-standards-researcher:subagent:docs-scout",
         }),
       ]),
@@ -1309,9 +1344,29 @@ describe("runInsightsCommand", () => {
     });
 
     expect(payload.sessions).toHaveLength(1);
+    expect(payload.readbackSubject).toMatchObject({
+      scope: "session",
+      sessionKey: "agent:coding:main",
+      agentId: "coding",
+    });
+    expect(payload.sessionKey).toBe("agent:coding:main");
+    expect(payload.status).toBe("done");
+    expect(payload.finality).toMatchObject({
+      status: "done",
+      finalAssistantTextPresent: true,
+      finalAssistantTextChars: "Final closeout exists.".length,
+      finalAssistantTextPointer: "openclaw sessions show agent:coding:main --agent coding",
+    });
+    expect(payload.finality.finalAssistantTextDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(payload.activeWork).toMatchObject({
+      phase: "succeeded",
+      source: "task-run-event",
+    });
+    expect(payload.finalAssistantText).toBe("Final closeout exists.");
     expect(payload.sessions[0]).toMatchObject({
       key: "agent:coding:main",
       status: "done",
+      finalAssistantText: "Final closeout exists.",
       hasFinalAssistantText: true,
       inputTokens: 12,
       outputTokens: 3,
@@ -1540,6 +1595,73 @@ describe("runInsightsCommand", () => {
       waitClass: "long_running",
       pointer: "openclaw tasks show task-active-no-receipt",
     });
+  });
+
+  it("classifies known-bad broad typecheck commands as validation seam evidence", () => {
+    const now = Date.UTC(2026, 6, 1, 6, 0, 0);
+    const validationTask: TaskRecord = {
+      taskId: "task-known-bad-typecheck",
+      runtime: "subagent",
+      taskKind: "openclaw-agent",
+      agentId: "coding",
+      runId: "coding-known-bad-typecheck",
+      label: "Coding validation",
+      requesterSessionKey: "agent:coding:main",
+      ownerKey: "agent:coding:main",
+      scopeKind: "session",
+      task: "Validate readback changes.",
+      status: "running",
+      deliveryStatus: "pending",
+      notifyPolicy: "silent",
+      createdAt: now - 60_000,
+      startedAt: now - 55_000,
+      lastEventAt: now - 5_000,
+      executionReceipt: {
+        schema: "openclaw.task.execution_receipt.v1",
+        eventCount: 1,
+        updatedAt: now - 5_000,
+        latestEvent: {
+          at: now - 5_000,
+          kind: "progress",
+          summary: "Validation failed with heap OOM.",
+          metadata: {
+            toolName: "exec_command",
+            command: "pnpm exec tsc --noEmit",
+            validationClass: "typecheck",
+            outputSummary: "JavaScript heap out of memory",
+            exitCode: 134,
+          },
+        },
+      },
+    };
+
+    const payload = buildRunInsightsReport(buildSummary(), {
+      agent: "coding",
+      session: "agent:coding:main",
+      limit: 5,
+      now,
+      taskRecords: [validationTask],
+    });
+
+    expect(payload.tasks[0].activeProgress).toMatchObject({
+      source: "task-run-event",
+      toolName: "exec_command",
+      command: "pnpm exec tsc --noEmit",
+      validationClass: "typecheck",
+      outputSummary: "JavaScript heap out of memory",
+    });
+    expect(payload.performanceProfile.validationBuildBottlenecks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "known_bad_validation_command",
+          evidence: expect.objectContaining({
+            taskId: "task-known-bad-typecheck",
+            command: "pnpm exec tsc --noEmit",
+            registry: "docs/agents/coding/validation-registry.md",
+          }),
+        }),
+      ]),
+    );
   });
 
   it("does not classify successful terminal planning proof tasks as active validation work", () => {

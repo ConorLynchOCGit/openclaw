@@ -9,6 +9,7 @@ import { getRuntimeConfig } from "../config/io.js";
 import { type AgentEventPayload, getAgentRunContext } from "../infra/agent-events.js";
 import { detectErrorKind, type ErrorKind } from "../infra/errors.js";
 import { resolveHeartbeatVisibility } from "../infra/heartbeat-visibility.js";
+import { buildSessionReadbackProjection } from "../readback/finality.js";
 import { isAcpSessionKey, isSubagentSessionKey } from "../sessions/session-key-utils.js";
 import { setSafeTimeout } from "../utils/timer-delay.js";
 import {
@@ -386,6 +387,12 @@ export function createAgentEventHandler({
       delete session.goal;
     }
     const snapshotSource = session ?? lifecyclePatch;
+    const readbackProjection = session
+      ? buildSessionReadbackProjection({
+          ...session,
+          agentId: agentId ?? null,
+        })
+      : null;
     return {
       ...(session ? { session } : {}),
       updatedAt: snapshotSource.updatedAt,
@@ -411,6 +418,9 @@ export function createAgentEventHandler({
       finalAssistantText: row?.finalAssistantText,
       activeProgress: row?.activeProgress ?? null,
       readbackProvenance: row?.readbackProvenance,
+      readbackSubject: readbackProjection?.readbackSubject ?? null,
+      finality: readbackProjection?.finality ?? null,
+      activeWork: readbackProjection?.activeWork ?? null,
       deliveryContext: row?.deliveryContext,
       parentSessionKey: row?.parentSessionKey,
       childSessions: row?.childSessions,

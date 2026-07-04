@@ -25,6 +25,7 @@ import {
 } from "../gateway/session-utils.js";
 import { info } from "../globals.js";
 import { parseStrictPositiveInteger } from "../infra/parse-finite-number.js";
+import { buildSessionReadbackProjection } from "../readback/finality.js";
 import { parseAgentSessionKey } from "../routing/session-key.js";
 import { type RuntimeEnv, writeRuntimeJson } from "../runtime.js";
 import { classifySessionKind, type SessionKind } from "../sessions/classify-session-kind.js";
@@ -460,9 +461,16 @@ export async function sessionsShowCommand(
   });
 
   if (opts.json) {
+    const readback = buildSessionReadbackProjection({
+      ...row,
+      agentId: target.agentId,
+    });
     writeRuntimeJson(runtime, {
       path: target.storePath,
       agentId: target.agentId,
+      sessionKey: row.key,
+      status: readback.finality.status,
+      ...readback,
       finalAssistantText: row.finalAssistantText ?? null,
       activeProgress: row.activeProgress ?? null,
       readbackProvenance: row.readbackProvenance,

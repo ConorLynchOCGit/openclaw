@@ -334,8 +334,8 @@ function archiveLegacyPluginStateSidecar(params: {
     .map((sourcePath) => `${sourcePath}.migrated`)
     .filter(fileExists);
   if (existingArchives.length > 0) {
-    params.warnings.push(
-      `Left migrated plugin-state sidecar in place because archive already exists: ${existingArchives[0]}`,
+    params.changes.push(
+      `Retained migrated plugin-state sidecar because archive already exists: ${existingArchives[0]}`,
     );
     return;
   }
@@ -519,8 +519,8 @@ function archiveLegacyInstalledPluginIndex(params: {
 }): void {
   const archivedPath = `${params.sourcePath}.migrated`;
   if (fileExists(archivedPath)) {
-    params.warnings.push(
-      `Left migrated plugin install index in place because archive already exists: ${archivedPath}`,
+    params.changes.push(
+      `Retained migrated plugin install index because archive already exists: ${archivedPath}`,
     );
     return;
   }
@@ -547,8 +547,8 @@ function archiveLegacyTaskStateSidecar(params: {
     .map((sourcePath) => `${sourcePath}.migrated`)
     .filter(fileExists);
   if (existingArchives.length > 0) {
-    params.warnings.push(
-      `Left migrated ${params.label} sidecar in place because archive already exists: ${existingArchives[0]}`,
+    params.changes.push(
+      `Retained migrated ${params.label} sidecar because archive already exists: ${existingArchives[0]}`,
     );
     return;
   }
@@ -3122,7 +3122,7 @@ async function migrateLegacySessions(
     const backupDir = `${detected.sessions.legacyDir}.legacy-${now()}`;
     try {
       fs.renameSync(detected.sessions.legacyDir, backupDir);
-      warnings.push(`Left legacy sessions at ${backupDir}`);
+      changes.push(`Retained legacy sessions at ${backupDir}`);
     } catch {
       // ignore
     }
@@ -3168,7 +3168,7 @@ export async function migrateLegacyAgentDir(
     );
     try {
       fs.renameSync(detected.agentDir.legacyDir, backupDir);
-      warnings.push(`Left legacy agent dir at ${backupDir}`);
+      changes.push(`Retained legacy agent dir at ${backupDir}`);
     } catch (err) {
       warnings.push(`Failed relocating legacy agent dir: ${String(err)}`);
     }

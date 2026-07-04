@@ -13,6 +13,15 @@ import {
 } from "../infra/session-cost-usage.js";
 import type { SessionCostSummary, UsageCacheStatus } from "../infra/session-cost-usage.types.js";
 import { buildAdvisoryReadback, type AdvisoryReadback } from "../readback/advisory.js";
+import {
+  buildEmptyReadbackProjection,
+  buildSessionReadbackProjection,
+  buildTaskReadbackProjection,
+  type ReadbackActiveWork,
+  type ReadbackFinality,
+  type ReadbackSubject,
+} from "../readback/finality.js";
+import { resolveAgentIdFromSessionKey } from "../routing/session-key.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { writeRuntimeJson } from "../runtime.js";
 import type { ReadbackProgressProjection } from "../shared/readback-progress.js";
@@ -135,6 +144,10 @@ export type RunInsightSession = {
   flags: string[];
   promptContext: SessionStatus["promptContext"] | null;
   status: string | null;
+  finalAssistantText: string | null;
+  readbackSubject: ReadbackSubject;
+  finality: ReadbackFinality;
+  activeWork: ReadbackActiveWork;
   hasFinalAssistantText: boolean;
   activeProgress: ReadbackProgressProjection | null;
   readbackProvenance: GatewaySessionRow["readbackProvenance"] | null;
@@ -259,6 +272,12 @@ export type RunInsightsReport = {
     activeMinutes: number | null;
     limit: number;
   };
+  sessionKey: string | null;
+  status: string | null;
+  readbackSubject: ReadbackSubject;
+  finality: ReadbackFinality;
+  activeWork: ReadbackActiveWork;
+  finalAssistantText: string | null;
   deployEvidenceScope: {
     scope: DeployEvidenceScope;
     filteredBy: [];
@@ -330,6 +349,18 @@ export type RunInsightsReport = {
       terminalSummary: string | null;
       errorSummary: string | null;
       provenanceMismatch: string | null;
+      trajectory: {
+        available: boolean;
+        source: "session_usage_cache" | "active_progress" | "not_available";
+        durationMs: number | null;
+        toolCalls: number | null;
+        readCalls: number | null;
+        searchCalls: number | null;
+        failedToolCalls: number | null;
+        validationCommands: string[];
+        stopRationalePresent: boolean | null;
+        reason: string | null;
+      };
       pointer: string;
     }>;
     skillActivationEvidence: Array<{
@@ -433,6 +464,7 @@ export type RunInsightsReport = {
 
 type RunInsightChildSessionEvidence =
   RunInsightsReport["performanceProfile"]["childSessionEvidence"][number];
+type RunInsightChildTrajectory = RunInsightChildSessionEvidence["trajectory"];
 
 function parsePositiveIntegerValue(
   value: string | number | undefined,
@@ -916,6 +948,17 @@ function resolveExactGatewaySessionFallbackForInsights(params: {
 function toInsightSession(row: SessionStatus, gatewayRow?: GatewaySessionRow): RunInsightSession {
   const agentId = row.agentId ?? null;
   const agentPart = agentId ? ` --agent ${agentId}` : "";
+  const finalAssistantText = gatewayRow?.finalAssistantText ?? null;
+  const status = gatewayRow?.status ?? null;
+  const readback = buildSessionReadbackProjection({
+    key: row.key,
+    agentId,
+    sessionId: gatewayRow?.sessionId ?? row.sessionId ?? undefined,
+    status: status ?? undefined,
+    finalAssistantText,
+    activeProgress: gatewayRow?.activeProgress ?? null,
+    readbackProvenance: gatewayRow?.readbackProvenance,
+  });
   return {
     key: row.key,
     agentId,
@@ -936,10 +979,12 @@ function toInsightSession(row: SessionStatus, gatewayRow?: GatewaySessionRow): R
     ),
     flags: row.flags,
     promptContext: gatewayRow?.promptContext ?? row.promptContext ?? null,
-    status: gatewayRow?.status ?? null,
-    hasFinalAssistantText:
-      typeof gatewayRow?.finalAssistantText === "string" &&
-      gatewayRow.finalAssistantText.length > 0,
+    status,
+    finalAssistantText,
+    readbackSubject: readback.readbackSubject,
+    finality: readback.finality,
+    activeWork: readback.activeWork,
+    hasFinalAssistantText: typeof finalAssistantText === "string" && finalAssistantText.length > 0,
     activeProgress: gatewayRow?.activeProgress ?? null,
     readbackProvenance: gatewayRow?.readbackProvenance ?? null,
     usage: null,
@@ -974,6 +1019,22 @@ async function loadCachedSessionUsage(
   row: RunInsightSession,
   config = getRuntimeConfig(),
 ): Promise<RunInsightSessionUsage | null> {
+  return loadCachedSessionUsageForSession(
+    {
+      sessionId: row.sessionId,
+      agentId: row.agentId,
+    },
+    config,
+  );
+}
+
+async function loadCachedSessionUsageForSession(
+  row: {
+    sessionId?: string | null;
+    agentId?: string | null;
+  },
+  config = getRuntimeConfig(),
+): Promise<RunInsightSessionUsage | null> {
   if (!row.sessionId) {
     return null;
   }
@@ -1005,6 +1066,74 @@ async function attachCachedSessionUsage(
     ...session,
     usage: usageRows[index] ?? null,
   }));
+}
+
+function resolveGatewaySessionRowByKey(params: {
+  summary: StatusSummary;
+  sessionKey: string;
+  agentId?: string | null;
+}): GatewaySessionRow | null {
+  const cfg = getRuntimeConfig();
+  const agentId = params.agentId ?? resolveAgentIdFromSessionKey(params.sessionKey);
+  for (const storePath of uniqueStrings(params.summary.sessions.paths)) {
+    const store = readSessionStoreReadOnly(storePath);
+    const compactStore = Object.fromEntries(
+      Object.entries(store).filter((entry): entry is [string, NonNullable<(typeof entry)[1]>] =>
+        Boolean(entry[1]),
+      ),
+    );
+    const result = listSessionsFromStore({
+      cfg,
+      storePath,
+      store: compactStore,
+      opts: {
+        agentId,
+        includeLastMessage: false,
+        limit: 5,
+        search: params.sessionKey,
+      },
+    });
+    const row = result.sessions.find(
+      (candidate) =>
+        sessionReferenceMatches(candidate.key, params.sessionKey) ||
+        sessionReferenceMatches(candidate.sessionId, params.sessionKey),
+    );
+    if (row) {
+      return row;
+    }
+  }
+  return null;
+}
+
+async function loadChildSessionUsageEvidence(params: {
+  summary: StatusSummary;
+  childSessionKeys: string[];
+  existingUsage: Map<string, RunInsightSessionUsage | null>;
+}): Promise<Map<string, RunInsightSessionUsage | null>> {
+  const config = getRuntimeConfig();
+  const childUsage = new Map<string, RunInsightSessionUsage | null>();
+  await Promise.all(
+    uniqueStrings(params.childSessionKeys)
+      .filter((sessionKey) => sessionKey && !params.existingUsage.has(sessionKey))
+      .map(async (sessionKey) => {
+        const row = resolveGatewaySessionRowByKey({
+          summary: params.summary,
+          sessionKey,
+        });
+        const sessionId = row?.sessionId ?? (sessionKey.includes(":") ? null : sessionKey);
+        childUsage.set(
+          sessionKey,
+          await loadCachedSessionUsageForSession(
+            {
+              sessionId,
+              agentId: resolveAgentIdFromSessionKey(row?.key ?? sessionKey),
+            },
+            config,
+          ),
+        );
+      }),
+  );
+  return childUsage;
 }
 
 function taskReferenceAt(task: TaskRecord): number {
@@ -2052,12 +2181,14 @@ function buildPerformanceProfile(params: {
   tasks: RunInsightTask[];
   deployEvents: RunInsightDeployEvent[];
   signals: RunInsightSignal[];
+  childSessionUsage?: Map<string, RunInsightSessionUsage | null>;
 }): RunInsightsReport["performanceProfile"] {
   const expensiveRunExplanation: RunInsightsReport["performanceProfile"]["expensiveRunExplanation"] =
     [];
   const timeline: RunInsightsReport["performanceProfile"]["timeline"] = [];
   const validationBuildBottlenecks: RunInsightsReport["performanceProfile"]["validationBuildBottlenecks"] =
     [];
+  const sessionsByKey = new Map(params.sessions.map((session) => [session.key, session]));
 
   for (const session of params.sessions) {
     if (session.usage && session.usage.totalCost >= EXPENSIVE_RUN_COST_WARN_USD) {
@@ -2135,6 +2266,20 @@ function buildPerformanceProfile(params: {
         },
       });
     }
+    if (isKnownBadValidationCommand(task.activeProgress?.command)) {
+      validationBuildBottlenecks.push({
+        code: "known_bad_validation_command",
+        message:
+          "Task active progress shows a known-bad broad typecheck command; use the validation registry focused/typecheck wrapper path instead.",
+        pointer: task.pointer,
+        evidence: {
+          taskId: task.taskId,
+          command: task.activeProgress?.command,
+          validationClass: task.activeProgress?.validationClass ?? null,
+          registry: "docs/agents/coding/validation-registry.md",
+        },
+      });
+    }
   }
 
   const deployDurations = params.deployEvents
@@ -2199,6 +2344,15 @@ function buildPerformanceProfile(params: {
       terminalSummary: compactSummaryText(child.terminalSummary),
       errorSummary: compactSummaryText(child.errorSummary),
       provenanceMismatch: compactSummaryText(child.provenanceMismatch),
+      trajectory: buildChildTrajectoryMetrics({
+        session: sessionsByKey.get(child.childSessionKey),
+        usage: params.childSessionUsage?.get(child.childSessionKey) ?? null,
+        activeProgress:
+          task.activeProgress?.pointer?.kind === "session" &&
+          task.activeProgress.pointer.ref === child.childSessionKey
+            ? task.activeProgress
+            : null,
+      }),
       pointer: child.childSessionKey
         ? `openclaw sessions show ${child.childSessionKey}`
         : task.pointer,
@@ -2230,6 +2384,11 @@ function buildPerformanceProfile(params: {
         terminalSummary: task.progressSummary,
         errorSummary: task.activeProgress?.outputSummary ?? null,
         provenanceMismatch: null,
+        trajectory: buildChildTrajectoryMetrics({
+          session: task.childSessionKey ? sessionsByKey.get(task.childSessionKey) : undefined,
+          usage: task.childSessionKey ? params.childSessionUsage?.get(task.childSessionKey) : null,
+          activeProgress: task.activeProgress,
+        }),
         pointer: task.pointer,
       },
     ];
@@ -2291,6 +2450,133 @@ function buildPerformanceProfile(params: {
   };
 }
 
+function isReadToolName(name: string): boolean {
+  return /\b(read|cat|sed|nl)\b/iu.test(name);
+}
+
+function isSearchToolName(name: string): boolean {
+  return /\b(rg|grep|find|search)\b/iu.test(name);
+}
+
+function isKnownBadValidationCommand(command: string | null | undefined): boolean {
+  if (!command) {
+    return false;
+  }
+  const normalized = command.replace(/\s+/gu, " ").trim().toLowerCase();
+  return (
+    normalized.includes("pnpm exec tsc --noemit") ||
+    normalized.includes("pnpm exec tsc --noemit") ||
+    normalized.includes("pnpm exec tsc --no-emit") ||
+    normalized === "tsc --noemit" ||
+    normalized === "tsc --no-emit" ||
+    normalized.includes(" tsc --noemit") ||
+    normalized.includes(" tsc --no-emit")
+  );
+}
+
+function buildChildTrajectoryMetrics(params: {
+  session?: RunInsightSession;
+  usage?: RunInsightSessionUsage | null;
+  activeProgress?: ReadbackProgressProjection | null;
+}): RunInsightChildTrajectory {
+  const usage = params.session?.usage ?? params.usage;
+  if (usage) {
+    const readCalls = usage.topTools
+      .filter((tool) => isReadToolName(tool.name))
+      .reduce((sum, tool) => sum + tool.count, 0);
+    const searchCalls = usage.topTools
+      .filter((tool) => isSearchToolName(tool.name))
+      .reduce((sum, tool) => sum + tool.count, 0);
+    return {
+      available: true,
+      source: "session_usage_cache",
+      durationMs: usage.durationMs,
+      toolCalls: usage.toolCalls,
+      readCalls,
+      searchCalls,
+      failedToolCalls: usage.errors,
+      validationCommands: [],
+      stopRationalePresent: null,
+      reason: null,
+    };
+  }
+  const progress = params.activeProgress;
+  if (progress?.toolName || progress?.command || progress?.validationClass) {
+    return {
+      available: true,
+      source: "active_progress",
+      durationMs: progress.durationMs ?? progress.elapsedMs ?? null,
+      toolCalls: progress.toolName ? 1 : null,
+      readCalls: progress.toolName && isReadToolName(progress.toolName) ? 1 : 0,
+      searchCalls: progress.toolName && isSearchToolName(progress.toolName) ? 1 : 0,
+      failedToolCalls: typeof progress.exitCode === "number" && progress.exitCode !== 0 ? 1 : 0,
+      validationCommands: progress.command ? [progress.command] : [],
+      stopRationalePresent: progress.note
+        ? /stop rationale|stopped because|i stopped/iu.test(progress.note)
+        : null,
+      reason: null,
+    };
+  }
+  return {
+    available: false,
+    source: "not_available",
+    durationMs: null,
+    toolCalls: null,
+    readCalls: null,
+    searchCalls: null,
+    failedToolCalls: null,
+    validationCommands: [],
+    stopRationalePresent: null,
+    reason: "no child session usage cache or active tool progress was available in scoped readback",
+  };
+}
+
+function selectReportReadbackProjection(params: {
+  sessions: RunInsightSession[];
+  tasks: RunInsightTask[];
+  filters: RunInsightsReport["filters"];
+}) {
+  const terminalSession =
+    params.sessions.find((session) => session.finality.finalAssistantTextPresent) ??
+    params.sessions.find((session) => session.status === "done") ??
+    params.sessions[0];
+  if (terminalSession) {
+    return {
+      readbackSubject: terminalSession.readbackSubject,
+      finality: terminalSession.finality,
+      activeWork: terminalSession.activeWork,
+      finalAssistantText: terminalSession.finalAssistantText,
+    };
+  }
+  const task = params.tasks[0];
+  if (task) {
+    const readback = buildTaskReadbackProjection({
+      taskId: task.taskId,
+      status: task.status,
+      agentId: task.agentId,
+      requesterSessionKey: task.requesterSessionKey,
+      ownerKey: task.ownerKey,
+      childSessionKey: task.childSessionKey,
+      activeProgress: task.activeProgress,
+    });
+    return {
+      ...readback,
+      finalAssistantText: null,
+    };
+  }
+  const readback = buildEmptyReadbackProjection({
+    scope: params.filters.task ? "task" : params.filters.session ? "session" : "global",
+    sessionKey: params.filters.session,
+    taskId: params.filters.task,
+    agentId: params.filters.agent,
+    reason: "no matching session or task evidence found for run-insights filters",
+  });
+  return {
+    ...readback,
+    finalAssistantText: null,
+  };
+}
+
 export function buildRunInsightsReport(
   summary: StatusSummary,
   options: {
@@ -2302,6 +2588,7 @@ export function buildRunInsightsReport(
     now?: number;
     taskRecords?: TaskRecord[];
     sessionUsage?: Map<string, RunInsightSessionUsage | null>;
+    childSessionUsage?: Map<string, RunInsightSessionUsage | null>;
     gatewaySessionRows?: Map<string, GatewaySessionRow>;
   },
 ): RunInsightsReport {
@@ -2363,6 +2650,7 @@ export function buildRunInsightsReport(
     tasks,
     deployEvents,
     signals,
+    childSessionUsage: options.childSessionUsage,
   });
   const filters = {
     agent: options.agent ?? null,
@@ -2371,6 +2659,11 @@ export function buildRunInsightsReport(
     activeMinutes: options.activeMinutes ?? null,
     limit: options.limit,
   };
+  const reportReadback = selectReportReadbackProjection({
+    sessions,
+    tasks,
+    filters,
+  });
   const diagnosticSummary = buildDiagnosticSummary({
     filters,
     attention,
@@ -2396,6 +2689,12 @@ export function buildRunInsightsReport(
     authority: advisory.semantics,
     advisory,
     filters,
+    sessionKey: reportReadback.readbackSubject.sessionKey,
+    status: reportReadback.finality.status,
+    readbackSubject: reportReadback.readbackSubject,
+    finality: reportReadback.finality,
+    activeWork: reportReadback.activeWork,
+    finalAssistantText: reportReadback.finalAssistantText,
     deployEvidenceScope: {
       scope: "global_unscoped",
       filteredBy: [],
@@ -2475,6 +2774,13 @@ export async function loadRunInsightsReport(
   const sessionUsage = new Map(
     sessionsWithUsage.map((session) => [session.key, session.usage] as const),
   );
+  const childSessionUsage = await loadChildSessionUsageEvidence({
+    summary,
+    childSessionKeys: initialReport.performanceProfile.childSessionEvidence.map(
+      (child) => child.childSessionKey,
+    ),
+    existingUsage: sessionUsage,
+  });
   return buildRunInsightsReport(summary, {
     agent: options.agent,
     session: options.session,
@@ -2482,6 +2788,7 @@ export async function loadRunInsightsReport(
     activeMinutes: options.activeMinutes,
     limit: options.limit,
     sessionUsage,
+    childSessionUsage,
     gatewaySessionRows,
   });
 }

@@ -625,6 +625,10 @@ function sessionTargetsForTask(
   if (sessionAgentId) {
     agentIds.add(sessionAgentId);
   }
+  const childAgentId = resolveAgentIdFromSessionKey(task.childSessionKey);
+  if (childAgentId) {
+    agentIds.add(childAgentId);
+  }
   const cacheKey =
     agentIds.size > 0 ? [...agentIds].toSorted().join("|") : ALL_SESSION_TARGETS_CACHE_KEY;
   const cached = context?.sessionTargetCache?.get(cacheKey);
@@ -643,7 +647,7 @@ function sessionTargetsForTask(
 
 function resolveStoreEntryForTaskSession(
   target: SessionStoreTarget,
-  requesterSessionKey: string,
+  sessionKey: string,
   context?: TaskReadbackProgressProjectionContext,
 ): SessionEntry | undefined {
   let store = context?.sessionStoreCache?.get(target.storePath);
@@ -653,20 +657,24 @@ function resolveStoreEntryForTaskSession(
   }
   return resolveSessionStoreEntry({
     store,
-    sessionKey: requesterSessionKey,
+    sessionKey,
   }).existing;
 }
 
-function resolveRequesterSessionTrajectoryProgressProjection(
-  task: TaskRecord,
+function resolveTaskSessionTrajectoryProgressProjection(
+  params: {
+    task: TaskRecord;
+    sessionKey: string;
+    pointerLabel: string;
+  },
   context?: TaskReadbackProgressProjectionContext,
 ): ReadbackProgressProjection | undefined {
-  const requesterSessionKey = normalizeOptionalString(task.requesterSessionKey);
-  if (!requesterSessionKey) {
+  const sessionKey = normalizeOptionalString(params.sessionKey);
+  if (!sessionKey) {
     return undefined;
   }
-  for (const target of sessionTargetsForTask(task, context)) {
-    const entry = resolveStoreEntryForTaskSession(target, requesterSessionKey, context);
+  for (const target of sessionTargetsForTask(params.task, context)) {
+    const entry = resolveStoreEntryForTaskSession(target, sessionKey, context);
     const sessionId = normalizeOptionalString(entry?.sessionId);
     if (!sessionId) {
       continue;
@@ -683,12 +691,58 @@ function resolveRequesterSessionTrajectoryProgressProjection(
         pointer: progress.pointer ?? {
           kind: "trajectory",
           ref: `session:${sessionId}`,
-          label: "requester session trajectory",
+          label: params.pointerLabel,
         },
       };
     }
   }
   return undefined;
+}
+
+function resolveRequesterSessionTrajectoryProgressProjection(
+  task: TaskRecord,
+  context?: TaskReadbackProgressProjectionContext,
+): ReadbackProgressProjection | undefined {
+  return resolveTaskSessionTrajectoryProgressProjection(
+    {
+      task,
+      sessionKey: task.requesterSessionKey,
+      pointerLabel: "requester session trajectory",
+    },
+    context,
+  );
+}
+
+function resolveChildSessionTrajectoryProgressProjection(
+  task: TaskRecord,
+  context?: TaskReadbackProgressProjectionContext,
+): ReadbackProgressProjection | undefined {
+  const childSessionKey = normalizeOptionalString(task.childSessionKey);
+  if (!childSessionKey) {
+    return undefined;
+  }
+  const progress = resolveTaskSessionTrajectoryProgressProjection(
+    {
+      task,
+      sessionKey: childSessionKey,
+      pointerLabel: "child session trajectory",
+    },
+    context,
+  );
+  if (!progress) {
+    return undefined;
+  }
+  return {
+    ...progress,
+    childRole: progress.childRole ?? resolveAgentIdFromSessionKey(childSessionKey),
+    childPhase: progress.childPhase ?? "running",
+    spawnReason: progress.spawnReason ?? truncateTaskProgressNote(task.task),
+    pointer: {
+      kind: "session",
+      ref: childSessionKey,
+      label: "child session trajectory",
+    },
+  };
 }
 
 function resolveFallbackTaskProgressProjection(
@@ -700,6 +754,10 @@ function resolveFallbackTaskProgressProjection(
   const taskRunEventProgress = resolveTaskRunEventProgressProjection(task, now);
   if (isCodexNativeSubagentTask(task) && taskRunEventProgress) {
     return taskRunEventProgress;
+  }
+  const childSessionProgress = resolveChildSessionTrajectoryProgressProjection(task, context);
+  if (childSessionProgress) {
+    return childSessionProgress;
   }
   const descendantChildProgress = resolveDescendantChildRunProgressProjection(task, now);
   if (descendantChildProgress) {

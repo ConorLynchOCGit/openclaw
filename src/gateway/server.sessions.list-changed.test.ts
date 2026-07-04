@@ -682,7 +682,7 @@ test("sessions.changed mutation events include subagent ownership metadata", asy
   });
 
   expectFields(responsePayload, { ok: true, key: "agent:main:subagent:child" });
-  expectChangedBroadcast(broadcastToConnIds, {
+  const broadcastPayload = expectChangedBroadcast(broadcastToConnIds, {
     sessionKey: "agent:main:subagent:child",
     reason: "patch",
     spawnedBy: "agent:main:main",
@@ -692,5 +692,15 @@ test("sessions.changed mutation events include subagent ownership metadata", asy
     spawnDepth: 2,
     subagentRole: "orchestrator",
     subagentControlScope: "children",
+  });
+  expect(requireRecord(broadcastPayload.readbackSubject, "readback subject")).toMatchObject({
+    scope: "session",
+    sessionKey: "agent:main:subagent:child",
+  });
+  expect(requireRecord(broadcastPayload.finality, "finality")).toMatchObject({
+    finalAssistantTextPresent: false,
+  });
+  expect(requireRecord(broadcastPayload.activeWork, "active work")).toMatchObject({
+    source: "none",
   });
 });
