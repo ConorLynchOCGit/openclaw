@@ -99,6 +99,14 @@ function formatTaskResult(params: {
   deliveryState: string;
 }): string {
   const taskNameAttr = params.taskName ? ` taskName="${escapeXmlAttr(params.taskName)}"` : "";
+  const handoffDirective =
+    params.handoffKind === "domain_final"
+      ? "domain final output; if this is the operator-facing answer, preserve the task_result verbatim or link to the exact artifact instead of summarizing or rewriting it"
+      : params.handoffKind === "context_pack" ||
+          params.handoffKind === "review_packet" ||
+          params.handoffKind === "implementation_closeout"
+        ? "authored evidence packet; use the task_result as child-authored evidence and do not replace it with a generic summary"
+        : "child task completed";
   return [
     `<task id="${escapeXmlAttr(params.childSessionKey)}" runId="${escapeXmlAttr(
       params.runId,
@@ -109,7 +117,7 @@ function formatTaskResult(params: {
     )}" deliveryState="${escapeXmlAttr(params.deliveryState)}" contentDigest="${escapeXmlAttr(
       params.contentDigest,
     )}" contentChars="${params.contentChars}">`,
-    "  <summary>child task completed</summary>",
+    `  <summary>${escapeXmlText(handoffDirective)}</summary>`,
     "  <task_result>",
     escapeXmlText(params.replyText.trim()),
     "  </task_result>",

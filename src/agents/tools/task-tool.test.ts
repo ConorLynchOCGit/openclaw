@@ -123,6 +123,9 @@ describe("task tool", () => {
     expect(content.text).toContain("<task_result>");
     expect(content.text).toContain('handoffKind="context_pack"');
     expect(content.text).toContain('deliveryState="model_visible_full"');
+    expect(content.text).toContain(
+      "authored evidence packet; use the task_result as child-authored evidence",
+    );
     expect(content.text).toContain(`contentDigest="${digestText("Context Pack\n\nP1...")}"`);
     expect(content.text).toContain("Context Pack\n\nP1...");
   });
@@ -150,6 +153,9 @@ describe("task tool", () => {
       throw new Error("Expected text tool result");
     }
     expect(content.text).toContain('handoffKind="domain_final"');
+    expect(content.text).toContain(
+      "domain final output; if this is the operator-facing answer, preserve the task_result verbatim",
+    );
     expect(content.text).toContain("Full planning artifact");
   });
 
