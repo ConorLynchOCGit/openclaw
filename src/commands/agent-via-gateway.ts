@@ -62,6 +62,9 @@ const EMBEDDED_FALLBACK_META = {
 } as const;
 const GATEWAY_TIMEOUT_FALLBACK_SESSION_PREFIX = "gateway-fallback-";
 const GATEWAY_TRANSIENT_CONNECT_RETRY_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 15_000] as const;
+const GATEWAY_FINAL_FRAME_RECOVERY_RETRY_DELAYS_MS = [
+  250, 1_000, 2_000, 5_000, 10_000, 15_000,
+] as const;
 
 type AgentCliOpts = {
   message: string;
@@ -121,9 +124,16 @@ const defaultAgentSessionModuleLoader: AgentSessionModuleLoader = () =>
   import("./agent/session.js");
 let agentSessionModuleLoader: AgentSessionModuleLoader = defaultAgentSessionModuleLoader;
 let gatewayAbortRetryDelaysMsForTests: readonly number[] | undefined;
+let gatewayFinalFrameRecoveryRetryDelaysMsForTests: readonly number[] | undefined;
 
 function resolveGatewayAbortRetryDelaysMs(): readonly number[] {
   return gatewayAbortRetryDelaysMsForTests ?? GATEWAY_ABORT_RETRY_DELAYS_MS;
+}
+
+function resolveGatewayFinalFrameRecoveryRetryDelaysMs(): readonly number[] {
+  return (
+    gatewayFinalFrameRecoveryRetryDelaysMsForTests ?? GATEWAY_FINAL_FRAME_RECOVERY_RETRY_DELAYS_MS
+  );
 }
 
 function loadEmbeddedAgentCommand(): Promise<EmbeddedAgentCommandModule["agentCommand"]> {
@@ -163,6 +173,9 @@ export const agentViaGatewayTesting = {
   resolveGatewayAgentTimeoutMs,
   setGatewayAbortRetryDelaysMsForTests(delays?: readonly number[]): void {
     gatewayAbortRetryDelaysMsForTests = delays;
+  },
+  setGatewayFinalFrameRecoveryRetryDelaysMsForTests(delays?: readonly number[]): void {
+    gatewayFinalFrameRecoveryRetryDelaysMsForTests = delays;
   },
 };
 
@@ -259,6 +272,10 @@ function isTransientGatewayAgentConnectClose(err: unknown): boolean {
   const code = typeof err.code === "number" ? err.code : undefined;
   const reason = normalizeOptionalString(err.reason);
   return code === 1000 && (!reason || reason === "no close reason");
+}
+
+function isRecoverableAcceptedGatewayFinalFrameLoss(err: unknown, acceptedGatewayRun: boolean) {
+  return acceptedGatewayRun && isGatewayTransportError(err) && err.kind === "closed";
 }
 
 function validateExplicitSessionKeyForDispatch(
@@ -677,6 +694,7 @@ async function agentViaGatewayCommand(
   let activeConnectionAbortAttempted = false;
   let activeConnectionAbortSucceeded = false;
   let response: GatewayAgentResponse | undefined;
+  const finalFrameRecoveryDeadlineMs = Date.now() + gatewayTimeoutMs;
   const dispatchGatewayAgentCall = async (activeCfg: OpenClawConfig) =>
     await withProgress(
       {
@@ -731,10 +749,31 @@ async function agentViaGatewayCommand(
     );
 
   let shellEnvFallbackRetriesRemaining = 1;
+  let finalFrameRecoveryAttempt = 0;
   const consumeShellEnvFallbackRetry = () => shellEnvFallbackRetriesRemaining-- > 0;
+  const nextFinalFrameRecoveryDelayMs = () => {
+    const remainingMs = Math.max(0, finalFrameRecoveryDeadlineMs - Date.now());
+    if (remainingMs <= 0) {
+      throw new Error(
+        `Gateway final response recovery timed out for run ${acceptedRunId ?? idempotencyKey}.`,
+      );
+    }
+    const retryDelaysMs = resolveGatewayFinalFrameRecoveryRetryDelaysMs();
+    const preferredDelayMs =
+      retryDelaysMs[Math.min(finalFrameRecoveryAttempt++, retryDelaysMs.length - 1)] ?? 0;
+    return Math.min(preferredDelayMs, remainingMs);
+  };
   for (;;) {
     try {
       response = await dispatchGatewayAgentCall(cfg);
+      if (acceptedGatewayRun && isInFlightGatewayAgentResponse(response)) {
+        const retryDelayMs = nextFinalFrameRecoveryDelayMs();
+        runtime.error?.(
+          `Gateway agent run ${response.runId ?? acceptedRunId ?? idempotencyKey} is still in flight after final-frame recovery; retrying in ${retryDelayMs}ms.`,
+        );
+        await delayMs(retryDelayMs, signalBridge.signal);
+        continue;
+      }
       break;
     } catch (err) {
       if (
@@ -758,6 +797,16 @@ async function agentViaGatewayCommand(
           gatewayIdentity,
           config: cfg,
         });
+      }
+      if (isRecoverableAcceptedGatewayFinalFrameLoss(err, acceptedGatewayRun)) {
+        const retryDelayMs = nextFinalFrameRecoveryDelayMs();
+        runtime.error?.(
+          `Gateway final response frame was lost after acceptance; recovering run ${
+            acceptedRunId ?? idempotencyKey
+          } through native idempotency readback in ${retryDelayMs}ms.`,
+        );
+        await delayMs(retryDelayMs, signalBridge.signal);
+        continue;
       }
       throw err;
     }

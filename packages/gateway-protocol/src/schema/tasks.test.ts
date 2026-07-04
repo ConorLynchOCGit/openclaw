@@ -153,6 +153,8 @@ describe("TaskSummarySchema", () => {
             spawnReason: "Inspect repo state.",
             terminalSummary: "Scout returned a bounded Context Pack.",
             errorSummary: "Context overflow before final synthesis.",
+            provenanceMismatch:
+              "child final output is present, but linked execution task reported failure.",
           },
         ],
       }),

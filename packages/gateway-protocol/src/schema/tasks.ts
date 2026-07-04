@@ -114,6 +114,7 @@ const TaskChildRunSummarySchema = Type.Object(
     spawnReason: Type.Optional(Type.String()),
     terminalSummary: Type.Optional(Type.String()),
     errorSummary: Type.Optional(Type.String()),
+    provenanceMismatch: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );

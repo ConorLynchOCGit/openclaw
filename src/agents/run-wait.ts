@@ -89,6 +89,22 @@ type RawAgentWaitResponse = {
   providerStarted?: unknown;
 };
 
+function readOpenClawMessageId(message: unknown): string | undefined {
+  if (!message || typeof message !== "object") {
+    return undefined;
+  }
+  const meta = (message as { __openclaw?: unknown }).__openclaw;
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) {
+    return undefined;
+  }
+  const id = (meta as { id?: unknown }).id;
+  return typeof id === "string" && id.trim() ? id.trim() : undefined;
+}
+
+function isProjectedTextTruncated(text: string | undefined): boolean {
+  return typeof text === "string" && text.includes("...(truncated)...");
+}
+
 function normalizeAgentWaitResult(
   status: AgentWaitResult["status"],
   wait?: RawAgentWaitResponse,
@@ -201,9 +217,51 @@ export async function readLatestAssistantReplySnapshot(params: {
       ...(typeof params.maxChars === "number" ? { maxChars: params.maxChars } : {}),
     },
   });
-  return resolveLatestAssistantReplySnapshot(
-    stripToolMessages(Array.isArray(history?.messages) ? history.messages : []),
-  );
+  const messages = stripToolMessages(Array.isArray(history?.messages) ? history.messages : []);
+  const snapshot = resolveLatestAssistantReplySnapshot(messages);
+  if (typeof params.maxChars === "number" || !isProjectedTextTruncated(snapshot.text)) {
+    return snapshot;
+  }
+
+  const latestAssistant = [...messages]
+    .reverse()
+    .find(
+      (message) =>
+        message &&
+        typeof message === "object" &&
+        (message as { role?: unknown }).role === "assistant" &&
+        readOpenClawMessageId(message),
+    );
+  const messageId = readOpenClawMessageId(latestAssistant);
+  if (!messageId) {
+    return snapshot;
+  }
+
+  try {
+    const full = await (params.callGateway ?? runWaitDeps.callGateway)<{
+      ok?: boolean;
+      message?: unknown;
+    }>({
+      method: "chat.message.get",
+      params: {
+        sessionKey: params.sessionKey,
+        messageId,
+      },
+    });
+    if (full?.ok && full.message) {
+      const fullSnapshot = resolveLatestAssistantReplySnapshot([full.message]);
+      if (fullSnapshot.text && !isProjectedTextTruncated(fullSnapshot.text)) {
+        return {
+          text: fullSnapshot.text,
+          fingerprint: fullSnapshot.fingerprint ?? snapshot.fingerprint,
+        };
+      }
+    }
+  } catch {
+    // Best-effort fallback; preserve the history projection if full readback is unavailable.
+  }
+
+  return snapshot;
 }
 
 /** Read only the latest assistant text for call sites that do not need fingerprints. */

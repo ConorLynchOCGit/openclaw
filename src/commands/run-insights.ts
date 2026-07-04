@@ -174,6 +174,7 @@ export type RunInsightTask = {
     spawnReason?: string;
     terminalSummary?: string;
     errorSummary?: string;
+    provenanceMismatch?: string;
   }>;
   parentTaskId: string | null;
   parentFlowId: string | null;
@@ -320,6 +321,7 @@ export type RunInsightsReport = {
       elapsed: string;
       terminalSummary: string | null;
       errorSummary: string | null;
+      provenanceMismatch: string | null;
       pointer: string;
     }>;
     skillActivationEvidence: Array<{
@@ -420,6 +422,9 @@ export type RunInsightsReport = {
     deployEvents: string;
   };
 };
+
+type RunInsightChildSessionEvidence =
+  RunInsightsReport["performanceProfile"]["childSessionEvidence"][number];
 
 function parsePositiveIntegerValue(
   value: string | number | undefined,
@@ -755,7 +760,14 @@ function canonicalSessionReference(value: string | null | undefined): string | n
 function sessionReferenceMatches(value: string | null | undefined, filter: string): boolean {
   const canonicalValue = canonicalSessionReference(value);
   const canonicalFilter = canonicalSessionReference(filter);
-  return Boolean(canonicalValue && canonicalFilter && canonicalValue === canonicalFilter);
+  if (!canonicalValue || !canonicalFilter) {
+    return false;
+  }
+  return (
+    canonicalValue === canonicalFilter ||
+    canonicalValue.endsWith(`:${canonicalFilter}`) ||
+    canonicalValue.includes(`:${canonicalFilter}:`)
+  );
 }
 
 function gatewaySessionKeyMatches(row: GatewaySessionRow, session: string | undefined): boolean {
@@ -1019,7 +1031,11 @@ function taskMatchesSessionFilter(task: TaskRecord, session: string | undefined)
   return (
     sessionReferenceMatches(task.requesterSessionKey, session) ||
     sessionReferenceMatches(task.ownerKey, session) ||
-    sessionReferenceMatches(task.childSessionKey, session)
+    sessionReferenceMatches(task.childSessionKey, session) ||
+    sessionReferenceMatches(task.runId, session) ||
+    sessionReferenceMatches(task.sourceId, session) ||
+    sessionReferenceMatches(task.parentFlowId, session) ||
+    sessionReferenceMatches(task.taskId, session)
   );
 }
 
@@ -1028,6 +1044,84 @@ function taskMatchesTaskFilter(task: TaskRecord, taskId: string | undefined): bo
     return true;
   }
   return task.taskId === taskId;
+}
+
+function collectTaskTreeSessionRefs(
+  taskRecords: readonly TaskRecord[],
+  session: string | undefined,
+): Set<string> {
+  const refs = new Set<string>();
+  if (!session) {
+    return refs;
+  }
+  refs.add(session);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const task of taskRecords) {
+      const directMatch =
+        taskMatchesSessionFilter(task, session) ||
+        [...refs].some(
+          (ref) =>
+            sessionReferenceMatches(task.requesterSessionKey, ref) ||
+            sessionReferenceMatches(task.ownerKey, ref) ||
+            sessionReferenceMatches(task.childSessionKey, ref) ||
+            sessionReferenceMatches(task.runId, ref) ||
+            sessionReferenceMatches(task.sourceId, ref) ||
+            sessionReferenceMatches(task.parentFlowId, ref) ||
+            sessionReferenceMatches(task.parentTaskId, ref) ||
+            sessionReferenceMatches(task.taskId, ref),
+        );
+      if (!directMatch) {
+        continue;
+      }
+      for (const candidate of [
+        task.requesterSessionKey,
+        task.ownerKey,
+        task.childSessionKey,
+        task.runId,
+        task.sourceId,
+        task.parentFlowId,
+        task.parentTaskId,
+        task.taskId,
+      ]) {
+        const normalized = canonicalSessionReference(candidate);
+        if (normalized && !refs.has(normalized)) {
+          refs.add(normalized);
+          changed = true;
+        }
+      }
+    }
+  }
+  return refs;
+}
+
+function taskMatchesSessionTreeFilter(
+  task: TaskRecord,
+  session: string | undefined,
+  sessionRefs: ReadonlySet<string>,
+): boolean {
+  if (!session) {
+    return true;
+  }
+  if (taskMatchesSessionFilter(task, session)) {
+    return true;
+  }
+  for (const ref of sessionRefs) {
+    if (
+      sessionReferenceMatches(task.requesterSessionKey, ref) ||
+      sessionReferenceMatches(task.ownerKey, ref) ||
+      sessionReferenceMatches(task.childSessionKey, ref) ||
+      sessionReferenceMatches(task.runId, ref) ||
+      sessionReferenceMatches(task.sourceId, ref) ||
+      sessionReferenceMatches(task.parentFlowId, ref) ||
+      sessionReferenceMatches(task.parentTaskId, ref) ||
+      sessionReferenceMatches(task.taskId, ref)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function isCodexNativeChildTask(task: Pick<RunInsightTask, "runId" | "taskKind">): boolean {
@@ -1252,12 +1346,13 @@ function toInsightTask(
   task: TaskRecord,
   now: number,
   progressContext?: TaskReadbackProgressProjectionContext,
+  tasksForReadback?: readonly TaskRecord[],
 ): RunInsightTask {
   const referenceAt = taskReferenceAt(task);
   const elapsedMs = taskElapsedMs(task, now);
   const latestEvent = task.executionReceipt?.latestEvent;
   const activeProgress = resolveTaskReadbackProgressProjection(task, progressContext) ?? null;
-  const childRunReadback = buildTaskChildRunReadback(task, now);
+  const childRunReadback = buildTaskChildRunReadback(task, now, tasksForReadback);
   const childRole = inferChildRole({
     taskKind: task.taskKind,
     label: task.label,
@@ -2075,7 +2170,7 @@ function buildPerformanceProfile(params: {
 
   const totalKnownDurationMs = deployDurations.reduce((sum, entry) => sum + entry.durationMs, 0);
   const slowestDeploy = deployDurations.toSorted((a, b) => b.durationMs - a.durationMs)[0] ?? null;
-  const childSessionEvidence = params.tasks.flatMap((task) => {
+  const childSessionEvidence = params.tasks.flatMap<RunInsightChildSessionEvidence>((task) => {
     const nested = task.childRuns.map((child) => ({
       taskId: task.taskId,
       childSessionKey: child.childSessionKey,
@@ -2091,6 +2186,7 @@ function buildPerformanceProfile(params: {
       elapsed: formatDurationMs(typeof child.durationMs === "number" ? child.durationMs : null),
       terminalSummary: compactSummaryText(child.terminalSummary),
       errorSummary: compactSummaryText(child.errorSummary),
+      provenanceMismatch: compactSummaryText(child.provenanceMismatch),
       pointer: child.childSessionKey
         ? `openclaw sessions show ${child.childSessionKey}`
         : task.pointer,
@@ -2117,6 +2213,7 @@ function buildPerformanceProfile(params: {
         elapsed: task.elapsed,
         terminalSummary: task.progressSummary,
         errorSummary: task.activeProgress?.outputSummary ?? null,
+        provenanceMismatch: null,
         pointer: task.pointer,
       },
     ];
@@ -2221,14 +2318,15 @@ export function buildRunInsightsReport(
     }));
   const taskRecords = options.taskRecords ?? listTaskRecords();
   const progressContext = createTaskReadbackProgressProjectionContext({ now });
+  const taskSessionRefs = collectTaskTreeSessionRefs(taskRecords, options.session);
   const matchingTaskRecords = taskRecords
     .filter((task) => taskMatchesAgentFilter(task, options.agent))
-    .filter((task) => taskMatchesSessionFilter(task, options.session))
+    .filter((task) => taskMatchesSessionTreeFilter(task, options.session, taskSessionRefs))
     .filter((task) => taskMatchesTaskFilter(task, options.task))
     .filter((task) => taskMatchesActiveFilter(task, options.activeMinutes, now));
   const tasks = matchingTaskRecords
     .slice(0, options.limit)
-    .map((task) => toInsightTask(task, now, progressContext));
+    .map((task) => toInsightTask(task, now, progressContext, taskRecords));
   const deployEvents = readRecentDeployEvents(options.limit);
   const lastPromotedEvent = deployEvents.find(
     (event) => event.eventType === "deploy.promote" && event.status === "passed",

@@ -817,6 +817,130 @@ describe("runInsightsCommand", () => {
     expect(JSON.stringify(payload)).not.toContain("DOCS_RAW_END");
   });
 
+  it("keeps successful child finality visible when execution-task provenance disagrees", () => {
+    const now = Date.UTC(2026, 6, 3, 4, 45, 0);
+    const parentSessionKey = "agent:planning:phase0z-proof";
+    const childSessionKey = "agent:codebase-researcher:subagent:overflow-child";
+    addSubagentRunForTests({
+      runId: "run-overflow-child",
+      childSessionKey,
+      requesterSessionKey: parentSessionKey,
+      requesterDisplayKey: "planning",
+      task: "Inspect source surfaces",
+      taskName: "repo_skill_wiring_state",
+      label: "Phase 0Z source scout",
+      cleanup: "keep",
+      createdAt: now - 8 * 60_000,
+      startedAt: now - 8 * 60_000,
+      endedAt: now - 6 * 60_000,
+      outcome: { status: "ok" },
+      expectsCompletionMessage: true,
+      completion: {
+        required: true,
+        resultText: "Context Pack is available for parent synthesis.",
+        capturedAt: now - 6 * 60_000,
+      },
+      delivery: { status: "delivered" },
+    });
+    const parentTask: TaskRecord = {
+      taskId: "task-planning-parent-overflow",
+      runtime: "subagent",
+      taskKind: "planning",
+      agentId: "planning",
+      runId: "run-planning-parent-overflow",
+      label: "Planning proof",
+      requesterSessionKey: "agent:main:phase0z-proof",
+      ownerKey: parentSessionKey,
+      scopeKind: "session",
+      childSessionKey: parentSessionKey,
+      task: "Plan native skill wiring work",
+      status: "running",
+      deliveryStatus: "pending",
+      notifyPolicy: "done_only",
+      createdAt: now - 9 * 60_000,
+      startedAt: now - 9 * 60_000,
+      lastEventAt: now - 4 * 60_000,
+    };
+    const wrapperTask: TaskRecord = {
+      taskId: "task-wrapper-overflow-child",
+      runtime: "subagent",
+      taskKind: "source-scout",
+      agentId: "codebase-researcher",
+      runId: "run-overflow-child",
+      label: "codebase scout",
+      requesterSessionKey: parentSessionKey,
+      ownerKey: parentSessionKey,
+      scopeKind: "session",
+      childSessionKey,
+      task: "Inspect source surfaces",
+      status: "succeeded",
+      deliveryStatus: "delivered",
+      notifyPolicy: "silent",
+      createdAt: now - 8 * 60_000,
+      startedAt: now - 8 * 60_000,
+      endedAt: now - 6 * 60_000,
+      lastEventAt: now - 6 * 60_000,
+    };
+    const executionTask: TaskRecord = {
+      taskId: "task-execution-overflow-child",
+      runtime: "cli",
+      taskKind: "cli",
+      agentId: "codebase-researcher",
+      runId: "run-overflow-child",
+      label: "child execution",
+      requesterSessionKey: childSessionKey,
+      ownerKey: childSessionKey,
+      parentTaskId: "task-wrapper-overflow-child",
+      scopeKind: "session",
+      childSessionKey,
+      task: "Inspect source surfaces",
+      status: "failed",
+      deliveryStatus: "not_applicable",
+      notifyPolicy: "silent",
+      createdAt: now - 8 * 60_000,
+      startedAt: now - 8 * 60_000,
+      endedAt: now - 6 * 60_000,
+      lastEventAt: now - 6 * 60_000,
+      error: "Context overflow: prompt too large for the model.",
+    };
+
+    const payload = buildRunInsightsReport(buildSummary(), {
+      session: parentSessionKey,
+      limit: 5,
+      now,
+      taskRecords: [parentTask, wrapperTask, executionTask],
+    });
+
+    expect(payload.tasks[0]).toMatchObject({
+      taskId: "task-planning-parent-overflow",
+      childRunCount: 1,
+      childRuns: [
+        expect.objectContaining({
+          runId: "run-overflow-child",
+          executionTaskId: "task-execution-overflow-child",
+          childSessionKey,
+          status: "done",
+          terminalSummary: "Context Pack is available for parent synthesis.",
+          errorSummary: expect.stringContaining("Context overflow"),
+          provenanceMismatch: expect.stringContaining("child final output is present"),
+        }),
+      ],
+    });
+    expect(payload.performanceProfile.childSessionEvidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          taskId: "task-planning-parent-overflow",
+          childSessionKey,
+          childPhase: "done",
+          status: "done",
+          terminalSummary: "Context Pack is available for parent synthesis.",
+          errorSummary: expect.stringContaining("Context overflow"),
+          provenanceMismatch: expect.stringContaining("child final output is present"),
+        }),
+      ]),
+    );
+  });
+
   it("hydrates exact session filters from native stores when recent rows miss", () => {
     expect(stateDir).toBeDefined();
     const storePath = path.join(stateDir!, "old-coding-sessions.json");
@@ -864,6 +988,94 @@ describe("runInsightsCommand", () => {
     });
     expect(payload.summary.recentSessionsConsidered).toBe(1);
     expect(payload.summary.sessionsDisplayed).toBe(1);
+  });
+
+  it("matches bare proof session ids against agent-prefixed sessions and related task trees", () => {
+    const now = Date.UTC(2026, 6, 3, 17, 30, 0);
+    const proofId = "phase0z-gbrain-openclaw-skill-wiring-proof-20260703T165709Z";
+    const sessionKey = `agent:main:${proofId}`;
+    const summary = buildSummary();
+    summary.sessions.recent = [
+      {
+        agentId: "main",
+        key: sessionKey,
+        kind: "direct",
+        sessionId: "sess-main-proof",
+        updatedAt: now - 1_000,
+        age: 1_000,
+        totalTokens: 12_000,
+        totalTokensFresh: true,
+        remainingTokens: 88_000,
+        percentUsed: 12,
+        model: "gpt-5.5",
+        configuredModel: "gpt-5.5",
+        selectedModel: "gpt-5.5",
+        modelSelectionReason: "configured",
+        runtime: "openclaw",
+        contextTokens: 100_000,
+        flags: [],
+      },
+    ];
+    const parentTask: TaskRecord = {
+      taskId: "task-main-proof",
+      runtime: "subagent",
+      taskKind: "planning",
+      agentId: "planning",
+      runId: "run-planning-proof",
+      label: "Planning proof",
+      requesterSessionKey: sessionKey,
+      ownerKey: sessionKey,
+      scopeKind: "session",
+      childSessionKey: "agent:planning:phase0z-proof",
+      task: "Plan native skill wiring work.",
+      status: "running",
+      deliveryStatus: "pending",
+      notifyPolicy: "done_only",
+      createdAt: now - 120_000,
+      startedAt: now - 120_000,
+      lastEventAt: now - 60_000,
+    };
+    const childTask: TaskRecord = {
+      taskId: "task-planning-child",
+      runtime: "subagent",
+      taskKind: "source-scout",
+      agentId: "codebase-researcher",
+      runId: "run-codebase-scout",
+      label: "codebase scout",
+      requesterSessionKey: "agent:planning:phase0z-proof",
+      ownerKey: "agent:planning:phase0z-proof",
+      parentTaskId: "task-main-proof",
+      scopeKind: "session",
+      childSessionKey: "agent:codebase-researcher:subagent:repo-scout",
+      task: "Inspect native skill wiring.",
+      status: "succeeded",
+      deliveryStatus: "delivered",
+      notifyPolicy: "silent",
+      createdAt: now - 90_000,
+      startedAt: now - 90_000,
+      endedAt: now - 10_000,
+      lastEventAt: now - 10_000,
+    };
+
+    const payload = buildRunInsightsReport(summary, {
+      session: proofId,
+      limit: 5,
+      now,
+      taskRecords: [parentTask, childTask],
+      gatewaySessionRows: new Map(),
+    });
+
+    expect(payload.sessions).toHaveLength(1);
+    expect(payload.sessions[0]).toMatchObject({ key: sessionKey });
+    expect(payload.summary.tasks.matching).toBe(2);
+    expect(payload.tasks.map((task: { taskId: string }) => task.taskId)).toEqual([
+      "task-main-proof",
+      "task-planning-child",
+    ]);
+    expect(payload.diagnosticSummary.currentOrLastKnownPhase).toMatchObject({
+      source: "task",
+      evidenceQuality: "evidence_backed",
+    });
   });
 
   it("projects terminal child task errors when no execution receipt is present", () => {

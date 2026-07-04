@@ -88,7 +88,6 @@ describe("task tool", () => {
     });
     expect(hoisted.readLatestAssistantReplyMock).toHaveBeenCalledWith({
       sessionKey: "agent:codebase-researcher:subagent:child",
-      maxChars: 32_000,
     });
     expect(result.details).toMatchObject({
       status: "ok",
@@ -221,7 +220,6 @@ describe("task tool", () => {
 
     expect(hoisted.readLatestAssistantReplyMock).toHaveBeenCalledWith({
       sessionKey: "agent:codebase-researcher:subagent:child",
-      maxChars: 32_000,
     });
     expect(result.details).toMatchObject({
       status: "error",
@@ -241,7 +239,7 @@ describe("task tool", () => {
   });
 
   it("does not duplicate long child output in both model text and details", async () => {
-    const longPacket = `# Context Pack\n\n${"plan-shaping evidence ".repeat(1200)}`;
+    const longPacket = `# Context Pack\n\n${"plan-shaping evidence ".repeat(2200)}`;
     hoisted.readLatestAssistantReplyMock.mockResolvedValue(longPacket);
 
     const result = await createTaskTool().execute("call-1", {
@@ -252,7 +250,6 @@ describe("task tool", () => {
     const serializedDetails = JSON.stringify(result.details);
     expect(hoisted.readLatestAssistantReplyMock).toHaveBeenCalledWith({
       sessionKey: "agent:codebase-researcher:subagent:child",
-      maxChars: 32_000,
     });
     const content = result.content[0];
     expect(content?.type).toBe("text");

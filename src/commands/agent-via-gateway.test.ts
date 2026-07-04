@@ -236,6 +236,7 @@ function resetAgentCliCommandMocksForTest() {
   vi.clearAllMocks();
   agentViaGatewayTesting.resetLazyImportsForTests();
   agentViaGatewayTesting.setGatewayAbortRetryDelaysMsForTests([0, 0, 0, 0]);
+  agentViaGatewayTesting.setGatewayFinalFrameRecoveryRetryDelaysMsForTests([0, 0, 0, 0]);
   loadAgentSessionModuleMock.mockImplementation(async () => await import("./agent/session.js"));
   agentViaGatewayTesting.setAgentSessionModuleLoaderForTests(loadAgentSessionModuleMock);
   originalForceConsoleToStderr = loggingState.forceConsoleToStderr;
@@ -248,6 +249,7 @@ beforeEach(() => {
 
 afterEach(() => {
   agentViaGatewayTesting.setGatewayAbortRetryDelaysMsForTests();
+  agentViaGatewayTesting.setGatewayFinalFrameRecoveryRetryDelaysMsForTests();
   loggingState.forceConsoleToStderr = originalForceConsoleToStderr;
 });
 
@@ -267,6 +269,7 @@ describe("agentCliCommand", () => {
       });
     } finally {
       agentViaGatewayTesting.setGatewayAbortRetryDelaysMsForTests();
+      agentViaGatewayTesting.setGatewayFinalFrameRecoveryRetryDelaysMsForTests();
       loggingState.forceConsoleToStderr = restoreForceConsoleToStderr;
     }
   });
@@ -1312,6 +1315,63 @@ describe("agentCliCommand", () => {
 
       expect(jsonRuntime.writeJson).toHaveBeenCalledWith(response, 2);
       expect(jsonRuntime.log).not.toHaveBeenCalled();
+    });
+  });
+
+  it("recovers accepted expect-final gateway runs through native idempotency readback", async () => {
+    await withTempStore(async () => {
+      const finalResponse = {
+        runId: "proof-run",
+        status: "ok",
+        result: {
+          payloads: [{ text: "final proof closeout" }],
+          meta: { stub: true },
+        },
+      };
+      callGateway
+        .mockImplementationOnce(async (requestValue: unknown) => {
+          const request = requireRecord(requestValue, "gateway request");
+          const onAccepted = request.onAccepted as ((payload: unknown) => void) | undefined;
+          onAccepted?.({
+            status: "accepted",
+            runId: "proof-run",
+            sessionKey: "agent:main:proof-session",
+          });
+          throw createGatewayClosedError();
+        })
+        .mockResolvedValueOnce({
+          runId: "proof-run",
+          status: "in_flight",
+          sessionKey: "agent:main:proof-session",
+        })
+        .mockResolvedValueOnce(finalResponse);
+
+      await agentCliCommand(
+        {
+          message: "hi",
+          sessionKey: "agent:main:proof-session",
+          runId: "proof-run",
+          json: true,
+        },
+        jsonRuntime,
+      );
+
+      expect(callGateway).toHaveBeenCalledTimes(3);
+      expect(
+        callGateway.mock.calls.map(
+          (call) =>
+            requireRecord(requireRecord(call[0], "gateway request").params, "gateway params")
+              .idempotencyKey,
+        ),
+      ).toEqual(["proof-run", "proof-run", "proof-run"]);
+      expect(jsonRuntime.writeJson).toHaveBeenCalledWith(finalResponse, 2);
+      expect(jsonRuntime.log).not.toHaveBeenCalled();
+      expect(mockMessages(jsonRuntime.error)).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining("final response frame was lost"),
+          expect.stringContaining("still in flight after final-frame recovery"),
+        ]),
+      );
     });
   });
 

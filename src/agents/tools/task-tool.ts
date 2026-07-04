@@ -17,7 +17,6 @@ import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readStringParam, textResult } from "./common.js";
 
 const TASK_WAIT_POLL_MS = 60_000;
-const TASK_CHILD_REPLY_MAX_CHARS = 32_000;
 const DEFAULT_LIGHT_CONTEXT_AGENT_IDS = new Set([
   "codebase-researcher",
   "docs-standards-researcher",
@@ -105,7 +104,6 @@ async function waitForForegroundTaskResult(params: {
         status: "ok",
         replyText: await readLatestAssistantReply({
           sessionKey: params.sessionKey,
-          maxChars: TASK_CHILD_REPLY_MAX_CHARS,
         }),
       };
     }
@@ -114,7 +112,6 @@ async function waitForForegroundTaskResult(params: {
         ...wait,
         replyText: await readLatestAssistantReply({
           sessionKey: params.sessionKey,
-          maxChars: TASK_CHILD_REPLY_MAX_CHARS,
         }),
       };
     }

@@ -155,6 +155,53 @@ describe("readLatestAssistantReply", () => {
     });
   });
 
+  it("uses native full-message readback when history projection truncates a child result", async () => {
+    callGatewayMock.mockImplementation(async (opts: { method?: string }) => {
+      if (opts.method === "chat.history") {
+        return {
+          messages: [
+            {
+              role: "assistant",
+              content: [{ type: "text", text: "abcde\n...(truncated)..." }],
+              __openclaw: { id: "msg-child-final" },
+            },
+          ],
+        };
+      }
+      if (opts.method === "chat.message.get") {
+        return {
+          ok: true,
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "abcdefghij" }],
+            __openclaw: { id: "msg-child-final" },
+          },
+        };
+      }
+      throw new Error(`unexpected method ${opts.method ?? ""}`);
+    });
+
+    const result = await readLatestAssistantReply({
+      sessionKey: "agent:codebase-researcher:subagent:child",
+    });
+
+    expect(result).toBe("abcdefghij");
+    expect(callGatewayMock).toHaveBeenNthCalledWith(1, {
+      method: "chat.history",
+      params: {
+        sessionKey: "agent:codebase-researcher:subagent:child",
+        limit: 50,
+      },
+    });
+    expect(callGatewayMock).toHaveBeenNthCalledWith(2, {
+      method: "chat.message.get",
+      params: {
+        sessionKey: "agent:codebase-researcher:subagent:child",
+        messageId: "msg-child-final",
+      },
+    });
+  });
+
   it("reads only final_answer text from phased assistant history", async () => {
     callGatewayMock.mockResolvedValue({
       messages: [

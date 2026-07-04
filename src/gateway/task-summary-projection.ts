@@ -126,6 +126,81 @@ function isIssueTaskStatus(status: TaskStatus | undefined): boolean {
   return status === "failed" || status === "timed_out" || status === "lost";
 }
 
+function isIssueChildRunStatus(status: TaskChildRunSummary["status"] | undefined): boolean {
+  return status === "failed" || status === "timeout" || status === "killed";
+}
+
+function childRunHasFinalCompletion(run: SubagentRunRecord): boolean {
+  return Boolean(
+    normalizeOptionalString(run.completion?.resultText) ||
+    normalizeOptionalString(run.completion?.fallbackResultText) ||
+    normalizeOptionalString(run.delivery?.payload?.frozenResultText) ||
+    normalizeOptionalString(run.delivery?.payload?.fallbackFrozenResultText),
+  );
+}
+
+function childRunHasSuccessfulRegistryFinality(run: SubagentRunRecord): boolean {
+  return (
+    resolveSubagentSessionStatus(run) === "done" &&
+    (run.outcome?.status === "ok" ||
+      run.delivery?.status === "delivered" ||
+      childRunHasFinalCompletion(run))
+  );
+}
+
+function resolveTaskChildRunStatus(params: {
+  run: SubagentRunRecord;
+  executionTaskStatus?: TaskChildRunSummary["status"];
+  registryStatus?: TaskChildRunSummary["status"];
+}): TaskChildRunSummary["status"] | undefined {
+  if (
+    params.executionTaskStatus === "failed" &&
+    params.registryStatus === "done" &&
+    childRunHasSuccessfulRegistryFinality(params.run)
+  ) {
+    return "done";
+  }
+  if (isIssueChildRunStatus(params.executionTaskStatus)) {
+    return params.executionTaskStatus;
+  }
+  return params.registryStatus ?? params.executionTaskStatus;
+}
+
+function resolveTaskChildRunErrorSummary(params: {
+  run: SubagentRunRecord;
+  executionTask?: TaskRecord;
+}): string | undefined {
+  const rawError =
+    params.executionTask?.error ??
+    params.executionTask?.terminalSummary ??
+    params.run.outcome?.error ??
+    params.run.execution?.outcome?.error ??
+    params.run.delivery?.lastError;
+  const sanitized = sanitizeOptionalTaskText(rawError, {
+    errorContext: true,
+    maxChars: TASK_CHILD_RUN_OUTPUT_MAX_CHARS,
+  });
+  return sanitized;
+}
+
+function resolveTaskChildRunProvenanceMismatch(params: {
+  run: SubagentRunRecord;
+  executionTask?: TaskRecord;
+  errorSummary?: string;
+}): string | undefined {
+  if (
+    !params.errorSummary ||
+    !isIssueTaskStatus(params.executionTask?.status) ||
+    !childRunHasSuccessfulRegistryFinality(params.run)
+  ) {
+    return undefined;
+  }
+  return sanitizeOptionalTaskText(
+    `child final output is present, but linked execution task reported ${params.errorSummary}`,
+    { errorContext: true, maxChars: TASK_CHILD_RUN_OUTPUT_MAX_CHARS },
+  );
+}
+
 function buildTasksByRunId(tasksForReadback: TaskRecord[]): Map<string, TaskRecord[]> {
   const byRunId = new Map<string, TaskRecord[]>();
   for (const task of tasksForReadback) {
@@ -186,9 +261,7 @@ function mapTaskChildRun(
   const executionTask = selectExecutionTaskForSubagentRun(run, tasksByRunId);
   const executionTaskStatus = mapTaskStatusToChildRunStatus(executionTask?.status);
   const registryStatus = resolveSubagentSessionStatus(run);
-  const status = isIssueTaskStatus(executionTask?.status)
-    ? executionTaskStatus
-    : (registryStatus ?? executionTaskStatus);
+  const status = resolveTaskChildRunStatus({ run, executionTaskStatus, registryStatus });
   const spawnReason = sanitizeOptionalTaskText(run.task, {
     maxChars: TASK_LIST_SUMMARY_TEXT_MAX_CHARS,
   });
@@ -199,14 +272,12 @@ function mapTaskChildRun(
       run.delivery?.payload?.fallbackFrozenResultText,
     { maxChars: TASK_CHILD_RUN_OUTPUT_MAX_CHARS },
   );
-  const errorSummary = sanitizeOptionalTaskText(
-    executionTask?.error ??
-      executionTask?.terminalSummary ??
-      run.outcome?.error ??
-      run.execution?.outcome?.error ??
-      run.delivery?.lastError,
-    { errorContext: true, maxChars: TASK_CHILD_RUN_OUTPUT_MAX_CHARS },
-  );
+  const errorSummary = resolveTaskChildRunErrorSummary({ run, executionTask });
+  const provenanceMismatch = resolveTaskChildRunProvenanceMismatch({
+    run,
+    executionTask,
+    errorSummary,
+  });
   return {
     runId: run.runId,
     ...(executionTask?.taskId ? { executionTaskId: executionTask.taskId } : {}),
@@ -224,12 +295,14 @@ function mapTaskChildRun(
     ...(spawnReason ? { spawnReason } : {}),
     ...(terminalSummary ? { terminalSummary } : {}),
     ...(errorSummary ? { errorSummary } : {}),
+    ...(provenanceMismatch ? { provenanceMismatch } : {}),
   };
 }
 
 export function buildTaskChildRunReadback(
   task: TaskRecord,
   now = Date.now(),
+  tasksForReadback?: readonly TaskRecord[],
 ): { childRunCount: number; childRuns: TaskChildRunSummary[] } | undefined {
   const byRunId = new Map<string, SubagentRunRecord>();
   for (const root of candidateTaskChildRunRoots(task)) {
@@ -247,7 +320,7 @@ export function buildTaskChildRunReadback(
     return undefined;
   }
   const sorted = [...byRunId.values()].sort((a, b) => a.createdAt - b.createdAt);
-  const tasksByRunId = buildTasksByRunId(listTaskRecords());
+  const tasksByRunId = buildTasksByRunId([...(tasksForReadback ?? listTaskRecords())]);
   return {
     childRunCount: sorted.length,
     childRuns: sorted

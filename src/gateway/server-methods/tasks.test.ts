@@ -833,7 +833,7 @@ describe("tasks gateway handlers", () => {
     expect(JSON.stringify(payload?.task)).not.toContain("stale child should not appear");
   });
 
-  it("projects linked execution-task failure through an otherwise completed child run", async () => {
+  it("preserves completed child finality when linked execution-task delivery reports failure", async () => {
     addSubagentRunForTests({
       runId: "run-child-overflow",
       childSessionKey: "agent:codebase-researcher:subagent:overflow-child",
@@ -866,6 +866,10 @@ describe("tasks gateway handlers", () => {
       status: "succeeded",
       deliveryStatus: "not_applicable",
       startedAt: 120,
+    });
+    markTaskTerminalById({
+      taskId: wrapper.taskId,
+      status: "succeeded",
       endedAt: 220,
     });
     const execution = createTaskRecord({
@@ -882,7 +886,6 @@ describe("tasks gateway handlers", () => {
       status: "failed",
       deliveryStatus: "not_applicable",
       startedAt: 125,
-      endedAt: 210,
     });
     markTaskTerminalById({
       taskId: execution.taskId,
@@ -912,9 +915,10 @@ describe("tasks gateway handlers", () => {
         runId: "run-child-overflow",
         executionTaskId: execution.taskId,
         childSessionKey: "agent:codebase-researcher:subagent:overflow-child",
-        status: "failed",
+        status: "done",
         terminalSummary: "Context Pack is available for parent synthesis.",
         errorSummary: expect.stringContaining("Context overflow: prompt too large for the model."),
+        provenanceMismatch: expect.stringContaining("child final output is present"),
       }),
     ]);
   });
