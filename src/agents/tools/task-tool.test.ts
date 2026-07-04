@@ -1,5 +1,6 @@
 // Foreground task tool tests cover manager-style subagent delegation without
 // exposing raw sessions_spawn/sessions_yield lifecycle mechanics to the parent.
+import { createHash } from "node:crypto";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const hoisted = vi.hoisted(() => {
@@ -23,6 +24,10 @@ vi.mock("../run-wait.js", () => ({
 }));
 
 let createTaskTool: typeof import("./task-tool.js").createTaskTool;
+
+function digestText(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
 
 describe("task tool", () => {
   beforeAll(async () => {
@@ -95,6 +100,14 @@ describe("task tool", () => {
       runId: "run-child",
       agentId: "codebase-researcher",
       taskName: "codebase_scan",
+      handoffKind: "context_pack",
+      producerAgentId: "codebase-researcher",
+      ownerAgentId: "planning",
+      sourceSessionKey: "agent:codebase-researcher:subagent:child",
+      sourceRunId: "run-child",
+      deliveryState: "model_visible_full",
+      contentDigest: digestText("Context Pack\n\nP1..."),
+      contentChars: "Context Pack\n\nP1...".length,
       resultChars: "Context Pack\n\nP1...".length,
       resultTruncated: false,
       resolvedProvider: "openrouter",
@@ -108,7 +121,36 @@ describe("task tool", () => {
       throw new Error("Expected text tool result");
     }
     expect(content.text).toContain("<task_result>");
+    expect(content.text).toContain('handoffKind="context_pack"');
+    expect(content.text).toContain('deliveryState="model_visible_full"');
+    expect(content.text).toContain(`contentDigest="${digestText("Context Pack\n\nP1...")}"`);
     expect(content.text).toContain("Context Pack\n\nP1...");
+  });
+
+  it("lets callers explicitly classify a domain-final handoff", async () => {
+    hoisted.readLatestAssistantReplyMock.mockResolvedValue("Full planning artifact");
+
+    const result = await createTaskTool().execute("call-1", {
+      agentId: "planning",
+      task: "Produce the Planning-owned artifact.",
+      handoffKind: "domain_final",
+    });
+
+    expect(result.details).toMatchObject({
+      status: "ok",
+      agentId: "planning",
+      handoffKind: "domain_final",
+      deliveryState: "model_visible_full",
+      contentDigest: digestText("Full planning artifact"),
+      contentChars: "Full planning artifact".length,
+    });
+    const content = result.content[0];
+    expect(content?.type).toBe("text");
+    if (!content || content.type !== "text") {
+      throw new Error("Expected text tool result");
+    }
+    expect(content.text).toContain('handoffKind="domain_final"');
+    expect(content.text).toContain("Full planning artifact");
   });
 
   it("keeps waiting through agent.wait timeout without turning it into task failure", async () => {
@@ -224,6 +266,11 @@ describe("task tool", () => {
     expect(result.details).toMatchObject({
       status: "error",
       error: "Context overflow: prompt too large for the model.",
+      handoffKind: "context_pack",
+      producerAgentId: "codebase-researcher",
+      deliveryState: "partial_model_visible_full",
+      contentDigest: digestText("Context Pack\n\nP1. Useful evidence before overflow."),
+      contentChars: "Context Pack\n\nP1. Useful evidence before overflow.".length,
       partialResultChars: "Context Pack\n\nP1. Useful evidence before overflow.".length,
       partialResultTruncated: false,
     });
@@ -233,6 +280,8 @@ describe("task tool", () => {
       throw new Error("Expected text tool result");
     }
     expect(content.text).toContain("<task_error>");
+    expect(content.text).toContain('handoffKind="context_pack"');
+    expect(content.text).toContain('deliveryState="partial_model_visible_full"');
     expect(content.text).toContain("Context overflow");
     expect(content.text).toContain("<partial_task_result>");
     expect(content.text).toContain("Useful evidence before overflow");

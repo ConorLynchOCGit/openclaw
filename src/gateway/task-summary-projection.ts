@@ -2,6 +2,11 @@ import { normalizeOptionalString } from "@openclaw/normalization-core/string-coe
 // Shared public task readback projection for gateway APIs and CLI JSON.
 import { type TaskSummary } from "../../packages/gateway-protocol/src/index.js";
 import {
+  computeEvidenceContentDigest,
+  inferEvidenceHandoffKindForAgent,
+  includesEvidenceTruncationMarker,
+} from "../agents/evidence-handoff.js";
+import {
   getSubagentSessionRuntimeMs,
   getSubagentSessionStartedAt,
   listDescendantRunsForRequester,
@@ -201,6 +206,15 @@ function resolveTaskChildRunProvenanceMismatch(params: {
   );
 }
 
+function resolveChildRunFinalOutput(run: SubagentRunRecord): string | undefined {
+  return normalizeOptionalString(
+    run.completion?.resultText ??
+      run.completion?.fallbackResultText ??
+      run.delivery?.payload?.frozenResultText ??
+      run.delivery?.payload?.fallbackFrozenResultText,
+  );
+}
+
 function buildTasksByRunId(tasksForReadback: TaskRecord[]): Map<string, TaskRecord[]> {
   const byRunId = new Map<string, TaskRecord[]>();
   for (const task of tasksForReadback) {
@@ -265,13 +279,16 @@ function mapTaskChildRun(
   const spawnReason = sanitizeOptionalTaskText(run.task, {
     maxChars: TASK_LIST_SUMMARY_TEXT_MAX_CHARS,
   });
-  const terminalSummary = sanitizeOptionalTaskText(
-    run.completion?.resultText ??
-      run.completion?.fallbackResultText ??
-      run.delivery?.payload?.frozenResultText ??
-      run.delivery?.payload?.fallbackFrozenResultText,
-    { maxChars: TASK_CHILD_RUN_OUTPUT_MAX_CHARS },
-  );
+  const terminalSummary = sanitizeOptionalTaskText(resolveChildRunFinalOutput(run), {
+    maxChars: TASK_CHILD_RUN_OUTPUT_MAX_CHARS,
+  });
+  const finalOutput = resolveChildRunFinalOutput(run);
+  const handoffKind = agentId ? inferEvidenceHandoffKindForAgent(agentId) : undefined;
+  const handoffDeliveryState = finalOutput
+    ? includesEvidenceTruncationMarker(finalOutput)
+      ? "model_visible_truncated"
+      : "model_visible_full"
+    : undefined;
   const errorSummary = resolveTaskChildRunErrorSummary({ run, executionTask });
   const provenanceMismatch = resolveTaskChildRunProvenanceMismatch({
     run,
@@ -288,6 +305,10 @@ function mapTaskChildRun(
     ...(run.label ? { label: run.label } : {}),
     ...(status ? { status } : {}),
     ...(run.delivery?.status ? { deliveryStatus: run.delivery.status } : {}),
+    ...(handoffKind ? { handoffKind } : {}),
+    ...(handoffDeliveryState ? { handoffDeliveryState } : {}),
+    ...(finalOutput ? { contentDigest: computeEvidenceContentDigest(finalOutput) } : {}),
+    ...(finalOutput ? { contentChars: finalOutput.length } : {}),
     createdAt: run.createdAt,
     ...(startedAt !== undefined ? { startedAt } : {}),
     ...(run.endedAt !== undefined ? { endedAt: run.endedAt } : {}),

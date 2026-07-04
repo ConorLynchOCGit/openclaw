@@ -9,6 +9,14 @@
 import { Type } from "typebox";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { GatewayMessageChannel } from "../../utils/message-channel.js";
+import {
+  computeEvidenceContentDigest,
+  EVIDENCE_HANDOFF_KINDS,
+  inferEvidenceHandoffKindForAgent,
+  includesEvidenceTruncationMarker,
+  normalizeEvidenceHandoffKind,
+  type EvidenceHandoffKind,
+} from "../evidence-handoff.js";
 import { readLatestAssistantReply, waitForAgentRun, type AgentWaitResult } from "../run-wait.js";
 import type { SpawnedToolContext } from "../spawned-context.js";
 import { spawnSubagentDirect } from "../subagent-spawn.js";
@@ -60,10 +68,23 @@ const TaskToolSchema = Type.Object({
         "Use lightweight bootstrap context for bounded children that need their role contract but not root workspace memory/context.",
     }),
   ),
+  handoffKind: Type.Optional(
+    Type.Union(
+      EVIDENCE_HANDOFF_KINDS.map((kind) => Type.Literal(kind)),
+      {
+        description:
+          "Evidence handoff class. Omit by default; the task tool infers the correct class from the child agent role.",
+      },
+    ),
+  ),
 });
 
 function escapeXmlText(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
+function escapeXmlAttr(value: string): string {
+  return escapeXmlText(value).replaceAll('"', "&quot;");
 }
 
 function formatTaskResult(params: {
@@ -72,12 +93,22 @@ function formatTaskResult(params: {
   agentId: string;
   taskName?: string;
   replyText: string;
+  handoffKind: EvidenceHandoffKind;
+  contentDigest: string;
+  contentChars: number;
+  deliveryState: string;
 }): string {
-  const taskNameAttr = params.taskName ? ` taskName="${escapeXmlText(params.taskName)}"` : "";
+  const taskNameAttr = params.taskName ? ` taskName="${escapeXmlAttr(params.taskName)}"` : "";
   return [
-    `<task id="${escapeXmlText(params.childSessionKey)}" runId="${escapeXmlText(
+    `<task id="${escapeXmlAttr(params.childSessionKey)}" runId="${escapeXmlAttr(
       params.runId,
-    )}" agentId="${escapeXmlText(params.agentId)}"${taskNameAttr} state="completed">`,
+    )}" agentId="${escapeXmlAttr(
+      params.agentId,
+    )}"${taskNameAttr} state="completed" handoffKind="${escapeXmlAttr(
+      params.handoffKind,
+    )}" deliveryState="${escapeXmlAttr(params.deliveryState)}" contentDigest="${escapeXmlAttr(
+      params.contentDigest,
+    )}" contentChars="${params.contentChars}">`,
     "  <summary>child task completed</summary>",
     "  <task_result>",
     escapeXmlText(params.replyText.trim()),
@@ -132,15 +163,26 @@ function formatTaskError(params: {
   taskName?: string;
   error: string;
   partialReplyText?: string;
+  handoffKind?: EvidenceHandoffKind;
+  contentDigest?: string;
+  contentChars?: number;
+  deliveryState?: string;
 }): string {
   const id = params.childSessionKey ?? params.runId ?? params.agentId;
-  const runIdAttr = params.runId ? ` runId="${escapeXmlText(params.runId)}"` : "";
-  const taskNameAttr = params.taskName ? ` taskName="${escapeXmlText(params.taskName)}"` : "";
+  const runIdAttr = params.runId ? ` runId="${escapeXmlAttr(params.runId)}"` : "";
+  const taskNameAttr = params.taskName ? ` taskName="${escapeXmlAttr(params.taskName)}"` : "";
+  const handoffAttrs = params.handoffKind
+    ? ` handoffKind="${escapeXmlAttr(params.handoffKind)}" deliveryState="${escapeXmlAttr(
+        params.deliveryState ?? "unavailable",
+      )}"${params.contentDigest ? ` contentDigest="${escapeXmlAttr(params.contentDigest)}"` : ""}${
+        params.contentChars !== undefined ? ` contentChars="${params.contentChars}"` : ""
+      }`
+    : "";
   const partialReplyText = params.partialReplyText?.trim();
   const lines = [
-    `<task id="${escapeXmlText(id)}"${runIdAttr} agentId="${escapeXmlText(
+    `<task id="${escapeXmlAttr(id)}"${runIdAttr} agentId="${escapeXmlAttr(
       params.agentId,
-    )}"${taskNameAttr} state="${params.state}">`,
+    )}"${taskNameAttr} state="${params.state}"${handoffAttrs}>`,
     "  <task_error>",
     escapeXmlText(params.error.trim() || "child task failed"),
     "  </task_error>",
@@ -206,6 +248,9 @@ export function createTaskTool(
       const context =
         params.context === "fork" || params.context === "isolated" ? params.context : undefined;
       const lightContext = resolveTaskToolLightContext(agentId, params.lightContext);
+      const handoffKind =
+        normalizeEvidenceHandoffKind(params.handoffKind) ??
+        inferEvidenceHandoffKindForAgent(agentId);
 
       const spawn = await spawnSubagentDirect(
         {
@@ -246,15 +291,17 @@ export function createTaskTool(
           agentId,
           taskName,
           error: spawn.error ?? `child task was not accepted: ${spawn.status}`,
+          handoffKind,
         });
-        return jsonResult({
+        return textResult(text, {
           status: spawn.status,
           error: spawn.error ?? `child task was not accepted: ${spawn.status}`,
           childSessionKey: spawn.childSessionKey,
           runId: spawn.runId,
           agentId,
           taskName,
-          text,
+          handoffKind,
+          deliveryState: "unavailable",
         });
       }
 
@@ -279,30 +326,58 @@ export function createTaskTool(
           taskName,
           error,
           partialReplyText: wait.replyText,
+          handoffKind,
+          ...(wait.replyText?.trim()
+            ? {
+                contentDigest: computeEvidenceContentDigest(wait.replyText.trim()),
+                contentChars: wait.replyText.trim().length,
+                deliveryState: includesEvidenceTruncationMarker(wait.replyText)
+                  ? "partial_model_visible_truncated"
+                  : "partial_model_visible_full",
+              }
+            : { deliveryState: "unavailable" }),
         });
-        return jsonResult({
+        return textResult(text, {
           status: "error",
           error,
           childSessionKey: spawn.childSessionKey,
           runId: spawn.runId,
           agentId,
           taskName,
+          handoffKind,
+          producerAgentId: agentId,
+          ownerAgentId: opts?.requesterAgentIdOverride,
+          deliveryState: wait.replyText?.trim()
+            ? includesEvidenceTruncationMarker(wait.replyText)
+              ? "partial_model_visible_truncated"
+              : "partial_model_visible_full"
+            : "unavailable",
           ...(wait.replyText?.trim()
             ? {
                 partialResultChars: wait.replyText.trim().length,
-                partialResultTruncated: wait.replyText.includes("...(truncated)..."),
+                partialResultTruncated: includesEvidenceTruncationMarker(wait.replyText),
+                contentDigest: computeEvidenceContentDigest(wait.replyText.trim()),
+                contentChars: wait.replyText.trim().length,
               }
             : {}),
-          text,
         });
       }
 
+      const replyText = wait.replyText.trim();
+      const contentDigest = computeEvidenceContentDigest(replyText);
+      const deliveryState = includesEvidenceTruncationMarker(replyText)
+        ? "model_visible_truncated"
+        : "model_visible_full";
       const text = formatTaskResult({
         childSessionKey: spawn.childSessionKey,
         runId: spawn.runId,
         agentId,
         taskName,
-        replyText: wait.replyText,
+        replyText,
+        handoffKind,
+        contentDigest,
+        contentChars: replyText.length,
+        deliveryState,
       });
       return textResult(text, {
         status: "ok",
@@ -310,8 +385,16 @@ export function createTaskTool(
         runId: spawn.runId,
         agentId,
         taskName,
-        resultChars: wait.replyText.trim().length,
-        resultTruncated: wait.replyText.includes("...(truncated)..."),
+        handoffKind,
+        producerAgentId: agentId,
+        ownerAgentId: opts?.requesterAgentIdOverride,
+        sourceSessionKey: spawn.childSessionKey,
+        sourceRunId: spawn.runId,
+        deliveryState,
+        contentDigest,
+        contentChars: replyText.length,
+        resultChars: replyText.length,
+        resultTruncated: includesEvidenceTruncationMarker(replyText),
         resolvedModel: spawn.resolvedModel,
         resolvedProvider: spawn.resolvedProvider,
       });

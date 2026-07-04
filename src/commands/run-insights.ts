@@ -167,6 +167,10 @@ export type RunInsightTask = {
     label?: string;
     status?: string;
     deliveryStatus?: string;
+    handoffKind?: string;
+    handoffDeliveryState?: string;
+    contentDigest?: string;
+    contentChars?: number;
     createdAt?: number | string;
     startedAt?: number | string;
     endedAt?: number | string;
@@ -317,6 +321,10 @@ export type RunInsightsReport = {
       startedAt: number | null;
       endedAt: number | null;
       status: string;
+      handoffKind: string | null;
+      handoffDeliveryState: string | null;
+      contentDigest: string | null;
+      contentChars: number | null;
       elapsedMs: number | null;
       elapsed: string;
       terminalSummary: string | null;
@@ -2182,6 +2190,10 @@ function buildPerformanceProfile(params: {
       startedAt: typeof child.startedAt === "number" ? child.startedAt : null,
       endedAt: typeof child.endedAt === "number" ? child.endedAt : null,
       status: child.status ?? "unknown",
+      handoffKind: child.handoffKind ?? null,
+      handoffDeliveryState: child.handoffDeliveryState ?? null,
+      contentDigest: child.contentDigest ?? null,
+      contentChars: typeof child.contentChars === "number" ? child.contentChars : null,
       elapsedMs: typeof child.durationMs === "number" ? child.durationMs : null,
       elapsed: formatDurationMs(typeof child.durationMs === "number" ? child.durationMs : null),
       terminalSummary: compactSummaryText(child.terminalSummary),
@@ -2209,6 +2221,10 @@ function buildPerformanceProfile(params: {
         startedAt: task.startedAt,
         endedAt: task.endedAt,
         status: task.status,
+        handoffKind: null,
+        handoffDeliveryState: null,
+        contentDigest: null,
+        contentChars: null,
         elapsedMs: task.elapsedMs,
         elapsed: task.elapsed,
         terminalSummary: task.progressSummary,
@@ -2597,8 +2613,13 @@ function formatPerformanceProfile(profile: RunInsightsReport["performanceProfile
     const role = child.childRole ? ` role=${child.childRole}` : "";
     const phase = child.childPhase ? ` phase="${compactSummaryText(child.childPhase)}"` : "";
     const reason = child.spawnReason ? ` reason="${compactSummaryText(child.spawnReason)}"` : "";
+    const handoff = child.handoffKind ? ` handoff=${child.handoffKind}` : "";
+    const handoffDelivery = child.handoffDeliveryState
+      ? ` handoffDelivery=${child.handoffDeliveryState}`
+      : "";
+    const content = child.contentChars != null ? ` contentChars=${child.contentChars}` : "";
     lines.push(
-      `  Child ${child.taskId}${role} status=${child.status} elapsed=${child.elapsed}${phase}${reason} (${child.pointer})`,
+      `  Child ${child.taskId}${role} status=${child.status}${handoff}${handoffDelivery}${content} elapsed=${child.elapsed}${phase}${reason} (${child.pointer})`,
     );
   }
   for (const skillEvidence of profile.skillActivationEvidence.slice(0, 6)) {

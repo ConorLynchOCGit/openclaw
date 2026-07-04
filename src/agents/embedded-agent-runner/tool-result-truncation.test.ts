@@ -23,6 +23,7 @@ let sessionLikelyHasOversizedToolResults: typeof import("./tool-result-truncatio
 let estimateToolResultReductionPotential: typeof import("./tool-result-truncation.js").estimateToolResultReductionPotential;
 let DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS: typeof import("./tool-result-truncation.js").DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS;
 let resolveLiveToolResultMaxChars: typeof import("./tool-result-truncation.js").resolveLiveToolResultMaxChars;
+let isEvidenceHandoffToolResultMessage: typeof import("./tool-result-truncation.js").isEvidenceHandoffToolResultMessage;
 let tmpDir: string | undefined;
 
 async function loadFreshToolResultTruncationModuleForTest() {
@@ -42,6 +43,7 @@ async function loadFreshToolResultTruncationModuleForTest() {
     estimateToolResultReductionPotential,
     DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS,
     resolveLiveToolResultMaxChars,
+    isEvidenceHandoffToolResultMessage,
   } = await import("./tool-result-truncation.js"));
 }
 
@@ -71,6 +73,22 @@ function makeToolResult(text: string, toolCallId = "call_1"): ToolResultMessage 
     isError: false,
     timestamp: nextTimestamp(),
   };
+}
+
+function makeEvidenceHandoffToolResult(
+  text: string,
+  handoffKind = "context_pack",
+  toolCallId = "call_1",
+): ToolResultMessage {
+  return {
+    ...makeToolResult(text, toolCallId),
+    toolName: "task",
+    details: {
+      handoffKind,
+      deliveryState: "model_visible_full",
+      contentChars: text.length,
+    },
+  } as ToolResultMessage;
 }
 
 function makeUserMessage(text: string): UserMessage {
@@ -195,6 +213,17 @@ describe("truncateToolResultMessage", () => {
     }
     expect(getFirstToolResultText(result)).toContain("[persist-truncated]");
   });
+
+  it("does not truncate evidence handoff tool results", () => {
+    const text = "# Context Pack\n\n".concat("plan-shaping evidence ".repeat(5000));
+    const msg = makeEvidenceHandoffToolResult(text);
+
+    const result = truncateToolResultMessage(msg, 10_000);
+
+    expect(result).toBe(msg);
+    expect(isEvidenceHandoffToolResultMessage(result)).toBe(true);
+    expect(getFirstToolResultText(result)).toBe(text);
+  });
 });
 
 describe("calculateMaxToolResultChars", () => {
@@ -258,6 +287,11 @@ describe("isOversizedToolResult", () => {
     expect(isOversizedToolResult(msg, 128_000)).toBe(true);
   });
 
+  it("returns false for evidence handoff tool results even when large", () => {
+    const msg = makeEvidenceHandoffToolResult("x".repeat(500_000));
+    expect(isOversizedToolResult(msg, 128_000)).toBe(false);
+  });
+
   it("honors an explicit higher maxChars override", () => {
     const msg = makeToolResult("x".repeat(20_000));
     expect(isOversizedToolResult(msg, 128_000, 24_000)).toBe(false);
@@ -300,6 +334,19 @@ describe("estimateToolResultReductionPotential", () => {
     });
 
     expect(estimate.toolResultCount).toBe(1);
+    expect(estimate.maxReducibleChars).toBe(0);
+  });
+
+  it("excludes evidence handoffs from reducible tool-result estimates", () => {
+    const messages: AgentMessage[] = [makeEvidenceHandoffToolResult("x".repeat(500_000))];
+
+    const estimate = estimateToolResultReductionPotential({
+      messages,
+      contextWindowTokens: 128_000,
+    });
+
+    expect(estimate.toolResultCount).toBe(0);
+    expect(estimate.totalToolResultChars).toBe(0);
     expect(estimate.maxReducibleChars).toBe(0);
   });
 
@@ -399,6 +446,26 @@ describe("truncateOversizedToolResultsInMessages", () => {
     expect(text).toContain("truncated");
   });
 
+  it("preserves evidence handoffs in live prompt-history truncation", () => {
+    const evidence = "# Context Pack\n\n".concat("plan-shaping evidence ".repeat(5000));
+    const messages: AgentMessage[] = [
+      makeUserMessage("hello"),
+      makeAssistantMessage("running source scout"),
+      makeEvidenceHandoffToolResult(evidence),
+    ];
+
+    const { messages: result, truncatedCount } = truncateOversizedToolResultsInMessages(
+      messages,
+      128_000,
+      10_000,
+      10_000,
+    );
+
+    expect(truncatedCount).toBe(0);
+    expect(result[2]).toBe(messages[2]);
+    expect(getFirstToolResultText(result[2] as AgentMessage)).toBe(evidence);
+  });
+
   it("preserves non-toolResult messages", () => {
     const messages = [
       makeUserMessage("hello"),
@@ -460,6 +527,29 @@ describe("truncateOversizedToolResultsInMessages", () => {
     expect(messages.reduce((sum, message) => sum + getToolResultTextLength(message), 0)).toBe(
       medium.length * 3,
     );
+  });
+
+  it("does not spend aggregate truncation budget on evidence handoffs", () => {
+    const evidence = "# Context Pack\n\n".concat("plan-shaping evidence ".repeat(4000));
+    const ordinary = "ordinary noisy output ".repeat(2000);
+    const messages: AgentMessage[] = [
+      makeUserMessage("hello"),
+      makeAssistantMessage("calling tools"),
+      makeEvidenceHandoffToolResult(evidence, "context_pack", "call_1"),
+      makeToolResult(ordinary, "call_2"),
+      makeToolResult(ordinary, "call_3"),
+    ];
+
+    const { messages: result, truncatedCount } = truncateOversizedToolResultsInMessages(
+      messages,
+      128_000,
+      12_000,
+      12_000,
+    );
+
+    expect(truncatedCount).toBeGreaterThan(0);
+    expect(getFirstToolResultText(result[2] as AgentMessage)).toBe(evidence);
+    expect(getFirstToolResultText(result[3] as AgentMessage)).toContain("truncated");
   });
 });
 
