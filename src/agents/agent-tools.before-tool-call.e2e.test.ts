@@ -577,7 +577,21 @@ describe("before_tool_call loop detection behavior", () => {
     const skillFilePath = path.join(skillBaseDir, "SKILL.md");
     fs.mkdirSync(skillBaseDir, { recursive: true });
     fs.writeFileSync(skillFilePath, "skill", "utf8");
-    const execute = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "skill" }] });
+    const execute = vi.fn().mockResolvedValue({
+      content: [{ type: "text", text: "skill" }],
+      details: {
+        text: {
+          readStatus: "full",
+          startLine: 1,
+          endLine: 1,
+          linesRead: 1,
+          totalLines: 1,
+          bytesRead: 5,
+          totalBytes: 5,
+          instructionFile: true,
+        },
+      },
+    });
     const tool = wrapToolWithBeforeToolCallHook({ name: "read", execute } as any, {
       agentId: "main",
       sessionKey: "session-key",
@@ -629,6 +643,8 @@ describe("before_tool_call loop detection behavior", () => {
         linesRead: 1,
         totalLines: 1,
         bytesRead: 5,
+        totalBytes: 5,
+        truncated: false,
       });
       expect(JSON.stringify(emitted)).not.toContain("SKILL.md");
       expect(JSON.stringify(emitted)).not.toContain(skillBaseDir);
@@ -674,6 +690,72 @@ describe("before_tool_call loop detection behavior", () => {
     expect(execute).toHaveBeenCalledTimes(1);
     expect(execute.mock.calls[0]?.[1]).toEqual({
       path: path.join(".agents", "skills", "demo-skill", "SKILL.md"),
+      __openclawInstructionFileRead: true,
+    });
+  });
+
+  it("does not report full skill usage when the delivered read result was partial", async () => {
+    const workspaceDir = path.join("/tmp", "openclaw-skill-partial-read");
+    const skillBaseDir = path.join(workspaceDir, ".agents", "skills", "demo-skill");
+    const skillFilePath = path.join(skillBaseDir, "SKILL.md");
+    const execute = vi.fn().mockResolvedValue({
+      content: [
+        { type: "text", text: "line-1\n\n[Showing lines 1-1 of 775. Use offset=2 to continue.]" },
+      ],
+      details: {
+        text: {
+          readStatus: "partial",
+          startLine: 1,
+          endLine: 1,
+          linesRead: 1,
+          totalLines: 775,
+          bytesRead: 128,
+          totalBytes: 80_000,
+          nextOffset: 2,
+          instructionFile: true,
+        },
+      },
+    });
+    const tool = wrapToolWithBeforeToolCallHook({ name: "read", execute } as any, {
+      agentId: "planning",
+      sessionKey: "session-key",
+      workspaceDir,
+      skillsSnapshot: {
+        prompt: "",
+        skills: [{ name: "demo-skill" }],
+        resolvedSkills: [
+          createCanonicalFixtureSkill({
+            name: "demo-skill",
+            description: "Demo",
+            filePath: skillFilePath,
+            baseDir: skillBaseDir,
+            source: "workspace",
+          }),
+        ],
+      },
+      loopDetection: { enabled: false },
+    });
+
+    await withDiagnosticEvents(async (emitted, flush) => {
+      await tool.execute(
+        "tool-call-partial-skill-read",
+        { path: path.join(".agents", "skills", "demo-skill", "SKILL.md") },
+        undefined,
+        undefined,
+      );
+      await flush();
+
+      expectEventFields(emitted[1], {
+        type: "skill.used",
+        skillName: "demo-skill",
+        readStatus: "partial",
+        linesRead: 1,
+        totalLines: 775,
+        bytesRead: 128,
+        totalBytes: 80_000,
+        nextOffset: 2,
+        truncated: true,
+      });
     });
   });
 
@@ -728,6 +810,7 @@ describe("before_tool_call loop detection behavior", () => {
       expect(execute).toHaveBeenCalledTimes(1);
       expect(execute.mock.calls[0]?.[1]).toEqual({
         path: sandboxSkillPath,
+        __openclawInstructionFileRead: true,
       });
       expect(emitted.map((evt) => evt.type)).toEqual([
         "tool.execution.started",

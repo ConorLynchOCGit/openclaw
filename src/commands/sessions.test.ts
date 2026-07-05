@@ -416,16 +416,16 @@ describe("sessionsCommand", () => {
       source: "session-transcript",
       ref: `session:${sessionId}`,
       derivedBy: "readLastAssistantTextFromTranscript",
-      bounded: true,
+      bounded: false,
     });
     expect(payload.session?.readbackProvenance?.finalAssistantText).toMatchObject({
       source: "session-transcript",
       ref: `session:${sessionId}`,
       derivedBy: "readLastAssistantTextFromTranscript",
-      bounded: true,
+      bounded: false,
     });
     expect(payload.session?.readbackProvenance?.finalAssistantText?.note).toContain(
-      "bounded transcript tail",
+      "unbounded final assistant text",
     );
   });
 

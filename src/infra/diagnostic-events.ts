@@ -428,6 +428,9 @@ export type DiagnosticSkillUsedEvent = DiagnosticBaseEvent & {
   linesRead?: number;
   totalLines?: number;
   bytesRead?: number;
+  totalBytes?: number;
+  nextOffset?: number;
+  truncated?: boolean;
 };
 
 export type DiagnosticExecProcessCompletedEvent = DiagnosticBaseEvent & {

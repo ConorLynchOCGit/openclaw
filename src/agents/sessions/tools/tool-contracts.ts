@@ -71,10 +71,28 @@ export interface ReadToolInput {
   path: string;
   offset?: number;
   limit?: number;
+  /**
+   * Internal runtime marker for OpenClaw-visible instruction files such as
+   * activated SKILL.md reads. This is not part of the model-facing schema.
+   */
+  __openclawInstructionFileRead?: boolean;
+}
+
+export interface ReadTextWindowDetails {
+  readStatus: "full" | "partial";
+  startLine: number;
+  endLine: number;
+  linesRead: number;
+  totalLines: number;
+  bytesRead: number;
+  totalBytes: number;
+  nextOffset?: number;
+  instructionFile?: boolean;
 }
 
 export interface ReadToolDetails {
   truncation?: TruncationResult;
+  text?: ReadTextWindowDetails;
 }
 
 export interface WriteToolInput {

@@ -100,4 +100,51 @@ describe("read tool", () => {
 
     expect(textContent(result)).toBe("alpha\n\n[2 more lines in file. Use offset=2 to continue.]");
   });
+
+  it("reads activated instruction files past the ordinary byte cap", async () => {
+    const lines = Array.from(
+      { length: 775 },
+      (_, index) => `line-${String(index + 1).padStart(4, "0")} ${"x".repeat(90)}`,
+    );
+    const skillText = lines.join("\n");
+    expect(Buffer.byteLength(skillText, "utf8")).toBeGreaterThan(DEFAULT_MAX_BYTES);
+    const tool = createReadToolDefinition("/workspace", {
+      operations: {
+        access: async () => {},
+        detectImageMimeType: async () => null,
+        readFile: async () => Buffer.from(skillText),
+      },
+    });
+
+    const ordinary = await tool.execute(
+      "call-ordinary",
+      { path: "skills/demo/SKILL.md" },
+      undefined,
+      undefined,
+      {} as never,
+    );
+    expect(ordinary.details?.text?.readStatus).toBe("partial");
+    expect(ordinary.details?.text?.totalLines).toBe(775);
+    expect(ordinary.details?.text?.linesRead).toBeLessThan(775);
+
+    const instruction = await tool.execute(
+      "call-instruction",
+      {
+        path: "skills/demo/SKILL.md",
+        __openclawInstructionFileRead: true,
+      },
+      undefined,
+      undefined,
+      {} as never,
+    );
+
+    expect(textContent(instruction)).toBe(skillText);
+    expect(instruction.details?.text).toMatchObject({
+      readStatus: "full",
+      linesRead: 775,
+      totalLines: 775,
+      instructionFile: true,
+    });
+    expect(instruction.details?.truncation?.truncated).not.toBe(true);
+  });
 });

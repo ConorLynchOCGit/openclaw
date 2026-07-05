@@ -898,7 +898,9 @@ export async function runCli(argv: string[] = process.argv) {
       stopStartupProgress();
 
       try {
-        await startupTrace.measure("parse", () => program.parseAsync(parseArgv));
+        await startupTrace.measure("parse", () =>
+          withConsoleLogsRoutedToStderrForJson(parseArgv, () => program.parseAsync(parseArgv)),
+        );
       } catch (error) {
         if (!isCommanderParseExit(error)) {
           throw error;

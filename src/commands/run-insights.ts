@@ -193,6 +193,9 @@ export type RunInsightSkillRead = {
   linesRead: number | null;
   totalLines: number | null;
   bytesRead: number | null;
+  totalBytes: number | null;
+  nextOffset: number | null;
+  truncated: boolean | null;
   usedSkillNames: string[];
   source: "native_skill_used" | "visible_catalog";
   pointer: string;
@@ -612,6 +615,46 @@ function resolveExactGatewaySessionFallbackForInsights(params: {
   return { rows, gatewayRows };
 }
 
+function resolveGatewayRowsForSessionKeys(params: {
+  summary: StatusSummary;
+  sessionKeys: readonly string[];
+  agent?: string;
+}): Map<string, GatewaySessionRow> {
+  const keys = uniqueValues(params.sessionKeys.map((key) => key.trim()).filter(Boolean));
+  if (keys.length === 0) {
+    return new Map();
+  }
+  const cfg = getRuntimeConfig();
+  const rows = new Map<string, GatewaySessionRow>();
+  for (const storePath of uniqueValues(params.summary.sessions.paths)) {
+    const missing = keys.filter((key) => !rows.has(key));
+    if (missing.length === 0) {
+      break;
+    }
+    const store = readSessionStoreReadOnly(storePath);
+    for (const sessionKey of missing) {
+      const result = listSessionsFromStore({
+        cfg,
+        storePath,
+        store: compactSessionStore(store),
+        opts: {
+          ...(params.agent ? { agentId: params.agent } : {}),
+          includeLastMessage: true,
+          limit: 1,
+          search: sessionKey,
+        },
+      });
+      const gatewayRow = result.sessions.find((candidate) =>
+        gatewaySessionKeyMatches(candidate, sessionKey),
+      );
+      if (gatewayRow) {
+        rows.set(sessionKey, gatewayRow);
+      }
+    }
+  }
+  return rows;
+}
+
 function toSessionUsageInsight(
   usage: { summary: SessionCostSummary | null; cacheStatus: UsageCacheStatus } | null,
 ): RunInsightSessionUsage | null {
@@ -687,12 +730,21 @@ function resolveTaskResultSessionEvidence(
     }
     return {
       sessionKey: row.key,
-      agentId: row.agentId ?? task.agentId ?? null,
+      agentId: task.agentId ?? inferAgentIdFromSessionKey(row.key) ?? null,
       finalAssistantText: row.finalAssistantText,
-      readbackProvenance: row.readbackProvenance ?? null,
+      ...(row.readbackProvenance ? { readbackProvenance: row.readbackProvenance } : {}),
     };
   }
   return null;
+}
+
+function inferAgentIdFromSessionKey(sessionKey: string | null | undefined): string | null {
+  const normalized = normalizeOptionalString(sessionKey);
+  if (!normalized) {
+    return null;
+  }
+  const match = /^agent:([^:]+):/u.exec(normalized);
+  return match?.[1] ?? null;
 }
 
 function toInsightSession(
@@ -704,26 +756,26 @@ function toInsightSession(
   const projection = gatewayRow
     ? buildSessionReadbackProjection({
         key: gatewayRow.key,
-        status: gatewayRow.status ?? null,
+        ...(gatewayRow.status ? { status: gatewayRow.status } : {}),
         sessionId: gatewayRow.sessionId,
         finalAssistantText: gatewayRow.finalAssistantText ?? null,
         activeProgress: gatewayRow.activeProgress ?? null,
-        readbackProvenance: gatewayRow.readbackProvenance ?? null,
-        agentId: gatewayRow.agentId ?? row.agentId ?? null,
+        ...(gatewayRow.readbackProvenance
+          ? { readbackProvenance: gatewayRow.readbackProvenance }
+          : {}),
+        agentId: row.agentId ?? inferAgentIdFromSessionKey(gatewayRow.key) ?? null,
       })
     : buildSessionReadbackProjection({
         key: row.key,
-        status: null,
         sessionId: row.sessionId,
         finalAssistantText: null,
         activeProgress: null,
-        readbackProvenance: null,
         agentId: row.agentId ?? null,
       });
   const ageMs = typeof row.age === "number" ? row.age : null;
   return {
     key: row.key,
-    agentId: row.agentId ?? gatewayRow?.agentId ?? null,
+    agentId: row.agentId ?? inferAgentIdFromSessionKey(gatewayRow?.key) ?? null,
     kind: row.kind,
     sessionId: row.sessionId ?? gatewayRow?.sessionId ?? null,
     updatedAt: row.updatedAt,
@@ -814,11 +866,7 @@ function latestTaskEvent(task: TaskRecord): RunInsightTask["latestEvent"] {
 
 function toInsightChildRun(
   parentTask: TaskRecord,
-  child: ReturnType<typeof buildTaskChildRunReadback> extends { childRuns: infer T }
-    ? T extends Array<infer U>
-      ? U
-      : never
-    : never,
+  child: NonNullable<ReturnType<typeof buildTaskChildRunReadback>>["childRuns"][number],
   usage: RunInsightSessionUsage | null,
 ): RunInsightChildRun {
   const durationMs = typeof child.durationMs === "number" ? child.durationMs : null;
@@ -969,6 +1017,9 @@ function buildSkillReads(
         linesRead: null,
         totalLines: null,
         bytesRead: null,
+        totalBytes: null,
+        nextOffset: null,
+        truncated: null,
         usedSkillNames: [],
         source: "visible_catalog",
       });
@@ -984,6 +1035,9 @@ function buildSkillReads(
         linesRead: normalizeNonNegativeInteger(event.linesRead),
         totalLines: normalizeNonNegativeInteger(event.totalLines),
         bytesRead: normalizeNonNegativeInteger(event.bytesRead),
+        totalBytes: normalizeNonNegativeInteger(event.totalBytes),
+        nextOffset: normalizeNonNegativeInteger(event.nextOffset),
+        truncated: typeof event.truncated === "boolean" ? event.truncated : null,
         usedSkillNames: skillName ? [skillName] : [],
         source: "native_skill_used",
       });
@@ -1212,7 +1266,7 @@ function buildSignals(params: {
       signals.push({
         severity:
           skillRead.readStatus === "failed" || skillRead.readStatus === "partial" ? "warn" : "info",
-        code: "skill_read_not_full",
+        code: "skill_instruction_read_not_full",
         message: `${skillRead.sessionKey} skill ${skillRead.skillName ?? "unknown"} read status is ${skillRead.readStatus}.`,
         pointer: skillRead.pointer,
         evidence: {
@@ -1220,6 +1274,10 @@ function buildSignals(params: {
           readStatus: skillRead.readStatus,
           linesRead: skillRead.linesRead,
           totalLines: skillRead.totalLines,
+          bytesRead: skillRead.bytesRead,
+          totalBytes: skillRead.totalBytes,
+          nextOffset: skillRead.nextOffset,
+          truncated: skillRead.truncated,
         },
       });
     }
@@ -1281,13 +1339,20 @@ function selectReportReadback(params: {
   options: ResolvedRunInsightsOptions;
 }): { finality: ReadbackFinality; activeWork: ReadbackActiveWork } {
   const session = selectReportSession(params.sessions, params.options);
+  const task = selectReportTask(params.tasks);
   if (session) {
+    const taskHasActiveEvidence =
+      task !== null &&
+      (task.status === "running" ||
+        task.status === "queued" ||
+        (task.activeWork.source !== "none" && task.activeWork.source !== "unknown"));
     return {
-      finality: session.finality,
-      activeWork: session.activeWork,
+      finality: session.finality.finalAssistantTextPresent
+        ? session.finality
+        : (task?.finality ?? session.finality),
+      activeWork: taskHasActiveEvidence ? task.activeWork : session.activeWork,
     };
   }
-  const task = selectReportTask(params.tasks);
   if (task) {
     return {
       finality: task.finality,
@@ -1324,48 +1389,47 @@ export function buildRunInsightsReport(
   if (rows.length === 0 && options.session) {
     const fallback = resolveExactGatewaySessionFallbackForInsights({ summary, options });
     rows = fallback.rows;
-    gatewayRows = fallback.gatewayRows;
+    gatewayRows = new Map([...gatewayRows, ...fallback.gatewayRows]);
   }
   const sessions = rows.map((row) => toInsightSession(row, gatewayRows.get(row.key), null));
   const progressContext = createTaskReadbackProgressProjectionContext({ now });
   const taskRecords = buildOptions.taskRecords ?? listTaskRecords();
   const tasksForReadback = [...taskRecords];
-  const tasks = taskRecords
+  const matchingTaskRecords = taskRecords
     .filter((task) => taskMatchesOptions(task, options, now))
     .sort(
       (a, b) =>
         (b.lastEventAt ?? b.startedAt ?? b.createdAt) -
         (a.lastEventAt ?? a.startedAt ?? a.createdAt),
     )
-    .slice(0, options.limit)
-    .map((task) =>
-      toInsightTask({
+    .slice(0, options.limit);
+  const taskResultSessionRows = resolveGatewayRowsForSessionKeys({
+    summary,
+    sessionKeys: matchingTaskRecords.flatMap((task) =>
+      uniqueValues([task.childSessionKey, task.requesterSessionKey]),
+    ),
+  });
+  const taskGatewayRows = new Map([...gatewayRows, ...taskResultSessionRows]);
+  const tasks = matchingTaskRecords.map((task) =>
+    toInsightTask({
+      task,
+      now,
+      progressContext,
+      tasksForReadback,
+      gatewayRows: taskGatewayRows,
+      childSessionUsage: buildOptions.childSessionUsage,
+    }),
+  );
+  const childRuns = matchingTaskRecords.flatMap((task) => {
+    const readback = buildTaskChildRunReadback(task, now, tasksForReadback);
+    return (readback?.childRuns ?? []).map((child) =>
+      toInsightChildRun(
         task,
-        now,
-        progressContext,
-        tasksForReadback,
-        gatewayRows,
-        childSessionUsage: buildOptions.childSessionUsage,
-      }),
+        child,
+        buildOptions.childSessionUsage?.get(child.childSessionKey) ?? null,
+      ),
     );
-  const childRuns = taskRecords
-    .filter((task) => taskMatchesOptions(task, options, now))
-    .sort(
-      (a, b) =>
-        (b.lastEventAt ?? b.startedAt ?? b.createdAt) -
-        (a.lastEventAt ?? a.startedAt ?? a.createdAt),
-    )
-    .slice(0, options.limit)
-    .flatMap((task) => {
-      const readback = buildTaskChildRunReadback(task, now, tasksForReadback);
-      return (readback?.childRuns ?? []).map((child) =>
-        toInsightChildRun(
-          task,
-          child,
-          buildOptions.childSessionUsage?.get(child.childSessionKey) ?? null,
-        ),
-      );
-    });
+  });
   const skillReads = buildSkillReads(sessions, buildOptions.diagnosticSkillEvents ?? []);
   const deployEvents = options.includeBackground ? readRecentDeployEvents(options.limit) : [];
   const selected = selectReportReadback({ sessions, tasks, options });
@@ -1424,10 +1488,21 @@ export function buildRunInsightsReport(
 
 async function loadChildSessionUsage(
   childRuns: RunInsightChildRun[],
+  summary: StatusSummary,
 ): Promise<Map<string, RunInsightSessionUsage | null>> {
+  const gatewayRows = resolveGatewayRowsForSessionKeys({
+    summary,
+    sessionKeys: childRuns.map((child) => child.childSessionKey),
+  });
   const entries = await Promise.all(
     uniqueValues(childRuns.map((child) => child.childSessionKey)).map(async (sessionKey) => {
-      const usage = await loadCachedSessionUsage({ sessionId: sessionKey, agentId: null });
+      const gatewayRow = gatewayRows.get(sessionKey);
+      const usage = gatewayRow?.sessionId
+        ? await loadCachedSessionUsage({
+            sessionId: gatewayRow.sessionId,
+            agentId: inferAgentIdFromSessionKey(gatewayRow.key),
+          }).catch(() => null)
+        : null;
       return [sessionKey, usage] as const;
     }),
   );
@@ -1454,7 +1529,7 @@ export async function loadRunInsightsReport(
     diagnosticSkillEvents,
   });
   const sessionsWithUsage = await attachCachedSessionUsage(initial.sessions);
-  const childSessionUsage = await loadChildSessionUsage(initial.childRuns);
+  const childSessionUsage = await loadChildSessionUsage(initial.childRuns, summary);
   const finalBase = buildRunInsightsReport(summary, options, {
     gatewaySessionRows: gatewayRows,
     diagnosticSkillEvents,
@@ -1518,7 +1593,7 @@ function formatChildRuns(childRuns: RunInsightChildRun[]): string[] {
 
 function formatSkillReads(skillReads: RunInsightSkillRead[]): string[] {
   if (skillReads.length === 0) {
-    return ["  No skill-read evidence in scoped readback."];
+    return ["  No skill instruction read evidence in scoped readback."];
   }
   return skillReads.map((skillRead) => {
     const skill = skillRead.skillName ? ` skill=${JSON.stringify(skillRead.skillName)}` : "";
@@ -1534,8 +1609,14 @@ function formatSkillReads(skillReads: RunInsightSkillRead[]): string[] {
       skillRead.linesRead !== null || skillRead.totalLines !== null
         ? ` lines=${skillRead.linesRead ?? "unknown"}/${skillRead.totalLines ?? "unknown"}`
         : "";
-    const bytes = skillRead.bytesRead !== null ? ` bytes=${skillRead.bytesRead}` : "";
-    return `  ${skillRead.sessionKey} agent=${skillRead.agentId ?? "unknown"} evidence=${skillRead.readEvidence} status=${skillRead.readStatus}${skill}${visible}${used}${lines}${bytes}`;
+    const bytes =
+      skillRead.bytesRead !== null || skillRead.totalBytes !== null
+        ? ` bytes=${skillRead.bytesRead ?? "unknown"}/${skillRead.totalBytes ?? "unknown"}`
+        : "";
+    const next = skillRead.nextOffset !== null ? ` nextOffset=${skillRead.nextOffset}` : "";
+    const truncated =
+      skillRead.truncated !== null ? ` truncated=${String(skillRead.truncated)}` : "";
+    return `  ${skillRead.sessionKey} agent=${skillRead.agentId ?? "unknown"} evidence=${skillRead.readEvidence} status=${skillRead.readStatus}${skill}${visible}${used}${lines}${bytes}${next}${truncated}`;
   });
 }
 

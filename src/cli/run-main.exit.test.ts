@@ -813,7 +813,7 @@ describe("runCli exit behavior", () => {
     expect(parseAsync).toHaveBeenCalledWith(argv);
   });
 
-  it("routes lazy plugin registration logs to stderr only during --json registration", async () => {
+  it("routes incidental logs to stderr during --json registration and command execution", async () => {
     tryRouteCliMock.mockResolvedValueOnce(false);
     resolvePluginCliRootOwnerIdsMock.mockImplementation(
       ({ primaryCommand }: { primaryCommand?: string }) =>
@@ -842,7 +842,7 @@ describe("runCli exit behavior", () => {
       { mode: "lazy", primary: "memory" },
     );
     expect(stderrDuringPluginRegistration).toBe(true);
-    expect(stderrDuringParse).toBe(false);
+    expect(stderrDuringParse).toBe(true);
     expect(loggingState.forceConsoleToStderr).toBe(false);
   });
 

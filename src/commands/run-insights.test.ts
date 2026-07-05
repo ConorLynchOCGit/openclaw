@@ -291,6 +291,95 @@ describe("buildRunInsightsReport", () => {
     expect(report).not.toHaveProperty("finalAssistantText");
   });
 
+  it("projects completed task finality from child transcript evidence instead of result text", () => {
+    const report = buildRunInsightsReport(
+      buildSummary(),
+      { session: "agent:main:main", limit: 10, includeBackground: false },
+      {
+        gatewaySessionRows: new Map([["agent:planning:main", buildGatewayRow()]]),
+        taskRecords: [
+          buildTask({
+            requesterSessionKey: "agent:main:main",
+            childSessionKey: "agent:planning:main",
+            status: "succeeded",
+          }),
+        ],
+      },
+    );
+
+    expect(report.tasks).toHaveLength(1);
+    expect(report.tasks[0]?.finality).toMatchObject({
+      finalAssistantTextPresent: true,
+      finalAssistantTextChars:
+        "Full Planning-authored packet.\n\nEvidence ledger and execution slices.".length,
+      finalAssistantTextPointer: "openclaw sessions show agent:planning:main --agent planning",
+    });
+  });
+
+  it("uses active task evidence when the scoped parent session has no fresh active work", () => {
+    const summary = buildSummary();
+    summary.sessions.recent = [
+      {
+        ...summary.sessions.recent[0],
+        agentId: "main",
+        key: "agent:main:main",
+        kind: "direct",
+        sessionId: "sess-main",
+        updatedAt: 1_000,
+        status: "running",
+        promptContext: null,
+      },
+    ];
+    const report = buildRunInsightsReport(
+      summary,
+      { session: "agent:main:main", limit: 10, includeBackground: false },
+      {
+        gatewaySessionRows: new Map([
+          [
+            "agent:main:main",
+            {
+              ...buildGatewayRow(),
+              key: "agent:main:main",
+              agentId: "main",
+              sessionId: "sess-main",
+              status: "running",
+              finalAssistantText: null,
+              activeProgress: null,
+            },
+          ],
+        ]),
+        taskRecords: [
+          buildTask({
+            status: "running",
+            deliveryStatus: "pending",
+            requesterSessionKey: "agent:main:main",
+            childSessionKey: "agent:planning:main",
+            progressSummary: "Planning is inspecting source refs.",
+            executionReceipt: {
+              schema: "openclaw.task.execution_receipt.v1",
+              eventCount: 1,
+              updatedAt: 1_500,
+              latestEvent: {
+                at: 1_500,
+                kind: "progress",
+                summary: "Planning is reading source refs.",
+                metadata: {
+                  toolName: "read",
+                },
+              },
+            },
+          }),
+        ],
+      },
+    );
+
+    expect(report.activeWork).toMatchObject({
+      phase: "running",
+      activeTool: "read",
+      source: "task-run-event",
+    });
+  });
+
   it("keeps background deploy receipts out of scoped readback unless requested", () => {
     const deployDir = path.join(stateDir!, "deploy");
     fs.mkdirSync(deployDir, { recursive: true });
@@ -475,5 +564,55 @@ describe("runInsightsCommand", () => {
     expect(payload).not.toHaveProperty("diagnosticSummary");
     expect(payload).not.toHaveProperty("performanceProfile");
     expect(payload).not.toHaveProperty("attention");
+  });
+
+  it("does not treat nested child session keys as usage session ids", async () => {
+    addSubagentRunForTests({
+      runId: "child-nested",
+      childSessionKey: "agent:codebase-researcher:subagent:child-nested",
+      requesterSessionKey: "agent:planning:main",
+      requesterDisplayKey: "agent:planning:main",
+      task: "Inspect native event readback refs.",
+      taskName: "codebase scout",
+      label: "codebase scout",
+      cleanup: "keep",
+      createdAt: 1_200,
+      startedAt: 1_300,
+      endedAt: 1_900,
+      completion: {
+        required: true,
+        resultText: "Finding packet",
+        capturedAt: 1_900,
+      },
+      delivery: {
+        status: "delivered",
+        deliveredAt: 1_950,
+      },
+    });
+    mocks.listTaskRecords.mockReturnValue([
+      buildTask({
+        taskId: "task-parent",
+        requesterSessionKey: "agent:planning:main",
+        ownerKey: "agent:planning:main",
+        childSessionKey: "agent:planning:main",
+      }),
+    ]);
+
+    await runInsightsCommand(
+      { json: true, session: "agent:planning:main" },
+      mocks.runtime as RuntimeEnv,
+    );
+
+    expect(mocks.runtime.exit).not.toHaveBeenCalled();
+    const payload = JSON.parse(String(mocks.runtime.log.mock.calls[0][0])) as {
+      childRuns?: Array<{ childSessionKey?: string; usage?: unknown }>;
+    };
+    expect(payload.childRuns?.[0]?.childSessionKey).toBe(
+      "agent:codebase-researcher:subagent:child-nested",
+    );
+    expect(payload.childRuns?.[0]?.usage).toBeNull();
+    for (const call of mocks.resolveExistingUsageSessionFile.mock.calls) {
+      expect(call[0]?.sessionId).not.toMatch(/^agent:/u);
+    }
   });
 });

@@ -73,6 +73,9 @@ export type DiagnosticStabilityEventRecord = {
   linesRead?: number;
   totalLines?: number;
   bytesRead?: number;
+  totalBytes?: number;
+  nextOffset?: number;
+  truncated?: boolean;
   active?: number;
   waiting?: number;
   queued?: number;
@@ -435,6 +438,9 @@ function sanitizeDiagnosticEvent(event: DiagnosticEventPayload): DiagnosticStabi
       record.linesRead = event.linesRead;
       record.totalLines = event.totalLines;
       record.bytesRead = event.bytesRead;
+      record.totalBytes = event.totalBytes;
+      record.nextOffset = event.nextOffset;
+      record.truncated = event.truncated;
       break;
     case "exec.process.completed":
       record.target = event.target;

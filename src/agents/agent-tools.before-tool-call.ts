@@ -1,4 +1,3 @@
-import fs from "node:fs";
 /**
  * before_tool_call policy runtime for agent tools.
  * Runs plugin hooks, trusted tool policies, approvals, diagnostics, loop
@@ -70,6 +69,7 @@ import {
   reconcileCodeModeExecBeforeHookParams,
 } from "./code-mode-control-tools.js";
 import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
+import type { ReadToolDetails } from "./sessions/tools/tool-contracts.js";
 import { normalizeToolName } from "./tool-policy.js";
 import type { AnyAgentTool } from "./tools/common.js";
 import { callGatewayTool } from "./tools/gateway.js";
@@ -440,12 +440,10 @@ function forceCompleteSkillInstructionReadParams(params: {
   if (!match || match.activation !== "read" || !isPlainObject(params.toolParams)) {
     return params.toolParams;
   }
-  if (!Object.hasOwn(params.toolParams, "limit") && !Object.hasOwn(params.toolParams, "offset")) {
-    return params.toolParams;
-  }
   const next = { ...params.toolParams };
   delete next.limit;
   delete next.offset;
+  next.__openclawInstructionFileRead = true;
   return next;
 }
 
@@ -454,6 +452,7 @@ function emitSkillUsedDiagnostic(params: {
   match: SkillUsageMatch;
   toolName: string;
   toolCallId?: string;
+  result?: unknown;
 }): void {
   const trace = params.ctx?.trace
     ? freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(params.ctx.trace))
@@ -470,36 +469,57 @@ function emitSkillUsedDiagnostic(params: {
     activation: params.match.activation,
     toolName: params.toolName,
     ...(params.toolCallId && { toolCallId: params.toolCallId }),
-    ...skillReadEvidence(params.match),
+    ...skillReadEvidence(params.match, params.result),
   });
 }
 
-function skillReadEvidence(match: SkillUsageMatch): {
-  readStatus?: "full" | "unknown";
+function readResultDetails(result: unknown): ReadToolDetails | undefined {
+  if (!isPlainObject(result) || !isPlainObject(result.details)) {
+    return undefined;
+  }
+  return result.details as ReadToolDetails;
+}
+
+function skillReadEvidence(
+  match: SkillUsageMatch,
+  result: unknown,
+): {
+  readStatus?: "full" | "partial" | "failed" | "unknown";
   linesRead?: number;
   totalLines?: number;
   bytesRead?: number;
+  totalBytes?: number;
+  nextOffset?: number;
+  truncated?: boolean;
 } {
   if (match.activation !== "read") {
     return {};
   }
-  const filePath = match.skillFilePath;
-  if (!filePath) {
-    return { readStatus: "unknown" };
-  }
-  try {
-    const raw = fs.readFileSync(filePath, "utf8");
-    const lines = raw.length === 0 ? 0 : raw.split(/\r\n|\r|\n/u).length;
-    const bytes = Buffer.byteLength(raw, "utf8");
+  const details = readResultDetails(result);
+  const text = details?.text;
+  if (text) {
     return {
-      readStatus: "full",
-      linesRead: lines,
-      totalLines: lines,
-      bytesRead: bytes,
+      readStatus: text.readStatus,
+      linesRead: text.linesRead,
+      totalLines: text.totalLines,
+      bytesRead: text.bytesRead,
+      totalBytes: text.totalBytes,
+      ...(text.nextOffset !== undefined ? { nextOffset: text.nextOffset } : {}),
+      truncated: text.readStatus !== "full" || details?.truncation?.truncated === true,
     };
-  } catch {
-    return { readStatus: "unknown" };
   }
+  const truncation = details?.truncation;
+  if (truncation) {
+    return {
+      readStatus: truncation.truncated ? "partial" : "unknown",
+      linesRead: truncation.outputLines,
+      totalLines: truncation.totalLines,
+      bytesRead: truncation.outputBytes,
+      totalBytes: truncation.totalBytes,
+      truncated: truncation.truncated,
+    };
+  }
+  return { readStatus: "unknown" };
 }
 
 function notifyPluginApprovalResolution(
@@ -1353,6 +1373,7 @@ export function wrapToolWithBeforeToolCallHook(
               match: skillMatch,
               toolName: normalizedToolName,
               toolCallId,
+              result,
             });
           }
           emitTrustedDiagnosticEventWithPrivateData(
