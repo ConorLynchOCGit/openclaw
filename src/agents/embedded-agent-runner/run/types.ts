@@ -98,12 +98,10 @@ export type EmbeddedRunAttemptResult = {
    * - "prompt": the LLM call itself failed and may be eligible for retry/fallback.
    * - "compaction": the prompt succeeded, but waiting for compaction/retry teardown was aborted;
    *   this must not be retried as a fresh prompt or the same tool turn can replay.
-   * - "precheck": pre-prompt overflow recovery intentionally short-circuited the prompt so the
-   *   outer run loop can recover via compaction/truncation before any model call is made.
    * - "hook:before_agent_run": a lifecycle hook blocked the run before the prompt was sent.
    * - null: no promptError.
    */
-  promptErrorSource: "prompt" | "compaction" | "precheck" | "hook:before_agent_run" | null;
+  promptErrorSource: "prompt" | "compaction" | "tool_config" | "hook:before_agent_run" | null;
   preflightRecovery?:
     | {
         route: Exclude<PreemptiveCompactionRoute, "fits">;

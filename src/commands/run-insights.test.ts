@@ -2,10 +2,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  addSubagentRunForTests,
-  resetSubagentRegistryForTests,
-} from "../agents/subagent-registry.js";
 import type { GatewaySessionRow } from "../gateway/session-utils.js";
 import type { DiagnosticStabilityEventRecord } from "../logging/diagnostic-stability.js";
 import type { RuntimeEnv } from "../runtime.js";
@@ -157,12 +153,11 @@ function buildGatewayRow(): GatewaySessionRow {
     key: "agent:planning:main",
     kind: "direct",
     sessionId: "sess-planning",
-    agentId: "planning",
     updatedAt: 1_000,
     status: "done",
     finalAssistantText: "Full Planning-authored packet.\n\nEvidence ledger and execution slices.",
     readbackProvenance: {
-      finalAssistant: {
+      finalAssistantText: {
         source: "session-transcript",
         ref: "/tmp/sess-planning.jsonl",
         bounded: false,
@@ -187,6 +182,34 @@ function buildGatewayRow(): GatewaySessionRow {
         },
       },
     },
+  };
+}
+
+function buildChildGatewayRow(overrides: Partial<GatewaySessionRow> = {}): GatewaySessionRow {
+  return {
+    key: "agent:codebase-researcher:child",
+    kind: "direct",
+    sessionId: "sess-codebase-child",
+    updatedAt: 2_000,
+    status: "done",
+    startedAt: 1_300,
+    endedAt: 2_000,
+    runtimeMs: 700,
+    label: "codebase scout",
+    finalAssistantText: "Finding: skill reads are visible in ordinary read telemetry.",
+    readbackProvenance: {
+      finalAssistantText: {
+        source: "session-transcript",
+        ref: "/tmp/sess-codebase-child.jsonl",
+        bounded: false,
+      },
+      status: {
+        source: "session-transcript",
+        ref: "/tmp/sess-codebase-child.jsonl",
+        bounded: false,
+      },
+    },
+    ...overrides,
   };
 }
 
@@ -233,11 +256,9 @@ beforeEach(() => {
   mocks.runtime.log.mockReset();
   mocks.runtime.error.mockReset();
   mocks.runtime.exit.mockReset();
-  resetSubagentRegistryForTests();
 });
 
 afterEach(() => {
-  resetSubagentRegistryForTests();
   if (stateDir) {
     fs.rmSync(stateDir, { recursive: true, force: true });
   }
@@ -326,8 +347,6 @@ describe("buildRunInsightsReport", () => {
         kind: "direct",
         sessionId: "sess-main",
         updatedAt: 1_000,
-        status: "running",
-        promptContext: null,
       },
     ];
     const report = buildRunInsightsReport(
@@ -340,7 +359,6 @@ describe("buildRunInsightsReport", () => {
             {
               ...buildGatewayRow(),
               key: "agent:main:main",
-              agentId: "main",
               sessionId: "sess-main",
               status: "running",
               finalAssistantText: null,
@@ -411,51 +429,32 @@ describe("buildRunInsightsReport", () => {
     expect(withBackground.costs.deployKnownDurationMs).toBe(42_000);
   });
 
-  it("reports child runs as native child evidence without advisory profiles", () => {
-    addSubagentRunForTests({
-      runId: "child-1",
-      childSessionKey: "agent:codebase-researcher:child",
-      requesterSessionKey: "agent:planning:main",
-      requesterDisplayKey: "agent:planning:main",
-      task: "Inspect the skill wiring refs and stop after exact findings.",
-      taskName: "source scout",
-      label: "codebase scout",
-      cleanup: "keep",
-      createdAt: 1_200,
-      startedAt: 1_300,
-      endedAt: 2_000,
-      completion: {
-        required: true,
-        resultText: "Finding: skill reads are visible in ordinary read telemetry.",
-        capturedAt: 2_000,
-      },
-      delivery: {
-        status: "delivered",
-        deliveredAt: 2_050,
-      },
-    });
+  it("reports child runs from native session lineage without advisory profiles", () => {
+    const parentRow: GatewaySessionRow = {
+      ...buildGatewayRow(),
+      childSessions: ["agent:codebase-researcher:child"],
+    };
+    const childRow = buildChildGatewayRow();
 
     const report = buildRunInsightsReport(
       buildSummary(),
       { session: "agent:planning:main", limit: 10, includeBackground: false },
       {
-        gatewaySessionRows: new Map(),
-        taskRecords: [
-          buildTask({
-            taskId: "task-parent",
-            requesterSessionKey: "agent:planning:main",
-            ownerKey: "agent:planning:main",
-            childSessionKey: "agent:planning:main",
-          }),
-        ],
+        gatewaySessionRows: new Map([
+          ["agent:planning:main", parentRow],
+          ["agent:codebase-researcher:child", childRow],
+        ]),
+        taskRecords: [],
       },
     );
 
     expect(report.childRuns).toHaveLength(1);
     expect(report.childRuns[0]).toMatchObject({
-      runId: "child-1",
+      parentSessionKey: "agent:planning:main",
+      runId: "sess-codebase-child",
       childSessionKey: "agent:codebase-researcher:child",
       agentId: "codebase-researcher",
+      evidenceSource: "session_lineage",
       contentTruncated: false,
     });
     expect(report).not.toHaveProperty("diagnosticSummary");
@@ -566,53 +565,40 @@ describe("runInsightsCommand", () => {
     expect(payload).not.toHaveProperty("attention");
   });
 
-  it("does not treat nested child session keys as usage session ids", async () => {
-    addSubagentRunForTests({
-      runId: "child-nested",
-      childSessionKey: "agent:codebase-researcher:subagent:child-nested",
-      requesterSessionKey: "agent:planning:main",
-      requesterDisplayKey: "agent:planning:main",
-      task: "Inspect native event readback refs.",
-      taskName: "codebase scout",
-      label: "codebase scout",
-      cleanup: "keep",
-      createdAt: 1_200,
-      startedAt: 1_300,
-      endedAt: 1_900,
-      completion: {
-        required: true,
-        resultText: "Finding packet",
-        capturedAt: 1_900,
+  it("does not treat nested child session keys as usage session ids", () => {
+    const report = buildRunInsightsReport(
+      buildSummary(),
+      { session: "agent:planning:main", limit: 10, includeBackground: false },
+      {
+        gatewaySessionRows: new Map([
+          [
+            "agent:planning:main",
+            {
+              ...buildGatewayRow(),
+              childSessions: ["agent:codebase-researcher:subagent:child-nested"],
+            },
+          ],
+          [
+            "agent:codebase-researcher:subagent:child-nested",
+            buildChildGatewayRow({
+              key: "agent:codebase-researcher:subagent:child-nested",
+              sessionId: "sess-nested-child",
+            }),
+          ],
+        ]),
+        taskRecords: [],
       },
-      delivery: {
-        status: "delivered",
-        deliveredAt: 1_950,
-      },
-    });
-    mocks.listTaskRecords.mockReturnValue([
-      buildTask({
-        taskId: "task-parent",
-        requesterSessionKey: "agent:planning:main",
-        ownerKey: "agent:planning:main",
-        childSessionKey: "agent:planning:main",
-      }),
-    ]);
-
-    await runInsightsCommand(
-      { json: true, session: "agent:planning:main" },
-      mocks.runtime as RuntimeEnv,
     );
 
-    expect(mocks.runtime.exit).not.toHaveBeenCalled();
-    const payload = JSON.parse(String(mocks.runtime.log.mock.calls[0][0])) as {
-      childRuns?: Array<{ childSessionKey?: string; usage?: unknown }>;
-    };
-    expect(payload.childRuns?.[0]?.childSessionKey).toBe(
+    expect(report.childRuns[0]?.childSessionKey).toBe(
       "agent:codebase-researcher:subagent:child-nested",
     );
-    expect(payload.childRuns?.[0]?.usage).toBeNull();
-    for (const call of mocks.resolveExistingUsageSessionFile.mock.calls) {
-      expect(call[0]?.sessionId).not.toMatch(/^agent:/u);
-    }
+    expect(report.childRuns[0]?.usage).toBeNull();
+    expect(mocks.resolveExistingUsageSessionFile).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "codebase-researcher",
+        sessionId: "agent:codebase-researcher:subagent:child-nested",
+      }),
+    );
   });
 });

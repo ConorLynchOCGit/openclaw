@@ -305,7 +305,6 @@ export {
 export {
   estimateRenderedLlmBoundaryTokenPressure,
   formatPrePromptPrecheckLog,
-  PREEMPTIVE_OVERFLOW_ERROR_TEXT,
   shouldPreemptivelyCompactBeforePrompt,
   type LlmBoundaryTokenPressure,
   type PreemptiveCompactionDecision,

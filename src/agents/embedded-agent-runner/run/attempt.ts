@@ -462,7 +462,6 @@ import {
   type MidTurnPrecheckRequest,
 } from "./midturn-precheck.js";
 import {
-  PREEMPTIVE_OVERFLOW_ERROR_TEXT,
   buildPrePromptContextBudgetStatus,
   estimateLlmBoundaryTokenPressure,
   formatPrePromptPrecheckLog,
@@ -695,14 +694,14 @@ function removeTrailingMidTurnPrecheckAssistantError(params: {
   if (lastEntry?.type !== "message" || !isMidTurnPrecheckAssistantError(lastEntry.message)) {
     if (isMidTurnPrecheckAssistantError(params.activeSession.agent.state.messages.at(-1))) {
       log.warn(
-        "[context-overflow-midturn-precheck] removed synthetic assistant error from active session but could not locate matching persisted SessionManager entry",
+        "[context-pressure-midturn-advisory] removed synthetic assistant error from active session but could not locate matching persisted SessionManager entry",
       );
     }
     return;
   }
   if (typeof mutableSessionManager.rewriteFile !== "function") {
     log.warn(
-      "[context-overflow-midturn-precheck] removed synthetic assistant error from active session but SessionManager rewrite hook is unavailable",
+      "[context-pressure-midturn-advisory] removed synthetic assistant error from active session but SessionManager rewrite hook is unavailable",
     );
     return;
   }
@@ -3571,7 +3570,7 @@ export async function runEmbeddedAttempt(
       const handleMidTurnPrecheckRequest = (request: MidTurnPrecheckRequest) => {
         const logMidTurnPrecheck = (route: string, extra?: string) => {
           log.warn(
-            `[context-overflow-midturn-precheck] sessionKey=${params.sessionKey ?? params.sessionId} ` +
+            `[context-pressure-midturn-advisory] sessionKey=${params.sessionKey ?? params.sessionId} ` +
               `provider=${params.provider}/${params.modelId} route=${route} ` +
               `estimatedPromptTokens=${request.estimatedPromptTokens} ` +
               `promptBudgetBeforeReserve=${request.promptBudgetBeforeReserve} ` +
@@ -3613,19 +3612,19 @@ export async function runEmbeddedAttempt(
               `handled=true truncatedCount=${truncationResult.truncatedCount}`,
             );
           } else {
-            preflightRecovery = { route: "compact_only", source: "mid-turn" };
-            promptError = new Error(PREEMPTIVE_OVERFLOW_ERROR_TEXT);
-            promptErrorSource = "precheck";
+            preflightRecovery = { route: "compact_only", source: "mid-turn", handled: false };
             logMidTurnPrecheck(
               "compact_only",
-              `truncateFallbackReason=${truncationResult.reason ?? "unknown"}`,
+              `truncateFallbackReason=${truncationResult.reason ?? "unknown"} ` +
+                "advisory=true continuingToNativeProviderBoundary=true",
             );
           }
         } else {
-          preflightRecovery = { route: request.route, source: "mid-turn" };
-          promptError = new Error(PREEMPTIVE_OVERFLOW_ERROR_TEXT);
-          promptErrorSource = "precheck";
-          logMidTurnPrecheck(request.route);
+          preflightRecovery = { route: request.route, source: "mid-turn", handled: false };
+          logMidTurnPrecheck(
+            request.route,
+            "advisory=true continuingToNativeProviderBoundary=true",
+          );
         }
       };
       let skipPromptSubmission = false;
@@ -3650,7 +3649,7 @@ export async function runEmbeddedAttempt(
         const promptStartedAt = Date.now();
         if (emptyExplicitToolAllowlistError) {
           promptError = emptyExplicitToolAllowlistError;
-          promptErrorSource = "precheck";
+          promptErrorSource = "tool_config";
           skipPromptSubmission = true;
           log.warn(`[tools] ${emptyExplicitToolAllowlistError.message}`);
         }
@@ -4375,7 +4374,7 @@ export async function runEmbeddedAttempt(
                 truncatedCount: truncationResult.truncatedCount,
               };
               log.info(
-                `[context-overflow-precheck] early tool-result truncation succeeded for ` +
+                `[context-pressure-advisory] early tool-result truncation succeeded for ` +
                   `${params.provider}/${params.modelId} route=${preemptiveCompaction.route} ` +
                   `truncatedCount=${truncationResult.truncatedCount} ` +
                   `estimatedPromptTokens=${preemptiveCompaction.estimatedPromptTokens} ` +
@@ -4389,25 +4388,20 @@ export async function runEmbeddedAttempt(
             }
             if (!skipPromptSubmission) {
               log.warn(
-                `[context-overflow-precheck] early tool-result truncation did not help for ` +
-                  `${params.provider}/${params.modelId}; falling back to compaction ` +
+                `[context-pressure-advisory] early tool-result truncation did not help for ` +
+                  `${params.provider}/${params.modelId}; continuing to native provider boundary ` +
                   `reason=${truncationResult.reason ?? "unknown"} sessionFile=${params.sessionFile}`,
               );
-              preflightRecovery = { route: "compact_only" };
-              promptError = new Error(PREEMPTIVE_OVERFLOW_ERROR_TEXT);
-              promptErrorSource = "precheck";
-              skipPromptSubmission = true;
+              preflightRecovery = { route: "compact_only", handled: false };
             }
           }
-          if (preemptiveCompaction?.shouldCompact) {
+          if (!skipPromptSubmission && preemptiveCompaction?.shouldCompact) {
             preflightRecovery =
               preemptiveCompaction.route === "compact_then_truncate"
-                ? { route: "compact_then_truncate" }
-                : { route: "compact_only" };
-            promptError = new Error(PREEMPTIVE_OVERFLOW_ERROR_TEXT);
-            promptErrorSource = "precheck";
+                ? { route: "compact_then_truncate", handled: false }
+                : { route: "compact_only", handled: false };
             log.warn(
-              `[context-overflow-precheck] sessionKey=${params.sessionKey ?? params.sessionId} ` +
+              `[context-pressure-advisory] sessionKey=${params.sessionKey ?? params.sessionId} ` +
                 `provider=${params.provider}/${params.modelId} ` +
                 `route=${preemptiveCompaction.route} ` +
                 `estimatedPromptTokens=${preemptiveCompaction.estimatedPromptTokens} ` +
@@ -4416,9 +4410,9 @@ export async function runEmbeddedAttempt(
                 `toolResultReducibleChars=${preemptiveCompaction.toolResultReducibleChars} ` +
                 `reserveTokens=${reserveTokens} ` +
                 `effectiveReserveTokens=${preemptiveCompaction.effectiveReserveTokens} ` +
+                `advisory=true continuingToNativeProviderBoundary=true ` +
                 `sessionFile=${params.sessionFile}`,
             );
-            skipPromptSubmission = true;
           }
 
           if (!skipPromptSubmission) {
@@ -4567,7 +4561,7 @@ export async function runEmbeddedAttempt(
               activeSession,
               sessionManager: activeSessionManager,
             });
-            if (!preflightRecovery && promptErrorSource !== "precheck") {
+            if (!preflightRecovery) {
               promptError = null;
               promptErrorSource = null;
               handleMidTurnPrecheckRequest(request);

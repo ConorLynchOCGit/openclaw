@@ -176,15 +176,13 @@ describe("overflow compaction in run loop", () => {
   it("does not suppress the next user turn when precheck overflow never persisted it", async () => {
     // Precheck overflow happens before the inbound message enters the transcript,
     // so the retry should still persist the original prompt.
-    const overflowError = makeOverflowError(
-      "Context overflow: prompt too large for the model (precheck).",
-    );
+    const overflowError = makeOverflowError("Context overflow: prompt too large for the model.");
 
     mockedRunEmbeddedAttempt
       .mockResolvedValueOnce(
         makeAttemptResult({
           promptError: overflowError,
-          promptErrorSource: "precheck",
+          promptErrorSource: "prompt",
           preflightRecovery: { route: "compact_only" },
         }),
       )
@@ -382,9 +380,7 @@ describe("overflow compaction in run loop", () => {
     mockedRunEmbeddedAttempt
       .mockResolvedValueOnce(
         makeAttemptResult({
-          promptError: makeOverflowError(
-            "Context overflow: prompt too large for the model (precheck).",
-          ),
+          promptError: makeOverflowError("Context overflow: prompt too large for the model."),
           preflightRecovery: { route: "compact_only" },
         }),
       )
@@ -410,14 +406,12 @@ describe("overflow compaction in run loop", () => {
     expect(result.meta.error).toBeUndefined();
   });
 
-  it("continues from the transcript after mid-turn precheck compaction", async () => {
+  it("continues from the transcript after provider overflow following mid-turn advisory", async () => {
     mockedRunEmbeddedAttempt
       .mockResolvedValueOnce(
         makeAttemptResult({
-          promptError: makeOverflowError(
-            "Context overflow: prompt too large for the model (mid-turn precheck).",
-          ),
-          promptErrorSource: "precheck",
+          promptError: makeOverflowError("Context overflow: prompt too large for the model."),
+          promptErrorSource: "prompt",
           preflightRecovery: { route: "compact_only", source: "mid-turn" },
         }),
       )
@@ -443,9 +437,7 @@ describe("overflow compaction in run loop", () => {
     mockedRunEmbeddedAttempt
       .mockResolvedValueOnce(
         makeAttemptResult({
-          promptError: makeOverflowError(
-            "Context overflow: prompt too large for the model (precheck).",
-          ),
+          promptError: makeOverflowError("Context overflow: prompt too large for the model."),
           preflightRecovery: { route: "compact_then_truncate" },
         }),
       )

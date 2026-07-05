@@ -101,7 +101,7 @@ describe("read tool", () => {
     expect(textContent(result)).toBe("alpha\n\n[2 more lines in file. Use offset=2 to continue.]");
   });
 
-  it("reads activated instruction files past the ordinary byte cap", async () => {
+  it("reads SKILL.md instruction files past ordinary caps without requiring a hidden marker", async () => {
     const lines = Array.from(
       { length: 775 },
       (_, index) => `line-${String(index + 1).padStart(4, "0")} ${"x".repeat(90)}`,
@@ -123,28 +123,34 @@ describe("read tool", () => {
       undefined,
       {} as never,
     );
-    expect(ordinary.details?.text?.readStatus).toBe("partial");
-    expect(ordinary.details?.text?.totalLines).toBe(775);
-    expect(ordinary.details?.text?.linesRead).toBeLessThan(775);
+    expect(textContent(ordinary)).toBe(skillText);
+    expect(ordinary.details?.text).toMatchObject({
+      readStatus: "full",
+      linesRead: 775,
+      totalLines: 775,
+      instructionFile: true,
+    });
 
-    const instruction = await tool.execute(
-      "call-instruction",
+    const lineLimited = await tool.execute(
+      "call-line-limited",
       {
         path: "skills/demo/SKILL.md",
-        __openclawInstructionFileRead: true,
+        offset: 240,
+        limit: 220,
       },
       undefined,
       undefined,
       {} as never,
     );
 
-    expect(textContent(instruction)).toBe(skillText);
-    expect(instruction.details?.text).toMatchObject({
+    expect(textContent(lineLimited)).toBe(skillText);
+    expect(lineLimited.details?.text).toMatchObject({
       readStatus: "full",
+      startLine: 1,
       linesRead: 775,
       totalLines: 775,
       instructionFile: true,
     });
-    expect(instruction.details?.truncation?.truncated).not.toBe(true);
+    expect(lineLimited.details?.truncation?.truncated).not.toBe(true);
   });
 });

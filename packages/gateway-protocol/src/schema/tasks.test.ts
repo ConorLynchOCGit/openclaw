@@ -82,30 +82,6 @@ describe("TaskSummarySchema", () => {
 
     expect(
       validateTaskSummary.Check({
-        id: "task-2",
-        status: "running",
-        deliveryStatus: "pending",
-        activeProgress: {
-          source: "subagent-registry",
-          ref: "subagent-run:run-child",
-          currentPhase: "running",
-          activeLabel: "planner",
-          observedAt: "2026-06-30T20:06:00.000Z",
-          elapsedMs: 1400,
-          note: "Child run is active; session trajectory progress is not indexed yet.",
-          pointer: {
-            kind: "session",
-            ref: "agent:planning:subagent:child",
-            label: "child session",
-          },
-          derivedBy: "resolveTaskReadbackProgressProjection",
-          bounded: true,
-        },
-      }),
-    ).toBe(true);
-
-    expect(
-      validateTaskSummary.Check({
         id: "task-3",
         status: "running",
         deliveryStatus: "pending",
@@ -130,38 +106,31 @@ describe("TaskSummarySchema", () => {
     ).toBe(true);
   });
 
-  it("accepts bounded child-run pointers on task summaries", () => {
+  it("rejects removed subagent registry and child-run task summary fields", () => {
+    expect(
+      validateTaskSummary.Check({
+        id: "task-subagent-registry-source",
+        status: "running",
+        deliveryStatus: "pending",
+        activeProgress: {
+          source: "subagent-registry",
+          ref: "subagent-run:run-child",
+          currentPhase: "running",
+          derivedBy: "resolveTaskReadbackProgressProjection",
+          bounded: true,
+        },
+      }),
+    ).toBe(false);
+
     expect(
       validateTaskSummary.Check({
         id: "task-parent",
         status: "running",
         deliveryStatus: "pending",
         childRunCount: 2,
-        childRuns: [
-          {
-            runId: "run-child-1",
-            childSessionKey: "agent:planning:subagent:child-1",
-            requesterSessionKey: "agent:planning:main",
-            agentId: "planning",
-            taskName: "repo_state",
-            label: "Repo state scout",
-            status: "running",
-            deliveryStatus: "pending",
-            contentDigest: "sha256-digest",
-            contentChars: 42,
-            contentTruncated: false,
-            createdAt: Date.UTC(2026, 6, 3, 4, 21, 51),
-            startedAt: Date.UTC(2026, 6, 3, 4, 21, 52),
-            durationMs: 42_000,
-            spawnReason: "Inspect repo state.",
-            terminalSummary: "Scout returned a bounded Context Pack.",
-            errorSummary: "Context overflow before final synthesis.",
-            provenanceMismatch:
-              "child final output is present, but linked execution task reported failure.",
-          },
-        ],
+        childRuns: [],
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("requires closed deliveryStatus values", () => {

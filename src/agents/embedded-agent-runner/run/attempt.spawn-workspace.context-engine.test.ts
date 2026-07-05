@@ -1881,7 +1881,7 @@ describe("runEmbeddedAttempt context engine sessionKey forwarding", () => {
     expect(JSON.stringify(promptMessages)).not.toContain("orphaned result");
   });
 
-  it("honors context engines that opt into preassembly overflow authority", async () => {
+  it("treats preassembly overflow authority as advisory before provider submission", async () => {
     const lockEvents = trackSessionWriteLocks();
     let sawPrompt = false;
     const hugeHistory = "large raw history ".repeat(2_000);
@@ -1911,9 +1911,10 @@ describe("runEmbeddedAttempt context engine sessionKey forwarding", () => {
       },
     });
 
-    expect(sawPrompt).toBe(false);
-    expect(result.promptErrorSource).toBe("precheck");
+    expect(sawPrompt).toBe(true);
+    expect(result.promptErrorSource).toBeNull();
     expect(result.preflightRecovery?.route).toBe("compact_only");
+    expect(result.preflightRecovery?.handled).toBe(false);
     expect(hoisted.preemptiveCompactionCalls.at(-1)).toHaveProperty("unwindowedMessages");
     expectInitialLockReleasedBeforePostTurnWrite(lockEvents);
   });
@@ -2547,7 +2548,8 @@ describe("runEmbeddedAttempt context engine mid-turn precheck integration", () =
       role: "assistant",
       content: [{ type: "text", text: "" }],
       stopReason: "error",
-      errorMessage: "Context overflow: prompt too large for the model (mid-turn precheck).",
+      errorMessage:
+        "Synthetic context-pressure advisory requested compaction before the next provider turn.",
       timestamp: 3,
     } as unknown as AgentMessage;
 
@@ -2573,8 +2575,12 @@ describe("runEmbeddedAttempt context engine mid-turn precheck integration", () =
       },
     });
 
-    expect(result.promptErrorSource).toBe("precheck");
-    expect(result.preflightRecovery).toEqual({ route: "compact_only", source: "mid-turn" });
+    expect(result.promptErrorSource).toBeNull();
+    expect(result.preflightRecovery).toEqual({
+      route: "compact_only",
+      source: "mid-turn",
+      handled: false,
+    });
     expect(result.messagesSnapshot).toEqual([seedMessage]);
   });
 });

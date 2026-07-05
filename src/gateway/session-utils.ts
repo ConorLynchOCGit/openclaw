@@ -2307,18 +2307,26 @@ export function buildGatewaySessionRow(params: {
   let lastMessagePreview: string | undefined;
   let finalAssistantText: string | null | undefined;
   let readbackProvenance: GatewaySessionRow["readbackProvenance"] | undefined;
-  let rowStatus = subagentRun ? subagentStatus : entry?.status;
+  const initialRowStatus = entry?.status ?? subagentStatus;
+  const initialStatusSource = entry?.status
+    ? "session-store"
+    : subagentRun
+      ? "codex-native-subagent"
+      : undefined;
+  let rowStatus = initialRowStatus;
   const originalRowStatus = rowStatus;
   if (rowStatus) {
     readbackProvenance = {
       ...readbackProvenance,
       status: {
-        source: subagentRun ? "codex-native-subagent" : "session-store",
+        source: initialStatusSource ?? "session-store",
         ref: `session:${entry?.sessionId ?? key}`,
         derivedBy: "buildGatewaySessionRow",
         bounded: false,
         note: subagentRun
-          ? "projected from native subagent registry; not final assistant truth"
+          ? entry?.status
+            ? "projected from session store metadata; subagent registry is compatibility context only"
+            : "projected from native subagent registry because no session-store status exists; not final assistant truth"
           : "projected from session store metadata; updatedAt may not track native trajectory events",
       },
     };
@@ -2468,7 +2476,7 @@ export function buildGatewaySessionRow(params: {
 
   return {
     key,
-    spawnedBy: subagentOwner || entry?.spawnedBy,
+    spawnedBy: entry?.spawnedBy ?? subagentOwner,
     spawnedWorkspaceDir: entry?.spawnedWorkspaceDir,
     spawnedCwd: entry?.spawnedCwd,
     forkedFromParent: entry?.forkedFromParent,
@@ -2511,10 +2519,10 @@ export function buildGatewaySessionRow(params: {
     goal,
     estimatedCostUsd,
     status: rowStatus,
-    startedAt: subagentRun ? subagentStartedAt : entry?.startedAt,
-    endedAt: subagentRun ? subagentEndedAt : entry?.endedAt,
-    runtimeMs: subagentRun ? subagentRuntimeMs : entry?.runtimeMs,
-    parentSessionKey: subagentOwner || entry?.parentSessionKey,
+    startedAt: entry?.startedAt ?? subagentStartedAt,
+    endedAt: entry?.endedAt ?? subagentEndedAt,
+    runtimeMs: entry?.runtimeMs ?? subagentRuntimeMs,
+    parentSessionKey: entry?.parentSessionKey ?? subagentOwner,
     childSessions,
     responseUsage: entry?.responseUsage,
     modelProvider: rowModelProvider,

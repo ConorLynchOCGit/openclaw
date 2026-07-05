@@ -531,7 +531,7 @@ export function installToolResultContextGuard(params: {
         });
         const request = toMidTurnPrecheckRequest(precheck);
         log.debug(
-          `[context-overflow-midturn-precheck] tool-result-guard check route=${precheck.route} ` +
+          `[context-pressure-midturn-advisory] tool-result-guard check route=${precheck.route} ` +
             `messages=${contextMessages.length} prePromptMessageCount=${prePromptMessageCount} ` +
             `estimatedPromptTokens=${precheck.estimatedPromptTokens} ` +
             `promptBudgetBeforeReserve=${precheck.promptBudgetBeforeReserve} ` +

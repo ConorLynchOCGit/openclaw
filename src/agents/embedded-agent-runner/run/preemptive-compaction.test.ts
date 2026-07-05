@@ -5,7 +5,6 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import "../../test-helpers/agent-session-token-mock.js";
 import { estimateToolResultReductionPotential } from "../tool-result-truncation.js";
 
-let PREEMPTIVE_OVERFLOW_ERROR_TEXT: typeof import("./preemptive-compaction.js").PREEMPTIVE_OVERFLOW_ERROR_TEXT;
 let estimateLlmBoundaryTokenPressure: typeof import("./preemptive-compaction.js").estimateLlmBoundaryTokenPressure;
 let buildPrePromptContextBudgetStatus: typeof import("./preemptive-compaction.js").buildPrePromptContextBudgetStatus;
 let estimatePrePromptTokens: typeof import("./preemptive-compaction.js").estimatePrePromptTokens;
@@ -18,7 +17,6 @@ beforeAll(async () => {
   // the runtime environment these helpers protect.
   vi.resetModules();
   ({
-    PREEMPTIVE_OVERFLOW_ERROR_TEXT,
     estimateLlmBoundaryTokenPressure,
     buildPrePromptContextBudgetStatus,
     estimatePrePromptTokens,
@@ -85,11 +83,6 @@ describe("preemptive-compaction", () => {
   const verbosePrompt =
     "user request with distinct content asking for a detailed answer and more context ".repeat(25);
 
-  it("exports a context-overflow-compatible precheck error text", () => {
-    expect(PREEMPTIVE_OVERFLOW_ERROR_TEXT).toContain("Context overflow:");
-    expect(PREEMPTIVE_OVERFLOW_ERROR_TEXT).toContain("(precheck)");
-  });
-
   it("raises the estimate as prompt-side content grows", () => {
     const smaller = estimatePrePromptTokens({
       messages: [makeAssistantHistory(verboseHistory)],
@@ -154,7 +147,7 @@ describe("preemptive-compaction", () => {
       sessionFile: "sessions/session-1.json",
     });
 
-    expect(line).toContain("[context-overflow-precheck] pre-prompt check");
+    expect(line).toContain("[context-pressure-advisory] pre-prompt check");
     expect(line).toContain("sessionKey=discord:channel:thread");
     expect(line).toContain("provider=anthropic/claude-opus-4-6");
     expect(line).toContain("route=fits");

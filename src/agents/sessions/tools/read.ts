@@ -356,21 +356,24 @@ export function createReadToolDefinition(
               const totalFileBytes = Buffer.byteLength(textContent, "utf-8");
               const allLines = textContent.split("\n");
               const totalFileLines = allLines.length;
-              const instructionFileRead = __openclawInstructionFileRead === true;
+              const instructionFileRead =
+                __openclawInstructionFileRead === true || basename(absolutePath) === "SKILL.md";
               // Apply offset if specified. Convert from 1-indexed input to 0-indexed array access.
-              const startLine = offset ? Math.max(0, offset - 1) : 0;
+              const effectiveOffset = instructionFileRead ? undefined : offset;
+              const effectiveLimit = instructionFileRead ? undefined : limit;
+              const startLine = effectiveOffset ? Math.max(0, effectiveOffset - 1) : 0;
               const startLineDisplay = startLine + 1;
               // Check if offset is out of bounds.
               if (startLine >= allLines.length) {
                 throw new Error(
-                  `Offset ${offset} is beyond end of file (${allLines.length} lines total)`,
+                  `Offset ${effectiveOffset} is beyond end of file (${allLines.length} lines total)`,
                 );
               }
               let selectedContent: string;
               let userLimitedLines: number | undefined;
               // If limit is specified by the user, honor it first. Otherwise truncateHead decides.
-              if (limit !== undefined) {
-                const normalizedLimit = normalizePositiveLimit(limit, DEFAULT_MAX_LINES);
+              if (effectiveLimit !== undefined) {
+                const normalizedLimit = normalizePositiveLimit(effectiveLimit, DEFAULT_MAX_LINES);
                 const endLine = Math.min(startLine + normalizedLimit, allLines.length);
                 selectedContent = allLines.slice(startLine, endLine).join("\n");
                 userLimitedLines = endLine - startLine;

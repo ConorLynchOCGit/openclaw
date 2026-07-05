@@ -583,7 +583,7 @@ describe("tasks gateway handlers", () => {
     });
   });
 
-  it("uses exact descendant child trajectory progress for parent waiting readback", async () => {
+  it("does not project descendant child trajectory progress through task readback", async () => {
     const parentSessionKey = "agent:planning:main";
     const childSessionKey = "agent:codebase-researcher:subagent:active-descendant";
     const childSessionId = "gateway-task-descendant-child-trajectory";
@@ -655,25 +655,22 @@ describe("tasks gateway handlers", () => {
     const { payload } = await getTaskPayload(task.taskId);
 
     expect(payload?.task?.activeProgress).toMatchObject({
-      source: "trajectory",
-      ref: `session:${childSessionId}`,
-      currentPhase: "waiting_on_child",
-      activeLabel: "codebase-researcher",
-      sourceEventType: "tool.call",
-      sourceEventSeq: 13,
-      toolName: "read",
-      childRole: "codebase-researcher",
-      childPhase: "running",
-      spawnReason: "Inspect exact skill wiring refs.",
-      note: "Child run is active; parent is waiting on codebase-researcher.",
+      source: "task-run-event",
+      ref: expect.stringContaining(`task-event:${task.taskId}:`),
+      currentPhase: "running",
+      activeLabel: "planning",
+      sourceEventType: "task.running",
+      note: "Child run started.",
       pointer: {
-        kind: "session",
-        ref: childSessionKey,
-        label: "descendant child session",
+        kind: "task",
+        ref: task.taskId,
+        label: "task run receipt",
       },
-      derivedBy: "resolveTaskReadbackProgressProjection+readLatestTrajectoryProgressProjection",
+      derivedBy: "resolveTaskReadbackProgressProjection",
       bounded: true,
     });
+    expect(JSON.stringify(payload?.task)).not.toContain(childSessionId);
+    expect(JSON.stringify(payload?.task)).not.toContain("codebase-researcher");
   });
 
   it("falls back to bounded task-run receipt progress when child session evidence is not indexed", async () => {
@@ -880,50 +877,10 @@ describe("tasks gateway handlers", () => {
       childSessionKey: "agent:planning:main",
       runId: "run-parent-planning",
       agentId: "planning",
-      childRunCount: 3,
     });
-    expect(payload?.task?.childRuns).toEqual([
-      expect.objectContaining({
-        runId: "run-child-a",
-        childSessionKey: "agent:planning:main:subagent:researcher-a",
-        requesterSessionKey: "agent:planning:main",
-        agentId: "planning",
-        status: "done",
-        deliveryStatus: "delivered",
-        contentChars: expect.any(Number),
-        contentDigest: expect.any(String),
-        contentTruncated: false,
-        createdAt: 120,
-        startedAt: 120,
-        endedAt: 220,
-        spawnReason: "Research local gaps",
-        terminalSummary: "Researcher A found a routing gap.",
-      }),
-      expect.objectContaining({
-        runId: "run-child-b",
-        childSessionKey: "agent:planning:main:subagent:reviewer-b",
-        requesterSessionKey: "agent:planning:main",
-        agentId: "planning",
-        status: "done",
-        deliveryStatus: "pending",
-        contentChars: expect.any(Number),
-        contentDigest: expect.any(String),
-        contentTruncated: false,
-        createdAt: 130,
-        startedAt: 130,
-        endedAt: 230,
-        spawnReason: "Review plan",
-        terminalSummary: expect.stringContaining("Reviewer B found a proof-finality risk."),
-      }),
-      expect.objectContaining({
-        runId: "run-child-c",
-        childSessionKey: "agent:planning:main:subagent:failed-c",
-        status: "failed",
-        deliveryStatus: "failed",
-        errorSummary: "Context overflow while reading docs.",
-      }),
-    ]);
-    expect(JSON.stringify(payload?.task)).toContain("Researcher A found a routing gap.");
+    expect(payload?.task).not.toHaveProperty("childRunCount");
+    expect(payload?.task).not.toHaveProperty("childRuns");
+    expect(JSON.stringify(payload?.task)).not.toContain("Researcher A found a routing gap.");
     expect(JSON.stringify(payload?.task)).not.toContain("FULL_END");
     expect(JSON.stringify(payload?.task)).not.toContain("stale child should not appear");
   });
@@ -1005,23 +962,18 @@ describe("tasks gateway handlers", () => {
 
     const { payload } = await getTaskPayload(parent.taskId);
 
-    expect(payload?.task?.childRuns).toEqual([
-      expect.objectContaining({
-        runId: "run-child-overflow",
-        executionTaskId: execution.taskId,
-        childSessionKey: "agent:codebase-researcher:subagent:overflow-child",
-        status: "done",
-        contentChars: "Context Pack is available for parent synthesis.".length,
-        contentDigest: expect.any(String),
-        contentTruncated: false,
-        terminalSummary: "Context Pack is available for parent synthesis.",
-        errorSummary: expect.stringContaining("Context overflow: prompt too large for the model."),
-        provenanceMismatch: expect.stringContaining("child final output is present"),
-      }),
-    ]);
+    expect(payload?.task).not.toHaveProperty("childRuns");
+    expect(payload?.task).not.toHaveProperty("childRunCount");
+    expect(JSON.stringify(payload?.task)).not.toContain(
+      "Context Pack is available for parent synthesis.",
+    );
+    expect(JSON.stringify(payload?.task)).not.toContain(
+      "Context overflow: prompt too large for the model.",
+    );
+    expect(execution.taskId).toBeTruthy();
   });
 
-  it("projects nested child failure as parent recovery instead of stale child-start progress", async () => {
+  it("does not project nested child registry failure as parent task truth", async () => {
     addSubagentRunForTests({
       runId: "run-planning-active",
       childSessionKey: "agent:planning:subagent:plan",
@@ -1071,26 +1023,25 @@ describe("tasks gateway handlers", () => {
     const { payload } = await getTaskPayload(task.taskId);
 
     expect(payload?.task?.activeProgress).toMatchObject({
-      source: "subagent-registry",
-      ref: "subagent-run:run-codebase-failed",
-      currentPhase: "recovering_from_failed_child",
-      activeLabel: "codebase-researcher",
-      sourceEventType: "subagent.descendant",
-      childRole: "codebase-researcher",
-      childPhase: "failed",
-      spawnReason: "Inspect skill and readback source surfaces",
-      note: "Child run is failed; parent is recovering from failed child.",
+      source: "task-run-event",
+      ref: expect.stringContaining(`task-event:${task.taskId}:`),
+      currentPhase: "running",
+      activeLabel: "planning",
+      sourceEventType: "task.running",
+      note: "Child run started.",
       pointer: {
-        kind: "session",
-        ref: "agent:codebase-researcher:subagent:source-overflow",
-        label: "descendant child session",
+        kind: "task",
+        ref: task.taskId,
+        label: "task run receipt",
       },
       derivedBy: "resolveTaskReadbackProgressProjection",
       bounded: true,
     });
+    expect(JSON.stringify(payload?.task)).not.toContain("Context overflow while reading source.");
+    expect(JSON.stringify(payload?.task)).not.toContain("Partial Context Pack captured");
   });
 
-  it("shows settled child state instead of stale running task text", async () => {
+  it("keeps settled child registry state out of task progress truth", async () => {
     addSubagentRunForTests({
       runId: "run-settled-child",
       childSessionKey: "agent:planning:subagent:settled",
@@ -1123,18 +1074,20 @@ describe("tasks gateway handlers", () => {
     const { payload } = await getTaskPayload(task.taskId);
 
     expect(payload?.task?.activeProgress).toMatchObject({
-      source: "subagent-registry",
-      ref: "subagent-run:run-settled-child",
-      currentPhase: "done",
-      note: "Child run is done; task row has not finalized.",
+      source: "task-run-event",
+      ref: expect.stringContaining(`task-event:${task.taskId}:`),
+      currentPhase: "running",
+      note: "Child run started.",
       pointer: {
-        kind: "session",
-        ref: "agent:planning:subagent:settled",
-        label: "settled child session",
+        kind: "task",
+        ref: task.taskId,
+        label: "task run receipt",
       },
       derivedBy: "resolveTaskReadbackProgressProjection",
       bounded: true,
     });
+    expect(JSON.stringify(payload?.task)).not.toContain("Child run is done");
+    expect(JSON.stringify(payload?.task)).not.toContain("settled child session");
   });
 
   it("sanitizes task text before exposing SDK summaries", async () => {

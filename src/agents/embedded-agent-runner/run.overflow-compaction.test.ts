@@ -1930,7 +1930,7 @@ describe("runEmbeddedAgent overflow compaction trigger routing", () => {
       .mockResolvedValueOnce(
         makeAttemptResult({
           promptError: makeOverflowError(),
-          promptErrorSource: "precheck",
+          promptErrorSource: "prompt",
           preflightRecovery: { route: "compact_only" },
           contextBudgetStatus: {
             schemaVersion: 1,

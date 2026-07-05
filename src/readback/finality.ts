@@ -114,7 +114,23 @@ function finalityPointer(params: {
 
 function statusConflictMismatch(
   provenance: SessionReadbackProvenance | null | undefined,
+  params?: { compatibilityStatus?: string | null; finalAssistantTextPresent?: boolean },
 ): Record<string, unknown> | null {
+  if (
+    params?.finalAssistantTextPresent &&
+    params.compatibilityStatus &&
+    params.compatibilityStatus !== "done" &&
+    params.compatibilityStatus !== "completed" &&
+    params.compatibilityStatus !== "succeeded"
+  ) {
+    return {
+      kind: "status_conflict",
+      severity: "info",
+      label: "Compatibility status demoted because transcript final assistant evidence exists.",
+      preview: `compatibilityStatus=${params.compatibilityStatus}`,
+      provenance: provenance?.status ?? null,
+    };
+  }
   const status = provenance?.status;
   if (status?.source !== "session-transcript" || !status.note) {
     return null;
@@ -142,7 +158,7 @@ export function buildSessionReadbackProjection(session: SessionReadbackLike): Re
       agentId: session.agentId ?? null,
     },
     finality: {
-      status: session.status ?? (finalAssistantText ? "done" : "unknown"),
+      status: finalAssistantText ? "done" : (session.status ?? "unknown"),
       finalAssistantTextPresent: finalAssistantText !== null,
       finalAssistantTextChars: finalAssistantText?.length ?? null,
       finalAssistantTextDigest: finalAssistantText ? digestText(finalAssistantText) : null,
@@ -150,7 +166,10 @@ export function buildSessionReadbackProjection(session: SessionReadbackLike): Re
         ? finalityPointer({ sessionKey: session.key, agentId: session.agentId })
         : null,
       provenance: session.readbackProvenance ?? null,
-      mismatch: statusConflictMismatch(session.readbackProvenance),
+      mismatch: statusConflictMismatch(session.readbackProvenance, {
+        compatibilityStatus: session.status ?? null,
+        finalAssistantTextPresent: finalAssistantText !== null,
+      }),
     },
     activeWork: {
       phase: activeProgress?.currentPhase ?? null,
@@ -184,7 +203,7 @@ export function buildTaskReadbackProjection(task: TaskReadbackLike): ReadbackPro
       agentId: task.agentId ?? null,
     },
     finality: {
-      status: task.status ?? (finalAssistantText ? "done" : "unknown"),
+      status: finalAssistantText ? "done" : (task.status ?? "unknown"),
       finalAssistantTextPresent: finalAssistantText !== null,
       finalAssistantTextChars: finalAssistantText?.length ?? null,
       finalAssistantTextDigest: finalAssistantText ? digestText(finalAssistantText) : null,
@@ -195,7 +214,10 @@ export function buildTaskReadbackProjection(task: TaskReadbackLike): ReadbackPro
           })
         : null,
       provenance: task.resultSession?.readbackProvenance ?? null,
-      mismatch: statusConflictMismatch(task.resultSession?.readbackProvenance),
+      mismatch: statusConflictMismatch(task.resultSession?.readbackProvenance, {
+        compatibilityStatus: task.status ?? null,
+        finalAssistantTextPresent: finalAssistantText !== null,
+      }),
     },
     activeWork: {
       phase: activeProgress?.currentPhase ?? task.status ?? "unknown",

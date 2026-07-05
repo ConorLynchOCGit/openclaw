@@ -13,9 +13,6 @@ import type { AgentMessage } from "../../runtime/index.js";
 import { estimateToolResultReductionPotential } from "../tool-result-truncation.js";
 import type { PreemptiveCompactionRoute } from "./preemptive-compaction.types.js";
 
-export const PREEMPTIVE_OVERFLOW_ERROR_TEXT =
-  "Context overflow: prompt too large for the model (precheck).";
-
 const ESTIMATED_CHARS_PER_TOKEN = 4;
 const TOOL_RESULT_CHARS_PER_TOKEN = 2;
 const JSON_PAYLOAD_CHARS_PER_TOKEN = 3;
@@ -358,7 +355,7 @@ export function formatPrePromptPrecheckLog(params: {
 }): string {
   const { result } = params;
   return (
-    `[context-overflow-precheck] pre-prompt check ` +
+    `[context-pressure-advisory] pre-prompt check ` +
     `sessionKey=${params.sessionKey ?? params.sessionId ?? "unknown"} ` +
     `provider=${params.provider}/${params.modelId} ` +
     `route=${result.route} ` +

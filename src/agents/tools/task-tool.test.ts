@@ -219,7 +219,7 @@ describe("task tool", () => {
     );
   });
 
-  it("returns latest child assistant text as partial evidence when the child terminal run fails", async () => {
+  it("treats a later child assistant final as success when task wait reports an earlier error", async () => {
     hoisted.waitForAgentRunMock.mockResolvedValue({
       status: "error",
       error: "Context overflow: prompt too large for the model.",
@@ -237,25 +237,31 @@ describe("task tool", () => {
       sessionKey: "agent:codebase-researcher:subagent:child",
     });
     expect(result.details).toMatchObject({
-      status: "error",
-      error: "Context overflow: prompt too large for the model.",
+      status: "ok",
       childResult: true,
       producerAgentId: "codebase-researcher",
       contentDigest: digestText("Context Pack\n\nP1. Useful evidence before overflow."),
       contentChars: "Context Pack\n\nP1. Useful evidence before overflow.".length,
       contentTruncated: false,
-      partialResultChars: "Context Pack\n\nP1. Useful evidence before overflow.".length,
-      partialResultTruncated: false,
+      resultChars: "Context Pack\n\nP1. Useful evidence before overflow.".length,
+      resultTruncated: false,
+      recoveryHistory: [
+        {
+          source: "task_wait",
+          status: "error",
+          error: "Context overflow: prompt too large for the model.",
+        },
+      ],
     });
     const content = result.content[0];
     expect(content?.type).toBe("text");
     if (!content || content.type !== "text") {
       throw new Error("Expected text tool result");
     }
-    expect(content.text).toContain("<task_error>");
+    expect(content.text).toContain("<task_result>");
     expect(content.text).toContain('contentTruncated="false"');
+    expect(content.text).toContain("<task_recovery_history>");
     expect(content.text).toContain("Context overflow");
-    expect(content.text).toContain("<partial_task_result>");
     expect(content.text).toContain("Useful evidence before overflow");
   });
 

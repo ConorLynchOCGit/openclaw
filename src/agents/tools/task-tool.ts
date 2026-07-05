@@ -83,6 +83,7 @@ function formatTaskResult(params: {
   contentDigest: string;
   contentChars: number;
   contentTruncated: boolean;
+  recoveryHistory?: Array<{ source: string; status: string; error?: string }>;
 }): string {
   const taskNameAttr = params.taskName ? ` taskName="${escapeXmlAttr(params.taskName)}"` : "";
   return [
@@ -96,6 +97,7 @@ function formatTaskResult(params: {
     "  <task_result>",
     escapeXmlText(params.replyText.trim()),
     "  </task_result>",
+    ...formatTaskRecoveryHistory(params.recoveryHistory),
     "</task>",
   ].join("\n");
 }
@@ -105,7 +107,16 @@ async function waitForForegroundTaskResult(params: {
   sessionKey: string;
   signal?: AbortSignal;
   onProgress?: () => void;
-}): Promise<AgentWaitResult & { replyText?: string }> {
+}): Promise<
+  AgentWaitResult & {
+    replyText?: string;
+    recoveryHistory?: Array<{
+      source: "task_wait";
+      status: AgentWaitResult["status"];
+      error?: string;
+    }>;
+  }
+> {
   while (params.signal?.aborted !== true) {
     params.onProgress?.();
     const wait = await waitForAgentRun({
@@ -122,11 +133,25 @@ async function waitForForegroundTaskResult(params: {
       };
     }
     if (wait.status === "error") {
+      const replyText = await readLatestAssistantReply({
+        sessionKey: params.sessionKey,
+      });
+      if (replyText?.trim()) {
+        return {
+          status: "ok",
+          replyText,
+          recoveryHistory: [
+            {
+              source: "task_wait",
+              status: wait.status,
+              ...(wait.error ? { error: wait.error } : {}),
+            },
+          ],
+        };
+      }
       return {
         ...wait,
-        replyText: await readLatestAssistantReply({
-          sessionKey: params.sessionKey,
-        }),
+        replyText,
       };
     }
     // `timeout` and `pending` are wait-RPC states, not child task failure.
@@ -172,6 +197,25 @@ function formatTaskError(params: {
   }
   lines.push("</task>");
   return lines.join("\n");
+}
+
+function formatTaskRecoveryHistory(
+  recoveryHistory: Array<{ source: string; status: string; error?: string }> | undefined,
+): string[] {
+  if (!recoveryHistory?.length) {
+    return [];
+  }
+  const lines = ["  <task_recovery_history>"];
+  for (const entry of recoveryHistory) {
+    const errorAttr = entry.error ? ` error="${escapeXmlAttr(entry.error)}"` : "";
+    lines.push(
+      `    <recovery source="${escapeXmlAttr(entry.source)}" status="${escapeXmlAttr(
+        entry.status,
+      )}"${errorAttr} />`,
+    );
+  }
+  lines.push("  </task_recovery_history>");
+  return lines;
 }
 
 function resolveTaskToolLightContext(agentId: string, value: unknown): boolean {
@@ -344,6 +388,7 @@ export function createTaskTool(
         contentDigest,
         contentChars: replyText.length,
         contentTruncated,
+        recoveryHistory: wait.recoveryHistory,
       });
       return textResult(text, {
         status: "ok",
@@ -361,6 +406,7 @@ export function createTaskTool(
         contentTruncated,
         resultChars: replyText.length,
         resultTruncated: contentTruncated,
+        ...(wait.recoveryHistory?.length ? { recoveryHistory: wait.recoveryHistory } : {}),
         resolvedModel: spawn.resolvedModel,
         resolvedProvider: spawn.resolvedProvider,
       });

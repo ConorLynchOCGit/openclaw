@@ -16,9 +16,9 @@ export type MidTurnPrecheckRequest = {
   effectiveReserveTokens: number;
 };
 
-/** Stable message used to identify synthetic mid-turn overflow errors in session cleanup. */
+/** Stable message used to identify synthetic mid-turn advisory markers in session cleanup. */
 export const MID_TURN_PRECHECK_ERROR_MESSAGE =
-  "Context overflow: prompt too large for the model (mid-turn precheck).";
+  "Synthetic context-pressure advisory requested compaction before the next provider turn.";
 
 /**
  * Internal control-flow signal thrown after a tool result makes the next prompt

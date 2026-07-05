@@ -2515,6 +2515,9 @@ public struct TaskSummary: Codable, Sendable {
     public let agentid: String?
     public let sessionkey: String?
     public let childsessionkey: String?
+    public let childrole: String?
+    public let childphase: String?
+    public let spawnreason: String?
     public let ownerkey: String?
     public let runid: String?
     public let taskid: String?
@@ -2540,6 +2543,9 @@ public struct TaskSummary: Codable, Sendable {
         agentid: String? = nil,
         sessionkey: String?,
         childsessionkey: String?,
+        childrole: String?,
+        childphase: String?,
+        spawnreason: String?,
         ownerkey: String?,
         runid: String?,
         taskid: String?,
@@ -2564,6 +2570,9 @@ public struct TaskSummary: Codable, Sendable {
         self.agentid = agentid
         self.sessionkey = sessionkey
         self.childsessionkey = childsessionkey
+        self.childrole = childrole
+        self.childphase = childphase
+        self.spawnreason = spawnreason
         self.ownerkey = ownerkey
         self.runid = runid
         self.taskid = taskid
@@ -2590,6 +2599,9 @@ public struct TaskSummary: Codable, Sendable {
         case agentid = "agentId"
         case sessionkey = "sessionKey"
         case childsessionkey = "childSessionKey"
+        case childrole = "childRole"
+        case childphase = "childPhase"
+        case spawnreason = "spawnReason"
         case ownerkey = "ownerKey"
         case runid = "runId"
         case taskid = "taskId"

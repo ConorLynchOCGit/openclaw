@@ -8,7 +8,6 @@ import { resolveStateDir } from "../config/paths.js";
 import { readSessionStoreReadOnly } from "../config/sessions/store-read.js";
 import type { SessionEntry } from "../config/sessions/types.js";
 import { listSessionsFromStore, type GatewaySessionRow } from "../gateway/session-utils.js";
-import { buildTaskChildRunReadback } from "../gateway/task-summary-projection.js";
 import {
   loadSessionCostSummaryFromCache,
   resolveExistingUsageSessionFile,
@@ -153,8 +152,9 @@ export type RunInsightTask = {
 };
 
 export type RunInsightChildRun = {
-  parentTaskId: string;
-  runId: string;
+  parentTaskId: string | null;
+  parentSessionKey: string;
+  runId: string | null;
   childSessionKey: string;
   requesterSessionKey: string | null;
   agentId: string | null;
@@ -175,6 +175,7 @@ export type RunInsightChildRun = {
   errorSummary: string | null;
   provenanceMismatch: string | null;
   usage: RunInsightSessionUsage | null;
+  evidenceSource: "session_lineage";
   pointer: string;
 };
 
@@ -420,7 +421,7 @@ function compactSummaryText(value: string | null | undefined, maxChars = 240): s
   return `${singleLine.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
 }
 
-function uniqueValues(values: Array<string | null | undefined>): string[] {
+function uniqueValues(values: readonly (string | null | undefined)[]): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
   for (const value of values) {
@@ -738,6 +739,12 @@ function resolveTaskResultSessionEvidence(
   return null;
 }
 
+type SessionLineageChildRecord = {
+  parentSessionKey: string;
+  childSessionKey: string;
+  childRow: GatewaySessionRow | null;
+};
+
 function inferAgentIdFromSessionKey(sessionKey: string | null | undefined): string | null {
   const normalized = normalizeOptionalString(sessionKey);
   if (!normalized) {
@@ -745,6 +752,68 @@ function inferAgentIdFromSessionKey(sessionKey: string | null | undefined): stri
   }
   const match = /^agent:([^:]+):/u.exec(normalized);
   return match?.[1] ?? null;
+}
+
+function resolveSessionLineage(params: {
+  summary: StatusSummary;
+  rootSessionKeys: readonly string[];
+  gatewayRows: Map<string, GatewaySessionRow>;
+}): { records: SessionLineageChildRecord[]; gatewayRows: Map<string, GatewaySessionRow> } {
+  const availableRows = new Map(params.gatewayRows);
+  const records: SessionLineageChildRecord[] = [];
+  const queued = uniqueValues(params.rootSessionKeys);
+  const processedParents = new Set<string>();
+  const seenEdges = new Set<string>();
+
+  while (queued.length > 0) {
+    const parentSessionKey = queued.shift();
+    if (!parentSessionKey || processedParents.has(parentSessionKey)) {
+      continue;
+    }
+    processedParents.add(parentSessionKey);
+
+    let parentRow = availableRows.get(parentSessionKey);
+    if (!parentRow) {
+      const resolvedParent = resolveGatewayRowsForSessionKeys({
+        summary: params.summary,
+        sessionKeys: [parentSessionKey],
+      }).get(parentSessionKey);
+      if (resolvedParent) {
+        availableRows.set(parentSessionKey, resolvedParent);
+        parentRow = resolvedParent;
+      }
+    }
+
+    const childSessionKeys = uniqueValues(parentRow?.childSessions ?? []);
+    const missingChildKeys = childSessionKeys.filter((key) => !availableRows.has(key));
+    if (missingChildKeys.length > 0) {
+      for (const [key, row] of resolveGatewayRowsForSessionKeys({
+        summary: params.summary,
+        sessionKeys: missingChildKeys,
+      })) {
+        availableRows.set(key, row);
+      }
+    }
+
+    for (const childSessionKey of childSessionKeys) {
+      const edgeKey = `${parentSessionKey}\u0000${childSessionKey}`;
+      if (seenEdges.has(edgeKey)) {
+        continue;
+      }
+      seenEdges.add(edgeKey);
+      const childRow = availableRows.get(childSessionKey) ?? null;
+      records.push({
+        parentSessionKey,
+        childSessionKey,
+        childRow,
+      });
+      if (childRow && !processedParents.has(childSessionKey)) {
+        queued.push(childSessionKey);
+      }
+    }
+  }
+
+  return { records, gatewayRows: availableRows };
 }
 
 function toInsightSession(
@@ -865,35 +934,69 @@ function latestTaskEvent(task: TaskRecord): RunInsightTask["latestEvent"] {
 }
 
 function toInsightChildRun(
-  parentTask: TaskRecord,
-  child: NonNullable<ReturnType<typeof buildTaskChildRunReadback>>["childRuns"][number],
+  record: SessionLineageChildRecord,
   usage: RunInsightSessionUsage | null,
 ): RunInsightChildRun {
-  const durationMs = typeof child.durationMs === "number" ? child.durationMs : null;
+  const childRow = record.childRow;
+  const projection = childRow
+    ? buildSessionReadbackProjection({
+        key: childRow.key,
+        ...(childRow.status ? { status: childRow.status } : {}),
+        sessionId: childRow.sessionId,
+        finalAssistantText: childRow.finalAssistantText ?? null,
+        activeProgress: childRow.activeProgress ?? null,
+        ...(childRow.readbackProvenance ? { readbackProvenance: childRow.readbackProvenance } : {}),
+        agentId: inferAgentIdFromSessionKey(childRow.key),
+      })
+    : null;
+  const durationMs =
+    typeof childRow?.runtimeMs === "number"
+      ? childRow.runtimeMs
+      : typeof childRow?.startedAt === "number" && typeof childRow.endedAt === "number"
+        ? Math.max(0, childRow.endedAt - childRow.startedAt)
+        : null;
+  const status = projection?.finality.status ?? childRow?.status ?? null;
+  const finalTextPresent = projection?.finality.finalAssistantTextPresent === true;
   return {
-    parentTaskId: parentTask.taskId,
-    runId: child.runId,
-    childSessionKey: child.childSessionKey,
-    requesterSessionKey: child.requesterSessionKey ?? null,
-    agentId: child.agentId ?? null,
-    taskName: child.taskName ?? null,
-    label: child.label ?? null,
-    status: child.status ?? null,
-    deliveryStatus: child.deliveryStatus ?? null,
-    contentDigest: child.contentDigest ?? null,
-    contentChars: child.contentChars ?? null,
-    contentTruncated: child.contentTruncated ?? null,
-    createdAt: child.createdAt ?? null,
-    startedAt: child.startedAt ?? null,
-    endedAt: child.endedAt ?? null,
+    parentTaskId: null,
+    parentSessionKey: record.parentSessionKey,
+    runId: childRow?.sessionId ?? null,
+    childSessionKey: record.childSessionKey,
+    requesterSessionKey: record.parentSessionKey,
+    agentId: inferAgentIdFromSessionKey(childRow?.key ?? record.childSessionKey),
+    taskName: null,
+    label: childRow?.label ?? childRow?.displayName ?? childRow?.derivedTitle ?? null,
+    status,
+    deliveryStatus: null,
+    contentDigest: projection?.finality.finalAssistantTextDigest ?? null,
+    contentChars: projection?.finality.finalAssistantTextChars ?? null,
+    contentTruncated:
+      projection?.finality.provenance?.finalAssistantText?.bounded === true
+        ? true
+        : finalTextPresent
+          ? false
+          : null,
+    createdAt: null,
+    startedAt: childRow?.startedAt ?? null,
+    endedAt: childRow?.endedAt ?? null,
     durationMs,
     elapsed: formatDurationMs(durationMs),
-    spawnReason: compactSummaryText(child.spawnReason) ?? null,
-    terminalSummary: compactSummaryText(child.terminalSummary) ?? null,
-    errorSummary: compactSummaryText(child.errorSummary) ?? null,
-    provenanceMismatch: child.provenanceMismatch ?? null,
+    spawnReason: null,
+    terminalSummary:
+      compactSummaryText(childRow?.lastMessagePreview) ??
+      (finalTextPresent
+        ? "Final assistant output is present in the child session transcript."
+        : null),
+    errorSummary:
+      status === "failed" && !finalTextPresent
+        ? compactSummaryText(childRow?.lastMessagePreview)
+        : null,
+    provenanceMismatch: projection?.finality.mismatch
+      ? compactSummaryText(String(projection.finality.mismatch.label ?? "finality mismatch"))
+      : null,
     usage,
-    pointer: `openclaw sessions show ${child.childSessionKey}${child.agentId ? ` --agent ${child.agentId}` : ""}`,
+    evidenceSource: "session_lineage",
+    pointer: `openclaw sessions show ${record.childSessionKey}`,
   };
 }
 
@@ -907,7 +1010,11 @@ function toInsightTask(params: {
 }): RunInsightTask {
   const activeProgress =
     resolveTaskReadbackProgressProjection(params.task, params.progressContext) ?? null;
-  const childReadback = buildTaskChildRunReadback(params.task, params.now, params.tasksForReadback);
+  const sessionLineageParentKey = params.task.childSessionKey ?? params.task.ownerKey;
+  const childRunCount =
+    (sessionLineageParentKey
+      ? params.gatewayRows.get(sessionLineageParentKey)?.childSessions?.length
+      : undefined) ?? 0;
   const projection = buildTaskReadbackProjection({
     ...params.task,
     activeProgress,
@@ -949,7 +1056,7 @@ function toInsightTask(params: {
     activeProgress,
     finality: projection.finality,
     activeWork: projection.activeWork,
-    childRunCount: childReadback?.childRunCount ?? 0,
+    childRunCount,
     pointer: `openclaw tasks show ${params.task.taskId} --json`,
   };
 }
@@ -1420,17 +1527,28 @@ export function buildRunInsightsReport(
       childSessionUsage: buildOptions.childSessionUsage,
     }),
   );
-  const childRuns = matchingTaskRecords.flatMap((task) => {
-    const readback = buildTaskChildRunReadback(task, now, tasksForReadback);
-    return (readback?.childRuns ?? []).map((child) =>
-      toInsightChildRun(
-        task,
-        child,
-        buildOptions.childSessionUsage?.get(child.childSessionKey) ?? null,
+  const sessionLineage = resolveSessionLineage({
+    summary,
+    rootSessionKeys: sessions.map((session) => session.key),
+    gatewayRows: taskGatewayRows,
+  });
+  const childRuns = sessionLineage.records.map((record) =>
+    toInsightChildRun(record, buildOptions.childSessionUsage?.get(record.childSessionKey) ?? null),
+  );
+  const sessionKeys = new Set(sessions.map((session) => session.key));
+  const lineageSessions = Array.from(sessionLineage.gatewayRows.values())
+    .filter((row) => !sessionKeys.has(row.key))
+    .map((row) =>
+      toInsightSession(
+        toSessionStatusFromGatewayRow(row, inferAgentIdFromSessionKey(row.key) ?? undefined),
+        row,
+        null,
       ),
     );
-  });
-  const skillReads = buildSkillReads(sessions, buildOptions.diagnosticSkillEvents ?? []);
+  const skillReads = buildSkillReads(
+    [...sessions, ...lineageSessions],
+    buildOptions.diagnosticSkillEvents ?? [],
+  );
   const deployEvents = options.includeBackground ? readRecentDeployEvents(options.limit) : [];
   const selected = selectReportReadback({ sessions, tasks, options });
   const costs = buildCostSummary({ sessions, deployEvents });

@@ -298,7 +298,7 @@ async function resetNoRealConversationTokenSnapshot(params: {
     });
   } catch (err) {
     log.warn(
-      `[context-overflow-precheck] failed to reset stale context snapshot for ` +
+      `[context-pressure-advisory] failed to reset stale context snapshot for ` +
         `${params.sessionKey}: ${String(err)}`,
     );
   }
@@ -1994,7 +1994,7 @@ export async function runEmbeddedAgent(
           if (preflightRecovery?.handled) {
             const retryingFromTranscript = preflightRecovery.source === "mid-turn";
             log.info(
-              `[context-overflow-precheck] early recovery route=${preflightRecovery.route} ` +
+              `[context-pressure-advisory] early recovery route=${preflightRecovery.route} ` +
                 `completed for ${provider}/${modelId}; ` +
                 (retryingFromTranscript ? "retrying from current transcript" : "retrying prompt"),
             );
@@ -2350,7 +2350,7 @@ export async function runEmbeddedAgent(
                   agentId: sessionAgentId,
                 });
                 log.info(
-                  `[context-overflow-precheck] stale token state had no real conversation messages for ` +
+                  `[context-pressure-advisory] stale token state had no real conversation messages for ` +
                     `${provider}/${modelId}; resetting the context snapshot and retrying prompt`,
                 );
                 if (preflightRecovery.source === "mid-turn") {
@@ -2383,12 +2383,12 @@ export async function runEmbeddedAgent(
                   });
                   if (truncResult.truncated) {
                     log.info(
-                      `[context-overflow-precheck] post-compaction tool-result truncation succeeded for ` +
+                      `[context-pressure-advisory] post-compaction tool-result truncation succeeded for ` +
                         `${provider}/${modelId}; truncated ${truncResult.truncatedCount} tool result(s)`,
                     );
                   } else {
                     log.warn(
-                      `[context-overflow-precheck] post-compaction tool-result truncation did not help for ` +
+                      `[context-pressure-advisory] post-compaction tool-result truncation did not help for ` +
                         `${provider}/${modelId}: ${truncResult.reason ?? "unknown"}`,
                     );
                   }
