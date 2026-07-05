@@ -142,7 +142,7 @@ export type TaskDeliveryStatus =
 
 /** Bounded native progress evidence projected onto readback rows. */
 export type ReadbackProgressProjection = {
-  source: "trajectory" | "task-run-event" | "task-registry";
+  source: "trajectory" | "task-run-event";
   ref: string;
   currentPhase?: string | null;
   activeLabel?: string | null;

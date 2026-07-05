@@ -2645,7 +2645,11 @@ export async function autoMigrateLegacyTaskStateSidecars(params: {
   const warnings = [...result.warnings, ...execApprovals.warnings];
   const logger = params.log ?? createSubsystemLogger("state-migrations");
   if (changes.length > 0) {
-    logger.info(`Auto-migrated legacy state:\n${changes.map((entry) => `- ${entry}`).join("\n")}`);
+    if ("debug" in logger && typeof logger.debug === "function") {
+      logger.debug(
+        `Auto-migrated legacy state:\n${changes.map((entry) => `- ${entry}`).join("\n")}`,
+      );
+    }
   }
   if (warnings.length > 0) {
     logger.warn(
@@ -3773,9 +3777,11 @@ export async function autoMigrateLegacyState(params: {
   const logMigrationResults = (changes: string[], warnings: string[]) => {
     const logger = params.log ?? createSubsystemLogger("state-migrations");
     if (changes.length > 0) {
-      logger.info(
-        `Auto-migrated legacy state:\n${changes.map((entry) => `- ${entry}`).join("\n")}`,
-      );
+      if ("debug" in logger && typeof logger.debug === "function") {
+        logger.debug(
+          `Auto-migrated legacy state:\n${changes.map((entry) => `- ${entry}`).join("\n")}`,
+        );
+      }
     }
     if (warnings.length > 0) {
       logger.warn(

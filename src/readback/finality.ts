@@ -31,14 +31,7 @@ export type ReadbackActiveWork = {
   childSessionKey: string | null;
   activeTool: string | null;
   waitReason: string | null;
-  source:
-    | "trajectory"
-    | "task-run-event"
-    | "subagent-registry"
-    | "task-registry"
-    | "session-store"
-    | "none"
-    | "unknown";
+  source: "trajectory" | "task-run-event" | "session-store" | "none" | "unknown";
   provenance: ReadbackProgressProjection | SessionReadbackProvenance | null;
 };
 
@@ -220,12 +213,12 @@ export function buildTaskReadbackProjection(task: TaskReadbackLike): ReadbackPro
       }),
     },
     activeWork: {
-      phase: activeProgress?.currentPhase ?? task.status ?? "unknown",
+      phase: activeProgress?.currentPhase ?? null,
       childRole: activeProgress?.childRole ?? null,
-      childSessionKey: pointerSessionKey(activeProgress) ?? task.childSessionKey ?? null,
+      childSessionKey: pointerSessionKey(activeProgress),
       activeTool: activeProgress?.toolName ?? null,
       waitReason: progressWaitReason(activeProgress),
-      source: activeProgress ? activeWorkSource(activeProgress) : "task-registry",
+      source: activeProgress ? activeWorkSource(activeProgress) : "none",
       provenance: activeProgress,
     },
   };

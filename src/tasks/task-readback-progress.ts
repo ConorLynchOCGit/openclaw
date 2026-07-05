@@ -379,6 +379,39 @@ function resolveTaskRunEventProgressProjection(
   const projectedNote = truncateTaskProgressNote(
     [note, recoveryNote].filter(Boolean).join(" ") || undefined,
   );
+  const hasDirectEvidence = Boolean(
+    toolName ||
+    command ||
+    exitCode !== undefined ||
+    validationClass ||
+    outputSummary ||
+    repairAction ||
+    recoveryKind ||
+    recoveryAction ||
+    recoveryReason ||
+    recoveryAttempts !== undefined ||
+    recoveryMaxAttempts !== undefined ||
+    compactionCount !== undefined ||
+    compactionTokensAfter !== undefined ||
+    toolResultTruncationAttempted !== undefined,
+  );
+  const hasTerminalEvidence =
+    latestEvent.kind !== "progress" || task.status === "failed" || task.status === "timed_out";
+  if (task.status === "running" || task.status === "queued") {
+    const phase = childPhase ?? (latestEvent.kind === "progress" ? task.status : latestEvent.kind);
+    if (!hasDirectEvidence && phase === "child_spawned") {
+      return undefined;
+    }
+    if (
+      !hasDirectEvidence &&
+      !childRole &&
+      !childAgentPath &&
+      !spawnReason &&
+      !hasTerminalEvidence
+    ) {
+      return undefined;
+    }
+  }
   return {
     source: "task-run-event",
     ref: `task-event:${task.taskId}:${latestEvent.at}:${latestEvent.kind}`,
@@ -592,10 +625,6 @@ function resolveFallbackTaskProgressProjection(
   context?: TaskReadbackProgressProjectionContext,
 ): ReadbackProgressProjection | undefined {
   const now = context?.now ?? Date.now();
-  const taskRunEventProgress = resolveTaskRunEventProgressProjection(task, now);
-  if (isCodexNativeSubagentTask(task) && taskRunEventProgress) {
-    return taskRunEventProgress;
-  }
   const childSessionProgress = resolveChildSessionTrajectoryProgressProjection(task, context);
   if (childSessionProgress) {
     return childSessionProgress;
@@ -609,42 +638,7 @@ function resolveFallbackTaskProgressProjection(
     return requesterSessionProgress;
   }
 
-  return taskRunEventProgress;
-}
-
-function resolveTaskRegistryProgressProjection(
-  task: TaskRecord,
-  context?: TaskReadbackProgressProjectionContext,
-): ReadbackProgressProjection | undefined {
-  if (task.status !== "running" && task.status !== "queued") {
-    return undefined;
-  }
-  const now = context?.now ?? Date.now();
-  const note =
-    truncateTaskProgressNote(task.progressSummary) ??
-    truncateTaskProgressNote(task.terminalSummary) ??
-    "Native task row is active; no richer task receipt or trajectory progress is available yet.";
-  return {
-    source: "task-registry",
-    ref: `task:${task.taskId}`,
-    currentPhase: task.status,
-    activeLabel:
-      truncateTaskProgressNote(task.label) ??
-      normalizeOptionalString(task.agentId) ??
-      normalizeOptionalString(task.taskKind) ??
-      normalizeOptionalString(task.runtime),
-    observedAt: formatTaskProgressObservedAt(task.lastEventAt, task.startedAt, task.createdAt),
-    elapsedMs: resolveElapsedMs(now, task.startedAt, task.createdAt),
-    sourceEventType: "task.registry",
-    note,
-    pointer: {
-      kind: "task",
-      ref: task.taskId,
-      label: "native task registry row",
-    },
-    derivedBy: "resolveTaskReadbackProgressProjection",
-    bounded: true,
-  };
+  return resolveTaskRunEventProgressProjection(task, now);
 }
 
 export function resolveTaskReadbackProgressProjection(
@@ -652,10 +646,7 @@ export function resolveTaskReadbackProgressProjection(
   context?: TaskReadbackProgressProjectionContext,
 ): ReadbackProgressProjection | undefined {
   if (task.status === "running" || task.status === "queued") {
-    return (
-      resolveFallbackTaskProgressProjection(task, context) ??
-      resolveTaskRegistryProgressProjection(task, context)
-    );
+    return resolveFallbackTaskProgressProjection(task, context);
   }
   const taskRunEventProgress = resolveTaskRunEventProgressProjection(
     task,

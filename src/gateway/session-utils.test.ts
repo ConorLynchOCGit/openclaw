@@ -566,7 +566,7 @@ describe("gateway session utils", () => {
     expect(row.thinkingLevels?.map((level) => level.id)).toContain("xhigh");
   });
 
-  test("session rows expose bounded active-progress diagnostics when the trajectory tail has no useful event", () => {
+  test("session rows do not expose active-progress diagnostics when the trajectory tail has no useful event", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "session-utils-active-progress-"));
     try {
       const sessionId = "session-active-progress-empty-tail";
@@ -601,13 +601,8 @@ describe("gateway session utils", () => {
         },
       });
 
-      expect(row.activeProgress).toMatchObject({
-        source: "trajectory",
-        ref: `session:${sessionId}`,
-        derivedBy: "readLatestTrajectoryProgressProjection",
-        bounded: true,
-        note: "trajectory file found but no valid recent event in bounded tail",
-      });
+      expect(row.activeProgress).toBeNull();
+      expect(row.readbackProvenance?.activeProgress).toBeUndefined();
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -700,7 +695,7 @@ describe("gateway session utils", () => {
     }
   });
 
-  test("session rows project related task wait-chain progress when trajectory has no useful event", () => {
+  test("session rows do not project related task wait-chain progress when trajectory has no useful event", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "session-utils-task-progress-"));
     try {
       const now = Date.UTC(2026, 6, 1, 0, 2, 0);
@@ -756,19 +751,8 @@ describe("gateway session utils", () => {
         now,
       });
 
-      expect(row.activeProgress).toMatchObject({
-        source: "task-run-event",
-        currentPhase: "running",
-        activeLabel: "Planning",
-        note: "Planning child is waiting on codebase-researcher source evidence.",
-        pointer: expect.objectContaining({
-          kind: "task",
-          label: "task run receipt",
-        }),
-        derivedBy: "resolveTaskReadbackProgressProjection",
-        bounded: true,
-      });
-      expect(row.readbackProvenance?.activeProgress).toBe(row.activeProgress);
+      expect(row.activeProgress).toBeNull();
+      expect(row.readbackProvenance?.activeProgress).toBeUndefined();
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

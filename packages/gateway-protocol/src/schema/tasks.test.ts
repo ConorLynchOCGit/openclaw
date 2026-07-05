@@ -103,7 +103,7 @@ describe("TaskSummarySchema", () => {
           bounded: true,
         },
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("rejects removed subagent registry and child-run task summary fields", () => {

@@ -47,11 +47,7 @@ const TaskReadbackProgressPointerSchema = Type.Object(
 
 const TaskReadbackProgressProjectionSchema = Type.Object(
   {
-    source: Type.Union([
-      Type.Literal("trajectory"),
-      Type.Literal("task-run-event"),
-      Type.Literal("task-registry"),
-    ]),
+    source: Type.Union([Type.Literal("trajectory"), Type.Literal("task-run-event")]),
     ref: NonEmptyString,
     currentPhase: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     activeLabel: Type.Optional(Type.Union([Type.String(), Type.Null()])),

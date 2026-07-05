@@ -337,7 +337,7 @@ describe("buildRunInsightsReport", () => {
     });
   });
 
-  it("uses active task evidence when the scoped parent session has no fresh active work", () => {
+  it("does not let task evidence override scoped session active work without an explicit task scope", () => {
     const summary = buildSummary();
     summary.sessions.recent = [
       {
@@ -392,10 +392,29 @@ describe("buildRunInsightsReport", () => {
     );
 
     expect(report.activeWork).toMatchObject({
-      phase: "running",
-      activeTool: "read",
-      source: "task-run-event",
+      phase: null,
+      activeTool: null,
+      source: "session-store",
     });
+  });
+
+  it("matches scoped session keys case-insensitively", () => {
+    const report = buildRunInsightsReport(
+      buildSummary(),
+      {
+        session: "agent:planning:MAIN",
+        limit: 10,
+        includeBackground: false,
+      },
+      {
+        gatewaySessionRows: new Map([["agent:planning:main", buildGatewayRow()]]),
+        taskRecords: [],
+      },
+    );
+
+    expect(report.sessions).toHaveLength(1);
+    expect(report.finality.finalAssistantTextPresent).toBe(true);
+    expect(report.sessions[0]?.key).toBe("agent:planning:main");
   });
 
   it("keeps background deploy receipts out of scoped readback unless requested", () => {
@@ -460,6 +479,45 @@ describe("buildRunInsightsReport", () => {
     expect(report).not.toHaveProperty("diagnosticSummary");
     expect(report).not.toHaveProperty("performanceProfile");
     expect(report).not.toHaveProperty("attention");
+  });
+
+  it("recovers child runs from native spawnedBy session-store lineage", () => {
+    const storePath = path.join(stateDir!, "sessions.json");
+    fs.writeFileSync(
+      storePath,
+      JSON.stringify({
+        "agent:planning:main": {
+          sessionId: "sess-planning",
+          status: "running",
+          updatedAt: 1_000,
+        },
+        "agent:codebase-researcher:child-from-store": {
+          sessionId: "sess-codebase-store-child",
+          status: "running",
+          spawnedBy: "agent:planning:main",
+          updatedAt: 2_000,
+          startedAt: 1_500,
+        },
+      }),
+    );
+    const summary = buildSummary();
+    summary.sessions.paths = [storePath];
+    const report = buildRunInsightsReport(
+      summary,
+      { session: "agent:planning:main", limit: 10, includeBackground: false },
+      {
+        gatewaySessionRows: new Map([["agent:planning:main", buildGatewayRow()]]),
+        taskRecords: [],
+      },
+    );
+
+    expect(report.childRuns).toHaveLength(1);
+    expect(report.childRuns[0]).toMatchObject({
+      parentSessionKey: "agent:planning:main",
+      childSessionKey: "agent:codebase-researcher:child-from-store",
+      agentId: "codebase-researcher",
+      evidenceSource: "session_lineage",
+    });
   });
 
   it("reports visible skills separately from native skill.used evidence", () => {

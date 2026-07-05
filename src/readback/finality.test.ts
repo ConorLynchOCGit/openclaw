@@ -48,4 +48,24 @@ describe("readback finality", () => {
       label: "Compatibility status demoted because transcript final assistant evidence exists.",
     });
   });
+
+  it("does not mark a task active from task-row status alone", () => {
+    const projection = buildTaskReadbackProjection({
+      taskId: "task-running-without-evidence",
+      status: "running",
+      agentId: "planning",
+      requesterSessionKey: "agent:main:proof",
+      childSessionKey: "agent:planning:subagent:child",
+      activeProgress: null,
+      resultSession: null,
+    });
+
+    expect(projection.activeWork).toMatchObject({
+      phase: null,
+      childSessionKey: null,
+      activeTool: null,
+      source: "none",
+      provenance: null,
+    });
+  });
 });

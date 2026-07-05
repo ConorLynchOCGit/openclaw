@@ -2,7 +2,7 @@ import { isRecord } from "./safe-record.js";
 
 /** Bounded progress evidence projected onto readback rows. */
 export type ReadbackProgressProjection = {
-  source: "trajectory" | "task-run-event" | "task-registry";
+  source: "trajectory" | "task-run-event";
   ref: string;
   currentPhase?: string | null;
   activeLabel?: string | null;
@@ -41,9 +41,7 @@ export type ReadbackProgressProjection = {
 };
 
 function normalizeSource(value: unknown): ReadbackProgressProjection["source"] | undefined {
-  return value === "trajectory" || value === "task-run-event" || value === "task-registry"
-    ? value
-    : undefined;
+  return value === "trajectory" || value === "task-run-event" ? value : undefined;
 }
 
 function normalizePointer(value: unknown): ReadbackProgressProjection["pointer"] | undefined {

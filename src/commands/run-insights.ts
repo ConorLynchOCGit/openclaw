@@ -147,7 +147,6 @@ export type RunInsightTask = {
   activeProgress: ReadbackProgressProjection | null;
   finality: ReadbackFinality;
   activeWork: ReadbackActiveWork;
-  childRunCount: number;
   pointer: string;
 };
 
@@ -451,11 +450,49 @@ function sessionReferenceMatches(
   if (!canonicalValue) {
     return false;
   }
+  const comparableValue = canonicalValue.toLowerCase();
+  const comparableFilter = canonicalFilter.toLowerCase();
   return (
-    canonicalValue === canonicalFilter ||
-    canonicalValue.endsWith(`:${canonicalFilter}`) ||
-    canonicalValue.includes(`:${canonicalFilter}:`)
+    comparableValue === comparableFilter ||
+    comparableValue.endsWith(`:${comparableFilter}`) ||
+    comparableValue.includes(`:${comparableFilter}:`)
   );
+}
+
+function canonicalSessionMapKey(value: string | null | undefined): string | null {
+  const normalized = normalizeOptionalString(value);
+  return normalized ? normalized.toLowerCase() : null;
+}
+
+function setGatewayRow(
+  rows: Map<string, GatewaySessionRow>,
+  key: string,
+  row: GatewaySessionRow,
+): void {
+  rows.set(key, row);
+  const canonicalKey = canonicalSessionMapKey(key);
+  if (canonicalKey) {
+    rows.set(canonicalKey, row);
+  }
+  const canonicalRowKey = canonicalSessionMapKey(row.key);
+  if (canonicalRowKey) {
+    rows.set(canonicalRowKey, row);
+  }
+  const canonicalSessionId = canonicalSessionMapKey(row.sessionId);
+  if (canonicalSessionId) {
+    rows.set(canonicalSessionId, row);
+  }
+}
+
+function getGatewayRow(
+  rows: Map<string, GatewaySessionRow>,
+  key: string | null | undefined,
+): GatewaySessionRow | undefined {
+  const normalized = normalizeOptionalString(key);
+  if (!normalized) {
+    return undefined;
+  }
+  return rows.get(normalized) ?? rows.get(normalized.toLowerCase());
 }
 
 function gatewaySessionKeyMatches(row: GatewaySessionRow, session: string | undefined): boolean {
@@ -567,7 +604,7 @@ function resolveGatewaySessionRowsForInsights(params: {
           gatewaySessionKeyMatches(candidate, params.options.session),
       );
       if (gatewayRow) {
-        resolvedRows.set(row.key, gatewayRow);
+        setGatewayRow(resolvedRows, row.key, gatewayRow);
       }
       break;
     }
@@ -606,7 +643,7 @@ function resolveExactGatewaySessionFallbackForInsights(params: {
         continue;
       }
       seen.add(gatewayRow.key);
-      gatewayRows.set(gatewayRow.key, gatewayRow);
+      setGatewayRow(gatewayRows, gatewayRow.key, gatewayRow);
       rows.push(toSessionStatusFromGatewayRow(gatewayRow, params.options.agent));
       if (rows.length >= params.options.limit) {
         return { rows, gatewayRows };
@@ -628,7 +665,7 @@ function resolveGatewayRowsForSessionKeys(params: {
   const cfg = getRuntimeConfig();
   const rows = new Map<string, GatewaySessionRow>();
   for (const storePath of uniqueValues(params.summary.sessions.paths)) {
-    const missing = keys.filter((key) => !rows.has(key));
+    const missing = keys.filter((key) => !getGatewayRow(rows, key));
     if (missing.length === 0) {
       break;
     }
@@ -649,8 +686,43 @@ function resolveGatewayRowsForSessionKeys(params: {
         gatewaySessionKeyMatches(candidate, sessionKey),
       );
       if (gatewayRow) {
-        rows.set(sessionKey, gatewayRow);
+        setGatewayRow(rows, sessionKey, gatewayRow);
       }
+    }
+  }
+  return rows;
+}
+
+function resolveGatewayChildRowsForSpawnedBy(params: {
+  summary: StatusSummary;
+  parentSessionKey: string;
+}): GatewaySessionRow[] {
+  const parentSessionKey = normalizeOptionalString(params.parentSessionKey);
+  if (!parentSessionKey) {
+    return [];
+  }
+  const cfg = getRuntimeConfig();
+  const rows: GatewaySessionRow[] = [];
+  const seen = new Set<string>();
+  for (const storePath of uniqueValues(params.summary.sessions.paths)) {
+    const store = readSessionStoreReadOnly(storePath);
+    const result = listSessionsFromStore({
+      cfg,
+      storePath,
+      store: compactSessionStore(store),
+      opts: {
+        includeLastMessage: true,
+        limit: MAX_LIMIT,
+        spawnedBy: parentSessionKey,
+      },
+    });
+    for (const row of result.sessions) {
+      const key = normalizeOptionalString(row.key);
+      if (!key || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      rows.push(row);
     }
   }
   return rows;
@@ -725,7 +797,7 @@ function resolveTaskResultSessionEvidence(
 ): Parameters<typeof buildTaskReadbackProjection>[0]["resultSession"] {
   const candidateKeys = uniqueValues([task.childSessionKey, task.requesterSessionKey]);
   for (const key of candidateKeys) {
-    const row = gatewayRows.get(key);
+    const row = getGatewayRow(gatewayRows, key);
     if (!row?.finalAssistantText) {
       continue;
     }
@@ -772,26 +844,36 @@ function resolveSessionLineage(params: {
     }
     processedParents.add(parentSessionKey);
 
-    let parentRow = availableRows.get(parentSessionKey);
+    let parentRow = getGatewayRow(availableRows, parentSessionKey);
     if (!parentRow) {
       const resolvedParent = resolveGatewayRowsForSessionKeys({
         summary: params.summary,
         sessionKeys: [parentSessionKey],
       }).get(parentSessionKey);
       if (resolvedParent) {
-        availableRows.set(parentSessionKey, resolvedParent);
+        setGatewayRow(availableRows, parentSessionKey, resolvedParent);
         parentRow = resolvedParent;
       }
     }
 
-    const childSessionKeys = uniqueValues(parentRow?.childSessions ?? []);
-    const missingChildKeys = childSessionKeys.filter((key) => !availableRows.has(key));
+    const spawnedByChildRows = resolveGatewayChildRowsForSpawnedBy({
+      summary: params.summary,
+      parentSessionKey,
+    });
+    for (const row of spawnedByChildRows) {
+      setGatewayRow(availableRows, row.key, row);
+    }
+    const childSessionKeys = uniqueValues([
+      ...(parentRow?.childSessions ?? []),
+      ...spawnedByChildRows.map((row) => row.key),
+    ]);
+    const missingChildKeys = childSessionKeys.filter((key) => !getGatewayRow(availableRows, key));
     if (missingChildKeys.length > 0) {
       for (const [key, row] of resolveGatewayRowsForSessionKeys({
         summary: params.summary,
         sessionKeys: missingChildKeys,
       })) {
-        availableRows.set(key, row);
+        setGatewayRow(availableRows, key, row);
       }
     }
 
@@ -801,7 +883,7 @@ function resolveSessionLineage(params: {
         continue;
       }
       seenEdges.add(edgeKey);
-      const childRow = availableRows.get(childSessionKey) ?? null;
+      const childRow = getGatewayRow(availableRows, childSessionKey) ?? null;
       records.push({
         parentSessionKey,
         childSessionKey,
@@ -1004,17 +1086,10 @@ function toInsightTask(params: {
   task: TaskRecord;
   now: number;
   progressContext: TaskReadbackProgressProjectionContext;
-  tasksForReadback: TaskRecord[];
   gatewayRows: Map<string, GatewaySessionRow>;
-  childSessionUsage?: Map<string, RunInsightSessionUsage | null>;
 }): RunInsightTask {
   const activeProgress =
     resolveTaskReadbackProgressProjection(params.task, params.progressContext) ?? null;
-  const sessionLineageParentKey = params.task.childSessionKey ?? params.task.ownerKey;
-  const childRunCount =
-    (sessionLineageParentKey
-      ? params.gatewayRows.get(sessionLineageParentKey)?.childSessions?.length
-      : undefined) ?? 0;
   const projection = buildTaskReadbackProjection({
     ...params.task,
     activeProgress,
@@ -1056,7 +1131,6 @@ function toInsightTask(params: {
     activeProgress,
     finality: projection.finality,
     activeWork: projection.activeWork,
-    childRunCount,
     pointer: `openclaw tasks show ${params.task.taskId} --json`,
   };
 }
@@ -1448,16 +1522,18 @@ function selectReportReadback(params: {
   const session = selectReportSession(params.sessions, params.options);
   const task = selectReportTask(params.tasks);
   if (session) {
-    const taskHasActiveEvidence =
+    const taskHasExplicitScope =
+      params.options.task !== undefined &&
       task !== null &&
-      (task.status === "running" ||
-        task.status === "queued" ||
-        (task.activeWork.source !== "none" && task.activeWork.source !== "unknown"));
+      task.activeWork.source !== "none" &&
+      task.activeWork.source !== "unknown";
     return {
       finality: session.finality.finalAssistantTextPresent
         ? session.finality
-        : (task?.finality ?? session.finality),
-      activeWork: taskHasActiveEvidence ? task.activeWork : session.activeWork,
+        : taskHasExplicitScope
+          ? task.finality
+          : session.finality,
+      activeWork: taskHasExplicitScope ? task.activeWork : session.activeWork,
     };
   }
   if (task) {
@@ -1498,10 +1574,11 @@ export function buildRunInsightsReport(
     rows = fallback.rows;
     gatewayRows = new Map([...gatewayRows, ...fallback.gatewayRows]);
   }
-  const sessions = rows.map((row) => toInsightSession(row, gatewayRows.get(row.key), null));
+  const sessions = rows.map((row) =>
+    toInsightSession(row, getGatewayRow(gatewayRows, row.key), null),
+  );
   const progressContext = createTaskReadbackProgressProjectionContext({ now });
   const taskRecords = buildOptions.taskRecords ?? listTaskRecords();
-  const tasksForReadback = [...taskRecords];
   const matchingTaskRecords = taskRecords
     .filter((task) => taskMatchesOptions(task, options, now))
     .sort(
@@ -1522,9 +1599,7 @@ export function buildRunInsightsReport(
       task,
       now,
       progressContext,
-      tasksForReadback,
       gatewayRows: taskGatewayRows,
-      childSessionUsage: buildOptions.childSessionUsage,
     }),
   );
   const sessionLineage = resolveSessionLineage({
@@ -1536,7 +1611,12 @@ export function buildRunInsightsReport(
     toInsightChildRun(record, buildOptions.childSessionUsage?.get(record.childSessionKey) ?? null),
   );
   const sessionKeys = new Set(sessions.map((session) => session.key));
-  const lineageSessions = Array.from(sessionLineage.gatewayRows.values())
+  const lineageRows = uniqueValues(
+    Array.from(sessionLineage.gatewayRows.values()).map((row) => row.key),
+  )
+    .map((key) => getGatewayRow(sessionLineage.gatewayRows, key))
+    .filter((row): row is GatewaySessionRow => Boolean(row));
+  const lineageSessions = lineageRows
     .filter((row) => !sessionKeys.has(row.key))
     .map((row) =>
       toInsightSession(
@@ -1614,7 +1694,7 @@ async function loadChildSessionUsage(
   });
   const entries = await Promise.all(
     uniqueValues(childRuns.map((child) => child.childSessionKey)).map(async (sessionKey) => {
-      const gatewayRow = gatewayRows.get(sessionKey);
+      const gatewayRow = getGatewayRow(gatewayRows, sessionKey);
       const usage = gatewayRow?.sessionId
         ? await loadCachedSessionUsage({
             sessionId: gatewayRow.sessionId,
@@ -1693,8 +1773,7 @@ function formatTasks(tasks: RunInsightTask[]): string[] {
   }
   return tasks.map((task) => {
     const tool = task.activeWork.activeTool ? ` tool=${task.activeWork.activeTool}` : "";
-    const child = task.childRunCount > 0 ? ` children=${task.childRunCount}` : "";
-    return `  ${task.taskId} agent=${task.agentId ?? "unknown"} status=${task.status} delivery=${task.deliveryStatus} elapsed=${task.elapsed}${tool}${child}`;
+    return `  ${task.taskId} agent=${task.agentId ?? "unknown"} status=${task.status} delivery=${task.deliveryStatus} elapsed=${task.elapsed}${tool}`;
   });
 }
 
