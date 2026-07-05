@@ -4452,6 +4452,19 @@ export const chatHandlers: GatewayRequestHandlers = {
                       returnedAgentErrorMessage ?? "agent returned an error payload",
                     )
                   : undefined;
+                const finalAssistantText =
+                  buildTranscriptReplyText(
+                    deliveredReplies
+                      .filter((entryLocal) => entryLocal.kind === "final")
+                      .map((entryLocal) => entryLocal.payload),
+                  ).trim() || undefined;
+                const finalAssistantTextDigest = finalAssistantText
+                  ? createHash("sha256").update(finalAssistantText).digest("hex")
+                  : undefined;
+                const finalAssistantTextRef = {
+                  kind: "session" as const,
+                  ref: `openclaw sessions show ${sessionKey}${agentId ? ` --agent ${agentId}` : ""}`,
+                };
                 const finalPayload = shouldBroadcastAgentError
                   ? {
                       runId: clientRunId,
@@ -4459,12 +4472,30 @@ export const chatHandlers: GatewayRequestHandlers = {
                       summary: returnedAgentErrorMessage ?? "agent returned an error payload",
                       sessionKey,
                       ...(agentId ? { agentId } : {}),
+                      finalAssistantTextPresent: Boolean(finalAssistantText),
+                      ...(finalAssistantText ? { finalAssistantText } : {}),
+                      ...(finalAssistantText
+                        ? {
+                            finalAssistantTextChars: finalAssistantText.length,
+                            finalAssistantTextDigest,
+                            finalAssistantTextRef,
+                          }
+                        : {}),
                     }
                   : {
                       runId: clientRunId,
                       status: "ok" as const,
                       sessionKey,
                       ...(agentId ? { agentId } : {}),
+                      finalAssistantTextPresent: Boolean(finalAssistantText),
+                      ...(finalAssistantText ? { finalAssistantText } : {}),
+                      ...(finalAssistantText
+                        ? {
+                            finalAssistantTextChars: finalAssistantText.length,
+                            finalAssistantTextDigest,
+                            finalAssistantTextRef,
+                          }
+                        : {}),
                     };
                 setGatewayDedupeEntry({
                   dedupe: context.dedupe,

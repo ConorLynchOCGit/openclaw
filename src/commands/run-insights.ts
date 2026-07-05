@@ -1,6 +1,7 @@
 // Operator-facing run performance readback derived from native status summaries.
 import fs from "node:fs";
 import path from "node:path";
+import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { theme } from "../../packages/terminal-core/src/theme.js";
 import { computeEvidenceContentDigest } from "../agents/evidence-handoff.js";
 import { getRuntimeConfig } from "../config/config.js";
@@ -18,6 +19,18 @@ import {
   type DiagnosticStabilityEventRecord,
 } from "../logging/diagnostic-stability.js";
 import { buildAdvisoryReadback, type AdvisoryReadback } from "../readback/advisory.js";
+import {
+  buildChildRunObservation,
+  buildHandoffObservation,
+  buildSkillUseObservation,
+  withAdditionalObservations,
+} from "../readback/evidence-adapter.js";
+import type {
+  BackgroundHealthObservation,
+  EvidenceObservation,
+  ReadbackEvidenceView,
+} from "../readback/evidence-schema.js";
+import { selectScopedRunInsights } from "../readback/evidence-selectors.js";
 import {
   buildEmptyReadbackProjection,
   buildSessionReadbackProjection,
@@ -70,6 +83,7 @@ export type RunInsightsOptions = {
   task?: string;
   active?: string | number;
   limit?: string | number;
+  includeBackground?: boolean;
 };
 
 export type RunInsightsRequest = Omit<RunInsightsOptions, "json">;
@@ -80,6 +94,7 @@ export type ResolvedRunInsightsOptions = {
   task?: string;
   activeMinutes?: number;
   limit: number;
+  includeBackground: boolean;
 };
 
 export type RunInsightsOptionsResult =
@@ -153,6 +168,7 @@ export type RunInsightSession = {
   readbackSubject: ReadbackSubject;
   finality: ReadbackFinality;
   activeWork: ReadbackActiveWork;
+  readbackEvidenceView: ReadbackEvidenceView;
   hasFinalAssistantText: boolean;
   activeProgress: ReadbackProgressProjection | null;
   readbackProvenance: GatewaySessionRow["readbackProvenance"] | null;
@@ -214,6 +230,10 @@ export type RunInsightTask = {
     summary: string | null;
   } | null;
   activeProgress: ReadbackProgressProjection | null;
+  readbackSubject: ReadbackSubject;
+  finality: ReadbackFinality;
+  activeWork: ReadbackActiveWork;
+  readbackEvidenceView: ReadbackEvidenceView;
   progressSummary: string | null;
   attention: {
     waitClass:
@@ -276,12 +296,15 @@ export type RunInsightsReport = {
     task: string | null;
     activeMinutes: number | null;
     limit: number;
+    includeBackground: boolean;
   };
   sessionKey: string | null;
   status: string | null;
   readbackSubject: ReadbackSubject;
   finality: ReadbackFinality;
   activeWork: ReadbackActiveWork;
+  readbackEvidenceView: ReadbackEvidenceView;
+  scopedEvidenceObservations: EvidenceObservation[];
   finalAssistantText: string | null;
   deployEvidenceScope: {
     scope: DeployEvidenceScope;
@@ -376,11 +399,7 @@ export type RunInsightsReport = {
       contentChars: number | null;
       finalAssistantTextDigest: string | null;
       finalAssistantTextChars: number | null;
-      fidelity:
-        | "verbatim_match"
-        | "visible_answer_shorter_than_domain_final"
-        | "digest_mismatch"
-        | "not_observed";
+      fidelity: "verbatim" | "wrapped_verbatim" | "linked" | "unknown";
       pointer: string;
       guidance: string;
     }>;
@@ -548,6 +567,7 @@ export function resolveRunInsightsOptions(options: RunInsightsRequest): RunInsig
       ...(parsedTask.value ? { task: parsedTask.value } : {}),
       ...(parsedActive.value !== undefined ? { activeMinutes: parsedActive.value } : {}),
       limit: clampLimit(parsedLimit.value),
+      includeBackground: options.includeBackground === true,
     },
   };
 }
@@ -1030,6 +1050,7 @@ function toInsightSession(row: SessionStatus, gatewayRow?: GatewaySessionRow): R
     readbackSubject: readback.readbackSubject,
     finality: readback.finality,
     activeWork: readback.activeWork,
+    readbackEvidenceView: readback.readbackEvidenceView,
     hasFinalAssistantText: typeof finalAssistantText === "string" && finalAssistantText.length > 0,
     activeProgress: gatewayRow?.activeProgress ?? null,
     readbackProvenance: gatewayRow?.readbackProvenance ?? null,
@@ -1134,7 +1155,7 @@ function resolveGatewaySessionRowByKey(params: {
       store: compactStore,
       opts: {
         agentId,
-        includeLastMessage: false,
+        includeLastMessage: true,
         limit: 5,
         search: params.sessionKey,
       },
@@ -1149,6 +1170,62 @@ function resolveGatewaySessionRowByKey(params: {
     }
   }
   return null;
+}
+
+function taskResultSessionCandidateKeys(task: TaskRecord): string[] {
+  return uniqueStrings(
+    [task.childSessionKey, task.ownerKey, task.requesterSessionKey].filter(
+      (value): value is string => Boolean(normalizeOptionalString(value)),
+    ),
+  );
+}
+
+function resolveTaskResultSessionEvidence(
+  task: TaskRecord,
+  resolveSessionRow?: (sessionKey: string, agentId?: string | null) => GatewaySessionRow | null,
+) {
+  if (!resolveSessionRow) {
+    return null;
+  }
+  for (const sessionKey of taskResultSessionCandidateKeys(task)) {
+    const row = resolveSessionRow(
+      sessionKey,
+      task.agentId ?? resolveAgentIdFromSessionKey(sessionKey),
+    );
+    if (!row?.finalAssistantText) {
+      continue;
+    }
+    return {
+      sessionKey: row.key,
+      agentId: task.agentId ?? resolveAgentIdFromSessionKey(row.key),
+      finalAssistantText: row.finalAssistantText,
+      readbackProvenance: row.readbackProvenance ?? null,
+    };
+  }
+  return null;
+}
+
+function createTaskSessionRowResolver(
+  summary: StatusSummary,
+  seedRows: ReadonlyMap<string, GatewaySessionRow>,
+) {
+  const cache = new Map<string, GatewaySessionRow | null>(seedRows);
+  return (sessionKey: string, agentId?: string | null): GatewaySessionRow | null => {
+    const normalized = normalizeOptionalString(sessionKey);
+    if (!normalized) {
+      return null;
+    }
+    if (cache.has(normalized)) {
+      return cache.get(normalized) ?? null;
+    }
+    const row = resolveGatewaySessionRowByKey({
+      summary,
+      sessionKey: normalized,
+      agentId,
+    });
+    cache.set(normalized, row);
+    return row;
+  };
 }
 
 async function loadChildSessionUsageEvidence(params: {
@@ -1530,11 +1607,22 @@ function toInsightTask(
   now: number,
   progressContext?: TaskReadbackProgressProjectionContext,
   tasksForReadback?: readonly TaskRecord[],
+  resolveSessionRow?: (sessionKey: string, agentId?: string | null) => GatewaySessionRow | null,
 ): RunInsightTask {
   const referenceAt = taskReferenceAt(task);
   const elapsedMs = taskElapsedMs(task, now);
   const latestEvent = task.executionReceipt?.latestEvent;
   const activeProgress = resolveTaskReadbackProgressProjection(task, progressContext) ?? null;
+  const readback = buildTaskReadbackProjection({
+    taskId: task.taskId,
+    status: task.status,
+    agentId: task.agentId,
+    requesterSessionKey: task.requesterSessionKey,
+    ownerKey: task.ownerKey,
+    childSessionKey: task.childSessionKey,
+    activeProgress,
+    resultSession: resolveTaskResultSessionEvidence(task, resolveSessionRow),
+  });
   const childRunReadback = buildTaskChildRunReadback(task, now, tasksForReadback);
   const childRole = inferChildRole({
     taskKind: task.taskKind,
@@ -1583,6 +1671,10 @@ function toInsightTask(
         }
       : null,
     activeProgress,
+    readbackSubject: readback.readbackSubject,
+    finality: readback.finality,
+    activeWork: readback.activeWork,
+    readbackEvidenceView: readback.readbackEvidenceView,
     progressSummary: compactSummaryText(task.progressSummary),
     attention: {
       waitClass: null,
@@ -1602,10 +1694,11 @@ function buildSignals(
   sessions: RunInsightSession[],
   tasks: RunInsightTask[],
   deployEvents: RunInsightDeployEvent[],
+  opts: { scopedRequest: boolean; includeBackground: boolean },
 ): RunInsightSignal[] {
   const signals: RunInsightSignal[] = [];
 
-  if (summary.tasks.failures > 0) {
+  if ((!opts.scopedRequest || opts.includeBackground) && summary.tasks.failures > 0) {
     signals.push({
       severity: "error",
       code: "task_failures_present",
@@ -1617,7 +1710,7 @@ function buildSignals(
     });
   }
 
-  if (summary.tasks.active > 0) {
+  if ((!opts.scopedRequest || opts.includeBackground) && summary.tasks.active > 0) {
     signals.push({
       severity: "info",
       code: "active_tasks_present",
@@ -1795,6 +1888,8 @@ function buildAttention(params: {
   sessions: RunInsightSession[];
   tasks: RunInsightTask[];
   deployEvents: RunInsightDeployEvent[];
+  scopedRequest: boolean;
+  includeBackground: boolean;
 }): RunInsightsReport["attention"] {
   const whyWorkMayFeelSlow: RunInsightAttentionItem[] = [];
   const validationAndPromotion: RunInsightAttentionItem[] = [];
@@ -1806,7 +1901,7 @@ function buildAttention(params: {
     "openclaw run-insights --json",
   ]);
 
-  if (params.summary.tasks.active > 0) {
+  if ((!params.scopedRequest || params.includeBackground) && params.summary.tasks.active > 0) {
     whyWorkMayFeelSlow.push({
       severity: "info",
       code: "active_task_work",
@@ -2453,15 +2548,9 @@ function buildPerformanceProfile(params: {
       const childDigest = child.contentDigest;
       const childChars = child.contentChars;
       const fidelity: RunInsightsReport["performanceProfile"]["domainFinalFidelityEvidence"][number]["fidelity"] =
-        !reportFinalAssistantText || !childDigest
-          ? "not_observed"
-          : reportFinalAssistantTextDigest === childDigest
-            ? "verbatim_match"
-            : typeof childChars === "number" &&
-                typeof reportFinalAssistantTextChars === "number" &&
-                reportFinalAssistantTextChars < childChars
-              ? "visible_answer_shorter_than_domain_final"
-              : "digest_mismatch";
+        reportFinalAssistantText && childDigest && reportFinalAssistantTextDigest === childDigest
+          ? "verbatim"
+          : "unknown";
       return {
         taskId: child.taskId,
         childSessionKey: child.childSessionKey,
@@ -2473,9 +2562,9 @@ function buildPerformanceProfile(params: {
         fidelity,
         pointer: child.pointer,
         guidance:
-          fidelity === "verbatim_match"
+          fidelity === "verbatim"
             ? "visible final answer digest matches the domain-final child output"
-            : "Main should present inline operator-facing domain-final output verbatim or link the exact artifact; this is readback evidence only, not transport substitution",
+            : "domain-final fidelity was not mechanically proven; readback records evidence only and does not mutate the presenter output",
       };
     });
   const diagnosticSkillEvents = params.diagnosticSkillEvents ?? [];
@@ -2649,22 +2738,17 @@ function selectReportReadbackProjection(params: {
       readbackSubject: terminalSession.readbackSubject,
       finality: terminalSession.finality,
       activeWork: terminalSession.activeWork,
+      readbackEvidenceView: terminalSession.readbackEvidenceView,
       finalAssistantText: terminalSession.finalAssistantText,
     };
   }
   const task = params.tasks[0];
   if (task) {
-    const readback = buildTaskReadbackProjection({
-      taskId: task.taskId,
-      status: task.status,
-      agentId: task.agentId,
-      requesterSessionKey: task.requesterSessionKey,
-      ownerKey: task.ownerKey,
-      childSessionKey: task.childSessionKey,
-      activeProgress: task.activeProgress,
-    });
     return {
-      ...readback,
+      readbackSubject: task.readbackSubject,
+      finality: task.finality,
+      activeWork: task.activeWork,
+      readbackEvidenceView: task.readbackEvidenceView,
       finalAssistantText: null,
     };
   }
@@ -2681,6 +2765,161 @@ function selectReportReadbackProjection(params: {
   };
 }
 
+function isScopedRunInsightsRequest(options: {
+  session?: string;
+  task?: string;
+  agent?: string;
+}): boolean {
+  return Boolean(options.session || options.task || options.agent);
+}
+
+function buildBackgroundHealthObservationFromDeployEvent(
+  event: RunInsightDeployEvent,
+): BackgroundHealthObservation {
+  const status = event.status ?? "unknown";
+  const failed = Boolean(status && !["built", "passed", "prepared"].includes(status));
+  const resolutionState: BackgroundHealthObservation["payload"]["resolutionState"] = failed
+    ? "unresolved"
+    : "historical";
+  return {
+    type: "background_health",
+    subject: { kind: "global" },
+    state: failed ? "failed" : "succeeded",
+    label: `${event.eventType} ${status}`,
+    preview: event.imageDigest ?? event.imageRef ?? undefined,
+    primaryRef: {
+      kind: "deploy",
+      ref: event.artifactRefs.find((ref) => ref.path)?.path ?? event.eventId,
+      label: event.eventType,
+    },
+    provenance: [
+      {
+        kind: "deploy",
+        ref: event.eventId,
+        source: "deploy-event",
+        observedAt: event.generatedAt ?? undefined,
+      },
+    ],
+    observedAt: event.generatedAt ?? undefined,
+    payload: {
+      code: failed ? "deploy_event_not_successful" : "deploy_event_observed",
+      severity: failed ? "warn" : "info",
+      relatedToSubject: false,
+      includeByDefault: false,
+      resolutionState,
+    },
+  };
+}
+
+function buildRunInsightsEvidenceView(params: {
+  base: ReadbackEvidenceView;
+  sessions: RunInsightSession[];
+  tasks: RunInsightTask[];
+  deployEvents: RunInsightDeployEvent[];
+  diagnosticSkillEvents: DiagnosticStabilityEventRecord[];
+  includeBackground: boolean;
+}): ReadbackEvidenceView {
+  const childObservations = params.tasks.flatMap((task) =>
+    task.childRuns.map((child) =>
+      buildChildRunObservation({
+        subject: {
+          kind: "task",
+          taskId: task.taskId,
+          sessionKey: task.requesterSessionKey,
+          agentId: task.agentId ?? undefined,
+        },
+        child: {
+          runId: child.runId,
+          executionTaskId: child.runId,
+          requesterSessionKey: child.requesterSessionKey,
+          childSessionKey: child.childSessionKey,
+          agentId: child.agentId,
+          taskName: child.taskName,
+          label: child.label,
+          status: child.status,
+          phase: undefined,
+          createdAt:
+            typeof child.createdAt === "number"
+              ? new Date(child.createdAt).toISOString()
+              : child.createdAt,
+          startedAt:
+            typeof child.startedAt === "number"
+              ? new Date(child.startedAt).toISOString()
+              : child.startedAt,
+          endedAt:
+            typeof child.endedAt === "number"
+              ? new Date(child.endedAt).toISOString()
+              : child.endedAt,
+          elapsedMs: child.durationMs,
+          activeTool: undefined,
+          spawnReason: child.spawnReason,
+          handoffKind: child.handoffKind,
+          handoffDeliveryState: child.handoffDeliveryState,
+          contentDigest: child.contentDigest,
+          contentChars: child.contentChars,
+          terminalSummary: child.terminalSummary,
+          errorSummary: child.errorSummary,
+        },
+      }),
+    ),
+  );
+  const handoffObservations = params.tasks.flatMap((task) =>
+    task.childRuns
+      .map((child) =>
+        buildHandoffObservation({
+          subject: {
+            kind: "task",
+            taskId: task.taskId,
+            sessionKey: task.requesterSessionKey,
+            agentId: task.agentId ?? undefined,
+          },
+          child: {
+            runId: child.runId,
+            executionTaskId: child.runId,
+            requesterSessionKey: child.requesterSessionKey,
+            childSessionKey: child.childSessionKey,
+            agentId: child.agentId,
+            taskName: child.taskName,
+            label: child.label,
+            status: child.status,
+            handoffKind: child.handoffKind,
+            handoffDeliveryState: child.handoffDeliveryState,
+            contentDigest: child.contentDigest,
+            contentChars: child.contentChars,
+          },
+        }),
+      )
+      .filter(Boolean),
+  );
+  const skillObservations = params.diagnosticSkillEvents
+    .map((event) =>
+      buildSkillUseObservation({
+        agentId: event.agentId,
+        skillName: event.target,
+        skillPath: event.source,
+        skillSource: event.source,
+        activation: event.action,
+        sessionKey: event.sessionKey,
+        runId: event.runId,
+        eventId: String(event.seq),
+        createdAt: new Date(event.ts).toISOString(),
+        toolCallId: event.toolName,
+      }),
+    )
+    .filter(Boolean);
+  const backgroundObservations = params.includeBackground
+    ? params.deployEvents.map(buildBackgroundHealthObservationFromDeployEvent)
+    : [];
+  return withAdditionalObservations(params.base, [
+    ...params.sessions.flatMap((session) => session.readbackEvidenceView.observations),
+    ...params.tasks.flatMap((task) => task.readbackEvidenceView.observations),
+    ...childObservations,
+    ...handoffObservations,
+    ...skillObservations,
+    ...backgroundObservations,
+  ]);
+}
+
 export function buildRunInsightsReport(
   summary: StatusSummary,
   options: {
@@ -2689,6 +2928,7 @@ export function buildRunInsightsReport(
     task?: string;
     activeMinutes?: number;
     limit: number;
+    includeBackground?: boolean;
     now?: number;
     taskRecords?: TaskRecord[];
     sessionUsage?: Map<string, RunInsightSessionUsage | null>;
@@ -2698,6 +2938,7 @@ export function buildRunInsightsReport(
   },
 ): RunInsightsReport {
   const now = options.now ?? Date.now();
+  const includeBackground = options.includeBackground === true;
   const recent = selectRecentSessions(summary, options.agent);
   let filtered = recent
     .filter((row) => sessionMatchesSessionFilter(row, options.session))
@@ -2732,10 +2973,13 @@ export function buildRunInsightsReport(
     .filter((task) => taskMatchesSessionTreeFilter(task, options.session, taskSessionRefs))
     .filter((task) => taskMatchesTaskFilter(task, options.task))
     .filter((task) => taskMatchesActiveFilter(task, options.activeMinutes, now));
+  const taskSessionRowResolver = createTaskSessionRowResolver(summary, gatewaySessionRows);
   const tasks = matchingTaskRecords
     .slice(0, options.limit)
-    .map((task) => toInsightTask(task, now, progressContext, taskRecords));
-  const deployEvents = readRecentDeployEvents(options.limit);
+    .map((task) => toInsightTask(task, now, progressContext, taskRecords, taskSessionRowResolver));
+  const rawDeployEvents = readRecentDeployEvents(options.limit);
+  const scopedRequest = isScopedRunInsightsRequest(options);
+  const deployEvents = scopedRequest && !includeBackground ? [] : rawDeployEvents;
   const lastPromotedEvent = deployEvents.find(
     (event) => event.eventType === "deploy.promote" && event.status === "passed",
   );
@@ -2748,8 +2992,13 @@ export function buildRunInsightsReport(
     sessions,
     tasks,
     deployEvents,
+    scopedRequest,
+    includeBackground,
   });
-  const signals = buildSignals(summary, sessions, tasks, deployEvents);
+  const signals = buildSignals(summary, sessions, tasks, deployEvents, {
+    scopedRequest,
+    includeBackground,
+  });
   const performanceProfile = buildPerformanceProfile({
     sessions,
     tasks,
@@ -2764,11 +3013,23 @@ export function buildRunInsightsReport(
     task: options.task ?? null,
     activeMinutes: options.activeMinutes ?? null,
     limit: options.limit,
+    includeBackground,
   };
   const reportReadback = selectReportReadbackProjection({
     sessions,
     tasks,
     filters,
+  });
+  const readbackEvidenceView = buildRunInsightsEvidenceView({
+    base: reportReadback.readbackEvidenceView,
+    sessions,
+    tasks,
+    deployEvents: rawDeployEvents,
+    diagnosticSkillEvents: options.diagnosticSkillEvents ?? [],
+    includeBackground,
+  });
+  const scopedEvidenceObservations = selectScopedRunInsights(readbackEvidenceView, {
+    includeBackground,
   });
   const diagnosticSummary = buildDiagnosticSummary({
     filters,
@@ -2800,13 +3061,17 @@ export function buildRunInsightsReport(
     readbackSubject: reportReadback.readbackSubject,
     finality: reportReadback.finality,
     activeWork: reportReadback.activeWork,
+    readbackEvidenceView,
+    scopedEvidenceObservations,
     finalAssistantText: reportReadback.finalAssistantText,
     deployEvidenceScope: {
       scope: "global_unscoped",
       filteredBy: [],
       limitApplied: options.limit,
       reason:
-        "native deploy receipts do not carry agent/session/task keys, so run-insights applies only the bounded tail limit to deploy/build/promote evidence",
+        scopedRequest && !includeBackground
+          ? "scoped run-insights excludes global deploy/build/promote evidence by default; pass --include-background to include it separately"
+          : "native deploy receipts do not carry agent/session/task keys, so run-insights applies only the bounded tail limit to deploy/build/promote evidence",
     },
     summary: {
       sessionCount: summary.sessions.count,
@@ -2874,6 +3139,7 @@ export async function loadRunInsightsReport(
     task: options.task,
     activeMinutes: options.activeMinutes,
     limit: options.limit,
+    includeBackground: options.includeBackground,
     gatewaySessionRows,
     diagnosticSkillEvents: readDiagnosticSkillUsedEvents(),
   });
@@ -2894,6 +3160,7 @@ export async function loadRunInsightsReport(
     task: options.task,
     activeMinutes: options.activeMinutes,
     limit: options.limit,
+    includeBackground: options.includeBackground,
     sessionUsage,
     childSessionUsage,
     gatewaySessionRows,

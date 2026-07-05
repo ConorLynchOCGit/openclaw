@@ -211,6 +211,11 @@ export function registerStatusHealthSessionsCommands(program: Command) {
     .option("--task <id>", "Limit task readback to one task id")
     .option("--active <minutes>", "Only consider sessions updated within the past N minutes")
     .option("--limit <count>", `Max sessions to show (default: 10, max: 50)`)
+    .option(
+      "--include-background",
+      "Include global/background health observations in scoped readback",
+      false,
+    )
     .addHelpText(
       "after",
       () =>

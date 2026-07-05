@@ -235,6 +235,106 @@ describe("gateway-cli coverage", () => {
     expect(gatewayCall?.params).toEqual({ sessionKey: "agent:planning:stdin" });
   });
 
+  it("rejects expect-final chat sends without an idempotency key before submission", async () => {
+    callGateway.mockClear();
+
+    await expectGatewayExit([
+      "gateway",
+      "call",
+      "chat.send",
+      "--expect-final",
+      "--json",
+      "--params",
+      JSON.stringify({
+        agentId: "main",
+        sessionKey: "agent:main:proof",
+        message: "run proof",
+      }),
+    ]);
+
+    expect(callGateway).not.toHaveBeenCalled();
+    expect(defaultRuntime.writeJson).toHaveBeenCalledWith({
+      status: "rejected_before_submission",
+      missingFields: ["idempotencyKey"],
+      invalidFields: [],
+      noRunCreated: true,
+      pathContext: {},
+    });
+  });
+
+  it("rejects expect-final chat sends with a missing prompt path before submission", async () => {
+    callGateway.mockClear();
+    const missingPromptPath = path.join(
+      os.tmpdir(),
+      `openclaw-missing-proof-prompt-${process.pid}.md`,
+    );
+
+    await expectGatewayExit([
+      "gateway",
+      "call",
+      "chat.send",
+      "--expect-final",
+      "--json",
+      "--params",
+      JSON.stringify({
+        agentId: "main",
+        sessionKey: "agent:main:proof",
+        idempotencyKey: "proof-idem",
+        message: "run proof",
+        promptPath: missingPromptPath,
+      }),
+    ]);
+
+    expect(callGateway).not.toHaveBeenCalled();
+    expect(defaultRuntime.writeJson).toHaveBeenCalledWith({
+      status: "rejected_before_submission",
+      missingFields: [],
+      invalidFields: ["promptPath"],
+      noRunCreated: true,
+      pathContext: {
+        promptPath: missingPromptPath,
+      },
+    });
+  });
+
+  it("submits valid expect-final chat sends after preflight validation", async () => {
+    callGateway.mockClear();
+    const promptPath = path.join(os.tmpdir(), `openclaw-proof-prompt-${process.pid}.md`);
+    fs.writeFileSync(promptPath, "Run the proof.");
+    try {
+      await runGatewayCommand([
+        "gateway",
+        "call",
+        "chat.send",
+        "--expect-final",
+        "--json",
+        "--params",
+        JSON.stringify({
+          agentId: "main",
+          sessionKey: "agent:main:proof",
+          idempotencyKey: "proof-idem",
+          message: "run proof",
+          promptPath,
+        }),
+      ]);
+    } finally {
+      fs.rmSync(promptPath, { force: true });
+    }
+
+    expect(callGateway).toHaveBeenCalledTimes(1);
+    expect(firstMockArg(callGateway)).toMatchObject({
+      method: "chat.send",
+      expectFinal: true,
+      params: {
+        agentId: "main",
+        sessionKey: "agent:main:proof",
+        idempotencyKey: "proof-idem",
+        message: "run proof",
+        promptPath,
+      },
+    });
+  });
+
   it("rejects invalid gateway call stdin JSON before calling Gateway", async () => {
     callGateway.mockClear();
     const restoreStdin = withPipedStdin("{nope");

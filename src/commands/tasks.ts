@@ -17,11 +17,13 @@ import {
   type SessionEntry,
 } from "../config/sessions.js";
 import { loadCronJobsStoreSync, resolveCronJobsStorePath } from "../cron/store.js";
+import { buildGatewaySessionRow } from "../gateway/session-utils.js";
 import {
   buildTasksListSummaryPayload,
   mapTaskSummaries,
   mapTaskSummary,
 } from "../gateway/task-summary-projection.js";
+import { buildTaskReadbackProjection } from "../readback/finality.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { parseAgentSessionKey } from "../sessions/session-key-utils.js";
 import { getTaskById, updateTaskNotifyPolicyById } from "../tasks/runtime-internal.js";
@@ -75,6 +77,50 @@ function formatTaskLookupMiss(lookup: string): string {
     listCommand: "openclaw tasks list",
     valueLabel: "task id",
   });
+}
+
+function taskResultSessionCandidateKeys(task: TaskRecord): string[] {
+  return [task.childSessionKey, task.ownerKey, task.requesterSessionKey]
+    .map((value) => normalizeOptionalString(value))
+    .filter((value): value is string => Boolean(value));
+}
+
+function resolveTaskResultSessionEvidence(task: TaskRecord) {
+  const candidateKeys = taskResultSessionCandidateKeys(task);
+  if (candidateKeys.length === 0) {
+    return null;
+  }
+  const cfg = getRuntimeConfig();
+  for (const target of resolveAllAgentSessionStoreTargetsSync(cfg)) {
+    const store = loadSessionStore(target.storePath, { skipCache: true });
+    for (const key of candidateKeys) {
+      const entry = store[key];
+      if (!entry) {
+        continue;
+      }
+      const row = buildGatewaySessionRow({
+        cfg,
+        storePath: target.storePath,
+        store,
+        key,
+        entry,
+        agentId: task.agentId ?? target.agentId,
+        includeLastMessage: true,
+        lightweightListRow: true,
+        skipTranscriptUsageFallback: true,
+      });
+      if (!row.finalAssistantText) {
+        continue;
+      }
+      return {
+        sessionKey: row.key,
+        agentId: task.agentId ?? target.agentId,
+        finalAssistantText: row.finalAssistantText,
+        readbackProvenance: row.readbackProvenance ?? null,
+      };
+    }
+  }
+  return null;
 }
 
 function formatTaskTimestamp(value: number | undefined): string {
@@ -605,8 +651,31 @@ export async function tasksShowCommand(
 
   const summary = mapTaskSummary(task);
   const activeProgress = summary.activeProgress;
+  const resultSession = resolveTaskResultSessionEvidence(task);
+  const readback = buildTaskReadbackProjection({
+    taskId: task.taskId,
+    status: task.status,
+    agentId: task.agentId,
+    requesterSessionKey: task.requesterSessionKey,
+    ownerKey: task.ownerKey,
+    childSessionKey: task.childSessionKey,
+    activeProgress,
+    resultSession,
+  });
   if (opts.json) {
-    runtime.log(JSON.stringify(summary, null, 2));
+    runtime.log(
+      JSON.stringify(
+        {
+          ...summary,
+          readbackSubject: readback.readbackSubject,
+          finality: readback.finality,
+          activeWork: readback.activeWork,
+          readbackEvidenceView: readback.readbackEvidenceView,
+        },
+        null,
+        2,
+      ),
+    );
     return;
   }
 

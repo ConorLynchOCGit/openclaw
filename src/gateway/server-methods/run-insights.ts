@@ -36,6 +36,17 @@ function readOptionalStringOrNumber(
   return typeof value === "string" || typeof value === "number" ? value : null;
 }
 
+function readOptionalBoolean(
+  record: Record<string, unknown>,
+  key: string,
+): boolean | undefined | null {
+  const value = record[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  return typeof value === "boolean" ? value : null;
+}
+
 function normalizeRunInsightsParams(params: unknown):
   | {
       ok: true;
@@ -52,6 +63,7 @@ function normalizeRunInsightsParams(params: unknown):
   const limit = readOptionalStringOrNumber(record, "limit");
   const active = readOptionalStringOrNumber(record, "active");
   const activeMinutes = readOptionalStringOrNumber(record, "activeMinutes");
+  const includeBackground = readOptionalBoolean(record, "includeBackground");
 
   for (const [key, value] of [
     ["agent", agent],
@@ -60,9 +72,10 @@ function normalizeRunInsightsParams(params: unknown):
     ["limit", limit],
     ["active", active],
     ["activeMinutes", activeMinutes],
+    ["includeBackground", includeBackground],
   ] as const) {
     if (value === null) {
-      return { ok: false, message: `${key} must be a string or number where applicable` };
+      return { ok: false, message: `${key} must be a string, number, or boolean where applicable` };
     }
   }
   if (
@@ -90,6 +103,9 @@ function normalizeRunInsightsParams(params: unknown):
     request.active = activeMinutes;
   } else if (active !== undefined && active !== null) {
     request.active = active;
+  }
+  if (includeBackground === true) {
+    request.includeBackground = true;
   }
   return { ok: true, value: request };
 }

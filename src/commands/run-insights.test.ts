@@ -470,21 +470,22 @@ describe("runInsightsCommand", () => {
       task: null,
       activeMinutes: 60,
       limit: 5,
+      includeBackground: false,
     });
     expect(payload.deployEvidenceScope).toEqual({
       scope: "global_unscoped",
       filteredBy: [],
       limitApplied: 5,
       reason:
-        "native deploy receipts do not carry agent/session/task keys, so run-insights applies only the bounded tail limit to deploy/build/promote evidence",
+        "scoped run-insights excludes global deploy/build/promote evidence by default; pass --include-background to include it separately",
     });
     expect(payload.summary.tasks.failures).toBe(1);
     expect(payload.summary.tasks.childTasksDisplayed).toBe(2);
     expect(payload.summary.tasks.deliveryIssues).toBe(1);
     expect(payload.summary.deploy).toMatchObject({
-      recentDisplayed: 2,
-      lastEventType: "deploy.promote",
-      lastPromotedImageDigest: "sha256:promoteddigest",
+      recentDisplayed: 0,
+      lastEventType: null,
+      lastPromotedImageDigest: null,
       recentFailures: 0,
     });
     expect(payload.sessions).toHaveLength(1);
@@ -494,31 +495,13 @@ describe("runInsightsCommand", () => {
       "task-delivery-watch",
       "task-codex-native-child",
     ]);
-    expect(payload.deployEvents.map((event: { eventId: string }) => event.eventId)).toEqual([
-      "deploy-promote-test",
-      "deploy-build-test",
-    ]);
-    expect(payload.deployEvents[0].artifactSummary).toMatchObject({
-      readable: true,
-      durationMs: 240_000,
-      failedCount: 0,
-      path: "/srv/openclaw-next/artifacts/host-only-promote.json",
-    });
-    expect(payload.deployEvents[0].artifactSummary.slowestChecks[0]).toMatchObject({
-      id: "openclaw-native-checks",
-      durationMs: 91_000,
-      status: "passed",
-      exitCode: 0,
-    });
+    expect(payload.deployEvents).toEqual([]);
     expect(payload.performanceProfile.retryBuildProofCost).toMatchObject({
-      deployReceiptCount: 2,
-      totalKnownDurationMs: 420_000,
-      totalKnownDuration: "7m",
+      deployReceiptCount: 0,
+      totalKnownDurationMs: 0,
+      totalKnownDuration: "0s",
     });
-    expect(payload.performanceProfile.retryBuildProofCost.slowestReceipt).toMatchObject({
-      eventType: "deploy.promote",
-      durationMs: 240_000,
-    });
+    expect(payload.performanceProfile.retryBuildProofCost.slowestReceipt).toBeNull();
     expect(payload.performanceProfile.validationBuildBottlenecks).toEqual([]);
     expect(
       payload.performanceProfile.advisoryInefficiencyFlags.map(
@@ -544,7 +527,7 @@ describe("runInsightsCommand", () => {
     });
     expect(payload.diagnosticSummary.validationBuildPromotion).toMatchObject({
       bottlenecks: 0,
-      deployReceipts: 2,
+      deployReceipts: 0,
     });
     expect(payload.diagnosticSummary.evidenceQuality).toMatchObject({
       heuristic: expect.any(Number),
@@ -598,27 +581,21 @@ describe("runInsightsCommand", () => {
     );
     expect(payload.attention.whyWorkMayFeelSlow.map((item: { code: string }) => item.code)).toEqual(
       expect.arrayContaining([
-        "active_task_work",
         "context_pressure",
         "tool_volume",
         "task_active_child",
         "task_delivery",
       ]),
     );
-    expect(
-      payload.attention.validationAndPromotion.map((item: { code: string }) => item.code),
-    ).toEqual(expect.arrayContaining(["deploy_receipt_activity"]));
+    expect(payload.attention.validationAndPromotion).toEqual([]);
     expect(payload.attention.evidencePointers).toEqual(
       expect.arrayContaining([
         "openclaw sessions show agent:coding:main --agent coding",
         "openclaw tasks show task-coding-child",
-        payload.deployEvents[0].artifactSummary.path,
       ]),
     );
     expect(payload.signals.map((signal: { code: string }) => signal.code)).toEqual(
       expect.arrayContaining([
-        "task_failures_present",
-        "active_tasks_present",
         "active_child_task",
         "task_delivery_issue",
         "session_aborted_last_run",
@@ -1238,8 +1215,8 @@ describe("runInsightsCommand", () => {
         childRole: "planning",
         contentChars: planningReport.length,
         finalAssistantTextChars: "Planning produced an approval packet.".length,
-        fidelity: "visible_answer_shorter_than_domain_final",
-        guidance: expect.stringContaining("readback evidence only"),
+        fidelity: "unknown",
+        guidance: expect.stringContaining("readback records evidence only"),
       }),
     ]);
   });
@@ -1466,7 +1443,8 @@ describe("runInsightsCommand", () => {
     });
 
     expect(payload.tasks).toHaveLength(1);
-    expect(payload.deployEvents.length).toBeGreaterThan(0);
+    expect(payload.deployEvents).toHaveLength(0);
+    expect(payload.deployEvidenceScope.reason).toContain("excludes global deploy");
     expect(payload.diagnosticSummary.currentOrLastKnownPhase).toMatchObject({
       label: "succeeded",
       source: "task",
@@ -1977,6 +1955,7 @@ describe("runInsightsCommand", () => {
       task: "task-coding-child",
       activeMinutes: null,
       limit: 10,
+      includeBackground: false,
     });
     expect(payload.sessions.map((session: { key: string }) => session.key)).toEqual([
       "agent:coding:main",
@@ -1984,10 +1963,7 @@ describe("runInsightsCommand", () => {
     expect(payload.tasks.map((task: { taskId: string }) => task.taskId)).toEqual([
       "task-coding-child",
     ]);
-    expect(payload.deployEvents.map((event: { eventId: string }) => event.eventId)).toEqual([
-      "deploy-promote-test",
-      "deploy-build-test",
-    ]);
+    expect(payload.deployEvents).toEqual([]);
     expect(payload.deployEvidenceScope).toMatchObject({
       scope: "global_unscoped",
       filteredBy: [],

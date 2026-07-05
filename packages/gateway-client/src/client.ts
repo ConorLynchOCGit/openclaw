@@ -1340,7 +1340,8 @@ export class GatewayClient {
       const status = payload?.status;
       if (
         pending.expectFinal &&
-        (status === "accepted" || (pending.method === "chat.send" && status === "started"))
+        (status === "accepted" ||
+          (pending.method === "chat.send" && (status === "started" || status === "in_flight")))
       ) {
         if (!pending.acceptedNotified) {
           pending.acceptedNotified = true;

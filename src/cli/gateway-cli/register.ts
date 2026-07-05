@@ -147,6 +147,65 @@ async function resolveGatewayCallParams(opts: { params?: string; paramsFile?: st
   }
 }
 
+function readGatewayCallRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+async function validateChatSendExpectFinalLaunch(params: {
+  method: string;
+  rpcOpts: GatewayRpcOpts;
+  callParams: unknown;
+}): Promise<{ ok: true } | { ok: false; rejection: Record<string, unknown> }> {
+  if (params.method !== "chat.send" || params.rpcOpts.expectFinal !== true) {
+    return { ok: true };
+  }
+  const record = readGatewayCallRecord(params.callParams);
+  const missingFields: string[] = [];
+  const invalidFields: string[] = [];
+  if (!record) {
+    return {
+      ok: false,
+      rejection: {
+        status: "rejected_before_submission",
+        missingFields: ["params"],
+        noRunCreated: true,
+        pathContext: {},
+      },
+    };
+  }
+  for (const field of ["agentId", "sessionKey", "idempotencyKey", "message"]) {
+    const value = record[field];
+    if (typeof value !== "string" || value.trim().length === 0) {
+      missingFields.push(field);
+    }
+  }
+  const promptPath = record.promptPath;
+  if (typeof promptPath === "string" && promptPath.trim()) {
+    try {
+      await fs.access(promptPath);
+    } catch {
+      invalidFields.push("promptPath");
+    }
+  }
+  if (missingFields.length === 0 && invalidFields.length === 0) {
+    return { ok: true };
+  }
+  return {
+    ok: false,
+    rejection: {
+      status: "rejected_before_submission",
+      missingFields,
+      invalidFields,
+      noRunCreated: true,
+      pathContext: {
+        ...(typeof promptPath === "string" ? { promptPath } : {}),
+      },
+    },
+  };
+}
+
 async function runGatewayCommand(
   action: () => Promise<void>,
   label?: string,
@@ -534,6 +593,16 @@ export function registerGatewayCli(program: Command) {
         await runGatewayCommand(async () => {
           const rpcOpts = resolveGatewayRpcOptions(opts, command);
           const params = await resolveGatewayCallParams(opts);
+          const launchValidation = await validateChatSendExpectFinalLaunch({
+            method,
+            rpcOpts,
+            callParams: params,
+          });
+          if (!launchValidation.ok) {
+            defaultRuntime.writeJson(launchValidation.rejection);
+            defaultRuntime.exit(1);
+            return;
+          }
           const result = await callGatewayCli(method, rpcOpts, params);
           if (rpcOpts.json) {
             defaultRuntime.writeJson(result);

@@ -45,6 +45,33 @@ describe("runInsightsHandlers", () => {
     expect(respond).toHaveBeenCalledWith(true, report);
   });
 
+  it("passes includeBackground through for explicit scoped background diagnostics", async () => {
+    const resolved = {
+      session: "agent:planning:proof",
+      includeBackground: true,
+    };
+    const report = {
+      schema: "openclaw.run_insights.v1",
+      authority: "advisory only",
+      generatedAt: "2026-07-05T00:00:00.000Z",
+    };
+    mocks.resolveRunInsightsOptions.mockReturnValueOnce({ ok: true, value: resolved });
+    mocks.loadRunInsightsReport.mockResolvedValueOnce(report);
+    const respond = createRespond();
+
+    await runInsightsHandlers["run.insights"]({
+      params: { session: "agent:planning:proof", includeBackground: true },
+      respond,
+    } as never);
+
+    expect(mocks.resolveRunInsightsOptions).toHaveBeenCalledWith({
+      session: "agent:planning:proof",
+      includeBackground: true,
+    });
+    expect(mocks.loadRunInsightsReport).toHaveBeenCalledWith(resolved);
+    expect(respond).toHaveBeenCalledWith(true, report);
+  });
+
   it("rejects conflicting active filters before loading report data", async () => {
     const respond = createRespond();
 
@@ -77,6 +104,21 @@ describe("runInsightsHandlers", () => {
       "limit must be a positive integer.",
     );
   });
+
+  it("rejects non-boolean includeBackground before loading report data", async () => {
+    const respond = createRespond();
+
+    await runInsightsHandlers["run.insights"]({
+      params: { includeBackground: "yes" },
+      respond,
+    } as never);
+
+    expect(mocks.loadRunInsightsReport).not.toHaveBeenCalled();
+    expect(respond.mock.calls[0]?.[0]).toBe(false);
+    expect(String(respond.mock.calls[0]?.[2]?.message)).toContain(
+      "includeBackground must be a string, number, or boolean where applicable",
+    );
+  });
 });
 
 describe("run insights param normalization", () => {
@@ -84,6 +126,25 @@ describe("run insights param normalization", () => {
     expect(__test.normalizeRunInsightsParams({ active: 10 })).toEqual({
       ok: true,
       value: { active: 10 },
+    });
+  });
+
+  it("accepts includeBackground only as an explicit boolean", () => {
+    expect(
+      __test.normalizeRunInsightsParams({
+        session: "agent:planning:proof",
+        includeBackground: true,
+      }),
+    ).toEqual({
+      ok: true,
+      value: {
+        session: "agent:planning:proof",
+        includeBackground: true,
+      },
+    });
+    expect(__test.normalizeRunInsightsParams({ includeBackground: false })).toEqual({
+      ok: true,
+      value: {},
     });
   });
 });

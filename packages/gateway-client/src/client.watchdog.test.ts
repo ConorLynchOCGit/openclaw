@@ -388,7 +388,7 @@ describe("GatewayClient", () => {
     expect((client as unknown as { pending: Map<string, unknown> }).pending.size).toBe(0);
   });
 
-  test("treats chat.send started as intermediate when expectFinal waits for final", async () => {
+  test("treats chat.send started/in_flight as intermediate when expectFinal waits for final", async () => {
     const client = new GatewayClient({
       requestTimeoutMs: 25,
     });
@@ -428,6 +428,21 @@ describe("GatewayClient", () => {
     );
 
     expect(onAccepted).toHaveBeenCalledWith({ status: "started", runId: "run-chat" });
+    expect(getPendingCount(client)).toBe(1);
+
+    (
+      client as unknown as {
+        handleMessage: (raw: string) => void;
+      }
+    ).handleMessage(
+      JSON.stringify({
+        type: "res",
+        id: frame.id,
+        ok: true,
+        payload: { status: "in_flight", runId: "run-chat" },
+      }),
+    );
+
     expect(getPendingCount(client)).toBe(1);
 
     (
