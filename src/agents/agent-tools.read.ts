@@ -56,10 +56,13 @@ const MAX_ADAPTIVE_READ_MAX_BYTES = 128 * 1024;
 const ADAPTIVE_READ_CONTEXT_SHARE = 0.1;
 const CHARS_PER_TOKEN_ESTIMATE = 4;
 const MAX_ADAPTIVE_READ_PAGES = 4;
+const MAX_SKILL_INSTRUCTION_READ_PAGES = 256;
 
 type OpenClawReadToolOptions = {
   modelContextWindowTokens?: number;
   imageSanitization?: ImageSanitizationLimits;
+  root?: string;
+  skillInstructionPaths?: readonly string[];
 };
 
 type ReadTruncationDetails = {
@@ -261,6 +264,74 @@ function normalizeDailyMemoryReadPath(value: unknown): string | undefined {
   return DAILY_MEMORY_PATH_RE.test(normalized) ? normalized : undefined;
 }
 
+function normalizeInstructionPathCandidate(value: string, root?: string): string | undefined {
+  let candidate = value.trim();
+  if (!candidate) {
+    return undefined;
+  }
+  if (candidate.startsWith("@")) {
+    candidate = candidate.slice(1);
+  }
+  if (/^file:\/\//i.test(candidate)) {
+    const localFilePath = trySafeFileURLToPath(candidate);
+    if (!localFilePath) {
+      return undefined;
+    }
+    candidate = localFilePath;
+  }
+  if (candidate === "~" || candidate.startsWith("~/")) {
+    candidate = expandHomePrefix(candidate, { home: resolveOsHomeDir() });
+  }
+  if (path.isAbsolute(candidate)) {
+    return path.resolve(candidate);
+  }
+  if (root) {
+    return path.resolve(root, candidate);
+  }
+  return path.resolve(candidate);
+}
+
+function normalizedSkillInstructionPaths(options?: OpenClawReadToolOptions): Set<string> {
+  const paths = new Set<string>();
+  for (const entry of options?.skillInstructionPaths ?? []) {
+    const normalized = normalizeInstructionPathCandidate(entry, options?.root);
+    if (normalized) {
+      paths.add(normalized);
+    }
+  }
+  return paths;
+}
+
+function isVisibleSkillInstructionRead(
+  args: Record<string, unknown>,
+  options?: OpenClawReadToolOptions,
+): boolean {
+  if (!options?.skillInstructionPaths?.length || typeof args.path !== "string") {
+    return false;
+  }
+  const candidate = normalizeInstructionPathCandidate(args.path, options.root);
+  if (!candidate) {
+    return false;
+  }
+  return normalizedSkillInstructionPaths(options).has(candidate);
+}
+
+function forceFullVisibleSkillInstructionRead(
+  args: Record<string, unknown>,
+  options?: OpenClawReadToolOptions,
+): Record<string, unknown> {
+  if (!isVisibleSkillInstructionRead(args, options)) {
+    return args;
+  }
+  if (!Object.hasOwn(args, "limit") && !Object.hasOwn(args, "offset")) {
+    return args;
+  }
+  const next = { ...args };
+  delete next.limit;
+  delete next.offset;
+  return next;
+}
+
 function isNotFoundError(error: unknown): boolean {
   if (typeof (error as NodeJS.ErrnoException | undefined)?.code === "string") {
     return (error as NodeJS.ErrnoException).code === "ENOENT";
@@ -372,6 +443,52 @@ async function executeReadWithAdaptivePaging(params: {
     finalText += `\n\n[Read output capped at ${formatBytes(params.maxBytes)} for this call. Use offset=${continuationOffset} to continue.]`;
   }
   return withToolResultText(firstResult, finalText);
+}
+
+async function executeFullSkillInstructionRead(params: {
+  base: AnyAgentTool;
+  toolCallId: string;
+  args: Record<string, unknown>;
+  signal?: AbortSignal;
+}): Promise<AgentToolResult<unknown>> {
+  let nextOffset = 1;
+  let firstResult: AgentToolResult<unknown> | null = null;
+  let aggregatedText = "";
+
+  for (let page = 0; page < MAX_SKILL_INSTRUCTION_READ_PAGES; page += 1) {
+    const pageArgs = { ...params.args, offset: nextOffset };
+    const pageResult = await executeReadPage({
+      base: params.base,
+      toolCallId: params.toolCallId,
+      args: pageArgs,
+      signal: params.signal,
+    });
+    firstResult ??= pageResult;
+
+    const rawText = getToolResultText(pageResult);
+    if (typeof rawText !== "string") {
+      return pageResult;
+    }
+
+    const truncation = extractReadTruncationDetails(pageResult);
+    const canContinue =
+      Boolean(truncation?.truncated) &&
+      !truncation?.firstLineExceedsLimit &&
+      (truncation?.outputLines ?? 0) > 0;
+    const pageText = canContinue ? stripReadContinuationNotice(rawText) : rawText;
+    const delimiter = aggregatedText && pageText ? "\n\n" : "";
+    aggregatedText += `${delimiter}${pageText}`;
+
+    if (!canContinue || !truncation) {
+      return withToolResultText(pageResult, aggregatedText);
+    }
+
+    nextOffset += truncation.outputLines;
+  }
+
+  throw new Error(
+    `Visible SKILL.md read exceeded ${MAX_SKILL_INSTRUCTION_READ_PAGES} pages; refusing partial skill activation.`,
+  );
 }
 
 function rewriteReadImageHeader(text: string, mimeType: string): string {
@@ -830,6 +947,7 @@ type SandboxToolParams = {
   bridge: SandboxFsBridge;
   modelContextWindowTokens?: number;
   imageSanitization?: ImageSanitizationLimits;
+  skillInstructionPaths?: readonly string[];
 };
 
 /** Create a sandbox-backed read tool with OpenClaw result normalization. */
@@ -840,6 +958,8 @@ export function createSandboxedReadTool(params: SandboxToolParams) {
   return createOpenClawReadTool(base, {
     modelContextWindowTokens: params.modelContextWindowTokens,
     imageSanitization: params.imageSanitization,
+    root: params.root,
+    skillInstructionPaths: params.skillInstructionPaths,
   });
 }
 
@@ -888,15 +1008,23 @@ export function createOpenClawReadTool(
         ? stripMalformedXmlArgValueSuffixFromKeys(record, ["path"])
         : undefined;
       assertRequiredParams(normalizedRecord, REQUIRED_PARAM_GROUPS.read, base.name);
-      const result = await executeReadWithAdaptivePaging({
-        base,
-        toolCallId,
-        args: normalizedRecord ?? {},
-        signal,
-        maxBytes: resolveAdaptiveReadMaxBytes(options),
-      });
-      const filePath =
-        typeof normalizedRecord?.path === "string" ? normalizedRecord.path : "<unknown>";
+      const readArgs = forceFullVisibleSkillInstructionRead(normalizedRecord ?? {}, options);
+      const isSkillInstruction = isVisibleSkillInstructionRead(readArgs, options);
+      const result = isSkillInstruction
+        ? await executeFullSkillInstructionRead({
+            base,
+            toolCallId,
+            args: readArgs,
+            signal,
+          })
+        : await executeReadWithAdaptivePaging({
+            base,
+            toolCallId,
+            args: readArgs,
+            signal,
+            maxBytes: resolveAdaptiveReadMaxBytes(options),
+          });
+      const filePath = typeof readArgs.path === "string" ? readArgs.path : "<unknown>";
       const strippedDetailsResult = stripReadTruncationContentDetails(result);
       const normalizedResult = await normalizeReadImageResult(strippedDetailsResult, filePath);
       return sanitizeToolResultImages(

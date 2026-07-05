@@ -409,6 +409,49 @@ describe("workspace path resolution", () => {
     });
   });
 
+  it("does not let generic read limits partially activate visible skill instructions", async () => {
+    await withTempDir("openclaw-skill-full-activation-", async (rootDir) => {
+      const workspaceDir = path.join(rootDir, "workspace");
+      const skillDir = path.join(rootDir, "global-skills", "comprehensive-plan-record");
+      await fs.mkdir(workspaceDir, { recursive: true });
+      await fs.mkdir(skillDir, { recursive: true });
+      const skillFile = path.join(skillDir, "SKILL.md");
+      const lines = Array.from({ length: 775 }, (_unused, index) => `skill-line-${index + 1}`);
+      await fs.writeFile(skillFile, `${lines.join("\n")}\n`, "utf8");
+
+      const tools = createOpenClawCodingTools({
+        workspaceDir,
+        config: { tools: { fs: { workspaceOnly: true } } },
+        skillsSnapshot: {
+          prompt: "",
+          skills: [{ name: "comprehensive-plan-record" }],
+          resolvedSkills: [
+            createCanonicalFixtureSkill({
+              name: "comprehensive-plan-record",
+              description: "Comprehensive planning",
+              filePath: skillFile,
+              baseDir: skillDir,
+              source: "test",
+            }),
+          ],
+        },
+      });
+      const { readTool } = expectReadWriteEditTools(tools);
+
+      const result = await readTool.execute("read-visible-skill-limited", {
+        path: skillFile,
+        offset: 1,
+        limit: 220,
+      });
+
+      const text = getTextContent(result);
+      expect(text).toContain("skill-line-1");
+      expect(text).toContain("skill-line-775");
+      expect(text).not.toContain("Use offset=");
+      expect(text).not.toContain("Read output capped");
+    });
+  });
+
   it("rejects symlink escapes inside resolved skill roots", async () => {
     if (process.platform === "win32") {
       return;

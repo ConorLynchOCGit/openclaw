@@ -197,6 +197,65 @@ describe("createOpenClawCodingTools read behavior", () => {
     expect(execute).toHaveBeenCalledTimes(2);
   });
 
+  it("reads model-visible SKILL.md files completely instead of applying generic adaptive caps", async () => {
+    const readResult = (
+      text: string,
+      outputLines: number,
+      truncated: boolean,
+    ): AgentToolResult<unknown> => ({
+      content: [
+        {
+          type: "text",
+          text,
+        },
+      ],
+      details: {
+        truncation: {
+          truncated,
+          outputLines,
+          firstLineExceedsLimit: false,
+        },
+      },
+    });
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce(
+        readResult("skill-a\n\n[2 more lines in file. Use offset=2 to continue.]", 1, true),
+      )
+      .mockResolvedValueOnce(readResult("skill-b\nskill-c", 2, false));
+    const skillPath = "/tmp/openclaw-visible-skill/SKILL.md";
+    const readTool = createOpenClawReadTool(
+      {
+        name: "read",
+        label: "read",
+        description: "test read",
+        parameters: Type.Object({
+          path: Type.String(),
+          offset: Type.Optional(Type.Number()),
+          limit: Type.Optional(Type.Number()),
+        }),
+        execute,
+      },
+      {
+        root: "/tmp",
+        skillInstructionPaths: [skillPath],
+        modelContextWindowTokens: 1,
+      },
+    );
+
+    const result = await readTool.execute("read-visible-skill", {
+      path: skillPath,
+      offset: 1,
+      limit: 220,
+    });
+
+    expect(extractToolText(result)).toBe("skill-a\n\nskill-b\nskill-c");
+    expect(execute.mock.calls.map((call) => call[1])).toEqual([
+      { path: skillPath, offset: 1 },
+      { path: skillPath, offset: 2 },
+    ]);
+  });
+
   it("keeps unrelated read failures loud", async () => {
     const readTool = createOpenClawReadTool({
       name: "read",

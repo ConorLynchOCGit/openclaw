@@ -168,6 +168,24 @@ function resolveSkillReadRoots(skillsSnapshot?: SkillSnapshot): string[] | undef
   return Array.from(roots);
 }
 
+function resolveSkillInstructionPaths(skillsSnapshot?: SkillSnapshot): string[] | undefined {
+  const paths = new Set<string>();
+  for (const skill of skillsSnapshot?.resolvedSkills ?? []) {
+    const filePath = typeof skill.filePath === "string" ? skill.filePath.trim() : "";
+    if (filePath) {
+      paths.add(filePath);
+    }
+    const baseDir = typeof skill.baseDir === "string" ? skill.baseDir.trim() : "";
+    if (baseDir) {
+      paths.add(path.join(baseDir, "SKILL.md"));
+    }
+  }
+  if (paths.size === 0) {
+    return undefined;
+  }
+  return Array.from(paths);
+}
+
 type BashToolsModule = typeof import("./bash-tools.js");
 
 const bashToolsModuleLoader = createLazyImportLoader<BashToolsModule>(
@@ -732,6 +750,7 @@ export function createOpenClawCodingTools(options?: {
   const includePluginTools = toolConstructionPlan.includePluginTools;
   const workspaceOnly = fsPolicy.workspaceOnly;
   const skillReadRoots = sandboxRoot ? undefined : resolveSkillReadRoots(options?.skillsSnapshot);
+  const skillInstructionPaths = resolveSkillInstructionPaths(options?.skillsSnapshot);
   const applyPatchConfig = execConfig.applyPatch;
   // Secure by default: apply_patch is workspace-contained unless explicitly disabled.
   // (tools.fs.workspaceOnly is a separate umbrella flag for read/write/edit/apply_patch.)
@@ -767,6 +786,7 @@ export function createOpenClawCodingTools(options?: {
             bridge: sandboxFsBridge!,
             modelContextWindowTokens: options?.modelContextWindowTokens,
             imageSanitization,
+            skillInstructionPaths,
           });
           base.push(
             workspaceOnly
@@ -782,6 +802,8 @@ export function createOpenClawCodingTools(options?: {
         const wrapped = createOpenClawReadTool(freshReadTool, {
           modelContextWindowTokens: options?.modelContextWindowTokens,
           imageSanitization,
+          root: codingRoot,
+          skillInstructionPaths,
         });
         base.push(
           workspaceOnly

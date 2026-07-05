@@ -54,6 +54,69 @@ export function computeEvidenceContentDigest(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+export type DomainFinalHandoff = {
+  taskResult: string;
+  contentDigest?: string;
+  contentChars?: number;
+  childSessionKey?: string;
+  runId?: string;
+  agentId?: string;
+  deliveryState?: string;
+};
+
+function decodeXmlText(value: string): string {
+  return value
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+function readXmlAttr(tag: string, name: string): string | undefined {
+  const re = new RegExp(`\\b${name}="([^"]*)"`);
+  const match = re.exec(tag);
+  const value = match?.[1]?.trim();
+  return value ? decodeXmlText(value) : undefined;
+}
+
+export function extractLatestDomainFinalHandoffFromText(
+  value: string | undefined | null,
+): DomainFinalHandoff | null {
+  if (!value || !value.includes('handoffKind="domain_final"')) {
+    return null;
+  }
+  const taskRe = /(<task\b(?=[^>]*\bhandoffKind="domain_final")[^>]*>)([\s\S]*?)<\/task>/g;
+  let latest: DomainFinalHandoff | null = null;
+  for (const match of value.matchAll(taskRe)) {
+    const taskTag = match[1] ?? "";
+    const body = match[2] ?? "";
+    const resultMatch = /<task_result>\s*([\s\S]*?)\s*<\/task_result>/.exec(body);
+    const taskResult = decodeXmlText(resultMatch?.[1] ?? "").trim();
+    if (!taskResult) {
+      continue;
+    }
+    const contentCharsRaw = readXmlAttr(taskTag, "contentChars");
+    const contentChars =
+      contentCharsRaw && /^\d+$/.test(contentCharsRaw) ? Number(contentCharsRaw) : undefined;
+    latest = {
+      taskResult,
+      ...(readXmlAttr(taskTag, "contentDigest")
+        ? { contentDigest: readXmlAttr(taskTag, "contentDigest") }
+        : {}),
+      ...(contentChars !== undefined ? { contentChars } : {}),
+      ...(readXmlAttr(taskTag, "id") ? { childSessionKey: readXmlAttr(taskTag, "id") } : {}),
+      ...(readXmlAttr(taskTag, "runId") ? { runId: readXmlAttr(taskTag, "runId") } : {}),
+      ...(readXmlAttr(taskTag, "agentId") ? { agentId: readXmlAttr(taskTag, "agentId") } : {}),
+      ...(readXmlAttr(taskTag, "deliveryState")
+        ? { deliveryState: readXmlAttr(taskTag, "deliveryState") }
+        : {}),
+    };
+  }
+  return latest;
+}
+
 export function includesEvidenceTruncationMarker(value: string): boolean {
   return (
     value.includes("...(truncated)...") ||

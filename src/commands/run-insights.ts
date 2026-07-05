@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { theme } from "../../packages/terminal-core/src/theme.js";
+import { computeEvidenceContentDigest } from "../agents/evidence-handoff.js";
 import { getRuntimeConfig } from "../config/config.js";
 import { resolveStateDir } from "../config/paths.js";
 import { readSessionStoreReadOnly } from "../config/sessions/store-read.js";
@@ -12,6 +13,10 @@ import {
   resolveExistingUsageSessionFile,
 } from "../infra/session-cost-usage.js";
 import type { SessionCostSummary, UsageCacheStatus } from "../infra/session-cost-usage.types.js";
+import {
+  getDiagnosticStabilitySnapshot,
+  type DiagnosticStabilityEventRecord,
+} from "../logging/diagnostic-stability.js";
 import { buildAdvisoryReadback, type AdvisoryReadback } from "../readback/advisory.js";
 import {
   buildEmptyReadbackProjection,
@@ -363,16 +368,35 @@ export type RunInsightsReport = {
       };
       pointer: string;
     }>;
+    domainFinalFidelityEvidence: Array<{
+      taskId: string;
+      childSessionKey: string;
+      childRole: string | null;
+      contentDigest: string | null;
+      contentChars: number | null;
+      finalAssistantTextDigest: string | null;
+      finalAssistantTextChars: number | null;
+      fidelity:
+        | "verbatim_match"
+        | "visible_answer_shorter_than_domain_final"
+        | "digest_mismatch"
+        | "not_observed";
+      pointer: string;
+      guidance: string;
+    }>;
     skillActivationEvidence: Array<{
       sessionKey: string;
       agentId: string | null;
+      catalogVisible: boolean;
       visibleSkillCount: number | null;
       visibleSkillNames: string[];
       skillFilter: string[] | null;
       promptChars: number | null;
       promptHash: string | null;
       promptRef: RunInsightSkillPromptRef | null;
-      activationEvidence: "visible_skill_catalog";
+      activationEvidence: "not_observed" | "skill_used_diagnostic";
+      activationStatus: "catalog_only" | "activated";
+      activatedSkillNames: string[];
       actualUsePointer: string;
       pointer: string;
     }>;
@@ -563,6 +587,28 @@ function compactSummaryText(value: string | null | undefined): string | null {
   return `${normalized.slice(0, SUMMARY_TEXT_MAX_CHARS - suffix.length).trimEnd()}${suffix}`;
 }
 
+function diagnosticSkillEventMatchesSession(
+  event: DiagnosticStabilityEventRecord,
+  session: RunInsightSession,
+): boolean {
+  if (event.type !== "skill.used") {
+    return false;
+  }
+  const sessionMatch =
+    (typeof event.sessionKey === "string" && event.sessionKey === session.key) ||
+    (typeof event.sessionId === "string" &&
+      typeof session.sessionId === "string" &&
+      event.sessionId === session.sessionId);
+  if (!sessionMatch) {
+    return false;
+  }
+  return !event.agentId || !session.agentId || event.agentId === session.agentId;
+}
+
+function readDiagnosticSkillUsedEvents(): DiagnosticStabilityEventRecord[] {
+  return getDiagnosticStabilitySnapshot({ limit: 100, type: "skill.used" }).events;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -722,7 +768,7 @@ function deployEventArtifactSummary(
     const durationMs = finiteNumberOrNull(summary.durationMs);
     return {
       path: stringOrNull(summary.path) ?? artifactRefs.find((ref) => ref.path)?.path ?? null,
-      readable: summary.readable === false ? false : true,
+      readable: summary.readable !== false,
       skippedReason: stringOrNull(summary.skippedReason),
       durationMs,
       duration: stringOrNull(summary.duration) ?? formatDurationMs(durationMs),
@@ -838,7 +884,7 @@ function resolveGatewaySessionRowsForInsights(params: {
         store = readSessionStoreReadOnly(storePath);
         storeCache.set(storePath, store);
       }
-      if (!Object.prototype.hasOwnProperty.call(store, row.key)) {
+      if (!Object.hasOwn(store, row.key)) {
         continue;
       }
       const compactStore = Object.fromEntries(
@@ -1438,11 +1484,11 @@ function readRecentDeployEvents(limit: number): RunInsightDeployEvent[] {
       }
     })
     .filter((event): event is Record<string, unknown> => event !== null)
-    .reverse()
+    .toReversed()
     .slice(0, limit)
     .map((event) => {
       const generatedAt = typeof event.generatedAt === "string" ? event.generatedAt : null;
-      const eventTime = generatedAt ? Date.parse(generatedAt) : NaN;
+      const eventTime = generatedAt ? Date.parse(generatedAt) : Number.NaN;
       const ageMs = Number.isFinite(eventTime) ? Math.max(0, now - eventTime) : null;
       const buildEpisode =
         event.buildEpisode && typeof event.buildEpisode === "object"
@@ -2182,6 +2228,7 @@ function buildPerformanceProfile(params: {
   deployEvents: RunInsightDeployEvent[];
   signals: RunInsightSignal[];
   childSessionUsage?: Map<string, RunInsightSessionUsage | null>;
+  diagnosticSkillEvents?: DiagnosticStabilityEventRecord[];
 }): RunInsightsReport["performanceProfile"] {
   const expensiveRunExplanation: RunInsightsReport["performanceProfile"]["expensiveRunExplanation"] =
     [];
@@ -2393,22 +2440,78 @@ function buildPerformanceProfile(params: {
       },
     ];
   });
+  const reportFinalAssistantText =
+    params.sessions.find((session) => session.finality.finalAssistantTextPresent)
+      ?.finalAssistantText ?? null;
+  const reportFinalAssistantTextDigest = reportFinalAssistantText
+    ? computeEvidenceContentDigest(reportFinalAssistantText)
+    : null;
+  const reportFinalAssistantTextChars = reportFinalAssistantText?.length ?? null;
+  const domainFinalFidelityEvidence = childSessionEvidence
+    .filter((child) => child.handoffKind === "domain_final")
+    .map((child) => {
+      const childDigest = child.contentDigest;
+      const childChars = child.contentChars;
+      const fidelity: RunInsightsReport["performanceProfile"]["domainFinalFidelityEvidence"][number]["fidelity"] =
+        !reportFinalAssistantText || !childDigest
+          ? "not_observed"
+          : reportFinalAssistantTextDigest === childDigest
+            ? "verbatim_match"
+            : typeof childChars === "number" &&
+                typeof reportFinalAssistantTextChars === "number" &&
+                reportFinalAssistantTextChars < childChars
+              ? "visible_answer_shorter_than_domain_final"
+              : "digest_mismatch";
+      return {
+        taskId: child.taskId,
+        childSessionKey: child.childSessionKey,
+        childRole: child.childRole,
+        contentDigest: childDigest,
+        contentChars: childChars,
+        finalAssistantTextDigest: reportFinalAssistantTextDigest,
+        finalAssistantTextChars: reportFinalAssistantTextChars,
+        fidelity,
+        pointer: child.pointer,
+        guidance:
+          fidelity === "verbatim_match"
+            ? "visible final answer digest matches the domain-final child output"
+            : "Main should present inline operator-facing domain-final output verbatim or link the exact artifact; this is readback evidence only, not transport substitution",
+      };
+    });
+  const diagnosticSkillEvents = params.diagnosticSkillEvents ?? [];
   const skillActivationEvidence = params.sessions
     .filter((session) => session.promptContext?.skills)
     .map((session) => {
       const skills = session.promptContext?.skills;
+      const matchingSkillEvents = diagnosticSkillEvents.filter((event) =>
+        diagnosticSkillEventMatchesSession(event, session),
+      );
+      const activatedSkillNames = Array.from(
+        new Set(
+          matchingSkillEvents
+            .map((event) => event.target)
+            .filter((value): value is string => typeof value === "string" && value.length > 0),
+        ),
+      ).toSorted();
+      const activated = activatedSkillNames.length > 0;
       return {
         sessionKey: session.key,
         agentId: session.agentId,
+        catalogVisible: true,
         visibleSkillCount: skills?.skillCount ?? null,
         visibleSkillNames: skills?.skillNames?.slice(0, 12) ?? [],
         skillFilter: skills?.skillFilter ?? null,
         promptChars: skills?.promptChars ?? null,
         promptHash: skills?.promptHash ?? null,
         promptRef: skills?.promptRef ?? null,
-        activationEvidence: "visible_skill_catalog" as const,
-        actualUsePointer:
-          "openclaw trajectory export marks invoked skills when SKILL.md is read via native read",
+        activationEvidence: activated
+          ? ("skill_used_diagnostic" as const)
+          : ("not_observed" as const),
+        activationStatus: activated ? ("activated" as const) : ("catalog_only" as const),
+        activatedSkillNames,
+        actualUsePointer: activated
+          ? "native skill.used diagnostic telemetry observed for this session"
+          : "visible skill catalog is not activation; require skill.used telemetry or trajectory/read evidence for activation",
         pointer: session.pointer,
       };
     });
@@ -2428,6 +2531,7 @@ function buildPerformanceProfile(params: {
     expensiveRunExplanation,
     timeline: timeline.toSorted((a, b) => (b.at ?? 0) - (a.at ?? 0)).slice(0, 12),
     childSessionEvidence,
+    domainFinalFidelityEvidence,
     skillActivationEvidence,
     retryBuildProofCost: {
       deployReceiptCount: deployDurations.length,
@@ -2590,6 +2694,7 @@ export function buildRunInsightsReport(
     sessionUsage?: Map<string, RunInsightSessionUsage | null>;
     childSessionUsage?: Map<string, RunInsightSessionUsage | null>;
     gatewaySessionRows?: Map<string, GatewaySessionRow>;
+    diagnosticSkillEvents?: DiagnosticStabilityEventRecord[];
   },
 ): RunInsightsReport {
   const now = options.now ?? Date.now();
@@ -2615,10 +2720,10 @@ export function buildRunInsightsReport(
   const sessions = filtered
     .slice(0, options.limit)
     .map((row) => toInsightSession(row, gatewaySessionRows.get(row.key)))
-    .map((session) => ({
-      ...session,
-      usage: options.sessionUsage?.get(session.key) ?? session.usage,
-    }));
+    .map((session) => {
+      session.usage = options.sessionUsage?.get(session.key) ?? session.usage;
+      return session;
+    });
   const taskRecords = options.taskRecords ?? listTaskRecords();
   const progressContext = createTaskReadbackProgressProjectionContext({ now });
   const taskSessionRefs = collectTaskTreeSessionRefs(taskRecords, options.session);
@@ -2651,6 +2756,7 @@ export function buildRunInsightsReport(
     deployEvents,
     signals,
     childSessionUsage: options.childSessionUsage,
+    diagnosticSkillEvents: options.diagnosticSkillEvents,
   });
   const filters = {
     agent: options.agent ?? null,
@@ -2769,6 +2875,7 @@ export async function loadRunInsightsReport(
     activeMinutes: options.activeMinutes,
     limit: options.limit,
     gatewaySessionRows,
+    diagnosticSkillEvents: readDiagnosticSkillUsedEvents(),
   });
   const sessionsWithUsage = await attachCachedSessionUsage(initialReport.sessions);
   const sessionUsage = new Map(
@@ -2790,6 +2897,7 @@ export async function loadRunInsightsReport(
     sessionUsage,
     childSessionUsage,
     gatewaySessionRows,
+    diagnosticSkillEvents: readDiagnosticSkillUsedEvents(),
   });
 }
 
@@ -2929,6 +3037,17 @@ function formatPerformanceProfile(profile: RunInsightsReport["performanceProfile
       `  Child ${child.taskId}${role} status=${child.status}${handoff}${handoffDelivery}${content} elapsed=${child.elapsed}${phase}${reason} (${child.pointer})`,
     );
   }
+  for (const fidelity of profile.domainFinalFidelityEvidence.slice(0, 4)) {
+    const role = fidelity.childRole ? ` role=${fidelity.childRole}` : "";
+    const childChars = fidelity.contentChars != null ? ` childChars=${fidelity.contentChars}` : "";
+    const finalChars =
+      fidelity.finalAssistantTextChars != null
+        ? ` finalChars=${fidelity.finalAssistantTextChars}`
+        : "";
+    lines.push(
+      `  DomainFinal ${fidelity.taskId}${role} fidelity=${fidelity.fidelity}${childChars}${finalChars} (${fidelity.pointer})`,
+    );
+  }
   for (const skillEvidence of profile.skillActivationEvidence.slice(0, 6)) {
     const agent = skillEvidence.agentId ? ` agent=${skillEvidence.agentId}` : "";
     const prompt =
@@ -2938,8 +3057,14 @@ function formatPerformanceProfile(profile: RunInsightsReport["performanceProfile
       skillEvidence.visibleSkillNames.length > 0
         ? ` names=${skillEvidence.visibleSkillNames.map((name) => JSON.stringify(name)).join(",")}`
         : "";
+    const activated =
+      skillEvidence.activatedSkillNames.length > 0
+        ? ` activated=${skillEvidence.activatedSkillNames
+            .map((name) => JSON.stringify(name))
+            .join(",")}`
+        : "";
     lines.push(
-      `  Skills ${skillEvidence.sessionKey}${agent} visible=${skillEvidence.visibleSkillCount ?? "unknown"}${prompt}${hash}${names} (${skillEvidence.pointer})`,
+      `  Skills ${skillEvidence.sessionKey}${agent} catalogVisible=${String(skillEvidence.catalogVisible)} activation=${skillEvidence.activationEvidence} visible=${skillEvidence.visibleSkillCount ?? "unknown"}${prompt}${hash}${names}${activated} (${skillEvidence.pointer})`,
     );
   }
   if (lines.length === 2) {

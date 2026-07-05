@@ -1000,6 +1000,250 @@ describe("runInsightsCommand", () => {
     );
   });
 
+  it("does not treat a visible skill catalog as skill activation", () => {
+    const now = Date.UTC(2026, 6, 4, 16, 20, 0);
+    const summary = buildSummary();
+    summary.sessions.recent = [
+      {
+        agentId: "planning",
+        key: "agent:planning:skill-proof",
+        kind: "direct",
+        sessionId: "sess-planning-skill-proof",
+        updatedAt: now - 1_000,
+        age: 1_000,
+        totalTokens: 30_000,
+        totalTokensFresh: true,
+        remainingTokens: 70_000,
+        percentUsed: 30,
+        model: "gpt-5.5",
+        configuredModel: "gpt-5.5",
+        selectedModel: "gpt-5.5",
+        modelSelectionReason: "configured",
+        runtime: "openclaw",
+        contextTokens: 100_000,
+        promptContext: {
+          skills: {
+            skillCount: 2,
+            skillNames: ["comprehensive-plan-record", "agentic-architecture-review"],
+            promptChars: 640,
+            promptHash: "abc123",
+            promptRef: {
+              version: 1,
+              algorithm: "sha256",
+              hash: "abc123",
+              bytes: 640,
+            },
+          },
+        },
+        flags: [],
+      },
+    ];
+
+    const payload = buildRunInsightsReport(summary, {
+      session: "agent:planning:skill-proof",
+      limit: 5,
+      now,
+      taskRecords: [],
+      gatewaySessionRows: new Map(),
+    });
+
+    expect(payload.performanceProfile.skillActivationEvidence).toEqual([
+      expect.objectContaining({
+        sessionKey: "agent:planning:skill-proof",
+        agentId: "planning",
+        catalogVisible: true,
+        visibleSkillCount: 2,
+        visibleSkillNames: ["comprehensive-plan-record", "agentic-architecture-review"],
+        activationEvidence: "not_observed",
+        activationStatus: "catalog_only",
+        activatedSkillNames: [],
+        actualUsePointer: expect.stringContaining("visible skill catalog is not activation"),
+      }),
+    ]);
+  });
+
+  it("reports skill activation when native skill.used diagnostics match the session", () => {
+    const now = Date.UTC(2026, 6, 4, 16, 25, 0);
+    const summary = buildSummary();
+    summary.sessions.recent = [
+      {
+        agentId: "planning",
+        key: "agent:planning:skill-proof",
+        kind: "direct",
+        sessionId: "sess-planning-skill-proof",
+        updatedAt: now - 1_000,
+        age: 1_000,
+        totalTokens: 30_000,
+        totalTokensFresh: true,
+        remainingTokens: 70_000,
+        percentUsed: 30,
+        model: "gpt-5.5",
+        configuredModel: "gpt-5.5",
+        selectedModel: "gpt-5.5",
+        modelSelectionReason: "configured",
+        runtime: "openclaw",
+        contextTokens: 100_000,
+        promptContext: {
+          skills: {
+            skillCount: 2,
+            skillNames: ["comprehensive-plan-record", "agentic-architecture-review"],
+            promptChars: 640,
+            promptHash: "abc123",
+            promptRef: {
+              version: 1,
+              algorithm: "sha256",
+              hash: "abc123",
+              bytes: 640,
+            },
+          },
+        },
+        flags: [],
+      },
+    ];
+
+    const payload = buildRunInsightsReport(summary, {
+      session: "agent:planning:skill-proof",
+      limit: 5,
+      now,
+      taskRecords: [],
+      gatewaySessionRows: new Map(),
+      diagnosticSkillEvents: [
+        {
+          seq: 7,
+          ts: now - 500,
+          type: "skill.used",
+          sessionKey: "agent:planning:skill-proof",
+          sessionId: "sess-planning-skill-proof",
+          agentId: "planning",
+          source: "workspace",
+          action: "read",
+          target: "comprehensive-plan-record",
+          toolName: "read",
+        },
+      ],
+    });
+
+    expect(payload.performanceProfile.skillActivationEvidence).toEqual([
+      expect.objectContaining({
+        sessionKey: "agent:planning:skill-proof",
+        activationEvidence: "skill_used_diagnostic",
+        activationStatus: "activated",
+        activatedSkillNames: ["comprehensive-plan-record"],
+        actualUsePointer: "native skill.used diagnostic telemetry observed for this session",
+      }),
+    ]);
+  });
+
+  it("flags domain-final child output when the visible final answer is shorter and different", () => {
+    const now = Date.UTC(2026, 6, 4, 16, 40, 0);
+    const parentSessionKey = "agent:main:domain-final-proof";
+    const planningSessionKey = "agent:planning:domain-final-proof";
+    const planningReport = [
+      "# Full Planning Product",
+      "",
+      "## Evidence Ledger",
+      "This is the child-authored operator-facing report.",
+      "",
+      "## Execution Slices",
+      "Slice 1, slice 2, and slice 3 are all included.",
+    ].join("\n");
+    addSubagentRunForTests({
+      runId: "run-planning-domain-final",
+      childSessionKey: planningSessionKey,
+      requesterSessionKey: parentSessionKey,
+      requesterDisplayKey: "main",
+      task: "Create the planning product.",
+      taskName: "phase0z_planning_product",
+      label: "Planning product",
+      cleanup: "keep",
+      createdAt: now - 120_000,
+      startedAt: now - 120_000,
+      endedAt: now - 30_000,
+      outcome: { status: "ok" },
+      expectsCompletionMessage: true,
+      completion: {
+        required: true,
+        resultText: planningReport,
+        capturedAt: now - 30_000,
+      },
+      delivery: { status: "delivered" },
+    });
+    const mainTask: TaskRecord = {
+      taskId: "task-main-planning-domain-final",
+      runtime: "subagent",
+      taskKind: "planning",
+      agentId: "planning",
+      runId: "run-planning-domain-final",
+      label: "Planning product",
+      requesterSessionKey: parentSessionKey,
+      ownerKey: parentSessionKey,
+      scopeKind: "session",
+      childSessionKey: planningSessionKey,
+      task: "Create the planning product.",
+      status: "succeeded",
+      deliveryStatus: "delivered",
+      notifyPolicy: "done_only",
+      createdAt: now - 130_000,
+      startedAt: now - 120_000,
+      endedAt: now - 30_000,
+      lastEventAt: now - 30_000,
+    };
+    const summary = buildSummary();
+    summary.sessions.recent.unshift({
+      agentId: "main",
+      key: parentSessionKey,
+      kind: "direct",
+      sessionId: "sess-main-domain-final-proof",
+      updatedAt: now,
+      age: 0,
+      totalTokens: 20_000,
+      totalTokensFresh: true,
+      remainingTokens: 80_000,
+      percentUsed: 20,
+      model: "gpt-5.5",
+      configuredModel: "gpt-5.5",
+      selectedModel: "gpt-5.5",
+      modelSelectionReason: "configured",
+      runtime: "openclaw",
+      contextTokens: 100_000,
+      flags: [],
+    });
+
+    const payload = buildRunInsightsReport(summary, {
+      session: parentSessionKey,
+      limit: 5,
+      now,
+      taskRecords: [mainTask],
+      gatewaySessionRows: new Map([
+        [
+          parentSessionKey,
+          {
+            key: parentSessionKey,
+            kind: "direct",
+            updatedAt: now,
+            status: "done",
+            model: "gpt-5.5",
+            totalTokens: 20_000,
+            totalTokensFresh: true,
+            finalAssistantText: "Planning produced an approval packet.",
+          },
+        ],
+      ]),
+    });
+
+    expect(payload.performanceProfile.domainFinalFidelityEvidence).toEqual([
+      expect.objectContaining({
+        taskId: "task-main-planning-domain-final",
+        childSessionKey: planningSessionKey,
+        childRole: "planning",
+        contentChars: planningReport.length,
+        finalAssistantTextChars: "Planning produced an approval packet.".length,
+        fidelity: "visible_answer_shorter_than_domain_final",
+        guidance: expect.stringContaining("readback evidence only"),
+      }),
+    ]);
+  });
+
   it("hydrates exact session filters from native stores when recent rows miss", () => {
     expect(stateDir).toBeDefined();
     const storePath = path.join(stateDir!, "old-coding-sessions.json");
