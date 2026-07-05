@@ -7,7 +7,7 @@ import { formatErrorMessage } from "../../infra/errors.js";
 import type { TextContent } from "../../llm/types.js";
 import { emitSessionTranscriptUpdate } from "../../sessions/transcript-events.js";
 import { resolveAgentContextLimits } from "../agent-scope.js";
-import { isEvidenceHandoffToolResultMessage } from "../evidence-handoff.js";
+import { isChildResultToolResultMessage } from "../child-result-metadata.js";
 import type { AgentMessage } from "../runtime/index.js";
 import {
   acquireSessionWriteLock,
@@ -273,7 +273,7 @@ export function getToolResultTextLength(msg: AgentMessage): number {
   return totalLength;
 }
 
-export { isEvidenceHandoffToolResultMessage };
+export { isChildResultToolResultMessage };
 
 /**
  * Truncate a tool result message's text content blocks to fit within maxChars.
@@ -284,7 +284,7 @@ export function truncateToolResultMessage(
   maxChars: number,
   options: ToolResultTruncationOptions = {},
 ): AgentMessage {
-  if (isEvidenceHandoffToolResultMessage(msg)) {
+  if (isChildResultToolResultMessage(msg)) {
     return msg;
   }
   const suffixFactory = resolveSuffixFactory(options.suffix);
@@ -432,7 +432,7 @@ function buildAggregateToolResultReplacements(params: {
         item.entry.type === "message" &&
         Boolean(item.entry.message) &&
         (item.entry.message as { role?: string }).role === "toolResult" &&
-        !isEvidenceHandoffToolResultMessage(item.entry.message),
+        !isChildResultToolResultMessage(item.entry.message),
     )
     .map((item) => ({
       index: item.index,
@@ -511,7 +511,7 @@ function buildOversizedToolResultReplacements(params: {
     if ((msg as { role?: string }).role !== "toolResult") {
       continue;
     }
-    if (isEvidenceHandoffToolResultMessage(msg)) {
+    if (isChildResultToolResultMessage(msg)) {
       continue;
     }
     if (getToolResultTextLength(msg) <= params.maxChars) {
@@ -646,7 +646,7 @@ export function estimateToolResultReductionPotential(params: {
     if ((msg as { role?: string }).role !== "toolResult") {
       continue;
     }
-    if (isEvidenceHandoffToolResultMessage(msg)) {
+    if (isChildResultToolResultMessage(msg)) {
       continue;
     }
     const textLength = getToolResultTextLength(msg);
@@ -879,7 +879,7 @@ export function isOversizedToolResult(
   if ((msg as { role?: string }).role !== "toolResult") {
     return false;
   }
-  if (isEvidenceHandoffToolResultMessage(msg)) {
+  if (isChildResultToolResultMessage(msg)) {
     return false;
   }
   const maxChars = Math.max(

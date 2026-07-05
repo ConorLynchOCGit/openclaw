@@ -360,6 +360,10 @@ function parseTailTranscriptRecord(line: string): TailTranscriptRecord | null {
   if (isOversizedTranscriptLine(line)) {
     return buildOversizedTranscriptRecord(line);
   }
+  return parseTailTranscriptRecordRaw(line);
+}
+
+function parseTailTranscriptRecordRaw(line: string): TailTranscriptRecord | null {
   try {
     const parsed = JSON.parse(line) as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -446,6 +450,20 @@ function readTranscriptRecords(filePath: string): TailTranscriptRecord[] {
   return records;
 }
 
+function readTranscriptRecordsRaw(filePath: string): TailTranscriptRecord[] {
+  const records: TailTranscriptRecord[] = [];
+  visitTranscriptLines(filePath, (line) => {
+    if (!line.trim()) {
+      return;
+    }
+    const record = parseTailTranscriptRecordRaw(line);
+    if (record && record.record.type !== "session") {
+      records.push(record);
+    }
+  });
+  return records;
+}
+
 function selectActiveTranscriptRecords(records: TailTranscriptRecord[]): TailTranscriptRecord[] {
   return records.some(tailRecordHasTreeLink) ? selectBoundedActiveTailRecords(records) : records;
 }
@@ -453,6 +471,14 @@ function selectActiveTranscriptRecords(records: TailTranscriptRecord[]): TailTra
 function readSelectedTranscriptRecords(filePath: string): TailTranscriptRecord[] {
   try {
     return selectActiveTranscriptRecords(readTranscriptRecords(filePath));
+  } catch {
+    return [];
+  }
+}
+
+function readSelectedTranscriptRecordsRaw(filePath: string): TailTranscriptRecord[] {
+  try {
+    return selectActiveTranscriptRecords(readTranscriptRecordsRaw(filePath));
   } catch {
     return [];
   }
@@ -1849,7 +1875,7 @@ export function readLastAssistantTextFromTranscript(
   storePath: string | undefined,
   sessionFile: string | undefined,
   agentId: string | undefined,
-  maxChars = 12_000,
+  maxChars?: number,
 ): string | null {
   return readLastAssistantTextFromTranscriptWithProvenance(
     sessionId,
@@ -1865,12 +1891,16 @@ export type LastAssistantTextTranscriptRead = {
   provenance: ReadbackFieldProvenance;
 };
 
-function finalAssistantTextProvenance(sessionId: string, note: string): ReadbackFieldProvenance {
+function finalAssistantTextProvenance(
+  sessionId: string,
+  note: string,
+  bounded: boolean,
+): ReadbackFieldProvenance {
   return {
     source: "session-transcript",
     ref: `session:${sessionId}`,
     derivedBy: "readLastAssistantTextFromTranscript",
-    bounded: true,
+    bounded,
     note,
   };
 }
@@ -1880,52 +1910,67 @@ export function readLastAssistantTextFromTranscriptWithProvenance(
   storePath: string | undefined,
   sessionFile: string | undefined,
   agentId: string | undefined,
-  maxChars = 12_000,
+  maxChars?: number,
 ): LastAssistantTextTranscriptRead {
   const candidates = resolveSessionTranscriptCandidates(sessionId, storePath, sessionFile, agentId);
   const filePath = candidates.find((p) => fs.existsSync(p));
   if (!filePath) {
     return {
       text: null,
-      provenance: finalAssistantTextProvenance(sessionId, "no transcript candidate found"),
+      provenance: finalAssistantTextProvenance(sessionId, "no transcript candidate found", false),
     };
   }
 
-  const boundedChars = Math.max(20, Math.min(maxChars, 50_000));
-  for (const readSize of PREVIEW_READ_SIZES) {
-    const messages = readRecentMessagesFromTranscript(filePath, 50, readSize);
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const message = messages[i];
-      if (normalizeLowercaseStringOrEmpty(message?.role) !== "assistant") {
-        continue;
-      }
-      const text = extractPreviewText(message);
-      if (text) {
-        return {
-          text: truncatePreviewText(text.trim(), boundedChars),
-          provenance: finalAssistantTextProvenance(
-            sessionId,
-            `derived from bounded transcript tail; readBytes=${readSize}`,
-          ),
-        };
-      }
+  const messages = transcriptRecordsToMessages(readSelectedTranscriptRecordsRaw(filePath));
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i] as TranscriptPreviewMessage | undefined;
+    if (!message) {
+      continue;
     }
-    if (messages.length > 0 || readSize === PREVIEW_READ_SIZES[PREVIEW_READ_SIZES.length - 1]) {
+    if (normalizeLowercaseStringOrEmpty(message?.role) !== "assistant") {
+      continue;
+    }
+    const text = extractPreviewText(message);
+    if (!text) {
+      continue;
+    }
+    const trimmed = text.trim();
+    if (!trimmed) {
+      continue;
+    }
+    if (typeof maxChars === "number" && Number.isFinite(maxChars) && maxChars > 0) {
+      const boundedChars = Math.max(20, Math.floor(maxChars));
+      const bounded = trimmed.length > boundedChars;
       return {
-        text: null,
+        text: bounded ? truncatePreviewText(trimmed, boundedChars) : trimmed,
         provenance: finalAssistantTextProvenance(
           sessionId,
-          messages.length > 0
-            ? `no visible assistant text in bounded transcript tail; readBytes=${readSize}`
-            : `no recent transcript messages found; readBytes=${readSize}`,
+          bounded
+            ? `derived from full transcript scan then bounded by caller maxChars=${boundedChars}`
+            : "derived from full transcript scan; caller maxChars did not truncate",
+          bounded,
         ),
       };
     }
+    return {
+      text: trimmed,
+      provenance: finalAssistantTextProvenance(
+        sessionId,
+        "derived from full transcript scan; unbounded final assistant text",
+        false,
+      ),
+    };
   }
 
   return {
     text: null,
-    provenance: finalAssistantTextProvenance(sessionId, "no transcript read result"),
+    provenance: finalAssistantTextProvenance(
+      sessionId,
+      messages.length > 0
+        ? "no visible assistant text in selected transcript records"
+        : "no selected transcript records found",
+      false,
+    ),
   };
 }
 

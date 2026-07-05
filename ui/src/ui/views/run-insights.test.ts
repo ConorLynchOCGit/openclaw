@@ -11,185 +11,87 @@ function createProps(overrides: Partial<RunInsightsProps> = {}): RunInsightsProp
     activeMinutes: 180,
     report: {
       schema: "openclaw.run_insights.v1",
-      authority:
-        "Derived readback over native status/session/task summaries; advisory only, not lifecycle truth.",
+      authority: "advisory_readback",
+      filters: {
+        activeMinutes: 180,
+        limit: 10,
+        includeBackground: true,
+      },
       summary: {
-        recentSessionsConsidered: 10,
-        tasks: {
-          total: 2738,
-          active: 0,
-          failures: 49,
-        },
-        deploy: {
-          lastEventType: "deploy.promote",
-          lastPromotedImageDigest:
-            "sha256:caf794952d2db69293b182d44630d943c7144f48bb8dc3bfb6b4a3969f2fde2f",
-          recentFailures: 1,
+        recentSessionsConsidered: 2,
+        sessionsDisplayed: 1,
+        tasksDisplayed: 1,
+        childRunsDisplayed: 1,
+        skillReadsDisplayed: 1,
+        backgroundSignalsIncluded: true,
+      },
+      finality: {
+        status: "done",
+        finalAssistantTextPresent: true,
+        finalAssistantTextChars: 10943,
+        finalAssistantTextPointer: "openclaw sessions show agent:planning:main --agent planning",
+      },
+      activeWork: {
+        phase: "succeeded",
+        activeTool: null,
+        source: "session-store",
+      },
+      costs: {
+        sessionDurationMs: 420_000,
+        sessionTokens: 30_000,
+        sessionCostUsd: 0.1234,
+        toolCalls: 55,
+        deployReceiptCount: 1,
+        deployKnownDurationMs: 120_000,
+        slowestDeployReceipt: {
+          eventId: "deploy-1",
+          eventType: "deploy.promote",
+          durationMs: 120_000,
+          pointer: "/srv/openclaw-next/state/deploy/events.ndjson",
         },
       },
-      attention: {
-        whyWorkMayFeelSlow: [
-          {
-            severity: "info",
-            code: "task_validation_or_promotion",
-            message: "Validation/promotion work is active.",
-            pointer: "openclaw tasks show task-1",
-          },
-        ],
-        validationAndPromotion: [
-          {
-            severity: "warn",
-            code: "deploy_receipt_activity",
-            message: "Recent deploy receipt activity is present.",
-            pointer: "/srv/openclaw-next/artifacts/deploy-controller-promote-test.json",
-          },
-        ],
-        evidencePointers: ["/srv/openclaw-next/artifacts/proof.json"],
-      },
-      advisory: {
-        missingEvidenceLanguage: "unknown",
-      },
-      deployEvidenceScope: {
-        scope: "global_unscoped",
-        filteredBy: [],
-        limitApplied: 10,
-        reason:
-          "native deploy receipts do not carry agent/session/task keys, so run-insights applies only the bounded tail limit to deploy/build/promote evidence",
-      },
-      performanceProfile: {
-        expensiveRunExplanation: [
-          {
-            severity: "warn",
-            code: "tool_heavy_session",
-            message: "Tool-heavy session evidence is present.",
-            pointer: "openclaw sessions show agent:coding:main",
-          },
-        ],
-        timeline: [
-          {
-            at: 200,
-            age: "2m",
-            source: "task",
-            label: "validation task active",
-            pointer: "openclaw tasks show task-1",
-          },
-        ],
-        childSessionEvidence: [
-          {
-            taskId: "task-1",
-            childSessionKey: "agent:coding:child:1",
-            status: "running",
-            elapsed: "11m",
-            pointer: "openclaw tasks show task-1",
-          },
-        ],
-        retryBuildProofCost: {
-          deployReceiptCount: 2,
-          totalKnownDurationMs: 420_000,
-          totalKnownDuration: "7m",
-          slowestReceipt: {
-            eventId: "deploy-promote-test",
-            eventType: "deploy.promote",
-            durationMs: 240_000,
-            duration: "4m",
-            pointer: "/srv/openclaw-next/artifacts/deploy-controller-promote-test.json",
-          },
+      signals: [
+        {
+          severity: "warn",
+          code: "task_long_running",
+          message: "Task has been running for 11m.",
+          pointer: "openclaw tasks show task-1 --json",
         },
-        validationBuildBottlenecks: [
-          {
-            code: "task_validation_or_promotion",
-            message: "Validation task is active.",
-            pointer: "openclaw tasks show task-1",
-          },
-        ],
-        advisoryInefficiencyFlags: [
-          {
-            severity: "warn",
-            code: "high_context_pressure",
-            message: "Context pressure is high.",
-          },
-        ],
-      },
-      diagnosticSummary: {
-        currentOrLastKnownPhase: {
-          label: "validation task active",
-          source: "task",
-          pointer: "openclaw tasks show task-1",
-          confidence: "medium",
-          evidenceQuality: "heuristic",
-          reason: "derived from task readback",
-        },
-        parentWaitState: {
-          waitClass: "validation_or_promotion",
-          reason: "Validation task is active.",
-          pointer: "openclaw tasks show task-1",
-          confidence: "medium",
-          evidenceQuality: "heuristic",
-        },
-        childWork: {
-          displayedChildTasks: 1,
-          activeChildTasks: 1,
-          contribution: "1 active child task(s), 1 child task(s) displayed",
-          confidence: "high",
-          evidenceQuality: "evidence_backed",
-          pointer: "openclaw tasks show task-1",
-        },
-        validationBuildPromotion: {
-          attentionItems: 2,
-          bottlenecks: 1,
-          deployReceipts: 2,
-          artifactPointers: ["/srv/openclaw-next/artifacts/deploy-controller-promote-test.json"],
-          confidence: "medium",
-          evidenceQuality: "heuristic",
-        },
-        evidenceQuality: {
-          evidenceBacked: 4,
-          heuristic: 3,
-          stale: 0,
-          scoped: 1,
-          unknown: 1,
-          missingPointers: ["native session usage cache"],
-        },
-        operatorNextAction: {
-          label: "Inspect native task evidence",
-          pointer: "openclaw tasks show task-1",
-          reason: "task readback has the most specific wait evidence",
-        },
-      },
+      ],
       sessions: [
         {
-          key: "agent:coding:main",
-          agentId: "coding",
+          key: "agent:planning:main",
+          agentId: "planning",
           runtime: "codex",
           model: "gpt-5.5",
           age: "5m",
+          totalTokens: 30_000,
+          percentUsed: 30,
+          status: "done",
           usage: {
             cacheStatus: "fresh",
             totalCost: 0.1234,
-            totalTokens: 15,
+            totalTokens: 30_000,
             duration: "7m",
-            messageCount: 4,
             toolCalls: 55,
-            uniqueTools: 2,
-            topTools: [
-              { name: "read", count: 40 },
-              { name: "grep", count: 15 },
-            ],
-            errors: 1,
+            topTools: [{ name: "read", count: 40 }],
           },
-          pointer: "openclaw sessions show agent:coding:main --agent coding",
+          pointer: "openclaw sessions show agent:planning:main --agent planning",
         },
       ],
       tasks: [
         {
           taskId: "task-1",
           runtime: "subagent",
-          status: "running",
-          deliveryStatus: "pending",
-          label: "codebase scout",
-          childSessionKey: "agent:coding:child:1",
-          elapsed: "11m",
-          progressSummary: "Running validation proof over source refs",
+          status: "succeeded",
+          deliveryStatus: "delivered",
+          label: "Planning run",
+          elapsed: "7m",
+          childRunCount: 1,
+          latestEvent: {
+            kind: "succeeded",
+            summary: "Planning completed.",
+          },
           activeProgress: {
             source: "task-run-event",
             ref: "task-event:task-1:2:progress",
@@ -201,45 +103,58 @@ function createProps(overrides: Partial<RunInsightsProps> = {}): RunInsightsProp
             derivedBy: "resolveTaskReadbackProgressProjection",
             bounded: true,
           },
-          attention: {
-            waitClass: "validation_or_promotion",
-            pointer: "openclaw tasks show task-1",
-          },
-          pointer: "openclaw tasks show task-1",
+          pointer: "openclaw tasks show task-1 --json",
+        },
+      ],
+      childRuns: [
+        {
+          parentTaskId: "task-1",
+          runId: "child-1",
+          childSessionKey: "agent:codebase-researcher:child",
+          agentId: "codebase-researcher",
+          status: "succeeded",
+          contentChars: 2048,
+          contentTruncated: false,
+          elapsed: "2m",
+          spawnReason: "Inspect exact refs.",
+          pointer:
+            "openclaw sessions show agent:codebase-researcher:child --agent codebase-researcher",
+        },
+      ],
+      skillReads: [
+        {
+          sessionKey: "agent:planning:main",
+          agentId: "planning",
+          skillName: "comprehensive-plan-record",
+          catalogVisible: true,
+          visibleSkillCount: 2,
+          visibleSkillNames: ["comprehensive-plan-record", "agentic-architecture-review"],
+          readEvidence: "skill_used",
+          readStatus: "full",
+          linesRead: 775,
+          totalLines: 775,
+          bytesRead: 32_000,
+          usedSkillNames: ["comprehensive-plan-record"],
+          pointer: "openclaw sessions show agent:planning:main --agent planning",
         },
       ],
       deployEvents: [
         {
-          eventId: "deploy-promote-test",
+          eventId: "deploy-1",
           eventType: "deploy.promote",
-          status: "passed",
-          age: "3m",
-          imageDigest: "sha256:caf794952d2db69293b182d44630d943c7144f48bb8dc3bfb6b4a3969f2fde2f",
-          artifactRefs: [
-            {
-              kind: "deploy-controller-artifact",
-              path: "/srv/openclaw-next/artifacts/deploy-controller-promote-test.json",
-            },
-          ],
-          artifactSummary: {
-            readable: true,
-            duration: "4m",
-            durationMs: 240_000,
-            failedCount: 0,
-            slowestChecks: [
-              {
-                id: "openclaw-native-checks",
-                duration: "2m",
-                status: "passed",
-              },
-            ],
-          },
+          status: "succeeded",
+          duration: "2m",
+          durationMs: 120_000,
+          sourceCommit: "abc123",
+          artifactRefs: ["/srv/openclaw-next/artifacts/deploy.json"],
+          pointer: "/srv/openclaw-next/state/deploy/events.ndjson",
         },
       ],
       pointers: {
         statusJson: "openclaw status --json",
-        tasksAudit: "openclaw tasks audit --json",
-        deployEvents: "openclaw run-insights --json",
+        sessions: "openclaw sessions show agent:planning:main --agent planning",
+        tasks: "openclaw tasks show task-1 --json",
+        deployEvents: "/srv/openclaw-next/state/deploy/events.ndjson",
       },
     },
     onActiveMinutesChange: vi.fn(),
@@ -249,56 +164,29 @@ function createProps(overrides: Partial<RunInsightsProps> = {}): RunInsightsProp
 }
 
 describe("renderRunInsights", () => {
-  it("renders the run-insights operator workbench from bounded report fields", () => {
+  it("renders the reduced native run-insights report", () => {
     const container = document.createElement("div");
 
     render(renderRunInsights(createProps()), container);
 
     expect(container.textContent).toContain("Run insights");
-    expect(container.textContent).toContain("advisory only, not lifecycle truth");
-    expect(container.textContent).toContain("Missing evidence: unknown");
-    expect(container.textContent).toContain("Deploy/build/promote evidence is global_unscoped");
-    expect(container.textContent).toContain(
-      "native deploy receipts do not carry agent/session/task keys",
-    );
-    expect(container.textContent).toContain("Performance and cost profile");
+    expect(container.textContent).toContain("advisory_readback");
+    expect(container.textContent).toContain("10,943 chars");
+    expect(container.textContent).toContain("Cost and timing");
     expect(container.textContent).toContain("$0.1234");
-    expect(container.textContent).toContain("read");
-    expect(container.textContent).toContain("40");
-    expect(container.textContent).toContain("tool_heavy_session");
-    expect(container.textContent).toContain("Advisory inefficiency flags");
-    expect(container.textContent).toContain("high_context_pressure");
-    expect(container.textContent).toContain("Diagnostic summary");
-    expect(container.textContent).toContain("Parent wait");
-    expect(container.textContent).toContain("validation_or_promotion");
-    expect(container.textContent).toContain("Evidence quality");
-    expect(container.textContent).toContain("Inspect native task evidence");
-    expect(container.textContent).toContain("Attention readback");
-    expect(container.textContent).toContain("Recent deploy receipt activity is present.");
-    expect(container.textContent).toContain("Timeline and phase readback");
-    expect(container.textContent).toContain("validation task active");
-    expect(container.textContent).toContain("Child and task evidence");
-    expect(container.textContent).toContain("agent:coding:child:1");
-    expect(container.textContent).toContain("Running validation proof over source refs");
-    expect(container.textContent).toContain("child test_engineer");
-    expect(container.textContent).toContain(
-      "command pnpm vitest run src/commands/run-insights.test.ts",
-    );
-    expect(container.textContent).toContain("Validation, build, and promote cost");
-    expect(container.textContent).toContain("Scope: global_unscoped");
-    expect(container.textContent).toContain("bottleneck");
-    expect(container.textContent).toContain("Known duration");
-    expect(container.textContent).toContain("7m");
+    expect(container.textContent).toContain("task_long_running");
+    expect(container.textContent).toContain("agent:planning:main");
+    expect(container.textContent).toContain("Planning completed.");
+    expect(container.textContent).toContain("agent:codebase-researcher:child");
+    expect(container.textContent).toContain("skill_used");
+    expect(container.textContent).toContain("comprehensive-plan-record");
+    expect(container.textContent).toContain("status full");
+    expect(container.textContent).toContain("lines 775/775");
     expect(container.textContent).toContain("deploy.promote");
-    expect(container.textContent).toContain("duration");
-    expect(container.textContent).toContain("slowest openclaw-native-checks 2m");
-    expect(container.textContent).toContain("deploy-controller-promote-test.json");
-    expect(container.textContent).toContain("sha256:caf794952d2");
-    expect(container.textContent).toContain("Validation/promotion work is active.");
-    expect(container.textContent).toContain("Pointers and debug fallback");
-    expect(container.textContent).toContain("openclaw tasks audit --json");
-    expect(container.textContent).toContain("/srv/openclaw-next/artifacts/proof.json");
-    expect(container.textContent).toContain("Raw bounded report");
+    expect(container.textContent).toContain("openclaw status --json");
+    expect(container.textContent).not.toContain("Diagnostic summary");
+    expect(container.textContent).not.toContain("Performance and cost profile");
+    expect(container.textContent).not.toContain("Attention readback");
   });
 
   it("changes the time window without owning runtime state", () => {

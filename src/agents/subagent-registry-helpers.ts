@@ -72,7 +72,7 @@ export function capFrozenResultText(resultText: string): string {
   if (totalBytes <= FROZEN_RESULT_TEXT_MAX_BYTES) {
     return trimmed;
   }
-  const notice = `\n\n[truncated: frozen completion output exceeded ${Math.round(FROZEN_RESULT_TEXT_MAX_BYTES / 1024)}KB (${Math.round(totalBytes / 1024)}KB)]`;
+  const notice = `\n\n[truncated preview: frozen completion output exceeded ${Math.round(FROZEN_RESULT_TEXT_MAX_BYTES / 1024)}KB (${Math.round(totalBytes / 1024)}KB); full child output remains in native child session evidence]`;
   const maxPayloadBytes = Math.max(
     0,
     FROZEN_RESULT_TEXT_MAX_BYTES - Buffer.byteLength(notice, "utf8"),

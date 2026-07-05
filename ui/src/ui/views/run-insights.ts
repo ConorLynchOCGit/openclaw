@@ -1,12 +1,13 @@
-// Control UI view renders run-insights performance readback.
+// Control UI view renders thin native run-insights readback.
 import { html, nothing } from "lit";
 import type {
-  RunInsightsAttentionItem,
-  RunInsightsChildSessionEvidence,
+  RunInsightsChildRun,
   RunInsightsDeployEvent,
   RunInsightsReport,
+  RunInsightsSession,
+  RunInsightsSignal,
+  RunInsightsSkillRead,
   RunInsightsTask,
-  RunInsightsTimelineItem,
 } from "../controllers/run-insights.ts";
 
 export type RunInsightsProps = {
@@ -28,17 +29,6 @@ function formatCost(value: number | null | undefined): string {
   return typeof value === "number" && Number.isFinite(value) ? `$${value.toFixed(4)}` : "n/a";
 }
 
-function formatDigest(value: string | null | undefined): string {
-  if (!value) {
-    return "n/a";
-  }
-  const normalized = value.trim();
-  if (normalized.length <= 24) {
-    return normalized;
-  }
-  return `${normalized.slice(0, 18)}...${normalized.slice(-10)}`;
-}
-
 function severityClass(severity: string | null | undefined): string {
   switch ((severity ?? "").toLowerCase()) {
     case "danger":
@@ -52,7 +42,7 @@ function severityClass(severity: string | null | undefined): string {
   }
 }
 
-function renderMetric(label: string, value: string, detail?: string) {
+function renderMetric(label: string, value: string, detail?: string | null) {
   return html`
     <div
       class="list-item"
@@ -77,578 +67,6 @@ function renderSectionHeader(title: string, subtitle?: string) {
   return html`
     <div class="card-title">${title}</div>
     ${subtitle ? html`<div class="card-sub">${subtitle}</div>` : nothing}
-  `;
-}
-
-function renderAttentionItem(item: RunInsightsAttentionItem) {
-  const tone = severityClass(item.severity);
-  return html`
-    <div class="list-item">
-      <div class="list-main">
-        <div class="list-title">
-          <span
-            class="pill pill--sm ${tone === "danger" ? "pill--danger" : ""}"
-            title=${item.source ?? "run insight"}
-          >
-            ${item.severity ?? "info"}
-          </span>
-          <span>${item.code ?? "run_insight"}</span>
-        </div>
-        <div class="list-sub">${item.message ?? "No summary provided."}</div>
-      </div>
-      ${renderPointer(item.pointer)}
-    </div>
-  `;
-}
-
-function renderAttentionList(items: RunInsightsAttentionItem[] | undefined, emptyMessage: string) {
-  if (!items || items.length === 0) {
-    return renderEmpty(emptyMessage);
-  }
-  return html`<div class="list" style="margin-top: 12px;">${items.map(renderAttentionItem)}</div>`;
-}
-
-function renderSignalList(
-  items:
-    | Array<{
-        severity?: string;
-        code?: string;
-        message?: string;
-      }>
-    | undefined,
-  emptyMessage: string,
-) {
-  if (!items || items.length === 0) {
-    return renderEmpty(emptyMessage);
-  }
-  return html`
-    <div class="list" style="margin-top: 12px;">
-      ${items.map((item) => {
-        const tone = severityClass(item.severity);
-        return html`
-          <div class="list-item">
-            <div class="list-main">
-              <div class="list-title">
-                <span class="pill pill--sm ${tone === "danger" ? "pill--danger" : ""}">
-                  ${item.severity ?? "signal"}
-                </span>
-                <span>${item.code ?? "run_signal"}</span>
-              </div>
-              <div class="list-sub">${item.message ?? "No summary provided."}</div>
-            </div>
-          </div>
-        `;
-      })}
-    </div>
-  `;
-}
-
-function renderBottleneckList(items: RunInsightsAttentionItem[] | undefined) {
-  if (!items || items.length === 0) {
-    return renderEmpty("No validation or build bottleneck evidence.");
-  }
-  return html`
-    <div class="list" style="margin-top: 12px;">
-      ${items.map(
-        (item) => html`
-          <div class="list-item">
-            <div class="list-main">
-              <div class="list-title">
-                <span class="pill pill--sm">bottleneck</span>
-                <span>${item.code ?? "validation_build_bottleneck"}</span>
-              </div>
-              <div class="list-sub">${item.message ?? "No summary provided."}</div>
-            </div>
-            ${renderPointer(item.pointer)}
-          </div>
-        `,
-      )}
-    </div>
-  `;
-}
-
-function renderRunHeadline(report: RunInsightsReport | null) {
-  const summary = report?.summary;
-  const tasks = summary?.tasks;
-  const deploy = summary?.deploy;
-  const deployScope = report?.deployEvidenceScope;
-  const attentionCount =
-    (report?.attention?.whyWorkMayFeelSlow?.length ?? 0) +
-    (report?.attention?.validationAndPromotion?.length ?? 0);
-
-  return html`
-    <section class="card">
-      <div class="row" style="justify-content: space-between; align-items: flex-end;">
-        <div>
-          <div class="card-title">Run insights</div>
-          <div class="card-sub">
-            Advisory readback from native sessions, tasks, deploy receipts, and artifacts.
-          </div>
-        </div>
-        ${report?.schema ? html`<span class="pill">${report.schema}</span>` : nothing}
-      </div>
-
-      ${report?.authority
-        ? html`<div class="callout info" style="margin-top: 12px;">${report.authority}</div>`
-        : renderEmpty("No run insights report loaded. Refresh to request bounded native evidence.")}
-      ${report?.advisory?.missingEvidenceLanguage
-        ? html`
-            <div class="muted" style="margin-top: 10px;">
-              Missing evidence: ${report.advisory.missingEvidenceLanguage}
-            </div>
-          `
-        : nothing}
-
-      <section class="grid" style="margin-top: 12px;">
-        ${renderMetric(
-          "Sessions",
-          formatCount(summary?.sessionsDisplayed ?? summary?.recentSessionsConsidered),
-          `${formatCount(summary?.recentSessionsConsidered)} considered`,
-        )}
-        ${renderMetric(
-          "Tasks",
-          formatCount(tasks?.total),
-          `${formatCount(tasks?.active)} active, ${formatCount(tasks?.failures)} failed`,
-        )}
-        ${renderMetric(
-          "Attention",
-          formatCount(attentionCount),
-          `${formatCount(tasks?.deliveryIssues)} delivery issues`,
-        )}
-        ${renderMetric(
-          "Deploy",
-          deploy?.lastEventType ?? "n/a",
-          `${formatCount(deploy?.recentFailures)} recent failures; ${deployScope?.scope ?? "global_unscoped"}`,
-        )}
-      </section>
-      ${deployScope?.reason
-        ? html`<div class="muted" style="margin-top: 10px;">
-            Deploy/build/promote evidence is ${deployScope.scope ?? "global_unscoped"}:
-            ${deployScope.reason}
-          </div>`
-        : nothing}
-    </section>
-  `;
-}
-
-function renderCostProfile(report: RunInsightsReport) {
-  const sessions = report.sessions ?? [];
-  const usageSessions = sessions.filter((session) => session.usage);
-  const totalCost = usageSessions.reduce(
-    (sum, session) => sum + (session.usage?.totalCost ?? 0),
-    0,
-  );
-  const totalTokens = usageSessions.reduce(
-    (sum, session) => sum + (session.usage?.totalTokens ?? 0),
-    0,
-  );
-  const messageCount = usageSessions.reduce(
-    (sum, session) => sum + (session.usage?.messageCount ?? 0),
-    0,
-  );
-  const toolCalls = usageSessions.reduce(
-    (sum, session) => sum + (session.usage?.toolCalls ?? 0),
-    0,
-  );
-  const errors = usageSessions.reduce((sum, session) => sum + (session.usage?.errors ?? 0), 0);
-  const topTools = new Map<string, number>();
-  for (const session of usageSessions) {
-    for (const tool of session.usage?.topTools ?? []) {
-      if (!tool.name) {
-        continue;
-      }
-      topTools.set(tool.name, (topTools.get(tool.name) ?? 0) + (tool.count ?? 0));
-    }
-  }
-  const tools = Array.from(topTools.entries())
-    .toSorted((left, right) => right[1] - left[1])
-    .slice(0, 5);
-  const explanation = report.performanceProfile?.expensiveRunExplanation ?? [];
-
-  return html`
-    <section class="card">
-      ${renderSectionHeader(
-        "Performance and cost profile",
-        "Cached usage, token, tool, and error evidence when native session usage has it.",
-      )}
-      <section class="grid" style="margin-top: 12px;">
-        ${renderMetric("Known cost", formatCost(usageSessions.length ? totalCost : null))}
-        ${renderMetric("Known tokens", formatCount(usageSessions.length ? totalTokens : null))}
-        ${renderMetric("Messages", formatCount(usageSessions.length ? messageCount : null))}
-        ${renderMetric("Tool calls", formatCount(usageSessions.length ? toolCalls : null))}
-        ${renderMetric("Usage errors", formatCount(usageSessions.length ? errors : null))}
-        ${renderMetric(
-          "Promoted image",
-          formatDigest(report.summary?.deploy?.lastPromotedImageDigest),
-        )}
-      </section>
-
-      ${tools.length
-        ? html`
-            <div class="list" style="margin-top: 12px;">
-              ${tools.map(
-                ([name, count]) => html`
-                  <div class="list-item">
-                    <div class="list-main">
-                      <div class="list-title">${name}</div>
-                      <div class="list-sub">Top tool evidence from cached session usage.</div>
-                    </div>
-                    <div class="list-meta">${formatCount(count)}</div>
-                  </div>
-                `,
-              )}
-            </div>
-          `
-        : renderEmpty("No cached usage or top-tool evidence in this bounded report.")}
-      ${explanation.length
-        ? html`<div style="margin-top: 12px;">
-            ${renderAttentionList(explanation, "No expensive-run explanation evidence.")}
-          </div>`
-        : nothing}
-      <div style="margin-top: 12px;">
-        <div class="card-sub">Advisory inefficiency flags</div>
-        ${renderSignalList(
-          report.performanceProfile?.advisoryInefficiencyFlags,
-          "No advisory inefficiency flags in this bounded report.",
-        )}
-      </div>
-    </section>
-  `;
-}
-
-function renderAttentionPanel(report: RunInsightsReport) {
-  return html`
-    <section class="card">
-      ${renderSectionHeader(
-        "Attention readback",
-        "Existing advisory signals and validation/promotion attention from the report.",
-      )}
-      <div style="margin-top: 12px;">
-        <div class="card-sub">Why work may feel slow</div>
-        ${renderAttentionList(
-          report.attention?.whyWorkMayFeelSlow,
-          "No current slow-work attention evidence.",
-        )}
-      </div>
-      <div style="margin-top: 12px;">
-        <div class="card-sub">Validation and promotion</div>
-        ${renderAttentionList(
-          report.attention?.validationAndPromotion,
-          "No validation or promotion attention evidence.",
-        )}
-      </div>
-    </section>
-  `;
-}
-
-function renderDiagnosticSummary(report: RunInsightsReport) {
-  const summary = report.diagnosticSummary;
-  if (!summary) {
-    return html`
-      <section class="card">
-        ${renderSectionHeader(
-          "Diagnostic summary",
-          "Current phase, wait state, confidence, and next action when bounded evidence has it.",
-        )}
-        ${renderEmpty("No diagnostic summary in this bounded report.")}
-      </section>
-    `;
-  }
-  const phase = summary.currentOrLastKnownPhase;
-  const wait = summary.parentWaitState;
-  const evidence = summary.evidenceQuality;
-  const next = summary.operatorNextAction;
-  const validation = summary.validationBuildPromotion;
-  return html`
-    <section class="card">
-      ${renderSectionHeader(
-        "Diagnostic summary",
-        "Current or last-known phase, wait state, evidence quality, and operator next action.",
-      )}
-      <section class="grid" style="margin-top: 12px;">
-        ${renderMetric(
-          "Phase",
-          phase?.label ?? "unknown",
-          `${phase?.evidenceQuality ?? "unknown"}; confidence ${phase?.confidence ?? "unknown"}`,
-        )}
-        ${renderMetric(
-          "Parent wait",
-          wait?.waitClass ?? "unknown",
-          `${wait?.evidenceQuality ?? "unknown"}; ${wait?.reason ?? "no bounded wait evidence"}`,
-        )}
-        ${renderMetric(
-          "Child work",
-          formatCount(summary.childWork?.displayedChildTasks),
-          summary.childWork?.contribution,
-        )}
-        ${renderMetric(
-          "Validation/build",
-          formatCount(validation?.attentionItems),
-          `${formatCount(validation?.bottlenecks)} bottlenecks, ${formatCount(
-            validation?.deployReceipts,
-          )} receipts`,
-        )}
-      </section>
-      <div class="list" style="margin-top: 12px;">
-        <div class="list-item">
-          <div class="list-main">
-            <div class="list-title">Evidence quality</div>
-            <div class="list-sub">
-              backed ${formatCount(evidence?.evidenceBacked)}, heuristic
-              ${formatCount(evidence?.heuristic)}, stale ${formatCount(evidence?.stale)}, scoped
-              ${formatCount(evidence?.scoped)}, unknown ${formatCount(evidence?.unknown)}
-            </div>
-          </div>
-        </div>
-        <div class="list-item">
-          <div class="list-main">
-            <div class="list-title">${next?.label ?? "Next action unknown"}</div>
-            <div class="list-sub">${next?.reason ?? "No next action reason in report."}</div>
-          </div>
-          ${renderPointer(next?.pointer)}
-        </div>
-      </div>
-    </section>
-  `;
-}
-
-function renderTimeline(timeline: RunInsightsTimelineItem[] | undefined) {
-  const rows = [...(timeline ?? [])]
-    .toSorted((left, right) => (right.at ?? -1) - (left.at ?? -1))
-    .slice(0, 12);
-  return html`
-    <section class="card">
-      ${renderSectionHeader(
-        "Timeline and phase readback",
-        "Existing timeline entries only; this panel does not infer lifecycle status.",
-      )}
-      ${rows.length
-        ? html`
-            <div class="list" style="margin-top: 12px;">
-              ${rows.map(
-                (item) => html`
-                  <div class="list-item">
-                    <div class="list-main">
-                      <div class="list-title">
-                        <span>${item.label ?? "timeline entry"}</span>
-                        ${item.source
-                          ? html`<span class="pill pill--sm">${item.source}</span>`
-                          : nothing}
-                      </div>
-                      <div class="list-sub">${item.age ?? "age unknown"}</div>
-                    </div>
-                    ${renderPointer(item.pointer)}
-                  </div>
-                `,
-              )}
-            </div>
-          `
-        : renderEmpty("No timeline evidence in this bounded report.")}
-    </section>
-  `;
-}
-
-function renderChildEvidence(rows: RunInsightsChildSessionEvidence[] | undefined) {
-  if (!rows || rows.length === 0) {
-    return renderEmpty("No child session evidence in this bounded report.");
-  }
-  return html`
-    <div class="list" style="margin-top: 12px;">
-      ${rows.map(
-        (row) => html`
-          <div class="list-item">
-            <div class="list-main">
-              <div class="list-title">
-                <span>${row.childSessionKey ?? "child session"}</span>
-                ${row.status ? html`<span class="pill pill--sm">${row.status}</span>` : nothing}
-              </div>
-              <div class="list-sub">
-                task ${row.taskId ?? "n/a"}${row.elapsed ? `, elapsed ${row.elapsed}` : ""}
-              </div>
-            </div>
-            ${renderPointer(row.pointer)}
-          </div>
-        `,
-      )}
-    </div>
-  `;
-}
-
-function renderTaskActiveProgress(task: RunInsightsTask) {
-  const progress = task.activeProgress;
-  if (!progress) {
-    return nothing;
-  }
-  const child = progress.childRole ? `child ${progress.childRole}` : null;
-  const phase = progress.currentPhase ? `phase ${progress.currentPhase}` : null;
-  const command = progress.command ? `command ${progress.command}` : null;
-  const output = progress.outputSummary ? `output ${progress.outputSummary}` : null;
-  const parts = [child, phase, command, output].filter((part): part is string => Boolean(part));
-  if (parts.length === 0) {
-    return nothing;
-  }
-  return html`<div class="list-sub">${parts.join("; ")}</div>`;
-}
-
-function renderTask(task: RunInsightsTask) {
-  const waitClass = task.attention?.waitClass;
-  return html`
-    <div class="list-item">
-      <div class="list-main">
-        <div class="list-title">
-          <span>${task.label ?? task.taskId ?? "task"}</span>
-          ${task.status ? html`<span class="pill pill--sm">${task.status}</span>` : nothing}
-          ${waitClass ? html`<span class="pill pill--sm">${waitClass}</span>` : nothing}
-        </div>
-        <div class="list-sub">
-          ${task.runtime ?? "runtime n/a"}${task.deliveryStatus
-            ? `, delivery ${task.deliveryStatus}`
-            : ""}${task.elapsed ? `, elapsed ${task.elapsed}` : ""}
-        </div>
-        ${task.progressSummary
-          ? html`<div class="list-sub">${task.progressSummary}</div>`
-          : task.latestEvent?.summary
-            ? html`<div class="list-sub">${task.latestEvent.summary}</div>`
-            : nothing}
-        ${renderTaskActiveProgress(task)}
-      </div>
-      ${renderPointer(task.pointer)}
-    </div>
-  `;
-}
-
-function renderChildAndTaskEvidence(report: RunInsightsReport) {
-  const tasks = report.tasks ?? [];
-  return html`
-    <section class="card">
-      ${renderSectionHeader(
-        "Child and task evidence",
-        "Native task rows, child-session pointers, progress summaries, and delivery state.",
-      )}
-      ${renderChildEvidence(report.performanceProfile?.childSessionEvidence)}
-      ${tasks.length
-        ? html`<div class="list" style="margin-top: 12px;">
-            ${tasks.slice(0, 10).map(renderTask)}
-          </div>`
-        : renderEmpty("No task rows in this bounded report.")}
-    </section>
-  `;
-}
-
-function renderDeployEvent(event: RunInsightsDeployEvent) {
-  const slowest = event.artifactSummary?.slowestChecks?.[0];
-  const artifact = event.artifactSummary?.path ?? event.artifactRefs?.find((ref) => ref.path)?.path;
-  return html`
-    <div class="list-item">
-      <div class="list-main">
-        <div class="list-title">
-          <span>${event.eventType ?? "deploy.event"}</span>
-          ${event.status ? html`<span class="pill pill--sm">${event.status}</span>` : nothing}
-          ${event.artifactSummary?.failedCount
-            ? html`<span class="pill pill--sm pill--danger">
-                ${formatCount(event.artifactSummary.failedCount)} failed
-              </span>`
-            : nothing}
-        </div>
-        <div class="list-sub">
-          duration
-          ${event.artifactSummary?.duration ?? "unknown"}${slowest?.id
-            ? `, slowest ${slowest.id}${slowest.duration ? ` ${slowest.duration}` : ""}`
-            : ""}${event.imageDigest ? `, ${formatDigest(event.imageDigest)}` : ""}
-        </div>
-        ${artifact ? html`<div class="list-sub mono">${artifact}</div>` : nothing}
-      </div>
-      ${event.age ? html`<div class="list-meta">${event.age}</div>` : nothing}
-    </div>
-  `;
-}
-
-function renderValidationCost(report: RunInsightsReport) {
-  const retry = report.performanceProfile?.retryBuildProofCost;
-  const bottlenecks = report.performanceProfile?.validationBuildBottlenecks ?? [];
-  const events = report.deployEvents ?? [];
-  const deployScope = report.deployEvidenceScope;
-
-  return html`
-    <section class="card">
-      ${renderSectionHeader(
-        "Validation, build, and promote cost",
-        `Deploy receipts, retry/build/proof duration, bottlenecks, failed counts, and artifacts. Scope: ${
-          deployScope?.scope ?? "global_unscoped"
-        }.`,
-      )}
-      <section class="grid" style="margin-top: 12px;">
-        ${renderMetric("Deploy receipts", formatCount(retry?.deployReceiptCount))}
-        ${renderMetric("Known duration", retry?.totalKnownDuration ?? "n/a")}
-        ${renderMetric(
-          "Slowest receipt",
-          retry?.slowestReceipt?.eventType ?? "n/a",
-          retry?.slowestReceipt?.duration,
-        )}
-        ${renderMetric(
-          "Recent deploy failures",
-          formatCount(report.summary?.deploy?.recentFailures),
-        )}
-      </section>
-      ${retry?.slowestReceipt?.pointer
-        ? html`<div class="callout" style="margin-top: 12px;">
-            <span class="mono">${retry.slowestReceipt.pointer}</span>
-          </div>`
-        : nothing}
-      ${bottlenecks.length
-        ? html`<div style="margin-top: 12px;">${renderBottleneckList(bottlenecks)}</div>`
-        : nothing}
-      ${events.length
-        ? html`<div class="list" style="margin-top: 12px;">
-            ${events.slice(0, 8).map(renderDeployEvent)}
-          </div>`
-        : renderEmpty("No deploy receipt rows in this bounded report.")}
-    </section>
-  `;
-}
-
-function pointerEntries(report: RunInsightsReport): Array<[string, string]> {
-  const entries = new Map<string, string>();
-  for (const [key, value] of Object.entries(report.pointers ?? {})) {
-    if (value) {
-      entries.set(key, value);
-    }
-  }
-  for (const pointer of report.attention?.evidencePointers ?? []) {
-    entries.set(pointer, pointer);
-  }
-  return Array.from(entries.entries()).slice(0, 18);
-}
-
-function renderPointers(report: RunInsightsReport) {
-  const pointers = pointerEntries(report);
-  return html`
-    <section class="card">
-      ${renderSectionHeader(
-        "Pointers and debug fallback",
-        "Artifact, proof, lifecycle-audit, task, session, and deploy pointers with bounded JSON secondary.",
-      )}
-      ${pointers.length
-        ? html`
-            <div class="list" style="margin-top: 12px;">
-              ${pointers.map(
-                ([label, pointer]) => html`
-                  <div class="list-item">
-                    <div class="list-main">
-                      <div class="list-title">${label}</div>
-                      <div class="list-sub mono">${pointer}</div>
-                    </div>
-                  </div>
-                `,
-              )}
-            </div>
-          `
-        : renderEmpty("No explicit evidence pointers in this bounded report.")}
-      <details class="callout" style="margin-top: 12px;">
-        <summary class="card-title">Raw bounded report</summary>
-        <pre class="code-block" style="margin-top: 12px;">${JSON.stringify(report, null, 2)}</pre>
-      </details>
-    </section>
   `;
 }
 
@@ -680,18 +98,382 @@ function renderControls(props: RunInsightsProps) {
   `;
 }
 
+function renderRunHeadline(report: RunInsightsReport | null) {
+  if (!report) {
+    return html`
+      <section class="card">
+        ${renderSectionHeader(
+          "Run insights",
+          "Thin readback from native sessions, tasks, child records, skill telemetry, and deploy receipts.",
+        )}
+        ${renderEmpty("No run insights report loaded. Refresh to request bounded native evidence.")}
+      </section>
+    `;
+  }
+  const summary = report.summary;
+  return html`
+    <section class="card">
+      <div class="row" style="justify-content: space-between; align-items: flex-end;">
+        <div>
+          ${renderSectionHeader(
+            "Run insights",
+            "Advisory readback only. Runtime truth remains in native OpenClaw/Codex evidence.",
+          )}
+        </div>
+        ${report.schema ? html`<span class="pill">${report.schema}</span>` : nothing}
+      </div>
+      <div class="callout info" style="margin-top: 12px;">
+        ${report.authority ?? "advisory_readback"}
+      </div>
+      <section class="grid" style="margin-top: 12px;">
+        ${renderMetric(
+          "Finality",
+          report.finality?.finalAssistantTextPresent
+            ? `${formatCount(report.finality.finalAssistantTextChars)} chars`
+            : "not present",
+          report.finality?.finalAssistantTextPointer,
+        )}
+        ${renderMetric(
+          "Active work",
+          report.activeWork?.phase ?? "unknown",
+          `tool ${report.activeWork?.activeTool ?? "unknown"}; source ${
+            report.activeWork?.source ?? "unknown"
+          }`,
+        )}
+        ${renderMetric(
+          "Sessions",
+          formatCount(summary?.sessionsDisplayed),
+          `${formatCount(summary?.recentSessionsConsidered)} considered`,
+        )}
+        ${renderMetric(
+          "Tasks",
+          formatCount(summary?.tasksDisplayed),
+          `${formatCount(summary?.childRunsDisplayed)} child runs`,
+        )}
+        ${renderMetric("Skills", formatCount(summary?.skillReadsDisplayed))}
+        ${renderMetric(
+          "Background",
+          report.filters?.includeBackground ? "included" : "hidden",
+          report.filters?.includeBackground
+            ? "deploy receipts visible"
+            : "use include-background for deploy receipts",
+        )}
+      </section>
+    </section>
+  `;
+}
+
+function renderCosts(report: RunInsightsReport) {
+  const costs = report.costs;
+  return html`
+    <section class="card">
+      ${renderSectionHeader(
+        "Cost and timing",
+        "Cached usage and deploy receipt durations when native evidence has them.",
+      )}
+      <section class="grid" style="margin-top: 12px;">
+        ${renderMetric(
+          "Session duration",
+          costs?.sessionDurationMs ? `${costs.sessionDurationMs}ms` : "n/a",
+        )}
+        ${renderMetric("Session tokens", formatCount(costs?.sessionTokens))}
+        ${renderMetric("Session cost", formatCost(costs?.sessionCostUsd))}
+        ${renderMetric("Tool calls", formatCount(costs?.toolCalls))}
+        ${renderMetric("Deploy receipts", formatCount(costs?.deployReceiptCount))}
+        ${renderMetric(
+          "Deploy duration",
+          costs?.deployKnownDurationMs ? `${costs.deployKnownDurationMs}ms` : "n/a",
+        )}
+      </section>
+      ${costs?.slowestDeployReceipt
+        ? html`<div class="callout" style="margin-top: 12px;">
+            Slowest deploy receipt: ${costs.slowestDeployReceipt.eventType}
+            ${formatCount(costs.slowestDeployReceipt.durationMs)}ms
+            ${renderPointer(costs.slowestDeployReceipt.pointer)}
+          </div>`
+        : nothing}
+    </section>
+  `;
+}
+
+function renderSignal(signal: RunInsightsSignal) {
+  const tone = severityClass(signal.severity);
+  return html`
+    <div class="list-item">
+      <div class="list-main">
+        <div class="list-title">
+          <span class="pill pill--sm ${tone === "danger" ? "pill--danger" : ""}">
+            ${signal.severity ?? "info"}
+          </span>
+          <span>${signal.code ?? "run_signal"}</span>
+        </div>
+        <div class="list-sub">${signal.message ?? "No summary provided."}</div>
+      </div>
+      ${renderPointer(signal.pointer)}
+    </div>
+  `;
+}
+
+function renderSignals(report: RunInsightsReport) {
+  const signals = report.signals ?? [];
+  return html`
+    <section class="card">
+      ${renderSectionHeader("Signals", "Mechanical evidence signals only; no quality verdicts.")}
+      ${signals.length
+        ? html`<div class="list" style="margin-top: 12px;">${signals.map(renderSignal)}</div>`
+        : renderEmpty("No scoped run signals found.")}
+    </section>
+  `;
+}
+
+function renderSession(session: RunInsightsSession) {
+  return html`
+    <div class="list-item">
+      <div class="list-main">
+        <div class="list-title">
+          <span>${session.key ?? "session"}</span>
+          ${session.status ? html`<span class="pill pill--sm">${session.status}</span>` : nothing}
+        </div>
+        <div class="list-sub">
+          agent ${session.agentId ?? "unknown"}; runtime ${session.runtime ?? "unknown"}; model
+          ${session.model ?? "unknown"}; age ${session.age ?? "unknown"}
+        </div>
+        <div class="list-sub">
+          tokens ${formatCount(session.totalTokens)}; context ${formatCount(session.percentUsed)}%;
+          tools ${formatCount(session.usage?.toolCalls)}; cost
+          ${formatCost(session.usage?.totalCost)}
+        </div>
+      </div>
+      ${renderPointer(session.pointer)}
+    </div>
+  `;
+}
+
+function renderSessions(report: RunInsightsReport) {
+  const sessions = report.sessions ?? [];
+  return html`
+    <section class="card">
+      ${renderSectionHeader("Sessions", "Session rows plus finality and cached usage pointers.")}
+      ${sessions.length
+        ? html`<div class="list" style="margin-top: 12px;">
+            ${sessions.slice(0, 10).map(renderSession)}
+          </div>`
+        : renderEmpty("No matching sessions.")}
+    </section>
+  `;
+}
+
+function renderTask(task: RunInsightsTask) {
+  const progress = task.activeProgress;
+  const progressParts = [
+    progress?.currentPhase ? `phase ${progress.currentPhase}` : null,
+    progress?.toolName ? `tool ${progress.toolName}` : null,
+    progress?.command ? `command ${progress.command}` : null,
+    progress?.outputSummary ? `output ${progress.outputSummary}` : null,
+  ].filter((part): part is string => Boolean(part));
+  return html`
+    <div class="list-item">
+      <div class="list-main">
+        <div class="list-title">
+          <span>${task.label ?? task.taskId ?? "task"}</span>
+          ${task.status ? html`<span class="pill pill--sm">${task.status}</span>` : nothing}
+        </div>
+        <div class="list-sub">
+          ${task.runtime ?? "runtime n/a"}; delivery ${task.deliveryStatus ?? "n/a"}; elapsed
+          ${task.elapsed ?? "unknown"}; children ${formatCount(task.childRunCount)}
+        </div>
+        ${task.latestEvent?.summary
+          ? html`<div class="list-sub">${task.latestEvent.summary}</div>`
+          : nothing}
+        ${progressParts.length
+          ? html`<div class="list-sub">${progressParts.join("; ")}</div>`
+          : nothing}
+      </div>
+      ${renderPointer(task.pointer)}
+    </div>
+  `;
+}
+
+function renderTasks(report: RunInsightsReport) {
+  const tasks = report.tasks ?? [];
+  return html`
+    <section class="card">
+      ${renderSectionHeader("Tasks", "Task receipts and active progress projections.")}
+      ${tasks.length
+        ? html`<div class="list" style="margin-top: 12px;">
+            ${tasks.slice(0, 10).map(renderTask)}
+          </div>`
+        : renderEmpty("No matching tasks.")}
+    </section>
+  `;
+}
+
+function renderChild(child: RunInsightsChildRun) {
+  return html`
+    <div class="list-item">
+      <div class="list-main">
+        <div class="list-title">
+          <span>${child.childSessionKey ?? child.runId ?? "child run"}</span>
+          ${child.status ? html`<span class="pill pill--sm">${child.status}</span>` : nothing}
+          ${child.contentTruncated
+            ? html`<span class="pill pill--sm pill--danger">truncated</span>`
+            : nothing}
+        </div>
+        <div class="list-sub">
+          agent ${child.agentId ?? "unknown"}; elapsed ${child.elapsed ?? "unknown"}; chars
+          ${formatCount(child.contentChars)}
+        </div>
+        ${child.spawnReason ? html`<div class="list-sub">${child.spawnReason}</div>` : nothing}
+        ${child.errorSummary ? html`<div class="list-sub">${child.errorSummary}</div>` : nothing}
+      </div>
+      ${renderPointer(child.pointer)}
+    </div>
+  `;
+}
+
+function renderChildren(report: RunInsightsReport) {
+  const children = report.childRuns ?? [];
+  return html`
+    <section class="card">
+      ${renderSectionHeader(
+        "Child runs",
+        "Normalized child evidence from existing task/session records.",
+      )}
+      ${children.length
+        ? html`<div class="list" style="margin-top: 12px;">
+            ${children.slice(0, 10).map(renderChild)}
+          </div>`
+        : renderEmpty("No child runs in scoped readback.")}
+    </section>
+  `;
+}
+
+function renderSkillRead(skill: RunInsightsSkillRead) {
+  const visible = (skill.visibleSkillNames ?? []).slice(0, 4).join(", ");
+  const used = (skill.usedSkillNames ?? []).join(", ");
+  const title = skill.skillName ?? skill.sessionKey ?? "session";
+  const lines =
+    skill.linesRead != null || skill.totalLines != null
+      ? `; lines ${skill.linesRead ?? "unknown"}/${skill.totalLines ?? "unknown"}`
+      : "";
+  const bytes = skill.bytesRead != null ? `; bytes ${skill.bytesRead}` : "";
+  return html`
+    <div class="list-item">
+      <div class="list-main">
+        <div class="list-title">
+          <span>${title}</span>
+          <span class="pill pill--sm">${skill.readEvidence ?? "unknown"}</span>
+        </div>
+        <div class="list-sub">
+          session ${skill.sessionKey ?? "unknown"}; status ${skill.readStatus ?? "unknown"}; visible
+          ${formatCount(skill.visibleSkillCount)}${visible ? `: ${visible}` : ""}${used
+            ? `; used ${used}`
+            : ""}${lines}${bytes}
+        </div>
+      </div>
+      ${renderPointer(skill.pointer)}
+    </div>
+  `;
+}
+
+function renderSkillReads(report: RunInsightsReport) {
+  const skillReads = report.skillReads ?? [];
+  return html`
+    <section class="card">
+      ${renderSectionHeader("Skill reads", "Visible catalog and native skill.used evidence only.")}
+      ${skillReads.length
+        ? html`<div class="list" style="margin-top: 12px;">${skillReads.map(renderSkillRead)}</div>`
+        : renderEmpty("No skill-read evidence in scoped readback.")}
+    </section>
+  `;
+}
+
+function renderDeploy(event: RunInsightsDeployEvent) {
+  return html`
+    <div class="list-item">
+      <div class="list-main">
+        <div class="list-title">
+          <span>${event.eventType ?? "deploy.event"}</span>
+          ${event.status ? html`<span class="pill pill--sm">${event.status}</span>` : nothing}
+        </div>
+        <div class="list-sub">
+          duration ${event.duration ?? "unknown"}; commit
+          ${event.sourceCommit ?? "unknown"}${event.imageDigest ? `; ${event.imageDigest}` : ""}
+        </div>
+        ${(event.artifactRefs ?? []).length
+          ? html`<div class="list-sub mono">${event.artifactRefs?.slice(0, 2).join(", ")}</div>`
+          : nothing}
+      </div>
+      ${renderPointer(event.pointer)}
+    </div>
+  `;
+}
+
+function renderDeploys(report: RunInsightsReport) {
+  const events = report.deployEvents ?? [];
+  return html`
+    <section class="card">
+      ${renderSectionHeader(
+        "Deploy receipts",
+        "Background deploy/build/promote receipts are opt-in.",
+      )}
+      ${events.length
+        ? html`<div class="list" style="margin-top: 12px;">
+            ${events.slice(0, 8).map(renderDeploy)}
+          </div>`
+        : renderEmpty("Background deploy receipts hidden or unavailable.")}
+    </section>
+  `;
+}
+
+function pointerEntries(report: RunInsightsReport): Array<[string, string]> {
+  return Object.entries(report.pointers ?? {})
+    .filter((entry): entry is [string, string] => Boolean(entry[1]))
+    .slice(0, 12);
+}
+
+function renderPointers(report: RunInsightsReport) {
+  const pointers = pointerEntries(report);
+  return html`
+    <section class="card">
+      ${renderSectionHeader(
+        "Pointers",
+        "Native command and artifact pointers for deliberate inspection.",
+      )}
+      ${pointers.length
+        ? html`
+            <div class="list" style="margin-top: 12px;">
+              ${pointers.map(
+                ([label, pointer]) => html`
+                  <div class="list-item">
+                    <div class="list-main">
+                      <div class="list-title">${label}</div>
+                      <div class="list-sub mono">${pointer}</div>
+                    </div>
+                  </div>
+                `,
+              )}
+            </div>
+          `
+        : renderEmpty("No explicit pointers in this bounded report.")}
+      <details class="callout" style="margin-top: 12px;">
+        <summary class="card-title">Raw report</summary>
+        <pre class="code-block" style="margin-top: 12px;">${JSON.stringify(report, null, 2)}</pre>
+      </details>
+    </section>
+  `;
+}
+
 export function renderRunInsights(props: RunInsightsProps) {
   const report = props.report;
-
   return html`
     <section class="stack" aria-label="Run insights">
       ${renderControls(props)} ${renderRunHeadline(report)}
       ${report
         ? html`
-            ${renderCostProfile(report)} ${renderDiagnosticSummary(report)}
-            ${renderAttentionPanel(report)} ${renderTimeline(report.performanceProfile?.timeline)}
-            ${renderChildAndTaskEvidence(report)} ${renderValidationCost(report)}
-            ${renderPointers(report)}
+            ${renderCosts(report)} ${renderSignals(report)} ${renderSessions(report)}
+            ${renderTasks(report)} ${renderChildren(report)} ${renderSkillReads(report)}
+            ${renderDeploys(report)} ${renderPointers(report)}
           `
         : nothing}
     </section>

@@ -1158,11 +1158,11 @@ describe("skills cli commands", () => {
     });
     const payload = JSON.parse(String(runtimeStdout.at(-1))) as {
       schema: string;
-      advisory: { semantics: string };
+      authority: string;
       filters: { agent: string };
     };
     expect(payload.schema).toBe("openclaw.lifecycle_audit.v1");
-    expect(payload.advisory.semantics).toContain("advisory readback");
+    expect(payload.authority).toBe("advisory_readback");
     expect(payload.filters.agent).toBe("main");
   });
 });

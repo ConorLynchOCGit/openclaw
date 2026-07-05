@@ -5,7 +5,6 @@ import { theme } from "../../packages/terminal-core/src/theme.js";
 import { listAgentEntries, listAgentIds, resolveAgentWorkspaceDir } from "../agents/agent-scope.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { PluginRegistryStatusReport } from "../plugins/status-snapshot.js";
-import { buildAdvisoryReadback, type AdvisoryReadback } from "../readback/advisory.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { writeRuntimeJson } from "../runtime.js";
 import type { SkillStatusReport } from "../skills/discovery/status.js";
@@ -57,7 +56,8 @@ export type LifecycleAuditAgentReport = {
 export type LifecycleAuditReport = {
   schema: "openclaw.lifecycle_audit.v1";
   generatedAt: string;
-  advisory: AdvisoryReadback;
+  authority: "advisory_readback";
+  caveats: string[];
   filters: {
     agent: string | null;
   };
@@ -502,16 +502,13 @@ export function buildLifecycleAuditReport(params: {
   return {
     schema: "openclaw.lifecycle_audit.v1",
     generatedAt: new Date(params.now ?? Date.now()).toISOString(),
-    advisory: buildAdvisoryReadback({
-      surface: "Agent/Skill Lifecycle Auditor",
-      pointers: evidencePointers,
-      caveats: [
-        "Skill visibility comes from skill discovery status, not from a lifecycle state machine.",
-        "Plugin evidence is registry readback only; plugin runtime truth remains with the plugin loader/runtime.",
-        "Findings are advisory evidence only and must not decide agent routing, skill activation, proof pass/fail, or release eligibility.",
-        "This command does not judge skill or canonical-doc content quality; use model-reviewed GBrain/Reviewer/Skill Workshop flows for semantic review or mutation.",
-      ],
-    }),
+    authority: "advisory_readback",
+    caveats: [
+      "Skill visibility comes from skill discovery status, not from a lifecycle state machine.",
+      "Plugin evidence is registry readback only; plugin runtime truth remains with the plugin loader/runtime.",
+      "Findings are advisory evidence only and must not decide agent routing, skill activation, proof pass/fail, or release eligibility.",
+      "This command does not judge skill or canonical-doc content quality; use model-reviewed GBrain/Reviewer/Skill Workshop flows for semantic review or mutation.",
+    ],
     filters: {
       agent: params.agent ?? null,
     },
@@ -587,7 +584,7 @@ export function buildLifecycleAuditReport(params: {
 function formatLifecycleAuditReport(report: LifecycleAuditReport): string[] {
   const lines = [
     theme.heading("Agent/Skill Lifecycle Audit"),
-    `Authority: ${report.advisory.semantics}`,
+    `Authority: ${report.authority}`,
     `Agents: ${report.summary.agents}; skills: ${report.summary.skills}; model-visible skills: ${report.summary.modelVisibleSkills}; plugins: ${report.summary.plugins ?? "unknown"}.`,
     `Findings: ${report.summary.findings}; unknowns: ${report.summary.unknowns}.`,
     "",

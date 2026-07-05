@@ -1,3 +1,4 @@
+import fs from "node:fs";
 /**
  * Integration-style tests for before_tool_call behavior.
  * Covers loop detection, diagnostics, plugin approval, and skill telemetry
@@ -574,6 +575,8 @@ describe("before_tool_call loop detection behavior", () => {
     const workspaceDir = path.join("/tmp", "openclaw-skill-usage");
     const skillBaseDir = path.join(workspaceDir, ".agents", "skills", "demo-skill");
     const skillFilePath = path.join(skillBaseDir, "SKILL.md");
+    fs.mkdirSync(skillBaseDir, { recursive: true });
+    fs.writeFileSync(skillFilePath, "skill", "utf8");
     const execute = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "skill" }] });
     const tool = wrapToolWithBeforeToolCallHook({ name: "read", execute } as any, {
       agentId: "main",
@@ -622,6 +625,10 @@ describe("before_tool_call loop detection behavior", () => {
         activation: "read",
         toolName: "read",
         toolCallId: "tool-call-skill-read",
+        readStatus: "full",
+        linesRead: 1,
+        totalLines: 1,
+        bytesRead: 5,
       });
       expect(JSON.stringify(emitted)).not.toContain("SKILL.md");
       expect(JSON.stringify(emitted)).not.toContain(skillBaseDir);

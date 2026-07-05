@@ -6,19 +6,25 @@ import {
   addSubagentRunForTests,
   resetSubagentRegistryForTests,
 } from "../agents/subagent-registry.js";
+import type { GatewaySessionRow } from "../gateway/session-utils.js";
+import type { DiagnosticStabilityEventRecord } from "../logging/diagnostic-stability.js";
+import type { RuntimeEnv } from "../runtime.js";
 import type { TaskRecord } from "../tasks/task-registry.types.js";
-import { buildRunInsightsReport, runInsightsCommand } from "./run-insights.js";
+import {
+  buildRunInsightsReport,
+  resolveRunInsightsOptions,
+  runInsightsCommand,
+} from "./run-insights.js";
 import type { StatusSummary } from "./status.types.js";
 
 const mocks = vi.hoisted(() => ({
   getStatusSummary: vi.fn(),
   getRuntimeConfig: vi.fn(() => ({})),
-  resolveConfigPath: vi.fn(),
+  resolveConfigPath: vi.fn(() => "/tmp/openclaw.json5"),
   resolveGatewayPort: vi.fn(() => 0),
   resolveIsNixMode: vi.fn(() => false),
   resolveStateDir: vi.fn(),
   listTaskRecords: vi.fn(),
-  listTasksForRelatedSessionKey: vi.fn(() => []),
   loadSessionCostSummaryFromCache: vi.fn(),
   resolveExistingUsageSessionFile: vi.fn(),
   runtime: {
@@ -27,16 +33,6 @@ const mocks = vi.hoisted(() => ({
     exit: vi.fn(),
   },
 }));
-
-const getStatusSummary = mocks.getStatusSummary;
-const listTaskRecords = mocks.listTaskRecords;
-const loadSessionCostSummaryFromCache = mocks.loadSessionCostSummaryFromCache;
-const resolveExistingUsageSessionFile = mocks.resolveExistingUsageSessionFile;
-const resolveConfigPath = mocks.resolveConfigPath;
-const resolveStateDir = mocks.resolveStateDir;
-const runtime = mocks.runtime;
-
-let stateDir: string | undefined;
 
 vi.mock("./status.summary.js", () => ({
   getStatusSummary: mocks.getStatusSummary,
@@ -55,13 +51,14 @@ vi.mock("../config/paths.js", () => ({
 
 vi.mock("../tasks/task-registry.js", () => ({
   listTaskRecords: mocks.listTaskRecords,
-  listTasksForRelatedSessionKey: mocks.listTasksForRelatedSessionKey,
 }));
 
 vi.mock("../infra/session-cost-usage.js", () => ({
   loadSessionCostSummaryFromCache: mocks.loadSessionCostSummaryFromCache,
   resolveExistingUsageSessionFile: mocks.resolveExistingUsageSessionFile,
 }));
+
+let stateDir: string | undefined;
 
 function buildSummary(): StatusSummary {
   return {
@@ -73,23 +70,23 @@ function buildSummary(): StatusSummary {
     channelSummary: [],
     queuedSystemEvents: [],
     tasks: {
-      total: 7,
-      active: 2,
-      terminal: 5,
-      failures: 1,
+      total: 0,
+      active: 0,
+      terminal: 0,
+      failures: 0,
       byStatus: {
         queued: 0,
-        running: 2,
-        succeeded: 4,
-        failed: 1,
+        running: 0,
+        succeeded: 0,
+        failed: 0,
         timed_out: 0,
         cancelled: 0,
         lost: 0,
       },
       byRuntime: {
-        subagent: 3,
+        subagent: 0,
         acp: 0,
-        cli: 4,
+        cli: 0,
         cron: 0,
       },
     },
@@ -107,1950 +104,376 @@ function buildSummary(): StatusSummary {
       },
     },
     sessions: {
-      paths: ["/tmp/coding-sessions.json"],
-      count: 3,
+      paths: [],
+      count: 1,
       defaults: {
         model: "gpt-5.5",
-        contextTokens: 100000,
+        contextTokens: 100_000,
       },
       recent: [
         {
-          agentId: "coding",
-          key: "agent:coding:main",
+          agentId: "planning",
+          key: "agent:planning:main",
           kind: "direct",
-          sessionId: "sess-coding",
+          sessionId: "sess-planning",
           updatedAt: 1_000,
-          age: 5 * 60_000,
-          abortedLastRun: true,
-          totalTokens: 92_000,
+          age: 60_000,
+          totalTokens: 12_000,
           totalTokensFresh: true,
-          inputTokens: 90_000,
+          inputTokens: 10_000,
           outputTokens: 2_000,
-          remainingTokens: 8_000,
-          percentUsed: 92,
+          remainingTokens: 88_000,
+          percentUsed: 12,
           model: "gpt-5.5",
           configuredModel: "gpt-5.5",
           selectedModel: "gpt-5.5",
           modelSelectionReason: "configured",
           runtime: "codex",
           contextTokens: 100_000,
-          flags: ["aborted"],
-        },
-        {
-          agentId: "planning",
-          key: "agent:planning:main",
-          kind: "direct",
-          sessionId: "sess-planning",
-          updatedAt: 900,
-          age: 180 * 60_000,
-          totalTokens: 10_000,
-          totalTokensFresh: false,
-          remainingTokens: 90_000,
-          percentUsed: 10,
-          model: "gpt-5.5",
-          configuredModel: "gpt-5.5",
-          selectedModel: "gpt-5.5",
-          modelSelectionReason: "configured",
-          runtime: "openclaw",
-          contextTokens: 100_000,
+          promptContext: {
+            skills: {
+              promptChars: 5000,
+              promptHash: "abc123",
+              skillCount: 2,
+              skillNames: ["comprehensive-plan-record", "agentic-architecture-review"],
+              promptRef: {
+                version: 1,
+                algorithm: "sha256",
+                hash: "abc123",
+                bytes: 5000,
+              },
+            },
+          },
           flags: [],
         },
       ],
-      byAgent: [
-        {
-          agentId: "coding",
-          path: "/tmp/coding-sessions.json",
-          count: 1,
-          recent: [
-            {
-              agentId: "coding",
-              key: "agent:coding:main",
-              kind: "direct",
-              sessionId: "sess-coding",
-              updatedAt: 1_000,
-              age: 5 * 60_000,
-              abortedLastRun: true,
-              totalTokens: 92_000,
-              totalTokensFresh: true,
-              inputTokens: 90_000,
-              outputTokens: 2_000,
-              remainingTokens: 8_000,
-              percentUsed: 92,
-              model: "gpt-5.5",
-              configuredModel: "gpt-5.5",
-              selectedModel: "gpt-5.5",
-              modelSelectionReason: "configured",
-              runtime: "codex",
-              contextTokens: 100_000,
-              flags: ["aborted"],
-            },
-          ],
-        },
-      ],
+      byAgent: [],
     },
-  } as unknown as StatusSummary;
+  };
 }
 
-describe("runInsightsCommand", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    resetSubagentRegistryForTests({ persist: false });
-    stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-run-insights-"));
-    fs.mkdirSync(path.join(stateDir, "deploy"), { recursive: true });
-    const buildArtifactPath = path.join(stateDir, "deploy-controller-build-test.json");
-    const promoteArtifactPath = path.join(stateDir, "deploy-controller-promote-test.json");
-    fs.writeFileSync(
-      buildArtifactPath,
-      JSON.stringify(
-        {
-          schema: "openclaw-next.deploy-controller.build-candidate.v1",
-          timingsMs: {
-            total: 180_000,
-          },
-        },
-        null,
-        2,
-      ),
-    );
-    fs.writeFileSync(
-      promoteArtifactPath,
-      JSON.stringify(
-        {
-          schema: "openclaw-next.deploy-controller.promote.v1",
-          timingsMs: {
-            total: 240_000,
-            checks: [
-              {
-                id: "openclaw-native-checks",
-                durationMs: 91_000,
-                status: "passed",
-                exitCode: 0,
-              },
-              {
-                id: "business-ops-surface-check",
-                durationMs: 44_000,
-                status: "passed",
-                exitCode: 0,
-              },
-            ],
-          },
-          failedCount: 0,
-        },
-        null,
-        2,
-      ),
-    );
-    fs.writeFileSync(
-      path.join(stateDir, "deploy", "events.ndjson"),
-      [
-        JSON.stringify({
-          schema: "openclaw-next.deploy-controller.deploy-event.v1",
-          generatedAt: new Date(Date.now() - 3 * 60_000).toISOString(),
-          eventId: "deploy-build-test",
-          eventType: "deploy.build",
-          status: "built",
-          imageRef: "openclaw-next/gateway:candidate-test",
-          imageDigest: "sha256:builddigest",
-          sourceCommit: "abc1234567890",
-          buildProfile: "full",
-          buildEpisode: {
-            id: "candidate-test",
-          },
-          artifactRefs: [
-            {
-              kind: "deploy-controller-artifact",
-              path: buildArtifactPath,
-            },
-          ],
-        }),
-        JSON.stringify({
-          schema: "openclaw-next.deploy-controller.deploy-event.v1",
-          generatedAt: new Date(Date.now() - 60_000).toISOString(),
-          eventId: "deploy-promote-test",
-          eventType: "deploy.promote",
-          status: "passed",
-          imageRef: "openclaw-next/gateway:candidate-test",
-          imageDigest: "sha256:promoteddigest",
-          sourceCommit: "def1234567890",
-          buildProfile: "full",
-          previousImageDigest: "sha256:previousdigest",
-          buildEpisode: {
-            id: "candidate-test",
-          },
-          artifactRefs: [
-            {
-              kind: "deploy-controller-artifact",
-              path: "/srv/openclaw-next/artifacts/host-only-promote.json",
-            },
-          ],
-          artifactSummary: {
-            path: "/srv/openclaw-next/artifacts/host-only-promote.json",
-            readable: true,
-            skippedReason: null,
-            durationMs: 240_000,
-            failedCount: 0,
-            slowestChecks: [
-              {
-                id: "openclaw-native-checks",
-                durationMs: 91_000,
-                status: "passed",
-                exitCode: 0,
-              },
-            ],
-          },
-        }),
-      ].join("\n"),
-    );
-    resolveConfigPath.mockReturnValue(path.join(stateDir, "openclaw.json"));
-    resolveStateDir.mockReturnValue(stateDir);
-    runtime.exit.mockImplementation(() => {});
-    getStatusSummary.mockResolvedValue(buildSummary());
-    resolveExistingUsageSessionFile.mockReturnValue("/tmp/sess-coding.jsonl");
-    loadSessionCostSummaryFromCache.mockResolvedValue({
-      cacheStatus: {
-        status: "fresh",
-        cachedFiles: 1,
-        pendingFiles: 0,
-        staleFiles: 0,
+function buildGatewayRow(): GatewaySessionRow {
+  return {
+    key: "agent:planning:main",
+    kind: "direct",
+    sessionId: "sess-planning",
+    agentId: "planning",
+    updatedAt: 1_000,
+    status: "done",
+    finalAssistantText: "Full Planning-authored packet.\n\nEvidence ledger and execution slices.",
+    readbackProvenance: {
+      finalAssistant: {
+        source: "session-transcript",
+        ref: "/tmp/sess-planning.jsonl",
+        bounded: false,
       },
-      summary: {
-        input: 10,
-        output: 5,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: 15,
-        totalCost: 0.1234,
-        inputCost: 0,
-        outputCost: 0,
-        cacheReadCost: 0,
-        cacheWriteCost: 0,
-        missingCostEntries: 0,
-        durationMs: 7 * 60_000,
-        messageCounts: {
-          total: 4,
-          user: 1,
-          assistant: 1,
-          toolCalls: 55,
-          toolResults: 2,
-          errors: 1,
-        },
-        toolUsage: {
-          totalCalls: 55,
-          uniqueTools: 2,
-          tools: [
-            { name: "read", count: 40 },
-            { name: "grep", count: 15 },
-          ],
-        },
-      },
-    });
-    const taskStartedAt = Date.now() - 11 * 60_000;
-    const longValidationSummary = `Running validation proof over source refs ${"with repeated diagnostic text ".repeat(25)}`;
-    listTaskRecords.mockReturnValue([
-      {
-        taskId: "task-coding-child",
-        runtime: "subagent",
-        taskKind: "source_scout",
-        agentId: "coding",
-        runId: "run-coding-child",
-        label: "codebase scout",
-        requesterSessionKey: "agent:coding:main",
-        ownerKey: "agent:coding:main",
-        scopeKind: "session",
-        childSessionKey: "agent:coding:child:1",
-        task: "inspect source",
-        status: "running",
-        deliveryStatus: "pending",
-        notifyPolicy: "done_only",
-        createdAt: taskStartedAt,
-        startedAt: taskStartedAt,
-        lastEventAt: taskStartedAt,
-        progressSummary: longValidationSummary,
-        executionReceipt: {
-          schema: "openclaw.task.execution_receipt.v1",
-          eventCount: 1,
-          updatedAt: taskStartedAt,
-          latestEvent: {
-            at: taskStartedAt,
-            kind: "progress",
-            summary: `reading bounded source refs ${"without raw transcript dump ".repeat(25)}`,
-          },
-        },
-      },
-      {
-        taskId: "task-delivery-watch",
-        runtime: "subagent",
-        taskKind: "review",
-        agentId: "coding",
-        runId: "run-delivery-watch",
-        label: "review closeout",
-        requesterSessionKey: "agent:coding:main",
-        ownerKey: "agent:coding:main",
-        scopeKind: "session",
-        task: "review output",
-        status: "succeeded",
-        deliveryStatus: "session_queued",
-        notifyPolicy: "done_only",
-        createdAt: Date.now() - 2 * 60_000,
-        startedAt: Date.now() - 2 * 60_000,
-        endedAt: Date.now() - 60_000,
-      },
-      {
-        taskId: "task-codex-native-child",
-        runtime: "subagent",
-        taskKind: "codex-native",
-        agentId: "coding",
-        runId: "codex-thread:project-explorer-1",
-        label: "project_explorer",
-        requesterSessionKey: "agent:coding:main",
-        ownerKey: "agent:coding:main",
-        scopeKind: "session",
-        task: "Inspect run intelligence readback owner files.",
-        status: "running",
-        deliveryStatus: "not_applicable",
-        notifyPolicy: "silent",
-        createdAt: taskStartedAt + 1_000,
-        startedAt: taskStartedAt + 1_000,
-        lastEventAt: taskStartedAt + 1_000,
-        progressSummary: "Codex native subagent spawned.",
-        executionReceipt: {
-          schema: "openclaw.task.execution_receipt.v1",
-          eventCount: 1,
-          updatedAt: taskStartedAt + 1_000,
-          latestEvent: {
-            at: taskStartedAt + 1_000,
-            kind: "running",
-            summary: "Codex native subagent spawned.",
-            metadata: {
-              codexNativeSubagent: true,
-              parentThreadId: "parent-thread",
-              childThreadId: "project-explorer-1",
-              childPhase: "child_spawned",
-              childRole: "project_explorer",
-              childAgentPath: "agents/project_explorer.toml",
-              spawnReason: "Inspect run intelligence readback owner files.",
-            },
-          },
-        },
-      },
-    ]);
-  });
-
-  afterEach(() => {
-    resetSubagentRegistryForTests({ persist: false });
-    if (stateDir) {
-      fs.rmSync(stateDir, { recursive: true, force: true });
-      stateDir = undefined;
-    }
-  });
-
-  it("emits bounded JSON run performance evidence from status summaries", async () => {
-    await runInsightsCommand(
-      {
-        json: true,
-        agent: "coding",
-        active: "60",
-        limit: "5",
-      },
-      runtime,
-    );
-
-    expect(getStatusSummary).toHaveBeenCalledWith({
-      includeSensitive: true,
-      includeChannelSummary: false,
-    });
-    expect(runtime.log).toHaveBeenCalledTimes(1);
-    const payload = JSON.parse(String(runtime.log.mock.calls[0]?.[0]));
-    expect(payload.schema).toBe("openclaw.run_insights.v1");
-    expect(payload.authority).toContain("not lifecycle truth");
-    expect(payload.advisory.missingEvidenceLanguage).toContain("unknown");
-    expect(payload.filters).toEqual({
-      agent: "coding",
-      session: null,
-      task: null,
-      activeMinutes: 60,
-      limit: 5,
-      includeBackground: false,
-    });
-    expect(payload.deployEvidenceScope).toEqual({
-      scope: "global_unscoped",
-      filteredBy: [],
-      limitApplied: 5,
-      reason:
-        "scoped run-insights excludes global deploy/build/promote evidence by default; pass --include-background to include it separately",
-    });
-    expect(payload.summary.tasks.failures).toBe(1);
-    expect(payload.summary.tasks.childTasksDisplayed).toBe(2);
-    expect(payload.summary.tasks.deliveryIssues).toBe(1);
-    expect(payload.summary.deploy).toMatchObject({
-      recentDisplayed: 0,
-      lastEventType: null,
-      lastPromotedImageDigest: null,
-      recentFailures: 0,
-    });
-    expect(payload.sessions).toHaveLength(1);
-    expect(payload.tasks).toHaveLength(3);
-    expect(payload.tasks.map((task: { taskId: string }) => task.taskId)).toEqual([
-      "task-coding-child",
-      "task-delivery-watch",
-      "task-codex-native-child",
-    ]);
-    expect(payload.deployEvents).toEqual([]);
-    expect(payload.performanceProfile.retryBuildProofCost).toMatchObject({
-      deployReceiptCount: 0,
-      totalKnownDurationMs: 0,
-      totalKnownDuration: "0s",
-    });
-    expect(payload.performanceProfile.retryBuildProofCost.slowestReceipt).toBeNull();
-    expect(payload.performanceProfile.validationBuildBottlenecks).toEqual([]);
-    expect(
-      payload.performanceProfile.advisoryInefficiencyFlags.map(
-        (item: { code: string }) => item.code,
-      ),
-    ).toEqual(expect.arrayContaining(["high_context_pressure", "tool_heavy_session"]));
-    expect(payload.performanceProfile.timeline.length).toBeGreaterThan(0);
-    expect(payload.diagnosticSummary.currentOrLastKnownPhase).toMatchObject({
-      source: "task",
-      evidenceQuality: "evidence_backed",
-      confidence: "high",
-      pointer: "openclaw tasks show task-coding-child",
-    });
-    expect(payload.diagnosticSummary.parentWaitState).toMatchObject({
-      waitClass: "active_child",
-      evidenceQuality: "evidence_backed",
-      pointer: "openclaw tasks show task-coding-child",
-    });
-    expect(payload.diagnosticSummary.childWork).toMatchObject({
-      displayedChildTasks: 2,
-      activeChildTasks: 2,
-      evidenceQuality: "evidence_backed",
-    });
-    expect(payload.diagnosticSummary.validationBuildPromotion).toMatchObject({
-      bottlenecks: 0,
-      deployReceipts: 0,
-    });
-    expect(payload.diagnosticSummary.evidenceQuality).toMatchObject({
-      heuristic: expect.any(Number),
-      scoped: 1,
-    });
-    expect(payload.diagnosticSummary.operatorNextAction).toMatchObject({
-      label: "Inspect native task evidence",
-      pointer: "openclaw tasks show task-coding-child",
-    });
-    expect(payload.sessions[0].usage.toolCalls).toBe(55);
-    expect(payload.sessions[0].usage.topTools).toEqual([
-      { name: "read", count: 40 },
-      { name: "grep", count: 15 },
-    ]);
-    expect(payload.sessions[0].pointer).toBe(
-      "openclaw sessions show agent:coding:main --agent coding",
-    );
-    expect(payload.tasks[0].pointer).toBe("openclaw tasks show task-coding-child");
-    expect(payload.tasks[0].progressSummary).toContain("Running validation proof over source refs");
-    expect(payload.tasks[0].progressSummary).toContain(
-      "[truncated; use pointer for full evidence]",
-    );
-    expect(payload.tasks[0].progressSummary.length).toBeLessThanOrEqual(360);
-    expect(payload.tasks[0].latestEvent.summary).toContain(
-      "[truncated; use pointer for full evidence]",
-    );
-    expect(payload.tasks[0].latestEvent.summary.length).toBeLessThanOrEqual(360);
-    expect(payload.tasks[0].activeProgress).toMatchObject({
-      source: "task-run-event",
-      currentPhase: "running",
-      activeLabel: "codebase scout",
-      sourceEventType: "task.progress",
-      derivedBy: "resolveTaskReadbackProgressProjection",
-      bounded: true,
-    });
-    expect(payload.tasks[0].attention).toMatchObject({
-      waitClass: "active_child",
-      pointer: "openclaw tasks show task-coding-child",
-    });
-    expect(payload.performanceProfile.childSessionEvidence).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          taskId: "task-codex-native-child",
-          childSessionKey: "",
-          childRole: "project_explorer",
-          childAgentPath: "agents/project_explorer.toml",
-          childPhase: "child_spawned",
-          spawnReason: "Inspect run intelligence readback owner files.",
-        }),
-      ]),
-    );
-    expect(payload.attention.whyWorkMayFeelSlow.map((item: { code: string }) => item.code)).toEqual(
-      expect.arrayContaining([
-        "context_pressure",
-        "tool_volume",
-        "task_active_child",
-        "task_delivery",
-      ]),
-    );
-    expect(payload.attention.validationAndPromotion).toEqual([]);
-    expect(payload.attention.evidencePointers).toEqual(
-      expect.arrayContaining([
-        "openclaw sessions show agent:coding:main --agent coding",
-        "openclaw tasks show task-coding-child",
-      ]),
-    );
-    expect(payload.signals.map((signal: { code: string }) => signal.code)).toEqual(
-      expect.arrayContaining([
-        "active_child_task",
-        "task_delivery_issue",
-        "session_aborted_last_run",
-        "high_context_pressure",
-        "tool_heavy_session",
-        "session_usage_errors",
-        "long_active_task",
-      ]),
-    );
-  });
-
-  it("keeps terminal child failure receipts visible without transcript archaeology", () => {
-    const now = Date.UTC(2026, 6, 1, 6, 0, 0);
-    const terminalChild: TaskRecord = {
-      taskId: "task-terminal-child",
-      runtime: "subagent",
-      taskKind: "codex-native",
-      agentId: "coding",
-      runId: "codex-thread:test-engineer-1",
-      label: "test_engineer",
-      requesterSessionKey: "agent:coding:main",
-      ownerKey: "agent:coding:main",
-      scopeKind: "session",
-      task: "Codex native subagent role: test_engineer",
-      status: "failed",
-      deliveryStatus: "delivered",
-      notifyPolicy: "silent",
-      createdAt: now - 90_000,
-      startedAt: now - 90_000,
-      endedAt: now - 15_000,
-      lastEventAt: now - 15_000,
-      executionReceipt: {
-        schema: "openclaw.task.execution_receipt.v1",
-        eventCount: 3,
-        updatedAt: now - 15_000,
-        latestEvent: {
-          at: now - 15_000,
-          kind: "failed",
-          summary: "context overflow before post-patch validation closeout",
-          metadata: {
-            childRole: "test_engineer",
-            childAgentPath: "agents/test_engineer.toml",
-            childPhase: "context_overflow",
-            spawnReason: "Review validation strategy for the implementation batch.",
-            outputSummary: "Context overflow before final validation packet.",
-          },
-        },
-      },
-    };
-
-    const payload = buildRunInsightsReport(buildSummary(), {
-      limit: 5,
-      now,
-      taskRecords: [terminalChild],
-    });
-
-    expect(payload.tasks[0].activeProgress).toMatchObject({
-      source: "task-run-event",
-      currentPhase: "context_overflow",
-      activeLabel: "test_engineer",
-      sourceEventType: "task.failed",
-      childRole: "test_engineer",
-      childAgentPath: "agents/test_engineer.toml",
-      childPhase: "context_overflow",
-      spawnReason: "Review validation strategy for the implementation batch.",
-      outputSummary: "Context overflow before final validation packet.",
-      derivedBy: "resolveTaskReadbackProgressProjection",
-      bounded: true,
-    });
-    expect(payload.performanceProfile.childSessionEvidence).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          taskId: "task-terminal-child",
-          childRole: "test_engineer",
-          childPhase: "context_overflow",
-          status: "failed",
-        }),
-      ]),
-    );
-  });
-
-  it("surfaces parent-owned registry child runs in run insights without transcript archaeology", () => {
-    const now = Date.UTC(2026, 6, 3, 4, 30, 0);
-    const parentSessionKey = "agent:planning:phase0z-proof";
-    addSubagentRunForTests({
-      runId: "run-repo-scout",
-      childSessionKey: "agent:codebase-researcher:subagent:repo-scout",
-      requesterSessionKey: parentSessionKey,
-      requesterDisplayKey: "planning",
-      task: "Inspect repo skill wiring state",
-      taskName: "repo_skill_wiring_state",
-      label: "Phase 0Z repo/source current-state scout",
-      cleanup: "keep",
-      createdAt: now - 8 * 60_000,
-      startedAt: now - 8 * 60_000,
-      endedAt: now - 6 * 60_000,
-      outcome: { status: "ok" },
-      expectsCompletionMessage: true,
-      completion: {
-        required: true,
-        resultText: `${"Scout packet should appear as a bounded summary. ".repeat(60)}SCOUT_RAW_END`,
-        capturedAt: now - 6 * 60_000,
-      },
-      delivery: { status: "delivered" },
-    });
-    addSubagentRunForTests({
-      runId: "run-docs-scout",
-      childSessionKey: "agent:docs-standards-researcher:subagent:docs-scout",
-      requesterSessionKey: parentSessionKey,
-      requesterDisplayKey: "planning",
-      task: "Inspect native docs skill surfaces",
-      taskName: "native_docs_skill_surfaces",
-      label: "Phase 0Z official/native docs scout",
-      cleanup: "keep",
-      createdAt: now - 7 * 60_000,
-      startedAt: now - 7 * 60_000,
-      endedAt: now - 5 * 60_000,
-      outcome: { status: "ok" },
-      expectsCompletionMessage: true,
-      completion: {
-        required: true,
-        resultText: `${"Docs packet should appear as a bounded summary. ".repeat(60)}DOCS_RAW_END`,
-        capturedAt: now - 5 * 60_000,
-      },
-      delivery: { status: "delivered" },
-    });
-    const parentTask: TaskRecord = {
-      taskId: "task-planning-parent",
-      runtime: "subagent",
-      taskKind: "planning",
-      agentId: "planning",
-      runId: "run-planning-parent",
-      label: "Planning proof",
-      requesterSessionKey: "agent:main:phase0z-proof",
-      ownerKey: parentSessionKey,
-      scopeKind: "session",
-      childSessionKey: parentSessionKey,
-      task: "Plan GBrain/OpenClaw skill wiring work",
-      status: "running",
-      deliveryStatus: "pending",
-      notifyPolicy: "done_only",
-      createdAt: now - 9 * 60_000,
-      startedAt: now - 9 * 60_000,
-      lastEventAt: now - 4 * 60_000,
-    };
-
-    const payload = buildRunInsightsReport(buildSummary(), {
-      limit: 5,
-      now,
-      taskRecords: [parentTask],
-      childSessionUsage: new Map([
-        [
-          "agent:codebase-researcher:subagent:repo-scout",
-          {
-            cacheStatus: "fresh",
-            totalCost: 0.04,
-            totalTokens: 12_000,
-            durationMs: 73_000,
-            duration: "1m 13s",
-            messageCount: 14,
-            toolCalls: 9,
-            uniqueTools: 3,
-            topTools: [
-              { name: "rg", count: 4 },
-              { name: "read", count: 3 },
-              { name: "find", count: 2 },
-            ],
-            errors: 0,
-          },
-        ],
-      ]),
-    });
-
-    expect(payload.tasks[0]).toMatchObject({
-      taskId: "task-planning-parent",
-      childRunCount: 2,
-      childRuns: [
-        expect.objectContaining({
-          runId: "run-repo-scout",
-          childSessionKey: "agent:codebase-researcher:subagent:repo-scout",
-          agentId: "codebase-researcher",
-          taskName: "repo_skill_wiring_state",
-          status: "done",
-          handoffKind: "context_pack",
-          handoffDeliveryState: "model_visible_full",
-          contentChars: expect.any(Number),
-          contentDigest: expect.any(String),
-          terminalSummary: expect.stringContaining("Scout packet should appear"),
-        }),
-        expect.objectContaining({
-          runId: "run-docs-scout",
-          childSessionKey: "agent:docs-standards-researcher:subagent:docs-scout",
-          agentId: "docs-standards-researcher",
-          taskName: "native_docs_skill_surfaces",
-          status: "done",
-          handoffKind: "context_pack",
-          handoffDeliveryState: "model_visible_full",
-          contentChars: expect.any(Number),
-          contentDigest: expect.any(String),
-          terminalSummary: expect.stringContaining("Docs packet should appear"),
-        }),
-      ],
-    });
-    expect(payload.performanceProfile.childSessionEvidence).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          taskId: "task-planning-parent",
-          childSessionKey: "agent:codebase-researcher:subagent:repo-scout",
-          childRole: "codebase-researcher",
-          childPhase: "done",
-          handoffKind: "context_pack",
-          handoffDeliveryState: "model_visible_full",
-          contentChars: expect.any(Number),
-          contentDigest: expect.any(String),
-          terminalSummary: expect.stringContaining("Scout packet should appear"),
-          trajectory: expect.objectContaining({
-            available: true,
-            source: "session_usage_cache",
-            durationMs: 73_000,
-            toolCalls: 9,
-            readCalls: 3,
-            searchCalls: 6,
-            failedToolCalls: 0,
-          }),
-          pointer: "openclaw sessions show agent:codebase-researcher:subagent:repo-scout",
-        }),
-        expect.objectContaining({
-          taskId: "task-planning-parent",
-          childSessionKey: "agent:docs-standards-researcher:subagent:docs-scout",
-          childRole: "docs-standards-researcher",
-          childPhase: "done",
-          handoffKind: "context_pack",
-          handoffDeliveryState: "model_visible_full",
-          contentChars: expect.any(Number),
-          contentDigest: expect.any(String),
-          terminalSummary: expect.stringContaining("Docs packet should appear"),
-          trajectory: expect.objectContaining({
-            available: false,
-            source: "not_available",
-            reason: expect.stringContaining("no child session usage cache"),
-          }),
-          pointer: "openclaw sessions show agent:docs-standards-researcher:subagent:docs-scout",
-        }),
-      ]),
-    );
-    expect(JSON.stringify(payload)).not.toContain("SCOUT_RAW_END");
-    expect(JSON.stringify(payload)).not.toContain("DOCS_RAW_END");
-  });
-
-  it("keeps successful child finality visible when execution-task provenance disagrees", () => {
-    const now = Date.UTC(2026, 6, 3, 4, 45, 0);
-    const parentSessionKey = "agent:planning:phase0z-proof";
-    const childSessionKey = "agent:codebase-researcher:subagent:overflow-child";
-    addSubagentRunForTests({
-      runId: "run-overflow-child",
-      childSessionKey,
-      requesterSessionKey: parentSessionKey,
-      requesterDisplayKey: "planning",
-      task: "Inspect source surfaces",
-      taskName: "repo_skill_wiring_state",
-      label: "Phase 0Z source scout",
-      cleanup: "keep",
-      createdAt: now - 8 * 60_000,
-      startedAt: now - 8 * 60_000,
-      endedAt: now - 6 * 60_000,
-      outcome: { status: "ok" },
-      expectsCompletionMessage: true,
-      completion: {
-        required: true,
-        resultText: "Context Pack is available for parent synthesis.",
-        capturedAt: now - 6 * 60_000,
-      },
-      delivery: { status: "delivered" },
-    });
-    const parentTask: TaskRecord = {
-      taskId: "task-planning-parent-overflow",
-      runtime: "subagent",
-      taskKind: "planning",
-      agentId: "planning",
-      runId: "run-planning-parent-overflow",
-      label: "Planning proof",
-      requesterSessionKey: "agent:main:phase0z-proof",
-      ownerKey: parentSessionKey,
-      scopeKind: "session",
-      childSessionKey: parentSessionKey,
-      task: "Plan native skill wiring work",
-      status: "running",
-      deliveryStatus: "pending",
-      notifyPolicy: "done_only",
-      createdAt: now - 9 * 60_000,
-      startedAt: now - 9 * 60_000,
-      lastEventAt: now - 4 * 60_000,
-    };
-    const wrapperTask: TaskRecord = {
-      taskId: "task-wrapper-overflow-child",
-      runtime: "subagent",
-      taskKind: "source-scout",
-      agentId: "codebase-researcher",
-      runId: "run-overflow-child",
-      label: "codebase scout",
-      requesterSessionKey: parentSessionKey,
-      ownerKey: parentSessionKey,
-      scopeKind: "session",
-      childSessionKey,
-      task: "Inspect source surfaces",
-      status: "succeeded",
-      deliveryStatus: "delivered",
-      notifyPolicy: "silent",
-      createdAt: now - 8 * 60_000,
-      startedAt: now - 8 * 60_000,
-      endedAt: now - 6 * 60_000,
-      lastEventAt: now - 6 * 60_000,
-    };
-    const executionTask: TaskRecord = {
-      taskId: "task-execution-overflow-child",
-      runtime: "cli",
-      taskKind: "cli",
-      agentId: "codebase-researcher",
-      runId: "run-overflow-child",
-      label: "child execution",
-      requesterSessionKey: childSessionKey,
-      ownerKey: childSessionKey,
-      parentTaskId: "task-wrapper-overflow-child",
-      scopeKind: "session",
-      childSessionKey,
-      task: "Inspect source surfaces",
-      status: "failed",
-      deliveryStatus: "not_applicable",
-      notifyPolicy: "silent",
-      createdAt: now - 8 * 60_000,
-      startedAt: now - 8 * 60_000,
-      endedAt: now - 6 * 60_000,
-      lastEventAt: now - 6 * 60_000,
-      error: "Context overflow: prompt too large for the model.",
-    };
-
-    const payload = buildRunInsightsReport(buildSummary(), {
-      session: parentSessionKey,
-      limit: 5,
-      now,
-      taskRecords: [parentTask, wrapperTask, executionTask],
-    });
-
-    expect(payload.tasks[0]).toMatchObject({
-      taskId: "task-planning-parent-overflow",
-      childRunCount: 1,
-      childRuns: [
-        expect.objectContaining({
-          runId: "run-overflow-child",
-          executionTaskId: "task-execution-overflow-child",
-          childSessionKey,
-          status: "done",
-          handoffKind: "context_pack",
-          handoffDeliveryState: "model_visible_full",
-          contentChars: "Context Pack is available for parent synthesis.".length,
-          contentDigest: expect.any(String),
-          terminalSummary: "Context Pack is available for parent synthesis.",
-          errorSummary: expect.stringContaining("Context overflow"),
-          provenanceMismatch: expect.stringContaining("child final output is present"),
-        }),
-      ],
-    });
-    expect(payload.performanceProfile.childSessionEvidence).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          taskId: "task-planning-parent-overflow",
-          childSessionKey,
-          childPhase: "done",
-          status: "done",
-          handoffKind: "context_pack",
-          handoffDeliveryState: "model_visible_full",
-          contentChars: "Context Pack is available for parent synthesis.".length,
-          contentDigest: expect.any(String),
-          terminalSummary: "Context Pack is available for parent synthesis.",
-          errorSummary: expect.stringContaining("Context overflow"),
-          provenanceMismatch: expect.stringContaining("child final output is present"),
-        }),
-      ]),
-    );
-  });
-
-  it("does not treat a visible skill catalog as skill activation", () => {
-    const now = Date.UTC(2026, 6, 4, 16, 20, 0);
-    const summary = buildSummary();
-    summary.sessions.recent = [
-      {
-        agentId: "planning",
-        key: "agent:planning:skill-proof",
-        kind: "direct",
-        sessionId: "sess-planning-skill-proof",
-        updatedAt: now - 1_000,
-        age: 1_000,
-        totalTokens: 30_000,
-        totalTokensFresh: true,
-        remainingTokens: 70_000,
-        percentUsed: 30,
-        model: "gpt-5.5",
-        configuredModel: "gpt-5.5",
-        selectedModel: "gpt-5.5",
-        modelSelectionReason: "configured",
-        runtime: "openclaw",
-        contextTokens: 100_000,
-        promptContext: {
-          skills: {
-            skillCount: 2,
-            skillNames: ["comprehensive-plan-record", "agentic-architecture-review"],
-            promptChars: 640,
-            promptHash: "abc123",
-            promptRef: {
-              version: 1,
-              algorithm: "sha256",
-              hash: "abc123",
-              bytes: 640,
-            },
-          },
-        },
-        flags: [],
-      },
-    ];
-
-    const payload = buildRunInsightsReport(summary, {
-      session: "agent:planning:skill-proof",
-      limit: 5,
-      now,
-      taskRecords: [],
-      gatewaySessionRows: new Map(),
-    });
-
-    expect(payload.performanceProfile.skillActivationEvidence).toEqual([
-      expect.objectContaining({
-        sessionKey: "agent:planning:skill-proof",
-        agentId: "planning",
-        catalogVisible: true,
-        visibleSkillCount: 2,
-        visibleSkillNames: ["comprehensive-plan-record", "agentic-architecture-review"],
-        activationEvidence: "not_observed",
-        activationStatus: "catalog_only",
-        activatedSkillNames: [],
-        actualUsePointer: expect.stringContaining("visible skill catalog is not activation"),
-      }),
-    ]);
-  });
-
-  it("reports skill activation when native skill.used diagnostics match the session", () => {
-    const now = Date.UTC(2026, 6, 4, 16, 25, 0);
-    const summary = buildSummary();
-    summary.sessions.recent = [
-      {
-        agentId: "planning",
-        key: "agent:planning:skill-proof",
-        kind: "direct",
-        sessionId: "sess-planning-skill-proof",
-        updatedAt: now - 1_000,
-        age: 1_000,
-        totalTokens: 30_000,
-        totalTokensFresh: true,
-        remainingTokens: 70_000,
-        percentUsed: 30,
-        model: "gpt-5.5",
-        configuredModel: "gpt-5.5",
-        selectedModel: "gpt-5.5",
-        modelSelectionReason: "configured",
-        runtime: "openclaw",
-        contextTokens: 100_000,
-        promptContext: {
-          skills: {
-            skillCount: 2,
-            skillNames: ["comprehensive-plan-record", "agentic-architecture-review"],
-            promptChars: 640,
-            promptHash: "abc123",
-            promptRef: {
-              version: 1,
-              algorithm: "sha256",
-              hash: "abc123",
-              bytes: 640,
-            },
-          },
-        },
-        flags: [],
-      },
-    ];
-
-    const payload = buildRunInsightsReport(summary, {
-      session: "agent:planning:skill-proof",
-      limit: 5,
-      now,
-      taskRecords: [],
-      gatewaySessionRows: new Map(),
-      diagnosticSkillEvents: [
-        {
-          seq: 7,
-          ts: now - 500,
-          type: "skill.used",
-          sessionKey: "agent:planning:skill-proof",
-          sessionId: "sess-planning-skill-proof",
-          agentId: "planning",
-          source: "workspace",
-          action: "read",
-          target: "comprehensive-plan-record",
-          toolName: "read",
-        },
-      ],
-    });
-
-    expect(payload.performanceProfile.skillActivationEvidence).toEqual([
-      expect.objectContaining({
-        sessionKey: "agent:planning:skill-proof",
-        activationEvidence: "skill_used_diagnostic",
-        activationStatus: "activated",
-        activatedSkillNames: ["comprehensive-plan-record"],
-        actualUsePointer: "native skill.used diagnostic telemetry observed for this session",
-      }),
-    ]);
-  });
-
-  it("flags domain-final child output when the visible final answer is shorter and different", () => {
-    const now = Date.UTC(2026, 6, 4, 16, 40, 0);
-    const parentSessionKey = "agent:main:domain-final-proof";
-    const planningSessionKey = "agent:planning:domain-final-proof";
-    const planningReport = [
-      "# Full Planning Product",
-      "",
-      "## Evidence Ledger",
-      "This is the child-authored operator-facing report.",
-      "",
-      "## Execution Slices",
-      "Slice 1, slice 2, and slice 3 are all included.",
-    ].join("\n");
-    addSubagentRunForTests({
-      runId: "run-planning-domain-final",
-      childSessionKey: planningSessionKey,
-      requesterSessionKey: parentSessionKey,
-      requesterDisplayKey: "main",
-      task: "Create the planning product.",
-      taskName: "phase0z_planning_product",
-      label: "Planning product",
-      cleanup: "keep",
-      createdAt: now - 120_000,
-      startedAt: now - 120_000,
-      endedAt: now - 30_000,
-      outcome: { status: "ok" },
-      expectsCompletionMessage: true,
-      completion: {
-        required: true,
-        resultText: planningReport,
-        capturedAt: now - 30_000,
-      },
-      delivery: { status: "delivered" },
-    });
-    const mainTask: TaskRecord = {
-      taskId: "task-main-planning-domain-final",
-      runtime: "subagent",
-      taskKind: "planning",
-      agentId: "planning",
-      runId: "run-planning-domain-final",
-      label: "Planning product",
-      requesterSessionKey: parentSessionKey,
-      ownerKey: parentSessionKey,
-      scopeKind: "session",
-      childSessionKey: planningSessionKey,
-      task: "Create the planning product.",
-      status: "succeeded",
-      deliveryStatus: "delivered",
-      notifyPolicy: "done_only",
-      createdAt: now - 130_000,
-      startedAt: now - 120_000,
-      endedAt: now - 30_000,
-      lastEventAt: now - 30_000,
-    };
-    const summary = buildSummary();
-    summary.sessions.recent.unshift({
-      agentId: "main",
-      key: parentSessionKey,
-      kind: "direct",
-      sessionId: "sess-main-domain-final-proof",
-      updatedAt: now,
-      age: 0,
-      totalTokens: 20_000,
-      totalTokensFresh: true,
-      remainingTokens: 80_000,
-      percentUsed: 20,
-      model: "gpt-5.5",
-      configuredModel: "gpt-5.5",
-      selectedModel: "gpt-5.5",
-      modelSelectionReason: "configured",
-      runtime: "openclaw",
-      contextTokens: 100_000,
-      flags: [],
-    });
-
-    const payload = buildRunInsightsReport(summary, {
-      session: parentSessionKey,
-      limit: 5,
-      now,
-      taskRecords: [mainTask],
-      gatewaySessionRows: new Map([
-        [
-          parentSessionKey,
-          {
-            key: parentSessionKey,
-            kind: "direct",
-            updatedAt: now,
-            status: "done",
-            model: "gpt-5.5",
-            totalTokens: 20_000,
-            totalTokensFresh: true,
-            finalAssistantText: "Planning produced an approval packet.",
-          },
-        ],
-      ]),
-    });
-
-    expect(payload.performanceProfile.domainFinalFidelityEvidence).toEqual([
-      expect.objectContaining({
-        taskId: "task-main-planning-domain-final",
-        childSessionKey: planningSessionKey,
-        childRole: "planning",
-        contentChars: planningReport.length,
-        finalAssistantTextChars: "Planning produced an approval packet.".length,
-        fidelity: "unknown",
-        guidance: expect.stringContaining("readback records evidence only"),
-      }),
-    ]);
-  });
-
-  it("hydrates exact session filters from native stores when recent rows miss", () => {
-    expect(stateDir).toBeDefined();
-    const storePath = path.join(stateDir!, "old-coding-sessions.json");
-    fs.writeFileSync(
-      storePath,
-      JSON.stringify(
-        {
-          "agent:coding:old-proof-session": {
-            sessionId: "old-proof-session-id",
-            updatedAt: 1_234_567,
-            model: "gpt-5.5",
-            modelProvider: "openai",
-          },
-        },
-        null,
-        2,
-      ),
-    );
-    const summary = buildSummary();
-    summary.sessions.paths = [storePath];
-    summary.sessions.count = 1;
-    summary.sessions.recent = [];
-    summary.sessions.byAgent = [
-      {
-        agentId: "coding",
-        path: storePath,
-        count: 1,
-        recent: [],
-      },
-    ];
-
-    const payload = buildRunInsightsReport(summary, {
-      session: "agent:coding:old-proof-session",
-      limit: 5,
-      taskRecords: [],
-      gatewaySessionRows: new Map(),
-    });
-
-    expect(payload.sessions).toHaveLength(1);
-    expect(payload.sessions[0]).toMatchObject({
-      key: "agent:coding:old-proof-session",
-      agentId: null,
-      sessionId: "old-proof-session-id",
-      model: "gpt-5.5",
-    });
-    expect(payload.summary.recentSessionsConsidered).toBe(1);
-    expect(payload.summary.sessionsDisplayed).toBe(1);
-  });
-
-  it("matches bare proof session ids against agent-prefixed sessions and related task trees", () => {
-    const now = Date.UTC(2026, 6, 3, 17, 30, 0);
-    const proofId = "phase0z-gbrain-openclaw-skill-wiring-proof-20260703T165709Z";
-    const sessionKey = `agent:main:${proofId}`;
-    const summary = buildSummary();
-    summary.sessions.recent = [
-      {
-        agentId: "main",
-        key: sessionKey,
-        kind: "direct",
-        sessionId: "sess-main-proof",
-        updatedAt: now - 1_000,
-        age: 1_000,
-        totalTokens: 12_000,
-        totalTokensFresh: true,
-        remainingTokens: 88_000,
-        percentUsed: 12,
-        model: "gpt-5.5",
-        configuredModel: "gpt-5.5",
-        selectedModel: "gpt-5.5",
-        modelSelectionReason: "configured",
-        runtime: "openclaw",
-        contextTokens: 100_000,
-        flags: [],
-      },
-    ];
-    const parentTask: TaskRecord = {
-      taskId: "task-main-proof",
-      runtime: "subagent",
-      taskKind: "planning",
-      agentId: "planning",
-      runId: "run-planning-proof",
-      label: "Planning proof",
-      requesterSessionKey: sessionKey,
-      ownerKey: sessionKey,
-      scopeKind: "session",
-      childSessionKey: "agent:planning:phase0z-proof",
-      task: "Plan native skill wiring work.",
-      status: "running",
-      deliveryStatus: "pending",
-      notifyPolicy: "done_only",
-      createdAt: now - 120_000,
-      startedAt: now - 120_000,
-      lastEventAt: now - 60_000,
-    };
-    const childTask: TaskRecord = {
-      taskId: "task-planning-child",
-      runtime: "subagent",
-      taskKind: "source-scout",
-      agentId: "codebase-researcher",
-      runId: "run-codebase-scout",
-      label: "codebase scout",
-      requesterSessionKey: "agent:planning:phase0z-proof",
-      ownerKey: "agent:planning:phase0z-proof",
-      parentTaskId: "task-main-proof",
-      scopeKind: "session",
-      childSessionKey: "agent:codebase-researcher:subagent:repo-scout",
-      task: "Inspect native skill wiring.",
-      status: "succeeded",
-      deliveryStatus: "delivered",
-      notifyPolicy: "silent",
-      createdAt: now - 90_000,
-      startedAt: now - 90_000,
-      endedAt: now - 10_000,
-      lastEventAt: now - 10_000,
-    };
-
-    const payload = buildRunInsightsReport(summary, {
-      session: proofId,
-      limit: 5,
-      now,
-      taskRecords: [parentTask, childTask],
-      gatewaySessionRows: new Map(),
-    });
-
-    expect(payload.sessions).toHaveLength(1);
-    expect(payload.sessions[0]).toMatchObject({ key: sessionKey });
-    expect(payload.summary.tasks.matching).toBe(2);
-    expect(payload.tasks.map((task: { taskId: string }) => task.taskId)).toEqual([
-      "task-main-proof",
-      "task-planning-child",
-    ]);
-    expect(payload.diagnosticSummary.currentOrLastKnownPhase).toMatchObject({
-      source: "task",
-      evidenceQuality: "evidence_backed",
-    });
-  });
-
-  it("projects terminal child task errors when no execution receipt is present", () => {
-    const now = Date.UTC(2026, 6, 1, 6, 0, 0);
-    const failedChild: TaskRecord = {
-      taskId: "task-failed-child-no-receipt",
-      runtime: "cli",
-      taskKind: "cli",
-      agentId: "codebase-researcher",
-      runId: "child-run-1",
-      label: "repo scout",
-      requesterSessionKey: "agent:codebase-researcher:subagent:child-1",
-      childSessionKey: "agent:codebase-researcher:subagent:child-1",
-      ownerKey: "agent:planning:main",
-      scopeKind: "session",
-      task: "Inspect repo current state.",
-      status: "failed",
-      deliveryStatus: "not_applicable",
-      notifyPolicy: "silent",
-      createdAt: now - 120_000,
-      startedAt: now - 110_000,
-      endedAt: now - 10_000,
-      lastEventAt: now - 10_000,
-      error:
-        "Context overflow: prompt too large for the model. Try /reset (or /new) to start a fresh session.",
-    };
-
-    const payload = buildRunInsightsReport(buildSummary(), {
-      session: "agent:codebase-researcher:subagent:child-1",
-      limit: 5,
-      now,
-      taskRecords: [failedChild],
-    });
-
-    expect(payload.tasks[0].activeProgress).toMatchObject({
-      source: "task-run-event",
-      currentPhase: "failed",
-      activeLabel: "repo scout",
-      sourceEventType: "task.failed",
-      childRole: "codebase-researcher",
-      childPhase: "failed",
-      outputSummary: expect.stringContaining("Context overflow"),
-      note: expect.stringContaining("Context overflow"),
-      pointer: {
-        kind: "task",
-        ref: "task-failed-child-no-receipt",
-        label: "terminal task error",
-      },
-      derivedBy: "resolveTaskReadbackProgressProjection",
-      bounded: true,
-    });
-    expect(payload.diagnosticSummary.currentOrLastKnownPhase).toMatchObject({
-      source: "task",
-      pointer: "openclaw tasks show task-failed-child-no-receipt",
-      evidenceQuality: "evidence_backed",
-    });
-  });
-
-  it("uses scoped terminal task evidence before unscoped deploy receipts for phase readback", () => {
-    const now = Date.UTC(2026, 6, 1, 6, 0, 0);
-    const completedCodingTask: TaskRecord = {
-      taskId: "task-completed-coding-no-receipt",
-      runtime: "subagent",
-      taskKind: "openclaw-agent",
-      agentId: "coding",
-      requesterSessionKey: "agent:coding:old-proof",
-      childSessionKey: "agent:coding:old-proof",
-      ownerKey: "agent:main:old-proof",
-      scopeKind: "session",
-      task: "Implement bounded readback feature.",
-      status: "succeeded",
-      deliveryStatus: "delivered",
-      notifyPolicy: "silent",
-      createdAt: now - 240_000,
-      startedAt: now - 230_000,
-      endedAt: now - 30_000,
-      lastEventAt: now - 30_000,
-    };
-
-    const payload = buildRunInsightsReport(buildSummary(), {
-      session: "agent:coding:old-proof",
-      limit: 5,
-      now,
-      taskRecords: [completedCodingTask],
-    });
-
-    expect(payload.tasks).toHaveLength(1);
-    expect(payload.deployEvents).toHaveLength(0);
-    expect(payload.deployEvidenceScope.reason).toContain("excludes global deploy");
-    expect(payload.diagnosticSummary.currentOrLastKnownPhase).toMatchObject({
-      label: "succeeded",
-      source: "task",
-      pointer: "openclaw tasks show task-completed-coding-no-receipt",
-      evidenceQuality: "evidence_backed",
-      confidence: "high",
-    });
-  });
-
-  it("infers Codex-native child role from the role preamble when the task label is generic", () => {
-    const now = Date.UTC(2026, 6, 1, 6, 0, 0);
-    const codexChild: TaskRecord = {
-      taskId: "task-codex-role-preamble",
-      runtime: "subagent",
-      taskKind: "codex-native",
-      agentId: "coding",
-      runId: "codex-thread:project-explorer-1",
-      label: "Codex subagent",
-      requesterSessionKey: "agent:coding:main",
-      ownerKey: "agent:coding:main",
-      scopeKind: "session",
-      task: "Role: project_explorer.\n\nInspect source context without editing.",
-      status: "succeeded",
-      deliveryStatus: "delivered",
-      notifyPolicy: "silent",
-      createdAt: now - 90_000,
-      startedAt: now - 90_000,
-      endedAt: now - 15_000,
-      lastEventAt: now - 15_000,
-      executionReceipt: {
-        schema: "openclaw.task.execution_receipt.v1",
-        eventCount: 2,
-        updatedAt: now - 15_000,
-        latestEvent: {
-          at: now - 15_000,
-          kind: "progress",
-          summary: "Explorer packet complete.",
-        },
-      },
-    };
-
-    const payload = buildRunInsightsReport(buildSummary(), {
-      session: "agent:coding:main",
-      limit: 5,
-      now,
-      taskRecords: [codexChild],
-    });
-
-    expect(payload.tasks[0]).toMatchObject({
-      childRole: "project_explorer",
-      childPhase: "succeeded",
-    });
-    expect(payload.tasks[0].activeProgress).toMatchObject({
-      activeLabel: "project_explorer",
-      childRole: "project_explorer",
-      spawnReason: expect.stringContaining("Role: project_explorer"),
-    });
-    expect(payload.performanceProfile.childSessionEvidence[0]).toMatchObject({
-      taskId: "task-codex-role-preamble",
-      childRole: "project_explorer",
-      childPhase: "succeeded",
-    });
-  });
-
-  it("uses gateway session row readback for scoped session status, final answer, and progress", () => {
-    const now = Date.UTC(2026, 6, 1, 6, 0, 0);
-    const payload = buildRunInsightsReport(buildSummary(), {
-      agent: "coding",
-      session: "agent:coding:main",
-      limit: 5,
-      now,
-      taskRecords: [],
-      gatewaySessionRows: new Map([
-        [
-          "agent:coding:main",
-          {
-            key: "agent:coding:main",
-            kind: "direct",
-            updatedAt: now - 1_000,
-            status: "done",
-            model: "gpt-5.5",
-            inputTokens: 12,
-            outputTokens: 3,
-            totalTokens: 15,
-            totalTokensFresh: true,
-            finalAssistantText: "Final closeout exists.",
-            activeProgress: {
-              source: "task-run-event",
-              ref: "task-event:task-coding-main:1:progress",
-              currentPhase: "succeeded",
-              activeLabel: "coding",
-              observedAt: new Date(now - 1_000).toISOString(),
-              sourceEventType: "task.progress",
-              pointer: {
-                kind: "task",
-                ref: "task-coding-main",
-                label: "task run receipt",
-              },
-              derivedBy: "resolveTaskReadbackProgressProjection",
-              bounded: true,
-            },
-            readbackProvenance: {
-              status: {
-                source: "session-transcript",
-                ref: "session:sess-coding",
-                derivedBy: "buildGatewaySessionRow",
-                bounded: true,
-              },
-              finalAssistantText: {
-                source: "session-transcript",
-                ref: "session:sess-coding",
-                derivedBy: "readLastAssistantTextFromTranscript",
-                bounded: true,
-              },
-            },
-          },
-        ],
-      ]),
-    });
-
-    expect(payload.sessions).toHaveLength(1);
-    expect(payload.readbackSubject).toMatchObject({
-      scope: "session",
-      sessionKey: "agent:coding:main",
-      agentId: "coding",
-    });
-    expect(payload.sessionKey).toBe("agent:coding:main");
-    expect(payload.status).toBe("done");
-    expect(payload.finality).toMatchObject({
-      status: "done",
-      finalAssistantTextPresent: true,
-      finalAssistantTextChars: "Final closeout exists.".length,
-      finalAssistantTextPointer: "openclaw sessions show agent:coding:main --agent coding",
-    });
-    expect(payload.finality.finalAssistantTextDigest).toMatch(/^[a-f0-9]{64}$/);
-    expect(payload.activeWork).toMatchObject({
-      phase: "succeeded",
-      source: "task-run-event",
-    });
-    expect(payload.finalAssistantText).toBe("Final closeout exists.");
-    expect(payload.sessions[0]).toMatchObject({
-      key: "agent:coding:main",
-      status: "done",
-      finalAssistantText: "Final closeout exists.",
-      hasFinalAssistantText: true,
-      inputTokens: 12,
-      outputTokens: 3,
-      totalTokens: 15,
-    });
-    expect(payload.sessions[0].activeProgress).toMatchObject({
-      source: "task-run-event",
-      currentPhase: "succeeded",
-    });
-    expect(payload.sessions[0].readbackProvenance).toMatchObject({
       status: {
         source: "session-transcript",
-        bounded: true,
+        ref: "/tmp/sess-planning.jsonl",
+        bounded: false,
       },
-      finalAssistantText: {
-        source: "session-transcript",
-        bounded: true,
-      },
-    });
-  });
-
-  it("prefers terminal final-answer session evidence over a later reviewer task", () => {
-    const now = Date.UTC(2026, 6, 1, 6, 0, 0);
-    const latestReviewerTask: TaskRecord = {
-      taskId: "task-latest-reviewer",
-      runtime: "subagent",
-      taskKind: "openclaw-agent",
-      agentId: "reviewer",
-      runId: "reviewer-after-planning",
-      label: "Reviewer pass",
-      requesterSessionKey: "agent:planning:main",
-      ownerKey: "agent:planning:main",
-      scopeKind: "session",
-      task: "Review final approval packet.",
-      status: "succeeded",
-      deliveryStatus: "delivered",
-      notifyPolicy: "silent",
-      createdAt: now - 120_000,
-      startedAt: now - 110_000,
-      endedAt: now - 1_000,
-      lastEventAt: now - 1_000,
-      executionReceipt: {
-        schema: "openclaw.task.execution_receipt.v1",
-        eventCount: 2,
-        updatedAt: now - 1_000,
-        latestEvent: {
-          at: now - 1_000,
-          kind: "succeeded",
-          summary: "Reviewer approved the plan.",
+    },
+    promptContext: {
+      skills: {
+        promptChars: 5000,
+        promptHash: "abc123",
+        skillCount: 2,
+        skillNames: ["comprehensive-plan-record", "agentic-architecture-review"],
+        promptRef: {
+          version: 1,
+          algorithm: "sha256",
+          hash: "abc123",
+          bytes: 5000,
         },
       },
-    };
+    },
+  };
+}
 
-    const payload = buildRunInsightsReport(buildSummary(), {
-      session: "agent:planning:main",
-      limit: 5,
-      now,
-      taskRecords: [latestReviewerTask],
-      gatewaySessionRows: new Map([
-        [
-          "agent:planning:main",
-          {
-            key: "agent:planning:main",
-            kind: "direct",
-            updatedAt: now,
-            status: "done",
-            model: "gpt-5.5",
-            totalTokens: 25,
-            totalTokensFresh: true,
-            finalAssistantText: "Final approval packet is ready.",
-            readbackProvenance: {
-              status: {
-                source: "session-transcript",
-                ref: "session:sess-planning",
-                derivedBy: "buildGatewaySessionRow",
-                bounded: true,
-              },
-              finalAssistantText: {
-                source: "session-transcript",
-                ref: "session:sess-planning",
-                derivedBy: "readLastAssistantTextFromTranscript",
-                bounded: true,
-              },
-            },
-          },
-        ],
-      ]),
-    });
+function buildTask(overrides: Partial<TaskRecord> = {}): TaskRecord {
+  return {
+    taskId: "task-planning",
+    runtime: "subagent",
+    taskKind: "planning",
+    requesterSessionKey: "agent:main:main",
+    ownerKey: "agent:planning:main",
+    scopeKind: "session",
+    childSessionKey: "agent:planning:main",
+    agentId: "planning",
+    runId: "run-planning",
+    label: "Planning run",
+    task: "Plan the skill wiring work",
+    status: "succeeded",
+    deliveryStatus: "delivered",
+    notifyPolicy: "done_only",
+    createdAt: 1_000,
+    startedAt: 1_100,
+    endedAt: 2_000,
+    lastEventAt: 2_000,
+    terminalSummary: "Planning completed.",
+    ...overrides,
+  };
+}
 
-    expect(payload.diagnosticSummary.currentOrLastKnownPhase).toMatchObject({
-      label: "final assistant answer present",
-      source: "session",
-      pointer: "openclaw sessions show agent:planning:main --agent planning",
-      confidence: "high",
-      evidenceQuality: "evidence_backed",
+beforeEach(() => {
+  stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-run-insights-"));
+  mocks.resolveStateDir.mockReturnValue(stateDir);
+  mocks.getStatusSummary.mockResolvedValue(buildSummary());
+  mocks.listTaskRecords.mockReturnValue([]);
+  mocks.resolveExistingUsageSessionFile.mockReturnValue(undefined);
+  mocks.loadSessionCostSummaryFromCache.mockResolvedValue({
+    summary: null,
+    cacheStatus: {
+      status: "fresh",
+      cachedFiles: 0,
+      pendingFiles: 0,
+      staleFiles: 0,
+    },
+  });
+  mocks.runtime.log.mockReset();
+  mocks.runtime.error.mockReset();
+  mocks.runtime.exit.mockReset();
+  resetSubagentRegistryForTests();
+});
+
+afterEach(() => {
+  resetSubagentRegistryForTests();
+  if (stateDir) {
+    fs.rmSync(stateDir, { recursive: true, force: true });
+  }
+});
+
+describe("resolveRunInsightsOptions", () => {
+  it("rejects invalid numeric filters before command execution", () => {
+    expect(resolveRunInsightsOptions({ limit: "0" })).toEqual({
+      ok: false,
+      message: "limit must be a positive integer",
     });
-    expect(payload.diagnosticSummary.parentWaitState).toMatchObject({
-      waitClass: null,
-      reason: "session is terminal with final assistant readback; no active parent wait remains",
-      pointer: "openclaw sessions show agent:planning:main --agent planning",
-    });
-    expect(payload.diagnosticSummary.operatorNextAction).toMatchObject({
-      label: "Inspect final assistant readback",
-      pointer: "openclaw sessions show agent:planning:main --agent planning",
+    expect(resolveRunInsightsOptions({ active: "nope" })).toEqual({
+      ok: false,
+      message: "active must be a positive integer",
     });
   });
 
-  it("labels active parent synthesis after terminal child work instead of latest child output", () => {
-    const now = Date.UTC(2026, 6, 1, 6, 0, 0);
-    const terminalChildTask: TaskRecord = {
-      taskId: "task-terminal-scout",
-      runtime: "subagent",
-      taskKind: "codex-native",
-      agentId: "planning",
-      runId: "codex-thread:source-scout",
-      label: "source_scout",
-      requesterSessionKey: "agent:planning:main",
-      ownerKey: "agent:planning:main",
-      scopeKind: "session",
-      task: "Role: source_scout.\n\nInspect native skill wiring refs.",
-      status: "succeeded",
-      deliveryStatus: "delivered",
-      notifyPolicy: "silent",
-      createdAt: now - 180_000,
-      startedAt: now - 175_000,
-      endedAt: now - 60_000,
-      lastEventAt: now - 60_000,
-      executionReceipt: {
-        schema: "openclaw.task.execution_receipt.v1",
-        eventCount: 2,
-        updatedAt: now - 60_000,
-        latestEvent: {
-          at: now - 60_000,
-          kind: "succeeded",
-          summary: "Source scout packet complete.",
-        },
-      },
-    };
-
-    const payload = buildRunInsightsReport(buildSummary(), {
-      session: "agent:planning:main",
-      limit: 5,
-      now,
-      taskRecords: [terminalChildTask],
-      gatewaySessionRows: new Map([
-        [
-          "agent:planning:main",
-          {
-            key: "agent:planning:main",
-            kind: "direct",
-            updatedAt: now,
-            status: "running",
-            model: "gpt-5.5",
-            totalTokens: 25,
-            totalTokensFresh: true,
-          },
-        ],
-      ]),
-    });
-
-    expect(payload.performanceProfile.childSessionEvidence[0]).toMatchObject({
-      taskId: "task-terminal-scout",
-      childRole: "source_scout",
-      childPhase: "succeeded",
-      status: "succeeded",
-    });
-    expect(payload.diagnosticSummary.currentOrLastKnownPhase).toMatchObject({
-      label: "parent synthesis/finalization after child work",
-      source: "session",
-      pointer: "openclaw sessions show agent:planning:main --agent planning",
-      confidence: "medium",
-      evidenceQuality: "heuristic",
-    });
-    expect(payload.diagnosticSummary.parentWaitState).toMatchObject({
-      waitClass: "unknown",
-      reason:
-        "derived from active parent session status with terminal child task evidence in scope",
-      pointer: "openclaw sessions show agent:planning:main --agent planning",
-    });
-  });
-
-  it("projects active task-registry progress when no richer task receipt exists yet", () => {
-    const now = Date.UTC(2026, 6, 1, 6, 0, 0);
-    const activeTask: TaskRecord = {
-      taskId: "task-active-no-receipt",
-      runtime: "subagent",
-      taskKind: "openclaw-agent",
-      agentId: "planning",
-      runId: "planning-active-no-receipt",
-      label: "Planning synthesis",
-      requesterSessionKey: "agent:planning:main",
-      ownerKey: "agent:main:main",
-      scopeKind: "session",
-      task: "Produce approval packet.",
-      status: "running",
-      deliveryStatus: "pending",
-      notifyPolicy: "done_only",
-      createdAt: now - 12 * 60_000,
-      startedAt: now - 11 * 60_000,
-      lastEventAt: now - 11 * 60_000,
-    };
-
-    const payload = buildRunInsightsReport(buildSummary(), {
-      agent: "planning",
-      session: "agent:planning:main",
-      limit: 5,
-      now,
-      taskRecords: [activeTask],
-    });
-
-    expect(payload.tasks[0].activeProgress).toMatchObject({
-      source: "task-registry",
-      ref: "task:task-active-no-receipt",
-      currentPhase: "running",
-      activeLabel: "Planning synthesis",
-      sourceEventType: "task.registry",
-      pointer: {
-        kind: "task",
-        ref: "task-active-no-receipt",
-        label: "native task registry row",
-      },
-      derivedBy: "resolveTaskReadbackProgressProjection",
-      bounded: true,
-    });
-    expect(payload.tasks[0].attention).toMatchObject({
-      waitClass: "long_running",
-      pointer: "openclaw tasks show task-active-no-receipt",
-    });
-  });
-
-  it("classifies known-bad broad typecheck commands as validation seam evidence", () => {
-    const now = Date.UTC(2026, 6, 1, 6, 0, 0);
-    const validationTask: TaskRecord = {
-      taskId: "task-known-bad-typecheck",
-      runtime: "subagent",
-      taskKind: "openclaw-agent",
-      agentId: "coding",
-      runId: "coding-known-bad-typecheck",
-      label: "Coding validation",
-      requesterSessionKey: "agent:coding:main",
-      ownerKey: "agent:coding:main",
-      scopeKind: "session",
-      task: "Validate readback changes.",
-      status: "running",
-      deliveryStatus: "pending",
-      notifyPolicy: "silent",
-      createdAt: now - 60_000,
-      startedAt: now - 55_000,
-      lastEventAt: now - 5_000,
-      executionReceipt: {
-        schema: "openclaw.task.execution_receipt.v1",
-        eventCount: 1,
-        updatedAt: now - 5_000,
-        latestEvent: {
-          at: now - 5_000,
-          kind: "progress",
-          summary: "Validation failed with heap OOM.",
-          metadata: {
-            toolName: "exec_command",
-            command: "pnpm exec tsc --noEmit",
-            validationClass: "typecheck",
-            outputSummary: "JavaScript heap out of memory",
-            exitCode: 134,
-          },
-        },
-      },
-    };
-
-    const payload = buildRunInsightsReport(buildSummary(), {
-      agent: "coding",
-      session: "agent:coding:main",
-      limit: 5,
-      now,
-      taskRecords: [validationTask],
-    });
-
-    expect(payload.tasks[0].activeProgress).toMatchObject({
-      source: "task-run-event",
-      toolName: "exec_command",
-      command: "pnpm exec tsc --noEmit",
-      validationClass: "typecheck",
-      outputSummary: "JavaScript heap out of memory",
-    });
-    expect(payload.performanceProfile.validationBuildBottlenecks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: "known_bad_validation_command",
-          evidence: expect.objectContaining({
-            taskId: "task-known-bad-typecheck",
-            command: "pnpm exec tsc --noEmit",
-            registry: "docs/agents/coding/validation-registry.md",
-          }),
-        }),
-      ]),
-    );
-  });
-
-  it("does not classify successful terminal planning proof tasks as active validation work", () => {
-    const now = Date.UTC(2026, 6, 1, 6, 0, 0);
-    const completedPlanningTask: TaskRecord = {
-      taskId: "task-completed-planning-proof",
-      runtime: "subagent",
-      taskKind: "openclaw-agent",
-      agentId: "planning",
-      runId: "planning-proof-finished",
-      label: "Planning proof plan",
-      requesterSessionKey: "agent:main:main",
-      ownerKey: "agent:main:main",
-      scopeKind: "session",
-      task: "Plan proof work and produce a validation-ready execution brief.",
-      status: "succeeded",
-      deliveryStatus: "delivered",
-      notifyPolicy: "silent",
-      createdAt: now - 180_000,
-      startedAt: now - 170_000,
-      endedAt: now - 60_000,
-      lastEventAt: now - 60_000,
-      terminalSummary: "Planning proof artifact completed.",
-      executionReceipt: {
-        schema: "openclaw.task.execution_receipt.v1",
-        eventCount: 2,
-        updatedAt: now - 60_000,
-        latestEvent: {
-          at: now - 60_000,
-          kind: "succeeded",
-          summary: "Planning proof artifact completed.",
-        },
-      },
-    };
-
-    const payload = buildRunInsightsReport(buildSummary(), {
-      limit: 5,
-      now,
-      taskRecords: [completedPlanningTask],
-    });
-
-    expect(payload.tasks[0].attention).toMatchObject({
-      waitClass: null,
-      reason: null,
-    });
+  it("normalizes filters and clamps the bounded limit", () => {
     expect(
-      payload.performanceProfile.validationBuildBottlenecks.map((item) => item.code),
-    ).not.toContain("task_validation_or_promotion");
-    expect(payload.attention.validationAndPromotion.map((item) => item.code)).not.toContain(
-      "task_validation_or_promotion",
-    );
-  });
-
-  it("focuses run insight readback by session and task", async () => {
-    await runInsightsCommand(
-      {
-        json: true,
-        session: "agent:coding:main",
-        task: "task-coding-child",
-        limit: "10",
+      resolveRunInsightsOptions({ agent: " planning ", session: " sess ", limit: 100 }),
+    ).toEqual({
+      ok: true,
+      value: {
+        agent: "planning",
+        session: "sess",
+        limit: 50,
+        includeBackground: false,
       },
-      runtime,
-    );
-
-    const payload = JSON.parse(String(runtime.log.mock.calls[0]?.[0]));
-    expect(payload.filters).toEqual({
-      agent: null,
-      session: "agent:coding:main",
-      task: "task-coding-child",
-      activeMinutes: null,
-      limit: 10,
-      includeBackground: false,
-    });
-    expect(payload.sessions.map((session: { key: string }) => session.key)).toEqual([
-      "agent:coding:main",
-    ]);
-    expect(payload.tasks.map((task: { taskId: string }) => task.taskId)).toEqual([
-      "task-coding-child",
-    ]);
-    expect(payload.deployEvents).toEqual([]);
-    expect(payload.deployEvidenceScope).toMatchObject({
-      scope: "global_unscoped",
-      filteredBy: [],
-      limitApplied: 10,
     });
   });
+});
 
-  it("matches session filters case-insensitively without changing readback keys", async () => {
-    await runInsightsCommand(
+describe("buildRunInsightsReport", () => {
+  it("projects finality from native session transcript evidence", () => {
+    const gatewayRows = new Map<string, GatewaySessionRow>([
+      ["agent:planning:main", buildGatewayRow()],
+    ]);
+    const report = buildRunInsightsReport(
+      buildSummary(),
       {
-        json: true,
-        session: "AGENT:CODING:MAIN",
-        limit: "10",
+        session: "agent:planning:main",
+        limit: 10,
+        includeBackground: false,
       },
-      runtime,
+      { gatewaySessionRows: gatewayRows, taskRecords: [] },
     );
 
-    const payload = JSON.parse(String(runtime.log.mock.calls[0]?.[0]));
-    expect(payload.filters.session).toBe("AGENT:CODING:MAIN");
-    expect(payload.sessions.map((session: { key: string }) => session.key)).toEqual([
-      "agent:coding:main",
-    ]);
-    expect(payload.tasks.map((task: { taskId: string }) => task.taskId)).toEqual([
-      "task-coding-child",
-      "task-delivery-watch",
-      "task-codex-native-child",
-    ]);
+    expect(report.finality.finalAssistantTextPresent).toBe(true);
+    expect(report.finality.finalAssistantTextChars).toBeGreaterThan(20);
+    expect(report.finality.finalAssistantTextPointer).toContain("openclaw sessions show");
+    expect(report).not.toHaveProperty("finalAssistantText");
   });
 
-  it("uses injected time for deterministic report timestamps", () => {
-    const now = Date.UTC(2026, 6, 1, 5, 30, 0);
-    const payload = buildRunInsightsReport(buildSummary(), {
-      activeMinutes: 60,
-      limit: 1,
-      now,
-      taskRecords: [],
+  it("keeps background deploy receipts out of scoped readback unless requested", () => {
+    const deployDir = path.join(stateDir!, "deploy");
+    fs.mkdirSync(deployDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(deployDir, "events.ndjson"),
+      `${JSON.stringify({
+        eventId: "deploy-1",
+        eventType: "deploy.promote",
+        status: "succeeded",
+        sourceCommit: "abc",
+        durationMs: 42_000,
+      })}\n`,
+    );
+
+    const scoped = buildRunInsightsReport(
+      buildSummary(),
+      { session: "agent:planning:main", limit: 10, includeBackground: false },
+      { gatewaySessionRows: new Map(), taskRecords: [] },
+    );
+    const withBackground = buildRunInsightsReport(
+      buildSummary(),
+      { session: "agent:planning:main", limit: 10, includeBackground: true },
+      { gatewaySessionRows: new Map(), taskRecords: [] },
+    );
+
+    expect(scoped.deployEvents).toHaveLength(0);
+    expect(scoped.summary.backgroundSignalsIncluded).toBe(false);
+    expect(withBackground.deployEvents).toHaveLength(1);
+    expect(withBackground.costs.deployKnownDurationMs).toBe(42_000);
+  });
+
+  it("reports child runs as native child evidence without advisory profiles", () => {
+    addSubagentRunForTests({
+      runId: "child-1",
+      childSessionKey: "agent:codebase-researcher:child",
+      requesterSessionKey: "agent:planning:main",
+      requesterDisplayKey: "agent:planning:main",
+      task: "Inspect the skill wiring refs and stop after exact findings.",
+      taskName: "source scout",
+      label: "codebase scout",
+      cleanup: "keep",
+      createdAt: 1_200,
+      startedAt: 1_300,
+      endedAt: 2_000,
+      completion: {
+        required: true,
+        resultText: "Finding: skill reads are visible in ordinary read telemetry.",
+        capturedAt: 2_000,
+      },
+      delivery: {
+        status: "delivered",
+        deliveredAt: 2_050,
+      },
     });
 
-    expect(payload.generatedAt).toBe("2026-07-01T05:30:00.000Z");
+    const report = buildRunInsightsReport(
+      buildSummary(),
+      { session: "agent:planning:main", limit: 10, includeBackground: false },
+      {
+        gatewaySessionRows: new Map(),
+        taskRecords: [
+          buildTask({
+            taskId: "task-parent",
+            requesterSessionKey: "agent:planning:main",
+            ownerKey: "agent:planning:main",
+            childSessionKey: "agent:planning:main",
+          }),
+        ],
+      },
+    );
+
+    expect(report.childRuns).toHaveLength(1);
+    expect(report.childRuns[0]).toMatchObject({
+      runId: "child-1",
+      childSessionKey: "agent:codebase-researcher:child",
+      agentId: "codebase-researcher",
+      contentTruncated: false,
+    });
+    expect(report).not.toHaveProperty("diagnosticSummary");
+    expect(report).not.toHaveProperty("performanceProfile");
+    expect(report).not.toHaveProperty("attention");
   });
 
-  it("prints human readback without crawling raw transcripts", async () => {
-    await runInsightsCommand({}, runtime);
+  it("reports visible skills separately from native skill.used evidence", () => {
+    const skillUsed: DiagnosticStabilityEventRecord = {
+      seq: 1,
+      ts: 2_000,
+      type: "skill.used",
+      sessionKey: "agent:planning:main",
+      sessionId: "sess-planning",
+      agentId: "planning",
+      target: "comprehensive-plan-record",
+      source: "ordinary_read",
+      action: "read",
+      readStatus: "full",
+      linesRead: 775,
+      totalLines: 775,
+      bytesRead: 32_000,
+    };
 
-    const output = runtime.log.mock.calls.map((call) => String(call[0])).join("\n");
-    expect(output).toContain("Run Insights");
-    expect(output).toContain("Run Insights is advisory readback over native evidence");
-    expect(output).toContain("Missing Evidence");
-    expect(output).toContain("Deploy Evidence Scope: global_unscoped");
-    expect(output).toContain("native deploy receipts do not carry agent/session/task keys");
-    expect(output).toContain("tools=55/2");
-    expect(output).toContain("cost=$0.1234");
-    expect(output).toContain("Diagnostic Summary");
-    expect(output).toContain("Phase:");
-    expect(output).toContain("Evidence quality:");
-    expect(output).toContain("Next action: Inspect native task evidence");
-    expect(output).toContain("Why Work May Feel Slow");
-    expect(output).toContain("task_active_child");
-    expect(output).toContain("Validation / Promotion Watch");
-    expect(output).toContain("deploy_receipt_activity");
-    expect(output).toContain("Performance Profile");
-    expect(output).toContain("Retry/build/proof cost: receipts=2 knownDuration=7m");
-    expect(output).toContain("Recent Tasks");
-    expect(output).toContain("attention=active_child");
-    expect(output).toContain("active=phase=running");
-    expect(output).toContain("Recent Deploy Events");
-    expect(output).toContain("deploy.promote status=passed");
-    expect(output).toContain("duration=4m");
-    expect(output).toContain("slowest=openclaw-native-checks:2m");
-    expect(output).toContain("openclaw tasks audit --json");
+    const report = buildRunInsightsReport(
+      buildSummary(),
+      { session: "agent:planning:main", limit: 10, includeBackground: false },
+      {
+        gatewaySessionRows: new Map([["agent:planning:main", buildGatewayRow()]]),
+        taskRecords: [],
+        diagnosticSkillEvents: [skillUsed],
+      },
+    );
+
+    expect(report.skillReads).toHaveLength(1);
+    expect(report.skillReads[0]).toMatchObject({
+      sessionKey: "agent:planning:main",
+      skillName: "comprehensive-plan-record",
+      readEvidence: "skill_used",
+      readStatus: "full",
+      linesRead: 775,
+      totalLines: 775,
+      bytesRead: 32_000,
+      usedSkillNames: ["comprehensive-plan-record"],
+    });
   });
 
-  it("rejects invalid numeric options before reading status summaries", async () => {
-    await runInsightsCommand({ limit: "nope" }, runtime);
+  it("does not attach skill.used evidence to a scoped session by agent id alone", () => {
+    const report = buildRunInsightsReport(
+      buildSummary(),
+      { session: "agent:planning:main", limit: 10, includeBackground: false },
+      {
+        gatewaySessionRows: new Map([["agent:planning:main", buildGatewayRow()]]),
+        taskRecords: [],
+        diagnosticSkillEvents: [
+          {
+            seq: 1,
+            ts: 2_000,
+            type: "skill.used",
+            agentId: "planning",
+            target: "comprehensive-plan-record",
+            source: "ordinary_read",
+            action: "read",
+            readStatus: "full",
+            linesRead: 775,
+            totalLines: 775,
+            bytesRead: 32_000,
+          },
+        ],
+      },
+    );
 
-    expect(runtime.error).toHaveBeenCalledWith("--limit must be a positive integer.");
-    expect(runtime.exit).toHaveBeenCalledWith(1);
-    expect(getStatusSummary).not.toHaveBeenCalled();
-    expect(loadSessionCostSummaryFromCache).not.toHaveBeenCalled();
+    expect(report.skillReads).toHaveLength(1);
+    expect(report.skillReads[0]).toMatchObject({
+      sessionKey: "agent:planning:main",
+      skillName: null,
+      readEvidence: "catalog_only",
+      readStatus: "visible_only",
+      usedSkillNames: [],
+    });
   });
+});
 
-  it("rejects empty focus filters before reading status summaries", async () => {
-    await runInsightsCommand({ session: " " }, runtime);
+describe("runInsightsCommand", () => {
+  it("emits the reduced JSON report", async () => {
+    mocks.listTaskRecords.mockReturnValue([buildTask()]);
 
-    expect(runtime.error).toHaveBeenCalledWith("--session must not be empty.");
-    expect(runtime.exit).toHaveBeenCalledWith(1);
-    expect(getStatusSummary).not.toHaveBeenCalled();
-    expect(loadSessionCostSummaryFromCache).not.toHaveBeenCalled();
+    await runInsightsCommand(
+      { json: true, session: "agent:planning:main" },
+      mocks.runtime as RuntimeEnv,
+    );
+
+    expect(mocks.runtime.exit).not.toHaveBeenCalled();
+    const payload = JSON.parse(String(mocks.runtime.log.mock.calls[0][0])) as Record<
+      string,
+      unknown
+    >;
+    expect(payload).toMatchObject({
+      schema: "openclaw.run_insights.v1",
+      authority: "advisory_readback",
+    });
+    expect(payload).toHaveProperty("finality");
+    expect(payload).toHaveProperty("activeWork");
+    expect(payload).toHaveProperty("childRuns");
+    expect(payload).toHaveProperty("skillReads");
+    expect(payload).not.toHaveProperty("diagnosticSummary");
+    expect(payload).not.toHaveProperty("performanceProfile");
+    expect(payload).not.toHaveProperty("attention");
   });
 });

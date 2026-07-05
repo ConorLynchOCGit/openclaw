@@ -23,7 +23,7 @@ let sessionLikelyHasOversizedToolResults: typeof import("./tool-result-truncatio
 let estimateToolResultReductionPotential: typeof import("./tool-result-truncation.js").estimateToolResultReductionPotential;
 let DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS: typeof import("./tool-result-truncation.js").DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS;
 let resolveLiveToolResultMaxChars: typeof import("./tool-result-truncation.js").resolveLiveToolResultMaxChars;
-let isEvidenceHandoffToolResultMessage: typeof import("./tool-result-truncation.js").isEvidenceHandoffToolResultMessage;
+let isChildResultToolResultMessage: typeof import("./tool-result-truncation.js").isChildResultToolResultMessage;
 let tmpDir: string | undefined;
 
 async function loadFreshToolResultTruncationModuleForTest() {
@@ -43,7 +43,7 @@ async function loadFreshToolResultTruncationModuleForTest() {
     estimateToolResultReductionPotential,
     DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS,
     resolveLiveToolResultMaxChars,
-    isEvidenceHandoffToolResultMessage,
+    isChildResultToolResultMessage,
   } = await import("./tool-result-truncation.js"));
 }
 
@@ -75,18 +75,14 @@ function makeToolResult(text: string, toolCallId = "call_1"): ToolResultMessage 
   };
 }
 
-function makeEvidenceHandoffToolResult(
-  text: string,
-  handoffKind = "context_pack",
-  toolCallId = "call_1",
-): ToolResultMessage {
+function makeChildResultToolResult(text: string, toolCallId = "call_1"): ToolResultMessage {
   return {
     ...makeToolResult(text, toolCallId),
     toolName: "task",
     details: {
-      handoffKind,
-      deliveryState: "model_visible_full",
+      childResult: true,
       contentChars: text.length,
+      contentTruncated: false,
     },
   } as ToolResultMessage;
 }
@@ -216,12 +212,12 @@ describe("truncateToolResultMessage", () => {
 
   it("does not truncate evidence handoff tool results", () => {
     const text = "# Context Pack\n\n".concat("plan-shaping evidence ".repeat(5000));
-    const msg = makeEvidenceHandoffToolResult(text);
+    const msg = makeChildResultToolResult(text);
 
     const result = truncateToolResultMessage(msg, 10_000);
 
     expect(result).toBe(msg);
-    expect(isEvidenceHandoffToolResultMessage(result)).toBe(true);
+    expect(isChildResultToolResultMessage(result)).toBe(true);
     expect(getFirstToolResultText(result)).toBe(text);
   });
 });
@@ -288,7 +284,7 @@ describe("isOversizedToolResult", () => {
   });
 
   it("returns false for evidence handoff tool results even when large", () => {
-    const msg = makeEvidenceHandoffToolResult("x".repeat(500_000));
+    const msg = makeChildResultToolResult("x".repeat(500_000));
     expect(isOversizedToolResult(msg, 128_000)).toBe(false);
   });
 
@@ -338,7 +334,7 @@ describe("estimateToolResultReductionPotential", () => {
   });
 
   it("excludes evidence handoffs from reducible tool-result estimates", () => {
-    const messages: AgentMessage[] = [makeEvidenceHandoffToolResult("x".repeat(500_000))];
+    const messages: AgentMessage[] = [makeChildResultToolResult("x".repeat(500_000))];
 
     const estimate = estimateToolResultReductionPotential({
       messages,
@@ -451,7 +447,7 @@ describe("truncateOversizedToolResultsInMessages", () => {
     const messages: AgentMessage[] = [
       makeUserMessage("hello"),
       makeAssistantMessage("running source scout"),
-      makeEvidenceHandoffToolResult(evidence),
+      makeChildResultToolResult(evidence),
     ];
 
     const { messages: result, truncatedCount } = truncateOversizedToolResultsInMessages(
@@ -535,7 +531,7 @@ describe("truncateOversizedToolResultsInMessages", () => {
     const messages: AgentMessage[] = [
       makeUserMessage("hello"),
       makeAssistantMessage("calling tools"),
-      makeEvidenceHandoffToolResult(evidence, "context_pack", "call_1"),
+      makeChildResultToolResult(evidence, "call_1"),
       makeToolResult(ordinary, "call_2"),
       makeToolResult(ordinary, "call_3"),
     ];

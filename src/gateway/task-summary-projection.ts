@@ -2,10 +2,9 @@ import { normalizeOptionalString } from "@openclaw/normalization-core/string-coe
 // Shared public task readback projection for gateway APIs and CLI JSON.
 import { type TaskSummary } from "../../packages/gateway-protocol/src/index.js";
 import {
-  computeEvidenceContentDigest,
-  inferEvidenceHandoffKindForAgent,
-  includesEvidenceTruncationMarker,
-} from "../agents/evidence-handoff.js";
+  computeChildResultContentDigest,
+  includesChildResultTruncationMarker,
+} from "../agents/child-result-metadata.js";
 import {
   getSubagentSessionRuntimeMs,
   getSubagentSessionStartedAt,
@@ -283,12 +282,6 @@ function mapTaskChildRun(
     maxChars: TASK_CHILD_RUN_OUTPUT_MAX_CHARS,
   });
   const finalOutput = resolveChildRunFinalOutput(run);
-  const handoffKind = agentId ? inferEvidenceHandoffKindForAgent(agentId) : undefined;
-  const handoffDeliveryState = finalOutput
-    ? includesEvidenceTruncationMarker(finalOutput)
-      ? "model_visible_truncated"
-      : "model_visible_full"
-    : undefined;
   const errorSummary = resolveTaskChildRunErrorSummary({ run, executionTask });
   const provenanceMismatch = resolveTaskChildRunProvenanceMismatch({
     run,
@@ -305,10 +298,9 @@ function mapTaskChildRun(
     ...(run.label ? { label: run.label } : {}),
     ...(status ? { status } : {}),
     ...(run.delivery?.status ? { deliveryStatus: run.delivery.status } : {}),
-    ...(handoffKind ? { handoffKind } : {}),
-    ...(handoffDeliveryState ? { handoffDeliveryState } : {}),
-    ...(finalOutput ? { contentDigest: computeEvidenceContentDigest(finalOutput) } : {}),
+    ...(finalOutput ? { contentDigest: computeChildResultContentDigest(finalOutput) } : {}),
     ...(finalOutput ? { contentChars: finalOutput.length } : {}),
+    ...(finalOutput ? { contentTruncated: includesChildResultTruncationMarker(finalOutput) } : {}),
     createdAt: run.createdAt,
     ...(startedAt !== undefined ? { startedAt } : {}),
     ...(run.endedAt !== undefined ? { endedAt: run.endedAt } : {}),

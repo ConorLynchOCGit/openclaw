@@ -398,6 +398,7 @@ function resolveParentPhaseFromDescendantRun(run: SubagentRunRecord): string {
 function resolveDescendantChildRunProgressProjection(
   task: TaskRecord,
   now = Date.now(),
+  context?: TaskReadbackProgressProjectionContext,
 ): ReadbackProgressProjection | undefined {
   if (task.status !== "running" && task.status !== "queued") {
     return undefined;
@@ -413,28 +414,56 @@ function resolveDescendantChildRunProgressProjection(
   const spawnReason = truncateTaskProgressNote(selected.task);
   const childLabel =
     role ?? truncateTaskProgressNote(selected.label) ?? truncateTaskProgressNote(selected.taskName);
+  const childTrajectoryProgress = resolveTaskSessionTrajectoryProgressProjection(
+    {
+      task,
+      sessionKey: selected.childSessionKey,
+      pointerLabel: "descendant child session trajectory",
+    },
+    context,
+  );
   const note =
     childPhase === "running"
       ? `Child run is active; parent is waiting on ${childLabel ?? "child work"}.`
       : `Child run is ${childPhase ?? "settled"}; parent is ${currentPhase.replace(/_/gu, " ")}.`;
   return {
-    source: "subagent-registry",
-    ref: `subagent-run:${selected.runId}`,
+    source: childTrajectoryProgress?.source ?? "subagent-registry",
+    ref: childTrajectoryProgress?.ref ?? `subagent-run:${selected.runId}`,
     currentPhase,
     activeLabel:
       childLabel ??
+      childTrajectoryProgress?.activeLabel ??
       truncateTaskProgressNote(task.label) ??
       normalizeOptionalString(task.agentId) ??
       normalizeOptionalString(task.runtime),
-    observedAt: formatTaskProgressObservedAt(
-      selected.endedAt,
-      selected.startedAt,
-      selected.createdAt,
-      task.lastEventAt,
-    ),
+    observedAt:
+      childTrajectoryProgress?.observedAt ??
+      formatTaskProgressObservedAt(
+        selected.endedAt,
+        selected.startedAt,
+        selected.createdAt,
+        task.lastEventAt,
+      ),
     elapsedMs: resolveElapsedMs(now, task.startedAt, task.createdAt),
-    durationMs: getSubagentSessionRuntimeMs(selected, now),
-    sourceEventType: "subagent.descendant",
+    durationMs: childTrajectoryProgress?.durationMs ?? getSubagentSessionRuntimeMs(selected, now),
+    sourceEventType: childTrajectoryProgress?.sourceEventType ?? "subagent.descendant",
+    ...(childTrajectoryProgress?.sourceEventSeq !== undefined
+      ? { sourceEventSeq: childTrajectoryProgress.sourceEventSeq }
+      : {}),
+    ...(childTrajectoryProgress?.toolName ? { toolName: childTrajectoryProgress.toolName } : {}),
+    ...(childTrajectoryProgress?.command ? { command: childTrajectoryProgress.command } : {}),
+    ...(childTrajectoryProgress?.exitCode !== undefined
+      ? { exitCode: childTrajectoryProgress.exitCode }
+      : {}),
+    ...(childTrajectoryProgress?.validationClass
+      ? { validationClass: childTrajectoryProgress.validationClass }
+      : {}),
+    ...(childTrajectoryProgress?.outputSummary
+      ? { outputSummary: childTrajectoryProgress.outputSummary }
+      : {}),
+    ...(childTrajectoryProgress?.repairAction
+      ? { repairAction: childTrajectoryProgress.repairAction }
+      : {}),
     ...(role ? { childRole: role } : {}),
     ...(childPhase ? { childPhase } : {}),
     ...(spawnReason ? { spawnReason } : {}),
@@ -444,7 +473,9 @@ function resolveDescendantChildRunProgressProjection(
       ref: selected.childSessionKey,
       label: "descendant child session",
     },
-    derivedBy: "resolveTaskReadbackProgressProjection",
+    derivedBy: childTrajectoryProgress
+      ? "resolveTaskReadbackProgressProjection+readLatestTrajectoryProgressProjection"
+      : "resolveTaskReadbackProgressProjection",
     bounded: true,
   };
 }
@@ -614,6 +645,7 @@ function uniqueTargets(targets: SessionStoreTarget[]): SessionStoreTarget[] {
 function sessionTargetsForTask(
   task: TaskRecord,
   context?: TaskReadbackProgressProjectionContext,
+  sessionKeyHint?: string,
 ): SessionStoreTarget[] {
   const cfg = getRuntimeConfig();
   const agentIds = new Set<string>();
@@ -628,6 +660,10 @@ function sessionTargetsForTask(
   const childAgentId = resolveAgentIdFromSessionKey(task.childSessionKey);
   if (childAgentId) {
     agentIds.add(childAgentId);
+  }
+  const hintedAgentId = resolveAgentIdFromSessionKey(sessionKeyHint);
+  if (hintedAgentId) {
+    agentIds.add(hintedAgentId);
   }
   const cacheKey =
     agentIds.size > 0 ? [...agentIds].toSorted().join("|") : ALL_SESSION_TARGETS_CACHE_KEY;
@@ -673,7 +709,7 @@ function resolveTaskSessionTrajectoryProgressProjection(
   if (!sessionKey) {
     return undefined;
   }
-  for (const target of sessionTargetsForTask(params.task, context)) {
+  for (const target of sessionTargetsForTask(params.task, context, sessionKey)) {
     const entry = resolveStoreEntryForTaskSession(target, sessionKey, context);
     const sessionId = normalizeOptionalString(entry?.sessionId);
     if (!sessionId) {
@@ -759,7 +795,7 @@ function resolveFallbackTaskProgressProjection(
   if (childSessionProgress) {
     return childSessionProgress;
   }
-  const descendantChildProgress = resolveDescendantChildRunProgressProjection(task, now);
+  const descendantChildProgress = resolveDescendantChildRunProgressProjection(task, now, context);
   if (descendantChildProgress) {
     return descendantChildProgress;
   }

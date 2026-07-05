@@ -508,7 +508,7 @@ describe("tasks gateway handlers", () => {
     });
   });
 
-  it("does not read child session trajectory progress for task summaries", async () => {
+  it("uses child session trajectory progress for task summaries when available", async () => {
     const sessionId = "gateway-task-progress-missing-status-child";
     const childSessionKey = "agent:codebase-researcher:subagent:progress-child";
     const sessionsDir = path.join(stateDir, "agents", "codebase-researcher", "sessions");
@@ -567,23 +567,112 @@ describe("tasks gateway handlers", () => {
     const { payload } = await getTaskPayload(task.taskId);
 
     expect(payload?.task?.activeProgress).toMatchObject({
-      source: "task-run-event",
-      ref: `task-event:${task.taskId}:${task.lastEventAt}:running`,
-      currentPhase: "running",
-      activeLabel: "codebase-researcher",
-      sourceEventType: "task.running",
-      note: "Child run started.",
+      source: "trajectory",
+      ref: `session:${sessionId}`,
+      currentPhase: "source-inspection",
+      activeLabel: "read",
+      sourceEventType: "tool.call",
+      note: "reading event-spine owner files",
       pointer: {
-        kind: "task",
-        ref: task.taskId,
-        label: "task run receipt",
+        kind: "session",
+        ref: childSessionKey,
+        label: "child session trajectory",
       },
-      derivedBy: "resolveTaskReadbackProgressProjection",
+      derivedBy: "readLatestTrajectoryProgressProjection",
       bounded: true,
     });
-    expect(payload?.task?.activeProgress).not.toMatchObject({
-      ref: `session:${sessionId}`,
+  });
+
+  it("uses exact descendant child trajectory progress for parent waiting readback", async () => {
+    const parentSessionKey = "agent:planning:main";
+    const childSessionKey = "agent:codebase-researcher:subagent:active-descendant";
+    const childSessionId = "gateway-task-descendant-child-trajectory";
+    const sessionsDir = path.join(stateDir, "agents", "codebase-researcher", "sessions");
+    await fs.mkdir(sessionsDir, { recursive: true });
+    await fs.writeFile(
+      path.join(sessionsDir, "sessions.json"),
+      JSON.stringify(
+        {
+          [childSessionKey]: {
+            sessionId: childSessionId,
+            sessionFile: path.join(sessionsDir, `${childSessionId}.jsonl`),
+            updatedAt: Date.UTC(2026, 6, 1, 2, 0, 0),
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(sessionsDir, `${childSessionId}.trajectory.jsonl`),
+      `${JSON.stringify({
+        traceSchema: "openclaw-trajectory",
+        schemaVersion: 1,
+        traceId: childSessionId,
+        source: "runtime",
+        type: "tool.call",
+        ts: "2026-07-01T02:00:00.000Z",
+        seq: 5,
+        sourceSeq: 13,
+        sessionId: childSessionId,
+        sessionKey: childSessionKey,
+        data: {
+          name: "read",
+          phase: "source-inspection",
+          summary: "reading exact OpenClaw skill refs",
+        },
+      })}\n`,
+      "utf8",
+    );
+    addSubagentRunForTests({
+      runId: "run-descendant-active",
+      childSessionKey,
+      requesterSessionKey: parentSessionKey,
+      requesterDisplayKey: "planning",
+      task: "Inspect exact skill wiring refs.",
+      taskName: "source scout",
+      label: "codebase scout",
+      cleanup: "keep",
+      createdAt: 2_000,
+      startedAt: 2_100,
+    });
+    const task = createTaskRecord({
+      runtime: "cli",
+      taskKind: "planning",
+      requesterSessionKey: parentSessionKey,
+      ownerKey: parentSessionKey,
+      scopeKind: "session",
+      agentId: "planning",
+      runId: "run-parent-waiting-descendant",
+      task: "Plan native skill wiring",
+      status: "running",
+      deliveryStatus: "pending",
+      startedAt: 1_000,
+      progressSummary: "Child run started.",
+    });
+
+    const { payload } = await getTaskPayload(task.taskId);
+
+    expect(payload?.task?.activeProgress).toMatchObject({
       source: "trajectory",
+      ref: `session:${childSessionId}`,
+      currentPhase: "waiting_on_child",
+      activeLabel: "codebase-researcher",
+      sourceEventType: "tool.call",
+      sourceEventSeq: 13,
+      toolName: "read",
+      childRole: "codebase-researcher",
+      childPhase: "running",
+      spawnReason: "Inspect exact skill wiring refs.",
+      note: "Child run is active; parent is waiting on codebase-researcher.",
+      pointer: {
+        kind: "session",
+        ref: childSessionKey,
+        label: "descendant child session",
+      },
+      derivedBy: "resolveTaskReadbackProgressProjection+readLatestTrajectoryProgressProjection",
+      bounded: true,
     });
   });
 
@@ -801,10 +890,9 @@ describe("tasks gateway handlers", () => {
         agentId: "planning",
         status: "done",
         deliveryStatus: "delivered",
-        handoffKind: "domain_final",
-        handoffDeliveryState: "model_visible_full",
         contentChars: expect.any(Number),
         contentDigest: expect.any(String),
+        contentTruncated: false,
         createdAt: 120,
         startedAt: 120,
         endedAt: 220,
@@ -818,10 +906,9 @@ describe("tasks gateway handlers", () => {
         agentId: "planning",
         status: "done",
         deliveryStatus: "pending",
-        handoffKind: "domain_final",
-        handoffDeliveryState: "model_visible_full",
         contentChars: expect.any(Number),
         contentDigest: expect.any(String),
+        contentTruncated: false,
         createdAt: 130,
         startedAt: 130,
         endedAt: 230,
@@ -924,10 +1011,9 @@ describe("tasks gateway handlers", () => {
         executionTaskId: execution.taskId,
         childSessionKey: "agent:codebase-researcher:subagent:overflow-child",
         status: "done",
-        handoffKind: "context_pack",
-        handoffDeliveryState: "model_visible_full",
         contentChars: "Context Pack is available for parent synthesis.".length,
         contentDigest: expect.any(String),
+        contentTruncated: false,
         terminalSummary: "Context Pack is available for parent synthesis.",
         errorSummary: expect.stringContaining("Context overflow: prompt too large for the model."),
         provenanceMismatch: expect.stringContaining("child final output is present"),

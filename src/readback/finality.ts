@@ -1,17 +1,12 @@
 // Compatibility readback projection for CLI, gateway, and diagnostics.
-// The authoritative read model is the on-demand ReadbackEvidenceView adapter.
+// Finality stays anchored to the native session transcript/lifecycle record;
+// task rows and progress summaries are bounded readback projections only.
+import { createHash } from "node:crypto";
 import type {
   GatewaySessionRow,
   SessionReadbackProvenance,
 } from "../gateway/session-utils.types.js";
 import type { ReadbackProgressProjection } from "../shared/readback-progress.js";
-import {
-  buildEmptyReadbackEvidenceView,
-  buildSessionReadbackEvidenceView,
-  buildTaskReadbackEvidenceView,
-} from "./evidence-adapter.js";
-import type { ReadbackEvidenceView } from "./evidence-schema.js";
-import { selectActiveWork, selectFinality } from "./evidence-selectors.js";
 
 export type ReadbackSubject = {
   scope: "session" | "task" | "run" | "global";
@@ -51,7 +46,6 @@ export type ReadbackProjection = {
   readbackSubject: ReadbackSubject;
   finality: ReadbackFinality;
   activeWork: ReadbackActiveWork;
-  readbackEvidenceView: ReadbackEvidenceView;
 };
 
 type SessionReadbackLike = Pick<
@@ -102,11 +96,44 @@ function progressWaitReason(
   return null;
 }
 
+function digestText(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function finalityPointer(params: {
+  sessionKey: string | null | undefined;
+  agentId?: string | null;
+}): string | null {
+  if (!params.sessionKey) {
+    return null;
+  }
+  return `openclaw sessions show ${params.sessionKey}${
+    params.agentId ? ` --agent ${params.agentId}` : ""
+  }`;
+}
+
+function statusConflictMismatch(
+  provenance: SessionReadbackProvenance | null | undefined,
+): Record<string, unknown> | null {
+  const status = provenance?.status;
+  if (status?.source !== "session-transcript" || !status.note) {
+    return null;
+  }
+  return {
+    kind: "status_conflict",
+    severity: "info",
+    label: "Status corrected from final assistant transcript evidence.",
+    preview: status.note,
+    provenance: status,
+  };
+}
+
 export function buildSessionReadbackProjection(session: SessionReadbackLike): ReadbackProjection {
-  const view = buildSessionReadbackEvidenceView(session);
-  const finalityObservation = selectFinality(view);
-  const activeWorkObservation = selectActiveWork(view);
   const activeProgress = session.activeProgress ?? null;
+  const finalAssistantText =
+    typeof session.finalAssistantText === "string" && session.finalAssistantText.length > 0
+      ? session.finalAssistantText
+      : null;
   return {
     readbackSubject: {
       scope: "session",
@@ -115,19 +142,21 @@ export function buildSessionReadbackProjection(session: SessionReadbackLike): Re
       agentId: session.agentId ?? null,
     },
     finality: {
-      status: session.status ?? finalityObservation?.state ?? "unknown",
-      finalAssistantTextPresent: finalityObservation?.payload.finalAssistantTextPresent ?? false,
-      finalAssistantTextChars: finalityObservation?.payload.finalAssistantTextChars ?? null,
-      finalAssistantTextDigest: finalityObservation?.payload.finalAssistantTextDigest ?? null,
-      finalAssistantTextPointer: finalityObservation?.payload.finalAssistantTextRef?.ref ?? null,
+      status: session.status ?? (finalAssistantText ? "done" : "unknown"),
+      finalAssistantTextPresent: finalAssistantText !== null,
+      finalAssistantTextChars: finalAssistantText?.length ?? null,
+      finalAssistantTextDigest: finalAssistantText ? digestText(finalAssistantText) : null,
+      finalAssistantTextPointer: finalAssistantText
+        ? finalityPointer({ sessionKey: session.key, agentId: session.agentId })
+        : null,
       provenance: session.readbackProvenance ?? null,
-      mismatch: view.mismatches[0] ?? null,
+      mismatch: statusConflictMismatch(session.readbackProvenance),
     },
     activeWork: {
-      phase: activeWorkObservation?.payload.phase ?? activeProgress?.currentPhase ?? null,
+      phase: activeProgress?.currentPhase ?? null,
       childRole: activeProgress?.childRole ?? null,
       childSessionKey: pointerSessionKey(activeProgress),
-      activeTool: activeWorkObservation?.payload.activeTool ?? null,
+      activeTool: activeProgress?.toolName ?? null,
       waitReason: progressWaitReason(activeProgress),
       source: activeProgress
         ? activeWorkSource(activeProgress)
@@ -136,16 +165,17 @@ export function buildSessionReadbackProjection(session: SessionReadbackLike): Re
           : "none",
       provenance: activeProgress ?? session.readbackProvenance ?? null,
     },
-    readbackEvidenceView: view,
   };
 }
 
 export function buildTaskReadbackProjection(task: TaskReadbackLike): ReadbackProjection {
-  const view = buildTaskReadbackEvidenceView(task);
-  const finalityObservation = selectFinality(view);
-  const activeWorkObservation = selectActiveWork(view);
   const activeProgress = task.activeProgress ?? null;
   const sessionKey = task.requesterSessionKey ?? task.ownerKey ?? null;
+  const finalAssistantText =
+    typeof task.resultSession?.finalAssistantText === "string" &&
+    task.resultSession.finalAssistantText.length > 0
+      ? task.resultSession.finalAssistantText
+      : null;
   return {
     readbackSubject: {
       scope: "task",
@@ -154,28 +184,28 @@ export function buildTaskReadbackProjection(task: TaskReadbackLike): ReadbackPro
       agentId: task.agentId ?? null,
     },
     finality: {
-      status: task.status ?? finalityObservation?.state ?? "unknown",
-      finalAssistantTextPresent: finalityObservation?.payload.finalAssistantTextPresent ?? false,
-      finalAssistantTextChars: finalityObservation?.payload.finalAssistantTextChars ?? null,
-      finalAssistantTextDigest: finalityObservation?.payload.finalAssistantTextDigest ?? null,
-      finalAssistantTextPointer: finalityObservation?.payload.finalAssistantTextRef?.ref ?? null,
-      provenance: null,
-      mismatch: null,
+      status: task.status ?? (finalAssistantText ? "done" : "unknown"),
+      finalAssistantTextPresent: finalAssistantText !== null,
+      finalAssistantTextChars: finalAssistantText?.length ?? null,
+      finalAssistantTextDigest: finalAssistantText ? digestText(finalAssistantText) : null,
+      finalAssistantTextPointer: finalAssistantText
+        ? finalityPointer({
+            sessionKey: task.resultSession?.sessionKey ?? task.childSessionKey ?? sessionKey,
+            agentId: task.resultSession?.agentId ?? task.agentId,
+          })
+        : null,
+      provenance: task.resultSession?.readbackProvenance ?? null,
+      mismatch: statusConflictMismatch(task.resultSession?.readbackProvenance),
     },
     activeWork: {
-      phase:
-        activeWorkObservation?.payload.phase ??
-        activeProgress?.currentPhase ??
-        task.status ??
-        "unknown",
+      phase: activeProgress?.currentPhase ?? task.status ?? "unknown",
       childRole: activeProgress?.childRole ?? null,
       childSessionKey: pointerSessionKey(activeProgress) ?? task.childSessionKey ?? null,
-      activeTool: activeWorkObservation?.payload.activeTool ?? null,
+      activeTool: activeProgress?.toolName ?? null,
       waitReason: progressWaitReason(activeProgress),
       source: activeProgress ? activeWorkSource(activeProgress) : "task-registry",
       provenance: activeProgress,
     },
-    readbackEvidenceView: view,
   };
 }
 
@@ -186,20 +216,6 @@ export function buildEmptyReadbackProjection(params: {
   agentId?: string | null;
   reason: string;
 }): ReadbackProjection {
-  const view = buildEmptyReadbackEvidenceView({
-    kind:
-      params.scope === "task"
-        ? "task"
-        : params.scope === "global"
-          ? "global"
-          : params.scope === "run"
-            ? "run"
-            : "session",
-    sessionKey: params.sessionKey,
-    taskId: params.taskId,
-    agentId: params.agentId,
-    reason: params.reason,
-  });
   return {
     readbackSubject: {
       scope: params.scope,
@@ -214,7 +230,11 @@ export function buildEmptyReadbackProjection(params: {
       finalAssistantTextDigest: null,
       finalAssistantTextPointer: null,
       provenance: null,
-      mismatch: view.mismatches[0] ?? null,
+      mismatch: {
+        kind: "missing_evidence",
+        severity: "info",
+        label: params.reason,
+      },
     },
     activeWork: {
       phase: null,
@@ -225,6 +245,5 @@ export function buildEmptyReadbackProjection(params: {
       source: "unknown",
       provenance: null,
     },
-    readbackEvidenceView: view,
   };
 }

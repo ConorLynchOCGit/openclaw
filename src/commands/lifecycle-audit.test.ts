@@ -73,12 +73,11 @@ describe("buildLifecycleAuditReport", () => {
 
     expect(payload.schema).toBe("openclaw.lifecycle_audit.v1");
     expect(payload.generatedAt).toBe("2026-07-01T05:30:00.000Z");
-    expect(payload.advisory.semantics).toContain("not lifecycle truth");
-    expect(payload.advisory.missingEvidenceLanguage).toContain("unknown");
-    expect(payload.advisory.caveats).toContain(
+    expect(payload.authority).toBe("advisory_readback");
+    expect(payload.caveats).toContain(
       "Findings are advisory evidence only and must not decide agent routing, skill activation, proof pass/fail, or release eligibility.",
     );
-    expect(payload.advisory.caveats).toContain(
+    expect(payload.caveats).toContain(
       "This command does not judge skill or canonical-doc content quality; use model-reviewed GBrain/Reviewer/Skill Workshop flows for semantic review or mutation.",
     );
     expect(payload.summary).toMatchObject({

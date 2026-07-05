@@ -670,7 +670,6 @@ export async function tasksShowCommand(
           readbackSubject: readback.readbackSubject,
           finality: readback.finality,
           activeWork: readback.activeWork,
-          readbackEvidenceView: readback.readbackEvidenceView,
         },
         null,
         2,

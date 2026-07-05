@@ -10,13 +10,9 @@ import { Type } from "typebox";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { GatewayMessageChannel } from "../../utils/message-channel.js";
 import {
-  computeEvidenceContentDigest,
-  EVIDENCE_HANDOFF_KINDS,
-  inferEvidenceHandoffKindForAgent,
-  includesEvidenceTruncationMarker,
-  normalizeEvidenceHandoffKind,
-  type EvidenceHandoffKind,
-} from "../evidence-handoff.js";
+  computeChildResultContentDigest,
+  includesChildResultTruncationMarker,
+} from "../child-result-metadata.js";
 import { readLatestAssistantReply, waitForAgentRun, type AgentWaitResult } from "../run-wait.js";
 import type { SpawnedToolContext } from "../spawned-context.js";
 import { spawnSubagentDirect } from "../subagent-spawn.js";
@@ -68,15 +64,6 @@ const TaskToolSchema = Type.Object({
         "Use lightweight bootstrap context for bounded children that need their role contract but not root workspace memory/context.",
     }),
   ),
-  handoffKind: Type.Optional(
-    Type.Union(
-      EVIDENCE_HANDOFF_KINDS.map((kind) => Type.Literal(kind)),
-      {
-        description:
-          "Evidence handoff class. Omit by default; the task tool infers the correct class from the child agent role.",
-      },
-    ),
-  ),
 });
 
 function escapeXmlText(value: string): string {
@@ -93,31 +80,19 @@ function formatTaskResult(params: {
   agentId: string;
   taskName?: string;
   replyText: string;
-  handoffKind: EvidenceHandoffKind;
   contentDigest: string;
   contentChars: number;
-  deliveryState: string;
+  contentTruncated: boolean;
 }): string {
   const taskNameAttr = params.taskName ? ` taskName="${escapeXmlAttr(params.taskName)}"` : "";
-  const handoffDirective =
-    params.handoffKind === "domain_final"
-      ? "domain final output; if this is the operator-facing answer, preserve the task_result verbatim or link to the exact artifact instead of summarizing or rewriting it"
-      : params.handoffKind === "context_pack" ||
-          params.handoffKind === "review_packet" ||
-          params.handoffKind === "implementation_closeout"
-        ? "authored evidence packet; use the task_result as child-authored evidence and do not replace it with a generic summary"
-        : "child task completed";
   return [
     `<task id="${escapeXmlAttr(params.childSessionKey)}" runId="${escapeXmlAttr(
       params.runId,
     )}" agentId="${escapeXmlAttr(
       params.agentId,
-    )}"${taskNameAttr} state="completed" handoffKind="${escapeXmlAttr(
-      params.handoffKind,
-    )}" deliveryState="${escapeXmlAttr(params.deliveryState)}" contentDigest="${escapeXmlAttr(
+    )}"${taskNameAttr} state="completed" contentDigest="${escapeXmlAttr(
       params.contentDigest,
-    )}" contentChars="${params.contentChars}">`,
-    `  <summary>${escapeXmlText(handoffDirective)}</summary>`,
+    )}" contentChars="${params.contentChars}" contentTruncated="${params.contentTruncated}">`,
     "  <task_result>",
     escapeXmlText(params.replyText.trim()),
     "  </task_result>",
@@ -171,26 +146,21 @@ function formatTaskError(params: {
   taskName?: string;
   error: string;
   partialReplyText?: string;
-  handoffKind?: EvidenceHandoffKind;
   contentDigest?: string;
   contentChars?: number;
-  deliveryState?: string;
+  contentTruncated?: boolean;
 }): string {
   const id = params.childSessionKey ?? params.runId ?? params.agentId;
   const runIdAttr = params.runId ? ` runId="${escapeXmlAttr(params.runId)}"` : "";
   const taskNameAttr = params.taskName ? ` taskName="${escapeXmlAttr(params.taskName)}"` : "";
-  const handoffAttrs = params.handoffKind
-    ? ` handoffKind="${escapeXmlAttr(params.handoffKind)}" deliveryState="${escapeXmlAttr(
-        params.deliveryState ?? "unavailable",
-      )}"${params.contentDigest ? ` contentDigest="${escapeXmlAttr(params.contentDigest)}"` : ""}${
-        params.contentChars !== undefined ? ` contentChars="${params.contentChars}"` : ""
-      }`
-    : "";
+  const evidenceAttrs = `${params.contentDigest ? ` contentDigest="${escapeXmlAttr(params.contentDigest)}"` : ""}${
+    params.contentChars !== undefined ? ` contentChars="${params.contentChars}"` : ""
+  }${params.contentTruncated !== undefined ? ` contentTruncated="${params.contentTruncated}"` : ""}`;
   const partialReplyText = params.partialReplyText?.trim();
   const lines = [
     `<task id="${escapeXmlAttr(id)}"${runIdAttr} agentId="${escapeXmlAttr(
       params.agentId,
-    )}"${taskNameAttr} state="${params.state}"${handoffAttrs}>`,
+    )}"${taskNameAttr} state="${params.state}"${evidenceAttrs}>`,
     "  <task_error>",
     escapeXmlText(params.error.trim() || "child task failed"),
     "  </task_error>",
@@ -256,9 +226,6 @@ export function createTaskTool(
       const context =
         params.context === "fork" || params.context === "isolated" ? params.context : undefined;
       const lightContext = resolveTaskToolLightContext(agentId, params.lightContext);
-      const handoffKind =
-        normalizeEvidenceHandoffKind(params.handoffKind) ??
-        inferEvidenceHandoffKindForAgent(agentId);
 
       const spawn = await spawnSubagentDirect(
         {
@@ -299,17 +266,15 @@ export function createTaskTool(
           agentId,
           taskName,
           error: spawn.error ?? `child task was not accepted: ${spawn.status}`,
-          handoffKind,
         });
         return textResult(text, {
           status: spawn.status,
           error: spawn.error ?? `child task was not accepted: ${spawn.status}`,
+          childResult: true,
           childSessionKey: spawn.childSessionKey,
           runId: spawn.runId,
           agentId,
           taskName,
-          handoffKind,
-          deliveryState: "unavailable",
         });
       }
 
@@ -334,75 +299,68 @@ export function createTaskTool(
           taskName,
           error,
           partialReplyText: wait.replyText,
-          handoffKind,
           ...(wait.replyText?.trim()
             ? {
-                contentDigest: computeEvidenceContentDigest(wait.replyText.trim()),
+                contentDigest: computeChildResultContentDigest(wait.replyText.trim()),
                 contentChars: wait.replyText.trim().length,
-                deliveryState: includesEvidenceTruncationMarker(wait.replyText)
-                  ? "partial_model_visible_truncated"
-                  : "partial_model_visible_full",
+                contentTruncated: includesChildResultTruncationMarker(wait.replyText),
               }
-            : { deliveryState: "unavailable" }),
+            : {}),
         });
+        const partialResultTruncated = wait.replyText?.trim()
+          ? includesChildResultTruncationMarker(wait.replyText)
+          : undefined;
         return textResult(text, {
           status: "error",
           error,
+          childResult: true,
           childSessionKey: spawn.childSessionKey,
           runId: spawn.runId,
           agentId,
           taskName,
-          handoffKind,
           producerAgentId: agentId,
           ownerAgentId: opts?.requesterAgentIdOverride,
-          deliveryState: wait.replyText?.trim()
-            ? includesEvidenceTruncationMarker(wait.replyText)
-              ? "partial_model_visible_truncated"
-              : "partial_model_visible_full"
-            : "unavailable",
           ...(wait.replyText?.trim()
             ? {
                 partialResultChars: wait.replyText.trim().length,
-                partialResultTruncated: includesEvidenceTruncationMarker(wait.replyText),
-                contentDigest: computeEvidenceContentDigest(wait.replyText.trim()),
+                partialResultTruncated,
+                contentDigest: computeChildResultContentDigest(wait.replyText.trim()),
                 contentChars: wait.replyText.trim().length,
+                contentTruncated: partialResultTruncated,
               }
             : {}),
         });
       }
 
       const replyText = wait.replyText.trim();
-      const contentDigest = computeEvidenceContentDigest(replyText);
-      const deliveryState = includesEvidenceTruncationMarker(replyText)
-        ? "model_visible_truncated"
-        : "model_visible_full";
+      const contentDigest = computeChildResultContentDigest(replyText);
+      const contentTruncated = includesChildResultTruncationMarker(replyText);
       const text = formatTaskResult({
         childSessionKey: spawn.childSessionKey,
         runId: spawn.runId,
         agentId,
         taskName,
         replyText,
-        handoffKind,
         contentDigest,
         contentChars: replyText.length,
-        deliveryState,
+        contentTruncated,
       });
       return textResult(text, {
         status: "ok",
+        childResult: true,
         childSessionKey: spawn.childSessionKey,
         runId: spawn.runId,
         agentId,
         taskName,
-        handoffKind,
         producerAgentId: agentId,
         ownerAgentId: opts?.requesterAgentIdOverride,
         sourceSessionKey: spawn.childSessionKey,
         sourceRunId: spawn.runId,
-        deliveryState,
         contentDigest,
         contentChars: replyText.length,
+        contentTruncated,
         resultChars: replyText.length,
-        resultTruncated: includesEvidenceTruncationMarker(replyText),
+        resultTruncated: contentTruncated,
         resolvedModel: spawn.resolvedModel,
         resolvedProvider: spawn.resolvedProvider,
       });

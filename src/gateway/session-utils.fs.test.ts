@@ -2026,6 +2026,22 @@ describe("oversized transcript line guards", () => {
     expect(serialized).toContain("after oversized");
   });
 
+  test("readLastAssistantTextFromTranscript preserves oversized final assistant text", () => {
+    const sessionId = "test-oversized-final-assistant";
+    const transcriptPath = path.join(tmpDir, `${sessionId}.jsonl`);
+    const oversizedFinal = `# Full Planning Product\n\n${"execution-grade detail ".repeat(16_000)}`;
+    const lines = [
+      JSON.stringify({ type: "session", version: 1, id: sessionId }),
+      JSON.stringify({ message: { role: "user", content: "start" } }),
+      JSON.stringify({ id: "final-msg", message: { role: "assistant", content: oversizedFinal } }),
+    ];
+    fs.writeFileSync(transcriptPath, `${lines.join("\n")}\n`, "utf-8");
+
+    expect(readLastAssistantTextFromTranscript(sessionId, storePath, undefined, undefined)).toBe(
+      oversizedFinal.trim(),
+    );
+  });
+
   test("readRecentSessionMessagesAsync keeps oversized active-tree leaves", async () => {
     const sessionId = "test-oversized-tree-tail";
     const transcriptPath = path.join(tmpDir, `${sessionId}.jsonl`);

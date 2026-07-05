@@ -69,6 +69,10 @@ export type DiagnosticStabilityEventRecord = {
   queueLength?: number;
   waitMs?: number;
   failureKind?: string;
+  readStatus?: string;
+  linesRead?: number;
+  totalLines?: number;
+  bytesRead?: number;
   active?: number;
   waiting?: number;
   queued?: number;
@@ -427,6 +431,10 @@ function sanitizeDiagnosticEvent(event: DiagnosticEventPayload): DiagnosticStabi
       record.source = event.skillSource;
       record.action = event.activation;
       record.target = event.skillName;
+      record.readStatus = event.readStatus;
+      record.linesRead = event.linesRead;
+      record.totalLines = event.totalLines;
+      record.bytesRead = event.bytesRead;
       break;
     case "exec.process.completed":
       record.target = event.target;

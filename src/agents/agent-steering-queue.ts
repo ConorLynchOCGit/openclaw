@@ -1,5 +1,6 @@
 /** Leases and formats completed subagent results for injection into requester turns. */
 import { sanitizeForPromptLiteral, wrapPromptDataBlock } from "./sanitize-for-prompt.js";
+import { buildSubagentResultRefs } from "./subagent-registry-helpers.js";
 import type {
   PendingFinalDeliveryPayload,
   SubagentCompletionDeliveryState,
@@ -123,14 +124,19 @@ export function buildMergedAgentSteeringPrompt(
       promptLiteral(payload.childSessionKey) ||
       `subagent ${index + 1}`;
     const resultText = selectResultText(payload);
+    const resultRefs = buildSubagentResultRefs({
+      childSessionKey: payload.childSessionKey,
+      runId: payload.childRunId,
+    });
     sections.push(
       [
         `${sections.length + 1}. ${title}`,
         `status: ${promptLiteral(describeOutcome(payload))}`,
         `childSessionKey: ${promptLiteral(payload.childSessionKey)}`,
         `childRunId: ${promptLiteral(payload.childRunId)}`,
+        `resultRefs: ${resultRefs.map(promptLiteral).join(", ") || "none"}`,
         wrapPromptDataBlock({
-          label: "Subagent result",
+          label: "Subagent result preview",
           text: resultText ?? "No completion text was captured.",
           maxChars: MAX_RESULT_CHARS_PER_ITEM,
         }),

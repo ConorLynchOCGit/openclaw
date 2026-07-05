@@ -411,6 +411,7 @@ export type DiagnosticToolExecutionBlockedEvent = DiagnosticToolExecutionBaseEve
 
 export type DiagnosticSkillTelemetrySource = "bundled" | "unknown" | "workspace";
 export type DiagnosticSkillActivation = "command" | "read";
+export type DiagnosticSkillReadStatus = "full" | "partial" | "failed" | "unknown";
 
 export type DiagnosticSkillUsedEvent = DiagnosticBaseEvent & {
   type: "skill.used";
@@ -423,6 +424,10 @@ export type DiagnosticSkillUsedEvent = DiagnosticBaseEvent & {
   activation: DiagnosticSkillActivation;
   toolName?: string;
   toolCallId?: string;
+  readStatus?: DiagnosticSkillReadStatus;
+  linesRead?: number;
+  totalLines?: number;
+  bytesRead?: number;
 };
 
 export type DiagnosticExecProcessCompletedEvent = DiagnosticBaseEvent & {

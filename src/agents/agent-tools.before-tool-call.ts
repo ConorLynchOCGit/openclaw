@@ -1,3 +1,4 @@
+import fs from "node:fs";
 /**
  * before_tool_call policy runtime for agent tools.
  * Runs plugin hooks, trusted tool policies, approvals, diagnostics, loop
@@ -310,6 +311,7 @@ type SkillUsageMatch = {
   skillName: string;
   skillSource: SkillTelemetrySource;
   activation: "command" | "read";
+  skillFilePath?: string;
 };
 
 function normalizeReadToolPath(candidate: string): string {
@@ -381,16 +383,17 @@ function skillInstructionPaths(snapshot: SkillSnapshot | undefined): Map<string,
     if (!skillName) {
       continue;
     }
+    const filePath = typeof skill.filePath === "string" ? skill.filePath.trim() : "";
+    const baseDir = typeof skill.baseDir === "string" ? skill.baseDir.trim() : "";
     const match = {
       skillName,
       skillSource: resolveSkillTelemetrySource(skill),
       activation: "read" as const,
+      skillFilePath: filePath || (baseDir ? path.join(baseDir, "SKILL.md") : undefined),
     };
-    const filePath = typeof skill.filePath === "string" ? skill.filePath.trim() : "";
     if (filePath && path.isAbsolute(filePath)) {
       matches.set(path.resolve(filePath), match);
     }
-    const baseDir = typeof skill.baseDir === "string" ? skill.baseDir.trim() : "";
     if (baseDir && path.isAbsolute(baseDir)) {
       matches.set(path.resolve(baseDir, "SKILL.md"), match);
     }
@@ -467,7 +470,36 @@ function emitSkillUsedDiagnostic(params: {
     activation: params.match.activation,
     toolName: params.toolName,
     ...(params.toolCallId && { toolCallId: params.toolCallId }),
+    ...skillReadEvidence(params.match),
   });
+}
+
+function skillReadEvidence(match: SkillUsageMatch): {
+  readStatus?: "full" | "unknown";
+  linesRead?: number;
+  totalLines?: number;
+  bytesRead?: number;
+} {
+  if (match.activation !== "read") {
+    return {};
+  }
+  const filePath = match.skillFilePath;
+  if (!filePath) {
+    return { readStatus: "unknown" };
+  }
+  try {
+    const raw = fs.readFileSync(filePath, "utf8");
+    const lines = raw.length === 0 ? 0 : raw.split(/\r\n|\r|\n/u).length;
+    const bytes = Buffer.byteLength(raw, "utf8");
+    return {
+      readStatus: "full",
+      linesRead: lines,
+      totalLines: lines,
+      bytesRead: bytes,
+    };
+  } catch {
+    return { readStatus: "unknown" };
+  }
 }
 
 function notifyPluginApprovalResolution(
