@@ -274,12 +274,8 @@ export function resolveIncompleteTurnPayloadText(params: {
   timedOut: boolean;
   attempt: IncompleteTurnAttempt;
 }): string | null {
-  // Tool-use terminal guard: when the last assistant message ended with a
-  // tool-call stop reason, the model expected to continue after tool results.
-  // Pre-tool text alone (payloadCount > 0) must not suppress the incomplete-
-  // turn check in that case — the final post-tool response was never
-  // produced. (#76477)
-  const toolUseTerminal = params.attempt.lastAssistant?.stopReason === "toolUse";
+  // Prefer the current attempt's terminal message. The session fallback can
+  // still point at the pre-tool turn after a post-tool answer completes. (#80918)
   const assistant = params.attempt.currentAttemptAssistant ?? params.attempt.lastAssistant;
   // Unsigned thinking payloads count toward payloadCount but carry no user-visible
   // content; bypass the visible-text guard when unsigned thinking was the only output

@@ -2038,10 +2038,11 @@ async function runEmbeddedAgentInternal(
             })
               ? undefined
               : sessionLastAssistant;
+          const attemptAssistant = currentAttemptAssistant ?? sessionAssistantForCandidate;
           const activeErrorContext = resolveActiveErrorContext({
             provider,
             model: modelId,
-            assistant: currentAttemptAssistant ?? sessionAssistantForCandidate,
+            assistant: attemptAssistant,
           });
           const resolveReplayInvalidForAttempt = (incompleteTurnText?: string | null) =>
             accumulatedReplayState.replayInvalid ||
@@ -2654,7 +2655,7 @@ async function runEmbeddedAgentInternal(
                   contextTokens: ctxInfo.tokens,
                   usageAccumulator,
                   lastRunPromptUsage,
-                  lastAssistant: sessionLastAssistant,
+                  lastAssistant: attemptAssistant,
                   lastTurnTotal,
                   codexThreadUsage: latestCodexThreadUsage,
                 }),
@@ -2767,7 +2768,7 @@ async function runEmbeddedAgentInternal(
                     contextTokens: ctxInfo.tokens,
                     usageAccumulator,
                     lastRunPromptUsage,
-                    lastAssistant: sessionLastAssistant,
+                    lastAssistant: attemptAssistant,
                     lastTurnTotal,
                     codexThreadUsage: latestCodexThreadUsage,
                   }),
@@ -2809,7 +2810,7 @@ async function runEmbeddedAgentInternal(
                     contextTokens: ctxInfo.tokens,
                     usageAccumulator,
                     lastRunPromptUsage,
-                    lastAssistant: sessionLastAssistant,
+                    lastAssistant: attemptAssistant,
                     lastTurnTotal,
                     codexThreadUsage: latestCodexThreadUsage,
                   }),
@@ -2970,9 +2971,8 @@ async function runEmbeddedAgentInternal(
             throw toLintErrorObject(promptError, "Prompt failed");
           }
 
-          const assistantForFailover = currentAttemptAssistant ?? sessionAssistantForCandidate;
           const fallbackThinking = pickFallbackThinkingLevel({
-            message: assistantForFailover?.errorMessage,
+            message: attemptAssistant?.errorMessage,
             attempted: attemptedThinking,
           });
           if (fallbackThinking && !aborted) {
@@ -3008,20 +3008,20 @@ async function runEmbeddedAgentInternal(
           );
           const cloudCodeAssistFormatError = attempt.cloudCodeAssistFormatError;
           const imageDimensionError = parseImageDimensionError(
-            assistantForFailover?.errorMessage ?? "",
+            attemptAssistant?.errorMessage ?? "",
           );
           // Capture the failing profile before auth-profile rotation mutates `lastProfileId`.
           const failedAssistantProfileId = lastProfileId;
           const logAssistantFailoverDecision = createFailoverDecisionLogger({
             stage: "assistant",
             runId: params.runId,
-            rawError: assistantForFailover?.errorMessage?.trim(),
+            rawError: attemptAssistant?.errorMessage?.trim(),
             failoverReason: assistantFailoverReason,
             profileFailureReason: assistantProfileFailureReason,
             provider: activeErrorContext.provider,
             model: activeErrorContext.model,
-            sourceProvider: assistantForFailover?.provider ?? provider,
-            sourceModel: assistantForFailover?.model ?? modelId,
+            sourceProvider: attemptAssistant?.provider ?? provider,
+            sourceModel: attemptAssistant?.model ?? modelId,
             profileId: failedAssistantProfileId,
             fallbackConfigured,
             timedOut,
@@ -3031,7 +3031,7 @@ async function runEmbeddedAgentInternal(
           if (
             authFailure &&
             (await maybeRefreshRuntimeAuthForAuthError(
-              assistantForFailover?.errorMessage ?? "",
+              attemptAssistant?.errorMessage ?? "",
               runtimeAuthRetry,
             ))
           ) {
@@ -3098,7 +3098,7 @@ async function runEmbeddedAgentInternal(
             modelId,
             provider,
             activeErrorContext,
-            lastAssistant: assistantForFailover,
+            lastAssistant: attemptAssistant,
             config: params.config,
             sessionKey: params.sessionKey ?? params.sessionId,
             authFailure,
@@ -3180,7 +3180,7 @@ async function runEmbeddedAgentInternal(
           }
           const usageMeta = buildUsageAgentMetaFields({
             usageAccumulator,
-            lastAssistantUsage: sessionLastAssistant?.usage as UsageLike | undefined,
+            lastAssistantUsage: attemptAssistant?.usage as UsageLike | undefined,
             lastRunPromptUsage,
             lastTurnTotal,
           });
@@ -3208,8 +3208,8 @@ async function runEmbeddedAgentInternal(
             compactionCount: autoCompactionCount > 0 ? autoCompactionCount : undefined,
             compactionTokensAfter: lastCompactionTokensAfter,
           };
-          const finalAssistantVisibleText = resolveFinalAssistantVisibleText(sessionLastAssistant);
-          const finalAssistantRawText = resolveFinalAssistantRawText(sessionLastAssistant);
+          const finalAssistantVisibleText = resolveFinalAssistantVisibleText(attemptAssistant);
+          const finalAssistantRawText = resolveFinalAssistantRawText(attemptAssistant);
 
           const payloads = buildEmbeddedRunPayloads({
             assistantTexts: attempt.assistantTexts,
@@ -3248,7 +3248,7 @@ async function runEmbeddedAgentInternal(
           });
           const timedOutDuringPrompt =
             timedOut && !timedOutDuringCompaction && !timedOutDuringToolExecution;
-          const finalAssistantStopReason = (sessionLastAssistant?.stopReason ?? "")
+          const finalAssistantStopReason = (attemptAssistant?.stopReason ?? "")
             .trim()
             .toLowerCase();
           const recoveredFinalAssistantTextAfterPromptTimeout =
@@ -3763,7 +3763,8 @@ async function runEmbeddedAgentInternal(
               replayInvalid,
               livenessState,
             });
-            const incompleteStopReason = attempt.lastAssistant?.stopReason;
+            const incompleteStopReason =
+              attempt.currentAttemptAssistant?.stopReason ?? attempt.lastAssistant?.stopReason;
             const replayMetadata = resolveAttemptReplayMetadata(attempt);
             log.warn(
               `incomplete turn detected: runId=${params.runId} sessionId=${params.sessionId} ` +
@@ -3877,7 +3878,7 @@ async function runEmbeddedAgentInternal(
             ? "tool_calls"
             : attempt.yieldDetected
               ? "end_turn"
-              : (sessionLastAssistant?.stopReason as string | undefined);
+              : (attemptAssistant?.stopReason as string | undefined);
           const terminalPayloads = emptyAssistantReplyIsSilent
             ? [{ text: SILENT_REPLY_TOKEN }]
             : payloadsForTerminalPath;
@@ -3920,9 +3921,7 @@ async function runEmbeddedAgentInternal(
                 winnerProvider: reportedModelRef.provider,
                 winnerModel: reportedModelRef.model,
                 attempts:
-                  traceAttempts.length > 0 ||
-                  sessionLastAssistant?.provider ||
-                  sessionLastAssistant?.model
+                  traceAttempts.length > 0 || attemptAssistant?.provider || attemptAssistant?.model
                     ? [
                         ...traceAttempts,
                         {
