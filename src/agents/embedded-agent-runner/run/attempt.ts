@@ -969,6 +969,7 @@ export async function runEmbeddedAttempt(
   let idleTimedOut = false;
   let timedOutDuringCompaction = false;
   let timedOutDuringToolExecution = false;
+  let timedOutByRunBudget = false;
   let promptError: unknown = null;
   let emitDiagnosticRunCompleted:
     | ((
@@ -3572,6 +3573,7 @@ export async function runEmbeddedAttempt(
             ) {
               timedOutDuringCompaction = true;
             }
+            timedOutByRunBudget = true;
             abortRun(true);
             if (!abortWarnTimer) {
               abortWarnTimer = setTimeout(() => {
@@ -5260,6 +5262,7 @@ export async function runEmbeddedAttempt(
         idleTimedOut,
         timedOutDuringCompaction,
         timedOutDuringToolExecution,
+        timedOutByRunBudget,
         promptError: promptError ? formatErrorMessage(promptError) : undefined,
         promptErrorSource,
         terminalError: attemptTrajectoryTerminal.terminalError,
@@ -5280,6 +5283,7 @@ export async function runEmbeddedAttempt(
           idleTimedOut,
           timedOutDuringCompaction,
           timedOutDuringToolExecution,
+          timedOutByRunBudget,
           promptError: promptError ? formatErrorMessage(promptError) : undefined,
           promptErrorSource,
           terminalError: attemptTrajectoryTerminal.terminalError,
@@ -5309,6 +5313,7 @@ export async function runEmbeddedAttempt(
         idleTimedOut,
         timedOutDuringCompaction,
         timedOutDuringToolExecution,
+        timedOutByRunBudget,
         promptError: promptError ? formatErrorMessage(promptError) : undefined,
         terminalError: attemptTrajectoryTerminal.terminalError,
       });
@@ -5324,6 +5329,7 @@ export async function runEmbeddedAttempt(
         idleTimedOut,
         timedOutDuringCompaction,
         timedOutDuringToolExecution,
+        timedOutByRunBudget,
         promptError,
         promptErrorSource,
         preflightRecovery,
@@ -5385,6 +5391,7 @@ export async function runEmbeddedAttempt(
           idleTimedOut,
           timedOutDuringCompaction,
           timedOutDuringToolExecution,
+          timedOutByRunBudget,
           promptError: promptError ? formatErrorMessage(promptError) : undefined,
         });
       }

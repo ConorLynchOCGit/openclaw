@@ -9,6 +9,7 @@ import {
   resolveAgentModelPrimaryValue,
 } from "../config/model-input.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { isCronTerminalAbortReasonText } from "../cron/service/execution-errors.js";
 import { emitFailoverEvent } from "../infra/diagnostic-events.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
@@ -31,6 +32,7 @@ import { isActiveUnusableWindow } from "./auth-profiles/usage-state.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "./defaults.js";
 import { isLikelyContextOverflowError } from "./embedded-agent-helpers/errors.js";
 import type { FailoverReason } from "./embedded-agent-helpers/types.js";
+import { isOpenClawAbortableWrapper } from "./embedded-agent-runner/run/abortable.js";
 import {
   FailoverError,
   buildFailoverRemediationHint,
@@ -210,21 +212,74 @@ function shouldRethrowAbort(err: unknown): boolean {
   return isFallbackAbortError(err) && !isTimeoutError(err);
 }
 
+function isTerminalAbortReasonString(reason: string): boolean {
+  return isCronTerminalAbortReasonText(reason);
+}
+
+function getErrorCauseCandidates(err: Error): unknown[] {
+  const candidates: unknown[] = [];
+  if ("cause" in err && err.cause !== undefined) {
+    candidates.push(err.cause);
+    if (err.cause instanceof Error && "cause" in err.cause && err.cause.cause !== undefined) {
+      candidates.push(err.cause.cause);
+    }
+  }
+  return candidates;
+}
+
+function isTerminalAbortCandidate(candidate: unknown): boolean {
+  if (typeof candidate === "string") {
+    return isTerminalAbortReasonString(candidate);
+  }
+  if (!(candidate instanceof Error)) {
+    return false;
+  }
+  if (isAgentRunRestartAbortReason(candidate)) {
+    return true;
+  }
+  if (candidate.name === "TimeoutError") {
+    return true;
+  }
+  if (candidate.name === "ClientDisconnectError") {
+    return true;
+  }
+  return isTerminalAbortReasonString(candidate.message);
+}
+
 function isTerminalAbort(signal: AbortSignal | undefined): boolean {
   if (!signal?.aborted) {
     return false;
   }
   const reason = signal.reason;
-  if (!(reason instanceof Error)) {
+
+  if (reason instanceof Error) {
+    const candidates: unknown[] = [reason, ...getErrorCauseCandidates(reason)];
+    return candidates.some(isTerminalAbortCandidate);
+  }
+
+  return isTerminalAbortCandidate(reason);
+}
+
+function isTerminalAbortFromError(err: unknown): boolean {
+  if (!(err instanceof Error)) {
     return false;
   }
-  if (isAgentRunRestartAbortReason(reason)) {
+  if (isAgentRunRestartAbortReason(err)) {
     return true;
   }
-  if (reason.name === "TimeoutError") {
-    return true;
+  const causeCandidates = getErrorCauseCandidates(err);
+  if (err.name !== "AbortError") {
+    return false;
   }
-  return reason.name === "ClientDisconnectError";
+  for (const candidate of causeCandidates) {
+    if (isAgentRunRestartAbortReason(candidate)) {
+      return true;
+    }
+  }
+  if (!isOpenClawAbortableWrapper(err)) {
+    return false;
+  }
+  return causeCandidates.some(isTerminalAbortCandidate);
 }
 
 function createModelCandidateCollector(allowlist: Set<string> | null | undefined): {
@@ -349,6 +404,9 @@ async function runFallbackCandidate<T>(params: {
       throw err;
     }
     if (isTerminalAbort(params.abortSignal)) {
+      throw err;
+    }
+    if (isTerminalAbortFromError(err)) {
       throw err;
     }
     // Normalize abort-wrapped rate-limit errors (e.g. Google Vertex RESOURCE_EXHAUSTED)
@@ -766,6 +824,7 @@ export const testing = {
   resolveImageFallbackCandidates,
   resolveCooldownDecision,
   resolveSessionSuspensionReason,
+  shouldDiscardDeferredSessionSuspension,
 } as const;
 
 export function resolveModelCandidateChain(
