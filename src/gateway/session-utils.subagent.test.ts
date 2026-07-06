@@ -97,7 +97,7 @@ describe("listSessionsFromStore subagent metadata", () => {
     }
   });
 
-  test("includes subagent status timing and direct child session keys", () => {
+  test("uses session-store lineage and does not promote registry status timing", () => {
     const now = Date.now();
     const store: Record<string, SessionEntry> = {
       "agent:main:main": {
@@ -186,17 +186,17 @@ describe("listSessionsFromStore subagent metadata", () => {
     expect(main?.status).toBeUndefined();
 
     const parent = result.sessions.find((session) => session.key === "agent:main:subagent:parent");
-    expect(parent?.status).toBe("running");
-    expect(parent?.startedAt).toBe(now - 9_000);
+    expect(parent?.status).toBeUndefined();
+    expect(parent?.startedAt).toBeUndefined();
     expect(parent?.endedAt).toBeUndefined();
-    expect(parent?.runtimeMs).toBeGreaterThanOrEqual(9_000);
+    expect(parent?.runtimeMs).toBeUndefined();
     expect(parent?.childSessions).toEqual(["agent:main:subagent:child"]);
 
     const child = result.sessions.find((session) => session.key === "agent:main:subagent:child");
-    expect(child?.status).toBe("done");
-    expect(child?.startedAt).toBe(now - 7_500);
-    expect(child?.endedAt).toBe(now - 2_500);
-    expect(child?.runtimeMs).toBe(5_000);
+    expect(child?.status).toBeUndefined();
+    expect(child?.startedAt).toBeUndefined();
+    expect(child?.endedAt).toBeUndefined();
+    expect(child?.runtimeMs).toBeUndefined();
     expect(child?.spawnedWorkspaceDir).toBe("/tmp/child-workspace");
     expect(child?.spawnedCwd).toBe("/tmp/task-repo");
     expect(child?.forkedFromParent).toBe(true);
@@ -206,8 +206,8 @@ describe("listSessionsFromStore subagent metadata", () => {
     expect(child?.childSessions).toBeUndefined();
 
     const failed = result.sessions.find((session) => session.key === "agent:main:subagent:failed");
-    expect(failed?.status).toBe("failed");
-    expect(failed?.runtimeMs).toBe(5_000);
+    expect(failed?.status).toBeUndefined();
+    expect(failed?.runtimeMs).toBeUndefined();
   });
 
   test("does not show stale registry-only subagent runs as actively running", () => {
@@ -342,7 +342,7 @@ describe("listSessionsFromStore subagent metadata", () => {
     expect(newParent?.childSessions).toEqual(["agent:main:subagent:shared-child"]);
   });
 
-  test("does not reattach moved children through stale spawnedBy store metadata", () => {
+  test("does not use registry ownership to rewrite stale spawnedBy store metadata", () => {
     const now = Date.now();
     const store: Record<string, SessionEntry> = {
       "agent:main:main": {
@@ -427,11 +427,11 @@ describe("listSessionsFromStore subagent metadata", () => {
       (session) => session.key === "agent:main:subagent:new-parent-store",
     );
 
-    expect(oldParent?.childSessions).toBeUndefined();
-    expect(newParent?.childSessions).toEqual(["agent:main:subagent:shared-child-store"]);
+    expect(oldParent?.childSessions).toEqual(["agent:main:subagent:shared-child-store"]);
+    expect(newParent?.childSessions).toBeUndefined();
   });
 
-  test("does not return moved child sessions from stale spawnedBy filters", () => {
+  test("spawnedBy filters use session-store lineage rather than registry ownership", () => {
     const now = Date.now();
     const store: Record<string, SessionEntry> = {
       "agent:main:main": {
@@ -511,10 +511,12 @@ describe("listSessionsFromStore subagent metadata", () => {
       },
     });
 
-    expect(result.sessions.map((session) => session.key)).toStrictEqual([]);
+    expect(result.sessions.map((session) => session.key)).toStrictEqual([
+      "agent:main:subagent:shared-child-filter",
+    ]);
   });
 
-  test("reports the newest run owner for moved child session rows", () => {
+  test("reports the session-store owner for child session rows", () => {
     const now = Date.now();
     const childSessionKey = "agent:main:subagent:shared-child-owner";
     const store: Record<string, SessionEntry> = {
@@ -559,10 +561,10 @@ describe("listSessionsFromStore subagent metadata", () => {
 
     expect(result.sessions).toHaveLength(1);
     expect(result.sessions[0]?.key).toBe(childSessionKey);
-    expect(result.sessions[0]?.spawnedBy).toBe("agent:main:subagent:new-parent-owner");
+    expect(result.sessions[0]?.spawnedBy).toBe("agent:main:subagent:old-parent-owner");
   });
 
-  test("reports the newest parentSessionKey for moved child session rows", () => {
+  test("reports the session-store parentSessionKey for child session rows", () => {
     const now = Date.now();
     const childSessionKey = "agent:main:subagent:shared-child-parent";
     const store: Record<string, SessionEntry> = {
@@ -607,7 +609,7 @@ describe("listSessionsFromStore subagent metadata", () => {
 
     expect(result.sessions).toHaveLength(1);
     expect(result.sessions[0]?.key).toBe(childSessionKey);
-    expect(result.sessions[0]?.parentSessionKey).toBe("agent:main:subagent:new-parent-parent");
+    expect(result.sessions[0]?.parentSessionKey).toBe("agent:main:subagent:old-parent-parent");
   });
 
   test("preserves original session timing across follow-up replacement runs", () => {
@@ -648,9 +650,9 @@ describe("listSessionsFromStore subagent metadata", () => {
     const followup = result.sessions.find(
       (session) => session.key === "agent:main:subagent:followup",
     );
-    expect(followup?.status).toBe("running");
-    expect(followup?.startedAt).toBe(now - 150_000);
-    expect(followup?.runtimeMs).toBeGreaterThanOrEqual(150_000);
+    expect(followup?.status).toBeUndefined();
+    expect(followup?.startedAt).toBeUndefined();
+    expect(followup?.runtimeMs).toBeUndefined();
   });
 
   test("uses the newest child-session row for stale/current replacement pairs", () => {
@@ -700,9 +702,9 @@ describe("listSessionsFromStore subagent metadata", () => {
 
     expect(result.sessions).toHaveLength(1);
     expect(result.sessions[0]?.key).toBe(childSessionKey);
-    expect(result.sessions[0]?.status).toBe("done");
-    expect(result.sessions[0]?.startedAt).toBe(now - 900);
-    expect(result.sessions[0]?.endedAt).toBe(now - 200);
+    expect(result.sessions[0]?.status).toBeUndefined();
+    expect(result.sessions[0]?.startedAt).toBeUndefined();
+    expect(result.sessions[0]?.endedAt).toBeUndefined();
   });
 
   test("prefers persisted terminal session state when only stale active subagent snapshots remain", () => {
@@ -778,7 +780,7 @@ describe("listSessionsFromStore subagent metadata", () => {
       expect(row?.status).toBe("done");
       expect("subagentRunState" in (row ?? {})).toBe(false);
       expect("hasActiveSubagentRun" in (row ?? {})).toBe(false);
-      expect(row?.startedAt).toBe(now - 9_000);
+      expect(row?.startedAt).toBeUndefined();
       expect(row?.endedAt).toBe(now - 1_800);
       expect(row?.runtimeMs).toBe(100);
     } finally {
@@ -786,7 +788,7 @@ describe("listSessionsFromStore subagent metadata", () => {
     }
   });
 
-  test("reuses one subagent registry disk snapshot across sessions.list filtering and row enrichment", () => {
+  test("does not read subagent registry disk snapshots for session lineage", () => {
     const tempRoot = fs.mkdtempSync(
       path.join(os.tmpdir(), "openclaw-session-utils-subagent-cache-"),
     );
@@ -866,7 +868,7 @@ describe("listSessionsFromStore subagent metadata", () => {
       const registryStatCount = statSpy.mock.calls.filter(
         ([pathname]) => path.normalize(String(pathname)) === path.normalize(registryPath),
       ).length;
-      expect(registryStatCount).toBe(1);
+      expect(registryStatCount).toBe(0);
     } finally {
       statSpy.mockRestore();
       fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -1145,6 +1147,16 @@ describe("listSessionsFromStore subagent metadata", () => {
     });
     const main = result.sessions.find((session) => session.key === "agent:main:main");
     expect(main?.childSessions).toEqual([parentKey]);
+
+    const filtered = listSessionsFromStore({
+      cfg,
+      storePath: "/tmp/sessions.json",
+      store,
+      opts: {
+        spawnedBy: "agent:main:main",
+      },
+    });
+    expect(filtered.sessions.map((session) => session.key)).toStrictEqual([parentKey]);
   });
 
   test("falls back to persisted subagent timing after run archival", () => {
@@ -1212,8 +1224,8 @@ describe("listSessionsFromStore subagent metadata", () => {
     const timeout = result.sessions.find(
       (session) => session.key === "agent:main:subagent:timeout",
     );
-    expect(timeout?.status).toBe("timeout");
-    expect(timeout?.runtimeMs).toBe(0);
+    expect(timeout?.status).toBeUndefined();
+    expect(timeout?.runtimeMs).toBeUndefined();
   });
 
   test("fails closed when model lookup misses", async () => {

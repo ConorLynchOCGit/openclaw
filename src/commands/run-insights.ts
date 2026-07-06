@@ -1379,18 +1379,6 @@ function buildSignals(params: {
         },
       });
     }
-    if (task.deliveryStatus === "failed" || task.deliveryStatus === "parent_missing") {
-      signals.push({
-        severity: "error",
-        code: "task_delivery_issue",
-        message: `${task.taskId} delivery status is ${task.deliveryStatus}.`,
-        pointer: task.pointer,
-        evidence: {
-          status: task.status,
-          deliveryStatus: task.deliveryStatus,
-        },
-      });
-    }
     const command = task.activeProgress?.command;
     if (
       command &&
@@ -1773,7 +1761,7 @@ function formatTasks(tasks: RunInsightTask[]): string[] {
   }
   return tasks.map((task) => {
     const tool = task.activeWork.activeTool ? ` tool=${task.activeWork.activeTool}` : "";
-    return `  ${task.taskId} agent=${task.agentId ?? "unknown"} status=${task.status} delivery=${task.deliveryStatus} elapsed=${task.elapsed}${tool}`;
+    return `  ${task.taskId} agent=${task.agentId ?? "unknown"} status=${task.status} receiptDelivery=${task.deliveryStatus} elapsed=${task.elapsed}${tool}`;
   });
 }
 

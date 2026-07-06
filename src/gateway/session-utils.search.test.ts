@@ -696,7 +696,7 @@ describe("listSessionsFromStore search", () => {
     });
   });
 
-  test("uses subagent run model immediately for child sessions while transcript usage fills live totals", () => {
+  test("does not use subagent registry model as child session identity", () => {
     withAnthropicTranscriptFixture({
       prefix: "openclaw-session-utils-subagent-",
       transcriptId: "sess-child",
@@ -717,16 +717,16 @@ describe("listSessionsFromStore search", () => {
 
         expectSessionModel(result.sessions[0], {
           key: "agent:main:subagent:child-live",
-          provider: "anthropic",
-          model: ANTHROPIC_MODEL,
+          provider: "openai",
+          model: "gpt-5.5",
         });
-        expect(result.sessions[0]?.status).toBe("running");
+        expect(result.sessions[0]?.status).toBeUndefined();
         expectAnthropicBackfill(result.sessions[0]);
       },
     });
   });
 
-  test("keeps a running subagent model when transcript fallback still reflects an older run", () => {
+  test("keeps session-store child model instead of registry run model", () => {
     withAnthropicTranscriptFixture({
       prefix: "openclaw-session-utils-subagent-stale-model-",
       transcriptId: "sess-child-stale",
@@ -748,9 +748,9 @@ describe("listSessionsFromStore search", () => {
         expectSessionModel(result.sessions[0], {
           key: "agent:main:subagent:child-live-stale-transcript",
           provider: "openai",
-          model: "gpt-5.4",
+          model: "gpt-5.5",
         });
-        expect(result.sessions[0]?.status).toBe("running");
+        expect(result.sessions[0]?.status).toBeUndefined();
         expectTranscriptBackfill(result.sessions[0]);
       },
     });

@@ -7,7 +7,6 @@ import {
   normalizeOptionalString,
   normalizeOptionalLowercaseString,
 } from "@openclaw/normalization-core/string-coerce";
-import { uniqueStrings } from "@openclaw/normalization-core/string-normalization";
 import type { SessionsListParams } from "../../packages/gateway-protocol/src/index.js";
 import {
   readAcpSessionMeta,
@@ -40,20 +39,6 @@ import {
   resolvePersistedSelectedModelRef,
   resolveThinkingDefault,
 } from "../agents/model-selection.js";
-import {
-  buildSubagentRunReadIndex,
-  countActiveDescendantRuns,
-  getSessionDisplaySubagentRunByChildSessionKey,
-  getSubagentSessionRuntimeMs,
-  getSubagentSessionStartedAt,
-  isSubagentRunLive,
-  listSubagentRunsForController,
-  resolveSubagentSessionStatus,
-} from "../agents/subagent-registry-read.js";
-import {
-  RECENT_ENDED_SUBAGENT_CHILD_SESSION_MS,
-  shouldKeepSubagentRunChildLink,
-} from "../agents/subagent-run-liveness.js";
 import { listThinkingLevelOptions } from "../auto-reply/thinking.js";
 import { getRuntimeConfig } from "../config/io.js";
 import { resolveAgentModelFallbackValues } from "../config/model-input.js";
@@ -259,13 +244,6 @@ export function deriveSessionTitle(
   return undefined;
 }
 
-function resolveSessionRuntimeMs(
-  run: { startedAt?: number; endedAt?: number; accumulatedRuntimeMs?: number } | null,
-  now: number,
-) {
-  return getSubagentSessionRuntimeMs(run, now);
-}
-
 function resolvePositiveNumber(value: number | null | undefined): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
 }
@@ -413,8 +391,10 @@ function resolveEstimatedSessionCostUsd(params: {
   return resolveNonNegativeNumber(estimated);
 }
 
-const STALE_STORE_ONLY_CHILD_LINK_MS = 60 * 60 * 1_000;
+const STALE_STORE_ONLY_CHILD_LINK_MS = 30 * 60 * 1_000;
+const RECENT_ENDED_CHILD_SESSION_MS = 30 * 60 * 1_000;
 const SINGLE_ROW_CONTEXT_CACHE_MAX_ENTRIES = 64;
+const STORE_DESCENDANT_SCAN_MAX_DEPTH = 8;
 
 function isFinitePositiveTimestamp(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
@@ -427,9 +407,7 @@ function isTerminalSessionStatus(status: unknown): status is Exclude<SessionRunS
 function shouldKeepStoreOnlyChildLink(entry: SessionEntry, now: number): boolean {
   if (isTerminalSessionStatus(entry.status) || isFinitePositiveTimestamp(entry.endedAt)) {
     const endedAt = isFinitePositiveTimestamp(entry.endedAt) ? entry.endedAt : entry.updatedAt;
-    return (
-      isFinitePositiveTimestamp(endedAt) && now - endedAt <= RECENT_ENDED_SUBAGENT_CHILD_SESSION_MS
-    );
+    return isFinitePositiveTimestamp(endedAt) && now - endedAt <= RECENT_ENDED_CHILD_SESSION_MS;
   }
   if (entry.status === "running" || isFinitePositiveTimestamp(entry.startedAt)) {
     return true;
@@ -443,7 +421,6 @@ function shouldKeepStoreOnlyChildLink(entry: SessionEntry, now: number): boolean
 }
 
 type SessionListRowContext = {
-  subagentRuns: ReturnType<typeof buildSubagentRunReadIndex>;
   storeChildSessionsByKey: Map<string, string[]>;
   selectedModelByOverrideRef: Map<string, ReturnType<typeof resolveSessionModelRef>>;
   // Per-list memoization for deterministic resolvers that scale linearly with
@@ -545,49 +522,6 @@ function getSingleRowChildSessionCandidates(params: {
   return childSessionCandidatesByParentKey;
 }
 
-function resolveRuntimeChildSessionKeys(
-  controllerSessionKey: string,
-  now = Date.now(),
-  subagentRuns?: SessionListRowContext["subagentRuns"],
-): string[] | undefined {
-  const childSessionKeys = new Set<string>();
-  const controllerKey = controllerSessionKey.trim();
-  const runs = subagentRuns
-    ? (subagentRuns.runsByControllerSessionKey.get(controllerKey) ?? [])
-    : listSubagentRunsForController(controllerSessionKey);
-  for (const entry of runs) {
-    const childSessionKey = normalizeOptionalString(entry.childSessionKey);
-    if (!childSessionKey) {
-      continue;
-    }
-    const latest = subagentRuns
-      ? subagentRuns.getDisplaySubagentRun(childSessionKey)
-      : getSessionDisplaySubagentRunByChildSessionKey(childSessionKey);
-    if (!latest) {
-      continue;
-    }
-    const latestControllerSessionKey =
-      normalizeOptionalString(latest?.controllerSessionKey) ||
-      normalizeOptionalString(latest?.requesterSessionKey);
-    if (latestControllerSessionKey !== controllerSessionKey) {
-      continue;
-    }
-    if (
-      !shouldKeepSubagentRunChildLink(latest, {
-        activeDescendants: subagentRuns
-          ? subagentRuns.countActiveDescendantRuns(childSessionKey)
-          : countActiveDescendantRuns(childSessionKey),
-        now,
-      })
-    ) {
-      continue;
-    }
-    childSessionKeys.add(childSessionKey);
-  }
-  const childSessions = Array.from(childSessionKeys);
-  return childSessions.length > 0 ? childSessions : undefined;
-}
-
 function addChildSessionKey(
   childSessionsByKey: Map<string, string[]>,
   parentKey: string,
@@ -606,7 +540,6 @@ function addChildSessionKey(
 function buildStoreChildSessionIndex(
   store: Record<string, SessionEntry>,
   now = Date.now(),
-  subagentRuns?: SessionListRowContext["subagentRuns"],
 ): Map<string, string[]> {
   const childSessionsByKey = new Map<string, string[]>();
   for (const [key, entry] of Object.entries(store)) {
@@ -620,35 +553,46 @@ function buildStoreChildSessionIndex(
     if (parentKeys.length === 0) {
       continue;
     }
-    const latest = subagentRuns
-      ? subagentRuns.getDisplaySubagentRun(key)
-      : getSessionDisplaySubagentRunByChildSessionKey(key);
-    let latestControllerSessionKey: string | undefined;
-    if (latest) {
-      latestControllerSessionKey =
-        normalizeOptionalString(latest.controllerSessionKey) ||
-        normalizeOptionalString(latest.requesterSessionKey);
-      if (
-        !shouldKeepSubagentRunChildLink(latest, {
-          activeDescendants: subagentRuns
-            ? subagentRuns.countActiveDescendantRuns(key)
-            : countActiveDescendantRuns(key),
-          now,
-        })
-      ) {
-        continue;
-      }
-    } else if (!shouldKeepStoreOnlyChildLink(entry, now)) {
+    if (!shouldKeepStoreOnlyChildLink(entry, now) && !hasKeepableStoreDescendant(store, key, now)) {
       continue;
     }
     for (const parentKey of parentKeys) {
-      if (latestControllerSessionKey && latestControllerSessionKey !== parentKey) {
-        continue;
-      }
       addChildSessionKey(childSessionsByKey, parentKey, key);
     }
   }
   return childSessionsByKey;
+}
+
+function hasKeepableStoreDescendant(
+  store: Record<string, SessionEntry>,
+  parentKey: string,
+  now: number,
+  seen = new Set<string>(),
+  depth = 0,
+): boolean {
+  if (depth >= STORE_DESCENDANT_SCAN_MAX_DEPTH || seen.has(parentKey)) {
+    return false;
+  }
+  seen.add(parentKey);
+  for (const [key, entry] of Object.entries(store)) {
+    if (!entry || key === parentKey) {
+      continue;
+    }
+    const parentKeys = [
+      normalizeOptionalString(entry.spawnedBy),
+      normalizeOptionalString(entry.parentSessionKey),
+    ].filter((value): value is string => Boolean(value) && value !== key);
+    if (!parentKeys.includes(parentKey)) {
+      continue;
+    }
+    if (shouldKeepStoreOnlyChildLink(entry, now)) {
+      return true;
+    }
+    if (hasKeepableStoreDescendant(store, key, now, seen, depth + 1)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function resolveStoreChildSessionKeysFromCandidates(params: {
@@ -663,26 +607,10 @@ function resolveStoreChildSessionKeysFromCandidates(params: {
     if (!entry) {
       continue;
     }
-    const latest = getSessionDisplaySubagentRunByChildSessionKey(childKey);
-    if (latest) {
-      const latestControllerSessionKey =
-        normalizeOptionalString(latest.controllerSessionKey) ||
-        normalizeOptionalString(latest.requesterSessionKey);
-      if (latestControllerSessionKey !== params.key) {
-        continue;
-      }
-      if (
-        !shouldKeepSubagentRunChildLink(latest, {
-          activeDescendants: countActiveDescendantRuns(childKey),
-          now: params.now,
-        })
-      ) {
-        continue;
-      }
-      childSessionKeys.push(childKey);
-      continue;
-    }
-    if (!shouldKeepStoreOnlyChildLink(entry, params.now)) {
+    if (
+      !shouldKeepStoreOnlyChildLink(entry, params.now) &&
+      !hasKeepableStoreDescendant(params.store, childKey, params.now)
+    ) {
       continue;
     }
     childSessionKeys.push(childKey);
@@ -694,21 +622,17 @@ function buildSessionListRowContext(params: {
   store: Record<string, SessionEntry>;
   now: number;
 }): SessionListRowContext {
-  const subagentRuns = buildSubagentRunReadIndex(params.now);
   return buildSessionListRowContextFromParts({
-    subagentRuns,
-    storeChildSessionsByKey: buildStoreChildSessionIndex(params.store, params.now, subagentRuns),
+    storeChildSessionsByKey: buildStoreChildSessionIndex(params.store, params.now),
     now: params.now,
   });
 }
 
 function buildSessionListRowContextFromParts(params: {
-  subagentRuns: ReturnType<typeof buildSubagentRunReadIndex>;
   storeChildSessionsByKey: Map<string, string[]>;
   now?: number;
 }): SessionListRowContext {
   return {
-    subagentRuns: params.subagentRuns,
     storeChildSessionsByKey: params.storeChildSessionsByKey,
     selectedModelByOverrideRef: new Map(),
     thinkingMetadataByModelRef: new Map(),
@@ -719,7 +643,6 @@ function buildSessionListRowContextFromParts(params: {
 
 function buildSessionListRowMetadataContext(params: { now: number }): SessionListRowContext {
   return buildSessionListRowContextFromParts({
-    subagentRuns: buildSubagentRunReadIndex(params.now),
     storeChildSessionsByKey: new Map(),
     now: params.now,
   });
@@ -838,34 +761,12 @@ function resolveSessionRowThinkingMetadata(params: {
   return metadata;
 }
 
-function mergeChildSessionKeys(
-  runtimeChildSessions: string[] | undefined,
-  storeChildSessions: string[] | undefined,
-): string[] | undefined {
-  if (!runtimeChildSessions?.length) {
-    return storeChildSessions?.length ? storeChildSessions : undefined;
-  }
-  if (!storeChildSessions?.length) {
-    return runtimeChildSessions;
-  }
-  return uniqueStrings([...runtimeChildSessions, ...storeChildSessions]);
-}
-
 function resolveChildSessionKeys(
   controllerSessionKey: string,
   store: Record<string, SessionEntry>,
   now = Date.now(),
-  subagentRuns?: SessionListRowContext["subagentRuns"],
 ): string[] | undefined {
-  const runtimeChildSessions = resolveRuntimeChildSessionKeys(
-    controllerSessionKey,
-    now,
-    subagentRuns,
-  );
-  const storeChildSessions = buildStoreChildSessionIndex(store, now, subagentRuns).get(
-    controllerSessionKey,
-  );
-  return mergeChildSessionKeys(runtimeChildSessions, storeChildSessions);
+  return buildStoreChildSessionIndex(store, now).get(controllerSessionKey);
 }
 
 function resolveTranscriptUsageFallback(params: {
@@ -2011,45 +1912,6 @@ export function buildGatewaySessionRow(params: {
     parsedAgent?.agentId ?? params.agentId ?? resolveDefaultAgentId(cfg),
   );
   const rowContext = params.rowContext;
-  const subagentRun = rowContext
-    ? rowContext.subagentRuns.getDisplaySubagentRun(key)
-    : getSessionDisplaySubagentRunByChildSessionKey(key);
-  const subagentOwner =
-    normalizeOptionalString(subagentRun?.controllerSessionKey) ||
-    normalizeOptionalString(subagentRun?.requesterSessionKey);
-  const liveSubagentRunActive = isSubagentRunLive(subagentRun);
-  const persistedSessionStatus = entry?.status;
-  const persistedSessionEndedAt = entry?.endedAt;
-  const persistedSessionStartedAt = entry?.startedAt;
-  const persistedSessionRuntimeMs = entry?.runtimeMs;
-  const subagentStatus = subagentRun
-    ? liveSubagentRunActive
-      ? resolveSubagentSessionStatus(subagentRun)
-      : persistedSessionStatus === "running"
-        ? undefined
-        : (persistedSessionStatus ??
-          (typeof subagentRun.endedAt === "number"
-            ? resolveSubagentSessionStatus(subagentRun)
-            : undefined))
-    : undefined;
-  const subagentStartedAt = subagentRun
-    ? liveSubagentRunActive
-      ? getSubagentSessionStartedAt(subagentRun)
-      : (persistedSessionStartedAt ?? getSubagentSessionStartedAt(subagentRun))
-    : undefined;
-  const subagentEndedAt = subagentRun
-    ? liveSubagentRunActive
-      ? subagentRun.endedAt
-      : (persistedSessionEndedAt ?? subagentRun.endedAt)
-    : undefined;
-  const subagentRuntimeMs = subagentRun
-    ? liveSubagentRunActive
-      ? resolveSessionRuntimeMs(subagentRun, now)
-      : (persistedSessionRuntimeMs ??
-        (typeof subagentRun.endedAt === "number"
-          ? resolveSessionRuntimeMs(subagentRun, now)
-          : undefined))
-    : undefined;
   const selectedModel = resolveSessionSelectedModelRef({
     cfg,
     entry,
@@ -2057,13 +1919,9 @@ export function buildGatewaySessionRow(params: {
     rowContext,
     allowPluginNormalization: !lightweight,
   });
-  const resolvedModel = resolveSessionModelIdentityRef(
-    cfg,
-    entry,
-    sessionAgentId,
-    subagentRun?.model,
-    { allowPluginNormalization: !lightweight },
-  );
+  const resolvedModel = resolveSessionModelIdentityRef(cfg, entry, sessionAgentId, undefined, {
+    allowPluginNormalization: !lightweight,
+  });
   const runtimeModelPresent =
     Boolean(entry?.model?.trim()) || Boolean(entry?.modelProvider?.trim());
   const needsTranscriptTotalTokens =
@@ -2093,8 +1951,7 @@ export function buildGatewaySessionRow(params: {
           agentId: sessionAgentId,
         })
       : null;
-  const preferLiveSubagentModelIdentity =
-    Boolean(subagentRun?.model?.trim()) && subagentStatus === "running";
+  const preferLiveSubagentModelIdentity = false;
   const shouldUseTranscriptModelIdentity =
     runtimeModelPresent &&
     !preferLiveSubagentModelIdentity &&
@@ -2131,11 +1988,8 @@ export function buildGatewaySessionRow(params: {
       )
     : undefined;
   const childSessions = params.storeChildSessionsByKey
-    ? mergeChildSessionKeys(
-        resolveRuntimeChildSessionKeys(key, now, rowContext?.subagentRuns),
-        params.storeChildSessionsByKey.get(key),
-      )
-    : resolveChildSessionKeys(key, store, now, rowContext?.subagentRuns);
+    ? params.storeChildSessionsByKey.get(key)
+    : resolveChildSessionKeys(key, store, now);
   const compactionCheckpoints = resolveProjectableCompactionCheckpoints(entry);
   const compactionCheckpointCount = Array.isArray(entry?.compactionCheckpoints)
     ? compactionCheckpoints.length
@@ -2205,12 +2059,8 @@ export function buildGatewaySessionRow(params: {
   let lastMessagePreview: string | undefined;
   let finalAssistantText: string | null | undefined;
   let readbackProvenance: GatewaySessionRow["readbackProvenance"] | undefined;
-  const initialRowStatus = entry?.status ?? subagentStatus;
-  const initialStatusSource = entry?.status
-    ? "session-store"
-    : subagentRun
-      ? "codex-native-subagent"
-      : undefined;
+  const initialRowStatus = entry?.status;
+  const initialStatusSource = entry?.status ? "session-store" : undefined;
   let rowStatus = initialRowStatus;
   const originalRowStatus = rowStatus;
   if (rowStatus) {
@@ -2221,17 +2071,12 @@ export function buildGatewaySessionRow(params: {
         ref: `session:${entry?.sessionId ?? key}`,
         derivedBy: "buildGatewaySessionRow",
         bounded: false,
-        note: subagentRun
-          ? entry?.status
-            ? "projected from session store metadata; subagent registry is compatibility context only"
-            : "projected from native subagent registry because no session-store status exists; not final assistant truth"
-          : "projected from session store metadata; updatedAt may not track native trajectory events",
+        note: "projected from session store metadata; updatedAt may not track native trajectory events",
       },
     };
   }
   const shouldReadActiveTrajectoryProgress =
-    entry?.sessionId &&
-    (rowStatus === "running" || liveSubagentRunActive || (!rowStatus && !entry.endedAt));
+    entry?.sessionId && (rowStatus === "running" || (!rowStatus && !entry.endedAt));
   let trajectoryActiveProgress: ReadbackProgressProjection | undefined;
   if (shouldReadActiveTrajectoryProgress && entry?.sessionId) {
     trajectoryActiveProgress = readLatestTrajectoryProgressProjection(
@@ -2353,7 +2198,7 @@ export function buildGatewaySessionRow(params: {
 
   return {
     key,
-    spawnedBy: entry?.spawnedBy ?? subagentOwner,
+    spawnedBy: entry?.spawnedBy,
     spawnedWorkspaceDir: entry?.spawnedWorkspaceDir,
     spawnedCwd: entry?.spawnedCwd,
     forkedFromParent: entry?.forkedFromParent,
@@ -2396,10 +2241,10 @@ export function buildGatewaySessionRow(params: {
     goal,
     estimatedCostUsd,
     status: rowStatus,
-    startedAt: entry?.startedAt ?? subagentStartedAt,
-    endedAt: entry?.endedAt ?? subagentEndedAt,
-    runtimeMs: entry?.runtimeMs ?? subagentRuntimeMs,
-    parentSessionKey: entry?.parentSessionKey ?? subagentOwner,
+    startedAt: entry?.startedAt,
+    endedAt: entry?.endedAt,
+    runtimeMs: entry?.runtimeMs,
+    parentSessionKey: entry?.parentSessionKey,
     childSessions,
     responseUsage: entry?.responseUsage,
     modelProvider: rowModelProvider,
@@ -2491,9 +2336,6 @@ function resolveSessionListSearchModelFields(params: {
 }): Array<string | undefined> {
   const parsedAgent = parseAgentSessionKey(params.key);
   const agentId = normalizeAgentId(parsedAgent?.agentId ?? resolveDefaultAgentId(params.cfg));
-  const subagentRun = params.rowContext
-    ? params.rowContext.subagentRuns.getDisplaySubagentRun(params.key)
-    : getSessionDisplaySubagentRunByChildSessionKey(params.key);
   const selectedModel = resolveSessionSelectedModelRef({
     cfg: params.cfg,
     entry: params.entry,
@@ -2505,7 +2347,7 @@ function resolveSessionListSearchModelFields(params: {
     params.cfg,
     params.entry,
     agentId,
-    subagentRun?.model,
+    undefined,
     { allowPluginNormalization: false },
   );
   const modelIdentity = {
@@ -2741,26 +2583,9 @@ function filterSessionEntries(params: {
       if (key === "unknown" || key === "global") {
         return false;
       }
-      const filterRowContext = resolveSessionListRowContext(params);
-      const latest = filterRowContext
-        ? filterRowContext.subagentRuns.getDisplaySubagentRun(key)
-        : getSessionDisplaySubagentRunByChildSessionKey(key);
-      if (latest) {
-        const latestControllerSessionKey =
-          normalizeOptionalString(latest.controllerSessionKey) ||
-          normalizeOptionalString(latest.requesterSessionKey);
-        return (
-          latestControllerSessionKey === spawnedBy &&
-          shouldKeepSubagentRunChildLink(latest, {
-            activeDescendants: filterRowContext
-              ? filterRowContext.subagentRuns.countActiveDescendantRuns(key)
-              : countActiveDescendantRuns(key),
-            now,
-          })
-        );
-      }
       return (
-        shouldKeepStoreOnlyChildLink(entry, now) &&
+        (shouldKeepStoreOnlyChildLink(entry, now) ||
+          hasKeepableStoreDescendant(params.store, key, now)) &&
         (entry?.spawnedBy === spawnedBy || entry?.parentSessionKey === spawnedBy)
       );
     })

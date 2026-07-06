@@ -219,7 +219,7 @@ describe("single gateway session row child-session cache", () => {
     );
   });
 
-  test("refreshes subagent registry state while reusing store child candidates", async () => {
+  test("ignores subagent registry ownership while reusing store child candidates", async () => {
     await withSingleRowCacheStore(
       "openclaw-single-row-cache-fresh-registry-",
       "/tmp/openclaw-single-row-cache-fresh-registry",
@@ -233,7 +233,13 @@ describe("single gateway session row child-session cache", () => {
         ]);
 
         setSubagentControllerRun(fixture.child, fixture.newParent, now + 25);
-        expectChildMovedToNewParent(fixture, now);
+        expect(loadGatewaySessionRow(fixture.oldParent, { now: now + 50 })?.childSessions).toEqual([
+          fixture.child,
+        ]);
+        expect(
+          loadGatewaySessionRow(fixture.newParent, { now: now + 50 })?.childSessions,
+        ).toBeUndefined();
+        expect(subagentRegistryReadMock.buildSubagentRunReadIndex).not.toHaveBeenCalled();
       },
     );
   });

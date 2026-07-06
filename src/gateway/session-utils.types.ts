@@ -32,14 +32,7 @@ export type GatewaySessionsDefaults = {
 export type SessionRunStatus = "running" | "done" | "failed" | "killed" | "timeout";
 
 export type ReadbackFieldProvenance = {
-  source:
-    | "session-store"
-    | "session-transcript"
-    | "task-registry"
-    | "trajectory"
-    | "codex-native-subagent"
-    | "artifact-registry"
-    | "gbrain-pointer";
+  source: "session-store" | "session-transcript" | "trajectory" | "task-run-event";
   ref: string;
   eventType?: string;
   eventSeq?: number;

@@ -25,8 +25,6 @@ import {
 const SINGLE_TOOL_RESULT_CONTEXT_SHARE = 0.5;
 const PREEMPTIVE_OVERFLOW_RATIO = 0.9;
 
-export const PREEMPTIVE_CONTEXT_OVERFLOW_MESSAGE =
-  "Context overflow: estimated context size exceeds safe threshold during tool loop.";
 const TOOL_RESULT_ESTIMATE_TO_TEXT_RATIO = 4 / TOOL_RESULT_CHARS_PER_TOKEN_ESTIMATE;
 const TRANSCRIPT_PROMPT_TEXT_KEY = "__openclawTranscriptPromptText";
 
@@ -550,7 +548,11 @@ export function installToolResultContextGuard(params: {
         maxContextChars,
       })
     ) {
-      throw new Error(PREEMPTIVE_CONTEXT_OVERFLOW_MESSAGE);
+      log.warn(
+        `[context-pressure-advisory] tool-result-guard estimated context above safe threshold; ` +
+          `continuing to native provider boundary messages=${contextMessages.length} ` +
+          `maxContextChars=${maxContextChars}`,
+      );
     }
 
     return contextMessages;
