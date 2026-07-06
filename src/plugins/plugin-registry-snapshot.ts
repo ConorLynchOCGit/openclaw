@@ -474,65 +474,21 @@ export function loadPluginRegistrySnapshotWithMetadata(
   if (persistedInstallRecordReadsEnabled) {
     persistedIndex = readPersistedInstalledPluginIndexSync(params);
     if (persistedReadsEnabled && persistedIndex) {
-      if (
+      const persistedIndexIsRecoverablyStale =
         params.config &&
-        persistedIndex.policyHash !== resolveInstalledPluginIndexPolicyHash(params.config)
-      ) {
-        diagnostics.push({
-          level: "info",
-          code: "persisted-registry-stale-policy",
-          message:
-            "Persisted plugin registry policy does not match current config; using derived plugin index as the current source.",
-        });
-      } else if (hasMissingPersistedPluginSource(persistedIndex)) {
-        diagnostics.push({
-          level: "info",
-          code: "persisted-registry-stale-source",
-          message:
-            "Persisted plugin registry points at missing plugin files; using derived plugin index as the current source.",
-        });
-      } else if (hasMismatchedPersistedBundledPluginRoot(persistedIndex, env)) {
-        diagnostics.push({
-          level: "info",
-          code: "persisted-registry-stale-source",
-          message:
-            "Persisted plugin registry points at a different bundled plugin tree; using derived plugin index as the current source.",
-        });
-      } else if (hasStalePersistedPluginDiagnostics(persistedIndex)) {
-        diagnostics.push({
-          level: "info",
-          code: "persisted-registry-stale-source",
-          message:
-            "Persisted plugin registry contains diagnostics referencing missing paths; using derived plugin index as the current source.",
-        });
-      } else if (hasMissingConfigPathActivationMetadata(persistedIndex)) {
-        diagnostics.push({
-          level: "info",
-          code: "persisted-registry-stale-source",
-          message:
-            "Persisted plugin registry is missing config-path startup metadata; using derived plugin index as the current source.",
-        });
-      } else if (hasStalePersistedPluginMetadata(persistedIndex)) {
-        diagnostics.push({
-          level: "info",
-          code: "persisted-registry-stale-source",
-          message:
-            "Persisted plugin registry metadata no longer matches plugin manifest or package files; using derived plugin index as the current source.",
-        });
-      } else if (
+        persistedIndex.policyHash !== resolveInstalledPluginIndexPolicyHash(params.config);
+      const persistedSourceIsRecoverablyStale =
+        hasMissingPersistedPluginSource(persistedIndex) ||
+        hasMismatchedPersistedBundledPluginRoot(persistedIndex, env) ||
+        hasStalePersistedPluginDiagnostics(persistedIndex) ||
+        hasMissingConfigPathActivationMetadata(persistedIndex) ||
+        hasStalePersistedPluginMetadata(persistedIndex) ||
         hasRecoveredInstallRecordsMissingFromPersistedIndex(
           persistedIndex,
           loadSnapshotInstallRecords(params, env),
           env,
-        )
-      ) {
-        diagnostics.push({
-          level: "info",
-          code: "persisted-registry-stale-source",
-          message:
-            "Persisted plugin registry is missing recoverable managed npm plugins; using derived plugin index as the current source.",
-        });
-      } else {
+        );
+      if (!persistedIndexIsRecoverablyStale && !persistedSourceIsRecoverablyStale) {
         const persistedResult: PluginRegistrySnapshotResult = {
           snapshot: persistedIndex,
           source: "persisted",
@@ -540,21 +496,15 @@ export function loadPluginRegistrySnapshotWithMetadata(
         };
         return rememberPluginRegistrySnapshotMemo(memoKey, persistedResult);
       }
-    } else if (persistedReadsEnabled) {
-      diagnostics.push({
-        level: "info",
-        code: "persisted-registry-missing",
-        message: "Persisted plugin registry is missing or invalid; using derived plugin index.",
-      });
     }
   } else {
-    diagnostics.push({
-      level: "warn",
-      code: "persisted-registry-disabled",
-      message: disabledByEnv
-        ? `${formatDeprecatedPersistedRegistryDisableWarning()} Using legacy derived plugin index.`
-        : "Persisted plugin registry reads are disabled by the caller; using derived plugin index.",
-    });
+    if (disabledByEnv) {
+      diagnostics.push({
+        level: "warn",
+        code: "persisted-registry-disabled",
+        message: `${formatDeprecatedPersistedRegistryDisableWarning()} Using legacy derived plugin index.`,
+      });
+    }
   }
 
   const derived = loadInstalledPluginIndexWithDiscovery({

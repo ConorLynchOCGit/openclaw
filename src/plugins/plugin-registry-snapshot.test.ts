@@ -385,11 +385,7 @@ describe("loadPluginRegistrySnapshotWithMetadata", () => {
     });
 
     expect(result.source).toBe("derived");
-    expectDiagnosticsContainCode(result.diagnostics, "persisted-registry-stale-source");
-    expect(
-      result.diagnostics.find((diagnostic) => diagnostic.code === "persisted-registry-stale-source")
-        ?.level,
-    ).toBe("info");
+    expect(result.diagnostics).toStrictEqual([]);
     expect(result.snapshot.installRecords.whatsapp).toEqual({
       source: "npm",
       spec: "@openclaw/whatsapp@2026.5.2",
@@ -535,7 +531,7 @@ describe("loadPluginRegistrySnapshotWithMetadata", () => {
     });
 
     expect(result.source).toBe("derived");
-    expectDiagnosticsContainCode(result.diagnostics, "persisted-registry-stale-source");
+    expect(result.diagnostics).toStrictEqual([]);
     expect(result.snapshot.plugins[0]?.startup.configPaths).toEqual(["browser"]);
   });
 
@@ -641,7 +637,7 @@ describe("loadPluginRegistrySnapshotWithMetadata", () => {
       });
 
       expect(result.source).toBe("derived");
-      expectDiagnosticsContainCode(result.diagnostics, "persisted-registry-stale-source");
+      expect(result.diagnostics).toStrictEqual([]);
     },
   );
 
@@ -676,7 +672,7 @@ describe("loadPluginRegistrySnapshotWithMetadata", () => {
     });
 
     expect(result.source).toBe("derived");
-    expectDiagnosticsContainCode(result.diagnostics, "persisted-registry-stale-source");
+    expect(result.diagnostics).toStrictEqual([]);
   });
 
   it("detects same-size same-mtime package.json replacements", () => {
@@ -705,7 +701,7 @@ describe("loadPluginRegistrySnapshotWithMetadata", () => {
     });
 
     expect(result.source).toBe("derived");
-    expectDiagnosticsContainCode(result.diagnostics, "persisted-registry-stale-source");
+    expect(result.diagnostics).toStrictEqual([]);
   });
 
   it("detects package.json replacements even when stored stat fields still match", () => {
@@ -754,7 +750,7 @@ describe("loadPluginRegistrySnapshotWithMetadata", () => {
     });
 
     expect(result.source).toBe("derived");
-    expectDiagnosticsContainCode(result.diagnostics, "persisted-registry-stale-source");
+    expect(result.diagnostics).toStrictEqual([]);
   });
 
   it("treats persisted registry as stale when a plugin diagnostic source path no longer exists", () => {
@@ -796,7 +792,7 @@ describe("loadPluginRegistrySnapshotWithMetadata", () => {
     expect(losslessPlugin.source).toBe(
       fs.realpathSync(path.join(npmPluginDir, "dist", "index.js")),
     );
-    expectDiagnosticsContainCode(result.diagnostics, "persisted-registry-stale-source");
+    expect(result.diagnostics).toStrictEqual([]);
   });
 
   it("keeps persisted registry when a non-plugin diagnostic source path still does not exist", () => {
