@@ -907,9 +907,15 @@ describe("gateway session utils", () => {
         `${JSON.stringify({
           traceSchema: "openclaw-trajectory",
           sessionId: mainSessionId,
-          type: "session.started",
-          ts: "2026-07-01T00:00:00.000Z",
-          data: {},
+          type: "agent.tool",
+          ts: "2026-07-01T00:01:00.000Z",
+          seq: 2,
+          sourceSeq: 12,
+          data: {
+            phase: "start",
+            name: "task",
+            childRole: "planning",
+          },
         })}\n`,
         "utf8",
       );

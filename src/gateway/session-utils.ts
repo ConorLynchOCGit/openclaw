@@ -2193,13 +2193,9 @@ export function buildGatewaySessionRow(params: {
       sessionAgentId,
     );
   }
-  if (trajectoryActiveProgress && !trajectoryProgressIsLowSignal(trajectoryActiveProgress)) {
-    readbackProvenance = {
-      ...readbackProvenance,
-      activeProgress: trajectoryActiveProgress,
-    };
-  } else if (shouldReadActiveTrajectoryProgress && childSessions && childSessions.length > 0) {
-    const descendantActiveProgress = readActiveDescendantTrajectoryProgress({
+  let descendantActiveProgress: ReadbackProgressProjection | undefined;
+  if (shouldReadActiveTrajectoryProgress && childSessions && childSessions.length > 0) {
+    descendantActiveProgress = readActiveDescendantTrajectoryProgress({
       store,
       storePath,
       parentKey: key,
@@ -2207,12 +2203,22 @@ export function buildGatewaySessionRow(params: {
       agentId: sessionAgentId,
       now,
     });
-    if (descendantActiveProgress) {
-      readbackProvenance = {
-        ...readbackProvenance,
-        activeProgress: descendantActiveProgress,
-      };
-    }
+  }
+  const ownActiveProgress =
+    trajectoryActiveProgress && !trajectoryProgressIsLowSignal(trajectoryActiveProgress)
+      ? trajectoryActiveProgress
+      : undefined;
+  const selectedActiveProgress =
+    ownActiveProgress && descendantActiveProgress
+      ? progressObservedAtMs(descendantActiveProgress) > progressObservedAtMs(ownActiveProgress)
+        ? descendantActiveProgress
+        : ownActiveProgress
+      : (ownActiveProgress ?? descendantActiveProgress);
+  if (selectedActiveProgress) {
+    readbackProvenance = {
+      ...readbackProvenance,
+      activeProgress: selectedActiveProgress,
+    };
   }
   if (
     shouldReadActiveTrajectoryProgress &&

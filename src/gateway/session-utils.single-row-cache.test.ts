@@ -312,6 +312,10 @@ describe("single gateway session row child-session cache", () => {
       const planningStorePath = resolveStorePath(cfg.session?.store, { agentId: "planning" });
       const reviewerStorePath = resolveStorePath(cfg.session?.store, { agentId: "reviewer" });
       const mainSessionFile = path.join(path.dirname(mainStorePath), `${mainSessionId}.jsonl`);
+      const mainTrajectoryFile = path.join(
+        path.dirname(mainStorePath),
+        `${mainSessionId}.trajectory.jsonl`,
+      );
       const planningSessionFile = path.join(
         path.dirname(planningStorePath),
         `${planningSessionId}.jsonl`,
@@ -330,6 +334,23 @@ describe("single gateway session row child-session cache", () => {
       fs.writeFileSync(mainSessionFile, "", "utf8");
       fs.writeFileSync(planningSessionFile, "", "utf8");
       fs.writeFileSync(reviewerSessionFile, "", "utf8");
+      fs.writeFileSync(
+        mainTrajectoryFile,
+        `${JSON.stringify({
+          traceSchema: "openclaw-trajectory",
+          sessionId: mainSessionId,
+          type: "agent.tool",
+          ts: "2026-07-01T00:01:00.000Z",
+          seq: 2,
+          sourceSeq: 12,
+          data: {
+            phase: "start",
+            name: "task",
+            childRole: "planning",
+          },
+        })}\n`,
+        "utf8",
+      );
       fs.writeFileSync(
         reviewerTrajectoryFile,
         `${JSON.stringify({
