@@ -1,6 +1,8 @@
 /**
  * Tests single-row session cache behavior in gateway session utilities.
  */
+import fs from "node:fs";
+import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { resetConfigRuntimeState, setRuntimeConfigSnapshot } from "../config/config.js";
 import type { OpenClawConfig } from "../config/config.js";
@@ -270,5 +272,134 @@ describe("single gateway session row child-session cache", () => {
         expectChildMovedToNewParent(fixture, now);
       },
     );
+  });
+
+  test("single session detail traverses native lineage across agent stores", async () => {
+    await withStateDirEnv("openclaw-single-row-cross-agent-lineage-", async ({ stateDir }) => {
+      const workspace = "/tmp/openclaw-single-row-cross-agent-lineage";
+      const cfg: OpenClawConfig = {
+        session: {
+          store: path.join(stateDir, "agents/{agentId}/sessions/sessions.json"),
+        },
+        agents: {
+          list: [
+            {
+              id: "main",
+              default: true,
+              workspace,
+            },
+            {
+              id: "planning",
+              workspace,
+            },
+            {
+              id: "reviewer",
+              workspace,
+            },
+          ],
+          defaults: { model: { primary: TEST_MODEL } },
+        },
+      } as OpenClawConfig;
+      setRuntimeConfigSnapshot(cfg, cfg);
+      const now = Date.UTC(2026, 6, 1, 0, 3, 0);
+      const mainKey = "agent:main:phase0z-topology-check";
+      const planningKey = "agent:planning:subagent:planning-child";
+      const reviewerKey = "agent:reviewer:subagent:reviewer-grandchild";
+      const mainSessionId = "main-cross-agent-lineage";
+      const planningSessionId = "planning-cross-agent-lineage";
+      const reviewerSessionId = "reviewer-cross-agent-lineage";
+      const mainStorePath = resolveStorePath(cfg.session?.store, { agentId: "main" });
+      const planningStorePath = resolveStorePath(cfg.session?.store, { agentId: "planning" });
+      const reviewerStorePath = resolveStorePath(cfg.session?.store, { agentId: "reviewer" });
+      const mainSessionFile = path.join(path.dirname(mainStorePath), `${mainSessionId}.jsonl`);
+      const planningSessionFile = path.join(
+        path.dirname(planningStorePath),
+        `${planningSessionId}.jsonl`,
+      );
+      const reviewerSessionFile = path.join(
+        path.dirname(reviewerStorePath),
+        `${reviewerSessionId}.jsonl`,
+      );
+      const reviewerTrajectoryFile = path.join(
+        path.dirname(reviewerStorePath),
+        `${reviewerSessionId}.trajectory.jsonl`,
+      );
+      fs.mkdirSync(path.dirname(mainStorePath), { recursive: true });
+      fs.mkdirSync(path.dirname(planningStorePath), { recursive: true });
+      fs.mkdirSync(path.dirname(reviewerStorePath), { recursive: true });
+      fs.writeFileSync(mainSessionFile, "", "utf8");
+      fs.writeFileSync(planningSessionFile, "", "utf8");
+      fs.writeFileSync(reviewerSessionFile, "", "utf8");
+      fs.writeFileSync(
+        reviewerTrajectoryFile,
+        `${JSON.stringify({
+          traceSchema: "openclaw-trajectory",
+          sessionId: reviewerSessionId,
+          type: "agent.tool",
+          ts: "2026-07-01T00:02:10.000Z",
+          seq: 5,
+          sourceSeq: 30,
+          data: {
+            phase: "start",
+            name: "read",
+          },
+        })}\n`,
+        "utf8",
+      );
+      await saveSessionStore(mainStorePath, {
+        [mainKey]: {
+          sessionId: mainSessionId,
+          sessionFile: mainSessionFile,
+          status: "running",
+          updatedAt: now - 180_000,
+          startedAt: now - 200_000,
+        },
+      });
+      await saveSessionStore(planningStorePath, {
+        [planningKey]: {
+          sessionId: planningSessionId,
+          sessionFile: planningSessionFile,
+          status: "running",
+          spawnedBy: mainKey,
+          parentSessionKey: mainKey,
+          updatedAt: now - 120_000,
+          startedAt: now - 150_000,
+        },
+      });
+      await saveSessionStore(reviewerStorePath, {
+        [reviewerKey]: {
+          sessionId: reviewerSessionId,
+          sessionFile: reviewerSessionFile,
+          status: "running",
+          spawnedBy: planningKey,
+          parentSessionKey: planningKey,
+          updatedAt: now - 30_000,
+          startedAt: now - 60_000,
+        },
+      });
+
+      const row = loadGatewaySessionRow(mainKey, { now });
+
+      expect(row?.childSessions).toEqual([planningKey]);
+      expect(row?.activeProgress).toMatchObject({
+        source: "trajectory",
+        ref: `session:${reviewerSessionId}`,
+        currentPhase: "start",
+        activeLabel: "read",
+        sourceEventType: "agent.tool",
+        sourceEventSeq: 30,
+        toolName: "read",
+        pointer: {
+          kind: "session",
+          ref: reviewerKey,
+          label: "active child session",
+        },
+        derivedBy: "readLatestTrajectoryProgressProjection",
+        bounded: true,
+      });
+      expect(row?.updatedAt).toBe(now - 180_000);
+      expect(row?.lastObservedActivityAt).toBe(Date.parse("2026-07-01T00:02:10.000Z"));
+      expect(row?.lastObservedActivitySource).toBe("descendant");
+    });
   });
 });

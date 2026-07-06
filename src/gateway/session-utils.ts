@@ -46,6 +46,7 @@ import { resolveStateDir } from "../config/paths.js";
 import {
   buildGroupDisplayName,
   getSessionStoreCacheVersion,
+  loadCombinedSessionStoreForGateway,
   loadSessionStore,
   resolveAllAgentSessionStoreTargetsSync,
   resolveAgentMainSessionKey,
@@ -2559,18 +2560,28 @@ export function loadGatewaySessionRow(
   if (!entry) {
     return null;
   }
+  const combined = loadCombinedSessionStoreForGateway(cfg);
+  const entrySessionId = normalizeOptionalString(entry.sessionId);
+  const combinedHasRequestedSession =
+    Boolean(combined.store[canonicalKey]) ||
+    (Boolean(entrySessionId) &&
+      Object.values(combined.store).some(
+        (candidate) => normalizeOptionalString(candidate.sessionId) === entrySessionId,
+      ));
+  const projectionStore = combinedHasRequestedSession ? combined.store : store;
+  const projectionEntry = projectionStore[canonicalKey] ?? entry;
   const storeChildSessionsByKey = buildSingleRowStoreChildSessionsByKey({
     storePath,
-    store,
+    store: projectionStore,
     key: canonicalKey,
     now,
   });
   return buildGatewaySessionRow({
     cfg,
     storePath,
-    store,
+    store: projectionStore,
     key: canonicalKey,
-    entry,
+    entry: projectionEntry,
     now,
     includeDerivedTitles: options?.includeDerivedTitles,
     includeLastMessage: options?.includeLastMessage,
