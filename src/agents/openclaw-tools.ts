@@ -519,6 +519,7 @@ export function createOpenClawTools(
       ? [
           createTaskTool({
             agentSessionKey: options?.agentSessionKey,
+            parentRunId: options?.runId,
             agentChannel: options?.agentChannel,
             agentAccountId: options?.agentAccountId,
             agentTo: options?.agentTo,

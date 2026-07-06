@@ -316,7 +316,6 @@ export type WorkboardTaskSummary = {
   sourceId?: string;
   updatedAt?: number | string;
   activeProgress?: ReadbackProgressProjection;
-  progressSummary?: string;
   terminalSummary?: string;
   error?: string;
 };
@@ -976,9 +975,6 @@ function normalizeTaskSummary(value: unknown): WorkboardTaskSummary | null {
       ? { updatedAt: value.updatedAt }
       : {}),
     ...(activeProgress ? { activeProgress } : {}),
-    ...(typeof value.progressSummary === "string"
-      ? { progressSummary: value.progressSummary }
-      : {}),
     ...(typeof value.terminalSummary === "string"
       ? { terminalSummary: value.terminalSummary }
       : {}),

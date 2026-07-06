@@ -1070,11 +1070,9 @@ function taskDetail(task: WorkboardTaskSummary): string {
           (part): part is string => typeof part === "string" && part.trim().length > 0,
         )
       : [];
-    return activeParts.length > 0
-      ? activeParts.join(" ")
-      : (task.progressSummary ?? task.title ?? task.taskId);
+    return activeParts.length > 0 ? activeParts.join(" ") : (task.title ?? task.taskId);
   }
-  return task.terminalSummary ?? task.error ?? task.progressSummary ?? task.title ?? task.taskId;
+  return task.terminalSummary ?? task.error ?? task.title ?? task.taskId;
 }
 
 function taskMatchesLifecycle(task: WorkboardTaskSummary, lifecycle: WorkboardLifecycle): boolean {

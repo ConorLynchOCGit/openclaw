@@ -7,6 +7,7 @@ import type {
   QueuedFileWriterDiagnostics,
 } from "../agents/queued-file-writer.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { onAgentEvent, type AgentEventPayload } from "../infra/agent-events.js";
 import { assertNoSymlinkParents, writeSiblingTempFile } from "../infra/fs-safe-advanced.js";
 import { readRegularFileSync } from "../infra/fs-safe.js";
 import { redactSecrets } from "../logging/redact.js";
@@ -62,6 +63,7 @@ const TRAJECTORY_RUNTIME_DATA_STRING_MAX_CHARS = 32_768;
 const TRAJECTORY_RUNTIME_DATA_ARRAY_MAX_ITEMS = 64;
 const TRAJECTORY_RUNTIME_DATA_OBJECT_MAX_KEYS = 64;
 const TRAJECTORY_RUNTIME_DATA_MAX_DEPTH = 6;
+const TRAJECTORY_RUNTIME_AUTO_FLUSH_MS = 100;
 
 type TrajectoryRuntimeWriterDiagnostics = Omit<QueuedFileWriterDiagnostics, "activeOperation"> & {
   activeOperation: QueuedFileWriterDiagnostics["activeOperation"] | "file-replace";
@@ -223,6 +225,38 @@ function sanitizeTrajectoryPayload(data: Record<string, unknown>): Record<string
     string,
     unknown
   >;
+}
+
+function recordAgentEventToTrajectory(params: {
+  event: AgentEventPayload;
+  recorder: TrajectoryRuntimeRecorder;
+  runId: string;
+}): void {
+  if (params.event.runId !== params.runId) {
+    return;
+  }
+  params.recorder.recordEvent(`agent.${params.event.stream}`, {
+    ...params.event.data,
+    agentEventStream: params.event.stream,
+    agentEventSeq: params.event.seq,
+    agentEventTs: params.event.ts,
+    ...(params.event.sessionKey ? { sessionKey: params.event.sessionKey } : {}),
+    ...(params.event.sessionId ? { eventSessionId: params.event.sessionId } : {}),
+    ...(params.event.agentId ? { agentId: params.event.agentId } : {}),
+  });
+}
+
+export function mirrorAgentEventsToTrajectory(params: {
+  recorder: TrajectoryRuntimeRecorder;
+  runId: string;
+}): () => void {
+  return onAgentEvent((event) => {
+    recordAgentEventToTrajectory({
+      event,
+      recorder: params.recorder,
+      runId: params.runId,
+    });
+  });
 }
 
 function describeTrajectoryWriterFlushState(writer: TrajectoryRuntimeWriter): string | undefined {
@@ -388,6 +422,51 @@ function createTrajectoryWindowWriter(
   let activeOperation: TrajectoryRuntimeWriterDiagnostics["activeOperation"] = "idle";
   let queue: Promise<unknown> = Promise.resolve();
   let sourceSeq = readMaxTrajectorySourceSeq(filePath);
+  let autoFlushTimer: NodeJS.Timeout | undefined;
+
+  const clearAutoFlushTimer = (): void => {
+    if (!autoFlushTimer) {
+      return;
+    }
+    clearTimeout(autoFlushTimer);
+    autoFlushTimer = undefined;
+  };
+
+  const flushPending = async (): Promise<void> => {
+    if (pendingLines.length === 0) {
+      await queue;
+      return;
+    }
+    const appendedLines = pendingLines;
+    pendingLines = [];
+    queuedBytes = 0;
+    queue = queue
+      .then(async () => {
+        activeOperation = "file-replace";
+        await queueTrajectoryWindowFlush({
+          filePath,
+          maxFileBytes,
+          appendedLines,
+        });
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        pendingWrites = pendingLines.length > 0 ? 1 : 0;
+        activeOperation = "idle";
+      });
+    await queue;
+  };
+
+  const scheduleAutoFlush = (): void => {
+    if (autoFlushTimer) {
+      return;
+    }
+    autoFlushTimer = setTimeout(() => {
+      autoFlushTimer = undefined;
+      void flushPending();
+    }, TRAJECTORY_RUNTIME_AUTO_FLUSH_MS);
+    autoFlushTimer.unref?.();
+  };
 
   return {
     filePath,
@@ -400,31 +479,12 @@ function createTrajectoryWindowWriter(
       queuedBytes += lineBytes;
       queuedBytes = trimJsonlWindow(pendingLines, maxFileBytes);
       pendingWrites = 1;
+      scheduleAutoFlush();
       return "queued";
     },
     flush: async () => {
-      if (pendingLines.length === 0) {
-        await queue;
-        return;
-      }
-      const appendedLines = pendingLines;
-      pendingLines = [];
-      queuedBytes = 0;
-      queue = queue
-        .then(async () => {
-          activeOperation = "file-replace";
-          await queueTrajectoryWindowFlush({
-            filePath,
-            maxFileBytes,
-            appendedLines,
-          });
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          pendingWrites = pendingLines.length > 0 ? 1 : 0;
-          activeOperation = "idle";
-        });
-      await queue;
+      clearAutoFlushTimer();
+      await flushPending();
     },
     describeQueue: () => ({
       pendingWrites,

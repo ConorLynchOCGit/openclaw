@@ -49,7 +49,6 @@ export function mapTaskRunView(task: TaskRecord): TaskRunView {
     ...(task.cleanupAfter !== undefined ? { cleanupAfter: task.cleanupAfter } : {}),
     ...(task.error ? { error: task.error } : {}),
     ...(activeProgress ? { activeProgress } : {}),
-    ...(task.progressSummary ? { progressSummary: task.progressSummary } : {}),
     ...(task.terminalSummary ? { terminalSummary: task.terminalSummary } : {}),
     ...(task.terminalOutcome ? { terminalOutcome: task.terminalOutcome } : {}),
   };

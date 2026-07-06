@@ -719,7 +719,6 @@ describe("renderWorkboard", () => {
       title: "Finished despite stale task",
       childSessionKey: "agent:main:subagent:workboard-default-card-1",
       runId: "run-1",
-      progressSummary: "Still running according to stale cache.",
     });
     const container = document.createElement("div");
     const props = {
@@ -782,7 +781,6 @@ describe("renderWorkboard", () => {
       taskId: "task-1",
       status: "running",
       title: "Task only run",
-      progressSummary: "Worker is active.",
     });
     const container = document.createElement("div");
     const props = {
@@ -808,9 +806,7 @@ describe("renderWorkboard", () => {
       ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     render(renderWorkboard(props), container);
 
-    expect(container.querySelector(".workboard-detail")?.textContent).toContain(
-      "Worker is active.",
-    );
+    expect(container.querySelector(".workboard-detail")?.textContent).toContain("Task only run");
   });
 
   it("shows bounded readback progress for active task-only cards", () => {
@@ -835,9 +831,8 @@ describe("renderWorkboard", () => {
       taskId: "task-1",
       status: "running",
       title: "Task only run",
-      progressSummary: "Generic child run started.",
       activeProgress: {
-        source: "task-run-event",
+        source: "task-receipt",
         ref: "task-event:task-1:2:progress",
         currentPhase: "running",
         activeLabel: "coding",
@@ -866,7 +861,7 @@ describe("renderWorkboard", () => {
     render(renderWorkboard(props), container);
 
     expect(container.textContent).toContain("Running focused validation");
-    expect(container.textContent).not.toContain("task-run-event");
+    expect(container.textContent).not.toContain("task-receipt");
     expect(container.textContent).not.toContain("Generic child run started.");
   });
 

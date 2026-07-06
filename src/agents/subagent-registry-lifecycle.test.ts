@@ -335,7 +335,7 @@ describe("subagent registry lifecycle hardening", () => {
       runId: entry.runId,
       runtime: "subagent",
       sessionKey: entry.childSessionKey,
-      progressSummary: "I'll inspect the repo now.",
+      progressSummary: undefined,
       terminalOutcome: "blocked",
       terminalSummary:
         "Required completion ended with progress-only text, not a final deliverable.",
@@ -387,7 +387,7 @@ describe("subagent registry lifecycle hardening", () => {
       runId: finalEntry.runId,
       runtime: "subagent",
       sessionKey: finalEntry.childSessionKey,
-      progressSummary: "Fixed the crash and verified the regression tests pass.",
+      progressSummary: undefined,
       terminalSummary: null,
     });
     expect(finalArg.terminalOutcome).toBeUndefined();
@@ -416,8 +416,7 @@ describe("subagent registry lifecycle hardening", () => {
       runId: entry.runId,
       runtime: "subagent",
       sessionKey: entry.childSessionKey,
-      progressSummary:
-        "I'll inspect the repo now. The crash is a missing null check in src/foo.ts.",
+      progressSummary: undefined,
       terminalSummary: null,
     });
     expect(finalArg.terminalOutcome).toBeUndefined();
@@ -446,8 +445,7 @@ describe("subagent registry lifecycle hardening", () => {
       runId: entry.runId,
       runtime: "subagent",
       sessionKey: entry.childSessionKey,
-      progressSummary:
-        "I'll inspect the repo now - the crash is a missing null check in src/foo.ts.",
+      progressSummary: undefined,
       terminalSummary: null,
     });
     expect(finalArg.terminalOutcome).toBeUndefined();
@@ -475,7 +473,7 @@ describe("subagent registry lifecycle hardening", () => {
       runId: entry.runId,
       runtime: "subagent",
       sessionKey: entry.childSessionKey,
-      progressSummary: "I'll inspect the repo now. Then I'll run tests and report back.",
+      progressSummary: undefined,
       terminalOutcome: "blocked",
       terminalSummary:
         "Required completion ended with progress-only text, not a final deliverable.",
@@ -992,7 +990,7 @@ describe("subagent registry lifecycle hardening", () => {
       runId: entry.runId,
       runtime: "subagent",
       sessionKey: entry.childSessionKey,
-      progressSummary: "final answer",
+      progressSummary: undefined,
       terminalOutcome: "blocked",
       terminalSummary:
         "Required completion delivery failed before reaching the requester: gateway request timeout for agent.",

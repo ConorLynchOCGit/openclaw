@@ -715,7 +715,6 @@ export function createSubagentRunManager(params: {
           registerParams.expectsCompletionMessage === false ? "not_applicable" : "pending",
         startedAt: now,
         lastEventAt: now,
-        progressSummary: "Child started.",
       });
       if (!task) {
         log.warn("Failed to persist background task for subagent run", {

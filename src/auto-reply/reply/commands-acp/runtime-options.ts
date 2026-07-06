@@ -12,7 +12,7 @@ import {
   validateRuntimePermissionProfileInput,
 } from "../../../acp/control-plane/runtime-options.js";
 import { findLatestTaskForRelatedSessionKeyForOwner } from "../../../tasks/task-owner-access.js";
-import { sanitizeTaskStatusText } from "../../../tasks/task-status.js";
+import { formatTaskStatusDetail, sanitizeTaskStatusText } from "../../../tasks/task-status.js";
 import type { CommandHandlerResult, HandleCommandsParams } from "../commands-types.js";
 import {
   ACP_CWD_USAGE,
@@ -135,7 +135,7 @@ export async function handleAcpStatusAction(
         backend: status.backend,
         identity: status.identity,
       });
-      const taskProgress = sanitizeTaskStatusText(linkedTask?.progressSummary);
+      const taskProgress = linkedTask ? formatTaskStatusDetail(linkedTask) : undefined;
       const taskSummary = sanitizeTaskStatusText(linkedTask?.terminalSummary, {
         errorContext: true,
       });

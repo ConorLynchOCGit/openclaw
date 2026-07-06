@@ -6,7 +6,6 @@ import { registerStatusHealthSessionsCommands } from "./register.status-health-s
 const mocks = vi.hoisted(() => ({
   statusCommand: vi.fn(),
   healthCommand: vi.fn(),
-  runInsightsCommand: vi.fn(),
   sessionsCommand: vi.fn(),
   sessionsShowCommand: vi.fn(),
   sessionsCleanupCommand: vi.fn(),
@@ -33,7 +32,6 @@ const mocks = vi.hoisted(() => ({
 
 const statusCommand = mocks.statusCommand;
 const healthCommand = mocks.healthCommand;
-const runInsightsCommand = mocks.runInsightsCommand;
 const sessionsCommand = mocks.sessionsCommand;
 const sessionsShowCommand = mocks.sessionsShowCommand;
 const sessionsCleanupCommand = mocks.sessionsCleanupCommand;
@@ -85,10 +83,6 @@ vi.mock("../../commands/status.js", () => ({
 
 vi.mock("../../commands/health.js", () => ({
   healthCommand: mocks.healthCommand,
-}));
-
-vi.mock("../../commands/run-insights.js", () => ({
-  runInsightsCommand: mocks.runInsightsCommand,
 }));
 
 vi.mock("../../commands/sessions.js", () => ({
@@ -148,7 +142,6 @@ describe("registerStatusHealthSessionsCommands", () => {
     runtime.exit.mockImplementation(() => {});
     statusCommand.mockResolvedValue(undefined);
     healthCommand.mockResolvedValue(undefined);
-    runInsightsCommand.mockResolvedValue(undefined);
     sessionsCommand.mockResolvedValue(undefined);
     sessionsShowCommand.mockResolvedValue(undefined);
     sessionsCleanupCommand.mockResolvedValue(undefined);
@@ -219,32 +212,6 @@ describe("registerStatusHealthSessionsCommands", () => {
     );
     expect(runtime.exit).toHaveBeenCalledWith(1);
     expect(healthCommand).not.toHaveBeenCalled();
-  });
-
-  it("runs run-insights command with filter options", async () => {
-    await runCli([
-      "run-insights",
-      "--json",
-      "--agent",
-      "coding",
-      "--session",
-      "agent:coding:main",
-      "--task",
-      "task-coding-child",
-      "--active",
-      "120",
-      "--limit",
-      "5",
-    ]);
-
-    expectCommandOptions(runInsightsCommand, {
-      json: true,
-      agent: "coding",
-      session: "agent:coding:main",
-      task: "task-coding-child",
-      active: "120",
-      limit: "5",
-    });
   });
 
   it("runs sessions command with forwarded options", async () => {

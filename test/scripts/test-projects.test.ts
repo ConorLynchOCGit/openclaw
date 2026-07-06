@@ -1936,11 +1936,11 @@ describe("scripts/test-projects validation performance profile", () => {
   it("describes focused command choice, cache behavior, and known-bad direct Vitest path", () => {
     const profile = buildValidationPerformanceProfile({
       isFullSuiteRun: false,
-      targetArgs: ["src/commands/run-insights.test.ts"],
+      targetArgs: ["src/commands/sessions.test.ts"],
       runSpecs: [
         {
           config: "test/vitest/vitest.unit-fast.config.ts",
-          includePatterns: ["src/commands/run-insights.test.ts"],
+          includePatterns: ["src/commands/sessions.test.ts"],
         },
       ],
       preflightEntries: [

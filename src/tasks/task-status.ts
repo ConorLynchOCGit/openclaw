@@ -128,13 +128,6 @@ export function formatTaskStatusTitle(task: TaskRecord): string {
 }
 
 export function formatTaskStatusDetail(task: TaskRecord): string | undefined {
-  if (task.status === "running" || task.status === "queued") {
-    return (
-      sanitizeTaskStatusText(task.progressSummary, { maxChars: TASK_STATUS_DETAIL_MAX_CHARS }) ||
-      undefined
-    );
-  }
-
   const sanitizedError = sanitizeTaskStatusText(task.error, {
     errorContext: true,
     maxChars: TASK_STATUS_DETAIL_MAX_CHARS,

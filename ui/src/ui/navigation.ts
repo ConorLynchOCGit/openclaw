@@ -7,16 +7,7 @@ export const TAB_GROUPS = [
   { label: "chat", tabs: ["chat"] },
   {
     label: "control",
-    tabs: [
-      "overview",
-      "activity",
-      "runInsights",
-      "workboard",
-      "instances",
-      "sessions",
-      "usage",
-      "cron",
-    ],
+    tabs: ["overview", "activity", "workboard", "instances", "sessions", "usage", "cron"],
   },
   { label: "agent", tabs: ["agents", "skills", "skillWorkshop", "nodes", "dreams"] },
   {
@@ -28,7 +19,6 @@ export const TAB_GROUPS = [
 export type Tab =
   | "agents"
   | "activity"
-  | "runInsights"
   | "overview"
   | "workboard"
   | "channels"
@@ -67,7 +57,6 @@ export const SETTINGS_TABS = [
 const TAB_PATHS: Record<Tab, string> = {
   agents: "/agents",
   activity: "/activity",
-  runInsights: "/run-insights",
   overview: "/overview",
   workboard: "/workboard",
   channels: "/channels",
@@ -218,8 +207,6 @@ export function iconForTab(tab: Tab): IconName {
       return "barChart";
     case "activity":
       return "activity";
-    case "runInsights":
-      return "activity";
     case "workboard":
       return "folder";
     case "channels":
@@ -267,15 +254,9 @@ export function titleForTab(tab: Tab) {
   if (tab === "config") {
     return t("nav.settings");
   }
-  if (tab === "runInsights") {
-    return "Run insights";
-  }
   return t(`tabs.${tab}`);
 }
 
 export function subtitleForTab(tab: Tab) {
-  if (tab === "runInsights") {
-    return "Run and deploy performance readback.";
-  }
   return t(`subtitles.${tab}`);
 }

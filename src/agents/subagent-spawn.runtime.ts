@@ -29,6 +29,7 @@ export {
 } from "../gateway/session-utils.js";
 export { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 export { emitSessionLifecycleEvent } from "../sessions/session-lifecycle-events.js";
+export { emitAgentEvent } from "../infra/agent-events.js";
 export {
   mergeDeliveryContext,
   normalizeDeliveryContext,

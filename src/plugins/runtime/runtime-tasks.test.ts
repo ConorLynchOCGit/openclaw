@@ -114,7 +114,7 @@ describe("runtime tasks", () => {
     expect(flowTask.label).toBe("Inbox triage");
     expect(flowTask.runId).toBe("runtime-task-run");
     expect(flowTask.activeProgress).toMatchObject({
-      source: "task-run-event",
+      source: "task-receipt",
       currentPhase: "running",
       activeLabel: "Inbox triage",
       sourceEventType: "task.running",
@@ -137,9 +137,9 @@ describe("runtime tasks", () => {
     expect(taskRun.id).toBe(child.task.taskId);
     expect(taskRun.flowId).toBe(created.flowId);
     expect(taskRun.title).toBe("Review PR 1");
-    expect(taskRun.progressSummary).toBe("Inspecting");
+    expect(taskRun).not.toHaveProperty("progressSummary");
     expect(taskRun.activeProgress).toMatchObject({
-      source: "task-run-event",
+      source: "task-receipt",
       currentPhase: "running",
       activeLabel: "Inbox triage",
       sourceEventType: "task.running",

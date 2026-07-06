@@ -17,10 +17,6 @@ describe("listGatewayMethods", () => {
     expect(listGatewayMethods()).toContain("node.pluginSurface.refresh");
   });
 
-  it("advertises run insights readback for operator-facing performance visibility", () => {
-    expect(listGatewayMethods()).toContain("run.insights");
-  });
-
   it("advertises ClawHub skill trust methods", () => {
     const methods = listGatewayMethods();
     expect(methods).toContain("skills.securityVerdicts");

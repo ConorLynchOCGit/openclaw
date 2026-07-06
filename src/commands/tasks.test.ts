@@ -433,6 +433,11 @@ describe("tasks commands", () => {
         taskId: progressTask.taskId,
         progressSummary: "validating bounded human list summary",
         lastEventAt: progressAt,
+        eventMetadata: {
+          nativeEventStream: "tool",
+          nativeEventPhase: "running",
+          nativeEventToolName: "validation",
+        },
       });
 
       const runtime = createRuntime();
@@ -443,8 +448,8 @@ describe("tasks commands", () => {
       expect(joined).toContain("Background tasks: 25");
       expect(joined).toContain("Showing 20 bounded rows");
       expect(joined).toContain("full list available with `openclaw tasks list --json`");
-      expect(joined).toContain("task-run-event phase=running cli task.progress");
-      expect(joined).toContain("note=validating bounded human list");
+      expect(joined).toContain("task-receipt phase=running validation agent.tool");
+      expect(joined).toContain("note=validating bounded human lis");
       expect(joined).not.toContain("Summary task 9");
     });
   });
@@ -560,8 +565,8 @@ describe("tasks commands", () => {
         .mocked(runtime.log)
         .mock.calls.map(([line]) => String(line))
         .join("\n");
-      expect(joined).toContain("task-run-event phase=running project_explorer task.progress");
-      expect(joined).toContain("note=project_explorer");
+      expect(joined).toContain("task-receipt phase=waiting_on_child project_explorer task.running");
+      expect(joined).toContain("note=Parent is w");
       expect(joined).not.toContain("Child started.");
     });
   });
@@ -582,6 +587,11 @@ describe("tasks commands", () => {
         taskId: task.taskId,
         progressSummary: "running focused task readback regression",
         lastEventAt: progressAt,
+        eventMetadata: {
+          nativeEventStream: "tool",
+          nativeEventPhase: "running",
+          nativeEventToolName: "validation",
+        },
       });
 
       const runtime = createRuntime();
@@ -591,9 +601,7 @@ describe("tasks commands", () => {
         .mocked(runtime.log)
         .mock.calls.map(([line]) => String(line))
         .join("\n");
-      expect(joined).toContain(
-        "activeProgress: task-run-event phase=running validation task.progress",
-      );
+      expect(joined).toContain("activeProgress: task-receipt phase=running validation agent.tool");
       expect(joined).toContain("note=running focused task readback regression");
       expect(joined).toContain(`pointer=task:${task.taskId}`);
     });
@@ -614,9 +622,18 @@ describe("tasks commands", () => {
         deliveryStatus: "not_applicable",
         notifyPolicy: "silent",
         task: "Inspect run intelligence owner files before implementation.",
-        progressSummary:
-          "Codex native subagent spawned (role: project_explorer; agent_path: agents/project_explorer.toml).",
         startedAt: Date.now(),
+      });
+      setTaskProgressById({
+        taskId: task.taskId,
+        eventSummary: "Codex native subagent spawned.",
+        lastEventAt: Date.now() + 1,
+        eventMetadata: {
+          childRole: "project_explorer",
+          childAgentPath: "agents/project_explorer.toml",
+          childPhase: "child_spawned",
+          spawnReason: "Inspect run intelligence owner files before implementation.",
+        },
       });
 
       const runtime = createRuntime();
@@ -650,6 +667,11 @@ describe("tasks commands", () => {
         taskId: task.taskId,
         progressSummary: "running JSON task readback regression",
         lastEventAt,
+        eventMetadata: {
+          nativeEventStream: "tool",
+          nativeEventPhase: "running",
+          nativeEventToolName: "validation-json",
+        },
       });
 
       const runtime = createRuntime();
@@ -667,18 +689,19 @@ describe("tasks commands", () => {
         };
       };
       expect(payload.activeProgress).toMatchObject({
-        source: "task-run-event",
+        source: "task-receipt",
         ref: `task-event:${task.taskId}:${lastEventAt}:progress`,
         currentPhase: "running",
         activeLabel: "validation-json",
-        sourceEventType: "task.progress",
+        sourceEventType: "agent.tool",
+        toolName: "validation-json",
         note: "running JSON task readback regression",
         bounded: true,
       });
     });
   });
 
-  it("infers OpenClaw child role timing in task show JSON from child session keys", async () => {
+  it("does not infer child role timing in task show JSON from child session keys", async () => {
     await withTaskCommandStateDir(async () => {
       const task = createTaskRecord({
         runtime: "subagent",
@@ -700,15 +723,17 @@ describe("tasks commands", () => {
       await tasksShowCommand({ json: true, lookup: task.taskId }, runtime);
 
       const payload = readFirstJsonLog(runtime) as {
+        childSessionKey?: string;
         childRole?: string;
         childPhase?: string;
         spawnReason?: string;
       };
       expect(payload).toMatchObject({
-        childRole: "codebase-researcher",
-        childPhase: "succeeded",
-        spawnReason: "Read bounded source refs and return a Context Pack.",
+        childSessionKey: "agent:codebase-researcher:subagent:child-1",
       });
+      expect(payload.childRole).toBeUndefined();
+      expect(payload.childPhase).toBeUndefined();
+      expect(payload.spawnReason).toBeUndefined();
     });
   });
 

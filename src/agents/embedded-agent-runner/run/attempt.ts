@@ -78,6 +78,7 @@ import {
 } from "../../../trajectory/metadata.js";
 import {
   createTrajectoryRuntimeRecorder,
+  mirrorAgentEventsToTrajectory,
   toTrajectoryToolDefinitions,
 } from "../../../trajectory/runtime.js";
 import { resolveUserPath } from "../../../utils.js";
@@ -2016,6 +2017,7 @@ export async function runEmbeddedAttempt(
     let session: Awaited<ReturnType<typeof createAgentSession>>["session"] | undefined;
     let removeToolResultContextGuard: (() => void) | undefined;
     let trajectoryRecorder: ReturnType<typeof createTrajectoryRuntimeRecorder> | null = null;
+    let unsubscribeTrajectoryAgentEventMirror: (() => void) | undefined;
     let trajectoryEndRecorded = false;
     let buildAbortSettlePromise: () => Promise<void> | null = () => null;
     let cleanupYieldAborted = false;
@@ -2556,6 +2558,13 @@ export async function runEmbeddedAttempt(
         modelApi: params.model.api,
         workspaceDir: params.workspaceDir,
       });
+      const eventMirrorRecorder = trajectoryRecorder;
+      if (eventMirrorRecorder) {
+        unsubscribeTrajectoryAgentEventMirror = mirrorAgentEventsToTrajectory({
+          recorder: eventMirrorRecorder,
+          runId: params.runId,
+        });
+      }
       trajectoryRecorder?.recordEvent("session.started", {
         trigger: params.trigger,
         sessionFile: params.sessionFile,
@@ -4384,9 +4393,8 @@ export async function runEmbeddedAttempt(
                   `effectiveReserveTokens=${preemptiveCompaction.effectiveReserveTokens} ` +
                   `sessionFile=${params.sessionFile}`,
               );
-              skipPromptSubmission = true;
             }
-            if (!skipPromptSubmission) {
+            if (!truncationResult.truncated) {
               log.warn(
                 `[context-pressure-advisory] early tool-result truncation did not help for ` +
                   `${params.provider}/${params.modelId}; continuing to native provider boundary ` +
@@ -5320,6 +5328,8 @@ export async function runEmbeddedAttempt(
         yieldDetected: yieldDetected || undefined,
       };
     } finally {
+      unsubscribeTrajectoryAgentEventMirror?.();
+      unsubscribeTrajectoryAgentEventMirror = undefined;
       if (trajectoryRecorder && !trajectoryEndRecorded) {
         trajectoryRecorder.recordEvent("session.ended", {
           status: promptError ? "error" : aborted || timedOut ? "interrupted" : "cleanup",

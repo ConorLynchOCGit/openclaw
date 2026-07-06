@@ -108,7 +108,6 @@ import {
   type ExecApprovalRequest,
 } from "./controllers/exec-approval.ts";
 import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "./controllers/exec-approvals.ts";
-import type { RunInsightsReport } from "./controllers/run-insights.ts";
 import type { SkillWorkshopState } from "./controllers/skill-workshop.ts";
 import type {
   ClawHubSearchResult,
@@ -666,15 +665,10 @@ export class OpenClawApp extends LitElement {
   @state() debugHealth: HealthSummary | null = null;
   @state() debugModels: ModelCatalogEntry[] = [];
   @state() debugHeartbeat: unknown = null;
-  @state() debugCallMethod = "run.insights";
+  @state() debugCallMethod = "sessions.list";
   @state() debugCallParams = "{}";
   @state() debugCallResult: string | null = null;
   @state() debugCallError: string | null = null;
-  @state() runInsightsLoading = false;
-  @state() runInsightsReport: RunInsightsReport | null = null;
-  @state() runInsightsError: string | null = null;
-  @state() runInsightsActiveMinutes = 180;
-
   @state() webPushSupported = false;
   @state() webPushPermission: NotificationPermission | "unsupported" = "unsupported";
   @state() webPushSubscribed = false;

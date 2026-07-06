@@ -22,15 +22,6 @@ type SessionsListCliOptions = {
   limit?: string;
 };
 
-type RunInsightsCliOptions = {
-  json?: boolean;
-  agent?: string;
-  session?: string;
-  task?: string;
-  active?: string;
-  limit?: string;
-};
-
 function createModuleLoader<T>(load: () => Promise<T>): () => Promise<T> {
   let promise: Promise<T> | undefined;
   return () => (promise ??= load());
@@ -40,7 +31,6 @@ const loadCommitmentsCommands = createModuleLoader(() => import("../../commands/
 const loadTasksCommands = createModuleLoader(() => import("../../commands/tasks.js"));
 const loadFlowsCommands = createModuleLoader(() => import("../../commands/flows.js"));
 const loadSessionsCommands = createModuleLoader(() => import("../../commands/sessions.js"));
-const loadRunInsightsCommand = createModuleLoader(() => import("../../commands/run-insights.js"));
 
 function addSessionsListOptions(command: Command): Command {
   return command
@@ -196,53 +186,6 @@ export function registerStatusHealthSessionsCommands(program: Command) {
             json: Boolean(opts.json),
             timeoutMs,
             verbose,
-          },
-          defaultRuntime,
-        );
-      });
-    });
-
-  program
-    .command("run-insights")
-    .description("Summarize recent run/session/task performance evidence")
-    .option("--json", "Output JSON instead of text", false)
-    .option("--agent <id>", "Limit recent session readback to one agent")
-    .option("--session <key>", "Limit readback to one session key or session id")
-    .option("--task <id>", "Limit task readback to one task id")
-    .option("--active <minutes>", "Only consider sessions updated within the past N minutes")
-    .option("--limit <count>", `Max sessions to show (default: 10, max: 50)`)
-    .option(
-      "--include-background",
-      "Include global/background health observations in scoped readback",
-      false,
-    )
-    .addHelpText(
-      "after",
-      () =>
-        `\n${theme.heading("Examples:")}\n${formatHelpExamples([
-          ["openclaw run-insights", "Show compact run performance signals."],
-          ["openclaw run-insights --agent coding", "Focus on one agent's recent sessions."],
-          ["openclaw run-insights --session agent:coding:main", "Focus on one session."],
-          ["openclaw run-insights --task <task-id>", "Focus on one task."],
-          [
-            "openclaw run-insights --active 120 --json",
-            "Machine-readable readback for recent active work.",
-          ],
-        ])}\n\n${theme.muted(
-          "Derived from native status/session/task summaries. It is operator readback, not lifecycle truth.",
-        )}`,
-    )
-    .action(async (opts: RunInsightsCliOptions) => {
-      await runCommandWithRuntime(defaultRuntime, async () => {
-        const { runInsightsCommand } = await loadRunInsightsCommand();
-        await runInsightsCommand(
-          {
-            json: Boolean(opts.json),
-            agent: opts.agent,
-            session: opts.session,
-            task: opts.task,
-            active: opts.active,
-            limit: opts.limit,
           },
           defaultRuntime,
         );

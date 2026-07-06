@@ -120,7 +120,6 @@ import {
 import { loadLogs } from "./controllers/logs.ts";
 import { loadNodes } from "./controllers/nodes.ts";
 import { loadPresence } from "./controllers/presence.ts";
-import { loadRunInsights } from "./controllers/run-insights.ts";
 import {
   branchSessionFromCheckpoint,
   createSessionAndRefresh,
@@ -669,10 +668,6 @@ const lazyDebug = createLazyView(() => import("./views/debug.ts"), notifyLazyVie
 const lazyInstances = createLazyView(() => import("./views/instances.ts"), notifyLazyViewChanged);
 const lazyLogs = createLazyView(() => import("./views/logs.ts"), notifyLazyViewChanged);
 const lazyNodes = createLazyView(() => import("./views/nodes.ts"), notifyLazyViewChanged);
-const lazyRunInsights = createLazyView(
-  () => import("./views/run-insights.ts"),
-  notifyLazyViewChanged,
-);
 const lazySessions = createLazyView(() => import("./views/sessions.ts"), notifyLazyViewChanged);
 const lazySkillWorkshop = createLazyView(
   () => import("./views/skill-workshop.ts"),
@@ -2593,21 +2588,6 @@ export function renderApp(state: AppViewState) {
                   state.activityExpandedIds = next;
                 },
                 onScroll: (event) => state.handleActivityScroll(event),
-              }),
-            )
-          : nothing}
-        ${state.tab === "runInsights"
-          ? renderLazyView(lazyRunInsights, (m) =>
-              m.renderRunInsights({
-                loading: state.runInsightsLoading,
-                error: state.runInsightsError,
-                report: state.runInsightsReport,
-                activeMinutes: state.runInsightsActiveMinutes,
-                onActiveMinutesChange: (next) => {
-                  state.runInsightsActiveMinutes = next;
-                  void loadRunInsights(state);
-                },
-                onRefresh: () => void loadRunInsights(state),
               }),
             )
           : nothing}

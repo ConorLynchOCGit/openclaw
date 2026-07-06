@@ -9,7 +9,7 @@ import { formatTimeAgo } from "../../../infra/format-time/format-relative.ts";
 import { parseAgentSessionKey } from "../../../routing/session-key.js";
 import { formatDurationCompact } from "../../../shared/subagents-format.js";
 import { findTaskByRunIdForOwner } from "../../../tasks/task-owner-access.js";
-import { sanitizeTaskStatusText } from "../../../tasks/task-status.js";
+import { formatTaskStatusDetail, sanitizeTaskStatusText } from "../../../tasks/task-status.js";
 import type { CommandHandlerResult } from "../commands-types.js";
 import { formatRunLabel, formatRunStatus } from "../subagents-utils.js";
 import {
@@ -78,7 +78,7 @@ export function handleSubagentsInfoAction(ctx: SubagentsCommandContext): Command
     callerOwnerKey: requesterKey,
   });
   const taskText = sanitizeTaskStatusText(run.task) || "n/a";
-  const progressText = sanitizeTaskStatusText(linkedTask?.progressSummary);
+  const progressText = linkedTask ? formatTaskStatusDetail(linkedTask) : undefined;
   const taskSummaryText = sanitizeTaskStatusText(linkedTask?.terminalSummary, {
     errorContext: true,
   });

@@ -140,6 +140,11 @@ describe("tasks JSON commands", () => {
         taskId: progressTask.taskId,
         progressSummary: "running bounded list summary check",
         lastEventAt: progressAt,
+        eventMetadata: {
+          nativeEventStream: "tool",
+          nativeEventPhase: "running",
+          nativeEventToolName: "summary-check",
+        },
       });
 
       const runtime = createRuntime();
@@ -157,7 +162,6 @@ describe("tasks JSON commands", () => {
           displayedBySource?: Record<string, number>;
         };
         tasks?: Array<{ taskId?: string; activeProgress?: { source?: string; note?: string } }>;
-        authority?: string;
       };
       expect(payload.schema).toBe("openclaw.tasks.list.summary.v1");
       expect(payload.count).toBe(25);
@@ -166,17 +170,14 @@ describe("tasks JSON commands", () => {
       expect(payload.truncated).toBe(true);
       expect(payload.summary).toMatchObject({ total: 25, active: 13 });
       expect(payload.activeProgress?.displayedWithProgress).toBeGreaterThanOrEqual(1);
-      expect(payload.activeProgress?.displayedBySource?.["task-run-event"]).toBeGreaterThanOrEqual(
-        1,
-      );
+      expect(payload.activeProgress?.displayedBySource?.["task-receipt"]).toBeGreaterThanOrEqual(1);
       expect(payload.tasks).toHaveLength(20);
       expect(payload.tasks?.[0]).toMatchObject({
         activeProgress: {
-          source: "task-run-event",
+          source: "task-receipt",
           note: "running bounded list summary check",
         },
       });
-      expect(payload.authority).toContain("bounded readback projection");
     });
   });
 

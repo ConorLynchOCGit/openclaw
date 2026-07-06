@@ -312,7 +312,7 @@ describe("cron service timer seam coverage", () => {
     }
     expect(task.status).toBe("running");
     expect(task.progressSummary).toBe("Running cron job.");
-    expect(formatTaskStatusDetail(task)).toBe("Running cron job.");
+    expect(formatTaskStatusDetail(task)).toBeUndefined();
 
     resolveRun?.({ status: "ok", summary: "done" });
     await timerRun;

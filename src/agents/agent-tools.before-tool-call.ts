@@ -314,6 +314,8 @@ type SkillUsageMatch = {
   skillFilePath?: string;
 };
 
+const READ_PAGING_PARAM_KEYS = ["limit", "offset", "startLine", "endLine", "maxLines"] as const;
+
 function normalizeReadToolPath(candidate: string): string {
   const trimmed = candidate.trim();
   if (trimmed.startsWith("file://")) {
@@ -376,6 +378,15 @@ function readToolPathCandidates(params: unknown, ctx?: HookContext): string[] {
   return [...candidates];
 }
 
+function conventionalSkillNameFromPath(candidate: string): string | undefined {
+  const normalized = candidate.replace(/\\/g, "/");
+  const match = normalized.match(
+    /(?:^|\/)(?:\.agents\/skills|\.openclaw\/sandbox-skills\/skills|skills)\/([^/]+)\/SKILL\.md$/iu,
+  );
+  const rawName = match?.[1]?.trim();
+  return rawName || undefined;
+}
+
 function skillInstructionPaths(snapshot: SkillSnapshot | undefined): Map<string, SkillUsageMatch> {
   const matches = new Map<string, SkillUsageMatch>();
   for (const skill of snapshot?.resolvedSkills ?? []) {
@@ -419,13 +430,36 @@ function findSkillUsageMatch(params: {
   }
 
   if (params.toolName !== "read" || !params.ctx?.skillsSnapshot?.resolvedSkills?.length) {
+    for (const candidate of readToolPathCandidates(params.toolParams, params.ctx)) {
+      const skillName = conventionalSkillNameFromPath(candidate);
+      if (skillName) {
+        return {
+          skillName,
+          skillSource: "unknown",
+          activation: "read",
+          skillFilePath: candidate,
+        };
+      }
+    }
     return undefined;
   }
+  const candidates = readToolPathCandidates(params.toolParams, params.ctx);
   const skillPaths = skillInstructionPaths(params.ctx.skillsSnapshot);
-  for (const candidate of readToolPathCandidates(params.toolParams, params.ctx)) {
+  for (const candidate of candidates) {
     const match = skillPaths.get(candidate);
     if (match) {
       return match;
+    }
+  }
+  for (const candidate of candidates) {
+    const skillName = conventionalSkillNameFromPath(candidate);
+    if (skillName) {
+      return {
+        skillName,
+        skillSource: "unknown",
+        activation: "read",
+        skillFilePath: candidate,
+      };
     }
   }
   return undefined;
@@ -441,8 +475,9 @@ function forceCompleteSkillInstructionReadParams(params: {
     return params.toolParams;
   }
   const next = { ...params.toolParams };
-  delete next.limit;
-  delete next.offset;
+  for (const key of READ_PAGING_PARAM_KEYS) {
+    delete next[key];
+  }
   next.__openclawInstructionFileRead = true;
   return next;
 }

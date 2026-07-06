@@ -153,10 +153,6 @@ const loadRestartHandlers = lazyHandlerModule(
   () => import("./server-methods/restart.js"),
   (module) => module.restartHandlers,
 );
-const loadRunInsightsHandlers = lazyHandlerModule(
-  () => import("./server-methods/run-insights.js"),
-  (module) => module.runInsightsHandlers,
-);
 const loadSendHandlers = lazyHandlerModule(
   () => import("./server-methods/send.js"),
   (module) => module.sendHandlers,
@@ -277,10 +273,6 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...createLazyCoreHandlers({
     methods: ["health", "status"],
     loadHandlers: loadHealthHandlers,
-  }),
-  ...createLazyCoreHandlers({
-    methods: ["run.insights"],
-    loadHandlers: loadRunInsightsHandlers,
   }),
   ...createLazyCoreHandlers({
     methods: ["channels.status", "channels.start", "channels.stop", "channels.logout"],

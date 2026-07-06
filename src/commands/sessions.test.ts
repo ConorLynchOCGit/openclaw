@@ -148,6 +148,69 @@ describe("sessionsCommand", () => {
     );
   });
 
+  it("uses native child session lineage for active session list filtering without mutating store updatedAt", async () => {
+    const staleUpdatedAt = Date.now() - 30 * 60_000;
+    const childActivityAt = Date.now() - 60_000;
+    const store = writeStore({
+      "agent:main:main": {
+        sessionId: "main-session",
+        updatedAt: staleUpdatedAt,
+        modelProvider: "openai",
+        model: "gpt-5.5",
+      },
+      "agent:planning:main": {
+        sessionId: "planning-session",
+        spawnedBy: "agent:main:main",
+        updatedAt: childActivityAt,
+        modelProvider: "openai",
+        model: "gpt-5.5",
+      },
+    });
+
+    const { runtime, logs } = makeRuntime();
+    await sessionsCommand({ store, json: true, active: "5", limit: "all" }, runtime);
+
+    fs.rmSync(store);
+
+    const payload = JSON.parse(logs[0] ?? "{}") as {
+      sessions?: Array<{
+        key?: string;
+        updatedAt?: number;
+        activityUpdatedAt?: number | null;
+      }>;
+    };
+    expect(payload.sessions?.map((session) => session.key)).toContain("agent:main:main");
+    const parentSession = payload.sessions?.find((session) => session.key === "agent:main:main");
+    expect(parentSession).toMatchObject({
+      updatedAt: staleUpdatedAt,
+      activityUpdatedAt: childActivityAt,
+    });
+  });
+
+  it("does not need task registry readback for session listing", async () => {
+    const store = writeStore({
+      "agent:main:main": {
+        sessionId: "main-session",
+        updatedAt: Date.now() - 60_000,
+        modelProvider: "openai",
+        model: "gpt-5.5",
+      },
+    });
+
+    const { runtime, logs } = makeRuntime();
+    await sessionsCommand({ store, json: true, active: "5" }, runtime);
+
+    fs.rmSync(store);
+
+    const payload = JSON.parse(logs[0] ?? "{}") as {
+      sessions?: Array<{ key?: string; activityUpdatedAt?: number | null }>;
+    };
+    expect(payload.sessions?.[0]).toMatchObject({
+      key: "agent:main:main",
+      activityUpdatedAt: null,
+    });
+  });
+
   it("exports freshness metadata in JSON output", async () => {
     const store = writeStore({
       main: {
@@ -736,11 +799,6 @@ describe("sessionsCommand", () => {
         status?: string | null;
         finalAssistantTextPresent?: boolean;
       };
-      activeWork?: {
-        phase?: string | null;
-        activeTool?: string | null;
-        source?: string | null;
-      };
     };
     expect(payload.sessionKey).toBe(sessionKey);
     expect(payload.status).toBe("unknown");
@@ -749,11 +807,7 @@ describe("sessionsCommand", () => {
       status: "unknown",
       finalAssistantTextPresent: false,
     });
-    expect(payload.activeWork).toMatchObject({
-      phase: "source-inspection",
-      activeTool: "read",
-      source: "trajectory",
-    });
+    expect(payload).not.toHaveProperty("activeWork");
     expect(payload.session?.status).toBeUndefined();
     expect(payload.activeProgress).toMatchObject({
       source: "trajectory",

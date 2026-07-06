@@ -1958,6 +1958,60 @@ describe("control UI credential redaction (issue #72283)", () => {
     expect(serialized).toContain("gpt-4");
   });
 
+  it("emits task tool result events as child refs without duplicating the child packet", async () => {
+    const events: Array<{ stream?: string; data?: Record<string, unknown> }> = [];
+    registerAgentEventListener((evt) => {
+      events.push(evt as never);
+    });
+    const { ctx } = createTestContext();
+    const childPacket = `# Context Pack\n\n${"planner evidence ".repeat(500)}`;
+
+    await handleToolExecutionEnd(
+      ctx as never,
+      {
+        type: "tool_execution_end",
+        toolName: "task",
+        toolCallId: "tool-task-child",
+        isError: false,
+        result: {
+          content: [{ type: "text", text: `<task_result>${childPacket}</task_result>` }],
+          details: {
+            status: "ok",
+            childResult: true,
+            childSessionKey: "agent:codebase-researcher:subagent:child",
+            runId: "run-child",
+            agentId: "codebase-researcher",
+            contentDigest: "sha256:child",
+            contentChars: childPacket.length,
+            contentTruncated: false,
+            resultChars: childPacket.length,
+            resultTruncated: false,
+          },
+        },
+      } as never,
+    );
+
+    const resultEvent = requireEvent(
+      events,
+      (evt) => evt.stream === "tool" && (evt.data as { phase?: string })?.phase === "result",
+      "task tool result",
+    );
+    expect(resultEvent.data?.result).toMatchObject({
+      toolResultKind: "task",
+      status: "ok",
+      childResult: true,
+      childSessionKey: "agent:codebase-researcher:subagent:child",
+      runId: "run-child",
+      agentId: "codebase-researcher",
+      contentDigest: "sha256:child",
+      contentChars: childPacket.length,
+      resultChars: childPacket.length,
+    });
+    const serialized = JSON.stringify(resultEvent.data?.result);
+    expect(serialized).not.toContain("planner evidence");
+    expect(serialized).not.toContain("<task_result>");
+  });
+
   it("redacts primitive string results before emitting the tool result event", async () => {
     const events: Array<{ stream?: string; data?: Record<string, unknown> }> = [];
     registerAgentEventListener((evt) => {

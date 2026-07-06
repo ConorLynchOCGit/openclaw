@@ -566,7 +566,7 @@ describe("gateway session utils", () => {
     expect(row.thinkingLevels?.map((level) => level.id)).toContain("xhigh");
   });
 
-  test("session rows do not expose active-progress diagnostics when the trajectory tail has no useful event", () => {
+  test("session rows expose unavailable active-progress evidence when a running session has no useful native event", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "session-utils-active-progress-"));
     try {
       const sessionId = "session-active-progress-empty-tail";
@@ -601,8 +601,21 @@ describe("gateway session utils", () => {
         },
       });
 
-      expect(row.activeProgress).toBeNull();
-      expect(row.readbackProvenance?.activeProgress).toBeUndefined();
+      expect(row.activeProgress).toMatchObject({
+        source: "unavailable",
+        ref: `session:${sessionId}`,
+        currentPhase: "running",
+        activeLabel: null,
+        note: "Native active progress event unavailable for running session; session-store status=running.",
+        pointer: {
+          kind: "session",
+          ref: "agent:main:main",
+          label: "session readback",
+        },
+        derivedBy: "buildGatewaySessionRow",
+        bounded: true,
+      });
+      expect(row.readbackProvenance?.activeProgress).toEqual(row.activeProgress);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -751,8 +764,118 @@ describe("gateway session utils", () => {
         now,
       });
 
-      expect(row.activeProgress).toBeNull();
-      expect(row.readbackProvenance?.activeProgress).toBeUndefined();
+      expect(row.activeProgress).toMatchObject({
+        source: "unavailable",
+        ref: `session:${sessionId}`,
+        currentPhase: "running",
+        pointer: {
+          kind: "session",
+          ref: "agent:main:main",
+          label: "session readback",
+        },
+        derivedBy: "buildGatewaySessionRow",
+        bounded: true,
+      });
+      expect(row.readbackProvenance?.activeProgress).toEqual(row.activeProgress);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("session rows project active descendant session trajectory through native lineage", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "session-utils-child-lineage-progress-"));
+    try {
+      const now = Date.UTC(2026, 6, 1, 0, 2, 0);
+      const parentSessionId = "session-parent-lineage-progress";
+      const childSessionId = "session-child-lineage-progress";
+      const parentKey = "agent:main:main";
+      const childKey = "agent:codebase-researcher:subagent:child-lineage-progress";
+      const parentSessionFile = path.join(dir, `${parentSessionId}.jsonl`);
+      const childSessionFile = path.join(dir, `${childSessionId}.jsonl`);
+      const parentTrajectoryFile = path.join(dir, `${parentSessionId}.trajectory.jsonl`);
+      const childTrajectoryFile = path.join(dir, `${childSessionId}.trajectory.jsonl`);
+      fs.writeFileSync(parentSessionFile, "", "utf8");
+      fs.writeFileSync(childSessionFile, "", "utf8");
+      fs.writeFileSync(
+        parentTrajectoryFile,
+        [
+          JSON.stringify({
+            traceSchema: "openclaw-trajectory",
+            sessionId: parentSessionId,
+            type: "session.started",
+            ts: "2026-07-01T00:00:00.000Z",
+            data: {},
+          }),
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+      fs.writeFileSync(
+        childTrajectoryFile,
+        [
+          JSON.stringify({
+            traceSchema: "openclaw-trajectory",
+            sessionId: childSessionId,
+            type: "agent.tool",
+            ts: "2026-07-01T00:01:30.000Z",
+            seq: 6,
+            sourceSeq: 22,
+            data: {
+              phase: "start",
+              name: "rg",
+              toolCallId: "call-child-lineage-rg",
+            },
+          }),
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+      const store = {
+        [parentKey]: {
+          sessionId: parentSessionId,
+          sessionFile: parentSessionFile,
+          status: "running",
+          updatedAt: now - 120_000,
+          startedAt: now - 180_000,
+        },
+        [childKey]: {
+          sessionId: childSessionId,
+          sessionFile: childSessionFile,
+          status: "running",
+          parentSessionKey: parentKey,
+          spawnedBy: parentKey,
+          updatedAt: now - 30_000,
+          startedAt: now - 60_000,
+        },
+      };
+
+      const row = buildGatewaySessionRow({
+        cfg: createModelDefaultsConfig({ primary: "openai/gpt-5.5" }),
+        storePath: path.join(dir, "sessions.json"),
+        store,
+        key: parentKey,
+        entry: store[parentKey],
+        now,
+      });
+
+      expect(row.childSessions).toEqual([childKey]);
+      expect(row.activeProgress).toMatchObject({
+        source: "trajectory",
+        ref: `session:${childSessionId}`,
+        currentPhase: "start",
+        activeLabel: "rg",
+        sourceEventType: "agent.tool",
+        sourceEventSeq: 22,
+        toolName: "rg",
+        pointer: {
+          kind: "session",
+          ref: childKey,
+          label: "active child session",
+        },
+        derivedBy: "readLatestTrajectoryProgressProjection",
+        bounded: true,
+      });
+      expect(row.updatedAt).toBe(Date.parse("2026-07-01T00:01:30.000Z"));
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

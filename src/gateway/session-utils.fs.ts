@@ -2085,7 +2085,9 @@ function activeProgressCommand(data: Record<string, unknown> | undefined): strin
     boundedProgressText(data?.cmd, 240) ??
     boundedProgressText(data?.shellCommand, 240) ??
     boundedProgressText(activeProgressRecord(data?.arguments)?.command, 240) ??
-    boundedProgressText(activeProgressRecord(data?.arguments)?.cmd, 240);
+    boundedProgressText(activeProgressRecord(data?.arguments)?.cmd, 240) ??
+    boundedProgressText(activeProgressRecord(data?.args)?.command, 240) ??
+    boundedProgressText(activeProgressRecord(data?.args)?.cmd, 240);
   if (direct) {
     return direct;
   }
@@ -2185,7 +2187,6 @@ function activeProgressChildAgentPath(
   return (
     boundedProgressText(data?.childAgentPath, 160) ??
     boundedProgressText(data?.agentPath, 160) ??
-    boundedProgressText(data?.agent_path, 160) ??
     boundedProgressText(data?.subagentAgentPath, 160)
   );
 }
@@ -2232,10 +2233,7 @@ function activeProgressNote(
   eventType: string,
   data: Record<string, unknown> | undefined,
 ): string | undefined {
-  const explicit =
-    boundedProgressText(data?.summary) ??
-    boundedProgressText(data?.note) ??
-    boundedProgressText(data?.status);
+  const explicit = boundedProgressText(data?.summary) ?? boundedProgressText(data?.note);
   if (explicit) {
     return explicit;
   }
@@ -2266,7 +2264,8 @@ function trajectoryEventIsUsefulActiveProgress(
     eventType === "prompt.submitted" ||
     eventType === "session.started" ||
     eventType === "model.completed" ||
-    eventType === "session.ended"
+    eventType === "session.ended" ||
+    eventType === "agent.lifecycle"
   ) {
     return false;
   }
@@ -2313,6 +2312,14 @@ function activeProgressPointer(
     return {
       kind: "inspect-next",
       ref: inspectNext,
+    };
+  }
+  const childSessionKey = boundedProgressText(data?.childSessionKey, 200);
+  if (childSessionKey) {
+    return {
+      kind: "session",
+      ref: childSessionKey,
+      label: "child session",
     };
   }
   return undefined;
@@ -2416,6 +2423,31 @@ function activeProgressToolCallId(data: Record<string, unknown> | undefined): st
   );
 }
 
+function activeProgressEventPhase(data: Record<string, unknown> | undefined): string | undefined {
+  return boundedProgressText(data?.phase, 80);
+}
+
+function isToolCallStartProgressEvent(event: ParsedTrajectoryProgressEvent): boolean {
+  if (event.eventType === "tool.call") {
+    return true;
+  }
+  return event.eventType === "agent.tool" && activeProgressEventPhase(event.data) === "start";
+}
+
+function isToolResultProgressEvent(event: ParsedTrajectoryProgressEvent | undefined): boolean {
+  if (!event) {
+    return false;
+  }
+  if (event.eventType === "tool.result") {
+    return true;
+  }
+  if (event.eventType !== "agent.tool") {
+    return false;
+  }
+  const phase = activeProgressEventPhase(event.data);
+  return phase === "result" || phase === "end";
+}
+
 function matchingPriorToolCallData(
   events: ParsedTrajectoryProgressEvent[],
   resultIndex: number,
@@ -2425,7 +2457,7 @@ function matchingPriorToolCallData(
   const resultName = activeProgressToolName(resultData);
   for (let index = resultIndex - 1; index >= 0; index -= 1) {
     const candidate = events[index];
-    if (!candidate || candidate.eventType !== "tool.call") {
+    if (!candidate || !isToolCallStartProgressEvent(candidate)) {
       continue;
     }
     const candidateCallId = activeProgressToolCallId(candidate.data);
@@ -2445,7 +2477,7 @@ function mergeToolResultWithPriorCallData(params: {
   event: Record<string, unknown>;
   data: Record<string, unknown> | undefined;
 }): Record<string, unknown> {
-  if (params.events[params.eventIndex]?.eventType !== "tool.result") {
+  if (!isToolResultProgressEvent(params.events[params.eventIndex])) {
     return params.event;
   }
   const callData = matchingPriorToolCallData(params.events, params.eventIndex, params.data);

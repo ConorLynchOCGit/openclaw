@@ -683,7 +683,6 @@ function tryFinalizeTrackedAgentTask(params: {
   runId: string;
   status: GatewayAgentTaskTerminalStatus;
   error?: string;
-  progressSummary?: string;
   terminalSummary?: string;
   log: Pick<GatewayRequestContext["logGateway"], "warn">;
 }): void {
@@ -694,7 +693,6 @@ function tryFinalizeTrackedAgentTask(params: {
       status: params.status,
       endedAt: Date.now(),
       ...(params.error !== undefined ? { error: params.error } : {}),
-      ...(params.progressSummary !== undefined ? { progressSummary: params.progressSummary } : {}),
       ...(params.terminalSummary !== undefined ? { terminalSummary: params.terminalSummary } : {}),
     });
   } catch (err) {

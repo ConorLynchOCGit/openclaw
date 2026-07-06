@@ -394,7 +394,6 @@ function resolveEstimatedSessionCostUsd(params: {
 const STALE_STORE_ONLY_CHILD_LINK_MS = 30 * 60 * 1_000;
 const RECENT_ENDED_CHILD_SESSION_MS = 30 * 60 * 1_000;
 const SINGLE_ROW_CONTEXT_CACHE_MAX_ENTRIES = 64;
-const STORE_DESCENDANT_SCAN_MAX_DEPTH = 8;
 
 function isFinitePositiveTimestamp(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
@@ -568,9 +567,8 @@ function hasKeepableStoreDescendant(
   parentKey: string,
   now: number,
   seen = new Set<string>(),
-  depth = 0,
 ): boolean {
-  if (depth >= STORE_DESCENDANT_SCAN_MAX_DEPTH || seen.has(parentKey)) {
+  if (seen.has(parentKey)) {
     return false;
   }
   seen.add(parentKey);
@@ -588,7 +586,7 @@ function hasKeepableStoreDescendant(
     if (shouldKeepStoreOnlyChildLink(entry, now)) {
       return true;
     }
-    if (hasKeepableStoreDescendant(store, key, now, seen, depth + 1)) {
+    if (hasKeepableStoreDescendant(store, key, now, seen)) {
       return true;
     }
   }
@@ -657,6 +655,96 @@ function trajectoryProgressIsLowSignal(progress: ReadbackProgressProjection): bo
     !progress.outputSummary &&
     normalizeOptionalString(progress.note)?.includes("no valid recent event") === true
   );
+}
+
+function progressObservedAtMs(progress: ReadbackProgressProjection): number {
+  const observed = normalizeOptionalString(progress.observedAt);
+  if (!observed) {
+    return 0;
+  }
+  const parsed = Date.parse(observed);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function buildUnavailableActiveProgress(params: {
+  key: string;
+  entry?: SessionEntry;
+  now: number;
+}): ReadbackProgressProjection {
+  const ref = `session:${params.entry?.sessionId ?? params.key}`;
+  const startedAt = resolvePositiveNumber(params.entry?.startedAt);
+  return {
+    source: "unavailable",
+    ref,
+    currentPhase: "running",
+    activeLabel: null,
+    observedAt: new Date(params.now).toISOString(),
+    ...(startedAt ? { elapsedMs: Math.max(0, params.now - startedAt) } : {}),
+    note: `Native active progress event unavailable for running session; session-store status=${params.entry?.status ?? "missing"}.`,
+    pointer: {
+      kind: "session",
+      ref: params.key,
+      label: "session readback",
+    },
+    derivedBy: "buildGatewaySessionRow",
+    bounded: true,
+  };
+}
+
+function readActiveDescendantTrajectoryProgress(params: {
+  store: Record<string, SessionEntry>;
+  storePath: string;
+  parentKey: string;
+  childSessions: readonly string[] | undefined;
+  agentId: string;
+  now: number;
+}): ReadbackProgressProjection | undefined {
+  const queued = [...(params.childSessions ?? [])];
+  const seen = new Set<string>([params.parentKey]);
+  let best: ReadbackProgressProjection | undefined;
+
+  for (let index = 0; index < queued.length; index += 1) {
+    const childKey = queued[index];
+    if (!childKey || seen.has(childKey)) {
+      continue;
+    }
+    seen.add(childKey);
+    const entry = params.store[childKey];
+    if (!entry) {
+      continue;
+    }
+    const childAgentId =
+      normalizeAgentId(parseAgentSessionKey(childKey)?.agentId ?? params.agentId) ?? params.agentId;
+    if (entry.sessionId) {
+      const progress = readLatestTrajectoryProgressProjection(
+        entry.sessionId,
+        params.storePath,
+        entry.sessionFile,
+        childAgentId,
+      );
+      if (progress && !trajectoryProgressIsLowSignal(progress)) {
+        const decorated: ReadbackProgressProjection = {
+          ...progress,
+          pointer: progress.pointer ?? {
+            kind: "session",
+            ref: childKey,
+            label: "active child session",
+          },
+        };
+        if (!best || progressObservedAtMs(decorated) >= progressObservedAtMs(best)) {
+          best = decorated;
+        }
+      }
+    }
+    const grandchildren = resolveChildSessionKeys(childKey, params.store, params.now);
+    for (const grandchildKey of grandchildren ?? []) {
+      if (!seen.has(grandchildKey)) {
+        queued.push(grandchildKey);
+      }
+    }
+  }
+
+  return best;
 }
 
 function buildSingleRowStoreChildSessionsByKey(params: {
@@ -2091,6 +2179,35 @@ export function buildGatewaySessionRow(params: {
       ...readbackProvenance,
       activeProgress: trajectoryActiveProgress,
     };
+  } else if (shouldReadActiveTrajectoryProgress && childSessions && childSessions.length > 0) {
+    const descendantActiveProgress = readActiveDescendantTrajectoryProgress({
+      store,
+      storePath,
+      parentKey: key,
+      childSessions,
+      agentId: sessionAgentId,
+      now,
+    });
+    if (descendantActiveProgress) {
+      readbackProvenance = {
+        ...readbackProvenance,
+        activeProgress: descendantActiveProgress,
+      };
+    }
+  }
+  if (
+    shouldReadActiveTrajectoryProgress &&
+    rowStatus === "running" &&
+    !readbackProvenance?.activeProgress
+  ) {
+    readbackProvenance = {
+      ...readbackProvenance,
+      activeProgress: buildUnavailableActiveProgress({
+        key,
+        entry,
+        now,
+      }),
+    };
   }
   if (entry?.sessionId && (params.includeDerivedTitles || params.includeLastMessage)) {
     const fields = readSessionTitleFieldsFromTranscript(
@@ -2151,6 +2268,10 @@ export function buildGatewaySessionRow(params: {
   const pluginExtensions =
     !lightweight && entry ? projectPluginSessionExtensionsSync({ sessionKey: key, entry }) : [];
   const activeProgress = readbackProvenance?.activeProgress ?? null;
+  const activeProgressUpdatedAt =
+    activeProgress?.source === "trajectory" ? progressObservedAtMs(activeProgress) : 0;
+  const rowUpdatedAt =
+    activeProgressUpdatedAt > (updatedAt ?? 0) ? activeProgressUpdatedAt : updatedAt;
   const promptContext =
     entry?.skillsSnapshot || entry?.systemPromptReport
       ? {
@@ -2220,7 +2341,7 @@ export function buildGatewaySessionRow(params: {
     space,
     chatType: entry?.chatType,
     origin,
-    updatedAt,
+    updatedAt: rowUpdatedAt,
     sessionId: entry?.sessionId,
     systemSent: entry?.systemSent,
     abortedLastRun: entry?.abortedLastRun,

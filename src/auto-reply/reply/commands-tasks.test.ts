@@ -105,7 +105,7 @@ describe("buildTasksReply", () => {
     expect(reply.text).toContain("Current session: 1 active · 1 total");
     expect(reply.text).toContain("🟢 Video generation");
     expect(reply.text).toContain("CLI · running");
-    expect(reply.text).toContain("Queued video generation");
+    expect(reply.text).not.toContain("Queued video generation");
   });
 
   it("lists session-backed image generation tasks for the current session", async () => {
@@ -128,7 +128,7 @@ describe("buildTasksReply", () => {
     expect(reply.text).toContain("Current session: 1 active · 1 total");
     expect(reply.text).toContain("🟢 Image generation");
     expect(reply.text).toContain("CLI · running");
-    expect(reply.text).toContain("Queued image generation");
+    expect(reply.text).not.toContain("Queued image generation");
   });
 
   it("sanitizes leaked internal runtime context from visible task details", async () => {

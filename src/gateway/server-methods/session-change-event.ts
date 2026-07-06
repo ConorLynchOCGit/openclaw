@@ -74,7 +74,6 @@ export function emitSessionsChanged(
             readbackProvenance: sessionRow.readbackProvenance,
             readbackSubject: readbackProjection?.readbackSubject ?? null,
             finality: readbackProjection?.finality ?? null,
-            activeWork: readbackProjection?.activeWork ?? null,
             deliveryContext: sessionRow.deliveryContext,
             parentSessionKey: sessionRow.parentSessionKey,
             childSessions: sessionRow.childSessions,

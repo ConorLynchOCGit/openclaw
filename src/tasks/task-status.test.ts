@@ -59,7 +59,7 @@ describe("task status snapshot", () => {
 });
 
 describe("task status formatting", () => {
-  it("truncates long task titles and details", () => {
+  it("truncates long task titles and does not expose running progress prose as detail", () => {
     const task = makeTask({
       task: "This is a deliberately long task prompt that should never be emitted in full because it may include internal instructions and file paths.",
       progressSummary:
@@ -70,10 +70,7 @@ describe("task status formatting", () => {
       "This is a deliberately long task prompt that should never be emitted in full",
     );
     expect(formatTaskStatusTitle(task).endsWith("…")).toBe(true);
-    expect(formatTaskStatusDetail(task)).toContain(
-      "This progress detail is also intentionally long so the status line proves it truncates verbose task context",
-    );
-    expect(formatTaskStatusDetail(task)?.endsWith("…")).toBe(true);
+    expect(formatTaskStatusDetail(task)).toBeUndefined();
   });
 
   it("strips leaked internal runtime context from task details", () => {

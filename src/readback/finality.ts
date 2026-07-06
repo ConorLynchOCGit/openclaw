@@ -1,4 +1,4 @@
-// Compatibility readback projection for CLI, gateway, and diagnostics.
+// Shared readback projection for CLI, gateway, and diagnostics.
 // Finality stays anchored to the native session transcript/lifecycle record;
 // task rows and progress summaries are bounded readback projections only.
 import { createHash } from "node:crypto";
@@ -6,7 +6,6 @@ import type {
   GatewaySessionRow,
   SessionReadbackProvenance,
 } from "../gateway/session-utils.types.js";
-import type { ReadbackProgressProjection } from "../shared/readback-progress.js";
 
 export type ReadbackSubject = {
   scope: "session" | "task" | "run" | "global";
@@ -25,25 +24,14 @@ export type ReadbackFinality = {
   mismatch: Record<string, unknown> | null;
 };
 
-export type ReadbackActiveWork = {
-  phase: string | null;
-  childRole: string | null;
-  childSessionKey: string | null;
-  activeTool: string | null;
-  waitReason: string | null;
-  source: "trajectory" | "task-run-event" | "session-store" | "none" | "unknown";
-  provenance: ReadbackProgressProjection | SessionReadbackProvenance | null;
-};
-
 export type ReadbackProjection = {
   readbackSubject: ReadbackSubject;
   finality: ReadbackFinality;
-  activeWork: ReadbackActiveWork;
 };
 
 type SessionReadbackLike = Pick<
   GatewaySessionRow,
-  "key" | "status" | "sessionId" | "finalAssistantText" | "activeProgress" | "readbackProvenance"
+  "key" | "status" | "sessionId" | "finalAssistantText" | "readbackProvenance"
 > & {
   agentId?: string | null;
 };
@@ -55,7 +43,6 @@ type TaskReadbackLike = {
   requesterSessionKey?: string | null;
   ownerKey?: string | null;
   childSessionKey?: string | null;
-  activeProgress?: ReadbackProgressProjection | null;
   resultSession?: {
     sessionKey: string;
     agentId?: string | null;
@@ -63,31 +50,6 @@ type TaskReadbackLike = {
     readbackProvenance?: SessionReadbackProvenance | null;
   } | null;
 };
-
-function activeWorkSource(
-  progress: ReadbackProgressProjection | null | undefined,
-): ReadbackActiveWork["source"] {
-  if (!progress) {
-    return "none";
-  }
-  return progress.source;
-}
-
-function pointerSessionKey(progress: ReadbackProgressProjection | null | undefined): string | null {
-  return progress?.pointer?.kind === "session" ? progress.pointer.ref : null;
-}
-
-function progressWaitReason(
-  progress: ReadbackProgressProjection | null | undefined,
-): string | null {
-  if (!progress) {
-    return null;
-  }
-  if (progress.currentPhase === "queued" || progress.currentPhase === "waiting_on_child") {
-    return progress.note ?? null;
-  }
-  return null;
-}
 
 function digestText(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -138,7 +100,6 @@ function statusConflictMismatch(
 }
 
 export function buildSessionReadbackProjection(session: SessionReadbackLike): ReadbackProjection {
-  const activeProgress = session.activeProgress ?? null;
   const finalAssistantText =
     typeof session.finalAssistantText === "string" && session.finalAssistantText.length > 0
       ? session.finalAssistantText
@@ -164,24 +125,10 @@ export function buildSessionReadbackProjection(session: SessionReadbackLike): Re
         finalAssistantTextPresent: finalAssistantText !== null,
       }),
     },
-    activeWork: {
-      phase: activeProgress?.currentPhase ?? null,
-      childRole: activeProgress?.childRole ?? null,
-      childSessionKey: pointerSessionKey(activeProgress),
-      activeTool: activeProgress?.toolName ?? null,
-      waitReason: progressWaitReason(activeProgress),
-      source: activeProgress
-        ? activeWorkSource(activeProgress)
-        : session.status === "running"
-          ? "session-store"
-          : "none",
-      provenance: activeProgress ?? session.readbackProvenance ?? null,
-    },
   };
 }
 
 export function buildTaskReadbackProjection(task: TaskReadbackLike): ReadbackProjection {
-  const activeProgress = task.activeProgress ?? null;
   const sessionKey = task.requesterSessionKey ?? task.ownerKey ?? null;
   const finalAssistantText =
     typeof task.resultSession?.finalAssistantText === "string" &&
@@ -212,15 +159,6 @@ export function buildTaskReadbackProjection(task: TaskReadbackLike): ReadbackPro
         finalAssistantTextPresent: finalAssistantText !== null,
       }),
     },
-    activeWork: {
-      phase: activeProgress?.currentPhase ?? null,
-      childRole: activeProgress?.childRole ?? null,
-      childSessionKey: pointerSessionKey(activeProgress),
-      activeTool: activeProgress?.toolName ?? null,
-      waitReason: progressWaitReason(activeProgress),
-      source: activeProgress ? activeWorkSource(activeProgress) : "none",
-      provenance: activeProgress,
-    },
   };
 }
 
@@ -250,15 +188,6 @@ export function buildEmptyReadbackProjection(params: {
         severity: "info",
         label: params.reason,
       },
-    },
-    activeWork: {
-      phase: null,
-      childRole: null,
-      childSessionKey: null,
-      activeTool: null,
-      waitReason: params.reason,
-      source: "unknown",
-      provenance: null,
     },
   };
 }

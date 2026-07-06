@@ -83,6 +83,7 @@ import {
   buildSubagentSystemPrompt,
   callGateway,
   dispatchGatewayMethodInProcess,
+  emitAgentEvent,
   emitSessionLifecycleEvent,
   forkSessionFromParent,
   getGlobalHookRunner,
@@ -188,6 +189,8 @@ export type SpawnSubagentContext = {
   agentSessionKey?: string;
   /** Separate key used only for completion routing, not sandbox policy. */
   completionOwnerKey?: string;
+  /** Native parent run id used only to emit parent-side child spawn activity. */
+  parentRunId?: string;
   agentChannel?: string;
   agentAccountId?: string;
   agentTo?: string;
@@ -1062,6 +1065,43 @@ function hasRoutableDeliveryOrigin(
   return Boolean(origin?.channel && origin.to);
 }
 
+function emitParentChildSpawnedEvent(params: {
+  parentRunId?: string;
+  parentSessionKey: string;
+  childSessionKey: string;
+  childRunId: string;
+  childAgentId: string;
+  label?: string;
+  taskName?: string;
+  task: string;
+}) {
+  const parentRunId = normalizeOptionalString(params.parentRunId);
+  if (!parentRunId) {
+    return;
+  }
+  const itemId = `subagent:${params.childRunId}`;
+  emitAgentEvent({
+    runId: parentRunId,
+    stream: "item",
+    sessionKey: params.parentSessionKey,
+    data: {
+      itemId,
+      phase: "start",
+      kind: "analysis",
+      status: "running",
+      title: params.label || params.childAgentId,
+      name: "task",
+      childRole: params.childAgentId,
+      childPhase: "child_spawned",
+      childSessionKey: params.childSessionKey,
+      childRunId: params.childRunId,
+      ...(params.taskName ? { taskName: params.taskName } : {}),
+      spawnReason: params.task,
+      progressText: `Spawned ${params.childAgentId} child session.`,
+    },
+  });
+}
+
 export async function spawnSubagentDirect(
   params: SpawnSubagentParams,
   ctx: SpawnSubagentContext,
@@ -1721,6 +1761,17 @@ export async function spawnSubagentDirect(
       // Spawn should still return accepted if spawn lifecycle hooks fail.
     }
   }
+
+  emitParentChildSpawnedEvent({
+    parentRunId: ctx.parentRunId,
+    parentSessionKey: requesterInternalKey,
+    childSessionKey,
+    childRunId,
+    childAgentId: targetAgentId,
+    label: label || undefined,
+    taskName,
+    task,
+  });
 
   // Emit lifecycle event so the gateway can broadcast sessions.changed to SSE subscribers.
   emitSessionLifecycleEvent({

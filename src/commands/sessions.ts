@@ -55,6 +55,7 @@ type SessionRow = SessionDisplayRow & {
   kind: SessionKind;
   agentRuntime: ReturnType<typeof resolveModelAgentRuntimeMetadata>;
   runtimeLabel: string;
+  activityUpdatedAt: number | null;
   /**
    * True only when the session has persisted ACP runtime metadata. Key-shape
    * alone is not sufficient because ACP bridge sessions (translator.ts) may
@@ -170,8 +171,12 @@ function applyAcpModelOverlayIfNeeded(
   return { provider: "acpx", model: `${agentId}-acp` };
 }
 
+function sessionRowActivityUpdatedAt(row: Pick<SessionRow, "activityUpdatedAt" | "updatedAt">) {
+  return row.activityUpdatedAt ?? row.updatedAt ?? 0;
+}
+
 function compareSessionRowsByUpdatedAt(a: SessionRow, b: SessionRow): number {
-  return (b.updatedAt ?? 0) - (a.updatedAt ?? 0);
+  return sessionRowActivityUpdatedAt(b) - sessionRowActivityUpdatedAt(a);
 }
 
 function selectNewestSessionRows(rows: SessionRow[], limit: number | undefined): SessionRow[] {
@@ -425,6 +430,63 @@ function resolveDisplayRuntimePolicySessionKey(params: {
     : undefined;
 }
 
+function sessionEntryActivityUpdatedAt(entry: SessionEntry | undefined): number {
+  if (!entry) {
+    return 0;
+  }
+  return Math.max(entry.updatedAt ?? 0, entry.startedAt ?? 0, entry.endedAt ?? 0);
+}
+
+function buildLineageActivityUpdatedAtBySessionKey(
+  store: Record<string, SessionEntry>,
+): Map<string, number> {
+  const childrenByParent = new Map<string, string[]>();
+  for (const [key, entry] of Object.entries(store)) {
+    if (!entry) {
+      continue;
+    }
+    for (const parentKey of [entry.spawnedBy, entry.parentSessionKey]) {
+      const parent = normalizeOptionalString(parentKey);
+      if (!parent || parent === key) {
+        continue;
+      }
+      const children = childrenByParent.get(parent);
+      if (children) {
+        if (!children.includes(key)) {
+          children.push(key);
+        }
+      } else {
+        childrenByParent.set(parent, [key]);
+      }
+    }
+  }
+
+  const activity = new Map<string, number>();
+  const resolveDescendantActivity = (key: string, seen = new Set<string>()): number => {
+    if (seen.has(key)) {
+      return 0;
+    }
+    seen.add(key);
+    let latest = 0;
+    for (const childKey of childrenByParent.get(key) ?? []) {
+      latest = Math.max(
+        latest,
+        sessionEntryActivityUpdatedAt(store[childKey]),
+        resolveDescendantActivity(childKey, seen),
+      );
+    }
+    return latest;
+  };
+
+  for (const key of Object.keys(store)) {
+    const latest = resolveDescendantActivity(key);
+    if (latest > 0) {
+      activity.set(key, latest);
+    }
+  }
+  return activity;
+}
+
 /** Shows one stored conversation session. */
 export async function sessionsShowCommand(
   opts: {
@@ -459,12 +521,14 @@ export async function sessionsShowCommand(
     includeDerivedTitles: true,
     includeLastMessage: true,
   });
+  const baseReadback = buildSessionReadbackProjection({
+    ...row,
+    agentId: target.agentId,
+  });
+  const readback = baseReadback;
+  const selectedActiveProgress = row.activeProgress ?? null;
 
   if (opts.json) {
-    const readback = buildSessionReadbackProjection({
-      ...row,
-      agentId: target.agentId,
-    });
     writeRuntimeJson(runtime, {
       path: target.storePath,
       agentId: target.agentId,
@@ -472,7 +536,7 @@ export async function sessionsShowCommand(
       status: readback.finality.status,
       ...readback,
       finalAssistantText: row.finalAssistantText ?? null,
-      activeProgress: row.activeProgress ?? null,
+      activeProgress: selectedActiveProgress,
       readbackProvenance: row.readbackProvenance,
       session: row,
     });
@@ -484,13 +548,13 @@ export async function sessionsShowCommand(
     `key: ${row.key}`,
     `agentId: ${target.agentId}`,
     `kind: ${row.kind}`,
-    `status: ${row.status ?? "n/a"}`,
+    `status: ${readback.finality.status ?? "n/a"}`,
     `model: ${row.modelProvider ?? "n/a"}/${row.model ?? "n/a"}`,
     `runtime: ${row.agentRuntime?.id ?? "n/a"}`,
     `updatedAt: ${row.updatedAt ? new Date(row.updatedAt).toISOString() : "n/a"}`,
     `startedAt: ${row.startedAt ? new Date(row.startedAt).toISOString() : "n/a"}`,
     `endedAt: ${row.endedAt ? new Date(row.endedAt).toISOString() : "n/a"}`,
-    `activeProgress: ${formatSessionActiveProgress(row.readbackProvenance?.activeProgress)}`,
+    `activeProgress: ${formatSessionActiveProgress(selectedActiveProgress ?? undefined)}`,
     `childSessions: ${(row.childSessions ?? []).length}`,
   ];
   for (const line of lines) {
@@ -551,16 +615,19 @@ export async function sessionsCommand(
 
   const allRows = targets.flatMap((target) => {
     const store = loadSessionStore(target.storePath);
+    const lineageActivityUpdatedAtBySessionKey = buildLineageActivityUpdatedAtBySessionKey(store);
     return Object.entries(store)
-      .filter(([, entry]) => {
+      .filter(([key, entry]) => {
         if (activeMinutes === undefined) {
           return true;
         }
-        const updatedAt = entry?.updatedAt;
+        const lineageActivityUpdatedAt = lineageActivityUpdatedAtBySessionKey.get(key) ?? null;
+        const updatedAt = Math.max(entry?.updatedAt ?? 0, lineageActivityUpdatedAt ?? 0);
         return typeof updatedAt === "number" && Date.now() - updatedAt <= activeMinutes * 60_000;
       })
       .map(([key, entry]) => {
         const row = toSessionDisplayRow(key, entry);
+        const lineageActivityUpdatedAt = lineageActivityUpdatedAtBySessionKey.get(row.key) ?? null;
         const agentId = parseAgentSessionKey(row.key)?.agentId ?? target.agentId;
         const acpSessionKey = resolveStoredSessionKeyForAgentStore({
           cfg,
@@ -593,6 +660,10 @@ export async function sessionsCommand(
           acpRuntime,
           agentRuntime,
           kind: classifySessionKind(row.key, store[row.key]),
+          activityUpdatedAt:
+            lineageActivityUpdatedAt && lineageActivityUpdatedAt > (row.updatedAt ?? 0)
+              ? lineageActivityUpdatedAt
+              : null,
           runtimePolicySessionKey: resolveDisplayRuntimePolicySessionKey({
             cfg,
             key: row.key,
@@ -725,7 +796,7 @@ export async function sessionsCommand(
         : []),
       formatKindCell(row.kind, rich),
       formatSessionKeyCell(row.key, rich),
-      formatSessionAgeCell(row.updatedAt, rich),
+      formatSessionAgeCell(row.activityUpdatedAt ?? row.updatedAt, rich),
       formatSessionModelCell(model, rich),
       formatRuntimeCell(row.runtimeLabel, rich),
       formatTokensCell(total, contextTokens ?? null, rich),

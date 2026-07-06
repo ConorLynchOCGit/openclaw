@@ -18,8 +18,6 @@ import { sanitizeTaskStatusText } from "./task-status.js";
 
 const TASK_PROGRESS_NOTE_MAX_CHARS = 240;
 const ALL_SESSION_TARGETS_CACHE_KEY = "__all__";
-const CODEX_NATIVE_SUBAGENT_TASK_KIND = "codex-native";
-const CODEX_NATIVE_SUBAGENT_RUN_ID_PREFIX = "codex-thread:";
 
 export type TaskReadbackProgressProjectionContext = {
   sessionStoreCache?: Map<string, Record<string, SessionEntry>>;
@@ -35,6 +33,46 @@ export function createTaskReadbackProgressProjectionContext(params?: {
     sessionTargetCache: new Map(),
     ...(typeof params?.now === "number" && Number.isFinite(params.now) ? { now: params.now } : {}),
   };
+}
+
+export function canonicalTaskReadbackSessionKey(value: string | null | undefined): string | null {
+  const normalized = normalizeOptionalString(value);
+  return normalized ? normalized.toLowerCase() : null;
+}
+
+export function taskReadbackSessionEndpoints(task: TaskRecord): string[] {
+  const seen = new Set<string>();
+  const endpoints: string[] = [];
+  for (const value of [task.requesterSessionKey, task.ownerKey, task.childSessionKey]) {
+    const normalized = normalizeOptionalString(value);
+    const canonical = canonicalTaskReadbackSessionKey(normalized);
+    if (!normalized || !canonical || seen.has(canonical)) {
+      continue;
+    }
+    seen.add(canonical);
+    endpoints.push(normalized);
+  }
+  return endpoints;
+}
+
+export function taskTouchesReadbackSessionKey(task: TaskRecord, sessionKey: string): boolean {
+  const canonicalSessionKey = canonicalTaskReadbackSessionKey(sessionKey);
+  if (!canonicalSessionKey) {
+    return false;
+  }
+  return taskReadbackSessionEndpoints(task).some(
+    (endpoint) => canonicalTaskReadbackSessionKey(endpoint) === canonicalSessionKey,
+  );
+}
+
+export function taskTouchesKnownReadbackSession(
+  task: TaskRecord,
+  knownSessionKeys: ReadonlySet<string>,
+): boolean {
+  return taskReadbackSessionEndpoints(task).some((endpoint) => {
+    const canonical = canonicalTaskReadbackSessionKey(endpoint);
+    return canonical ? knownSessionKeys.has(canonical) : false;
+  });
 }
 
 function truncateTaskProgressNote(value: string | undefined): string | undefined {
@@ -78,37 +116,27 @@ function resolveElapsedMs(now: number, ...candidates: unknown[]): number | undef
   return undefined;
 }
 
-function isCodexNativeSubagentTask(task: TaskRecord): boolean {
+function isGenericChildStartNote(value: string | undefined): boolean {
+  const text = normalizeOptionalString(value)?.toLowerCase();
   return (
-    task.taskKind === CODEX_NATIVE_SUBAGENT_TASK_KIND ||
-    normalizeOptionalString(task.runId)?.startsWith(CODEX_NATIVE_SUBAGENT_RUN_ID_PREFIX) === true
+    text === "child run started." ||
+    text === "child run started" ||
+    text === "child started." ||
+    text === "child started"
   );
 }
 
-function stripRoleParenthetical(value: string): string {
-  return value.replace(/\s+\([^)]*\)\s*$/u, "").trim();
-}
-
-function resolveNativeSubagentSummaryField(
-  value: string | undefined,
-  field: "role" | "agent_path" | "phase" | "spawn_reason",
-): string | undefined {
-  const text = normalizeOptionalString(value);
-  if (!text) {
-    return undefined;
+function isFreeformProgressReceipt(
+  latestEvent: NonNullable<TaskRecord["executionReceipt"]>["latestEvent"] | undefined,
+) {
+  if (!latestEvent) {
+    return false;
   }
-  const match = text.match(new RegExp(`\\b${field}:\\s*([^;)\\r\\n]+)`, "iu"));
-  const raw = normalizeOptionalString(match?.[1]);
-  return normalizeOptionalString(raw?.replace(/[.\s]+$/u, ""));
-}
-
-function resolveCodexPromptRole(value: string | undefined): string | undefined {
-  const text = normalizeOptionalString(value);
-  if (!text) {
-    return undefined;
-  }
-  const match = text.match(/(?:^|\n)\s*Role:\s*([A-Za-z0-9_.-]+)/u);
-  return normalizeOptionalString(match?.[1]?.replace(/[.\s]+$/u, ""));
+  return (
+    latestEvent.kind === "progress" ||
+    latestEvent.kind === "running" ||
+    latestEvent.kind === "queued"
+  );
 }
 
 function taskEventMetadataString(
@@ -152,12 +180,17 @@ function taskEventMetadataHasReadbackSignal(metadata: TaskEventMetadata | undefi
     "childAgentPath",
     "childPhase",
     "spawnReason",
+    "nativeEventStream",
+    "nativeEventPhase",
+    "nativeEventToolName",
+    "nativeEventItemStatus",
   ]) {
     if (taskEventMetadataString(metadata, key)) {
       return true;
     }
   }
   return (
+    typeof metadata.nativeEventSeq === "number" ||
     typeof metadata.exitCode === "number" ||
     typeof metadata.recoveryAttempts === "number" ||
     typeof metadata.compactionCount === "number" ||
@@ -194,98 +227,6 @@ function formatRecoveryNote(params: {
   );
 }
 
-function resolveCodexNativeChildRole(
-  task: TaskRecord,
-  note: string | undefined,
-  metadata?: TaskEventMetadata,
-): string | undefined {
-  const fromMetadata = taskEventMetadataString(metadata, "childRole");
-  if (fromMetadata) {
-    return fromMetadata;
-  }
-  const fromNote = resolveNativeSubagentSummaryField(note, "role");
-  if (fromNote) {
-    return fromNote;
-  }
-  const fromTaskPrompt = resolveCodexPromptRole(task.task);
-  if (fromTaskPrompt) {
-    return fromTaskPrompt;
-  }
-  const label = truncateTaskProgressNote(task.label);
-  if (!label || label === "Codex subagent") {
-    return undefined;
-  }
-  return normalizeOptionalString(stripRoleParenthetical(label));
-}
-
-function resolveCodexNativeChildAgentPath(
-  note: string | undefined,
-  metadata?: TaskEventMetadata,
-): string | undefined {
-  const fromMetadata = taskEventMetadataString(metadata, "childAgentPath");
-  if (fromMetadata) {
-    return fromMetadata;
-  }
-  const fromNote = resolveNativeSubagentSummaryField(note, "agent_path");
-  return fromNote;
-}
-
-function resolveCodexNativeChildPhase(
-  latestEvent: NonNullable<TaskRecord["executionReceipt"]>["latestEvent"],
-  note: string | undefined,
-  task: TaskRecord,
-  metadata?: TaskEventMetadata,
-): string | undefined {
-  const fromMetadata = taskEventMetadataString(metadata, "childPhase");
-  if (fromMetadata) {
-    return fromMetadata;
-  }
-  const fromNote = resolveNativeSubagentSummaryField(note, "phase");
-  if (fromNote) {
-    return fromNote;
-  }
-  const normalized = note?.toLowerCase() ?? "";
-  if (normalized.includes("initializing")) {
-    return "pre_implementation_scout";
-  }
-  if (normalized.includes("running") || normalized.includes("active")) {
-    return task.status === "running" ? "active_child_work" : undefined;
-  }
-  if (normalized.includes("spawned") || normalized.includes("started")) {
-    return "child_spawned";
-  }
-  if (normalized.includes("finished") || normalized.includes("completed")) {
-    return "child_completed";
-  }
-  if (normalized.includes("blocked")) {
-    return "child_blocked";
-  }
-  if (latestEvent?.kind === "running") {
-    return "child_spawned";
-  }
-  return undefined;
-}
-
-function resolveCodexNativeSpawnReason(
-  task: TaskRecord,
-  note: string | undefined,
-  metadata?: TaskEventMetadata,
-): string | undefined {
-  const fromMetadata = taskEventMetadataString(metadata, "spawnReason");
-  if (fromMetadata) {
-    return truncateTaskProgressNote(fromMetadata);
-  }
-  const fromNote = resolveNativeSubagentSummaryField(note, "spawn_reason");
-  if (fromNote) {
-    return truncateTaskProgressNote(fromNote);
-  }
-  const taskText = normalizeOptionalString(task.task);
-  if (!taskText || /^Codex native subagent\b/u.test(taskText)) {
-    return undefined;
-  }
-  return truncateTaskProgressNote(taskText);
-}
-
 function resolveTaskTerminalErrorProgressProjection(
   task: TaskRecord,
   now = Date.now(),
@@ -298,11 +239,10 @@ function resolveTaskTerminalErrorProgressProjection(
   if (!outputSummary) {
     return undefined;
   }
-  const childRole = resolveAgentIdFromSessionKey(task.childSessionKey);
   return {
-    source: "task-run-event",
+    source: "task-receipt",
     ref: `task-event:${task.taskId}:${task.endedAt ?? task.lastEventAt ?? task.startedAt ?? task.createdAt}:terminal`,
-    currentPhase: childRole ? task.status : `task_${task.status}`,
+    currentPhase: `task_${task.status}`,
     activeLabel:
       truncateTaskProgressNote(task.label) ??
       normalizeOptionalString(task.agentId) ??
@@ -312,7 +252,6 @@ function resolveTaskTerminalErrorProgressProjection(
     elapsedMs: resolveElapsedMs(now, task.startedAt, task.createdAt),
     sourceEventType: `task.${task.status}`,
     outputSummary,
-    ...(childRole ? { childRole, childPhase: task.status } : {}),
     note: outputSummary,
     pointer: {
       kind: "task",
@@ -324,38 +263,76 @@ function resolveTaskTerminalErrorProgressProjection(
   };
 }
 
+function resolveTaskLaunchWaitProgressProjection(
+  task: TaskRecord,
+  now = Date.now(),
+): ReadbackProgressProjection | undefined {
+  const childSessionKey = normalizeOptionalString(task.childSessionKey);
+  if (!childSessionKey || (task.status !== "running" && task.status !== "queued")) {
+    return undefined;
+  }
+  const observedAt = formatTaskProgressObservedAt(task.lastEventAt, task.startedAt, task.createdAt);
+  const elapsedMs = resolveElapsedMs(now, task.startedAt, task.createdAt);
+  const label =
+    truncateTaskProgressNote(task.label) ??
+    normalizeOptionalString(task.agentId) ??
+    normalizeOptionalString(task.taskKind) ??
+    normalizeOptionalString(task.runtime);
+  return {
+    source: "task-receipt",
+    ref: `task:${task.taskId}`,
+    currentPhase: task.status === "queued" ? "queued_child_work" : "waiting_on_child",
+    ...(label ? { activeLabel: label } : {}),
+    ...(observedAt ? { observedAt } : {}),
+    ...(elapsedMs !== undefined ? { elapsedMs } : {}),
+    sourceEventType: `task.${task.status}`,
+    note: `${task.status === "queued" ? "Queued child task" : "Parent is waiting on child task"} ${task.taskId}.`,
+    pointer: {
+      kind: "session",
+      ref: childSessionKey,
+      label: "child session",
+    },
+    derivedBy: "resolveTaskReadbackProgressProjection",
+    bounded: true,
+  };
+}
+
 function resolveTaskRunEventProgressProjection(
   task: TaskRecord,
   now = Date.now(),
 ): ReadbackProgressProjection | undefined {
   const latestEvent = task.executionReceipt?.latestEvent;
-  const note = truncateTaskProgressNote(latestEvent?.summary);
   if (!latestEvent) {
     return undefined;
   }
+  const latestEventNote = truncateTaskProgressNote(latestEvent.summary);
+  const note = latestEventNote;
   const metadata = latestEvent.metadata;
-  const codexNativeChild = isCodexNativeSubagentTask(task);
-  if (!note && !codexNativeChild && !taskEventMetadataHasReadbackSignal(metadata)) {
+  const taskChildSessionKey = normalizeOptionalString(task.childSessionKey);
+  if (!note && !taskEventMetadataHasReadbackSignal(metadata)) {
     return undefined;
   }
-  const childRole = codexNativeChild
-    ? resolveCodexNativeChildRole(task, note, metadata)
-    : undefined;
-  const childAgentPath = codexNativeChild
-    ? resolveCodexNativeChildAgentPath(note, metadata)
-    : undefined;
-  const childPhase = codexNativeChild
-    ? resolveCodexNativeChildPhase(latestEvent, note, task, metadata)
-    : undefined;
-  const spawnReason = codexNativeChild
-    ? resolveCodexNativeSpawnReason(task, note, metadata)
-    : undefined;
   const toolName = taskEventMetadataString(metadata, "toolName");
   const command = taskEventMetadataString(metadata, "command");
   const validationClass = taskEventMetadataString(metadata, "validationClass");
   const outputSummary = taskEventMetadataString(metadata, "outputSummary");
   const repairAction = taskEventMetadataString(metadata, "repairAction");
   const exitCode = taskEventMetadataNumber(metadata, "exitCode");
+  const nativeEventStream = taskEventMetadataString(metadata, "nativeEventStream");
+  const nativeEventSeq = taskEventMetadataNumber(metadata, "nativeEventSeq");
+  const nativeEventPhase = taskEventMetadataString(metadata, "nativeEventPhase");
+  const nativeEventToolName = taskEventMetadataString(metadata, "nativeEventToolName");
+  const nativeEventItemStatus = taskEventMetadataString(metadata, "nativeEventItemStatus");
+  const metadataChildRole = taskEventMetadataString(metadata, "childRole");
+  const metadataChildAgentPath = taskEventMetadataString(metadata, "childAgentPath");
+  const metadataChildPhase = taskEventMetadataString(metadata, "childPhase");
+  const metadataSpawnReason = taskEventMetadataString(metadata, "spawnReason");
+  const childRole = metadataChildRole;
+  const childAgentPath = metadataChildAgentPath;
+  const childPhase = metadataChildPhase;
+  const spawnReason = metadataSpawnReason
+    ? truncateTaskProgressNote(metadataSpawnReason)
+    : undefined;
   const recoveryKind = taskEventMetadataString(metadata, "recoveryKind");
   const recoveryAction = taskEventMetadataString(metadata, "recoveryAction");
   const recoveryReason = taskEventMetadataString(metadata, "recoveryReason");
@@ -376,16 +353,22 @@ function resolveTaskRunEventProgressProjection(
     compactionCount,
     toolResultTruncationAttempted,
   });
-  const projectedNote = truncateTaskProgressNote(
-    [note, recoveryNote].filter(Boolean).join(" ") || undefined,
-  );
   const hasDirectEvidence = Boolean(
     toolName ||
+    nativeEventToolName ||
+    nativeEventStream ||
+    nativeEventPhase ||
+    nativeEventItemStatus ||
+    nativeEventSeq !== undefined ||
     command ||
     exitCode !== undefined ||
     validationClass ||
     outputSummary ||
     repairAction ||
+    metadataChildRole ||
+    metadataChildAgentPath ||
+    metadataChildPhase ||
+    metadataSpawnReason ||
     recoveryKind ||
     recoveryAction ||
     recoveryReason ||
@@ -395,8 +378,24 @@ function resolveTaskRunEventProgressProjection(
     compactionTokensAfter !== undefined ||
     toolResultTruncationAttempted !== undefined,
   );
+  const childTerminalSummaryIsCompatibilityText =
+    Boolean(taskChildSessionKey) &&
+    task.status === "succeeded" &&
+    latestEvent.kind !== "progress" &&
+    !hasDirectEvidence;
+  const projectedNote = truncateTaskProgressNote(
+    [childTerminalSummaryIsCompatibilityText ? undefined : note, recoveryNote]
+      .filter(Boolean)
+      .join(" ") || undefined,
+  );
   const hasTerminalEvidence =
     latestEvent.kind !== "progress" || task.status === "failed" || task.status === "timed_out";
+  if (
+    !hasDirectEvidence &&
+    (isGenericChildStartNote(note) || isFreeformProgressReceipt(latestEvent))
+  ) {
+    return undefined;
+  }
   if (task.status === "running" || task.status === "queued") {
     const phase = childPhase ?? (latestEvent.kind === "progress" ? task.status : latestEvent.kind);
     if (!hasDirectEvidence && phase === "child_spawned") {
@@ -404,6 +403,7 @@ function resolveTaskRunEventProgressProjection(
     }
     if (
       !hasDirectEvidence &&
+      !projectedNote &&
       !childRole &&
       !childAgentPath &&
       !spawnReason &&
@@ -413,19 +413,32 @@ function resolveTaskRunEventProgressProjection(
     }
   }
   return {
-    source: "task-run-event",
+    source: "task-receipt",
     ref: `task-event:${task.taskId}:${latestEvent.at}:${latestEvent.kind}`,
-    currentPhase: childPhase ?? (latestEvent.kind === "progress" ? task.status : latestEvent.kind),
-    activeLabel:
-      childRole ??
-      truncateTaskProgressNote(task.label) ??
-      normalizeOptionalString(task.agentId) ??
-      normalizeOptionalString(task.taskKind) ??
-      normalizeOptionalString(task.runtime),
+    currentPhase:
+      childPhase ??
+      nativeEventPhase ??
+      (latestEvent.kind === "progress" ? task.status : latestEvent.kind),
+    activeLabel: nativeEventStream
+      ? (childRole ??
+        nativeEventToolName ??
+        nativeEventItemStatus ??
+        truncateTaskProgressNote(task.label) ??
+        normalizeOptionalString(task.agentId) ??
+        normalizeOptionalString(task.taskKind) ??
+        normalizeOptionalString(task.runtime))
+      : (truncateTaskProgressNote(task.label) ??
+        childRole ??
+        nativeEventToolName ??
+        nativeEventItemStatus ??
+        normalizeOptionalString(task.agentId) ??
+        normalizeOptionalString(task.taskKind) ??
+        normalizeOptionalString(task.runtime)),
     observedAt: formatTaskProgressObservedAt(latestEvent.at, task.lastEventAt),
     elapsedMs: resolveElapsedMs(now, task.startedAt, task.createdAt),
-    sourceEventType: `task.${latestEvent.kind}`,
-    ...(toolName ? { toolName } : {}),
+    sourceEventType: nativeEventStream ? `agent.${nativeEventStream}` : `task.${latestEvent.kind}`,
+    ...(nativeEventSeq !== undefined ? { sourceEventSeq: nativeEventSeq } : {}),
+    ...(toolName || nativeEventToolName ? { toolName: toolName ?? nativeEventToolName } : {}),
     ...(command ? { command } : {}),
     ...(typeof exitCode === "number" ? { exitCode } : {}),
     ...(validationClass ? { validationClass } : {}),
@@ -457,6 +470,13 @@ function resolveTaskRunEventProgressProjection(
 }
 
 function progressHasUsefulSignal(progress: ReadbackProgressProjection): boolean {
+  if (
+    progress.source === "trajectory" &&
+    !progress.sourceEventType &&
+    normalizeOptionalString(progress.note)?.includes("no valid recent event") === true
+  ) {
+    return false;
+  }
   return Boolean(
     normalizeOptionalString(progress.sourceEventType) ??
     normalizeOptionalString(progress.activeLabel) ??
@@ -492,15 +512,22 @@ function sessionTargetsForTask(
   if (explicitAgentId) {
     agentIds.add(explicitAgentId);
   }
-  const sessionAgentId = resolveAgentIdFromSessionKey(task.requesterSessionKey);
+  const requesterSessionKey = normalizeOptionalString(task.requesterSessionKey);
+  const sessionAgentId = requesterSessionKey
+    ? resolveAgentIdFromSessionKey(requesterSessionKey)
+    : undefined;
   if (sessionAgentId) {
     agentIds.add(sessionAgentId);
   }
-  const childAgentId = resolveAgentIdFromSessionKey(task.childSessionKey);
+  const childSessionKey = normalizeOptionalString(task.childSessionKey);
+  const childAgentId = childSessionKey ? resolveAgentIdFromSessionKey(childSessionKey) : undefined;
   if (childAgentId) {
     agentIds.add(childAgentId);
   }
-  const hintedAgentId = resolveAgentIdFromSessionKey(sessionKeyHint);
+  const hintedSessionKey = normalizeOptionalString(sessionKeyHint);
+  const hintedAgentId = hintedSessionKey
+    ? resolveAgentIdFromSessionKey(hintedSessionKey)
+    : undefined;
   if (hintedAgentId) {
     agentIds.add(hintedAgentId);
   }
@@ -609,9 +636,6 @@ function resolveChildSessionTrajectoryProgressProjection(
   }
   return {
     ...progress,
-    childRole: progress.childRole ?? resolveAgentIdFromSessionKey(childSessionKey),
-    childPhase: progress.childPhase ?? "running",
-    spawnReason: progress.spawnReason ?? truncateTaskProgressNote(task.task),
     pointer: {
       kind: "session",
       ref: childSessionKey,
@@ -634,11 +658,17 @@ function resolveFallbackTaskProgressProjection(
     task,
     context,
   );
+  if (task.childSessionKey && requesterSessionProgress) {
+    return requesterSessionProgress;
+  }
+
+  const taskRunEventProgress = resolveTaskRunEventProgressProjection(task, now);
   if (requesterSessionProgress) {
     return requesterSessionProgress;
   }
 
-  return resolveTaskRunEventProgressProjection(task, now);
+  const launchWaitProgress = resolveTaskLaunchWaitProgressProjection(task, now);
+  return taskRunEventProgress ?? launchWaitProgress;
 }
 
 export function resolveTaskReadbackProgressProjection(

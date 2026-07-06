@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { SessionManager } from "openclaw/plugin-sdk/agent-sessions";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
+import { createTrajectoryRuntimeRecorder } from "../trajectory/runtime.js";
 import { estimateStringChars, estimateTokensFromChars } from "../utils/cjk-chars.js";
 import { createToolSummaryPreviewTranscriptLines } from "./session-preview.test-helpers.js";
 import { clearSessionTranscriptIndexCache } from "./session-transcript-index.fs.js";
@@ -29,6 +30,7 @@ import {
   readSessionTitleFieldsFromTranscriptAsync,
   readSessionPreviewItemsFromTranscript,
   readLastAssistantTextFromTranscript,
+  readLatestTrajectoryProgressProjection,
   resolveSessionTranscriptCandidates,
 } from "./session-utils.fs.js";
 
@@ -1506,6 +1508,198 @@ describe("readSessionPreviewItemsFromTranscript", () => {
     expect(readLastAssistantTextFromTranscript(sessionId, storePath, undefined, undefined)).toBe(
       "Final proof answer with implementation slices.",
     );
+  });
+});
+
+describe("readLatestTrajectoryProgressProjection", () => {
+  let tmpDir: string;
+  let storePath: string;
+
+  registerTempSessionStore("openclaw-trajectory-progress-test-", (nextTmpDir, nextStorePath) => {
+    tmpDir = nextTmpDir;
+    storePath = nextStorePath;
+  });
+
+  test("uses mirrored native agent tool events as active progress", async () => {
+    const sessionId = "trajectory-native-agent-tool";
+    const sessionFile = path.join(tmpDir, `${sessionId}.jsonl`);
+    fs.writeFileSync(sessionFile, "", "utf-8");
+    const recorder = createTrajectoryRuntimeRecorder({
+      sessionId,
+      sessionKey: `agent:main:${sessionId}`,
+      sessionFile,
+      maxRuntimeFileBytes: 4_000,
+    });
+    if (!recorder) {
+      throw new Error("expected trajectory recorder");
+    }
+
+    recorder.recordEvent("agent.lifecycle", {
+      phase: "start",
+    });
+    recorder.recordEvent("agent.tool", {
+      phase: "start",
+      name: "read",
+      toolCallId: "call-read",
+    });
+    await recorder.flush();
+
+    const projection = readLatestTrajectoryProgressProjection(
+      sessionId,
+      storePath,
+      sessionFile,
+      "main",
+    );
+
+    expect(projection).toMatchObject({
+      source: "trajectory",
+      sourceEventType: "agent.tool",
+      currentPhase: "start",
+      toolName: "read",
+      activeLabel: "read",
+    });
+  });
+
+  test("uses mirrored native agent tool result events without task-row fallback", async () => {
+    const sessionId = "trajectory-native-agent-tool-result";
+    const sessionFile = path.join(tmpDir, `${sessionId}.jsonl`);
+    fs.writeFileSync(sessionFile, "", "utf-8");
+    const recorder = createTrajectoryRuntimeRecorder({
+      sessionId,
+      sessionKey: `agent:main:${sessionId}`,
+      sessionFile,
+      maxRuntimeFileBytes: 4_000,
+    });
+    if (!recorder) {
+      throw new Error("expected trajectory recorder");
+    }
+
+    recorder.recordEvent("agent.tool", {
+      phase: "start",
+      name: "exec",
+      toolCallId: "call-exec",
+      args: { command: "pnpm test" },
+    });
+    recorder.recordEvent("agent.tool", {
+      phase: "result",
+      name: "exec",
+      toolCallId: "call-exec",
+      result: { exitCode: 0, stdout: "passed" },
+    });
+    await recorder.flush();
+
+    const projection = readLatestTrajectoryProgressProjection(
+      sessionId,
+      storePath,
+      sessionFile,
+      "main",
+    );
+
+    expect(projection).toMatchObject({
+      source: "trajectory",
+      sourceEventType: "agent.tool",
+      currentPhase: "result",
+      toolName: "exec",
+      command: "pnpm test",
+      exitCode: 0,
+      outputSummary: "passed",
+    });
+  });
+
+  test("uses mirrored native agent item titles without treating progress text as active-progress detail", async () => {
+    const sessionId = "trajectory-native-agent-item";
+    const sessionFile = path.join(tmpDir, `${sessionId}.jsonl`);
+    fs.writeFileSync(sessionFile, "", "utf-8");
+    const recorder = createTrajectoryRuntimeRecorder({
+      sessionId,
+      sessionKey: `agent:planning:${sessionId}`,
+      sessionFile,
+      maxRuntimeFileBytes: 4_000,
+    });
+    if (!recorder) {
+      throw new Error("expected trajectory recorder");
+    }
+
+    recorder.recordEvent("agent.item", {
+      phase: "update",
+      kind: "analysis",
+      title: "Planning synthesis",
+      status: "running",
+      progressText: "Integrating scout evidence",
+      itemId: "item-synthesis",
+    });
+    await recorder.flush();
+
+    const projection = readLatestTrajectoryProgressProjection(
+      sessionId,
+      storePath,
+      sessionFile,
+      "planning",
+    );
+
+    expect(projection).toMatchObject({
+      source: "trajectory",
+      sourceEventType: "agent.item",
+      currentPhase: "update",
+      activeLabel: "Planning synthesis",
+    });
+    expect(projection?.outputSummary).toBeUndefined();
+    expect(projection?.note).toBeUndefined();
+  });
+
+  test("uses mirrored native child-spawn item events as parent active progress", async () => {
+    const sessionId = "trajectory-native-agent-child-spawn";
+    const sessionFile = path.join(tmpDir, `${sessionId}.jsonl`);
+    fs.writeFileSync(sessionFile, "", "utf-8");
+    const recorder = createTrajectoryRuntimeRecorder({
+      sessionId,
+      sessionKey: `agent:main:${sessionId}`,
+      sessionFile,
+      maxRuntimeFileBytes: 4_000,
+    });
+    if (!recorder) {
+      throw new Error("expected trajectory recorder");
+    }
+
+    recorder.recordEvent("agent.item", {
+      phase: "start",
+      kind: "analysis",
+      status: "running",
+      title: "planning",
+      name: "task",
+      childRole: "planning",
+      childPhase: "child_spawned",
+      childSessionKey: "agent:planning:child-session",
+      childRunId: "run-child",
+      spawnReason: "produce the operator-facing plan",
+      progressText: "Spawned planning child session.",
+      itemId: "subagent:run-child",
+    });
+    await recorder.flush();
+
+    const projection = readLatestTrajectoryProgressProjection(
+      sessionId,
+      storePath,
+      sessionFile,
+      "main",
+    );
+
+    expect(projection).toMatchObject({
+      source: "trajectory",
+      sourceEventType: "agent.item",
+      currentPhase: "start",
+      activeLabel: "planning",
+      childRole: "planning",
+      childPhase: "child_spawned",
+      spawnReason: "produce the operator-facing plan",
+      pointer: {
+        kind: "session",
+        ref: "agent:planning:child-session",
+        label: "child session",
+      },
+    });
+    expect(projection?.outputSummary).toBeUndefined();
+    expect(projection?.note).toBeUndefined();
   });
 });
 

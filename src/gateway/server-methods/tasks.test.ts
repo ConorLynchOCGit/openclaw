@@ -184,17 +184,23 @@ describe("tasks gateway handlers", () => {
       runId: "run-gateway-task-progress",
       lastEventAt,
       progressSummary: "checking gateway task progress",
+      eventMetadata: {
+        nativeEventStream: "tool",
+        nativeEventPhase: "running",
+        nativeEventToolName: "coding",
+      },
     });
 
     const { payload } = await getTaskPayload(task.taskId);
 
     expect(payload?.task?.activeProgress).toMatchObject({
-      source: "task-run-event",
+      source: "task-receipt",
       ref: `task-event:${task.taskId}:${lastEventAt}:progress`,
       currentPhase: "running",
       activeLabel: "coding",
       observedAt: "2026-06-30T18:30:00.000Z",
-      sourceEventType: "task.progress",
+      sourceEventType: "agent.tool",
+      toolName: "coding",
       note: "checking gateway task progress",
       pointer: {
         kind: "task",
@@ -223,19 +229,28 @@ describe("tasks gateway handlers", () => {
       deliveryStatus: "not_applicable",
       notifyPolicy: "silent",
       startedAt,
-      progressSummary:
-        "Codex native subagent spawned (role: project_explorer; agent_path: agents/project_explorer.toml).",
+    });
+    recordTaskProgressByRunId({
+      runId: "codex-thread:child-readback",
+      eventSummary: "Codex native subagent spawned.",
+      lastEventAt: startedAt + 1,
+      eventMetadata: {
+        childRole: "project_explorer",
+        childAgentPath: "agents/project_explorer.toml",
+        childPhase: "child_spawned",
+        spawnReason: "Inspect run intelligence owner files before implementation.",
+      },
     });
 
     const { payload } = await getTaskPayload(task.taskId);
 
     expect(payload?.task?.activeProgress).toMatchObject({
-      source: "task-run-event",
-      ref: `task-event:${task.taskId}:${task.lastEventAt}:running`,
+      source: "task-receipt",
+      ref: `task-event:${task.taskId}:${startedAt + 1}:progress`,
       currentPhase: "child_spawned",
       activeLabel: "project_explorer",
-      sourceEventType: "task.running",
-      note: "Codex native subagent spawned (role: project_explorer; agent_path: agents/project_explorer.toml).",
+      sourceEventType: "task.progress",
+      note: "Codex native subagent spawned.",
       childRole: "project_explorer",
       childAgentPath: "agents/project_explorer.toml",
       childPhase: "child_spawned",
@@ -250,7 +265,7 @@ describe("tasks gateway handlers", () => {
     });
   });
 
-  it("prefers Codex-native child task receipts before requester trajectory progress", async () => {
+  it("prefers requester trajectory progress before Codex-native child task text", async () => {
     const sessionKey = "agent:coding:main";
     const sessionId = "gateway-codex-child-parent-trajectory";
     const sessionsDir = path.join(stateDir, "agents", "coding", "sessions");
@@ -305,23 +320,20 @@ describe("tasks gateway handlers", () => {
       status: "running",
       deliveryStatus: "not_applicable",
       notifyPolicy: "silent",
-      progressSummary:
-        "Codex native subagent spawned (role: project_explorer; agent_path: agents/project_explorer.toml).",
+      progressSummary: "Stale Codex native child prose should not outrank trajectory.",
     });
 
     const { payload } = await getTaskPayload(task.taskId);
 
     expect(payload?.task?.activeProgress).toMatchObject({
-      source: "task-run-event",
-      ref: `task-event:${task.taskId}:${task.lastEventAt}:running`,
-      activeLabel: "project_explorer",
-      childRole: "project_explorer",
-      childAgentPath: "agents/project_explorer.toml",
-    });
-    expect(payload?.task?.activeProgress).not.toMatchObject({
       source: "trajectory",
+      ref: `session:${sessionId}`,
       activeLabel: "bash",
+      sourceEventType: "tool.call",
+      note: "parent is running validation",
     });
+    expect(JSON.stringify(payload?.task?.activeProgress)).not.toContain("project_explorer");
+    expect(JSON.stringify(payload?.task?.activeProgress)).not.toContain("agent_path");
   });
 
   it("lists active task progress from requester session trajectory before stale task text", async () => {
@@ -654,21 +666,7 @@ describe("tasks gateway handlers", () => {
 
     const { payload } = await getTaskPayload(task.taskId);
 
-    expect(payload?.task?.activeProgress).toMatchObject({
-      source: "task-run-event",
-      ref: expect.stringContaining(`task-event:${task.taskId}:`),
-      currentPhase: "running",
-      activeLabel: "planning",
-      sourceEventType: "task.running",
-      note: "Child run started.",
-      pointer: {
-        kind: "task",
-        ref: task.taskId,
-        label: "task run receipt",
-      },
-      derivedBy: "resolveTaskReadbackProgressProjection",
-      bounded: true,
-    });
+    expect(payload?.task?.activeProgress).toBeUndefined();
     expect(JSON.stringify(payload?.task)).not.toContain(childSessionId);
     expect(JSON.stringify(payload?.task)).not.toContain("codebase-researcher");
   });
@@ -694,16 +692,16 @@ describe("tasks gateway handlers", () => {
     const { payload } = await getTaskPayload(task.taskId);
 
     expect(payload?.task?.activeProgress).toMatchObject({
-      source: "task-run-event",
-      ref: `task-event:${task.taskId}:${task.lastEventAt}:running`,
-      currentPhase: "running",
+      source: "task-receipt",
+      ref: `task:${task.taskId}`,
+      currentPhase: "waiting_on_child",
       activeLabel: "planning",
       sourceEventType: "task.running",
-      note: "Child run started.",
+      note: `Parent is waiting on child task ${task.taskId}.`,
       pointer: {
-        kind: "task",
-        ref: task.taskId,
-        label: "task run receipt",
+        kind: "session",
+        ref: "agent:planning:subagent:not-yet-indexed",
+        label: "child session",
       },
       derivedBy: "resolveTaskReadbackProgressProjection",
       bounded: true,
@@ -755,7 +753,7 @@ describe("tasks gateway handlers", () => {
     expect(JSON.stringify(payload?.task)).not.toContain("Child found three concrete routing gaps.");
   });
 
-  it("keeps long subagent Context Pack progress visible in task readback", async () => {
+  it("keeps long subagent Context Pack text out of task progress readback", async () => {
     const longContextPack = Array.from({ length: 2_100 }, (_, index) => `finding-${index}`).join(
       " ",
     );
@@ -776,9 +774,9 @@ describe("tasks gateway handlers", () => {
 
     const { payload } = await getTaskPayload(task.taskId);
 
-    expect(payload?.task?.progressSummary).toBe(longContextPack);
-    expect(String(payload?.task?.progressSummary)).toContain("finding-2099");
-    expect(String(payload?.task?.progressSummary)).not.toContain("…");
+    expect(payload?.task?.progressSummary).toBeUndefined();
+    expect(JSON.stringify(payload?.task)).not.toContain("finding-0");
+    expect(JSON.stringify(payload?.task)).not.toContain("finding-2099");
   });
 
   it("projects descendant child-run status and bounded terminal summaries into parent task summaries", async () => {
@@ -1023,16 +1021,16 @@ describe("tasks gateway handlers", () => {
     const { payload } = await getTaskPayload(task.taskId);
 
     expect(payload?.task?.activeProgress).toMatchObject({
-      source: "task-run-event",
-      ref: expect.stringContaining(`task-event:${task.taskId}:`),
-      currentPhase: "running",
+      source: "task-receipt",
+      ref: `task:${task.taskId}`,
+      currentPhase: "waiting_on_child",
       activeLabel: "planning",
       sourceEventType: "task.running",
-      note: "Child run started.",
+      note: `Parent is waiting on child task ${task.taskId}.`,
       pointer: {
-        kind: "task",
-        ref: task.taskId,
-        label: "task run receipt",
+        kind: "session",
+        ref: "agent:planning:subagent:plan",
+        label: "child session",
       },
       derivedBy: "resolveTaskReadbackProgressProjection",
       bounded: true,
@@ -1074,14 +1072,14 @@ describe("tasks gateway handlers", () => {
     const { payload } = await getTaskPayload(task.taskId);
 
     expect(payload?.task?.activeProgress).toMatchObject({
-      source: "task-run-event",
-      ref: expect.stringContaining(`task-event:${task.taskId}:`),
-      currentPhase: "running",
-      note: "Child run started.",
+      source: "task-receipt",
+      ref: `task:${task.taskId}`,
+      currentPhase: "waiting_on_child",
+      note: `Parent is waiting on child task ${task.taskId}.`,
       pointer: {
-        kind: "task",
-        ref: task.taskId,
-        label: "task run receipt",
+        kind: "session",
+        ref: "agent:planning:subagent:settled",
+        label: "child session",
       },
       derivedBy: "resolveTaskReadbackProgressProjection",
       bounded: true,

@@ -353,6 +353,58 @@ function capLiveExecResult(result: unknown): unknown {
   };
 }
 
+function compactTaskToolEventResult(result: unknown): unknown {
+  const details = readToolResultDetailsRecord(result);
+  if (!details) {
+    return {
+      toolResultKind: "task",
+      detailsStatus: "unavailable",
+    };
+  }
+  const compact: Record<string, unknown> = {
+    toolResultKind: "task",
+  };
+  const keys = [
+    "status",
+    "childResult",
+    "childSessionKey",
+    "runId",
+    "agentId",
+    "taskName",
+    "producerAgentId",
+    "ownerAgentId",
+    "sourceSessionKey",
+    "sourceRunId",
+    "contentDigest",
+    "contentChars",
+    "contentTruncated",
+    "resultChars",
+    "resultTruncated",
+    "partialResultChars",
+    "partialResultTruncated",
+    "resolvedModel",
+    "resolvedProvider",
+    "recoveryHistory",
+    "error",
+  ];
+  for (const key of keys) {
+    if (details[key] !== undefined) {
+      compact[key] = details[key];
+    }
+  }
+  return compact;
+}
+
+function compactToolResultForAgentEvent(toolName: string, result: unknown): unknown {
+  if (toolName === "task") {
+    return compactTaskToolEventResult(result);
+  }
+  if (isExecToolName(toolName)) {
+    return capLiveExecResult(result);
+  }
+  return result;
+}
+
 function extractExecOutput(result: unknown): string | undefined {
   const execDetails = readExecToolDetails(result);
   const output =
@@ -1167,9 +1219,7 @@ export async function handleToolExecutionEnd(
   const result = evt.result;
   const isToolError = isError || isToolResultError(result);
   const sanitizedResult = sanitizeToolResult(result);
-  const eventResult = isExecToolName(toolName)
-    ? capLiveExecResult(sanitizedResult)
-    : sanitizedResult;
+  const eventResult = compactToolResultForAgentEvent(toolName, sanitizedResult);
   const toolStartKey = buildToolStartKey(runId, toolCallId);
   const startData = toolStartData.get(toolStartKey);
   toolStartData.delete(toolStartKey);

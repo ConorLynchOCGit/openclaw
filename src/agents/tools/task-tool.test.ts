@@ -51,6 +51,7 @@ describe("task tool", () => {
   it("runs a native foreground child and returns the final assistant text", async () => {
     const tool = createTaskTool({
       agentSessionKey: "agent:planning:main",
+      parentRunId: "run-parent",
       requesterAgentIdOverride: "planning",
       workspaceDir: "/workspace",
       inheritedToolDenylist: ["gateway"],
@@ -78,6 +79,7 @@ describe("task tool", () => {
       }),
       expect.objectContaining({
         agentSessionKey: "agent:planning:main",
+        parentRunId: "run-parent",
         completionOwnerKey: "agent:planning:main",
         requesterAgentIdOverride: "planning",
         workspaceDir: "/workspace",

@@ -48,7 +48,6 @@ export type TaskRunView = {
   cleanupAfter?: number;
   error?: string;
   activeProgress?: ReadbackProgressProjection;
-  progressSummary?: string;
   terminalSummary?: string;
   terminalOutcome?: TaskTerminalOutcome;
 };

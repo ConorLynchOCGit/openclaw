@@ -1841,7 +1841,7 @@ describe("/acp command", () => {
     expect(result?.reply?.text).toContain("agent session id: codex-sid-1");
     expect(result?.reply?.text).toContain("acpx session id: acpx-sid-1");
     expect(result?.reply?.text).toContain("taskStatus: running");
-    expect(result?.reply?.text).toContain("taskProgress: Fetching the latest runtime state");
+    expect(result?.reply?.text).not.toContain("taskProgress: Fetching the latest runtime state");
     expect(result?.reply?.text).toContain("capabilities:");
     expect(hoisted.getStatusMock).toHaveBeenCalledTimes(1);
   });

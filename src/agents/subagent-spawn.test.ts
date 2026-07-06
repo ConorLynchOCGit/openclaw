@@ -16,6 +16,7 @@ const hoisted = vi.hoisted(() => ({
   updateSessionStoreMock: vi.fn(),
   pruneLegacyStoreKeysMock: vi.fn(),
   registerSubagentRunMock: vi.fn(),
+  emitAgentEventMock: vi.fn(),
   emitSessionLifecycleEventMock: vi.fn(),
   dispatchGatewayMethodInProcessMock: vi.fn(),
   hasInProcessGatewayContextMock: vi.fn(),
@@ -76,6 +77,7 @@ describe("spawnSubagentDirect seam flow", () => {
       updateSessionStoreMock: hoisted.updateSessionStoreMock,
       pruneLegacyStoreKeysMock: hoisted.pruneLegacyStoreKeysMock,
       registerSubagentRunMock: hoisted.registerSubagentRunMock,
+      emitAgentEventMock: hoisted.emitAgentEventMock,
       emitSessionLifecycleEventMock: hoisted.emitSessionLifecycleEventMock,
       resolveAgentConfig: hoisted.resolveAgentConfigMock,
       resolveSubagentSpawnModelSelection: () => "openai/gpt-5.4",
@@ -91,6 +93,7 @@ describe("spawnSubagentDirect seam flow", () => {
     hoisted.updateSessionStoreMock.mockReset();
     hoisted.pruneLegacyStoreKeysMock.mockReset();
     hoisted.registerSubagentRunMock.mockReset();
+    hoisted.emitAgentEventMock.mockReset();
     hoisted.emitSessionLifecycleEventMock.mockReset();
     hoisted.dispatchGatewayMethodInProcessMock.mockReset();
     hoisted.hasInProcessGatewayContextMock.mockReset().mockReturnValue(false);
@@ -219,6 +222,7 @@ describe("spawnSubagentDirect seam flow", () => {
         agentAccountId: "acct-1",
         agentTo: "user-1",
         agentThreadId: 42,
+        parentRunId: "run-parent",
         workspaceDir: "/tmp/requester-workspace",
       },
     );
@@ -249,6 +253,25 @@ describe("spawnSubagentDirect seam flow", () => {
     expect(registerInput.expectsCompletionMessage).toBe(true);
     expect(registerInput).not.toHaveProperty("dependency");
     expect(registerInput.spawnMode).toBe("run");
+    expect(hoisted.emitAgentEventMock).toHaveBeenCalledWith({
+      runId: "run-parent",
+      stream: "item",
+      sessionKey: "agent:main:main",
+      data: expect.objectContaining({
+        itemId: "subagent:run-1",
+        phase: "start",
+        kind: "analysis",
+        status: "running",
+        title: "main",
+        name: "task",
+        childRole: "main",
+        childPhase: "child_spawned",
+        childSessionKey,
+        childRunId: "run-1",
+        spawnReason: "inspect the spawn seam",
+        progressText: "Spawned main child session.",
+      }),
+    });
     expect(hoisted.emitSessionLifecycleEventMock).toHaveBeenCalledWith({
       sessionKey: childSessionKey,
       reason: "create",

@@ -106,7 +106,9 @@ describe("task domain view mappers", () => {
       terminalOutcome: "blocked",
     });
 
-    expect(mapTaskRunView(task)).toEqual({
+    const view = mapTaskRunView(task);
+
+    expect(view).toMatchObject({
       id: "task-full",
       runtime: "cli",
       sourceId: "source-1",
@@ -129,9 +131,16 @@ describe("task domain view mappers", () => {
       lastEventAt: 190,
       cleanupAfter: 1_000,
       error: "Command failed",
-      progressSummary: "Checking logs",
       terminalSummary: "Diagnostics failed",
       terminalOutcome: "blocked",
+    });
+    expect(view).not.toHaveProperty("progressSummary");
+    expect(view.activeProgress).toMatchObject({
+      source: "task-receipt",
+      currentPhase: "failed",
+      activeLabel: "diagnostics",
+      note: "Diagnostics failed",
+      outputSummary: "Diagnostics failed",
     });
   });
 
@@ -157,7 +166,7 @@ describe("task domain view mappers", () => {
     });
 
     expect(mapTaskRunView(task).activeProgress).toMatchObject({
-      source: "task-run-event",
+      source: "task-receipt",
       ref: "task-event:task-progress:150:progress",
       currentPhase: "running",
       activeLabel: "phase0z",
@@ -208,7 +217,7 @@ describe("task domain view mappers", () => {
     });
 
     expect(mapTaskRunView(task).activeProgress).toMatchObject({
-      source: "task-run-event",
+      source: "task-receipt",
       ref: "task-event:task-overflow:180:failed",
       currentPhase: "failed",
       activeLabel: "source scout",

@@ -9,7 +9,6 @@ describe("readback finality", () => {
       agentId: "planning",
       status: "failed",
       finalAssistantText: "Planning final packet.",
-      activeProgress: null,
     });
 
     expect(projection.finality).toMatchObject({
@@ -30,7 +29,6 @@ describe("readback finality", () => {
       agentId: "codebase-researcher",
       requesterSessionKey: "agent:planning:proof",
       childSessionKey: "agent:codebase-researcher:subagent:child",
-      activeProgress: null,
       resultSession: {
         sessionKey: "agent:codebase-researcher:subagent:child",
         agentId: "codebase-researcher",
@@ -49,23 +47,16 @@ describe("readback finality", () => {
     });
   });
 
-  it("does not mark a task active from task-row status alone", () => {
+  it("does not expose a second active-work compatibility object", () => {
     const projection = buildTaskReadbackProjection({
       taskId: "task-running-without-evidence",
       status: "running",
       agentId: "planning",
       requesterSessionKey: "agent:main:proof",
       childSessionKey: "agent:planning:subagent:child",
-      activeProgress: null,
       resultSession: null,
     });
 
-    expect(projection.activeWork).toMatchObject({
-      phase: null,
-      childSessionKey: null,
-      activeTool: null,
-      source: "none",
-      provenance: null,
-    });
+    expect(projection).not.toHaveProperty("activeWork");
   });
 });

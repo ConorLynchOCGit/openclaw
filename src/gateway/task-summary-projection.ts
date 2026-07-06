@@ -13,17 +13,10 @@ import {
   sanitizeTaskStatusText,
 } from "../tasks/task-status.js";
 
-// Subagent completions use progressSummary as a requester-facing Context Pack
-// pointer/readback surface. Keep ordinary task status compact, but allow child
-// task readback to carry more than a 2,000-word scout packet.
-const SUBAGENT_PROGRESS_READBACK_MAX_CHARS = 32_000;
 const TASK_LIST_SUMMARY_LIMIT = 20;
-const TASK_LIST_SUMMARY_TEXT_MAX_CHARS = 1_000;
 
 type TaskLedgerStatus = TaskSummary["status"];
 type TaskSummaryProjectionOptions = {
-  progressMaxChars?: number;
-  subagentProgressMaxChars?: number;
   readbackContext?: TaskReadbackProgressProjectionContext;
 };
 
@@ -65,63 +58,13 @@ function sanitizeOptionalTaskText(
   return sanitized || undefined;
 }
 
-function inferAgentRoleFromSessionKey(sessionKey: string | undefined): string | undefined {
-  const match = sessionKey?.match(/^agent:([^:]+):/);
-  return match?.[1];
-}
-
-function inferTaskChildRole(
-  task: TaskRecord,
-  activeProgress: ReturnType<typeof resolveTaskReadbackProgressProjection>,
-): string | undefined {
-  return (
-    activeProgress?.childRole ??
-    inferAgentRoleFromSessionKey(task.childSessionKey) ??
-    (task.taskKind === "codex-native" ? sanitizeOptionalTaskText(task.label) : undefined)
-  );
-}
-
-function inferTaskChildPhase(
-  task: TaskRecord,
-  activeProgress: ReturnType<typeof resolveTaskReadbackProgressProjection>,
-  childRole: string | undefined,
-): string | undefined {
-  return (
-    activeProgress?.childPhase ??
-    activeProgress?.currentPhase ??
-    (childRole ? task.status : undefined)
-  );
-}
-
-function inferTaskSpawnReason(
-  task: TaskRecord,
-  activeProgress: ReturnType<typeof resolveTaskReadbackProgressProjection>,
-  childRole: string | undefined,
-): string | undefined {
-  return (
-    activeProgress?.spawnReason ??
-    (childRole
-      ? sanitizeOptionalTaskText(task.task, { maxChars: TASK_LIST_SUMMARY_TEXT_MAX_CHARS })
-      : undefined)
-  );
-}
-
 export function mapTaskSummary(
   task: TaskRecord,
   opts: TaskSummaryProjectionOptions = {},
 ): TaskSummary {
-  const progressSummary = sanitizeOptionalTaskText(task.progressSummary, {
-    maxChars:
-      task.runtime === "subagent"
-        ? (opts.subagentProgressMaxChars ?? SUBAGENT_PROGRESS_READBACK_MAX_CHARS)
-        : (opts.progressMaxChars ?? TASK_STATUS_DETAIL_MAX_CHARS),
-  });
   const terminalSummary = sanitizeOptionalTaskText(task.terminalSummary, { errorContext: true });
   const error = sanitizeOptionalTaskText(task.error, { errorContext: true });
   const activeProgress = resolveTaskReadbackProgressProjection(task, opts.readbackContext);
-  const childRole = inferTaskChildRole(task, activeProgress);
-  const childPhase = inferTaskChildPhase(task, activeProgress, childRole);
-  const spawnReason = inferTaskSpawnReason(task, activeProgress, childRole);
   return {
     id: task.taskId,
     taskId: task.taskId,
@@ -133,9 +76,6 @@ export function mapTaskSummary(
     ...(task.agentId ? { agentId: task.agentId } : {}),
     sessionKey: task.requesterSessionKey,
     ...(task.childSessionKey ? { childSessionKey: task.childSessionKey } : {}),
-    ...(childRole ? { childRole } : {}),
-    ...(childPhase ? { childPhase } : {}),
-    ...(spawnReason ? { spawnReason } : {}),
     ownerKey: task.ownerKey,
     ...(task.runId ? { runId: task.runId } : {}),
     ...(task.parentFlowId ? { flowId: task.parentFlowId } : {}),
@@ -146,7 +86,6 @@ export function mapTaskSummary(
     ...(task.startedAt !== undefined ? { startedAt: task.startedAt } : {}),
     ...(task.endedAt !== undefined ? { endedAt: task.endedAt } : {}),
     ...(activeProgress ? { activeProgress } : {}),
-    ...(progressSummary ? { progressSummary } : {}),
     ...(terminalSummary ? { terminalSummary } : {}),
     ...(error ? { error } : {}),
   };
@@ -209,8 +148,6 @@ export function buildTasksListSummaryPayload(
   const readbackContext = createTaskReadbackProgressProjectionContext();
   const sample = selectTaskSummarySample(tasks, limit).map((task) =>
     mapTaskSummary(task, {
-      progressMaxChars: TASK_LIST_SUMMARY_TEXT_MAX_CHARS,
-      subagentProgressMaxChars: TASK_LIST_SUMMARY_TEXT_MAX_CHARS,
       readbackContext,
     }),
   );
@@ -233,8 +170,6 @@ export function buildTasksListSummaryPayload(
       displayedBySource: summarizeActiveProgressSources(sample),
     },
     tasks: sample,
-    authority:
-      "bounded readback projection derived from task registry records, task receipts, and session trajectory evidence; use tasks list --json for the full list",
   };
 }
 

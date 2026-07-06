@@ -139,6 +139,7 @@ export async function loadSubagentSpawnModuleForTest(params: {
   resolveParentForkDecisionMock?: MockFn;
   pruneLegacyStoreKeysMock?: MockFn;
   registerSubagentRunMock?: MockFn;
+  emitAgentEventMock?: MockFn;
   emitSessionLifecycleEventMock?: MockFn;
   hookRunner?: HookRunner;
   resolveAgentConfig?: (cfg: Record<string, unknown>, agentId: string) => unknown;
@@ -221,6 +222,7 @@ export async function loadSubagentSpawnModuleForTest(params: {
     getGlobalHookRunner: () => params.hookRunner ?? { hasHooks: () => false },
     emitSessionLifecycleEvent: (...args: unknown[]) =>
       params.emitSessionLifecycleEventMock?.(...args),
+    emitAgentEvent: (...args: unknown[]) => params.emitAgentEventMock?.(...args),
     formatThinkingLevels: (levels: string[]) => levels.join(", "),
     normalizeThinkLevel: (level: unknown) => normalizeOptionalString(level),
     DEFAULT_SUBAGENT_MAX_CHILDREN_PER_AGENT: 5,

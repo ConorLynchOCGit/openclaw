@@ -225,24 +225,6 @@ export function buildBuiltinChatCommands(
       tier: "essential",
     }),
     defineChatCommand({
-      key: "run-insights",
-      nativeName: "run-insights",
-      description: "Summarize recent run/session/task performance evidence.",
-      textAlias: "/run-insights",
-      acceptsArgs: true,
-      args: [
-        {
-          name: "options",
-          description:
-            "Optional run-insights flags, such as --agent coding --session agent:coding:main --task <task-id> --active 120",
-          type: "string",
-          captureRemaining: true,
-        },
-      ],
-      category: "status",
-      tier: "standard",
-    }),
-    defineChatCommand({
       key: "goal",
       nativeName: "goal",
       description: "Show or control the current goal.",

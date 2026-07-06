@@ -4,8 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  emitAgentEvent,
+  resetAgentEventsForTest,
+  registerAgentRunContext,
+} from "../infra/agent-events.js";
+import {
   TRAJECTORY_RUNTIME_EVENT_MAX_BYTES,
   createTrajectoryRuntimeRecorder,
+  mirrorAgentEventsToTrajectory,
   resolveTrajectoryPointerOpenFlags,
   resolveTrajectoryPointerFilePath,
   resolveTrajectoryFilePath,
@@ -24,6 +30,7 @@ function makeTempDir(): string {
 
 afterEach(() => {
   vi.useRealTimers();
+  resetAgentEventsForTest();
   for (const dir of tempDirs.splice(0)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -104,6 +111,98 @@ describe("trajectory runtime", () => {
     expect(JSON.stringify(parsed.data)).not.toContain("sk-other-secret-token");
     expect(JSON.stringify(parsed.data)).not.toContain("ya29.fake-access-token");
     expect(JSON.stringify(parsed.data)).not.toContain("abcd-efgh-ijkl-mnop");
+  });
+
+  it("auto-flushes queued runtime events for live readback", async () => {
+    vi.useFakeTimers();
+    const tmpDir = makeTempDir();
+    const sessionFile = path.join(tmpDir, "session.jsonl");
+    const recorder = createTrajectoryRuntimeRecorder({
+      sessionId: "session-1",
+      sessionFile,
+      maxRuntimeFileBytes: 2_400,
+    });
+
+    const runtimeRecorder = expectTrajectoryRuntimeRecorder(recorder);
+    runtimeRecorder.recordEvent("agent.tool", {
+      phase: "start",
+      name: "read",
+      toolCallId: "call-1",
+    });
+
+    const runtimeFile = resolveTrajectoryFilePath({ sessionFile, sessionId: "session-1" });
+    expect(fs.existsSync(runtimeFile)).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(150);
+    await vi.waitFor(() => {
+      expect(fs.existsSync(runtimeFile)).toBe(true);
+    });
+
+    const raw = fs.readFileSync(runtimeFile, "utf8");
+    expect(raw).toContain("agent.tool");
+    expect(raw).toContain("call-1");
+  });
+
+  it("mirrors native run-scoped agent events into trajectory", async () => {
+    const tmpDir = makeTempDir();
+    const sessionFile = path.join(tmpDir, "session.jsonl");
+    const recorder = createTrajectoryRuntimeRecorder({
+      sessionId: "session-1",
+      sessionKey: "agent:main:session-1",
+      sessionFile,
+      maxRuntimeFileBytes: 3_000,
+    });
+
+    const runtimeRecorder = expectTrajectoryRuntimeRecorder(recorder);
+    const unsubscribe = mirrorAgentEventsToTrajectory({
+      recorder: runtimeRecorder,
+      runId: "run-1",
+    });
+    registerAgentRunContext("run-1", {
+      sessionId: "session-1",
+      sessionKey: "agent:main:session-1",
+    });
+    emitAgentEvent({
+      runId: "run-1",
+      stream: "tool",
+      data: {
+        phase: "start",
+        name: "read",
+        toolCallId: "call-1",
+      },
+    });
+    emitAgentEvent({
+      runId: "other-run",
+      stream: "tool",
+      data: {
+        phase: "start",
+        name: "ignored",
+        toolCallId: "call-ignored",
+      },
+    });
+    unsubscribe();
+    await runtimeRecorder.flush();
+
+    const runtimeFile = resolveTrajectoryFilePath({ sessionFile, sessionId: "session-1" });
+    const raw = fs.readFileSync(runtimeFile, "utf8");
+    expect(raw).toContain("agent.tool");
+    expect(raw).toContain("call-1");
+    expect(raw).not.toContain("call-ignored");
+    const parsed = raw
+      .trim()
+      .split(/\r?\n/u)
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            type?: string;
+            sessionId?: string;
+            data?: Record<string, unknown>;
+          },
+      )
+      .find((event) => event.type === "agent.tool");
+    expect(parsed?.data?.agentEventStream).toBe("tool");
+    expect(parsed?.data?.sessionKey).toBe("agent:main:session-1");
+    expect(parsed?.sessionId).toBe("session-1");
   });
 
   it("bounds large runtime event fields before serialization", () => {

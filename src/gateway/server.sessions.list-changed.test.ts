@@ -700,7 +700,5 @@ test("sessions.changed mutation events include subagent ownership metadata", asy
   expect(requireRecord(broadcastPayload.finality, "finality")).toMatchObject({
     finalAssistantTextPresent: false,
   });
-  expect(requireRecord(broadcastPayload.activeWork, "active work")).toMatchObject({
-    source: "none",
-  });
+  expect(broadcastPayload).not.toHaveProperty("activeWork");
 });

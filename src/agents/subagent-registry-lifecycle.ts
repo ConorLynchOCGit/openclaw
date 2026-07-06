@@ -333,7 +333,7 @@ export function createSubagentRegistryLifecycleController(params: {
           sessionKey: args.entry.childSessionKey,
           endedAt,
           lastEventAt,
-          progressSummary: completion.resultText ?? undefined,
+          progressSummary: undefined,
           terminalSummary: terminalResult.terminalSummary ?? null,
           terminalOutcome: terminalResult.terminalOutcome,
         });
@@ -347,7 +347,7 @@ export function createSubagentRegistryLifecycleController(params: {
         endedAt,
         lastEventAt,
         error: args.outcome.status === "error" ? args.outcome.error : undefined,
-        progressSummary: ensureCompletionState(args.entry).resultText ?? undefined,
+        progressSummary: undefined,
         terminalSummary: null,
       });
     } catch (err) {
@@ -376,7 +376,7 @@ export function createSubagentRegistryLifecycleController(params: {
         sessionKey: args.entry.childSessionKey,
         endedAt,
         lastEventAt: Date.now(),
-        progressSummary: ensureCompletionState(args.entry).resultText ?? undefined,
+        progressSummary: undefined,
         terminalSummary: terminalResult.terminalSummary,
         terminalOutcome: terminalResult.terminalOutcome,
       });

@@ -34,7 +34,10 @@ import {
   previewTaskFlowRegistryMaintenance,
   runTaskFlowRegistryMaintenance,
 } from "../tasks/task-flow-registry.maintenance.js";
-import { resolveTaskReadbackProgressProjection } from "../tasks/task-readback-progress.js";
+import {
+  createTaskReadbackProgressProjectionContext,
+  resolveTaskReadbackProgressProjection,
+} from "../tasks/task-readback-progress.js";
 import {
   listTaskAuditFindings,
   summarizeRetainedLostTaskAuditFindings,
@@ -353,10 +356,13 @@ function formatTaskRows(tasks: TaskRecord[], rich: boolean) {
     "Summary",
   ].join(" ");
   const lines = [rich ? theme.heading(header) : header];
+  const readbackContext = createTaskReadbackProgressProjectionContext();
   for (const task of tasks) {
+    const activeProgress = resolveTaskReadbackProgressProjection(task, readbackContext);
     const summary = truncate(
-      normalizeOptionalString(task.terminalSummary) ||
-        normalizeOptionalString(task.progressSummary) ||
+      (activeProgress ? formatTaskReadbackProgress(activeProgress) : undefined) ||
+        normalizeOptionalString(task.terminalSummary) ||
+        normalizeOptionalString(task.error) ||
         normalizeOptionalString(task.label) ||
         task.task.trim(),
       80,
@@ -389,7 +395,6 @@ function formatTaskSummaryRows(tasks: TaskSummary[], rich: boolean) {
     const progress = task.activeProgress
       ? formatTaskReadbackProgress(task.activeProgress)
       : (normalizeOptionalString(task.terminalSummary) ??
-        normalizeOptionalString(task.progressSummary) ??
         normalizeOptionalString(task.error) ??
         task.title);
     lines.push(
@@ -453,6 +458,7 @@ function formatTaskReadbackProgress(progress: TaskReadbackProgress | undefined):
     progress.durationMs !== undefined && progress.durationMs !== null
       ? `durationMs=${progress.durationMs}`
       : undefined,
+    progress.note ? `note=${truncate(progress.note, 120)}` : undefined,
     progress.childRole ? `childRole=${progress.childRole}` : undefined,
     progress.childAgentPath
       ? `childAgentPath=${truncate(progress.childAgentPath, 120)}`
@@ -467,7 +473,6 @@ function formatTaskReadbackProgress(progress: TaskReadbackProgress | undefined):
     progress.validationClass ? `validation=${progress.validationClass}` : undefined,
     progress.outputSummary ? `output=${truncate(progress.outputSummary, 120)}` : undefined,
     progress.repairAction ? `repair=${truncate(progress.repairAction, 120)}` : undefined,
-    progress.note ? `note=${truncate(progress.note, 120)}` : undefined,
     progress.pointer
       ? `pointer=${progress.pointer.kind}:${truncate(progress.pointer.ref, 120)}`
       : undefined,
@@ -630,7 +635,6 @@ export async function tasksShowCommand(
     requesterSessionKey: task.requesterSessionKey,
     ownerKey: task.ownerKey,
     childSessionKey: task.childSessionKey,
-    activeProgress,
     resultSession,
   });
   if (opts.json) {
@@ -640,7 +644,6 @@ export async function tasksShowCommand(
           ...summary,
           readbackSubject: readback.readbackSubject,
           finality: readback.finality,
-          activeWork: readback.activeWork,
         },
         null,
         2,
@@ -660,9 +663,6 @@ export async function tasksShowCommand(
     `notify: ${task.notifyPolicy}`,
     `ownerKey: ${task.ownerKey}`,
     `childSessionKey: ${task.childSessionKey ?? "n/a"}`,
-    `childRole: ${summary.childRole ?? "n/a"}`,
-    `childPhase: ${summary.childPhase ?? "n/a"}`,
-    `spawnReason: ${summary.spawnReason ?? "n/a"}`,
     `parentTaskId: ${task.parentTaskId ?? "n/a"}`,
     `agentId: ${task.agentId ?? "n/a"}`,
     `runId: ${task.runId ?? "n/a"}`,
@@ -675,7 +675,6 @@ export async function tasksShowCommand(
     `cleanupAfter: ${formatTaskTimestamp(task.cleanupAfter)}`,
     `activeProgress: ${formatTaskReadbackProgress(activeProgress)}`,
     ...(task.error ? [`error: ${task.error}`] : []),
-    ...(task.progressSummary ? [`progressSummary: ${task.progressSummary}`] : []),
     ...(task.terminalSummary ? [`terminalSummary: ${task.terminalSummary}`] : []),
   ];
   for (const line of lines) {

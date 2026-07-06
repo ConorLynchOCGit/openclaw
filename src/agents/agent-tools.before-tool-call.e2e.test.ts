@@ -682,6 +682,9 @@ describe("before_tool_call loop detection behavior", () => {
         path: path.join(".agents", "skills", "demo-skill", "SKILL.md"),
         offset: 1,
         limit: 220,
+        maxLines: 220,
+        startLine: 1,
+        endLine: 220,
       },
       undefined,
       undefined,
@@ -691,6 +694,51 @@ describe("before_tool_call loop detection behavior", () => {
     expect(execute.mock.calls[0]?.[1]).toEqual({
       path: path.join(".agents", "skills", "demo-skill", "SKILL.md"),
       __openclawInstructionFileRead: true,
+    });
+  });
+
+  it("forces conventional skill instruction reads even when resolved skill snapshot paths are unavailable", async () => {
+    const workspaceDir = path.join("/tmp", "openclaw-conventional-skill-full-read");
+    const execute = vi.fn().mockResolvedValue({ content: [{ type: "text", text: "full skill" }] });
+    const tool = wrapToolWithBeforeToolCallHook({ name: "read", execute } as any, {
+      agentId: "planning",
+      sessionKey: "session-key",
+      workspaceDir,
+      loopDetection: { enabled: false },
+    });
+
+    await withDiagnosticEvents(async (emitted, flush) => {
+      await tool.execute(
+        "tool-call-conventional-skill-read",
+        {
+          path: path.join("skills", "comprehensive-plan-record", "SKILL.md"),
+          offset: 1,
+          limit: 240,
+          maxLines: 240,
+          startLine: 1,
+          endLine: 240,
+        },
+        undefined,
+        undefined,
+      );
+      await flush();
+
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute.mock.calls[0]?.[1]).toEqual({
+        path: path.join("skills", "comprehensive-plan-record", "SKILL.md"),
+        __openclawInstructionFileRead: true,
+      });
+      expectEventFields(emitted[1], {
+        type: "skill.used",
+        agentId: "planning",
+        sessionKey: "session-key",
+        skillName: "comprehensive-plan-record",
+        skillSource: "unknown",
+        activation: "read",
+        toolName: "read",
+        toolCallId: "tool-call-conventional-skill-read",
+        readStatus: "unknown",
+      });
     });
   });
 

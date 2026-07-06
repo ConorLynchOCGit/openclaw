@@ -61,7 +61,7 @@ describe("TaskSummarySchema", () => {
         status: "running",
         deliveryStatus: "pending",
         activeProgress: {
-          source: "task-run-event",
+          source: "task-receipt",
           ref: "task-event:task-1:1782869100000:progress",
           currentPhase: "running",
           activeLabel: "codebase-researcher",
@@ -104,6 +104,29 @@ describe("TaskSummarySchema", () => {
         },
       }),
     ).toBe(false);
+
+    expect(
+      validateTaskSummary.Check({
+        id: "task-4",
+        status: "running",
+        deliveryStatus: "pending",
+        activeProgress: {
+          source: "unavailable",
+          ref: "session:child-1",
+          currentPhase: "running",
+          activeLabel: null,
+          observedAt: "2026-06-30T20:05:00.000Z",
+          note: "Native active progress event unavailable for running session; session-store status=running.",
+          pointer: {
+            kind: "session",
+            ref: "agent:main:subagent:child-1",
+            label: "session readback",
+          },
+          derivedBy: "buildGatewaySessionRow",
+          bounded: true,
+        },
+      }),
+    ).toBe(true);
   });
 
   it("rejects removed subagent registry and child-run task summary fields", () => {
@@ -129,6 +152,18 @@ describe("TaskSummarySchema", () => {
         deliveryStatus: "pending",
         childRunCount: 2,
         childRuns: [],
+      }),
+    ).toBe(false);
+
+    expect(
+      validateTaskSummary.Check({
+        id: "task-child-top-level",
+        status: "running",
+        deliveryStatus: "pending",
+        childSessionKey: "agent:codebase-researcher:subagent:child",
+        childRole: "codebase-researcher",
+        childPhase: "running",
+        spawnReason: "inspect source",
       }),
     ).toBe(false);
   });

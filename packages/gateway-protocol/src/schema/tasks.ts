@@ -47,7 +47,11 @@ const TaskReadbackProgressPointerSchema = Type.Object(
 
 const TaskReadbackProgressProjectionSchema = Type.Object(
   {
-    source: Type.Union([Type.Literal("trajectory"), Type.Literal("task-run-event")]),
+    source: Type.Union([
+      Type.Literal("trajectory"),
+      Type.Literal("task-receipt"),
+      Type.Literal("unavailable"),
+    ]),
     ref: NonEmptyString,
     currentPhase: Type.Optional(Type.Union([Type.String(), Type.Null()])),
     activeLabel: Type.Optional(Type.Union([Type.String(), Type.Null()])),
@@ -94,9 +98,6 @@ export const TaskSummarySchema = Type.Object(
     agentId: Type.Optional(Type.String()),
     sessionKey: Type.Optional(Type.String()),
     childSessionKey: Type.Optional(Type.String()),
-    childRole: Type.Optional(Type.String()),
-    childPhase: Type.Optional(Type.String()),
-    spawnReason: Type.Optional(Type.String()),
     ownerKey: Type.Optional(Type.String()),
     runId: Type.Optional(Type.String()),
     taskId: Type.Optional(Type.String()),
@@ -109,7 +110,6 @@ export const TaskSummarySchema = Type.Object(
     startedAt: Type.Optional(TimestampSchema),
     endedAt: Type.Optional(TimestampSchema),
     activeProgress: Type.Optional(TaskReadbackProgressProjectionSchema),
-    progressSummary: Type.Optional(Type.String()),
     terminalSummary: Type.Optional(Type.String()),
     error: Type.Optional(Type.String()),
   },

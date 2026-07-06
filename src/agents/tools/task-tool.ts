@@ -231,6 +231,7 @@ function resolveTaskToolLightContext(agentId: string, value: unknown): boolean {
 export function createTaskTool(
   opts?: {
     agentSessionKey?: string;
+    parentRunId?: string;
     agentChannel?: GatewayMessageChannel;
     agentAccountId?: string;
     agentTo?: string;
@@ -288,6 +289,7 @@ export function createTaskTool(
         },
         {
           agentSessionKey: opts?.agentSessionKey,
+          parentRunId: opts?.parentRunId,
           completionOwnerKey: opts?.agentSessionKey,
           agentChannel: opts?.agentChannel,
           agentAccountId: opts?.agentAccountId,

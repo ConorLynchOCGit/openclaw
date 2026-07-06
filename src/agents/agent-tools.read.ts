@@ -57,6 +57,7 @@ const ADAPTIVE_READ_CONTEXT_SHARE = 0.1;
 const CHARS_PER_TOKEN_ESTIMATE = 4;
 const MAX_ADAPTIVE_READ_PAGES = 4;
 const MAX_SKILL_INSTRUCTION_READ_PAGES = 256;
+const READ_PAGING_PARAM_KEYS = ["limit", "offset", "startLine", "endLine", "maxLines"] as const;
 
 type OpenClawReadToolOptions = {
   modelContextWindowTokens?: number;
@@ -302,18 +303,31 @@ function normalizedSkillInstructionPaths(options?: OpenClawReadToolOptions): Set
   return paths;
 }
 
+function isConventionalSkillInstructionPath(candidate: string): boolean {
+  const normalized = candidate.replace(/\\/g, "/");
+  if (!/\/SKILL\.md$/iu.test(normalized)) {
+    return false;
+  }
+  return /(?:^|\/)(?:\.agents\/skills|\.openclaw\/sandbox-skills\/skills|skills)\/[^/]+\/SKILL\.md$/iu.test(
+    normalized,
+  );
+}
+
 function isVisibleSkillInstructionRead(
   args: Record<string, unknown>,
   options?: OpenClawReadToolOptions,
 ): boolean {
-  if (!options?.skillInstructionPaths?.length || typeof args.path !== "string") {
+  if (typeof args.path !== "string") {
     return false;
   }
-  const candidate = normalizeInstructionPathCandidate(args.path, options.root);
+  const candidate = normalizeInstructionPathCandidate(args.path, options?.root);
   if (!candidate) {
     return false;
   }
-  return normalizedSkillInstructionPaths(options).has(candidate);
+  return (
+    normalizedSkillInstructionPaths(options).has(candidate) ||
+    isConventionalSkillInstructionPath(candidate)
+  );
 }
 
 function forceFullVisibleSkillInstructionRead(
@@ -323,12 +337,13 @@ function forceFullVisibleSkillInstructionRead(
   if (!isVisibleSkillInstructionRead(args, options)) {
     return args;
   }
-  if (!Object.hasOwn(args, "limit") && !Object.hasOwn(args, "offset")) {
+  if (!READ_PAGING_PARAM_KEYS.some((key) => Object.hasOwn(args, key))) {
     return args;
   }
   const next = { ...args };
-  delete next.limit;
-  delete next.offset;
+  for (const key of READ_PAGING_PARAM_KEYS) {
+    delete next[key];
+  }
   return next;
 }
 
