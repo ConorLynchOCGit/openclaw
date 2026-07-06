@@ -58,7 +58,7 @@ export type SnapshotSelection = {
   source: "pre-compaction" | "current";
 };
 
-function canContinueFromMessage(message: AgentMessage | undefined): boolean {
+export function canContinueFromMessage(message: AgentMessage | undefined): boolean {
   switch (message?.role) {
     case "user":
     case "toolResult":
@@ -76,7 +76,7 @@ function canContinueFromMessage(message: AgentMessage | undefined): boolean {
 // Drop trailing assistant/tool-call-only fragments before retrying. Those tails
 // are not safe continuation points because replay could resume after an
 // incomplete action instead of a user, tool-result, or summary boundary.
-function trimToContinuableTail(messages: AgentMessage[]): AgentMessage[] | null {
+export function trimToContinuableTail(messages: AgentMessage[]): AgentMessage[] | null {
   let end = messages.length;
   while (end > 0 && !canContinueFromMessage(messages[end - 1])) {
     end -= 1;
