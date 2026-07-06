@@ -25,6 +25,7 @@ import { jsonResult, readStringParam, textResult } from "./common.js";
 const TASK_WAIT_POLL_MS = 60_000;
 const TASK_RESULT_PARENT_INLINE_MAX_CHARS = 1_800;
 const TASK_RESULT_PARENT_PREVIEW_MAX_CHARS = 0;
+const RECEIPT_ONLY_PARENT_AGENT_IDS = new Set(["main"]);
 const DEFAULT_LIGHT_CONTEXT_AGENT_IDS = new Set([
   "codebase-researcher",
   "docs-standards-researcher",
@@ -89,6 +90,7 @@ function formatTaskResult(params: {
   contentChars: number;
   contentTruncated: boolean;
   inlineResult: boolean;
+  receiptOnly: boolean;
   inspectCommand: string;
   previewText?: string;
   previewChars?: number;
@@ -98,6 +100,18 @@ function formatTaskResult(params: {
   const childSessionIdAttr = params.childSessionId
     ? ` childSessionId="${escapeXmlAttr(params.childSessionId)}"`
     : "";
+  if (params.receiptOnly) {
+    return [
+      `<task_receipt sessionKey="${escapeXmlAttr(params.childSessionKey)}" agentId="${escapeXmlAttr(
+        params.agentId,
+      )}" status="completed" ref="${escapeXmlAttr(
+        `openclaw-session:${params.childSessionKey}:latest-assistant`,
+      )}" chars="${params.contentChars}" digest="${escapeXmlAttr(params.contentDigest)}">`,
+      `  <inspect_command>${escapeXmlText(params.inspectCommand)}</inspect_command>`,
+      ...formatTaskRecoveryHistory(params.recoveryHistory),
+      "</task_receipt>",
+    ].join("\n");
+  }
   const openTag = `<task id="${escapeXmlAttr(params.childSessionKey)}" runId="${escapeXmlAttr(
     params.runId,
   )}" agentId="${escapeXmlAttr(
@@ -146,6 +160,22 @@ function shouldInlineTaskResultForParent(replyText: string): boolean {
     replyText.length <= TASK_RESULT_PARENT_INLINE_MAX_CHARS &&
     !includesChildResultTruncationMarker(replyText)
   );
+}
+
+function resolveRequesterAgentId(
+  opts: { requesterAgentIdOverride?: string; agentSessionKey?: string } | undefined,
+) {
+  const override = opts?.requesterAgentIdOverride?.trim();
+  if (override) {
+    return override;
+  }
+  const fromSessionKey = /^agent:([^:]+)/.exec(opts?.agentSessionKey ?? "")?.[1]?.trim();
+  return fromSessionKey || undefined;
+}
+
+function shouldReturnReceiptOnlyToParent(params: { requesterAgentId?: string }) {
+  const requesterAgentId = params.requesterAgentId?.trim().toLowerCase();
+  return requesterAgentId !== undefined && RECEIPT_ONLY_PARENT_AGENT_IDS.has(requesterAgentId);
 }
 
 function buildTaskResultInspectCommand(params: {
@@ -448,7 +478,9 @@ export function createTaskTool(
       const replyText = wait.replyText.trim();
       const contentDigest = computeChildResultContentDigest(replyText);
       const contentTruncated = includesChildResultTruncationMarker(replyText);
-      const inlineResult = shouldInlineTaskResultForParent(replyText);
+      const requesterAgentId = resolveRequesterAgentId(opts);
+      const receiptOnly = shouldReturnReceiptOnlyToParent({ requesterAgentId });
+      const inlineResult = !receiptOnly && shouldInlineTaskResultForParent(replyText);
       const resultRef = `openclaw-session:${spawn.childSessionKey}`;
       const transcriptFinalRef = `openclaw-session:${spawn.childSessionKey}:latest-assistant`;
       const inspectCommand = buildTaskResultInspectCommand({
@@ -467,6 +499,7 @@ export function createTaskTool(
         contentChars: replyText.length,
         contentTruncated,
         inlineResult,
+        receiptOnly,
         inspectCommand,
         previewText,
         previewChars: previewText?.length ?? 0,

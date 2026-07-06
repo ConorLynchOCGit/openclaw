@@ -141,6 +141,75 @@ describe("task tool", () => {
     expect(content.text).toContain("Context Pack\n\nP1...");
   });
 
+  it("returns receipt-only task output to Main even when the delegated child result is small", async () => {
+    const shortPlanningResult = "Brief Planning artifact that Main must not rewrite.";
+    hoisted.readLatestAssistantReplyMock.mockResolvedValue(shortPlanningResult);
+
+    const result = await createTaskTool({
+      agentSessionKey: "agent:main:operator",
+      requesterAgentIdOverride: "main",
+    }).execute("call-1", {
+      agentId: "planning",
+      task: "Produce a small Planning artifact.",
+    });
+
+    expect(result.details).toMatchObject({
+      status: "ok",
+      childSessionKey: "agent:codebase-researcher:subagent:child",
+      agentId: "planning",
+      contentDigest: digestText(shortPlanningResult),
+      contentChars: shortPlanningResult.length,
+      resultChars: shortPlanningResult.length,
+      resultInline: false,
+      resultMode: "pointer",
+      previewOnly: true,
+      previewChars: 0,
+      displayTruncated: true,
+    });
+    const content = result.content[0];
+    expect(content?.type).toBe("text");
+    if (!content || content.type !== "text") {
+      throw new Error("Expected text tool result");
+    }
+    expect(content.text).toContain("<task_receipt");
+    expect(content.text).toContain('agentId="planning"');
+    expect(content.text).toContain('status="completed"');
+    expect(content.text).toContain(
+      'ref="openclaw-session:agent:codebase-researcher:subagent:child:latest-assistant"',
+    );
+    expect(content.text).toContain(`chars="${shortPlanningResult.length}"`);
+    expect(content.text).toContain(`digest="${digestText(shortPlanningResult)}"`);
+    expect(content.text).toContain("<inspect_command>");
+    expect(content.text).not.toContain("<task_result>");
+    expect(content.text).not.toContain("<task_result_preview");
+    expect(content.text).not.toContain(shortPlanningResult);
+  });
+
+  it("infers Main receipt-only behavior from the parent session key", async () => {
+    const shortPlanningResult = "Small artifact that should still stay in Planning.";
+    hoisted.readLatestAssistantReplyMock.mockResolvedValue(shortPlanningResult);
+
+    const result = await createTaskTool({
+      agentSessionKey: "agent:main:operator",
+    }).execute("call-1", {
+      agentId: "planning",
+      task: "Produce a small Planning artifact.",
+    });
+
+    const content = result.content[0];
+    expect(content?.type).toBe("text");
+    if (!content || content.type !== "text") {
+      throw new Error("Expected text tool result");
+    }
+    expect(result.details).toMatchObject({
+      resultInline: false,
+      resultMode: "pointer",
+      previewOnly: true,
+    });
+    expect(content.text).toContain("<task_receipt");
+    expect(content.text).not.toContain(shortPlanningResult);
+  });
+
   it("returns native child transcript pointers instead of large child finals as parent context", async () => {
     const largePlanningResult = `# Approval Packet\n\n${"substantive planning evidence\n".repeat(360)}`;
     const finalPlanningResult = largePlanningResult.trim();
