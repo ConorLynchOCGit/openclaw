@@ -86,6 +86,8 @@ const defaultOpenClawToolsDeps: OpenClawToolsDeps = {
 
 let openClawToolsDeps: OpenClawToolsDeps = defaultOpenClawToolsDeps;
 
+const ROUTER_AGENT_IDS_WITHOUT_CHILD_HISTORY = new Set(["main", "execution-orchestrator"]);
+
 export function createOpenClawTools(
   options?: {
     sandboxBrowserBridgeUrl?: string;
@@ -196,6 +198,10 @@ export function createOpenClawTools(
     config: resolvedConfig,
     agentId: options?.requesterAgentIdOverride,
   });
+  const effectiveAgentId = options?.requesterAgentIdOverride ?? sessionAgentId;
+  const omitChildHistoryForRouterAgent =
+    effectiveAgentId !== undefined &&
+    ROUTER_AGENT_IDS_WITHOUT_CHILD_HISTORY.has(effectiveAgentId.trim());
   // Fall back to the session agent workspace so plugin loading stays workspace-stable
   // even when a caller forgets to thread workspaceDir explicitly.
   const inferredWorkspaceDir =
@@ -498,12 +504,16 @@ export function createOpenClawTools(
       config: resolvedConfig,
       callGateway: effectiveCallGateway,
     }),
-    createSessionsHistoryTool({
-      agentSessionKey: options?.agentSessionKey,
-      sandboxed: options?.sandboxed,
-      config: resolvedConfig,
-      callGateway: effectiveCallGateway,
-    }),
+    ...(omitChildHistoryForRouterAgent
+      ? []
+      : [
+          createSessionsHistoryTool({
+            agentSessionKey: options?.agentSessionKey,
+            sandboxed: options?.sandboxed,
+            config: resolvedConfig,
+            callGateway: effectiveCallGateway,
+          }),
+        ]),
     ...(embedded
       ? []
       : [

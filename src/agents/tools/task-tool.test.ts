@@ -168,10 +168,10 @@ describe("task tool", () => {
       inspectCommand:
         "openclaw sessions show agent:codebase-researcher:subagent:child --agent planning",
       previewOnly: true,
-      previewChars: 600,
+      previewChars: 0,
       displayTruncated: true,
       parentInlineLimitChars: 1_800,
-      parentPreviewLimitChars: 600,
+      parentPreviewLimitChars: 0,
     });
     const content = result.content[0];
     expect(content?.type).toBe("text");
@@ -182,7 +182,7 @@ describe("task tool", () => {
     expect(content.text).toContain('childSessionId="session-child"');
     expect(content.text).toContain("<task_result_ref");
     expect(content.text).toContain("<task_result_inspect>");
-    expect(content.text).toContain("<task_result_preview");
+    expect(content.text).not.toContain("<task_result_preview");
     expect(content.text).toContain("full result remains in the child session transcript");
     expect(content.text).not.toContain("<task_result>");
     expect(content.text).not.toContain(finalPlanningResult);
@@ -359,10 +359,10 @@ describe("task tool", () => {
       resultInline: false,
       resultMode: "pointer",
       previewOnly: true,
-      previewChars: 600,
+      previewChars: 0,
       displayTruncated: true,
       parentInlineLimitChars: 1_800,
-      parentPreviewLimitChars: 600,
+      parentPreviewLimitChars: 0,
     });
   });
 });

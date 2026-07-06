@@ -159,6 +159,25 @@ describe("createOpenClawTools TTS config wiring", () => {
     mocks.textToSpeech.mockClear();
   });
 
+  it("omits sessions_history for router agents so delegated artifacts stay receipt-only", () => {
+    const tools = createOpenClawTools({
+      requesterAgentIdOverride: "main",
+      wrapBeforeToolCallHook: false,
+    });
+
+    expect(tools.map((tool) => tool.name)).toContain("sessions_list");
+    expect(tools.map((tool) => tool.name)).not.toContain("sessions_history");
+  });
+
+  it("keeps sessions_history available for non-router agents that need bounded child readback", () => {
+    const tools = createOpenClawTools({
+      requesterAgentIdOverride: "planning",
+      wrapBeforeToolCallHook: false,
+    });
+
+    expect(tools.map((tool) => tool.name)).toContain("sessions_history");
+  });
+
   it("passes the resolved shared config into the tts tool", async () => {
     const injectedConfig = {
       messages: {

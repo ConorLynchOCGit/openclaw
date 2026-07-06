@@ -24,7 +24,7 @@ import { jsonResult, readStringParam, textResult } from "./common.js";
 
 const TASK_WAIT_POLL_MS = 60_000;
 const TASK_RESULT_PARENT_INLINE_MAX_CHARS = 1_800;
-const TASK_RESULT_PARENT_PREVIEW_MAX_CHARS = 600;
+const TASK_RESULT_PARENT_PREVIEW_MAX_CHARS = 0;
 const DEFAULT_LIGHT_CONTEXT_AGENT_IDS = new Set([
   "codebase-researcher",
   "docs-standards-researcher",
@@ -157,6 +157,9 @@ function buildTaskResultInspectCommand(params: {
 
 function buildTaskResultPreview(replyText: string, inlineResult: boolean): string | undefined {
   if (inlineResult) {
+    return undefined;
+  }
+  if (TASK_RESULT_PARENT_PREVIEW_MAX_CHARS <= 0) {
     return undefined;
   }
   const trimmed = replyText.trim();
