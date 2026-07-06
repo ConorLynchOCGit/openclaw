@@ -195,4 +195,54 @@ describe("gateway register option collisions", () => {
     await sharedProgram.parseAsync(argv, { from: "user" });
     assert();
   });
+
+  it("rejects chat.send --expect-final before submission when required proof launch fields are missing", async () => {
+    await sharedProgram.parseAsync(
+      ["gateway", "call", "chat.send", "--expect-final", "--json", "--params", "{}"],
+      { from: "user" },
+    );
+
+    expect(callGatewayCli).not.toHaveBeenCalled();
+    expect(defaultRuntime.writeJson).toHaveBeenCalledWith({
+      status: "rejected_before_submission",
+      missingFields: ["agentId", "sessionKey", "idempotencyKey", "message"],
+      invalidFields: [],
+      noRunCreated: true,
+      pathContext: {},
+    });
+    expect(defaultRuntime.exit).toHaveBeenCalledWith(1);
+  });
+
+  it("rejects chat.send --expect-final before submission when promptPath cannot be read", async () => {
+    await sharedProgram.parseAsync(
+      [
+        "gateway",
+        "call",
+        "chat.send",
+        "--expect-final",
+        "--json",
+        "--params",
+        JSON.stringify({
+          agentId: "main",
+          sessionKey: "agent:main:proof",
+          idempotencyKey: "proof-launch-validation",
+          message: "Run proof.",
+          promptPath: "/tmp/openclaw-missing-proof-prompt.md",
+        }),
+      ],
+      { from: "user" },
+    );
+
+    expect(callGatewayCli).not.toHaveBeenCalled();
+    expect(defaultRuntime.writeJson).toHaveBeenCalledWith({
+      status: "rejected_before_submission",
+      missingFields: [],
+      invalidFields: ["promptPath"],
+      noRunCreated: true,
+      pathContext: {
+        promptPath: "/tmp/openclaw-missing-proof-prompt.md",
+      },
+    });
+    expect(defaultRuntime.exit).toHaveBeenCalledWith(1);
+  });
 });
