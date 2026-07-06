@@ -666,6 +666,21 @@ function progressObservedAtMs(progress: ReadbackProgressProjection): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function resolveLastObservedActivitySource(params: {
+  key: string;
+  childSessions: readonly string[] | undefined;
+  progress: ReadbackProgressProjection | null | undefined;
+}): GatewaySessionRow["lastObservedActivitySource"] {
+  const pointerRef =
+    params.progress?.pointer?.kind === "session"
+      ? normalizeOptionalString(params.progress.pointer.ref)
+      : undefined;
+  if (!pointerRef || pointerRef === params.key) {
+    return "own";
+  }
+  return params.childSessions?.includes(pointerRef) ? "direct-child" : "descendant";
+}
+
 function buildUnavailableActiveProgress(params: {
   key: string;
   entry?: SessionEntry;
@@ -1005,8 +1020,11 @@ export function resolveDeletedAgentIdFromSessionKey(
   return agentId;
 }
 
-export function loadSessionEntry(sessionKey: string, opts?: { agentId?: string; clone?: boolean }) {
-  const cfg = getRuntimeConfig();
+export function loadSessionEntry(
+  sessionKey: string,
+  opts?: { agentId?: string; clone?: boolean; cfg?: OpenClawConfig },
+) {
+  const cfg = opts?.cfg ?? getRuntimeConfig();
   const key = normalizeOptionalString(sessionKey) ?? "";
   const target = resolveGatewaySessionStoreTargetWithStore({
     cfg,
@@ -2252,6 +2270,21 @@ export function buildGatewaySessionRow(params: {
       },
     };
   }
+  if (!rowStatus && readbackProvenance?.activeProgress?.source === "trajectory") {
+    rowStatus = "running";
+    readbackProvenance = {
+      ...readbackProvenance,
+      status: {
+        source: "trajectory",
+        ref: readbackProvenance.activeProgress.ref,
+        eventType: readbackProvenance.activeProgress.sourceEventType,
+        eventSeq: readbackProvenance.activeProgress.sourceEventSeq,
+        derivedBy: "buildGatewaySessionRow",
+        bounded: true,
+        note: "session-store status missing; native trajectory progress shows active work",
+      },
+    };
+  }
 
   const thinkingProvider = rowModelProvider ?? DEFAULT_PROVIDER;
   const thinkingModel = rowModel ?? DEFAULT_MODEL;
@@ -2270,8 +2303,14 @@ export function buildGatewaySessionRow(params: {
   const activeProgress = readbackProvenance?.activeProgress ?? null;
   const activeProgressUpdatedAt =
     activeProgress?.source === "trajectory" ? progressObservedAtMs(activeProgress) : 0;
-  const rowUpdatedAt =
-    activeProgressUpdatedAt > (updatedAt ?? 0) ? activeProgressUpdatedAt : updatedAt;
+  const latestObservedAt = Math.max(updatedAt ?? 0, activeProgressUpdatedAt);
+  const lastObservedActivityAt = latestObservedAt > 0 ? latestObservedAt : null;
+  const lastObservedActivitySource =
+    activeProgressUpdatedAt > (updatedAt ?? 0)
+      ? resolveLastObservedActivitySource({ key, childSessions, progress: activeProgress })
+      : updatedAt
+        ? "own"
+        : undefined;
   const promptContext =
     entry?.skillsSnapshot || entry?.systemPromptReport
       ? {
@@ -2319,6 +2358,7 @@ export function buildGatewaySessionRow(params: {
 
   return {
     key,
+    agentId: sessionAgentId,
     spawnedBy: entry?.spawnedBy,
     spawnedWorkspaceDir: entry?.spawnedWorkspaceDir,
     spawnedCwd: entry?.spawnedCwd,
@@ -2341,7 +2381,9 @@ export function buildGatewaySessionRow(params: {
     space,
     chatType: entry?.chatType,
     origin,
-    updatedAt: rowUpdatedAt,
+    updatedAt,
+    lastObservedActivityAt,
+    lastObservedActivitySource,
     sessionId: entry?.sessionId,
     systemSent: entry?.systemSent,
     abortedLastRun: entry?.abortedLastRun,
@@ -2500,6 +2542,7 @@ function resolveSessionListSearchModelFields(params: {
 export function loadGatewaySessionRow(
   sessionKey: string,
   options?: {
+    cfg?: OpenClawConfig;
     agentId?: string;
     includeDerivedTitles?: boolean;
     includeLastMessage?: boolean;
@@ -2509,6 +2552,7 @@ export function loadGatewaySessionRow(
 ): GatewaySessionRow | null {
   const now = options?.now ?? Date.now();
   const { cfg, storePath, store, entry, canonicalKey } = loadSessionEntry(sessionKey, {
+    ...(options?.cfg ? { cfg: options.cfg } : {}),
     clone: false,
     ...(options?.agentId ? { agentId: options.agentId } : {}),
   });

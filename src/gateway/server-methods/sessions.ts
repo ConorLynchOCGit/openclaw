@@ -13,6 +13,7 @@ import {
   ErrorCodes,
   errorShape,
   type SessionOperationEvent,
+  type SessionsDescribeParams,
   validateSessionsAbortParams,
   validateSessionsCleanupParams,
   validateSessionsCompactParams,
@@ -100,6 +101,7 @@ import {
   buildGatewaySessionRow,
   listSessionsFromStoreAsync,
   loadCombinedSessionStoreForGateway,
+  loadGatewaySessionRow,
   loadSessionEntry,
   migrateAndPruneGatewaySessionStoreKey,
   readRecentSessionMessagesWithStatsAsync,
@@ -922,6 +924,35 @@ async function handleSessionSend(params: {
     });
   }
 }
+
+function respondWithSessionDetail(params: {
+  method: "sessions.describe" | "sessions.show";
+  rawParams: unknown;
+  respond: RespondFn;
+  context: GatewayRequestContext;
+}): void {
+  const rawParams = params.rawParams;
+  if (
+    !assertValidParams(rawParams, validateSessionsDescribeParams, params.method, params.respond)
+  ) {
+    return;
+  }
+  const p: SessionsDescribeParams = rawParams;
+  const key = requireSessionKey(p.key, params.respond);
+  if (!key) {
+    return;
+  }
+  const row = loadGatewaySessionRow(key, {
+    includeDerivedTitles: p.includeDerivedTitles,
+    includeLastMessage: p.includeLastMessage,
+    transcriptUsageMaxBytes: 64 * 1024,
+  });
+  if (!row) {
+    params.respond(true, { session: null }, undefined);
+    return;
+  }
+  params.respond(true, { session: row }, undefined);
+}
 export const sessionsHandlers: GatewayRequestHandlers = {
   "sessions.list": async ({ params, respond, context }) => {
     if (!assertValidParams(params, validateSessionsListParams, "sessions.list", respond)) {
@@ -1206,33 +1237,20 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     respond(true, { ts: Date.now(), previews } satisfies SessionsPreviewResult, undefined);
   },
   "sessions.describe": ({ params, respond, context }) => {
-    if (!assertValidParams(params, validateSessionsDescribeParams, "sessions.describe", respond)) {
-      return;
-    }
-    const p = params;
-    const key = requireSessionKey(p.key, respond);
-    if (!key) {
-      return;
-    }
-    const cfg = context.getRuntimeConfig();
-    const { target, storePath } = resolveGatewaySessionTargetFromKey(key, cfg);
-    const store = loadSessionStore(storePath);
-    const entry = resolveFreshestSessionEntryFromStoreKeys(store, target.storeKeys);
-    if (!entry) {
-      respond(true, { session: null }, undefined);
-      return;
-    }
-    const row = buildGatewaySessionRow({
-      cfg,
-      storePath,
-      store,
-      key: target.canonicalKey,
-      entry,
-      includeDerivedTitles: p.includeDerivedTitles,
-      includeLastMessage: p.includeLastMessage,
-      transcriptUsageMaxBytes: 64 * 1024,
+    respondWithSessionDetail({
+      method: "sessions.describe",
+      rawParams: params,
+      respond,
+      context,
     });
-    respond(true, { session: row }, undefined);
+  },
+  "sessions.show": ({ params, respond, context }) => {
+    respondWithSessionDetail({
+      method: "sessions.show",
+      rawParams: params,
+      respond,
+      context,
+    });
   },
   "sessions.resolve": async ({ params, respond, context }) => {
     if (!assertValidParams(params, validateSessionsResolveParams, "sessions.resolve", respond)) {

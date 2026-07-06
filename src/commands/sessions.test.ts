@@ -187,6 +187,70 @@ describe("sessionsCommand", () => {
     });
   });
 
+  it("uses native trajectory progress for session list display freshness without mutating updatedAt", async () => {
+    const staleUpdatedAt = Date.now() - 30 * 60_000;
+    const observedAt = Date.parse("2025-12-05T23:59:30.000Z");
+    const sessionId = "main-trajectory-list-session";
+    const store = writeStore(
+      {
+        "agent:main:main": {
+          sessionId,
+          updatedAt: staleUpdatedAt,
+          status: "running",
+          modelProvider: "openai",
+          model: "gpt-5.5",
+        },
+      },
+      "sessions-list-trajectory-freshness",
+    );
+    const trajectory = path.join(path.dirname(store), `${sessionId}.trajectory.jsonl`);
+    fs.writeFileSync(
+      trajectory,
+      [
+        JSON.stringify({
+          traceSchema: "openclaw-trajectory",
+          schemaVersion: 1,
+          sessionId,
+          type: "agent.tool",
+          ts: "2025-12-05T23:59:30.000Z",
+          seq: 4,
+          sourceSeq: 12,
+          data: {
+            phase: "start",
+            name: "task",
+            title: "Task",
+            summary: "waiting on Planning child",
+          },
+        }),
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const { runtime, logs } = makeRuntime();
+    await sessionsCommand({ store, json: true, active: "5", limit: "all" }, runtime);
+
+    fs.rmSync(store, { force: true });
+    fs.rmSync(trajectory, { force: true });
+
+    const payload = JSON.parse(logs[0] ?? "{}") as {
+      sessions?: Array<{
+        key?: string;
+        updatedAt?: number;
+        activityUpdatedAt?: number | null;
+        lastObservedActivityAt?: number | null;
+        lastObservedActivitySource?: string;
+      }>;
+    };
+    const parentSession = payload.sessions?.find((session) => session.key === "agent:main:main");
+    expect(parentSession).toMatchObject({
+      updatedAt: staleUpdatedAt,
+      activityUpdatedAt: observedAt,
+      lastObservedActivityAt: observedAt,
+      lastObservedActivitySource: "own",
+    });
+  });
+
   it("does not need task registry readback for session listing", async () => {
     const store = writeStore({
       "agent:main:main": {
@@ -327,16 +391,24 @@ describe("sessionsCommand", () => {
     }
 
     const payload = JSON.parse(logs[0] ?? "{}") as {
+      key?: string | null;
+      sessionKey?: string | null;
+      sessionId?: string | null;
       agentId?: string;
       finalAssistantText?: string | null;
       session?: {
         key?: string;
+        sessionId?: string;
         finalAssistantText?: string | null;
         childSessions?: string[];
       };
     };
+    expect(payload.key).toBe("agent:planning:main");
+    expect(payload.sessionKey).toBe("agent:planning:main");
+    expect(payload.sessionId).toBe(sessionId);
     expect(payload.agentId).toBe("planning");
     expect(payload.session?.key).toBe("agent:planning:main");
+    expect(payload.session?.sessionId).toBe(sessionId);
     expect(payload.session?.finalAssistantText).toBe(
       "Final recursive planning improvement synthesized.",
     );
@@ -801,14 +873,14 @@ describe("sessionsCommand", () => {
       };
     };
     expect(payload.sessionKey).toBe(sessionKey);
-    expect(payload.status).toBe("unknown");
+    expect(payload.status).toBe("running");
     expect(payload.readbackSubject?.sessionKey).toBe(sessionKey);
     expect(payload.finality).toMatchObject({
-      status: "unknown",
+      status: "running",
       finalAssistantTextPresent: false,
     });
     expect(payload).not.toHaveProperty("activeWork");
-    expect(payload.session?.status).toBeUndefined();
+    expect(payload.session?.status).toBe("running");
     expect(payload.activeProgress).toMatchObject({
       source: "trajectory",
       currentPhase: "source-inspection",

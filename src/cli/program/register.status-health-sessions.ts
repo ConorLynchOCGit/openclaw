@@ -326,6 +326,7 @@ export function registerStatusHealthSessionsCommands(program: Command) {
     .option("--session-key <key>", "Session key to tail (default: active sessions or latest)")
     .option("--tail <count>", "Number of existing trajectory events to show", "80")
     .option("--follow", "Continue following for new trajectory events", false)
+    .option("--json", "Output a parseable trajectory event snapshot", false)
     .option("--store <path>", "Path to session store (default: resolved from config)")
     .option("--agent <id>", "Agent id to inspect (default: configured default agent)")
     .option("--all-agents", "Aggregate sessions across all configured agents", false)
@@ -335,6 +336,7 @@ export function registerStatusHealthSessionsCommands(program: Command) {
             store?: string;
             agent?: string;
             allAgents?: boolean;
+            json?: boolean;
           }
         | undefined;
       await runCommandWithRuntime(defaultRuntime, async () => {
@@ -346,6 +348,7 @@ export function registerStatusHealthSessionsCommands(program: Command) {
             agent: (opts.agent as string | undefined) ?? parentOpts?.agent,
             allAgents: Boolean(opts.allAgents || parentOpts?.allAgents),
             follow: Boolean(opts.follow),
+            json: Boolean(opts.json || parentOpts?.json),
             tail: opts.tail as string | undefined,
           },
           defaultRuntime,

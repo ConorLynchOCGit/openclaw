@@ -1606,6 +1606,50 @@ describe("readLatestTrajectoryProgressProjection", () => {
     });
   });
 
+  test("uses native prompt submission as assistant generation progress without exposing prompt text", async () => {
+    const sessionId = "trajectory-native-prompt-submitted";
+    const sessionFile = path.join(tmpDir, `${sessionId}.jsonl`);
+    fs.writeFileSync(sessionFile, "", "utf-8");
+    const recorder = createTrajectoryRuntimeRecorder({
+      sessionId,
+      sessionKey: `agent:planning:${sessionId}`,
+      sessionFile,
+      maxRuntimeFileBytes: 4_000,
+    });
+    if (!recorder) {
+      throw new Error("expected trajectory recorder");
+    }
+
+    recorder.recordEvent("tool.result", {
+      name: "task",
+      status: "completed",
+      summary: "reviewer returned approval packet",
+    });
+    recorder.recordEvent("prompt.submitted", {
+      prompt: "private finalization prompt",
+      systemPrompt: "private system prompt",
+      messages: [{ role: "user", content: "private user message" }],
+    });
+    await recorder.flush();
+
+    const projection = readLatestTrajectoryProgressProjection(
+      sessionId,
+      storePath,
+      sessionFile,
+      "planning",
+    );
+
+    expect(projection).toMatchObject({
+      source: "trajectory",
+      sourceEventType: "prompt.submitted",
+      activeLabel: "assistant generation",
+      note: "model prompt submitted; assistant generation in progress",
+    });
+    expect(JSON.stringify(projection)).not.toContain("private finalization prompt");
+    expect(JSON.stringify(projection)).not.toContain("private system prompt");
+    expect(JSON.stringify(projection)).not.toContain("private user message");
+  });
+
   test("uses mirrored native agent item titles without treating progress text as active-progress detail", async () => {
     const sessionId = "trajectory-native-agent-item";
     const sessionFile = path.join(tmpDir, `${sessionId}.jsonl`);

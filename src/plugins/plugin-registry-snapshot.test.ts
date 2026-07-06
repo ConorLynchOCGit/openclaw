@@ -386,6 +386,10 @@ describe("loadPluginRegistrySnapshotWithMetadata", () => {
 
     expect(result.source).toBe("derived");
     expectDiagnosticsContainCode(result.diagnostics, "persisted-registry-stale-source");
+    expect(
+      result.diagnostics.find((diagnostic) => diagnostic.code === "persisted-registry-stale-source")
+        ?.level,
+    ).toBe("info");
     expect(result.snapshot.installRecords.whatsapp).toEqual({
       source: "npm",
       spec: "@openclaw/whatsapp@2026.5.2",

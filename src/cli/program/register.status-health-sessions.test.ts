@@ -402,6 +402,15 @@ describe("registerStatusHealthSessionsCommands", () => {
     });
   });
 
+  it("forwards sessions tail json mode", async () => {
+    await runCli(["sessions", "tail", "--session-key", "agent:main:main", "--json"]);
+
+    expectCommandOptions(sessionsTailCommand, {
+      sessionKey: "agent:main:main",
+      json: true,
+    });
+  });
+
   it("runs sessions export-trajectory with owner-routable export options", async () => {
     await runCli([
       "sessions",

@@ -14,7 +14,7 @@ import type { SessionEntry } from "../config/sessions/types.js";
 import { resolveStoredSessionKeyForAgentStore } from "../gateway/session-store-key.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { resolveAgentIdFromSessionKey } from "../routing/session-key.js";
-import type { RuntimeEnv } from "../runtime.js";
+import { writeRuntimeJson, type RuntimeEnv } from "../runtime.js";
 import { resolveTrajectoryFilePath } from "../trajectory/paths.js";
 import { resolveTrajectoryRuntimeFile } from "../trajectory/runtime-file.js";
 import type { TrajectoryEvent } from "../trajectory/types.js";
@@ -27,6 +27,7 @@ type SessionsTailOptions = {
   allAgents?: boolean;
   sessionKey?: string;
   follow?: boolean;
+  json?: boolean;
   tail?: string | number;
 };
 
@@ -306,6 +307,43 @@ function renderEvents(events: TrajectoryEvent[], runtime: RuntimeEnv): Trajector
   return cursor;
 }
 
+function eventToJson(event: TrajectoryEvent): Record<string, unknown> {
+  const seq = eventSequence(event);
+  return {
+    ts: event.ts,
+    type: event.type,
+    sessionId: event.sessionId,
+    ...(event.sessionKey ? { sessionKey: event.sessionKey } : {}),
+    ...(seq !== null ? { seq } : {}),
+    preview: safePreview(event),
+  };
+}
+
+function writeTailJson(params: {
+  runtime: RuntimeEnv;
+  tailCount: number;
+  selections: TailSelection[];
+  snapshots: Map<string, TrajectorySnapshot>;
+}): void {
+  writeRuntimeJson(params.runtime, {
+    schema: "openclaw.sessions_tail.v1",
+    generatedAt: new Date().toISOString(),
+    follow: false,
+    tailCount: params.tailCount,
+    sessions: params.selections.map((selection) => {
+      const snapshot = params.snapshots.get(selection.trajectoryPath);
+      const events = params.tailCount > 0 ? (snapshot?.events ?? []).slice(-params.tailCount) : [];
+      return {
+        agentId: selection.agentId,
+        key: selection.key,
+        sessionId: selection.entry.sessionId,
+        trajectoryPath: selection.trajectoryPath,
+        events: events.map(eventToJson),
+      };
+    }),
+  });
+}
+
 function fileStateFromStat(stat: fs.Stats): FollowFileState {
   return {
     dev: stat.dev,
@@ -516,7 +554,23 @@ export async function sessionsTailCommand(
 ): Promise<void> {
   const tailCount = parseTailCount(opts.tail);
   if (tailCount === null) {
-    runtime.error("--tail must be a non-negative integer, for example --tail 25.");
+    if (opts.json) {
+      writeRuntimeJson(runtime, {
+        ok: false,
+        error: "--tail must be a non-negative integer, for example --tail 25.",
+      });
+    } else {
+      runtime.error("--tail must be a non-negative integer, for example --tail 25.");
+    }
+    runtime.exit(1);
+    return;
+  }
+  if (opts.json && opts.follow) {
+    writeRuntimeJson(runtime, {
+      ok: false,
+      error:
+        "sessions tail --json does not support --follow; rerun without --follow for a parseable event snapshot.",
+    });
     runtime.exit(1);
     return;
   }
@@ -552,6 +606,17 @@ export async function sessionsTailCommand(
   const selected = selectSessionsToTail(selections, opts.sessionKey);
   if (selected.length === 0) {
     const suffix = opts.sessionKey ? ` for ${opts.sessionKey}` : "";
+    if (opts.json) {
+      writeRuntimeJson(runtime, {
+        schema: "openclaw.sessions_tail.v1",
+        generatedAt: new Date().toISOString(),
+        follow: false,
+        tailCount,
+        sessions: [],
+        message: `No sessions found${suffix}.`,
+      });
+      return;
+    }
     runtime.log(`No sessions found${suffix}.`);
     return;
   }
@@ -560,7 +625,14 @@ export async function sessionsTailCommand(
   for (const selection of selected) {
     const snapshot = readTrajectorySnapshot(selection.trajectoryPath);
     followSnapshots.set(selection.trajectoryPath, snapshot);
-    renderEvents(tailCount > 0 ? snapshot.events.slice(-tailCount) : [], runtime);
+    if (!opts.json) {
+      renderEvents(tailCount > 0 ? snapshot.events.slice(-tailCount) : [], runtime);
+    }
+  }
+
+  if (opts.json) {
+    writeTailJson({ runtime, tailCount, selections: selected, snapshots: followSnapshots });
+    return;
   }
 
   if (opts.follow) {

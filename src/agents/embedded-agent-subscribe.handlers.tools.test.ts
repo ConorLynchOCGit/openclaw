@@ -2012,6 +2012,43 @@ describe("control UI credential redaction (issue #72283)", () => {
     expect(serialized).not.toContain("<task_result>");
   });
 
+  it("records SKILL.md read metadata from actual read results instead of requested line limits", async () => {
+    const { ctx } = createTestContext();
+    ctx.state.toolMetaById.set("tool-read-skill", {
+      meta: "read first 160 lines of skills/comprehensive-plan-record/SKILL.md",
+      mutatingAction: false,
+    });
+
+    await handleToolExecutionEnd(
+      ctx as never,
+      {
+        type: "tool_execution_end",
+        toolName: "read",
+        toolCallId: "tool-read-skill",
+        isError: false,
+        result: {
+          content: [{ type: "text", text: "full skill text" }],
+          details: {
+            text: {
+              path: "skills/comprehensive-plan-record/SKILL.md",
+              instructionFile: true,
+              readStatus: "full",
+              linesRead: 775,
+              totalLines: 775,
+              bytesRead: 32000,
+              totalBytes: 32000,
+            },
+          },
+        },
+      } as never,
+    );
+
+    expect(ctx.state.toolMetas.at(-1)).toMatchObject({
+      toolName: "read",
+      meta: "read full SKILL.md (775/775 lines, 32000/32000 bytes)",
+    });
+  });
+
   it("redacts primitive string results before emitting the tool result event", async () => {
     const events: Array<{ stream?: string; data?: Record<string, unknown> }> = [];
     registerAgentEventListener((evt) => {

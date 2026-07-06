@@ -228,6 +228,11 @@ function resolvePathArg(args: unknown): string | undefined {
   return undefined;
 }
 
+function isSkillInstructionPath(path: string): boolean {
+  const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  return normalized === "SKILL.md" || normalized.endsWith("/SKILL.md");
+}
+
 function resolveReadDetail(args: unknown): string | undefined {
   const record = asRecord(args);
   if (!record) {
@@ -237,6 +242,10 @@ function resolveReadDetail(args: unknown): string | undefined {
   const path = resolvePathArg(record);
   if (!path) {
     return undefined;
+  }
+
+  if (isSkillInstructionPath(path)) {
+    return `full SKILL.md from ${path}`;
   }
 
   const offsetRaw =

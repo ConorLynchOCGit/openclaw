@@ -177,6 +177,44 @@ describe("sessionsTailCommand", () => {
     expect(output).toContain("tool.result");
   });
 
+  it("renders parseable JSON snapshots from native trajectory events", async () => {
+    const runtime = makeRuntime();
+    writeJsonl(trajectoryPath, [
+      makeEvent({ type: "session.started", ts: "2026-05-18T12:04:17.000Z" }),
+      makeEvent({
+        type: "tool.call",
+        ts: "2026-05-18T12:04:18.000Z",
+        data: { name: "bash", arguments: { command: "echo SECRET" } },
+      }),
+    ]);
+
+    await sessionsTailCommand({ store: storePath, sessionKey, tail: "1", json: true }, runtime);
+
+    expect(runtime.error).not.toHaveBeenCalled();
+    const payload = JSON.parse(String(vi.mocked(runtime.log).mock.calls[0]?.[0] ?? "{}")) as {
+      schema?: string;
+      sessions?: Array<{
+        key?: string;
+        sessionId?: string;
+        events?: Array<{ type?: string; preview?: string }>;
+      }>;
+    };
+    expect(payload.schema).toBe("openclaw.sessions_tail.v1");
+    expect(payload.sessions?.[0]?.key).toBe(sessionKey);
+    expect(payload.sessions?.[0]?.sessionId).toBe("session-one");
+    expect(payload.sessions?.[0]?.events).toEqual([
+      {
+        ts: "2026-05-18T12:04:18.000Z",
+        type: "tool.call",
+        sessionId: "session-one",
+        sessionKey,
+        seq: 1,
+        preview: "bash {...redacted...}",
+      },
+    ]);
+    expect(JSON.stringify(payload)).not.toContain("SECRET");
+  });
+
   it("uses a session trajectory pointer for relocated runtime files", async () => {
     const runtime = makeRuntime();
     const relocatedDir = path.join(tmpDir, "relocated-trajectories");

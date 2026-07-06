@@ -56,6 +56,7 @@ export type SessionCompactionCheckpointPreview = Pick<
 
 export type GatewaySessionRow = {
   key: string;
+  agentId: string;
   spawnedBy?: string;
   spawnedWorkspaceDir?: string;
   spawnedCwd?: string;
@@ -99,6 +100,8 @@ export type GatewaySessionRow = {
   chatType?: ChatType;
   origin?: SessionEntry["origin"];
   updatedAt: number | null;
+  lastObservedActivityAt?: number | null;
+  lastObservedActivitySource?: "own" | "direct-child" | "descendant";
   sessionId?: string;
   systemSent?: boolean;
   abortedLastRun?: boolean;

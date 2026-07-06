@@ -17,14 +17,14 @@ import {
   type SessionEntry,
 } from "../config/sessions.js";
 import { loadCronJobsStoreSync, resolveCronJobsStorePath } from "../cron/store.js";
-import { buildGatewaySessionRow } from "../gateway/session-utils.js";
+import { loadGatewaySessionRow } from "../gateway/session-utils.js";
 import {
   buildTasksListSummaryPayload,
   mapTaskSummaries,
   mapTaskSummary,
 } from "../gateway/task-summary-projection.js";
 import { buildTaskReadbackProjection } from "../readback/finality.js";
-import type { RuntimeEnv } from "../runtime.js";
+import { writeRuntimeJson, type RuntimeEnv } from "../runtime.js";
 import { parseAgentSessionKey } from "../sessions/session-key-utils.js";
 import { getTaskById, updateTaskNotifyPolicyById } from "../tasks/runtime-internal.js";
 import { cancelDetachedTaskRunById } from "../tasks/task-executor.js";
@@ -93,35 +93,21 @@ function resolveTaskResultSessionEvidence(task: TaskRecord) {
   if (candidateKeys.length === 0) {
     return null;
   }
-  const cfg = getRuntimeConfig();
-  for (const target of resolveAllAgentSessionStoreTargetsSync(cfg)) {
-    const store = loadSessionStore(target.storePath, { skipCache: true });
-    for (const key of candidateKeys) {
-      const entry = store[key];
-      if (!entry) {
-        continue;
-      }
-      const row = buildGatewaySessionRow({
-        cfg,
-        storePath: target.storePath,
-        store,
-        key,
-        entry,
-        agentId: task.agentId ?? target.agentId,
-        includeLastMessage: true,
-        lightweightListRow: true,
-        skipTranscriptUsageFallback: true,
-      });
-      if (!row.finalAssistantText) {
-        continue;
-      }
-      return {
-        sessionKey: row.key,
-        agentId: task.agentId ?? target.agentId,
-        finalAssistantText: row.finalAssistantText,
-        readbackProvenance: row.readbackProvenance ?? null,
-      };
+  for (const key of candidateKeys) {
+    const row = loadGatewaySessionRow(key, {
+      ...(task.agentId ? { agentId: task.agentId } : {}),
+      includeLastMessage: true,
+      transcriptUsageMaxBytes: 64 * 1024,
+    });
+    if (!row?.finalAssistantText) {
+      continue;
     }
+    return {
+      sessionKey: row.key,
+      agentId: row.agentId,
+      finalAssistantText: row.finalAssistantText,
+      readbackProvenance: row.readbackProvenance ?? null,
+    };
   }
   return null;
 }
@@ -550,22 +536,19 @@ export async function tasksListCommand(
   });
 
   if (opts.json) {
-    runtime.log(
-      JSON.stringify(
-        opts.summary
-          ? buildTasksListSummaryPayload(tasks, {
-              runtime: runtimeFilter ?? null,
-              status: statusFilter ?? null,
-            })
-          : {
-              count: tasks.length,
-              runtime: runtimeFilter ?? null,
-              status: statusFilter ?? null,
-              tasks: mapTaskSummaries(tasks),
-            },
-        null,
-        2,
-      ),
+    writeRuntimeJson(
+      runtime,
+      opts.summary
+        ? buildTasksListSummaryPayload(tasks, {
+            runtime: runtimeFilter ?? null,
+            status: statusFilter ?? null,
+          })
+        : {
+            count: tasks.length,
+            runtime: runtimeFilter ?? null,
+            status: statusFilter ?? null,
+            tasks: mapTaskSummaries(tasks),
+          },
     );
     return;
   }
@@ -638,17 +621,11 @@ export async function tasksShowCommand(
     resultSession,
   });
   if (opts.json) {
-    runtime.log(
-      JSON.stringify(
-        {
-          ...summary,
-          readbackSubject: readback.readbackSubject,
-          finality: readback.finality,
-        },
-        null,
-        2,
-      ),
-    );
+    writeRuntimeJson(runtime, {
+      ...summary,
+      readbackSubject: readback.readbackSubject,
+      finality: readback.finality,
+    });
     return;
   }
 
@@ -773,32 +750,26 @@ export async function tasksAuditCommand(
 
   if (opts.json) {
     const legacySummary = summarizeTaskAuditFindings(taskFindings);
-    runtime.log(
-      JSON.stringify(
-        {
-          count: allFindings.length,
-          filteredCount: filteredFindings.length,
-          displayed: displayed.length,
-          filters: {
-            severity: severityFilter ?? null,
-            code: codeFilter ?? null,
-            limit: limit ?? null,
-          },
-          summary: {
-            ...legacySummary,
-            taskFlows: summary.taskFlows,
-            combined: {
-              total: summary.total,
-              errors: summary.errors,
-              warnings: summary.warnings,
-            },
-          },
-          findings: displayed,
+    writeRuntimeJson(runtime, {
+      count: allFindings.length,
+      filteredCount: filteredFindings.length,
+      displayed: displayed.length,
+      filters: {
+        severity: severityFilter ?? null,
+        code: codeFilter ?? null,
+        limit: limit ?? null,
+      },
+      summary: {
+        ...legacySummary,
+        taskFlows: summary.taskFlows,
+        combined: {
+          total: summary.total,
+          errors: summary.errors,
+          warnings: summary.warnings,
         },
-        null,
-        2,
-      ),
-    );
+      },
+      findings: displayed,
+    });
     return;
   }
 
@@ -858,30 +829,24 @@ export async function tasksMaintenanceCommand(
   );
 
   if (opts.json) {
-    runtime.log(
-      JSON.stringify(
-        {
-          mode: opts.apply ? "apply" : "preview",
-          maintenance: {
-            tasks: taskMaintenance,
-            taskFlows: flowMaintenance,
-            sessions: sessionMaintenance,
-          },
-          tasks: summary,
-          diagnostics,
-          auditBefore: {
-            ...auditBefore,
-            taskFlows: flowAuditBefore,
-          },
-          auditAfter: {
-            ...auditAfter,
-            taskFlows: flowAuditAfter,
-          },
-        },
-        null,
-        2,
-      ),
-    );
+    writeRuntimeJson(runtime, {
+      mode: opts.apply ? "apply" : "preview",
+      maintenance: {
+        tasks: taskMaintenance,
+        taskFlows: flowMaintenance,
+        sessions: sessionMaintenance,
+      },
+      tasks: summary,
+      diagnostics,
+      auditBefore: {
+        ...auditBefore,
+        taskFlows: flowAuditBefore,
+      },
+      auditAfter: {
+        ...auditAfter,
+        taskFlows: flowAuditAfter,
+      },
+    });
     return;
   }
 

@@ -38,6 +38,7 @@ describe("task tool", () => {
     hoisted.spawnSubagentDirectMock.mockReset().mockResolvedValue({
       status: "accepted",
       childSessionKey: "agent:codebase-researcher:subagent:child",
+      childSessionId: "session-child",
       runId: "run-child",
       resolvedProvider: "openrouter",
       resolvedModel: "anthropic/claude-haiku-4.5",
@@ -99,6 +100,7 @@ describe("task tool", () => {
     expect(result.details).toMatchObject({
       status: "ok",
       childSessionKey: "agent:codebase-researcher:subagent:child",
+      childSessionId: "session-child",
       runId: "run-child",
       agentId: "codebase-researcher",
       taskName: "codebase_scan",
@@ -112,6 +114,11 @@ describe("task tool", () => {
       contentTruncated: false,
       resultChars: "Context Pack\n\nP1...".length,
       resultTruncated: false,
+      resultInline: true,
+      resultMode: "inline",
+      resultRef: "openclaw-session:agent:codebase-researcher:subagent:child",
+      transcriptFinalRef:
+        "openclaw-session:agent:codebase-researcher:subagent:child:latest-assistant",
       resolvedProvider: "openrouter",
       resolvedModel: "anthropic/claude-haiku-4.5",
     });
@@ -123,9 +130,48 @@ describe("task tool", () => {
       throw new Error("Expected text tool result");
     }
     expect(content.text).toContain("<task_result>");
+    expect(content.text).toContain('childSessionId="session-child"');
     expect(content.text).toContain(`contentDigest="${digestText("Context Pack\n\nP1...")}"`);
     expect(content.text).toContain('contentTruncated="false"');
     expect(content.text).toContain("Context Pack\n\nP1...");
+  });
+
+  it("returns native child transcript pointers instead of large child finals as parent context", async () => {
+    const largePlanningResult = `# Approval Packet\n\n${"substantive planning evidence\n".repeat(650)}`;
+    const finalPlanningResult = largePlanningResult.trim();
+    hoisted.readLatestAssistantReplyMock.mockResolvedValue(largePlanningResult);
+
+    const result = await createTaskTool().execute("call-1", {
+      agentId: "planning",
+      task: "Produce the approval packet.",
+    });
+
+    expect(result.details).toMatchObject({
+      status: "ok",
+      childSessionKey: "agent:codebase-researcher:subagent:child",
+      childSessionId: "session-child",
+      runId: "run-child",
+      agentId: "planning",
+      contentDigest: digestText(finalPlanningResult),
+      contentChars: finalPlanningResult.length,
+      resultChars: finalPlanningResult.length,
+      resultInline: false,
+      resultMode: "pointer",
+      resultRef: "openclaw-session:agent:codebase-researcher:subagent:child",
+      transcriptFinalRef:
+        "openclaw-session:agent:codebase-researcher:subagent:child:latest-assistant",
+    });
+    const content = result.content[0];
+    expect(content?.type).toBe("text");
+    if (!content || content.type !== "text") {
+      throw new Error("Expected text tool result");
+    }
+    expect(content.text).toContain('resultInline="false"');
+    expect(content.text).toContain('childSessionId="session-child"');
+    expect(content.text).toContain("<task_result_ref");
+    expect(content.text).toContain("full result remains in the child session transcript");
+    expect(content.text).not.toContain("<task_result>");
+    expect(content.text).not.toContain("substantive planning evidence");
   });
 
   it("keeps waiting through agent.wait timeout without turning it into task failure", async () => {
@@ -285,7 +331,9 @@ describe("task tool", () => {
     if (!content || content.type !== "text") {
       throw new Error("Expected text tool result");
     }
-    expect(content.text).toContain(longPacket.trim());
+    expect(content.text).toContain("<task_result_ref");
+    expect(content.text).toContain("full result remains in the child session transcript");
+    expect(content.text).not.toContain(longPacket.trim());
     expect(serializedDetails.length).toBeLessThan(longPacket.length);
     expect(serializedDetails).not.toContain("plan-shaping evidence ".repeat(100));
     expect(serializedDetails).not.toContain("preview truncated");
@@ -293,6 +341,8 @@ describe("task tool", () => {
     expect(result.details).toMatchObject({
       resultChars: longPacket.trim().length,
       resultTruncated: false,
+      resultInline: false,
+      resultMode: "pointer",
     });
   });
 });

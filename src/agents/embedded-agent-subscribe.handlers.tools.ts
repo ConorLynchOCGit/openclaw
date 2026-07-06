@@ -320,6 +320,70 @@ function readExecToolDetails(result: unknown): ExecToolDetails | null {
   return details as ExecToolDetails;
 }
 
+function readFiniteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function formatCountPair(
+  current: number | undefined,
+  total: number | undefined,
+  unit: string,
+): string | undefined {
+  if (current === undefined && total === undefined) {
+    return undefined;
+  }
+  if (current !== undefined && total !== undefined) {
+    return `${current}/${total} ${unit}`;
+  }
+  return `${current ?? total} ${unit}`;
+}
+
+function resolveReadResultMeta(
+  toolName: string,
+  result: unknown,
+  fallback?: string,
+): string | undefined {
+  if (toolName !== "read") {
+    return fallback;
+  }
+  const details = readToolResultDetailsRecord(result);
+  const textDetails = readRecordField(details?.text);
+  const filePath =
+    readStringValue(textDetails?.path) ??
+    readStringValue(details?.path) ??
+    readStringValue(details?.filePath);
+  const isSkillInstruction =
+    textDetails?.instructionFile === true ||
+    Boolean(filePath && /(^|\/)SKILL\.md$/u.test(filePath));
+  if (!isSkillInstruction) {
+    return fallback;
+  }
+  const readStatus = normalizeOptionalLowercaseString(textDetails?.readStatus);
+  const counts = [
+    formatCountPair(
+      readFiniteNumber(textDetails?.linesRead),
+      readFiniteNumber(textDetails?.totalLines),
+      "lines",
+    ),
+    formatCountPair(
+      readFiniteNumber(textDetails?.bytesRead),
+      readFiniteNumber(textDetails?.totalBytes),
+      "bytes",
+    ),
+  ].filter((part): part is string => Boolean(part));
+  const suffix = counts.length > 0 ? ` (${counts.join(", ")})` : "";
+  if (readStatus === "full") {
+    return `read full SKILL.md${suffix}`;
+  }
+  if (readStatus === "partial") {
+    return `partial SKILL.md read${suffix}`;
+  }
+  if (readStatus === "failed") {
+    return `failed SKILL.md read${suffix}`;
+  }
+  return fallback;
+}
+
 function truncateLiveExecOutput(text: string): string {
   if (text.length <= LIVE_EXEC_OUTPUT_MAX_CHARS) {
     return text;
@@ -368,6 +432,7 @@ function compactTaskToolEventResult(result: unknown): unknown {
     "status",
     "childResult",
     "childSessionKey",
+    "childSessionId",
     "runId",
     "agentId",
     "taskName",
@@ -380,6 +445,11 @@ function compactTaskToolEventResult(result: unknown): unknown {
     "contentTruncated",
     "resultChars",
     "resultTruncated",
+    "resultInline",
+    "resultMode",
+    "resultRef",
+    "transcriptFinalRef",
+    "parentInlineLimitChars",
     "partialResultChars",
     "partialResultTruncated",
     "resolvedModel",
@@ -1225,8 +1295,10 @@ export async function handleToolExecutionEnd(
   toolStartData.delete(toolStartKey);
   ctx.state.execLiveUpdateStateById?.delete(toolCallId);
   const callSummary = ctx.state.toolMetaById.get(toolCallId);
-  const completedMutatingAction = !isToolError && Boolean(callSummary?.mutatingAction);
-  const meta = callSummary?.meta;
+  const meta = resolveReadResultMeta(toolName, sanitizedResult, callSummary?.meta);
+  const completedCallSummary =
+    callSummary && meta !== callSummary.meta ? { ...callSummary, meta } : callSummary;
+  const completedMutatingAction = !isToolError && Boolean(completedCallSummary?.mutatingAction);
   const asyncStarted = !isToolError && isAsyncStartedToolResult(sanitizedResult);
   const asyncTaskIds = asyncStarted ? readAsyncStartedTaskIds(sanitizedResult) : {};
   ctx.state.toolMetas.push({
@@ -1253,9 +1325,9 @@ export async function handleToolExecutionEnd(
       error: errorMessage,
       timedOut: isToolResultTimedOut(sanitizedResult) || undefined,
       middlewareError: isMiddlewareToolResultError(sanitizedResult) || undefined,
-      mutatingAction: callSummary?.mutatingAction,
-      actionFingerprint: callSummary?.actionFingerprint,
-      fileTarget: callSummary?.fileTarget,
+      mutatingAction: completedCallSummary?.mutatingAction,
+      actionFingerprint: completedCallSummary?.actionFingerprint,
+      fileTarget: completedCallSummary?.fileTarget,
     };
   } else if (ctx.state.lastToolError) {
     // Keep unresolved mutating failures until the same action succeeds.
@@ -1264,8 +1336,8 @@ export async function handleToolExecutionEnd(
         isSameToolMutationAction(ctx.state.lastToolError, {
           toolName,
           meta,
-          actionFingerprint: callSummary?.actionFingerprint,
-          fileTarget: callSummary?.fileTarget,
+          actionFingerprint: completedCallSummary?.actionFingerprint,
+          fileTarget: completedCallSummary?.fileTarget,
         })
       ) {
         ctx.state.lastToolError = undefined;

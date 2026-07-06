@@ -124,6 +124,21 @@ describe("tool display details", () => {
     expect(editDetail).toBe("in /tmp/a.txt (4 chars)");
   });
 
+  it("formats SKILL.md reads as full instruction reads instead of requested page limits", () => {
+    const detail = formatToolDetail(
+      resolveToolDisplay({
+        name: "read",
+        args: {
+          file_path: "skills/comprehensive-plan-record/SKILL.md",
+          offset: 1,
+          limit: 160,
+        },
+      }),
+    );
+
+    expect(detail).toBe("full SKILL.md from skills/comprehensive-plan-record/SKILL.md");
+  });
+
   it("formats web_search query with quotes", () => {
     const detail = formatToolDetail(
       resolveToolDisplay({

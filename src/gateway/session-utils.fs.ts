@@ -2202,6 +2202,7 @@ function activeProgressLabel(
     boundedProgressText(data?.name, 96) ??
     boundedProgressText(data?.toolName, 96) ??
     boundedProgressText(data?.action, 96) ??
+    (eventType === "prompt.submitted" ? "assistant generation" : undefined) ??
     (eventType === "run.started" ? "run" : undefined)
   );
 }
@@ -2241,6 +2242,9 @@ function activeProgressNote(
   if (eventType === "tool.call" && label) {
     return `${label} started`;
   }
+  if (eventType === "prompt.submitted") {
+    return "model prompt submitted; assistant generation in progress";
+  }
   return undefined;
 }
 
@@ -2261,11 +2265,9 @@ function trajectoryEventIsUsefulActiveProgress(
 ): boolean {
   if (
     eventType === "context.compiled" ||
-    eventType === "prompt.submitted" ||
     eventType === "session.started" ||
     eventType === "model.completed" ||
-    eventType === "session.ended" ||
-    eventType === "agent.lifecycle"
+    eventType === "session.ended"
   ) {
     return false;
   }

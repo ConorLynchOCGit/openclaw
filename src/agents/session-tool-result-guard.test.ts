@@ -2,6 +2,7 @@
 import type { AgentMessage } from "openclaw/plugin-sdk/agent-core";
 import { SessionManager } from "openclaw/plugin-sdk/agent-sessions";
 import { describe, expect, it } from "vitest";
+import { DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS } from "./embedded-agent-runner/tool-result-truncation.js";
 import { installSessionToolResultGuard } from "./session-tool-result-guard.js";
 import { castAgentMessage } from "./test-helpers/agent-message-fixtures.js";
 import { redactTranscriptMessage } from "./transcript-redact.js";
@@ -211,8 +212,48 @@ describe("installSessionToolResultGuard", () => {
     appendToolResultText(sm, "x".repeat(80_000));
 
     const text = getToolResultText(getPersistedMessages(sm));
-    expect(text.length).toBeLessThanOrEqual(16_000);
+    expect(text.length).toBeLessThanOrEqual(DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS);
     expect(text).toContain("truncated");
+  });
+
+  it("preserves skill-read evidence when persisted tool-result details are capped", () => {
+    const sm = SessionManager.inMemory();
+    installSessionToolResultGuard(sm);
+
+    sm.appendMessage(toolCallMessage);
+    sm.appendMessage(
+      asAppendMessage({
+        role: "toolResult",
+        toolCallId: "call_1",
+        toolName: "read",
+        content: [{ type: "text", text: "skill body" }],
+        isError: false,
+        details: {
+          path: "/workspace/.agents/skills/comprehensive-plan-record/SKILL.md",
+          readStatus: "full",
+          linesRead: 775,
+          totalLines: 775,
+          bytesRead: 82_000,
+          totalBytes: 82_000,
+          rawPayload: "x".repeat(40_000),
+        },
+      } as unknown),
+    );
+
+    const messages = expectPersistedRoles(sm, ["assistant", "toolResult"]);
+    const toolResult = messages[1] as {
+      details?: Record<string, unknown>;
+    };
+    expect(toolResult.details).toMatchObject({
+      persistedDetailsTruncated: true,
+      path: "/workspace/.agents/skills/comprehensive-plan-record/SKILL.md",
+      readStatus: "full",
+      linesRead: 775,
+      totalLines: 775,
+      bytesRead: 82_000,
+      totalBytes: 82_000,
+    });
+    expect(toolResult.details?.rawPayload).toBeUndefined();
   });
 
   it("backfills blank toolResult names from pending tool calls", () => {

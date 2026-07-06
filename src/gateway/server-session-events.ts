@@ -64,7 +64,7 @@ function buildGatewaySessionSnapshot(params: {
   }
   const readbackProjection = buildSessionReadbackProjection({
     ...sessionRow,
-    agentId: params.agentId ?? null,
+    agentId: sessionRow.agentId,
   });
   return {
     ...(session ? { session } : {}),

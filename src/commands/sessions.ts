@@ -21,6 +21,7 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { resolveStoredSessionKeyForAgentStore } from "../gateway/session-store-key.js";
 import {
   buildGatewaySessionRow,
+  loadGatewaySessionRow,
   resolveGatewaySessionStoreTargetWithStore,
 } from "../gateway/session-utils.js";
 import { info } from "../globals.js";
@@ -56,6 +57,8 @@ type SessionRow = SessionDisplayRow & {
   agentRuntime: ReturnType<typeof resolveModelAgentRuntimeMetadata>;
   runtimeLabel: string;
   activityUpdatedAt: number | null;
+  lastObservedActivityAt?: number | null;
+  lastObservedActivitySource?: "own" | "direct-child" | "descendant";
   /**
    * True only when the session has persisted ACP runtime metadata. Key-shape
    * alone is not sufficient because ACP bridge sessions (translator.ts) may
@@ -498,43 +501,81 @@ export async function sessionsShowCommand(
   runtime: RuntimeEnv,
 ) {
   const cfg = getRuntimeConfig();
-  const target = resolveSessionShowTarget({
-    cfg,
-    sessionKey: opts.sessionKey,
-    store: opts.store,
-    agent: opts.agent,
-  });
-  const match = findSessionStoreMatch(target.store, target.storeKeys);
-  if (!match) {
+  const target = opts.store
+    ? resolveSessionShowTarget({
+        cfg,
+        sessionKey: opts.sessionKey,
+        store: opts.store,
+        agent: opts.agent,
+      })
+    : undefined;
+  const row = target
+    ? (() => {
+        const match = findSessionStoreMatch(target.store, target.storeKeys);
+        if (!match) {
+          return null;
+        }
+        return buildGatewaySessionRow({
+          cfg,
+          storePath: target.storePath,
+          store: target.store,
+          key: match.key,
+          entry: match.entry,
+          agentId: target.agentId,
+          includeDerivedTitles: true,
+          includeLastMessage: true,
+        });
+      })()
+    : loadGatewaySessionRow(opts.sessionKey, {
+        cfg,
+        ...(opts.agent ? { agentId: opts.agent } : {}),
+        includeDerivedTitles: true,
+        includeLastMessage: true,
+      });
+  const agentId =
+    row?.agentId ??
+    target?.agentId ??
+    opts.agent ??
+    parseAgentSessionKey(row?.key ?? opts.sessionKey)?.agentId ??
+    "main";
+  if (!row) {
     runtime.error(`Session not found: ${opts.sessionKey}`);
     runtime.exit(1);
     return;
   }
-
-  const row = buildGatewaySessionRow({
-    cfg,
-    storePath: target.storePath,
-    store: target.store,
-    key: match.key,
-    entry: match.entry,
-    agentId: target.agentId,
-    includeDerivedTitles: true,
-    includeLastMessage: true,
-  });
+  if (!row.key || !row.sessionId) {
+    const payload = {
+      status: "identity_unavailable",
+      requestedSessionKey: opts.sessionKey,
+      resolvedKey: row.key || null,
+      sessionId: row.sessionId ?? null,
+      agentId,
+      ...(target?.storePath ? { path: target.storePath } : {}),
+    };
+    if (opts.json) {
+      writeRuntimeJson(runtime, payload);
+    } else {
+      runtime.error(`Session identity unavailable for ${opts.sessionKey}.`);
+    }
+    runtime.exit(1);
+    return;
+  }
   const baseReadback = buildSessionReadbackProjection({
     ...row,
-    agentId: target.agentId,
+    agentId,
   });
   const readback = baseReadback;
   const selectedActiveProgress = row.activeProgress ?? null;
 
   if (opts.json) {
     writeRuntimeJson(runtime, {
-      path: target.storePath,
-      agentId: target.agentId,
-      sessionKey: row.key,
-      status: readback.finality.status,
+      ...(target?.storePath ? { path: target.storePath } : {}),
       ...readback,
+      key: row.key,
+      sessionKey: row.key,
+      sessionId: row.sessionId,
+      agentId,
+      status: readback.finality.status,
       finalAssistantText: row.finalAssistantText ?? null,
       activeProgress: selectedActiveProgress,
       readbackProvenance: row.readbackProvenance,
@@ -546,7 +587,7 @@ export async function sessionsShowCommand(
   const lines = [
     "Session:",
     `key: ${row.key}`,
-    `agentId: ${target.agentId}`,
+    `agentId: ${agentId}`,
     `kind: ${row.kind}`,
     `status: ${readback.finality.status ?? "n/a"}`,
     `model: ${row.modelProvider ?? "n/a"}/${row.model ?? "n/a"}`,
@@ -617,18 +658,42 @@ export async function sessionsCommand(
     const store = loadSessionStore(target.storePath);
     const lineageActivityUpdatedAtBySessionKey = buildLineageActivityUpdatedAtBySessionKey(store);
     return Object.entries(store)
-      .filter(([key, entry]) => {
-        if (activeMinutes === undefined) {
-          return true;
-        }
-        const lineageActivityUpdatedAt = lineageActivityUpdatedAtBySessionKey.get(key) ?? null;
-        const updatedAt = Math.max(entry?.updatedAt ?? 0, lineageActivityUpdatedAt ?? 0);
-        return typeof updatedAt === "number" && Date.now() - updatedAt <= activeMinutes * 60_000;
-      })
       .map(([key, entry]) => {
         const row = toSessionDisplayRow(key, entry);
         const lineageActivityUpdatedAt = lineageActivityUpdatedAtBySessionKey.get(row.key) ?? null;
         const agentId = parseAgentSessionKey(row.key)?.agentId ?? target.agentId;
+        const gatewayRow = buildGatewaySessionRow({
+          cfg,
+          storePath: target.storePath,
+          store,
+          key,
+          entry,
+          agentId,
+          lightweightListRow: true,
+          skipTranscriptUsageFallback: true,
+        });
+        const observedActivityUpdatedAt = Math.max(
+          lineageActivityUpdatedAt ?? 0,
+          gatewayRow.lastObservedActivityAt ?? 0,
+        );
+        return {
+          key,
+          entry,
+          row,
+          agentId,
+          gatewayRow,
+          lineageActivityUpdatedAt,
+          observedActivityUpdatedAt,
+        };
+      })
+      .filter(({ entry, observedActivityUpdatedAt }) => {
+        if (activeMinutes === undefined) {
+          return true;
+        }
+        const updatedAt = Math.max(entry?.updatedAt ?? 0, observedActivityUpdatedAt ?? 0);
+        return typeof updatedAt === "number" && Date.now() - updatedAt <= activeMinutes * 60_000;
+      })
+      .map(({ entry, row, agentId, gatewayRow, observedActivityUpdatedAt }) => {
         const acpSessionKey = resolveStoredSessionKeyForAgentStore({
           cfg,
           agentId,
@@ -661,9 +726,11 @@ export async function sessionsCommand(
           agentRuntime,
           kind: classifySessionKind(row.key, store[row.key]),
           activityUpdatedAt:
-            lineageActivityUpdatedAt && lineageActivityUpdatedAt > (row.updatedAt ?? 0)
-              ? lineageActivityUpdatedAt
+            observedActivityUpdatedAt && observedActivityUpdatedAt > (row.updatedAt ?? 0)
+              ? observedActivityUpdatedAt
               : null,
+          lastObservedActivityAt: gatewayRow.lastObservedActivityAt,
+          lastObservedActivitySource: gatewayRow.lastObservedActivitySource,
           runtimePolicySessionKey: resolveDisplayRuntimePolicySessionKey({
             cfg,
             key: row.key,

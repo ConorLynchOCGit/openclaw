@@ -471,6 +471,7 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
       "sessions.messages.unsubscribe",
       "sessions.preview",
       "sessions.describe",
+      "sessions.show",
       "sessions.resolve",
       "sessions.compaction.list",
       "sessions.compaction.get",

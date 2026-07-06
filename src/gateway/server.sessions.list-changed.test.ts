@@ -126,6 +126,29 @@ async function invokeSessionsList({
   return { request, respond };
 }
 
+async function invokeSessionDetail(method: "sessions.describe" | "sessions.show", key: string) {
+  const respond = vi.fn();
+  const sessionsHandlers = await getSessionsHandlers();
+  const { getRuntimeConfig } = await getGatewayConfigModule();
+  await sessionsHandlers[method]({
+    req: {
+      type: "req",
+      id: `${method}-test`,
+      method,
+      params: { key },
+    },
+    params: { key },
+    respond,
+    client: null,
+    isWebchatConnect: () => false,
+    context: {
+      getRuntimeConfig,
+      loadGatewayModelCatalog: async () => [],
+    } as never,
+  });
+  return expectRespondPayload(respond);
+}
+
 async function invokeSessionMutation({
   method,
   params,
@@ -173,6 +196,22 @@ async function writeMainSessionStore(options?: SessionStoreEntryOptions) {
     },
   });
 }
+
+test("sessions.show and sessions.describe share native session identity detail", async () => {
+  await writeMainSessionStore({ status: "running", updatedAt: 1234 });
+
+  const describePayload = await invokeSessionDetail("sessions.describe", "main");
+  const showPayload = await invokeSessionDetail("sessions.show", "main");
+  const describeSession = requireRecord(describePayload.session, "describe session");
+  const showSession = requireRecord(showPayload.session, "show session");
+
+  expect(showSession.key).toBe(describeSession.key);
+  expect(showSession.sessionId).toBe(describeSession.sessionId);
+  expect(showSession.agentId).toBe(describeSession.agentId);
+  expect(showSession.key).toBe("agent:main:main");
+  expect(showSession.sessionId).toBe("sess-main");
+  expect(showSession.status).toBe("running");
+});
 
 function expectMainPatchBroadcast(
   result: Awaited<ReturnType<typeof invokeSessionsPatch>>,

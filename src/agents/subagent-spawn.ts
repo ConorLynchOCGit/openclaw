@@ -208,6 +208,7 @@ export type SpawnSubagentContext = {
 export type SpawnSubagentResult = {
   status: "accepted" | "forbidden" | "error";
   childSessionKey?: string;
+  childSessionId?: string;
   runId?: string;
   mode?: SpawnSubagentMode;
   taskName?: string;
@@ -452,6 +453,25 @@ function readRequesterThinkingLevel(params: {
     provider: defaultModel.provider,
     model: defaultModel.model,
   });
+}
+
+function readChildSessionId(params: {
+  cfg: OpenClawConfig;
+  childSessionKey: string;
+}): string | undefined {
+  try {
+    const target = resolveGatewaySessionStoreTarget({
+      cfg: params.cfg,
+      key: params.childSessionKey,
+    });
+    const store = loadSessionStore(target.storePath, { clone: false });
+    const entry = resolveStoreEntryByKeys(store, target.storeKeys);
+    return typeof entry?.sessionId === "string" && entry.sessionId.trim()
+      ? entry.sessionId.trim()
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 type PreparedSpawnContext =
@@ -1785,9 +1805,15 @@ export async function spawnSubagentDirect(
     spawnMode,
     agentSessionKey: ctx.agentSessionKey,
   });
+  const childSessionId =
+    readChildSessionId({ cfg, childSessionKey }) ??
+    (preparedSpawnContext.mode === "fork"
+      ? preparedSpawnContext.forked.sessionId
+      : preparedSpawnContext.childEntry?.sessionId);
   return {
     status: "accepted",
     childSessionKey,
+    childSessionId,
     runId: childRunId,
     mode: spawnMode,
     taskName,

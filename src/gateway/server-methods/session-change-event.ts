@@ -39,7 +39,7 @@ export function emitSessionsChanged(
   const readbackProjection = sessionRow
     ? buildSessionReadbackProjection({
         ...sessionRow,
-        agentId: payload.agentId ?? null,
+        agentId: sessionRow.agentId,
       })
     : null;
   context.broadcastToConnIds(

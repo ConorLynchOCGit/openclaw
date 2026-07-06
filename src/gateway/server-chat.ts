@@ -389,7 +389,7 @@ export function createAgentEventHandler({
     const readbackProjection = session
       ? buildSessionReadbackProjection({
           ...session,
-          agentId: agentId ?? null,
+          agentId: session.agentId,
         })
       : null;
     return {

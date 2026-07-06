@@ -2,9 +2,11 @@
  * task built-in tool.
  *
  * Foreground subagent delegation facade. It launches a native subagent child,
- * waits for the child run, and returns the child assistant output as a normal
- * parent-visible tool result. This keeps manager-style orchestration out of
- * raw sessions_spawn/sessions_yield lifecycle mechanics.
+ * waits for the child run, and returns either small child output or native
+ * child transcript pointers as a normal parent-visible tool result. This keeps
+ * manager-style orchestration out of raw sessions_spawn/sessions_yield
+ * lifecycle mechanics without forcing substantial child artifacts back into the
+ * parent prompt.
  */
 import { Type } from "typebox";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
@@ -21,6 +23,7 @@ import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readStringParam, textResult } from "./common.js";
 
 const TASK_WAIT_POLL_MS = 60_000;
+const TASK_RESULT_PARENT_INLINE_MAX_CHARS = 12_000;
 const DEFAULT_LIGHT_CONTEXT_AGENT_IDS = new Set([
   "codebase-researcher",
   "docs-standards-researcher",
@@ -76,6 +79,7 @@ function escapeXmlAttr(value: string): string {
 
 function formatTaskResult(params: {
   childSessionKey: string;
+  childSessionId?: string;
   runId: string;
   agentId: string;
   taskName?: string;
@@ -83,23 +87,51 @@ function formatTaskResult(params: {
   contentDigest: string;
   contentChars: number;
   contentTruncated: boolean;
+  inlineResult: boolean;
   recoveryHistory?: Array<{ source: string; status: string; error?: string }>;
 }): string {
   const taskNameAttr = params.taskName ? ` taskName="${escapeXmlAttr(params.taskName)}"` : "";
+  const childSessionIdAttr = params.childSessionId
+    ? ` childSessionId="${escapeXmlAttr(params.childSessionId)}"`
+    : "";
+  const openTag = `<task id="${escapeXmlAttr(params.childSessionKey)}" runId="${escapeXmlAttr(
+    params.runId,
+  )}" agentId="${escapeXmlAttr(
+    params.agentId,
+  )}"${childSessionIdAttr}${taskNameAttr} state="completed" contentDigest="${escapeXmlAttr(
+    params.contentDigest,
+  )}" contentChars="${params.contentChars}" contentTruncated="${
+    params.contentTruncated
+  }" resultInline="${params.inlineResult}">`;
+  if (!params.inlineResult) {
+    return [
+      openTag,
+      `  <task_result_ref kind="session" ref="${escapeXmlAttr(params.childSessionKey)}" />`,
+      `  <task_result_ref kind="transcript_final" ref="${escapeXmlAttr(
+        `openclaw-session:${params.childSessionKey}:latest-assistant`,
+      )}" />`,
+      "  <task_result_status>",
+      "child task completed; full result remains in the child session transcript",
+      "  </task_result_status>",
+      ...formatTaskRecoveryHistory(params.recoveryHistory),
+      "</task>",
+    ].join("\n");
+  }
   return [
-    `<task id="${escapeXmlAttr(params.childSessionKey)}" runId="${escapeXmlAttr(
-      params.runId,
-    )}" agentId="${escapeXmlAttr(
-      params.agentId,
-    )}"${taskNameAttr} state="completed" contentDigest="${escapeXmlAttr(
-      params.contentDigest,
-    )}" contentChars="${params.contentChars}" contentTruncated="${params.contentTruncated}">`,
+    openTag,
     "  <task_result>",
     escapeXmlText(params.replyText.trim()),
     "  </task_result>",
     ...formatTaskRecoveryHistory(params.recoveryHistory),
     "</task>",
   ].join("\n");
+}
+
+function shouldInlineTaskResultForParent(replyText: string): boolean {
+  return (
+    replyText.length <= TASK_RESULT_PARENT_INLINE_MAX_CHARS &&
+    !includesChildResultTruncationMarker(replyText)
+  );
 }
 
 async function waitForForegroundTaskResult(params: {
@@ -246,7 +278,7 @@ export function createTaskTool(
     label: "Task",
     name: "task",
     description:
-      "Run one target OpenClaw subagent as a foreground child task and return its final result here. Use for source scouts, reviewers, and other bounded specialist work when you own final synthesis. Do not use sessions_yield after task.",
+      "Run one target OpenClaw subagent as a foreground child task and return a small final result or exact native result pointers here. Use for source scouts, reviewers, and other bounded specialist work when you own final synthesis. Do not use sessions_yield after task.",
     promptGuidelines: [
       "When multiple independent child tasks are useful, call `task` multiple times in the same assistant turn so the runtime can execute them in parallel.",
       "Use one `task` call per independent specialist; do not pack unrelated work into one child prompt just to avoid multiple calls.",
@@ -381,8 +413,12 @@ export function createTaskTool(
       const replyText = wait.replyText.trim();
       const contentDigest = computeChildResultContentDigest(replyText);
       const contentTruncated = includesChildResultTruncationMarker(replyText);
+      const inlineResult = shouldInlineTaskResultForParent(replyText);
+      const resultRef = `openclaw-session:${spawn.childSessionKey}`;
+      const transcriptFinalRef = `openclaw-session:${spawn.childSessionKey}:latest-assistant`;
       const text = formatTaskResult({
         childSessionKey: spawn.childSessionKey,
+        childSessionId: spawn.childSessionId,
         runId: spawn.runId,
         agentId,
         taskName,
@@ -390,12 +426,14 @@ export function createTaskTool(
         contentDigest,
         contentChars: replyText.length,
         contentTruncated,
+        inlineResult,
         recoveryHistory: wait.recoveryHistory,
       });
       return textResult(text, {
         status: "ok",
         childResult: true,
         childSessionKey: spawn.childSessionKey,
+        ...(spawn.childSessionId ? { childSessionId: spawn.childSessionId } : {}),
         runId: spawn.runId,
         agentId,
         taskName,
@@ -408,6 +446,11 @@ export function createTaskTool(
         contentTruncated,
         resultChars: replyText.length,
         resultTruncated: contentTruncated,
+        resultInline: inlineResult,
+        resultMode: inlineResult ? "inline" : "pointer",
+        resultRef,
+        transcriptFinalRef,
+        parentInlineLimitChars: TASK_RESULT_PARENT_INLINE_MAX_CHARS,
         ...(wait.recoveryHistory?.length ? { recoveryHistory: wait.recoveryHistory } : {}),
         resolvedModel: spawn.resolvedModel,
         resolvedProvider: spawn.resolvedProvider,

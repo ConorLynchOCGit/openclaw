@@ -479,45 +479,45 @@ export function loadPluginRegistrySnapshotWithMetadata(
         persistedIndex.policyHash !== resolveInstalledPluginIndexPolicyHash(params.config)
       ) {
         diagnostics.push({
-          level: "warn",
+          level: "info",
           code: "persisted-registry-stale-policy",
           message:
-            "Persisted plugin registry policy does not match current config; using derived plugin index. Run `openclaw plugins registry --refresh` to update the persisted registry.",
+            "Persisted plugin registry policy does not match current config; using derived plugin index as the current source.",
         });
       } else if (hasMissingPersistedPluginSource(persistedIndex)) {
         diagnostics.push({
-          level: "warn",
+          level: "info",
           code: "persisted-registry-stale-source",
           message:
-            "Persisted plugin registry points at missing plugin files; using derived plugin index. Run `openclaw plugins registry --refresh` to update the persisted registry.",
+            "Persisted plugin registry points at missing plugin files; using derived plugin index as the current source.",
         });
       } else if (hasMismatchedPersistedBundledPluginRoot(persistedIndex, env)) {
         diagnostics.push({
-          level: "warn",
+          level: "info",
           code: "persisted-registry-stale-source",
           message:
-            "Persisted plugin registry points at a different bundled plugin tree; using derived plugin index. Run `openclaw plugins registry --refresh` to update the persisted registry.",
+            "Persisted plugin registry points at a different bundled plugin tree; using derived plugin index as the current source.",
         });
       } else if (hasStalePersistedPluginDiagnostics(persistedIndex)) {
         diagnostics.push({
-          level: "warn",
+          level: "info",
           code: "persisted-registry-stale-source",
           message:
-            "Persisted plugin registry contains diagnostics referencing missing paths; using derived plugin index. Run `openclaw plugins registry --refresh` to update the persisted registry.",
+            "Persisted plugin registry contains diagnostics referencing missing paths; using derived plugin index as the current source.",
         });
       } else if (hasMissingConfigPathActivationMetadata(persistedIndex)) {
         diagnostics.push({
-          level: "warn",
+          level: "info",
           code: "persisted-registry-stale-source",
           message:
-            "Persisted plugin registry is missing config-path startup metadata; using derived plugin index. Run `openclaw plugins registry --refresh` to update the persisted registry.",
+            "Persisted plugin registry is missing config-path startup metadata; using derived plugin index as the current source.",
         });
       } else if (hasStalePersistedPluginMetadata(persistedIndex)) {
         diagnostics.push({
-          level: "warn",
+          level: "info",
           code: "persisted-registry-stale-source",
           message:
-            "Persisted plugin registry metadata no longer matches plugin manifest or package files; using derived plugin index. Run `openclaw plugins registry --refresh` to update the persisted registry.",
+            "Persisted plugin registry metadata no longer matches plugin manifest or package files; using derived plugin index as the current source.",
         });
       } else if (
         hasRecoveredInstallRecordsMissingFromPersistedIndex(
@@ -527,10 +527,10 @@ export function loadPluginRegistrySnapshotWithMetadata(
         )
       ) {
         diagnostics.push({
-          level: "warn",
+          level: "info",
           code: "persisted-registry-stale-source",
           message:
-            "Persisted plugin registry is missing recoverable managed npm plugins; using derived plugin index. Run `openclaw plugins registry --refresh` to update the persisted registry.",
+            "Persisted plugin registry is missing recoverable managed npm plugins; using derived plugin index as the current source.",
         });
       } else {
         const persistedResult: PluginRegistrySnapshotResult = {
