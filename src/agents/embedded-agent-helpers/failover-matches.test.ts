@@ -1,6 +1,6 @@
 // Covers provider-specific failover matcher regressions.
 import { describe, expect, it } from "vitest";
-import { classifyFailoverReason } from "./errors.js";
+import { classifyFailoverReason, classifyFailoverReasonFromHttpStatus } from "./errors.js";
 import {
   isAuthErrorMessage,
   isBillingErrorMessage,
@@ -8,6 +8,7 @@ import {
   isRateLimitErrorMessage,
   isServerErrorMessage,
 } from "./failover-matches.js";
+import { formatRateLimitOrOverloadedErrorCopy } from "./sanitize-user-facing-text.js";
 
 describe("Z.ai vendor error codes (#48988)", () => {
   describe("error 1311 — model not included in subscription plan", () => {
@@ -162,5 +163,25 @@ describe("server error status classification", () => {
 
   it("does not classify prefixed plain internal server error status prose", () => {
     expect(isServerErrorMessage("Proxy notice: Status: Internal Server Error")).toBe(false);
+  });
+});
+describe("HTTP 429 overload wording (#98101)", () => {
+  it("keeps Z.AI code 1305 in rate-limit backoff while preserving overload copy", () => {
+    const message =
+      "429 status code (exceeded limit)\n" +
+      '{"code":1305,"message":"The service may be temporarily overloaded, please try again later."}';
+    expect(classifyFailoverReason(message)).toBe("rate_limit");
+    expect(classifyFailoverReasonFromHttpStatus(429, message)).toBe("rate_limit");
+    expect(formatRateLimitOrOverloadedErrorCopy(message)).toBe(
+      "The AI service is temporarily overloaded. Please try again in a moment.",
+    );
+  });
+
+  it("preserves actionable retry details when a rate limit also mentions overload", () => {
+    expect(
+      formatRateLimitOrOverloadedErrorCopy(
+        "429 rate limit: service overloaded, try again in 30 seconds",
+      ),
+    ).toBe("⚠️ rate limit: service overloaded, try again in 30 seconds");
   });
 });
