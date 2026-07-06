@@ -3,6 +3,7 @@
  *
  * Reads child session output, detects waiting states, and formats completion findings for announcements.
  */
+import { createHash } from "node:crypto";
 import { asFiniteNumber } from "@openclaw/normalization-core/number-coercion";
 import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
 import { buildAgentRunTerminalOutcomeFromWaitResult } from "./agent-run-terminal-outcome.js";
@@ -24,6 +25,8 @@ import { extractAssistantText, sanitizeTextContent } from "./tools/chat-history-
 import { isAnnounceSkip } from "./tools/sessions-send-tokens.js";
 
 const FAST_TEST_RETRY_INTERVAL_MS = 8;
+const CHILD_COMPLETION_FINDING_INLINE_MAX_CHARS = 1_800;
+const CHILD_COMPLETION_FINDING_PREVIEW_MAX_CHARS = 600;
 
 type SubagentAnnounceOutputDeps = {
   callGateway: typeof callGateway;
@@ -368,11 +371,48 @@ function describeSubagentOutcome(outcome?: SubagentRunOutcome): string {
   return "unknown";
 }
 
-function formatChildResultData(resultText?: string | null): string {
+function sha256Hex(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
+
+function isFrozenResultPreview(resultText: string): boolean {
+  return resultText.includes("[truncated preview: frozen completion output exceeded ");
+}
+
+function formatChildResultData(params: {
+  childSessionKey: string;
+  resultText?: string | null;
+}): string {
+  const resultText = params.resultText?.trim() || "";
+  if (resultText.length > CHILD_COMPLETION_FINDING_INLINE_MAX_CHARS) {
+    const preview = resultText.slice(0, CHILD_COMPLETION_FINDING_PREVIEW_MAX_CHARS);
+    const cappedFrozenPreview = isFrozenResultPreview(resultText);
+    const previewBlock = wrapPromptDataBlock({
+      label: "Child result preview",
+      text: preview,
+    });
+    return [
+      "Child result:",
+      `  childSessionKey: ${params.childSessionKey}`,
+      `  transcriptFinalRef: openclaw-session:${params.childSessionKey}#final`,
+      ...(cappedFrozenPreview
+        ? [
+            "  exactChars: unavailable",
+            "  exactDigest: unavailable",
+            `  previewChars: ${resultText.length}`,
+            `  previewDigest: sha256:${sha256Hex(resultText)}`,
+            "  resultTextCapped: true",
+          ]
+        : [`  chars: ${resultText.length}`, `  digest: sha256:${sha256Hex(resultText)}`]),
+      `  inspect: openclaw sessions show ${params.childSessionKey} --json`,
+      "  note: full child output remains in native child session evidence; preview is not authoritative",
+      ...(previewBlock ? ["", previewBlock] : []),
+    ].join("\n");
+  }
   return (
     wrapPromptDataBlock({
       label: "Child result",
-      text: resultText?.trim() || "(no output)",
+      text: resultText || "(no output)",
     }) || "Child result: (no output)"
   );
 }
@@ -438,9 +478,14 @@ export function buildChildCompletionFindings(
       `child ${index + 1}`;
     const displayIndex = sections.length + 1;
     sections.push(
-      [`${displayIndex}. ${title}`, `status: ${outcome}`, formatChildResultData(resultText)].join(
-        "\n",
-      ),
+      [
+        `${displayIndex}. ${title}`,
+        `status: ${outcome}`,
+        formatChildResultData({
+          childSessionKey: child.childSessionKey,
+          resultText,
+        }),
+      ].join("\n"),
     );
   }
 

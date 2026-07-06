@@ -337,6 +337,55 @@ describe("buildChildCompletionFindings", () => {
     expect(findings).not.toContain("(no output)");
   });
 
+  it("uses native child result refs instead of embedding substantial completion text", () => {
+    const largeResult = "substantial child result ".repeat(200);
+    const findings = buildChildCompletionFindings([
+      {
+        childSessionKey: "agent:main:subagent:large-child",
+        task: "large child task",
+        createdAt: 1,
+        completion: { resultText: largeResult },
+        outcome: { status: "ok" },
+      },
+    ]);
+
+    expect(findings).toContain("childSessionKey: agent:main:subagent:large-child");
+    expect(findings).toContain(
+      "transcriptFinalRef: openclaw-session:agent:main:subagent:large-child#final",
+    );
+    expect(findings).toContain("digest: sha256:");
+    expect(findings).toContain(
+      "inspect: openclaw sessions show agent:main:subagent:large-child --json",
+    );
+    expect(findings).toContain("Child result preview");
+    expect(findings).not.toContain(largeResult);
+  });
+
+  it("does not present capped frozen completion preview metadata as exact child result metadata", () => {
+    const cappedPreview = `${"substantial child result ".repeat(200)}\n\n[truncated preview: frozen completion output exceeded 100KB (180KB); full child output remains in native child session evidence]`;
+    const findings = buildChildCompletionFindings([
+      {
+        childSessionKey: "agent:main:subagent:capped-child",
+        task: "capped child task",
+        createdAt: 1,
+        completion: { resultText: cappedPreview },
+        outcome: { status: "ok" },
+      },
+    ]);
+
+    expect(findings).toContain("childSessionKey: agent:main:subagent:capped-child");
+    expect(findings).toContain("exactChars: unavailable");
+    expect(findings).toContain("exactDigest: unavailable");
+    expect(findings).toContain("previewChars:");
+    expect(findings).toContain("previewDigest: sha256:");
+    expect(findings).toContain("resultTextCapped: true");
+    expect(findings).toContain(
+      "inspect: openclaw sessions show agent:main:subagent:capped-child --json",
+    );
+    expect(findings).not.toContain("  chars:");
+    expect(findings).not.toContain("  digest: sha256:");
+  });
+
   it("uses pending delivery payload text when completion text has been cleared", () => {
     const findings = buildChildCompletionFindings([
       {

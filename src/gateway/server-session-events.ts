@@ -4,7 +4,6 @@ import { asPositiveSafeInteger } from "@openclaw/normalization-core/number-coerc
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { resolveDefaultAgentId } from "../agents/agent-scope.js";
 import { getRuntimeConfig } from "../config/io.js";
-import { buildSessionReadbackProjection } from "../readback/finality.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 import type { SessionLifecycleEvent } from "../sessions/session-lifecycle-events.js";
 import type { SessionTranscriptUpdate } from "../sessions/transcript-events.js";
@@ -14,6 +13,7 @@ import type {
   SessionEventSubscriberRegistry,
   SessionMessageSubscriberRegistry,
 } from "./server-chat.js";
+import { buildGatewaySessionDetailProjection } from "./session-detail.js";
 import { resolveSessionKeyForTranscriptFile } from "./session-transcript-key.js";
 import {
   attachOpenClawTranscriptMeta,
@@ -62,10 +62,12 @@ function buildGatewaySessionSnapshot(params: {
   if (session && omitUnscopedGlobalGoal) {
     delete session.goal;
   }
-  const readbackProjection = buildSessionReadbackProjection({
-    ...sessionRow,
+  const readbackProjection = buildGatewaySessionDetailProjection({
+    row: sessionRow,
+    requestedSessionKey: sessionRow.key,
     agentId: sessionRow.agentId,
   });
+  const readbackDetail = readbackProjection.ok ? readbackProjection.detail : null;
   return {
     ...(session ? { session } : {}),
     updatedAt: sessionRow.updatedAt ?? undefined,
@@ -91,8 +93,8 @@ function buildGatewaySessionSnapshot(params: {
     finalAssistantText: sessionRow.finalAssistantText,
     activeProgress: sessionRow.activeProgress ?? null,
     readbackProvenance: sessionRow.readbackProvenance,
-    readbackSubject: readbackProjection.readbackSubject,
-    finality: readbackProjection.finality,
+    readbackSubject: readbackDetail?.readbackSubject ?? null,
+    finality: readbackDetail?.finality ?? null,
     deliveryContext: sessionRow.deliveryContext,
     parentSessionKey: params.parentSessionKey ?? sessionRow.parentSessionKey,
     childSessions: sessionRow.childSessions,

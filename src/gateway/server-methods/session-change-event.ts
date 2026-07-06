@@ -1,6 +1,6 @@
 // Shared sessions.changed broadcaster for gateway RPC and chat-command mutations.
 import { resolveDefaultAgentId } from "../../agents/agent-scope.js";
-import { buildSessionReadbackProjection } from "../../readback/finality.js";
+import { buildGatewaySessionDetailProjection } from "../session-detail.js";
 import { loadGatewaySessionRow } from "../session-utils.js";
 import { hasTrackedActiveSessionRun } from "./session-active-runs.js";
 import type { GatewayRequestContext } from "./types.js";
@@ -37,11 +37,13 @@ export function emitSessionsChanged(
   const omitUnscopedGlobalGoal = payload.sessionKey === "global" && !payload.agentId;
   const defaultAgentId = resolveDefaultAgentId(context.getRuntimeConfig());
   const readbackProjection = sessionRow
-    ? buildSessionReadbackProjection({
-        ...sessionRow,
+    ? buildGatewaySessionDetailProjection({
+        row: sessionRow,
+        requestedSessionKey: payload.sessionKey ?? sessionRow.key,
         agentId: sessionRow.agentId,
       })
     : null;
+  const readbackDetail = readbackProjection?.ok ? readbackProjection.detail : null;
   context.broadcastToConnIds(
     "sessions.changed",
     {
@@ -72,8 +74,8 @@ export function emitSessionsChanged(
             finalAssistantText: sessionRow.finalAssistantText,
             activeProgress: sessionRow.activeProgress ?? null,
             readbackProvenance: sessionRow.readbackProvenance,
-            readbackSubject: readbackProjection?.readbackSubject ?? null,
-            finality: readbackProjection?.finality ?? null,
+            readbackSubject: readbackDetail?.readbackSubject ?? null,
+            finality: readbackDetail?.finality ?? null,
             deliveryContext: sessionRow.deliveryContext,
             parentSessionKey: sessionRow.parentSessionKey,
             childSessions: sessionRow.childSessions,

@@ -2191,6 +2191,14 @@ function activeProgressChildAgentPath(
   );
 }
 
+function isAssistantGenerationEvent(eventType: string): boolean {
+  return (
+    eventType === "agent.assistant" ||
+    eventType === "assistant.message" ||
+    eventType === "assistant.delta"
+  );
+}
+
 function activeProgressLabel(
   eventType: string,
   data: Record<string, unknown> | undefined,
@@ -2202,6 +2210,7 @@ function activeProgressLabel(
     boundedProgressText(data?.name, 96) ??
     boundedProgressText(data?.toolName, 96) ??
     boundedProgressText(data?.action, 96) ??
+    (isAssistantGenerationEvent(eventType) ? "assistant generation" : undefined) ??
     (eventType === "prompt.submitted" ? "assistant generation" : undefined) ??
     (eventType === "run.started" ? "run" : undefined)
   );
@@ -2245,6 +2254,9 @@ function activeProgressNote(
   if (eventType === "prompt.submitted") {
     return "model prompt submitted; assistant generation in progress";
   }
+  if (isAssistantGenerationEvent(eventType)) {
+    return "assistant generation/finalization event observed";
+  }
   return undefined;
 }
 
@@ -2263,6 +2275,13 @@ function trajectoryEventIsUsefulActiveProgress(
   eventType: string,
   data: Record<string, unknown> | undefined,
 ): boolean {
+  if (
+    isAssistantGenerationEvent(eventType) ||
+    eventType === "prompt.submitted" ||
+    eventType === "agent.lifecycle"
+  ) {
+    return true;
+  }
   if (
     eventType === "context.compiled" ||
     eventType === "session.started" ||

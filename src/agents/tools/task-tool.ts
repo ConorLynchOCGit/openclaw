@@ -23,7 +23,8 @@ import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readStringParam, textResult } from "./common.js";
 
 const TASK_WAIT_POLL_MS = 60_000;
-const TASK_RESULT_PARENT_INLINE_MAX_CHARS = 12_000;
+const TASK_RESULT_PARENT_INLINE_MAX_CHARS = 1_800;
+const TASK_RESULT_PARENT_PREVIEW_MAX_CHARS = 600;
 const DEFAULT_LIGHT_CONTEXT_AGENT_IDS = new Set([
   "codebase-researcher",
   "docs-standards-researcher",
@@ -88,6 +89,9 @@ function formatTaskResult(params: {
   contentChars: number;
   contentTruncated: boolean;
   inlineResult: boolean;
+  inspectCommand: string;
+  previewText?: string;
+  previewChars?: number;
   recoveryHistory?: Array<{ source: string; status: string; error?: string }>;
 }): string {
   const taskNameAttr = params.taskName ? ` taskName="${escapeXmlAttr(params.taskName)}"` : "";
@@ -102,7 +106,9 @@ function formatTaskResult(params: {
     params.contentDigest,
   )}" contentChars="${params.contentChars}" contentTruncated="${
     params.contentTruncated
-  }" resultInline="${params.inlineResult}">`;
+  }" resultInline="${params.inlineResult}" previewOnly="${!params.inlineResult}" previewChars="${
+    params.previewChars ?? 0
+  }">`;
   if (!params.inlineResult) {
     return [
       openTag,
@@ -110,9 +116,17 @@ function formatTaskResult(params: {
       `  <task_result_ref kind="transcript_final" ref="${escapeXmlAttr(
         `openclaw-session:${params.childSessionKey}:latest-assistant`,
       )}" />`,
+      `  <task_result_inspect>${escapeXmlText(params.inspectCommand)}</task_result_inspect>`,
       "  <task_result_status>",
       "child task completed; full result remains in the child session transcript",
       "  </task_result_status>",
+      ...(params.previewText
+        ? [
+            '  <task_result_preview previewOnly="true">',
+            escapeXmlText(params.previewText.trim()),
+            "  </task_result_preview>",
+          ]
+        : []),
       ...formatTaskRecoveryHistory(params.recoveryHistory),
       "</task>",
     ].join("\n");
@@ -132,6 +146,24 @@ function shouldInlineTaskResultForParent(replyText: string): boolean {
     replyText.length <= TASK_RESULT_PARENT_INLINE_MAX_CHARS &&
     !includesChildResultTruncationMarker(replyText)
   );
+}
+
+function buildTaskResultInspectCommand(params: {
+  childSessionKey: string;
+  agentId: string;
+}): string {
+  return `openclaw sessions show ${params.childSessionKey} --agent ${params.agentId}`;
+}
+
+function buildTaskResultPreview(replyText: string, inlineResult: boolean): string | undefined {
+  if (inlineResult) {
+    return undefined;
+  }
+  const trimmed = replyText.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  return trimmed.slice(0, TASK_RESULT_PARENT_PREVIEW_MAX_CHARS);
 }
 
 async function waitForForegroundTaskResult(params: {
@@ -416,6 +448,11 @@ export function createTaskTool(
       const inlineResult = shouldInlineTaskResultForParent(replyText);
       const resultRef = `openclaw-session:${spawn.childSessionKey}`;
       const transcriptFinalRef = `openclaw-session:${spawn.childSessionKey}:latest-assistant`;
+      const inspectCommand = buildTaskResultInspectCommand({
+        childSessionKey: spawn.childSessionKey,
+        agentId,
+      });
+      const previewText = buildTaskResultPreview(replyText, inlineResult);
       const text = formatTaskResult({
         childSessionKey: spawn.childSessionKey,
         childSessionId: spawn.childSessionId,
@@ -427,6 +464,9 @@ export function createTaskTool(
         contentChars: replyText.length,
         contentTruncated,
         inlineResult,
+        inspectCommand,
+        previewText,
+        previewChars: previewText?.length ?? 0,
         recoveryHistory: wait.recoveryHistory,
       });
       return textResult(text, {
@@ -450,7 +490,12 @@ export function createTaskTool(
         resultMode: inlineResult ? "inline" : "pointer",
         resultRef,
         transcriptFinalRef,
+        inspectCommand,
+        previewOnly: !inlineResult,
+        previewChars: previewText?.length ?? 0,
+        displayTruncated: !inlineResult,
         parentInlineLimitChars: TASK_RESULT_PARENT_INLINE_MAX_CHARS,
+        parentPreviewLimitChars: TASK_RESULT_PARENT_PREVIEW_MAX_CHARS,
         ...(wait.recoveryHistory?.length ? { recoveryHistory: wait.recoveryHistory } : {}),
         resolvedModel: spawn.resolvedModel,
         resolvedProvider: spawn.resolvedProvider,

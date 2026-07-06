@@ -883,6 +883,127 @@ describe("gateway session utils", () => {
     }
   });
 
+  test("session rows project grandchild descendant activity without mutating parent updatedAt", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "session-utils-grandchild-progress-"));
+    try {
+      const now = Date.UTC(2026, 6, 1, 0, 3, 0);
+      const mainSessionId = "session-main-grandchild-progress";
+      const planningSessionId = "session-planning-grandchild-progress";
+      const reviewerSessionId = "session-reviewer-grandchild-progress";
+      const mainKey = "agent:main:main";
+      const planningKey = "agent:planning:subagent:planning-grandchild-progress";
+      const reviewerKey = "agent:reviewer:subagent:reviewer-grandchild-progress";
+      const mainSessionFile = path.join(dir, `${mainSessionId}.jsonl`);
+      const planningSessionFile = path.join(dir, `${planningSessionId}.jsonl`);
+      const reviewerSessionFile = path.join(dir, `${reviewerSessionId}.jsonl`);
+      const mainTrajectoryFile = path.join(dir, `${mainSessionId}.trajectory.jsonl`);
+      const planningTrajectoryFile = path.join(dir, `${planningSessionId}.trajectory.jsonl`);
+      const reviewerTrajectoryFile = path.join(dir, `${reviewerSessionId}.trajectory.jsonl`);
+      fs.writeFileSync(mainSessionFile, "", "utf8");
+      fs.writeFileSync(planningSessionFile, "", "utf8");
+      fs.writeFileSync(reviewerSessionFile, "", "utf8");
+      fs.writeFileSync(
+        mainTrajectoryFile,
+        `${JSON.stringify({
+          traceSchema: "openclaw-trajectory",
+          sessionId: mainSessionId,
+          type: "session.started",
+          ts: "2026-07-01T00:00:00.000Z",
+          data: {},
+        })}\n`,
+        "utf8",
+      );
+      fs.writeFileSync(
+        planningTrajectoryFile,
+        `${JSON.stringify({
+          traceSchema: "openclaw-trajectory",
+          sessionId: planningSessionId,
+          type: "session.started",
+          ts: "2026-07-01T00:00:10.000Z",
+          data: {},
+        })}\n`,
+        "utf8",
+      );
+      fs.writeFileSync(
+        reviewerTrajectoryFile,
+        `${JSON.stringify({
+          traceSchema: "openclaw-trajectory",
+          sessionId: reviewerSessionId,
+          type: "agent.tool",
+          ts: "2026-07-01T00:02:10.000Z",
+          seq: 5,
+          sourceSeq: 30,
+          data: {
+            phase: "reviewing",
+            name: "read",
+            childRole: "reviewer",
+          },
+        })}\n`,
+        "utf8",
+      );
+      const store = {
+        [mainKey]: {
+          sessionId: mainSessionId,
+          sessionFile: mainSessionFile,
+          status: "running",
+          updatedAt: now - 180_000,
+          startedAt: now - 200_000,
+        },
+        [planningKey]: {
+          sessionId: planningSessionId,
+          sessionFile: planningSessionFile,
+          status: "running",
+          parentSessionKey: mainKey,
+          spawnedBy: mainKey,
+          updatedAt: now - 120_000,
+          startedAt: now - 150_000,
+        },
+        [reviewerKey]: {
+          sessionId: reviewerSessionId,
+          sessionFile: reviewerSessionFile,
+          status: "running",
+          parentSessionKey: planningKey,
+          spawnedBy: planningKey,
+          updatedAt: now - 30_000,
+          startedAt: now - 60_000,
+        },
+      };
+
+      const row = buildGatewaySessionRow({
+        cfg: createModelDefaultsConfig({ primary: "openai/gpt-5.5" }),
+        storePath: path.join(dir, "sessions.json"),
+        store,
+        key: mainKey,
+        entry: store[mainKey],
+        now,
+      });
+
+      expect(row.childSessions).toEqual([planningKey]);
+      expect(row.activeProgress).toMatchObject({
+        source: "trajectory",
+        ref: `session:${reviewerSessionId}`,
+        currentPhase: "reviewing",
+        activeLabel: "read",
+        sourceEventType: "agent.tool",
+        sourceEventSeq: 30,
+        toolName: "read",
+        childRole: "reviewer",
+        pointer: {
+          kind: "session",
+          ref: reviewerKey,
+          label: "active child session",
+        },
+        derivedBy: "readLatestTrajectoryProgressProjection",
+        bounded: true,
+      });
+      expect(row.updatedAt).toBe(now - 180_000);
+      expect(row.lastObservedActivityAt).toBe(Date.parse("2026-07-01T00:02:10.000Z"));
+      expect(row.lastObservedActivitySource).toBe("descendant");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("session rows project native lifecycle finalization instead of generic running state", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "session-utils-lifecycle-progress-"));
     try {
@@ -950,6 +1071,74 @@ describe("gateway session utils", () => {
         bounded: true,
       });
       expect(row.lastObservedActivityAt).toBe(Date.parse("2026-07-01T00:01:14.000Z"));
+      expect(row.lastObservedActivitySource).toBe("own");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("session rows project native assistant events as finalization progress", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "session-utils-assistant-progress-"));
+    try {
+      const sessionId = "session-assistant-finalizing";
+      const sessionFile = path.join(dir, `${sessionId}.jsonl`);
+      const trajectoryFile = path.join(dir, `${sessionId}.trajectory.jsonl`);
+      fs.writeFileSync(sessionFile, "", "utf8");
+      fs.writeFileSync(
+        trajectoryFile,
+        [
+          JSON.stringify({
+            traceSchema: "openclaw-trajectory",
+            sessionId,
+            type: "tool.result",
+            ts: "2026-07-01T00:01:10.000Z",
+            seq: 6,
+            sourceSeq: 18,
+            data: {
+              name: "task",
+              status: "completed",
+              summary: "reviewer returned approval packet",
+            },
+          }),
+          JSON.stringify({
+            traceSchema: "openclaw-trajectory",
+            sessionId,
+            type: "agent.assistant",
+            ts: "2026-07-01T00:01:20.000Z",
+            seq: 7,
+            sourceSeq: 19,
+            data: {},
+          }),
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+
+      const row = buildGatewaySessionRow({
+        cfg: createModelDefaultsConfig({ primary: "openai/gpt-5.5" }),
+        storePath: path.join(dir, "sessions.json"),
+        store: {},
+        key: "agent:planning:main",
+        entry: {
+          sessionId,
+          sessionFile,
+          status: "running",
+          updatedAt: Date.UTC(2026, 6, 1, 0, 1, 0),
+        },
+      });
+
+      expect(row.activeProgress).toMatchObject({
+        source: "trajectory",
+        ref: `session:${sessionId}`,
+        activeLabel: "assistant generation",
+        observedAt: "2026-07-01T00:01:20.000Z",
+        sourceEventType: "agent.assistant",
+        sourceEventSeq: 19,
+        note: "assistant generation/finalization event observed",
+        derivedBy: "readLatestTrajectoryProgressProjection",
+        bounded: true,
+      });
+      expect(row.lastObservedActivityAt).toBe(Date.parse("2026-07-01T00:01:20.000Z"));
       expect(row.lastObservedActivitySource).toBe("own");
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

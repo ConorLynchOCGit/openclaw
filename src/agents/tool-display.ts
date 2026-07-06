@@ -100,6 +100,15 @@ export function formatToolSummary(display: ToolDisplay): string {
   if (detail && (display.name === "bash" || display.name === "exec")) {
     return `${display.emoji} ${detail}`;
   }
+  if (
+    detail &&
+    display.name === "read" &&
+    /^(read full SKILL\.md|full SKILL\.md|partial SKILL\.md read|failed SKILL\.md read)/u.test(
+      detail,
+    )
+  ) {
+    return `${display.emoji} ${detail}`;
+  }
   return detail
     ? `${display.emoji} ${display.label}: ${detail}`
     : `${display.emoji} ${display.label}`;

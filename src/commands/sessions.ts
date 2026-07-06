@@ -18,6 +18,7 @@ import { getRuntimeConfig } from "../config/config.js";
 import { loadSessionStore, resolveSessionTotalTokens } from "../config/sessions.js";
 import type { SessionEntry } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { buildGatewaySessionDetailProjection } from "../gateway/session-detail.js";
 import { resolveStoredSessionKeyForAgentStore } from "../gateway/session-store-key.js";
 import {
   buildGatewaySessionRow,
@@ -26,7 +27,6 @@ import {
 } from "../gateway/session-utils.js";
 import { info } from "../globals.js";
 import { parseStrictPositiveInteger } from "../infra/parse-finite-number.js";
-import { buildSessionReadbackProjection } from "../readback/finality.js";
 import { parseAgentSessionKey } from "../routing/session-key.js";
 import { type RuntimeEnv, writeRuntimeJson } from "../runtime.js";
 import { classifySessionKind, type SessionKind } from "../sessions/classify-session-kind.js";
@@ -543,43 +543,28 @@ export async function sessionsShowCommand(
     runtime.exit(1);
     return;
   }
-  if (!row.key || !row.sessionId) {
-    const payload = {
-      status: "identity_unavailable",
-      requestedSessionKey: opts.sessionKey,
-      resolvedKey: row.key || null,
-      sessionId: row.sessionId ?? null,
-      agentId,
-      ...(target?.storePath ? { path: target.storePath } : {}),
-    };
+  const detailResult = buildGatewaySessionDetailProjection({
+    row,
+    requestedSessionKey: opts.sessionKey,
+    agentId,
+    ...(target?.storePath ? { path: target.storePath } : {}),
+  });
+  if (!detailResult.ok) {
     if (opts.json) {
-      writeRuntimeJson(runtime, payload);
+      writeRuntimeJson(runtime, detailResult.error);
     } else {
       runtime.error(`Session identity unavailable for ${opts.sessionKey}.`);
     }
     runtime.exit(1);
     return;
   }
-  const baseReadback = buildSessionReadbackProjection({
-    ...row,
-    agentId,
-  });
-  const readback = baseReadback;
-  const selectedActiveProgress = row.activeProgress ?? null;
+  const readback = detailResult.detail;
+  const selectedActiveProgress = readback.activeProgress ?? null;
 
   if (opts.json) {
     writeRuntimeJson(runtime, {
       ...(target?.storePath ? { path: target.storePath } : {}),
       ...readback,
-      key: row.key,
-      sessionKey: row.key,
-      sessionId: row.sessionId,
-      agentId,
-      status: readback.finality.status,
-      finalAssistantText: row.finalAssistantText ?? null,
-      activeProgress: selectedActiveProgress,
-      readbackProvenance: row.readbackProvenance,
-      session: row,
     });
     return;
   }

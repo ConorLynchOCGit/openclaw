@@ -124,7 +124,8 @@ export const SessionsPreviewParamsSchema = Type.Object(
 /** Describes one session and optional derived title/last-message previews. */
 export const SessionsDescribeParamsSchema = Type.Object(
   {
-    key: NonEmptyString,
+    key: Type.Optional(NonEmptyString),
+    sessionKey: Type.Optional(NonEmptyString),
     includeDerivedTitles: Type.Optional(Type.Boolean()),
     includeLastMessage: Type.Optional(Type.Boolean()),
     includeFinalAssistant: Type.Optional(Type.Boolean()),

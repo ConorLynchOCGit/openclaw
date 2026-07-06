@@ -111,7 +111,7 @@ function buildSubagentDelegationPreferenceSection(params: {
     ? "- Before calling `task`, decide what stays local and what is delegated. Give the child a clear objective, expected output, relevant files/inputs, write scope, and verification ask."
     : "- Before spawning, decide what stays local and what is delegated. Give each child a clear objective, expected output, relevant files/inputs, write scope, verification ask, and whether it blocks your final answer.";
   const childCompletionLine = params.hasTask
-    ? "- Do not call `sessions_yield` after `task`; `task` returns the child result as the tool result."
+    ? "- Do not call `sessions_yield` after `task`; `task` returns a small child result or exact native child-result receipt/pointers as the tool result."
     : params.hasSessionsYield
       ? "- After spawning required work, call `sessions_yield` if you need completion events before answering. Do not poll for completion."
       : "- After spawning, do not poll for completion. Child completion is push-based and returns as a runtime event; synthesize that result for the user.";

@@ -119,6 +119,11 @@ describe("task tool", () => {
       resultRef: "openclaw-session:agent:codebase-researcher:subagent:child",
       transcriptFinalRef:
         "openclaw-session:agent:codebase-researcher:subagent:child:latest-assistant",
+      inspectCommand:
+        "openclaw sessions show agent:codebase-researcher:subagent:child --agent codebase-researcher",
+      previewOnly: false,
+      previewChars: 0,
+      displayTruncated: false,
       resolvedProvider: "openrouter",
       resolvedModel: "anthropic/claude-haiku-4.5",
     });
@@ -137,7 +142,7 @@ describe("task tool", () => {
   });
 
   it("returns native child transcript pointers instead of large child finals as parent context", async () => {
-    const largePlanningResult = `# Approval Packet\n\n${"substantive planning evidence\n".repeat(650)}`;
+    const largePlanningResult = `# Approval Packet\n\n${"substantive planning evidence\n".repeat(360)}`;
     const finalPlanningResult = largePlanningResult.trim();
     hoisted.readLatestAssistantReplyMock.mockResolvedValue(largePlanningResult);
 
@@ -160,6 +165,13 @@ describe("task tool", () => {
       resultRef: "openclaw-session:agent:codebase-researcher:subagent:child",
       transcriptFinalRef:
         "openclaw-session:agent:codebase-researcher:subagent:child:latest-assistant",
+      inspectCommand:
+        "openclaw sessions show agent:codebase-researcher:subagent:child --agent planning",
+      previewOnly: true,
+      previewChars: 600,
+      displayTruncated: true,
+      parentInlineLimitChars: 1_800,
+      parentPreviewLimitChars: 600,
     });
     const content = result.content[0];
     expect(content?.type).toBe("text");
@@ -169,9 +181,12 @@ describe("task tool", () => {
     expect(content.text).toContain('resultInline="false"');
     expect(content.text).toContain('childSessionId="session-child"');
     expect(content.text).toContain("<task_result_ref");
+    expect(content.text).toContain("<task_result_inspect>");
+    expect(content.text).toContain("<task_result_preview");
     expect(content.text).toContain("full result remains in the child session transcript");
     expect(content.text).not.toContain("<task_result>");
-    expect(content.text).not.toContain("substantive planning evidence");
+    expect(content.text).not.toContain(finalPlanningResult);
+    expect(content.text).not.toContain("substantive planning evidence\n".repeat(100));
   });
 
   it("keeps waiting through agent.wait timeout without turning it into task failure", async () => {
@@ -343,6 +358,11 @@ describe("task tool", () => {
       resultTruncated: false,
       resultInline: false,
       resultMode: "pointer",
+      previewOnly: true,
+      previewChars: 600,
+      displayTruncated: true,
+      parentInlineLimitChars: 1_800,
+      parentPreviewLimitChars: 600,
     });
   });
 });

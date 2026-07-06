@@ -9,7 +9,6 @@ import { getRuntimeConfig } from "../config/io.js";
 import { type AgentEventPayload, getAgentRunContext } from "../infra/agent-events.js";
 import { detectErrorKind, type ErrorKind } from "../infra/errors.js";
 import { resolveHeartbeatVisibility } from "../infra/heartbeat-visibility.js";
-import { buildSessionReadbackProjection } from "../readback/finality.js";
 import { isAcpSessionKey, isSubagentSessionKey } from "../sessions/session-key-utils.js";
 import { setSafeTimeout } from "../utils/timer-delay.js";
 import {
@@ -28,6 +27,7 @@ import type {
 } from "./server-chat-state.js";
 import { loadGatewaySessionRow } from "./server-chat.load-gateway-session-row.runtime.js";
 import { persistGatewaySessionLifecycleEvent } from "./server-chat.persist-session-lifecycle.runtime.js";
+import { buildGatewaySessionDetailProjection } from "./session-detail.js";
 import {
   deriveGatewaySessionLifecycleSnapshot,
   isStaleLifecycleEventForSession,
@@ -387,11 +387,13 @@ export function createAgentEventHandler({
     }
     const snapshotSource = session ?? lifecyclePatch;
     const readbackProjection = session
-      ? buildSessionReadbackProjection({
-          ...session,
-          agentId: session.agentId,
+      ? buildGatewaySessionDetailProjection({
+          row: session,
+          requestedSessionKey: sessionKey,
+          agentId: session.agentId ?? agentId ?? "main",
         })
       : null;
+    const readbackDetail = readbackProjection?.ok ? readbackProjection.detail : null;
     return {
       ...(session ? { session } : {}),
       updatedAt: snapshotSource.updatedAt,
@@ -417,8 +419,8 @@ export function createAgentEventHandler({
       finalAssistantText: row?.finalAssistantText,
       activeProgress: row?.activeProgress ?? null,
       readbackProvenance: row?.readbackProvenance,
-      readbackSubject: readbackProjection?.readbackSubject ?? null,
-      finality: readbackProjection?.finality ?? null,
+      readbackSubject: readbackDetail?.readbackSubject ?? null,
+      finality: readbackDetail?.finality ?? null,
       deliveryContext: row?.deliveryContext,
       parentSessionKey: row?.parentSessionKey,
       childSessions: row?.childSessions,

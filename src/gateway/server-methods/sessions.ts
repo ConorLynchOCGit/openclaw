@@ -88,6 +88,7 @@ import {
   getSessionCompactionCheckpoint,
   listSessionCompactionCheckpoints,
 } from "../session-compaction-checkpoints.js";
+import { buildGatewaySessionDetailProjection } from "../session-detail.js";
 import { triggerSessionPatchHook } from "../session-patch-hooks.js";
 import {
   resolveSessionStoreAgentId,
@@ -98,7 +99,6 @@ import {
 import { reactivateCompletedSubagentSession } from "../session-subagent-reactivation.js";
 import {
   archiveFileOnDisk,
-  buildGatewaySessionRow,
   listSessionsFromStoreAsync,
   loadCombinedSessionStoreForGateway,
   loadGatewaySessionRow,
@@ -938,20 +938,40 @@ function respondWithSessionDetail(params: {
     return;
   }
   const p: SessionsDescribeParams = rawParams;
-  const key = requireSessionKey(p.key, params.respond);
+  const sessionKeyParam =
+    p.key ?? (p as SessionsDescribeParams & { sessionKey?: unknown }).sessionKey;
+  const key = requireSessionKey(sessionKeyParam, params.respond);
   if (!key) {
     return;
   }
   const row = loadGatewaySessionRow(key, {
-    includeDerivedTitles: p.includeDerivedTitles,
-    includeLastMessage: p.includeLastMessage,
+    includeDerivedTitles: p.includeDerivedTitles ?? true,
+    includeLastMessage: true,
     transcriptUsageMaxBytes: 64 * 1024,
   });
   if (!row) {
     params.respond(true, { session: null }, undefined);
     return;
   }
-  params.respond(true, { session: row }, undefined);
+  const detail = buildGatewaySessionDetailProjection({
+    row,
+    requestedSessionKey: key,
+    agentId: row.agentId ?? parseAgentSessionKey(row.key)?.agentId ?? "main",
+  });
+  if (!detail.ok) {
+    params.respond(
+      false,
+      undefined,
+      errorShape(ErrorCodes.INVALID_REQUEST, "Session identity unavailable", {
+        details: {
+          method: params.method,
+          ...detail.error,
+        },
+      }),
+    );
+    return;
+  }
+  params.respond(true, detail.detail, undefined);
 }
 export const sessionsHandlers: GatewayRequestHandlers = {
   "sessions.list": async ({ params, respond, context }) => {

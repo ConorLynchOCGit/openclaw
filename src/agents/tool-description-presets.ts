@@ -44,7 +44,7 @@ export function describeTaskTool(): string {
     "Run one target OpenClaw subagent as a foreground child task and return its final result here.",
     "Use when you own final synthesis and need source-scout, review, or bounded specialist decision material.",
     "For independent lanes, call task multiple times in the same assistant turn so they can run in parallel.",
-    "Do not call sessions_yield after task; task returns the child result as the tool result.",
+    "Do not call sessions_yield after task; task returns a small child result or exact native child-result receipt/pointers as the tool result.",
   ].join(" ");
 }
 

@@ -139,6 +139,17 @@ describe("tool display details", () => {
     expect(detail).toBe("full SKILL.md from skills/comprehensive-plan-record/SKILL.md");
   });
 
+  it("does not duplicate the read verb in SKILL.md read summaries", () => {
+    expect(
+      formatToolSummary(
+        resolveToolDisplay({
+          name: "read",
+          meta: "read full SKILL.md (775/775 lines, 27207/27207 bytes)",
+        }),
+      ),
+    ).toBe("📖 read full SKILL.md (775/775 lines, 27207/27207 bytes)");
+  });
+
   it("formats web_search query with quotes", () => {
     const detail = formatToolDetail(
       resolveToolDisplay({

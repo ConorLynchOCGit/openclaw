@@ -127,6 +127,13 @@ async function invokeSessionsList({
 }
 
 async function invokeSessionDetail(method: "sessions.describe" | "sessions.show", key: string) {
+  return invokeSessionDetailParams(method, { key });
+}
+
+async function invokeSessionDetailParams(
+  method: "sessions.describe" | "sessions.show",
+  params: Record<string, unknown>,
+) {
   const respond = vi.fn();
   const sessionsHandlers = await getSessionsHandlers();
   const { getRuntimeConfig } = await getGatewayConfigModule();
@@ -135,9 +142,9 @@ async function invokeSessionDetail(method: "sessions.describe" | "sessions.show"
       type: "req",
       id: `${method}-test`,
       method,
-      params: { key },
+      params,
     },
-    params: { key },
+    params,
     respond,
     client: null,
     isWebchatConnect: () => false,
@@ -198,12 +205,24 @@ async function writeMainSessionStore(options?: SessionStoreEntryOptions) {
 }
 
 test("sessions.show and sessions.describe share native session identity detail", async () => {
-  await writeMainSessionStore({ status: "running", updatedAt: 1234 });
+  const { dir } = await createSessionStoreDir();
+  await writeSessionStore({
+    entries: {
+      main: sessionStoreEntry("sess-main", { status: "running", updatedAt: 1234 }),
+    },
+  });
+  await fs.writeFile(
+    path.join(dir, "sess-main.jsonl"),
+    `${JSON.stringify({ message: { role: "assistant", content: "Planning final packet." } })}\n`,
+    "utf-8",
+  );
 
   const describePayload = await invokeSessionDetail("sessions.describe", "main");
   const showPayload = await invokeSessionDetail("sessions.show", "main");
   const describeSession = requireRecord(describePayload.session, "describe session");
   const showSession = requireRecord(showPayload.session, "show session");
+  const describeFinality = requireRecord(describePayload.finality, "describe finality");
+  const showFinality = requireRecord(showPayload.finality, "show finality");
 
   expect(showSession.key).toBe(describeSession.key);
   expect(showSession.sessionId).toBe(describeSession.sessionId);
@@ -211,6 +230,50 @@ test("sessions.show and sessions.describe share native session identity detail",
   expect(showSession.key).toBe("agent:main:main");
   expect(showSession.sessionId).toBe("sess-main");
   expect(showSession.status).toBe("running");
+  expect(showPayload.key).toBe(describePayload.key);
+  expect(showPayload.sessionKey).toBe("agent:main:main");
+  expect(showPayload.sessionId).toBe("sess-main");
+  expect(showPayload.status).toBe("done");
+  expect(showPayload.finalAssistantText).toBe("Planning final packet.");
+  expect(showFinality).toMatchObject({
+    status: "done",
+    finalAssistantTextPresent: true,
+    finalAssistantTextChars: "Planning final packet.".length,
+  });
+  expect(describeFinality).toMatchObject({
+    status: "done",
+    finalAssistantTextPresent: true,
+    finalAssistantTextChars: "Planning final packet.".length,
+  });
+});
+
+test("sessions.show accepts sessionKey alias and returns enriched session detail", async () => {
+  const { dir } = await createSessionStoreDir();
+  await writeSessionStore({
+    entries: {
+      main: sessionStoreEntry("sess-main", { status: "running", updatedAt: 1234 }),
+    },
+  });
+  await fs.writeFile(
+    path.join(dir, "sess-main.jsonl"),
+    `${JSON.stringify({ message: { role: "assistant", content: "Alias final packet." } })}\n`,
+    "utf-8",
+  );
+
+  const showPayload = await invokeSessionDetailParams("sessions.show", {
+    sessionKey: "main",
+  });
+  const showFinality = requireRecord(showPayload.finality, "show finality");
+
+  expect(showPayload.key).toBe("agent:main:main");
+  expect(showPayload.sessionId).toBe("sess-main");
+  expect(showPayload.status).toBe("done");
+  expect(showPayload.finalAssistantText).toBe("Alias final packet.");
+  expect(showFinality).toMatchObject({
+    status: "done",
+    finalAssistantTextPresent: true,
+    finalAssistantTextChars: "Alias final packet.".length,
+  });
 });
 
 function expectMainPatchBroadcast(
