@@ -2166,19 +2166,22 @@ export function buildGatewaySessionRow(params: {
   let lastMessagePreview: string | undefined;
   let finalAssistantText: string | null | undefined;
   let readbackProvenance: GatewaySessionRow["readbackProvenance"] | undefined;
-  const initialRowStatus = entry?.status;
-  const initialStatusSource = entry?.status ? "session-store" : undefined;
+  const statusDerivedFromEndedAt = !entry?.status && entry?.endedAt ? "done" : undefined;
+  const initialRowStatus = entry?.status ?? statusDerivedFromEndedAt;
+  const initialStatusNote = statusDerivedFromEndedAt
+    ? "session-store status missing; endedAt marks the session terminal"
+    : "projected from session store metadata; updatedAt may not track native trajectory events";
   let rowStatus = initialRowStatus;
   const originalRowStatus = rowStatus;
   if (rowStatus) {
     readbackProvenance = {
       ...readbackProvenance,
       status: {
-        source: initialStatusSource ?? "session-store",
+        source: "session-store",
         ref: `session:${entry?.sessionId ?? key}`,
         derivedBy: "buildGatewaySessionRow",
         bounded: false,
-        note: "projected from session store metadata; updatedAt may not track native trajectory events",
+        note: initialStatusNote,
       },
     };
   }

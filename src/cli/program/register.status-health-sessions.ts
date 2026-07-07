@@ -230,17 +230,26 @@ export function registerStatusHealthSessionsCommands(program: Command) {
   sessionsCmd
     .command("show")
     .description("Show one stored conversation session")
-    .argument("<session-key>", "Session key")
+    .argument("[session-key]", "Session key")
+    .option("--session-key <key>", "Session key to show")
     .option("--json", "Output JSON", false)
     .option("--store <path>", "Path to session store (default: resolved from config)")
     .option("--agent <id>", "Agent id to inspect (default: resolved from session key)")
     .action(async (sessionKey, opts, command) => {
       const parentOpts = command.parent?.opts() as SessionsListCliOptions | undefined;
+      const resolvedSessionKey =
+        (opts.sessionKey as string | undefined) ??
+        (typeof sessionKey === "string" ? sessionKey : undefined);
+      if (!resolvedSessionKey) {
+        defaultRuntime.error("sessions show requires <session-key> or --session-key <key>.");
+        defaultRuntime.exit(1);
+        return;
+      }
       await runCommandWithRuntime(defaultRuntime, async () => {
         const { sessionsShowCommand } = await loadSessionsCommands();
         await sessionsShowCommand(
           {
-            sessionKey: String(sessionKey),
+            sessionKey: resolvedSessionKey,
             json: Boolean(opts.json || parentOpts?.json),
             store: opts.store ?? parentOpts?.store,
             agent: opts.agent ?? parentOpts?.agent,
@@ -299,6 +308,7 @@ export function registerStatusHealthSessionsCommands(program: Command) {
             agent?: string;
             allAgents?: boolean;
             json?: boolean;
+            limit?: string;
           }
         | undefined;
       await runCommandWithRuntime(defaultRuntime, async () => {
@@ -326,6 +336,7 @@ export function registerStatusHealthSessionsCommands(program: Command) {
     .argument("[session-key]", "Session key to tail (alias for --session-key)")
     .option("--session-key <key>", "Session key to tail (default: active sessions or latest)")
     .option("--tail <count>", "Number of existing trajectory events to show", "80")
+    .option("--limit <count>", "Alias for --tail <count>")
     .option("--follow", "Continue following for new trajectory events", false)
     .option("--json", "Output a parseable trajectory event snapshot", false)
     .option("--store <path>", "Path to session store (default: resolved from config)")
@@ -352,7 +363,10 @@ export function registerStatusHealthSessionsCommands(program: Command) {
             allAgents: Boolean(opts.allAgents || parentOpts?.allAgents),
             follow: Boolean(opts.follow),
             json: Boolean(opts.json || parentOpts?.json),
-            tail: opts.tail as string | undefined,
+            tail:
+              (opts.limit as string | undefined) ??
+              parentOpts?.limit ??
+              (opts.tail as string | undefined),
           },
           defaultRuntime,
         );

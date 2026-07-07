@@ -187,6 +187,42 @@ describe("sessionsCommand", () => {
     });
   });
 
+  it("projects done status for ended lightweight list rows without final text details", async () => {
+    const store = writeStore(
+      {
+        "agent:main:main": {
+          sessionId: "main-ended-session",
+          updatedAt: Date.now() - 60_000,
+          endedAt: Date.now() - 30_000,
+          modelProvider: "openai",
+          model: "gpt-5.5",
+        },
+      },
+      "sessions-list-ended-status",
+    );
+
+    const payload = await runSessionsJson<{
+      sessions?: Array<{
+        key?: string;
+        status?: string | null;
+        finalAssistantText?: string | null;
+        readbackProvenance?: {
+          status?: { source?: string; note?: string };
+        };
+      }>;
+    }>(sessionsCommand, store, { limit: "all" });
+
+    const row = payload.sessions?.find((session) => session.key === "agent:main:main");
+    expect(row).toMatchObject({
+      status: "done",
+    });
+    expect(row?.finalAssistantText).toBeUndefined();
+    expect(row?.readbackProvenance?.status).toMatchObject({
+      source: "session-store",
+      note: "session-store status missing; endedAt marks the session terminal",
+    });
+  });
+
   it("uses native trajectory progress for session list display freshness without mutating updatedAt", async () => {
     const staleUpdatedAt = Date.now() - 30 * 60_000;
     const observedAt = Date.parse("2025-12-05T23:59:30.000Z");

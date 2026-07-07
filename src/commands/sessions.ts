@@ -25,6 +25,10 @@ import {
   loadGatewaySessionRow,
   resolveGatewaySessionStoreTargetWithStore,
 } from "../gateway/session-utils.js";
+import type {
+  SessionReadbackProvenance,
+  SessionRunStatus,
+} from "../gateway/session-utils.types.js";
 import { info } from "../globals.js";
 import { parseStrictPositiveInteger } from "../infra/parse-finite-number.js";
 import { parseAgentSessionKey } from "../routing/session-key.js";
@@ -59,6 +63,8 @@ type SessionRow = SessionDisplayRow & {
   activityUpdatedAt: number | null;
   lastObservedActivityAt?: number | null;
   lastObservedActivitySource?: "own" | "direct-child" | "descendant";
+  status?: SessionRunStatus | null;
+  readbackProvenance?: SessionReadbackProvenance;
   /**
    * True only when the session has persisted ACP runtime metadata. Key-shape
    * alone is not sufficient because ACP bridge sessions (translator.ts) may
@@ -716,6 +722,8 @@ export async function sessionsCommand(
               : null,
           lastObservedActivityAt: gatewayRow.lastObservedActivityAt,
           lastObservedActivitySource: gatewayRow.lastObservedActivitySource,
+          status: gatewayRow.status,
+          readbackProvenance: gatewayRow.readbackProvenance,
           runtimePolicySessionKey: resolveDisplayRuntimePolicySessionKey({
             cfg,
             key: row.key,

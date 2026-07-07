@@ -341,6 +341,27 @@ describe("registerStatusHealthSessionsCommands", () => {
     });
   });
 
+  it("accepts sessions show --session-key with JSON/store/agent forwarding", async () => {
+    await runCli([
+      "sessions",
+      "--json",
+      "--store",
+      "/tmp/sessions.json",
+      "--agent",
+      "planning",
+      "show",
+      "--session-key",
+      "agent:planning:main",
+    ]);
+
+    expectCommandOptions(sessionsShowCommand, {
+      sessionKey: "agent:planning:main",
+      json: true,
+      store: "/tmp/sessions.json",
+      agent: "planning",
+    });
+  });
+
   it("runs sessions cleanup subcommand with forwarded options", async () => {
     await runCli([
       "sessions",
@@ -398,6 +419,22 @@ describe("registerStatusHealthSessionsCommands", () => {
       agent: "work",
       allAgents: false,
       follow: true,
+      tail: "5",
+    });
+  });
+
+  it("accepts sessions tail --limit as the tail count alias", async () => {
+    await runCli([
+      "sessions",
+      "tail",
+      "--session-key",
+      "agent:main:telegram:direct:owner",
+      "--limit",
+      "5",
+    ]);
+
+    expectCommandOptions(sessionsTailCommand, {
+      sessionKey: "agent:main:telegram:direct:owner",
       tail: "5",
     });
   });
