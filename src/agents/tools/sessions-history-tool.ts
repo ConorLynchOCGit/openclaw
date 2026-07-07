@@ -342,25 +342,6 @@ export function createSessionsHistoryTool(opts?: {
       const resolvedKey = visibleSession.key;
       const displayKey = visibleSession.displayKey;
 
-      const a2aPolicy = createAgentToAgentPolicy(cfg);
-      const visibility = resolveEffectiveSessionToolsVisibility({
-        cfg,
-        sandboxed: opts?.sandboxed === true,
-      });
-      const visibilityGuard = await createSessionVisibilityGuard({
-        action: "history",
-        requesterSessionKey: effectiveRequesterKey,
-        visibility,
-        a2aPolicy,
-      });
-      const access = visibilityGuard.check(resolvedKey);
-      if (!access.allowed) {
-        return jsonResult({
-          status: access.status,
-          error: access.error,
-        });
-      }
-
       if (transcriptRef?.messageId) {
         const refMessage = await readTranscriptRefMessage({
           ref: transcriptRef,
@@ -391,6 +372,25 @@ export function createSessionsHistoryTool(opts?: {
           bytes: jsonUtf8Bytes([]),
           status: "message_not_found",
           error: refMessage.reason,
+        });
+      }
+
+      const a2aPolicy = createAgentToAgentPolicy(cfg);
+      const visibility = resolveEffectiveSessionToolsVisibility({
+        cfg,
+        sandboxed: opts?.sandboxed === true,
+      });
+      const visibilityGuard = await createSessionVisibilityGuard({
+        action: "history",
+        requesterSessionKey: effectiveRequesterKey,
+        visibility,
+        a2aPolicy,
+      });
+      const access = visibilityGuard.check(resolvedKey);
+      if (!access.allowed) {
+        return jsonResult({
+          status: access.status,
+          error: access.error,
         });
       }
 

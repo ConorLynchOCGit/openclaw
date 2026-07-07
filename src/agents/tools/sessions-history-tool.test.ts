@@ -142,12 +142,8 @@ describe("sessions_history redaction", () => {
     );
 
     const tool = createSessionsHistoryTool({
-      config: {
-        tools: {
-          sessions: { visibility: "all" },
-          agentToAgent: { enabled: true, allow: ["*"] },
-        },
-      },
+      agentSessionKey: "agent:reviewer:review-session",
+      config: {},
       callGateway: async () => {
         throw new Error("chat.history should not be called for exact transcript refs");
       },
