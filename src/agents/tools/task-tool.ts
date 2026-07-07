@@ -106,7 +106,9 @@ function formatTaskResult(params: {
         params.agentId,
       )}" status="completed" ref="${escapeXmlAttr(
         `openclaw-session:${params.childSessionKey}:latest-assistant`,
-      )}" chars="${params.contentChars}" digest="${escapeXmlAttr(params.contentDigest)}">`,
+      )}" source="transcript" chars="${params.contentChars}" digest="${escapeXmlAttr(
+        params.contentDigest,
+      )}">`,
       `  <inspect_command>${escapeXmlText(params.inspectCommand)}</inspect_command>`,
       ...formatTaskRecoveryHistory(params.recoveryHistory),
       "</task_receipt>",
@@ -525,6 +527,7 @@ export function createTaskTool(
         resultInline: inlineResult,
         resultMode: inlineResult ? "inline" : "pointer",
         resultRef,
+        resultSource: "transcript",
         transcriptFinalRef,
         inspectCommand,
         previewOnly: !inlineResult,

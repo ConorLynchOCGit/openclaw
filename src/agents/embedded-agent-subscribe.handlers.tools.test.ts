@@ -2013,7 +2013,7 @@ describe("control UI credential redaction (issue #72283)", () => {
   });
 
   it("records SKILL.md read metadata from actual read results instead of requested line limits", async () => {
-    const { ctx } = createTestContext();
+    const { ctx, onAgentEvent } = createTestContext();
     ctx.state.toolMetaById.set("tool-read-skill", {
       meta: "read first 160 lines of skills/comprehensive-plan-record/SKILL.md",
       mutatingAction: false,
@@ -2045,6 +2045,17 @@ describe("control UI credential redaction (issue #72283)", () => {
 
     expect(ctx.state.toolMetas.at(-1)).toMatchObject({
       toolName: "read",
+      meta: "read full SKILL.md (775/775 lines, 32000/32000 bytes)",
+    });
+    const itemEnd = onAgentEvent.mock.calls
+      .map((call) => call[0])
+      .find(
+        (event) =>
+          (event as { stream?: string })?.stream === "item" &&
+          ((event as { data?: { phase?: string } }).data?.phase ?? "") === "end",
+      );
+    expect(requireRecord(itemEnd, "skill read item event").data).toMatchObject({
+      title: "read full SKILL.md (775/775 lines, 32000/32000 bytes)",
       meta: "read full SKILL.md (775/775 lines, 32000/32000 bytes)",
     });
   });

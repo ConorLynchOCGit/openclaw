@@ -117,6 +117,7 @@ describe("task tool", () => {
       resultInline: true,
       resultMode: "inline",
       resultRef: "openclaw-session:agent:codebase-researcher:subagent:child",
+      resultSource: "transcript",
       transcriptFinalRef:
         "openclaw-session:agent:codebase-researcher:subagent:child:latest-assistant",
       inspectCommand:
@@ -162,6 +163,7 @@ describe("task tool", () => {
       resultChars: shortPlanningResult.length,
       resultInline: false,
       resultMode: "pointer",
+      resultSource: "transcript",
       previewOnly: true,
       previewChars: 0,
       displayTruncated: true,
@@ -174,6 +176,7 @@ describe("task tool", () => {
     expect(content.text).toContain("<task_receipt");
     expect(content.text).toContain('agentId="planning"');
     expect(content.text).toContain('status="completed"');
+    expect(content.text).toContain('source="transcript"');
     expect(content.text).toContain(
       'ref="openclaw-session:agent:codebase-researcher:subagent:child:latest-assistant"',
     );
@@ -204,6 +207,7 @@ describe("task tool", () => {
     expect(result.details).toMatchObject({
       resultInline: false,
       resultMode: "pointer",
+      resultSource: "transcript",
       previewOnly: true,
     });
     expect(content.text).toContain("<task_receipt");
@@ -231,6 +235,7 @@ describe("task tool", () => {
       resultChars: finalPlanningResult.length,
       resultInline: false,
       resultMode: "pointer",
+      resultSource: "transcript",
       resultRef: "openclaw-session:agent:codebase-researcher:subagent:child",
       transcriptFinalRef:
         "openclaw-session:agent:codebase-researcher:subagent:child:latest-assistant",

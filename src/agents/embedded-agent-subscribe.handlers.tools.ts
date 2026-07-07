@@ -239,7 +239,19 @@ function buildToolItemId(toolCallId: string): string {
   return `tool:${toolCallId}`;
 }
 
+function isReadSkillMeta(meta?: string): boolean {
+  return Boolean(
+    meta &&
+    /^(read full SKILL\.md|full SKILL\.md|partial SKILL\.md read|failed SKILL\.md read)/u.test(
+      meta,
+    ),
+  );
+}
+
 function buildToolItemTitle(toolName: string, meta?: string): string {
+  if (toolName === "read" && isReadSkillMeta(meta)) {
+    return meta ?? toolName;
+  }
   return meta ? `${toolName} ${meta}` : toolName;
 }
 
