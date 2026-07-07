@@ -121,12 +121,12 @@ const CODEX_TOOL_SEARCH_UNSUPPORTED_THREAD_CONFIG: JsonObject = {
   "features.multi_agent": false,
 };
 
-const CODEX_NATIVE_CODING_TEAM_AGENT_IDS = new Set(["coding"]);
+const CODEX_NATIVE_CODING_TEAM_AGENT_IDS = new Set(["coding", "execution-coding"]);
 
 const CODEX_NATIVE_CODING_TEAM_THREAD_CONFIG: JsonObject = {
   "features.multi_agent": true,
   "agents.max_threads": 6,
-  "agents.max_depth": 2,
+  "agents.max_depth": 1,
 };
 
 function isCodexNativeCodingTeamRun(
@@ -1418,7 +1418,7 @@ export function buildDeveloperInstructions(
     "You are a personal agent running inside OpenClaw. OpenClaw has dynamic tools for OpenClaw-owned messaging, cron, sessions, media, gateway, and nodes.",
     buildDeferredDynamicToolManifest(options.dynamicTools),
     buildSkillWorkshopInstruction(options.dynamicTools),
-    "Use Codex native `spawn_agent` for Codex subagents. Use OpenClaw `sessions_spawn` only for OpenClaw or ACP delegation.",
+    "Use Codex native `spawn_agent` for Codex subagents, including `codex_reviewer` when reviewing whether Coding stayed Codex-native. Use OpenClaw `sessions_spawn` only for OpenClaw or ACP delegation.",
     buildVisibleReplyInstruction(params, options.dynamicTools),
     nativeCommandGuidance,
     params.extraSystemPrompt,

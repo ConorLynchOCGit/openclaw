@@ -3,4 +3,4 @@ multi_agent = true
 
 [agents]
 max_threads = 6
-max_depth = 2
+max_depth = 1

@@ -186,6 +186,7 @@ describe("Codex app-server native code mode config", () => {
     const instructions = buildDeveloperInstructions(createAttemptParams({ provider: "openai" }));
 
     expect(instructions).toContain("Use Codex native `spawn_agent` for Codex subagents");
+    expect(instructions).toContain("including `codex_reviewer`");
     expect(instructions).toContain(
       "Use OpenClaw `sessions_spawn` only for OpenClaw or ACP delegation.",
     );
@@ -359,7 +360,7 @@ describe("Codex app-server native code mode config", () => {
       "features.apply_patch_streaming_events": true,
       "features.multi_agent": true,
       "agents.max_threads": 6,
-      "agents.max_depth": 2,
+      "agents.max_depth": 1,
     });
   });
 
@@ -377,7 +378,26 @@ describe("Codex app-server native code mode config", () => {
     expect(request.config).toMatchObject({
       "features.multi_agent": true,
       "agents.max_threads": 6,
-      "agents.max_depth": 2,
+      "agents.max_depth": 1,
+    });
+  });
+
+  it("keeps Codex-native coding team subagents enabled for execution-coding runs", () => {
+    const params = createAttemptParams({ provider: "openai", modelId: "gpt-5.4-nano" });
+    params.agentId = "execution-coding";
+    params.sessionKey = "agent:execution-coding:session-1";
+
+    const request = buildThreadStartParams(params, {
+      cwd: "/repo",
+      dynamicTools: [],
+      appServer: createAppServerOptions() as never,
+      developerInstructions: "test instructions",
+    });
+
+    expect(request.config).toMatchObject({
+      "features.multi_agent": true,
+      "agents.max_threads": 6,
+      "agents.max_depth": 1,
     });
   });
 

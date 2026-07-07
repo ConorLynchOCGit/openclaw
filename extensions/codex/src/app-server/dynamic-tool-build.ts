@@ -52,7 +52,7 @@ const CODEX_NATIVE_SANDBOX_TOOL_REQUIREMENTS = [
   "apply_patch",
 ] as const;
 const CODEX_MEMORY_FLUSH_DYNAMIC_TOOL_ALLOW = new Set(["read", "write"]);
-const CODEX_NATIVE_CODING_AGENT_IDS = new Set(["coding"]);
+const CODEX_NATIVE_CODING_AGENT_IDS = new Set(["coding", "execution-coding"]);
 
 /** Runtime inputs needed to derive the exact Codex dynamic tool surface for a turn. */
 export type DynamicToolBuildParams = {

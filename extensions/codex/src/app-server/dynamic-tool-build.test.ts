@@ -195,6 +195,39 @@ describe("Codex app-server dynamic tool build", () => {
     expect(tools.map((tool) => tool.name)).toEqual([]);
   });
 
+  it("removes OpenClaw dynamic tools from execution-coding's default Codex-native workbench", async () => {
+    setOpenClawCodingToolsFactoryForTests(() => [
+      createRuntimeDynamicTool("read"),
+      createRuntimeDynamicTool("write"),
+      createRuntimeDynamicTool("edit"),
+      createRuntimeDynamicTool("apply_patch"),
+      createRuntimeDynamicTool("exec"),
+      createRuntimeDynamicTool("process"),
+      createRuntimeDynamicTool("message"),
+      createRuntimeDynamicTool("task"),
+      createRuntimeDynamicTool("sessions_history"),
+      createRuntimeDynamicTool("sessions_spawn"),
+      createRuntimeDynamicTool("sessions_yield"),
+      createRuntimeDynamicTool("subagents"),
+      createRuntimeDynamicTool("session_status"),
+    ]);
+    const sessionFile = path.join(tempDir, "execution-coding-session.jsonl");
+    const workspaceDir = path.join(tempDir, "workspace");
+    const params = createParams(sessionFile, workspaceDir);
+    params.disableTools = false;
+    params.sessionKey = "agent:execution-coding:session-1";
+    params.runtimePlan = createCodexRuntimePlanFixture();
+
+    const tools = await buildDynamicToolsForTest(params, workspaceDir, {
+      sessionAgentId: "execution-coding",
+      sandboxSessionKey: "agent:execution-coding:session-1",
+      nativeToolSurfaceEnabled: true,
+    });
+
+    expect(isCodexNativeCodingAgent("execution-coding")).toBe(true);
+    expect(tools.map((tool) => tool.name)).toEqual([]);
+  });
+
   it("does not re-add OpenClaw shell shims for Coding when native Code Mode is unavailable", async () => {
     setOpenClawCodingToolsFactoryForTests(() => [
       createRuntimeDynamicTool("exec"),
