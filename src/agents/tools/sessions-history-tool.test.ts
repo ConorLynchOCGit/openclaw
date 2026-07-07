@@ -10,6 +10,7 @@ type CallGatewayRequest = Parameters<typeof gatewayCall>[0];
 
 let createSessionsHistoryTool: typeof import("./sessions-history-tool.js").createSessionsHistoryTool;
 let previousConfigPath: string | undefined;
+let previousStateDir: string | undefined;
 let tempDir: string | undefined;
 
 function useLoggingConfig(name: string, logging: Record<string, unknown>): void {
@@ -43,6 +44,7 @@ function createHistoryToolWithMessage(content: string) {
 describe("sessions_history redaction", () => {
   beforeAll(async () => {
     previousConfigPath = process.env.OPENCLAW_CONFIG_PATH;
+    previousStateDir = process.env.OPENCLAW_STATE_DIR;
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-sessions-history-redact-"));
     useLoggingConfig("redaction-off.json", { redactSensitive: "off" });
     ({ createSessionsHistoryTool } = await import("./sessions-history-tool.js"));
@@ -53,6 +55,11 @@ describe("sessions_history redaction", () => {
       delete process.env.OPENCLAW_CONFIG_PATH;
     } else {
       process.env.OPENCLAW_CONFIG_PATH = previousConfigPath;
+    }
+    if (previousStateDir === undefined) {
+      delete process.env.OPENCLAW_STATE_DIR;
+    } else {
+      process.env.OPENCLAW_STATE_DIR = previousStateDir;
     }
     if (tempDir) {
       fs.rmSync(tempDir, { recursive: true, force: true });
@@ -94,5 +101,77 @@ describe("sessions_history redaction", () => {
     await expect(tool.execute("call-1", { sessionKey: "main", limit })).rejects.toThrow(
       "limit must be a positive integer",
     );
+  });
+
+  it("resolves openclaw transcript refs to exact assistant message text", async () => {
+    if (!tempDir) {
+      throw new Error("tempDir not initialized");
+    }
+    const stateDir = path.join(tempDir, "state-transcript-ref");
+    process.env.OPENCLAW_STATE_DIR = stateDir;
+    const sessionsDir = path.join(stateDir, "agents", "coding", "sessions");
+    fs.mkdirSync(sessionsDir, { recursive: true });
+
+    const sessionKey = "agent:coding:subagent:child";
+    const sessionId = "child-session";
+    const messageId = "assistant-message-1";
+    const sessionFile = path.join(sessionsDir, `${sessionId}.jsonl`);
+    fs.writeFileSync(
+      path.join(sessionsDir, "sessions.json"),
+      `${JSON.stringify({
+        [sessionKey]: {
+          sessionId,
+          sessionFile,
+          chatType: "direct",
+        },
+      })}\n`,
+      "utf8",
+    );
+    fs.writeFileSync(
+      sessionFile,
+      `${JSON.stringify({
+        id: messageId,
+        type: "message",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Inspectable child artifact" }],
+          timestamp: 1_783_435_000_000,
+        },
+      })}\n`,
+      "utf8",
+    );
+
+    const tool = createSessionsHistoryTool({
+      config: {
+        tools: {
+          sessions: { visibility: "all" },
+          agentToAgent: { enabled: true, allow: ["*"] },
+        },
+      },
+      callGateway: async () => {
+        throw new Error("chat.history should not be called for exact transcript refs");
+      },
+    });
+    const ref = `openclaw-transcript://${encodeURIComponent(
+      sessionKey,
+    )}#message:${encodeURIComponent(messageId)}`;
+
+    const result = await tool.execute("call-ref", { sessionKey: ref });
+    const details = result.details as {
+      sessionKey?: string;
+      transcriptRef?: string;
+      messages?: Array<{ role?: string; content?: unknown; id?: string }>;
+    };
+
+    expect(details.sessionKey).toBe(sessionKey);
+    expect(details.transcriptRef).toBe(ref);
+    expect(details.messages).toEqual([
+      {
+        id: messageId,
+        role: "assistant",
+        content: "Inspectable child artifact",
+        timestamp: 1_783_435_000_000,
+      },
+    ]);
   });
 });

@@ -169,6 +169,30 @@ export async function readLatestAssistantTextFromSessionTranscript(
   return undefined;
 }
 
+export async function readAssistantTextFromSessionTranscriptById(
+  sessionFile: string | undefined,
+  messageId: string | undefined,
+): Promise<AssistantTranscriptText | undefined> {
+  const normalizedMessageId = messageId?.trim();
+  if (!sessionFile?.trim() || !normalizedMessageId) {
+    return undefined;
+  }
+
+  for await (const line of streamSessionTranscriptLinesReverse(sessionFile)) {
+    try {
+      const assistantText = parseAssistantTranscriptText(line, {
+        excludeTranscriptOnlyOpenClawAssistant: true,
+      });
+      if (assistantText?.id === normalizedMessageId) {
+        return assistantText;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
 export async function readTailAssistantTextFromSessionTranscript(
   sessionFile: string | undefined,
 ): Promise<TailAssistantTranscriptText | undefined> {

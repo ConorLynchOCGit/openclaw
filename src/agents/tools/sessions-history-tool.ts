@@ -6,11 +6,20 @@
 import { readStringValue } from "@openclaw/normalization-core/string-coerce";
 import { Type } from "typebox";
 import { getRuntimeConfig } from "../../config/config.js";
+import {
+  loadSessionStore,
+  readAssistantTextFromSessionTranscriptById,
+  resolveDefaultSessionStorePath,
+  resolveSessionFilePath,
+  resolveSessionFilePathOptions,
+  resolveSessionStoreEntry,
+} from "../../config/sessions.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { callGateway } from "../../gateway/call.js";
 import { capArrayByJsonBytes } from "../../gateway/session-utils.fs.js";
 import { jsonUtf8Bytes } from "../../infra/json-utf8-bytes.js";
 import { redactToolPayloadText } from "../../logging/redact.js";
+import { resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
 import { truncateUtf16Safe } from "../../utils.js";
 import { optionalPositiveIntegerSchema } from "../schema/typebox.js";
 import {
@@ -38,8 +47,105 @@ const SessionsHistoryToolSchema = Type.Object({
 const SESSIONS_HISTORY_MAX_BYTES = 256 * 1024;
 const SESSIONS_HISTORY_TEXT_MAX_CHARS = 32_000;
 type GatewayCaller = typeof callGateway;
+type OpenClawTranscriptRef = {
+  raw: string;
+  sessionKey: string;
+  messageId?: string;
+};
 
 // sandbox policy handling is shared with sessions-list-tool via sessions-helpers.ts
+
+const OPENCLAW_TRANSCRIPT_REF_PREFIX = "openclaw-transcript://";
+
+function parseOpenClawTranscriptRef(value: string): OpenClawTranscriptRef | undefined {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith(OPENCLAW_TRANSCRIPT_REF_PREFIX)) {
+    return undefined;
+  }
+  const rest = trimmed.slice(OPENCLAW_TRANSCRIPT_REF_PREFIX.length);
+  const hashIndex = rest.indexOf("#");
+  const encodedSessionKey = hashIndex >= 0 ? rest.slice(0, hashIndex) : rest;
+  if (!encodedSessionKey) {
+    return undefined;
+  }
+  let sessionKey: string;
+  try {
+    sessionKey = decodeURIComponent(encodedSessionKey).trim();
+  } catch {
+    return undefined;
+  }
+  if (!sessionKey) {
+    return undefined;
+  }
+  const fragment = hashIndex >= 0 ? rest.slice(hashIndex + 1) : "";
+  let messageId: string | undefined;
+  if (fragment.startsWith("message:")) {
+    try {
+      messageId = decodeURIComponent(fragment.slice("message:".length)).trim() || undefined;
+    } catch {
+      messageId = undefined;
+    }
+  }
+  return {
+    raw: trimmed,
+    sessionKey,
+    ...(messageId ? { messageId } : {}),
+  };
+}
+
+async function readTranscriptRefMessage(params: {
+  ref: OpenClawTranscriptRef;
+  resolvedSessionKey: string;
+}): Promise<
+  | {
+      status: "found";
+      message: {
+        id?: string;
+        role: "assistant";
+        content: string;
+        timestamp?: number;
+      };
+    }
+  | { status: "not_found"; reason: string }
+> {
+  if (!params.ref.messageId) {
+    return { status: "not_found", reason: "message id missing from transcript ref" };
+  }
+
+  const agentId = resolveAgentIdFromSessionKey(params.resolvedSessionKey);
+  const storePath = resolveDefaultSessionStorePath(agentId);
+  const store = loadSessionStore(storePath, { skipCache: true });
+  const resolved = resolveSessionStoreEntry({
+    store,
+    sessionKey: params.resolvedSessionKey,
+  });
+  const entry = resolved.existing;
+  if (!entry?.sessionId) {
+    return { status: "not_found", reason: "session not found" };
+  }
+
+  const sessionFile = resolveSessionFilePath(
+    entry.sessionId,
+    entry,
+    resolveSessionFilePathOptions({ agentId, storePath }),
+  );
+  const assistantText = await readAssistantTextFromSessionTranscriptById(
+    sessionFile,
+    params.ref.messageId,
+  );
+  if (!assistantText) {
+    return { status: "not_found", reason: "assistant message not found" };
+  }
+  return {
+    status: "found",
+    message: {
+      ...(assistantText.id ? { id: assistantText.id } : {}),
+      role: "assistant",
+      content: assistantText.text,
+      ...(assistantText.timestamp !== undefined ? { timestamp: assistantText.timestamp } : {}),
+    },
+  };
+}
 
 function truncateHistoryText(text: string): {
   text: string;
@@ -198,9 +304,11 @@ export function createSessionsHistoryTool(opts?: {
     execute: async (_toolCallId, args) => {
       const params = args as Record<string, unknown>;
       const gatewayCall = opts?.callGateway ?? callGateway;
-      const sessionKeyParam = readStringParam(params, "sessionKey", {
+      const rawSessionKeyParam = readStringParam(params, "sessionKey", {
         required: true,
       });
+      const transcriptRef = parseOpenClawTranscriptRef(rawSessionKeyParam);
+      const sessionKeyParam = transcriptRef?.sessionKey ?? rawSessionKeyParam;
       const cfg = opts?.config ?? getRuntimeConfig();
       const { mainKey, alias, effectiveRequesterKey, restrictToSpawned } =
         resolveSandboxedSessionToolContext({
@@ -250,6 +358,39 @@ export function createSessionsHistoryTool(opts?: {
         return jsonResult({
           status: access.status,
           error: access.error,
+        });
+      }
+
+      if (transcriptRef?.messageId) {
+        const refMessage = await readTranscriptRefMessage({
+          ref: transcriptRef,
+          resolvedSessionKey: resolvedKey,
+        });
+        if (refMessage.status === "found") {
+          const sanitized = sanitizeHistoryMessage(refMessage.message);
+          const bytes = jsonUtf8Bytes([sanitized.message]);
+          return jsonResult({
+            sessionKey: displayKey,
+            transcriptRef: transcriptRef.raw,
+            messages: [sanitized.message],
+            truncated: sanitized.truncated,
+            droppedMessages: false,
+            contentTruncated: sanitized.truncated,
+            contentRedacted: sanitized.redacted,
+            bytes,
+          });
+        }
+        return jsonResult({
+          sessionKey: displayKey,
+          transcriptRef: transcriptRef.raw,
+          messages: [],
+          truncated: false,
+          droppedMessages: false,
+          contentTruncated: false,
+          contentRedacted: false,
+          bytes: jsonUtf8Bytes([]),
+          status: "message_not_found",
+          error: refMessage.reason,
         });
       }
 

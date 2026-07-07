@@ -16,6 +16,7 @@ import {
 import {
   appendAssistantMessageToSessionTranscript,
   appendExactAssistantMessageToSessionTranscript,
+  readAssistantTextFromSessionTranscriptById,
   readLatestAssistantTextFromSessionTranscript,
   readTailAssistantTextFromSessionTranscript,
 } from "./transcript.js";
@@ -558,6 +559,33 @@ describe("appendAssistantMessageToSessionTranscript", () => {
       mirrorResult.sessionFile,
     );
     expect(latestAssistantText).toBeUndefined();
+  });
+
+  it("reads a canonical assistant transcript entry by message id", async () => {
+    writeTranscriptStore();
+
+    const firstResult = await appendExactAssistantMessageToSessionTranscript({
+      sessionKey,
+      storePath: fixture.storePath(),
+      message: createExactAssistantMessage({ text: "First assistant artifact" }),
+    });
+    const secondResult = await appendExactAssistantMessageToSessionTranscript({
+      sessionKey,
+      storePath: fixture.storePath(),
+      message: createExactAssistantMessage({ text: "Second assistant artifact" }),
+    });
+    expect(firstResult.ok).toBe(true);
+    expect(secondResult.ok).toBe(true);
+    if (!firstResult.ok || !secondResult.ok) {
+      return;
+    }
+
+    const firstAssistantText = await readAssistantTextFromSessionTranscriptById(
+      firstResult.sessionFile,
+      firstResult.messageId,
+    );
+    expect(firstAssistantText?.id).toBe(firstResult.messageId);
+    expect(firstAssistantText?.text).toBe("First assistant artifact");
   });
 
   it("keeps transcript-only OpenClaw assistant entries available to the tail reader", async () => {
