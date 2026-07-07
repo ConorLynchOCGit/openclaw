@@ -121,6 +121,28 @@ const CODEX_TOOL_SEARCH_UNSUPPORTED_THREAD_CONFIG: JsonObject = {
   "features.multi_agent": false,
 };
 
+const CODEX_NATIVE_CODING_TEAM_AGENT_IDS = new Set(["coding"]);
+
+const CODEX_NATIVE_CODING_TEAM_THREAD_CONFIG: JsonObject = {
+  "features.multi_agent": true,
+  "agents.max_threads": 6,
+  "agents.max_depth": 2,
+};
+
+function isCodexNativeCodingTeamRun(
+  params: Pick<EmbeddedRunAttemptParams, "agentId" | "sessionKey">,
+): boolean {
+  const agentId = params.agentId?.trim().toLowerCase();
+  if (agentId) {
+    return CODEX_NATIVE_CODING_TEAM_AGENT_IDS.has(agentId);
+  }
+  const sessionAgentId = /^agent:([^:]+)/u
+    .exec(params.sessionKey ?? "")?.[1]
+    ?.trim()
+    .toLowerCase();
+  return sessionAgentId ? CODEX_NATIVE_CODING_TEAM_AGENT_IDS.has(sessionAgentId) : false;
+}
+
 export type CodexThreadLifecycleTimingSpan = {
   name: string;
   durationMs: number;
@@ -1120,12 +1142,14 @@ function buildCodexRuntimeThreadConfigForRun(
   options: { nativeCodeModeEnabled?: boolean; nativeCodeModeOnlyEnabled?: boolean } = {},
 ): JsonObject {
   const baseConfig = buildCodexRuntimeThreadConfig(config, options);
+  const isNativeCodingTeamRun = isCodexNativeCodingTeamRun(params);
   const runtimeConfig =
     mergeCodexThreadConfigs(
       baseConfig,
       shouldDisableCodexToolSearchForModel(params.modelId)
         ? CODEX_TOOL_SEARCH_UNSUPPORTED_THREAD_CONFIG
         : undefined,
+      isNativeCodingTeamRun ? CODEX_NATIVE_CODING_TEAM_THREAD_CONFIG : undefined,
     ) ?? baseConfig;
   if (params.bootstrapContextMode !== "lightweight") {
     return runtimeConfig;

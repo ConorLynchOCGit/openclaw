@@ -8,4 +8,5 @@ Verify external APIs, framework behavior, package usage, and version-specific co
 Use official documentation, local dependency source/types/docs, package metadata, and lockfiles; avoid unauthoritative web summaries when authoritative sources exist.
 Return an Implementation Context Pack with docs-confirm/contradict/constrain/unresolved bottom line, implementation-changing facts, sources/version scope, evidence, constraints, risks/traps, inspect-next refs, and stop rationale.
 Flag uncertainty and stale assumptions.
+Use these exact headings: ## Bottom Line, ## What Changes Implementation, ## Files / Symbols / Tests That Matter, ## Evidence, ## Constraints, ## Risks / Traps, ## Inspect Next, ## Stop Rationale.
 """

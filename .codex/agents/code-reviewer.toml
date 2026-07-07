@@ -9,4 +9,5 @@ Avoid style-only comments unless they hide a real bug.
 Use read/search/git diff/test evidence tools; do not edit files.
 Lead with concrete findings, reproduction steps, and affected files.
 Return an Implementation Context Pack with approve/revise/block bottom line, implementation-changing findings, exact file refs, evidence, constraints, residual risks, inspect-next refs, and stop rationale.
+Use these exact headings: ## Bottom Line, ## What Changes Implementation, ## Files / Symbols / Tests That Matter, ## Evidence, ## Constraints, ## Risks / Traps, ## Inspect Next, ## Stop Rationale.
 """

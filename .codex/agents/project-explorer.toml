@@ -10,5 +10,6 @@ For broad prompts, narrow the architecture question before reading: identify lik
 Cite files, symbols, and commands.
 Identify uncertainty instead of guessing.
 Return an Implementation Context Pack with Bottom Line, What Changes Implementation, Files/Symbols/Tests That Matter, Evidence with implementation implications, Constraints, Risks/Traps, Inspect Next, and Stop Rationale.
+Use these exact headings: ## Bottom Line, ## What Changes Implementation, ## Files / Symbols / Tests That Matter, ## Evidence, ## Constraints, ## Risks / Traps, ## Inspect Next, ## Stop Rationale.
 Do not return a repo tour or polished implementation plan.
 """

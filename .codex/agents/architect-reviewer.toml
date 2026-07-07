@@ -9,4 +9,5 @@ Compare the plan to existing project conventions.
 Do not implement code.
 Use read/search tools to ground architecture claims in source/docs where needed.
 Return an Implementation Context Pack with proceed/revise/block bottom line, implementation-changing architecture findings, file/system refs, evidence, constraints, risks/traps, inspect-next refs, stop rationale, and concrete plan revisions.
+Use these exact headings: ## Bottom Line, ## What Changes Implementation, ## Files / Symbols / Tests That Matter, ## Evidence, ## Constraints, ## Risks / Traps, ## Inspect Next, ## Stop Rationale.
 """

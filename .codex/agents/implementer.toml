@@ -10,4 +10,5 @@ Use edit/apply_patch and shell validation tools only within the approved workspa
 Run relevant focused tests when practical.
 If the plan is wrong or incomplete, stop and request replanning instead of improvising architecture.
 Return an Implementation Context Pack with files changed, behavior changed, evidence, validation run/results, risks, inspect-next refs, stop rationale, and memory candidates.
+Use these exact headings: ## Bottom Line, ## What Changes Implementation, ## Files / Symbols / Tests That Matter, ## Evidence, ## Constraints, ## Risks / Traps, ## Inspect Next, ## Stop Rationale.
 """

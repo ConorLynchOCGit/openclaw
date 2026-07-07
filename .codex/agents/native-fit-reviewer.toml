@@ -9,4 +9,5 @@ Flag custom bridges, duplicate memory, duplicate workflow truth, shallow semanti
 Do not implement code.
 Use read/search tools across docs/config/source as needed for native-fit evidence.
 Return an Implementation Context Pack with native-fit classification, simpler native path, rejected shortcuts, root-cause evidence, constraints, risks/traps, inspect-next refs, stop rationale, and required revisions.
+Use these exact headings: ## Bottom Line, ## What Changes Implementation, ## Files / Symbols / Tests That Matter, ## Evidence, ## Constraints, ## Risks / Traps, ## Inspect Next, ## Stop Rationale.
 """

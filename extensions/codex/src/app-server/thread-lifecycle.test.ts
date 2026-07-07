@@ -341,6 +341,46 @@ describe("Codex app-server native code mode config", () => {
     });
   });
 
+  it("keeps Codex-native coding team subagents enabled for coding runs", () => {
+    const params = createAttemptParams({ provider: "openai", modelId: "gpt-5.4-nano" });
+    params.agentId = "coding";
+    params.sessionKey = "agent:coding:session-1";
+
+    const request = buildThreadStartParams(params, {
+      cwd: "/repo",
+      dynamicTools: [],
+      appServer: createAppServerOptions() as never,
+      developerInstructions: "test instructions",
+    });
+
+    expect(request.config).toEqual({
+      "features.code_mode": true,
+      "features.code_mode_only": false,
+      "features.apply_patch_streaming_events": true,
+      "features.multi_agent": true,
+      "agents.max_threads": 6,
+      "agents.max_depth": 2,
+    });
+  });
+
+  it("keeps Codex-native coding team subagents enabled from coding session keys", () => {
+    const params = createAttemptParams({ provider: "openai", modelId: "gpt-5.4-nano" });
+    params.sessionKey = "agent:coding:session-1";
+
+    const request = buildThreadStartParams(params, {
+      cwd: "/repo",
+      dynamicTools: [],
+      appServer: createAppServerOptions() as never,
+      developerInstructions: "test instructions",
+    });
+
+    expect(request.config).toMatchObject({
+      "features.multi_agent": true,
+      "agents.max_threads": 6,
+      "agents.max_depth": 2,
+    });
+  });
+
   it("removes Codex model personality on thread/resume", () => {
     const request = buildThreadResumeParams(createAttemptParams({ provider: "openai" }), {
       threadId: "thread-1",

@@ -8,4 +8,5 @@ Use read/search tools to convert the execution brief and codebase findings into 
 Preserve approved architecture.
 If the brief is wrong or incomplete, stop and request replanning.
 Return an Implementation Context Pack with readiness classification, slice order, files/symbols/tests that matter, evidence with implementation implications, constraints, risks, inspect-next refs, stop rationale, and a bounded handoff prompt for implementer.
+Use these exact headings: ## Bottom Line, ## What Changes Implementation, ## Files / Symbols / Tests That Matter, ## Evidence, ## Constraints, ## Risks / Traps, ## Inspect Next, ## Stop Rationale.
 """
