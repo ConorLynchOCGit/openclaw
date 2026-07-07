@@ -11,8 +11,10 @@ import {
   addSandboxShellDynamicToolsIfAvailable,
   buildDynamicTools,
   filterCodexDynamicToolsForAllowlist,
+  filterOpenClawDynamicToolsForCodexNativeCoding,
   hasWildcardCodexToolsAllow,
   includeForcedCodexDynamicToolAllow,
+  isCodexNativeCodingAgent,
   resolveCodexAppServerNativeToolSurfaceDecision,
   resetOpenClawCodingToolsFactoryForTests,
   resolveOpenClawCodingToolsSessionKeys,
@@ -158,6 +160,92 @@ describe("Codex app-server dynamic tool build", () => {
       "heartbeat_respond",
       "sessions_spawn",
     ]);
+  });
+
+  it("removes OpenClaw dynamic tools from Coding's default Codex-native workbench", async () => {
+    setOpenClawCodingToolsFactoryForTests(() => [
+      createRuntimeDynamicTool("read"),
+      createRuntimeDynamicTool("write"),
+      createRuntimeDynamicTool("edit"),
+      createRuntimeDynamicTool("apply_patch"),
+      createRuntimeDynamicTool("exec"),
+      createRuntimeDynamicTool("process"),
+      createRuntimeDynamicTool("message"),
+      createRuntimeDynamicTool("task"),
+      createRuntimeDynamicTool("sessions_history"),
+      createRuntimeDynamicTool("sessions_spawn"),
+      createRuntimeDynamicTool("sessions_yield"),
+      createRuntimeDynamicTool("subagents"),
+      createRuntimeDynamicTool("session_status"),
+    ]);
+    const sessionFile = path.join(tempDir, "coding-session.jsonl");
+    const workspaceDir = path.join(tempDir, "workspace");
+    const params = createParams(sessionFile, workspaceDir);
+    params.disableTools = false;
+    params.sessionKey = "agent:coding:session-1";
+    params.runtimePlan = createCodexRuntimePlanFixture();
+
+    const tools = await buildDynamicToolsForTest(params, workspaceDir, {
+      sessionAgentId: "coding",
+      sandboxSessionKey: "agent:coding:session-1",
+      nativeToolSurfaceEnabled: true,
+    });
+
+    expect(isCodexNativeCodingAgent("coding")).toBe(true);
+    expect(tools.map((tool) => tool.name)).toEqual([]);
+  });
+
+  it("does not re-add OpenClaw shell shims for Coding when native Code Mode is unavailable", async () => {
+    setOpenClawCodingToolsFactoryForTests(() => [
+      createRuntimeDynamicTool("exec"),
+      createRuntimeDynamicTool("process"),
+      createRuntimeDynamicTool("message"),
+    ]);
+    const sessionFile = path.join(tempDir, "coding-session.jsonl");
+    const workspaceDir = path.join(tempDir, "workspace");
+    const params = createParams(sessionFile, workspaceDir);
+    params.disableTools = false;
+    params.sessionKey = "agent:coding:session-1";
+    params.runtimePlan = createCodexRuntimePlanFixture();
+
+    const tools = await buildDynamicToolsForTest(params, workspaceDir, {
+      sessionAgentId: "coding",
+      sandboxSessionKey: "agent:coding:session-1",
+      sandbox: { enabled: true, backendId: "ssh" } as never,
+      nativeToolSurfaceEnabled: false,
+    });
+
+    expect(tools.map((tool) => tool.name)).toEqual([]);
+  });
+
+  it("keeps only forced non-workbench delivery tools for Coding", async () => {
+    const tools = [
+      createRuntimeDynamicTool("message"),
+      createRuntimeDynamicTool("heartbeat_respond"),
+      createRuntimeDynamicTool("sessions_history"),
+      createRuntimeDynamicTool("task"),
+    ];
+    const sessionFile = path.join(tempDir, "coding-session.jsonl");
+    const workspaceDir = path.join(tempDir, "workspace");
+    const params = createParams(sessionFile, workspaceDir);
+    params.disableTools = false;
+    params.sessionKey = "agent:coding:session-1";
+    params.sourceReplyDeliveryMode = "message_tool_only";
+
+    expect(
+      filterOpenClawDynamicToolsForCodexNativeCoding(tools, {
+        params,
+        sessionAgentId: "coding",
+      }).map((tool) => tool.name),
+    ).toEqual(["message"]);
+
+    expect(
+      filterOpenClawDynamicToolsForCodexNativeCoding(tools, {
+        params: { ...params, trigger: "heartbeat" },
+        sessionAgentId: "coding",
+        forceHeartbeatTool: true,
+      }).map((tool) => tool.name),
+    ).toEqual(["message", "heartbeat_respond"]);
   });
 
   it("applies additional Codex dynamic tool excludes without exposing Codex-native tools", () => {

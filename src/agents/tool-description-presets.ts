@@ -24,6 +24,7 @@ export function describeSessionsListTool(): string {
 export function describeSessionsHistoryTool(): string {
   return [
     "Fetch sanitized history for visible session.",
+    "For openclaw-transcript://...#message:<id> exact refs, pass the full ref as ref/transcriptRef/messageRef; do not strip it to sessionKey.",
     "Use for bounded recovery/readback after a terminal child event, timeout/cancel partial output, compaction/resume, operator audit, or result-ref verification.",
     "Do not poll active children with sessions_history; native completion delivery is the normal handoff.",
   ].join(" ");

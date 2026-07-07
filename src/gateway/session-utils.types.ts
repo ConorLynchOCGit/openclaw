@@ -54,6 +54,23 @@ export type SessionCompactionCheckpointPreview = Pick<
   "checkpointId" | "createdAt" | "reason"
 >;
 
+export type GatewaySessionCodexNativeChildRun = {
+  source: "codex-native";
+  taskId: string;
+  runId?: string;
+  childThreadId?: string;
+  role?: string;
+  agentPath?: string;
+  label?: string;
+  status?: string;
+  terminalOutcome?: string;
+  startedAt?: number;
+  endedAt?: number;
+  lastEventAt?: number;
+  progressSummary?: string;
+  terminalSummary?: string;
+};
+
 export type GatewaySessionRow = {
   key: string;
   agentId: string;
@@ -128,6 +145,7 @@ export type GatewaySessionRow = {
   runtimeMs?: number;
   parentSessionKey?: string;
   childSessions?: string[];
+  codexNativeChildRuns?: GatewaySessionCodexNativeChildRun[];
   responseUsage?: "on" | "off" | "tokens" | "full";
   modelProvider?: string;
   model?: string;

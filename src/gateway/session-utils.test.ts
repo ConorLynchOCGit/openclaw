@@ -259,6 +259,62 @@ describe("gateway session utils", () => {
     expect(listed.hasMore).toBe(false);
   });
 
+  test("session detail projects mirrored Codex-native child runs", () => {
+    const cfg = { agents: { list: [{ id: "coding", default: true }] } } as OpenClawConfig;
+    const sessionKey = "agent:coding:session-1";
+    const store = {
+      [sessionKey]: {
+        sessionId: "session-1",
+        updatedAt: 2_000,
+      } satisfies SessionEntry,
+    };
+    createTaskRecord({
+      runtime: "subagent",
+      taskKind: "codex-native",
+      sourceId: "codex-thread:child-thread-1",
+      requesterSessionKey: sessionKey,
+      agentId: "coding",
+      runId: "codex-thread:child-thread-1",
+      label: "project_explorer (worker)",
+      task: "Inspect source seams",
+      status: "succeeded",
+      deliveryStatus: "not_applicable",
+      notifyPolicy: "silent",
+      startedAt: 2_100,
+      lastEventAt: 2_500,
+      terminalSummary: "Codex native subagent finished: inspected source seams.",
+      eventMetadata: {
+        codexNativeSubagent: true,
+        parentThreadId: "parent-thread",
+        childThreadId: "child-thread-1",
+        childPhase: "child_completed",
+        childRole: "worker",
+        childAgentPath: "agents/project_explorer.toml",
+      },
+    });
+
+    const row = buildGatewaySessionRow({
+      cfg,
+      storePath: "",
+      store,
+      key: sessionKey,
+      entry: store[sessionKey],
+    });
+
+    expect(row.codexNativeChildRuns).toEqual([
+      expect.objectContaining({
+        source: "codex-native",
+        runId: "codex-thread:child-thread-1",
+        childThreadId: "child-thread-1",
+        role: "worker",
+        agentPath: "agents/project_explorer.toml",
+        label: "project_explorer (worker)",
+        status: "succeeded",
+        terminalSummary: "Codex native subagent finished: inspected source seams.",
+      }),
+    ]);
+  });
+
   test("parseGroupKey handles group keys", () => {
     expect(parseGroupKey("discord:group:dev")).toEqual({
       channel: "discord",
@@ -830,7 +886,7 @@ describe("gateway session utils", () => {
         ].join("\n"),
         "utf8",
       );
-      const store = {
+      const store: Record<string, SessionEntry> = {
         [parentKey]: {
           sessionId: parentSessionId,
           sessionFile: parentSessionFile,
@@ -947,7 +1003,7 @@ describe("gateway session utils", () => {
         })}\n`,
         "utf8",
       );
-      const store = {
+      const store: Record<string, SessionEntry> = {
         [mainKey]: {
           sessionId: mainSessionId,
           sessionFile: mainSessionFile,

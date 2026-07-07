@@ -39,7 +39,10 @@ import {
 } from "./sessions-helpers.js";
 
 const SessionsHistoryToolSchema = Type.Object({
-  sessionKey: Type.String(),
+  sessionKey: Type.Optional(Type.String()),
+  ref: Type.Optional(Type.String()),
+  transcriptRef: Type.Optional(Type.String()),
+  messageRef: Type.Optional(Type.String()),
   limit: optionalPositiveIntegerSchema(),
   includeTools: Type.Optional(Type.Boolean()),
 });
@@ -304,9 +307,14 @@ export function createSessionsHistoryTool(opts?: {
     execute: async (_toolCallId, args) => {
       const params = args as Record<string, unknown>;
       const gatewayCall = opts?.callGateway ?? callGateway;
-      const rawSessionKeyParam = readStringParam(params, "sessionKey", {
-        required: true,
-      });
+      const rawSessionKeyParam =
+        readStringParam(params, "ref") ??
+        readStringParam(params, "transcriptRef") ??
+        readStringParam(params, "messageRef") ??
+        readStringParam(params, "sessionKey", {
+          required: true,
+          label: "sessionKey/ref",
+        });
       const transcriptRef = parseOpenClawTranscriptRef(rawSessionKeyParam);
       const sessionKeyParam = transcriptRef?.sessionKey ?? rawSessionKeyParam;
       const cfg = opts?.config ?? getRuntimeConfig();

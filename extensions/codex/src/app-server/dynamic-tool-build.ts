@@ -52,6 +52,7 @@ const CODEX_NATIVE_SANDBOX_TOOL_REQUIREMENTS = [
   "apply_patch",
 ] as const;
 const CODEX_MEMORY_FLUSH_DYNAMIC_TOOL_ALLOW = new Set(["read", "write"]);
+const CODEX_NATIVE_CODING_AGENT_IDS = new Set(["coding"]);
 
 /** Runtime inputs needed to derive the exact Codex dynamic tool surface for a turn. */
 export type DynamicToolBuildParams = {
@@ -299,15 +300,18 @@ export async function buildDynamicTools(input: DynamicToolBuildParams) {
   const readableAllToolProjection = filterProviderNormalizableTools(allTools);
   preNormalizationDiagnostics.push(...readableAllToolProjection.diagnostics);
   const readableAllTools = [...readableAllToolProjection.tools];
-  const codexFilteredTools = addNodeShellDynamicToolsIfNeeded(
-    addSandboxShellDynamicToolsIfAvailable(
-      isCodexMemoryFlushRun(params)
-        ? filterCodexMemoryFlushDynamicTools(readableAllTools)
-        : filterCodexDynamicTools(readableAllTools, input.pluginConfig),
+  const codexFilteredTools = filterOpenClawDynamicToolsForCodexNativeCoding(
+    addNodeShellDynamicToolsIfNeeded(
+      addSandboxShellDynamicToolsIfAvailable(
+        isCodexMemoryFlushRun(params)
+          ? filterCodexMemoryFlushDynamicTools(readableAllTools)
+          : filterCodexDynamicTools(readableAllTools, input.pluginConfig),
+        readableAllTools,
+        input,
+      ),
       readableAllTools,
       input,
     ),
-    readableAllTools,
     input,
   );
   toolBuildStages.mark("codex-filtering");
@@ -520,6 +524,40 @@ function filterCodexMemoryFlushDynamicTools<T extends { name: string }>(tools: T
   return tools.filter((tool) =>
     CODEX_MEMORY_FLUSH_DYNAMIC_TOOL_ALLOW.has(normalizeCodexDynamicToolName(tool.name)),
   );
+}
+
+/** Detects the full-measure Coding profile where Codex, not OpenClaw, owns the workbench. */
+export function isCodexNativeCodingAgent(agentId: string | undefined): boolean {
+  return CODEX_NATIVE_CODING_AGENT_IDS.has(normalizeCodexDynamicToolName(agentId ?? ""));
+}
+
+/**
+ * Removes OpenClaw dynamic tools from Coding's default model-visible workbench.
+ *
+ * Coding runs as a Codex-native app-server thread. OpenClaw still launches,
+ * binds, observes, and receipts the thread out of band, but OpenClaw task,
+ * session, history, and shell shims must not become Coding's inner workbench.
+ * Only forced delivery/heartbeat mechanics survive when the transport already
+ * requires them for a non-workbench channel operation.
+ */
+export function filterOpenClawDynamicToolsForCodexNativeCoding<T extends { name: string }>(
+  tools: T[],
+  input: Pick<DynamicToolBuildParams, "params" | "sessionAgentId" | "forceHeartbeatTool">,
+): T[] {
+  if (!isCodexNativeCodingAgent(input.sessionAgentId)) {
+    return tools;
+  }
+  const allowed = new Set<string>();
+  if (shouldForceMessageTool(input.params)) {
+    allowed.add("message");
+  }
+  if (input.params.trigger === "heartbeat" || input.forceHeartbeatTool === true) {
+    allowed.add("heartbeat_respond");
+  }
+  if (allowed.size === 0) {
+    return [];
+  }
+  return tools.filter((tool) => allowed.has(normalizeCodexDynamicToolName(tool.name)));
 }
 
 /** Requires a Codex sandbox environment only when native tools must run inside OpenClaw sandboxing. */

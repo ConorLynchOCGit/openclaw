@@ -152,22 +152,24 @@ describe("sessions_history redaction", () => {
       sessionKey,
     )}#message:${encodeURIComponent(messageId)}`;
 
-    const result = await tool.execute("call-ref", { sessionKey: ref });
-    const details = result.details as {
-      sessionKey?: string;
-      transcriptRef?: string;
-      messages?: Array<{ role?: string; content?: unknown; id?: string }>;
-    };
+    for (const field of ["sessionKey", "ref", "transcriptRef", "messageRef"]) {
+      const result = await tool.execute("call-ref", { [field]: ref });
+      const details = result.details as {
+        sessionKey?: string;
+        transcriptRef?: string;
+        messages?: Array<{ role?: string; content?: unknown; id?: string }>;
+      };
 
-    expect(details.sessionKey).toBe(sessionKey);
-    expect(details.transcriptRef).toBe(ref);
-    expect(details.messages).toEqual([
-      {
-        id: messageId,
-        role: "assistant",
-        content: "Inspectable child artifact",
-        timestamp: 1_783_435_000_000,
-      },
-    ]);
+      expect(details.sessionKey).toBe(sessionKey);
+      expect(details.transcriptRef).toBe(ref);
+      expect(details.messages).toEqual([
+        {
+          id: messageId,
+          role: "assistant",
+          content: "Inspectable child artifact",
+          timestamp: 1_783_435_000_000,
+        },
+      ]);
+    }
   });
 });

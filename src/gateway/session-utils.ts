@@ -76,6 +76,13 @@ import {
   resolveAvatarMime,
 } from "../shared/avatar-policy.js";
 import type { ReadbackProgressProjection } from "../shared/readback-progress.js";
+import {
+  CODEX_NATIVE_SUBAGENT_RUNTIME,
+  CODEX_NATIVE_SUBAGENT_RUN_ID_PREFIX,
+  CODEX_NATIVE_SUBAGENT_TASK_KIND,
+} from "../tasks/codex-native-subagent-task.js";
+import { listTasksForRelatedSessionKey } from "../tasks/task-registry.js";
+import type { TaskEventMetadata, TaskRecord } from "../tasks/task-registry.types.js";
 import { normalizeSessionDeliveryFields } from "../utils/delivery-context.shared.js";
 import type { ModelCostConfig } from "../utils/usage-format.js";
 import { estimateUsageCost, resolveModelCostConfig } from "../utils/usage-format.js";
@@ -254,6 +261,70 @@ function resolveNonNegativeNumber(value: number | null | undefined): number | un
 }
 
 type SessionCompactionCheckpointEntry = NonNullable<SessionEntry["compactionCheckpoints"]>[number];
+
+function readTaskMetadataString(
+  metadata: TaskEventMetadata | undefined,
+  key: string,
+): string | undefined {
+  const value = metadata?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function isCodexNativeSubagentTask(task: TaskRecord): boolean {
+  return (
+    task.runtime === CODEX_NATIVE_SUBAGENT_RUNTIME &&
+    task.taskKind === CODEX_NATIVE_SUBAGENT_TASK_KIND
+  );
+}
+
+function resolveCodexChildThreadId(task: TaskRecord, metadata: TaskEventMetadata | undefined) {
+  const fromMetadata = readTaskMetadataString(metadata, "childThreadId");
+  if (fromMetadata) {
+    return fromMetadata;
+  }
+  const runId = task.runId?.trim() ?? task.sourceId?.trim();
+  return runId?.startsWith(CODEX_NATIVE_SUBAGENT_RUN_ID_PREFIX)
+    ? runId.slice(CODEX_NATIVE_SUBAGENT_RUN_ID_PREFIX.length)
+    : undefined;
+}
+
+function buildCodexNativeChildRunsForSession(
+  sessionKey: string,
+): GatewaySessionRow["codexNativeChildRuns"] {
+  const children = listTasksForRelatedSessionKey(sessionKey)
+    .filter(isCodexNativeSubagentTask)
+    .slice()
+    .sort(
+      (a, b) =>
+        (b.lastEventAt ?? b.endedAt ?? b.startedAt ?? b.createdAt) -
+        (a.lastEventAt ?? a.endedAt ?? a.startedAt ?? a.createdAt),
+    )
+    .map((task) => {
+      const metadata = task.executionReceipt?.latestEvent?.metadata;
+      const childThreadId = resolveCodexChildThreadId(task, metadata);
+      return {
+        source: "codex-native" as const,
+        taskId: task.taskId,
+        ...(task.runId ? { runId: task.runId } : {}),
+        ...(childThreadId ? { childThreadId } : {}),
+        ...(readTaskMetadataString(metadata, "childRole")
+          ? { role: readTaskMetadataString(metadata, "childRole") }
+          : {}),
+        ...(readTaskMetadataString(metadata, "childAgentPath")
+          ? { agentPath: readTaskMetadataString(metadata, "childAgentPath") }
+          : {}),
+        ...(task.label ? { label: task.label } : {}),
+        status: task.status,
+        ...(task.terminalOutcome ? { terminalOutcome: task.terminalOutcome } : {}),
+        ...(task.startedAt !== undefined ? { startedAt: task.startedAt } : {}),
+        ...(task.endedAt !== undefined ? { endedAt: task.endedAt } : {}),
+        ...(task.lastEventAt !== undefined ? { lastEventAt: task.lastEventAt } : {}),
+        ...(task.progressSummary ? { progressSummary: task.progressSummary } : {}),
+        ...(task.terminalSummary ? { terminalSummary: task.terminalSummary } : {}),
+      };
+    });
+  return children.length > 0 ? children : undefined;
+}
 
 function isProjectableCompactionCheckpoint(
   value: unknown,
@@ -2097,6 +2168,7 @@ export function buildGatewaySessionRow(params: {
   const childSessions = params.storeChildSessionsByKey
     ? params.storeChildSessionsByKey.get(key)
     : resolveChildSessionKeys(key, store, now);
+  const codexNativeChildRuns = buildCodexNativeChildRunsForSession(key);
   const compactionCheckpoints = resolveProjectableCompactionCheckpoints(entry);
   const compactionCheckpointCount = Array.isArray(entry?.compactionCheckpoints)
     ? compactionCheckpoints.length
@@ -2419,6 +2491,7 @@ export function buildGatewaySessionRow(params: {
     runtimeMs: entry?.runtimeMs,
     parentSessionKey: entry?.parentSessionKey,
     childSessions,
+    codexNativeChildRuns,
     responseUsage: entry?.responseUsage,
     modelProvider: rowModelProvider,
     model: rowModel,
