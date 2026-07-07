@@ -45,6 +45,11 @@ export type MemoryWikiStatus = {
     unsafeLocal: number;
     other: number;
   };
+  freshnessReadback: {
+    posture: "context-only";
+    authority: string;
+    limitations: string[];
+  };
   warnings: MemoryWikiStatusWarning[];
 };
 
@@ -257,6 +262,16 @@ export async function resolveMemoryWikiStatus(
     },
     pageCounts: counts.pageCounts,
     sourceCounts: counts.sourceCounts,
+    freshnessReadback: {
+      posture: "context-only",
+      authority:
+        "Source provenance counts and bridge artifact availability are compact status readback, not runtime truth or source-row proof.",
+      limitations: [
+        "Status output cannot prove index freshness.",
+        "Status output cannot distinguish write failure from query-shape limitation.",
+        "Use source-scoped GBrain get/list/search or source registry checks for evidence.",
+      ],
+    },
     warnings: buildWarnings({
       config,
       bridgePublicArtifactCount,
@@ -301,8 +316,11 @@ export function renderMemoryWikiStatus(status: MemoryWikiStatus): string {
     `Bridge: ${status.bridge.enabled ? "enabled" : "disabled"}${typeof status.bridgePublicArtifactCount === "number" ? ` (${status.bridgePublicArtifactCount} exported artifact${status.bridgePublicArtifactCount === 1 ? "" : "s"})` : ""}`,
     `Unsafe local: ${status.unsafeLocal.allowPrivateMemoryCoreAccess ? `enabled (${status.unsafeLocal.pathCount} paths)` : "disabled"}`,
     `Pages: ${status.pageCounts.source} sources, ${status.pageCounts.entity} entities, ${status.pageCounts.concept} concepts, ${status.pageCounts.synthesis} syntheses, ${status.pageCounts.report} reports`,
-    `Source provenance: ${status.sourceCounts.native} native, ${status.sourceCounts.bridge} bridge, ${status.sourceCounts.bridgeEvents} bridge-events, ${status.sourceCounts.unsafeLocal} unsafe-local, ${status.sourceCounts.other} other`,
+    `Source provenance/freshness context: ${status.sourceCounts.native} native, ${status.sourceCounts.bridge} bridge, ${status.sourceCounts.bridgeEvents} bridge-events, ${status.sourceCounts.unsafeLocal} unsafe-local, ${status.sourceCounts.other} other; ${status.freshnessReadback.posture}; not runtime truth`,
   ];
+  for (const limitation of status.freshnessReadback.limitations) {
+    lines.push(`Freshness limitation: ${limitation}`);
+  }
 
   if (status.warnings.length > 0) {
     lines.push("", "Warnings:");

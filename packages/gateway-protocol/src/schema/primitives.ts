@@ -27,6 +27,7 @@ export const CHAT_SEND_SESSION_KEY_MAX_LENGTH = 512;
 export const ChatSendSessionKeyString = Type.String({
   minLength: 1,
   maxLength: CHAT_SEND_SESSION_KEY_MAX_LENGTH,
+  pattern: "^[^/\\\\\\u0000]+$",
 });
 /** Human-readable session label primitive with bounded display length. */
 export const SessionLabelString = Type.String({

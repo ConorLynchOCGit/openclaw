@@ -1,6 +1,9 @@
 // Foreground task tool tests cover manager-style subagent delegation without
 // exposing raw sessions_spawn/sessions_yield lifecycle mechanics to the parent.
 import { createHash } from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const hoisted = vi.hoisted(() => {
@@ -24,6 +27,7 @@ vi.mock("../run-wait.js", () => ({
 }));
 
 let createTaskTool: typeof import("./task-tool.js").createTaskTool;
+let buildTaskTranscriptFinalRef: typeof import("./task-tool.js").buildTaskTranscriptFinalRef;
 
 function digestText(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -31,7 +35,7 @@ function digestText(value: string): string {
 
 describe("task tool", () => {
   beforeAll(async () => {
-    ({ createTaskTool } = await import("./task-tool.js"));
+    ({ createTaskTool, buildTaskTranscriptFinalRef } = await import("./task-tool.js"));
   });
 
   beforeEach(() => {
@@ -116,12 +120,10 @@ describe("task tool", () => {
       resultTruncated: false,
       resultInline: true,
       resultMode: "inline",
-      resultRef: "openclaw-session:agent:codebase-researcher:subagent:child",
+      resultRef: "openclaw-transcript://agent%3Acodebase-researcher%3Asubagent%3Achild#session",
       resultSource: "transcript",
       transcriptFinalRef:
-        "openclaw-session:agent:codebase-researcher:subagent:child:latest-assistant",
-      inspectCommand:
-        "openclaw sessions show agent:codebase-researcher:subagent:child --agent codebase-researcher",
+        "openclaw-transcript://agent%3Acodebase-researcher%3Asubagent%3Achild#assistant:last",
       previewOnly: false,
       previewChars: 0,
       displayTruncated: false,
@@ -174,15 +176,15 @@ describe("task tool", () => {
       throw new Error("Expected text tool result");
     }
     expect(content.text).toContain("<task_receipt");
-    expect(content.text).toContain('agentId="planning"');
-    expect(content.text).toContain('status="completed"');
-    expect(content.text).toContain('source="transcript"');
     expect(content.text).toContain(
-      'ref="openclaw-session:agent:codebase-researcher:subagent:child:latest-assistant"',
+      'ref="openclaw-transcript://agent%3Acodebase-researcher%3Asubagent%3Achild#assistant:last"',
     );
     expect(content.text).toContain(`chars="${shortPlanningResult.length}"`);
     expect(content.text).toContain(`digest="${digestText(shortPlanningResult)}"`);
-    expect(content.text).toContain("<inspect_command>");
+    expect(content.text).not.toContain('agentId="planning"');
+    expect(content.text).not.toContain('status="completed"');
+    expect(content.text).not.toContain('source="transcript"');
+    expect(content.text).not.toContain("<inspect_command>");
     expect(content.text).not.toContain("<task_result>");
     expect(content.text).not.toContain("<task_result_preview");
     expect(content.text).not.toContain(shortPlanningResult);
@@ -236,11 +238,9 @@ describe("task tool", () => {
       resultInline: false,
       resultMode: "pointer",
       resultSource: "transcript",
-      resultRef: "openclaw-session:agent:codebase-researcher:subagent:child",
+      resultRef: "openclaw-transcript://agent%3Acodebase-researcher%3Asubagent%3Achild#session",
       transcriptFinalRef:
-        "openclaw-session:agent:codebase-researcher:subagent:child:latest-assistant",
-      inspectCommand:
-        "openclaw sessions show agent:codebase-researcher:subagent:child --agent planning",
+        "openclaw-transcript://agent%3Acodebase-researcher%3Asubagent%3Achild#assistant:last",
       previewOnly: true,
       previewChars: 0,
       displayTruncated: true,
@@ -255,7 +255,13 @@ describe("task tool", () => {
     expect(content.text).toContain('resultInline="false"');
     expect(content.text).toContain('childSessionId="session-child"');
     expect(content.text).toContain("<task_result_ref");
-    expect(content.text).toContain("<task_result_inspect>");
+    expect(content.text).toContain(
+      'ref="openclaw-transcript://agent%3Acodebase-researcher%3Asubagent%3Achild#session"',
+    );
+    expect(content.text).toContain(
+      'ref="openclaw-transcript://agent%3Acodebase-researcher%3Asubagent%3Achild#assistant:last"',
+    );
+    expect(content.text).not.toContain("<task_result_inspect>");
     expect(content.text).not.toContain("<task_result_preview");
     expect(content.text).toContain("full result remains in the child session transcript");
     expect(content.text).not.toContain("<task_result>");
@@ -438,5 +444,58 @@ describe("task tool", () => {
       parentInlineLimitChars: 1_800,
       parentPreviewLimitChars: 0,
     });
+  });
+
+  it("uses stable assistant message ids for transcript-final task refs when available", async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-task-ref-"));
+    const storePath = path.join(
+      tempDir,
+      "agents",
+      "codebase-researcher",
+      "sessions",
+      "sessions.json",
+    );
+    fs.mkdirSync(path.dirname(storePath), { recursive: true });
+    fs.writeFileSync(
+      storePath,
+      JSON.stringify({
+        "agent:codebase-researcher:subagent:child-stable": {
+          sessionId: "child-session",
+          updatedAt: Date.now(),
+        },
+      }),
+    );
+    fs.writeFileSync(
+      path.join(path.dirname(storePath), "child-session.jsonl"),
+      [
+        JSON.stringify({
+          id: "user-message-1",
+          message: {
+            role: "user",
+            content: [{ type: "text", text: "request" }],
+          },
+        }),
+        JSON.stringify({
+          id: "assistant-message-42",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "published child artifact" }],
+          },
+        }),
+      ].join("\n"),
+    );
+
+    await expect(
+      buildTaskTranscriptFinalRef({
+        childSessionKey: "agent:codebase-researcher:subagent:child-stable",
+        cfg: {
+          session: {
+            store: path.join(tempDir, "agents", "{agentId}", "sessions", "sessions.json"),
+          },
+        },
+      }),
+    ).resolves.toBe(
+      "openclaw-transcript://agent%3Acodebase-researcher%3Asubagent%3Achild-stable#message:assistant-message-42",
+    );
   });
 });

@@ -134,6 +134,37 @@ describe("lazy protocol validators", () => {
     ).toBe(true);
   });
 
+  it("keeps chat.send strict around run ids and required context", () => {
+    expect(
+      validateChatSendParams({
+        sessionKey: "agent:main:main",
+        message: "hello",
+        idempotencyKey: "run-1",
+        runId: "caller-supplied-run-id",
+      }),
+    ).toBe(false);
+    expect(JSON.stringify(validateChatSendParams.errors)).toContain("runId");
+
+    expect(
+      validateChatSendParams({
+        message: "hello",
+        idempotencyKey: "run-1",
+      }),
+    ).toBe(false);
+    expect(JSON.stringify(validateChatSendParams.errors)).toContain("sessionKey");
+
+    expect(
+      validateChatSendParams({
+        sessionKey: "../agent:main:main",
+        message: "hello",
+        idempotencyKey: "run-1",
+      }),
+    ).toBe(false);
+    expect(JSON.stringify(validateChatSendParams.errors)).toContain("sessionKey");
+
+    expect(validateChatSendParams("not an object")).toBe(false);
+  });
+
   it("validates Skill Workshop revision request params", () => {
     expect(
       protocol.validateSkillsProposalRequestRevisionParams({

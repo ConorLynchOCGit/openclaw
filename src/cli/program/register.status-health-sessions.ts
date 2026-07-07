@@ -349,6 +349,7 @@ export function registerStatusHealthSessionsCommands(program: Command) {
             agent?: string;
             allAgents?: boolean;
             json?: boolean;
+            limit?: string;
           }
         | undefined;
       await runCommandWithRuntime(defaultRuntime, async () => {

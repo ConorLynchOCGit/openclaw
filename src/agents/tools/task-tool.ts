@@ -9,7 +9,16 @@
  * parent prompt.
  */
 import { Type } from "typebox";
+import {
+  loadSessionStore,
+  readLatestAssistantTextFromSessionTranscript,
+  resolveSessionFilePath,
+  resolveSessionFilePathOptions,
+  resolveSessionStoreEntry,
+  resolveStorePath,
+} from "../../config/sessions.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
 import type { GatewayMessageChannel } from "../../utils/message-channel.js";
 import {
   computeChildResultContentDigest,
@@ -91,7 +100,8 @@ function formatTaskResult(params: {
   contentTruncated: boolean;
   inlineResult: boolean;
   receiptOnly: boolean;
-  inspectCommand: string;
+  resultRef: string;
+  transcriptFinalRef: string;
   previewText?: string;
   previewChars?: number;
   recoveryHistory?: Array<{ source: string; status: string; error?: string }>;
@@ -102,14 +112,9 @@ function formatTaskResult(params: {
     : "";
   if (params.receiptOnly) {
     return [
-      `<task_receipt sessionKey="${escapeXmlAttr(params.childSessionKey)}" agentId="${escapeXmlAttr(
-        params.agentId,
-      )}" status="completed" ref="${escapeXmlAttr(
-        `openclaw-session:${params.childSessionKey}:latest-assistant`,
-      )}" source="transcript" chars="${params.contentChars}" digest="${escapeXmlAttr(
-        params.contentDigest,
-      )}">`,
-      `  <inspect_command>${escapeXmlText(params.inspectCommand)}</inspect_command>`,
+      `<task_receipt ref="${escapeXmlAttr(
+        params.transcriptFinalRef,
+      )}" chars="${params.contentChars}" digest="${escapeXmlAttr(params.contentDigest)}">`,
       ...formatTaskRecoveryHistory(params.recoveryHistory),
       "</task_receipt>",
     ].join("\n");
@@ -128,11 +133,10 @@ function formatTaskResult(params: {
   if (!params.inlineResult) {
     return [
       openTag,
-      `  <task_result_ref kind="session" ref="${escapeXmlAttr(params.childSessionKey)}" />`,
+      `  <task_result_ref kind="session" ref="${escapeXmlAttr(params.resultRef)}" />`,
       `  <task_result_ref kind="transcript_final" ref="${escapeXmlAttr(
-        `openclaw-session:${params.childSessionKey}:latest-assistant`,
+        params.transcriptFinalRef,
       )}" />`,
-      `  <task_result_inspect>${escapeXmlText(params.inspectCommand)}</task_result_inspect>`,
       "  <task_result_status>",
       "child task completed; full result remains in the child session transcript",
       "  </task_result_status>",
@@ -180,11 +184,39 @@ function shouldReturnReceiptOnlyToParent(params: { requesterAgentId?: string }) 
   return requesterAgentId !== undefined && RECEIPT_ONLY_PARENT_AGENT_IDS.has(requesterAgentId);
 }
 
-function buildTaskResultInspectCommand(params: {
+export async function buildTaskTranscriptFinalRef(params: {
   childSessionKey: string;
-  agentId: string;
-}): string {
-  return `openclaw sessions show ${params.childSessionKey} --agent ${params.agentId}`;
+  cfg?: OpenClawConfig;
+}): Promise<string> {
+  const childSessionKey = params.childSessionKey.trim();
+  const encodedSessionKey = encodeURIComponent(childSessionKey);
+  if (!childSessionKey) {
+    return "openclaw-transcript://unknown#assistant:last";
+  }
+  try {
+    const agentId = resolveAgentIdFromSessionKey(childSessionKey);
+    const storePath = resolveStorePath(params.cfg?.session?.store, { agentId });
+    const store = loadSessionStore(storePath, { clone: false });
+    const entry = resolveSessionStoreEntry({ store, sessionKey: childSessionKey }).existing;
+    const sessionId = entry?.sessionId?.trim();
+    if (sessionId) {
+      const sessionFile = resolveSessionFilePath(
+        sessionId,
+        entry,
+        resolveSessionFilePathOptions({ agentId, storePath }),
+      );
+      const assistant = await readLatestAssistantTextFromSessionTranscript(sessionFile);
+      if (assistant?.id?.trim()) {
+        return `openclaw-transcript://${encodedSessionKey}#message:${encodeURIComponent(
+          assistant.id.trim(),
+        )}`;
+      }
+    }
+  } catch {
+    // Keep task result delivery working even when readback metadata is not yet
+    // available; the fallback remains a transcript ref, not task-row truth.
+  }
+  return `openclaw-transcript://${encodedSessionKey}#assistant:last`;
 }
 
 function buildTaskResultPreview(replyText: string, inlineResult: boolean): string | undefined {
@@ -483,11 +515,12 @@ export function createTaskTool(
       const requesterAgentId = resolveRequesterAgentId(opts);
       const receiptOnly = shouldReturnReceiptOnlyToParent({ requesterAgentId });
       const inlineResult = !receiptOnly && shouldInlineTaskResultForParent(replyText);
-      const resultRef = `openclaw-session:${spawn.childSessionKey}`;
-      const transcriptFinalRef = `openclaw-session:${spawn.childSessionKey}:latest-assistant`;
-      const inspectCommand = buildTaskResultInspectCommand({
+      const resultRef = `openclaw-transcript://${encodeURIComponent(
+        spawn.childSessionKey,
+      )}#session`;
+      const transcriptFinalRef = await buildTaskTranscriptFinalRef({
         childSessionKey: spawn.childSessionKey,
-        agentId,
+        cfg: opts?.config,
       });
       const previewText = buildTaskResultPreview(replyText, inlineResult);
       const text = formatTaskResult({
@@ -502,7 +535,8 @@ export function createTaskTool(
         contentTruncated,
         inlineResult,
         receiptOnly,
-        inspectCommand,
+        resultRef,
+        transcriptFinalRef,
         previewText,
         previewChars: previewText?.length ?? 0,
         recoveryHistory: wait.recoveryHistory,
@@ -529,7 +563,6 @@ export function createTaskTool(
         resultRef,
         resultSource: "transcript",
         transcriptFinalRef,
-        inspectCommand,
         previewOnly: !inlineResult,
         previewChars: previewText?.length ?? 0,
         displayTruncated: !inlineResult,

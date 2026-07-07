@@ -67,6 +67,10 @@ describe("resolveMemoryWikiStatus", () => {
       unsafeLocal: 0,
       other: 0,
     });
+    expect(status.freshnessReadback).toMatchObject({
+      posture: "context-only",
+    });
+    expect(status.freshnessReadback.authority).toContain("not runtime truth");
   });
 
   it("warns when unsafe-local is selected without explicit private access", async () => {
@@ -202,13 +206,27 @@ describe("renderMemoryWikiStatus", () => {
         unsafeLocal: 0,
         other: 0,
       },
+      freshnessReadback: {
+        posture: "context-only",
+        authority:
+          "Source provenance counts and bridge artifact availability are compact status readback, not runtime truth or source-row proof.",
+        limitations: [
+          "Status output cannot prove index freshness.",
+          "Status output cannot distinguish write failure from query-shape limitation.",
+          "Use source-scoped GBrain get/list/search or source registry checks for evidence.",
+        ],
+      },
       warnings: [{ code: "vault-missing", message: "Wiki vault has not been initialized yet." }],
     });
 
     expect(rendered).toContain("Wiki vault mode: isolated");
     expect(rendered).toContain("Pages: 0 sources, 0 entities, 0 concepts, 0 syntheses, 0 reports");
     expect(rendered).toContain(
-      "Source provenance: 0 native, 0 bridge, 0 bridge-events, 0 unsafe-local, 0 other",
+      "Source provenance/freshness context: 0 native, 0 bridge, 0 bridge-events, 0 unsafe-local, 0 other; context-only; not runtime truth",
+    );
+    expect(rendered).toContain("Freshness limitation: Status output cannot prove index freshness.");
+    expect(rendered).toContain(
+      "Freshness limitation: Status output cannot distinguish write failure from query-shape limitation.",
     );
     expect(rendered).toContain("Warnings:");
     expect(rendered).toContain("Wiki vault has not been initialized yet.");
