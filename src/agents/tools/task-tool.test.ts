@@ -144,6 +144,54 @@ describe("task tool", () => {
     expect(content.text).toContain("Context Pack\n\nP1...");
   });
 
+  it("renders host provenance paths as live-workspace paths before child handoff", async () => {
+    await createTaskTool({
+      agentSessionKey: "agent:main:operator",
+      requesterAgentIdOverride: "main",
+    }).execute("call-1", {
+      agentId: "coding",
+      task: [
+        "Use /root/services/openclaw-roles/live/docs/projects/execution-platform/prompts/proof.md",
+        "Patch /srv/openclaw-next/src/openclaw/src/agents/tools/task-tool.ts",
+        "Check /srv/openclaw-next/home-repo/docs/agents/coding/AGENTS.md",
+      ].join("\n"),
+      cwd: "/srv/openclaw-next/src/openclaw",
+    });
+
+    expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: [
+          "Use docs/projects/execution-platform/prompts/proof.md",
+          "Patch src/openclaw/src/agents/tools/task-tool.ts",
+          "Check docs/agents/coding/AGENTS.md",
+        ].join("\n"),
+        cwd: "src/openclaw",
+      }),
+      expect.anything(),
+    );
+    const spawnArgs = JSON.stringify(hoisted.spawnSubagentDirectMock.mock.calls[0]?.[0]);
+    expect(spawnArgs).not.toContain("/root/services");
+    expect(spawnArgs).not.toContain("/srv/openclaw-next");
+  });
+
+  it("rejects unmapped host-only paths before child handoff", async () => {
+    const result = await createTaskTool({
+      agentSessionKey: "agent:main:operator",
+      requesterAgentIdOverride: "main",
+    }).execute("call-1", {
+      agentId: "coding",
+      task: "Read /root/not-visible/proof.md before editing.",
+    });
+
+    expect(hoisted.spawnSubagentDirectMock).not.toHaveBeenCalled();
+    expect(result.details).toMatchObject({
+      status: "error",
+      error:
+        "task handoff contains host-only absolute paths that are not visible to live child agents",
+      rejectedHostPaths: ["/root/not-visible/proof.md"],
+    });
+  });
+
   it("returns receipt-only task output to Main even when the delegated child result is small", async () => {
     const shortPlanningResult = "Brief Planning artifact that Main must not rewrite.";
     hoisted.readLatestAssistantReplyMock.mockResolvedValue(shortPlanningResult);

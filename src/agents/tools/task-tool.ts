@@ -24,6 +24,10 @@ import {
   computeChildResultContentDigest,
   includesChildResultTruncationMarker,
 } from "../child-result-metadata.js";
+import {
+  renderLiveAgentHandoffText,
+  renderLiveAgentPathReference,
+} from "../live-agent-path-handoff.js";
 import { readLatestAssistantReply, waitForAgentRun, type AgentWaitResult } from "../run-wait.js";
 import type { SpawnedToolContext } from "../spawned-context.js";
 import { spawnSubagentDirect } from "../subagent-spawn.js";
@@ -390,6 +394,15 @@ export function createTaskTool(
       const params = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
       const agentId = readStringParam(params, "agentId", { required: true });
       const task = readStringParam(params, "task", { required: true });
+      const renderedTask = renderLiveAgentHandoffText(task);
+      if (renderedTask.rejectedHostPaths.length > 0) {
+        return jsonResult({
+          status: "error",
+          error:
+            "task handoff contains host-only absolute paths that are not visible to live child agents",
+          rejectedHostPaths: renderedTask.rejectedHostPaths,
+        });
+      }
       const label = readStringParam(params, "label");
       const taskNameResult = normalizeSubagentTaskName(params.taskName);
       if (taskNameResult.error) {
@@ -402,15 +415,24 @@ export function createTaskTool(
       const context =
         params.context === "fork" || params.context === "isolated" ? params.context : undefined;
       const lightContext = resolveTaskToolLightContext(agentId, params.lightContext);
+      const cwd = readStringParam(params, "cwd");
+      const renderedCwd = cwd ? renderLiveAgentPathReference(cwd) : undefined;
+      if (cwd && !renderedCwd && /^\/(?:srv|root)\b/u.test(cwd.trim())) {
+        return jsonResult({
+          status: "error",
+          error: "task cwd is a host-only absolute path that is not visible to live child agents",
+          rejectedHostPaths: [cwd.trim()],
+        });
+      }
 
       const spawn = await spawnSubagentDirect(
         {
-          task,
+          task: renderedTask.text,
           taskName,
           label,
           agentId,
           thinking: readStringParam(params, "thinking"),
-          cwd: readStringParam(params, "cwd"),
+          cwd: renderedCwd ?? cwd,
           mode: "run",
           cleanup: "keep",
           sandbox: "inherit",
