@@ -444,8 +444,7 @@ describe("runCodexAppServerAttempt", () => {
       attempt: params,
       sessionKey: params.sessionKey ?? params.sessionId,
       workspaceDir,
-      developerInstructions:
-        "Use the Codex native app-server collaboration item `collabAgentToolCall` with tool `spawnAgent` for Codex subagents.",
+      developerInstructions: "Use Codex native `spawn_agent` for Codex subagents.",
       workspaceBootstrapContext: {
         bootstrapFiles: [],
         contextFiles: [],
@@ -459,9 +458,7 @@ describe("runCodexAppServerAttempt", () => {
         codeModeConfigured: true,
         codeModeOnlyConfigured: false,
         nativeSubagents: {
-          expectedTool: "spawnAgent",
-          expectedItemType: "collabAgentToolCall",
-          legacyPromptAlias: "spawn_agent",
+          expectedTool: "spawn_agent",
           owner: "codex_app_server",
           listedInOpenClawDynamicTools: false,
           guidanceInjected: true,
@@ -477,9 +474,7 @@ describe("runCodexAppServerAttempt", () => {
       codeModeConfigured: true,
       codeModeOnlyConfigured: false,
       nativeSubagents: {
-        expectedTool: "spawnAgent",
-        expectedItemType: "collabAgentToolCall",
-        legacyPromptAlias: "spawn_agent",
+        expectedTool: "spawn_agent",
         owner: "codex_app_server",
         listedInOpenClawDynamicTools: false,
         guidanceInjected: true,

@@ -222,7 +222,7 @@ export async function buildContextReply(params: HandleCommandsParams): Promise<R
   const sandboxLine = `Sandbox: mode=${report.sandbox?.mode ?? "unknown"} sandboxed=${report.sandbox?.sandboxed ?? false}`;
   const codexNativeSurface = report.codexNativeSurface;
   const codexNativeSurfaceLine = codexNativeSurface
-    ? `Codex native surface: ${codexNativeSurface.nativeToolSurfaceConfigured ? "configured" : "disabled"} (${codexNativeSurface.nativeToolSurfaceReason}); native subagents=${codexNativeSurface.nativeSubagents.expectedItemType}/${codexNativeSurface.nativeSubagents.expectedTool}, listed in OpenClaw tools=${codexNativeSurface.nativeSubagents.listedInOpenClawDynamicTools}, guidance=${codexNativeSurface.nativeSubagents.guidanceInjected ? "yes" : "no"}, model-disabled=${codexNativeSurface.nativeSubagents.disabledByOpenClawModelProfile ? "yes" : "no"}`
+    ? `Codex native surface: ${codexNativeSurface.nativeToolSurfaceConfigured ? "configured" : "disabled"} (${codexNativeSurface.nativeToolSurfaceReason}); native subagents=${codexNativeSurface.nativeSubagents.expectedTool}, listed in OpenClaw tools=${codexNativeSurface.nativeSubagents.listedInOpenClawDynamicTools}, guidance=${codexNativeSurface.nativeSubagents.guidanceInjected ? "yes" : "no"}, model-disabled=${codexNativeSurface.nativeSubagents.disabledByOpenClawModelProfile ? "yes" : "no"}`
     : null;
   const toolSchemaLine = `Tool schemas (JSON): ${formatCharsAndTokens(report.tools.schemaChars)} (counts toward context; not shown as text)`;
   const toolListLine = `Tool list (system prompt text): ${formatCharsAndTokens(report.tools.listChars)}`;

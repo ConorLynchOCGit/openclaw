@@ -90,9 +90,8 @@ export type CodexDynamicToolBridge = {
 /** Namespace attached to OpenClaw-owned dynamic tools exposed to Codex. */
 export const CODEX_OPENCLAW_DYNAMIC_TOOL_NAMESPACE = "openclaw";
 
-// Keep OpenClaw session spawning out of the default direct surface in Codex
-// mode so Codex's native collabAgentToolCall/spawnAgent surface remains the
-// primary Codex subagent surface.
+// Keep OpenClaw session spawning searchable in Codex mode so Codex's native
+// spawn_agent remains the primary Codex subagent surface.
 const ALWAYS_DIRECT_DYNAMIC_TOOL_NAMES = new Set(["sessions_yield"]);
 const DEFAULT_CODEX_DYNAMIC_TOOL_RESULT_MAX_CHARS = 16_000;
 

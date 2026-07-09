@@ -6,11 +6,7 @@ import type { EmbeddedRunAttemptParams } from "openclaw/plugin-sdk/agent-harness
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CodexAppServerRuntimeOptions } from "./config.js";
 import { readCodexAppServerBinding, writeCodexAppServerBinding } from "./session-binding.js";
-import {
-  CODEX_REPO_WORKBENCH_MCP_SERVER_NAME,
-  resolveCodexRepoWorkbenchRoot,
-  startOrResumeThread,
-} from "./thread-lifecycle.js";
+import { startOrResumeThread } from "./thread-lifecycle.js";
 
 function threadStartResult(threadId = "thread-1"): Record<string, unknown> {
   return {
@@ -138,83 +134,6 @@ describe("startOrResumeThread — user mcp.servers projection (regression: #8081
     expect(startParams?.config?.mcp_servers).toBeDefined();
     expect(startParams.config!.mcp_servers).toMatchObject({
       outlook: { command: "node", args: ["/opt/outlook-mcp/dist/index.js"] },
-    });
-  });
-
-  it("adds the built-in repo workbench MCP server for native Coding threads", async () => {
-    const sessionFile = path.join(tempDir, "session.jsonl");
-    const workspaceDir = path.join(tempDir, "workspace");
-    const repoRoot = path.join(workspaceDir, "src", "openclaw");
-    await fs.mkdir(repoRoot, { recursive: true });
-    await fs.writeFile(path.join(repoRoot, "openclaw.mjs"), "#!/usr/bin/env node\n");
-    const request = vi.fn(async (method: string, _params: unknown) => {
-      if (method === "thread/start") {
-        return threadStartResult();
-      }
-      throw new Error(`unexpected method: ${method}`);
-    });
-
-    await startOrResumeThread({
-      client: { request } as never,
-      params: createParams(sessionFile, workspaceDir),
-      agentId: "coding",
-      cwd: workspaceDir,
-      dynamicTools: [],
-      appServer: createAppServerOptions(),
-    });
-
-    expect(resolveCodexRepoWorkbenchRoot(workspaceDir)).toBe(repoRoot);
-    const startCall = request.mock.calls.find(([method]) => method === "thread/start");
-    const startParams = startCall?.[1] as { config?: { mcp_servers?: Record<string, unknown> } };
-    expect(startParams?.config?.mcp_servers).toMatchObject({
-      [CODEX_REPO_WORKBENCH_MCP_SERVER_NAME]: {
-        command: "node",
-        args: [path.join(repoRoot, "scripts", "codex-repo-workbench-mcp.mjs")],
-        env: {
-          OPENCLAW_CODEX_REPO_WORKBENCH_ROOT: repoRoot,
-        },
-        default_tools_approval_mode: "approve",
-      },
-    });
-  });
-
-  it("merges the built-in repo workbench MCP server with user MCP servers for Coding", async () => {
-    const sessionFile = path.join(tempDir, "session.jsonl");
-    const workspaceDir = path.join(tempDir, "workspace");
-    const request = vi.fn(async (method: string, _params: unknown) => {
-      if (method === "thread/start") {
-        return threadStartResult();
-      }
-      throw new Error(`unexpected method: ${method}`);
-    });
-
-    await startOrResumeThread({
-      client: { request } as never,
-      params: createParams(sessionFile, workspaceDir, {
-        mcp: {
-          servers: {
-            notes: {
-              transport: "stdio",
-              command: "node",
-              args: ["/opt/notes-mcp/dist/index.js"],
-            },
-          },
-        },
-      } as unknown as EmbeddedRunAttemptParams["config"]),
-      agentId: "coding",
-      cwd: workspaceDir,
-      dynamicTools: [],
-      appServer: createAppServerOptions(),
-    });
-
-    const startCall = request.mock.calls.find(([method]) => method === "thread/start");
-    const startParams = startCall?.[1] as { config?: { mcp_servers?: Record<string, unknown> } };
-    expect(Object.keys(startParams?.config?.mcp_servers ?? {}).toSorted()).toEqual(
-      ["notes", CODEX_REPO_WORKBENCH_MCP_SERVER_NAME].toSorted(),
-    );
-    expect(startParams?.config?.mcp_servers?.notes).toMatchObject({
-      command: "node",
-      args: ["/opt/notes-mcp/dist/index.js"],
     });
   });
 
