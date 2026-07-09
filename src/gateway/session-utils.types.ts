@@ -109,6 +109,7 @@ export type GatewaySessionRow = {
       names?: string[];
       schemaChars?: number;
     };
+    codexNativeSurface?: NonNullable<SessionEntry["systemPromptReport"]>["codexNativeSurface"];
   };
   channel?: string;
   subject?: string;

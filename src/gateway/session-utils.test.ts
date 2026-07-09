@@ -315,6 +315,73 @@ describe("gateway session utils", () => {
     ]);
   });
 
+  test("session detail projects Codex-native workbench capability readback", () => {
+    const cfg = { agents: { list: [{ id: "coding", default: true }] } } as OpenClawConfig;
+    const sessionKey = "agent:coding:session-workbench";
+    const store = {
+      [sessionKey]: {
+        sessionId: "session-workbench",
+        updatedAt: 2_000,
+        systemPromptReport: {
+          source: "run",
+          generatedAt: 1_900,
+          sessionId: "session-workbench",
+          sessionKey,
+          workspaceDir: "/home/node/.openclaw/workspace",
+          codexNativeSurface: {
+            owner: "codex_app_server",
+            nativeToolSurfaceConfigured: true,
+            nativeToolSurfaceReason: "enabled",
+            codeModeConfigured: true,
+            codeModeOnlyConfigured: false,
+            nativeSubagents: {
+              expectedTool: "spawn_agent",
+              owner: "codex_app_server",
+              listedInOpenClawDynamicTools: false,
+              guidanceInjected: true,
+              disabledByOpenClawModelProfile: false,
+            },
+            workbenchCapability: {
+              schemaVersion: "openclaw.codex-workbench-capability.v1",
+              owner: "codex_app_server",
+              openclawDynamicTools: { count: 0, names: [] },
+              customAgents: { count: 9, hasCodexReviewer: true },
+              nativeParallelToolCalls: { status: "not_proven" },
+            },
+          },
+          systemPrompt: {
+            chars: 10,
+            projectContextChars: 0,
+            nonProjectContextChars: 10,
+          },
+          injectedWorkspaceFiles: [],
+          skills: { promptChars: 0, hash: "hash", entries: [] },
+          tools: { listChars: 0, schemaChars: 0, entries: [] },
+        },
+      } satisfies SessionEntry,
+    };
+
+    const row = buildGatewaySessionRow({
+      cfg,
+      storePath: "",
+      store,
+      key: sessionKey,
+      entry: store[sessionKey],
+    });
+
+    expect(row.promptContext?.codexNativeSurface).toMatchObject({
+      owner: "codex_app_server",
+      nativeToolSurfaceConfigured: true,
+      codeModeConfigured: true,
+      workbenchCapability: {
+        schemaVersion: "openclaw.codex-workbench-capability.v1",
+        owner: "codex_app_server",
+        openclawDynamicTools: { count: 0, names: [] },
+        customAgents: { count: 9, hasCodexReviewer: true },
+      },
+    });
+  });
+
   test("parseGroupKey handles group keys", () => {
     expect(parseGroupKey("discord:group:dev")).toEqual({
       channel: "discord",

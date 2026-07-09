@@ -25,6 +25,7 @@ import {
   isContextEngineBindingCompatible,
   type CodexContextEngineThreadBootstrapProjection,
 } from "./thread-lifecycle.js";
+import type { CodexWorkbenchCapabilityReport } from "./workbench-capability.js";
 
 const CODEX_NATIVE_PROJECT_DOC_BASENAME = "agents.md";
 const CODEX_INHERITED_WORKSPACE_DEVELOPER_CONTEXT_BASENAMES = new Set(["tools.md"]);
@@ -75,6 +76,7 @@ export type CodexNativeSurfaceReport = {
     guidanceInjected: boolean;
     disabledByOpenClawModelProfile: boolean;
   };
+  workbenchCapability?: CodexWorkbenchCapabilityReport;
 };
 export type CodexSystemPromptReportWithNativeSurface = CodexSystemPromptReport & {
   codexNativeSurface?: CodexNativeSurfaceReport;

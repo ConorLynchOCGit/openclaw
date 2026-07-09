@@ -67,6 +67,7 @@ import {
   readMirroredSessionHistoryMessages,
   renderCodexSkillsCollaborationInstructions,
   resolveContextEngineBootstrapProjectionDecision,
+  type CodexNativeSurfaceReport,
 } from "./attempt-context.js";
 import {
   classifyCodexModelCallFailureKind,
@@ -259,6 +260,7 @@ import {
   refreshCodexUsageLimitPromptError,
 } from "./usage-limit-error.js";
 import { createCodexUserInputBridge } from "./user-input-bridge.js";
+import { buildCodexWorkbenchCapabilityReport } from "./workbench-capability.js";
 
 const CODEX_NATIVE_HOOK_RELAY_RENEW_INTERVAL_MS = 60_000;
 const CODEX_APP_SERVER_PROJECTED_CHARS_PER_TOKEN = 4;
@@ -1097,7 +1099,7 @@ export async function runCodexAppServerAttempt(
   };
   await rotateStartupBindingForProjectedTurn();
   const renderedDeveloperInstructions = buildRenderedCodexDeveloperInstructions();
-  const codexNativeSurfaceReport = {
+  const codexNativeSurfaceReport: CodexNativeSurfaceReport = {
     owner: "codex_app_server" as const,
     nativeToolSurfaceConfigured: nativeToolSurfaceEnabled,
     nativeToolSurfaceReason: nativeToolSurfaceDecision.reason,
@@ -1244,6 +1246,29 @@ export async function runCodexAppServerAttempt(
     codexSandboxPolicy = startupResult.sandboxPolicy;
     releaseSharedClientLease = startupResult.releaseSharedClientLease;
     restartContextEngineCodexThread = startupResult.restartContextEngineCodexThread;
+    const sandboxLabel =
+      typeof codexSandboxPolicy === "string"
+        ? codexSandboxPolicy
+        : codexSandboxPolicy
+          ? JSON.stringify(codexSandboxPolicy)
+          : undefined;
+    const approvalPolicyLabel =
+      typeof appServer.approvalPolicy === "string" ? appServer.approvalPolicy : undefined;
+    const workbenchCapability = await buildCodexWorkbenchCapabilityReport({
+      client,
+      threadId: thread.threadId,
+      cwd: codexExecutionCwd,
+      workspaceDir: effectiveWorkspace,
+      appServerStart: appServer.start,
+      ...(sandboxLabel ? { sandbox: sandboxLabel } : {}),
+      ...(approvalPolicyLabel ? { approvalPolicy: approvalPolicyLabel } : {}),
+      codeModeConfigured: nativeToolSurfaceEnabled,
+      codeModeOnlyConfigured: nativeToolSurfaceEnabled && appServer.codeModeOnly === true,
+      openclawDynamicToolNames: toolBridge.availableSpecs.map((tool) => tool.name),
+      timeoutMs: appServer.requestTimeoutMs,
+      signal: runAbortController.signal,
+    });
+    codexNativeSurfaceReport.workbenchCapability = workbenchCapability;
     emitCodexAppServerEvent(params, {
       stream: "codex_app_server.lifecycle",
       data: {
@@ -1268,6 +1293,7 @@ export async function runCodexAppServerAttempt(
     workspaceDir: effectiveWorkspace,
     toolCount: toolBridge.specs.length,
     codexNativeSurface: codexNativeSurfaceReport,
+    codexWorkbenchCapability: codexNativeSurfaceReport.workbenchCapability,
   });
   recordCodexTrajectoryContext(trajectoryRecorder, {
     attempt: params,

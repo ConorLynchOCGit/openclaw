@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "authority": "non_authoritative_checked_projection",
+  "source": ".codex/agents",
+  "configSource": ".codex/config.toml",
+  "agentOwner": "execution-coding",
+  "config": {
+    "multiAgent": true,
+    "maxThreads": 6,
+    "maxDepth": 1
+  },
+  "agents": [
+    {
+      "id": "architect_reviewer",
+      "tomlPath": ".codex/agents/architect_reviewer.toml",
+      "docsPath": null
+    },
+    {
+      "id": "code_reviewer",
+      "tomlPath": ".codex/agents/code_reviewer.toml",
+      "docsPath": null
+    },
+    {
+      "id": "codex_reviewer",
+      "tomlPath": ".codex/agents/codex_reviewer.toml",
+      "docsPath": "docs/agents/execution-coding/codex-agents/codex_reviewer.md"
+    },
+    {
+      "id": "docs_researcher",
+      "tomlPath": ".codex/agents/docs_researcher.toml",
+      "docsPath": null
+    },
+    {
+      "id": "implementation_planner",
+      "tomlPath": ".codex/agents/implementation_planner.toml",
+      "docsPath": null
+    },
+    {
+      "id": "implementer",
+      "tomlPath": ".codex/agents/implementer.toml",
+      "docsPath": null
+    },
+    {
+      "id": "native_fit_reviewer",
+      "tomlPath": ".codex/agents/native_fit_reviewer.toml",
+      "docsPath": null
+    },
+    {
+      "id": "project_explorer",
+      "tomlPath": ".codex/agents/project_explorer.toml",
+      "docsPath": null
+    },
+    {
+      "id": "test_engineer",
+      "tomlPath": ".codex/agents/test_engineer.toml",
+      "docsPath": null
+    }
+  ]
+}

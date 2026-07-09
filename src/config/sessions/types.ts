@@ -201,6 +201,17 @@ export type SessionGoal = {
   budgetLimitedAt?: number;
 };
 
+export type SessionCodexNativeChild = {
+  threadId: string;
+  role?: string;
+  status?: "running" | "done" | "failed" | "killed" | "timeout";
+  summary?: string;
+  finalRef?: string;
+  source: "codex-native";
+  startedAt?: number;
+  endedAt?: number;
+};
+
 export type SessionEntry = {
   /**
    * Last delivered heartbeat payload (used to suppress duplicate heartbeat notifications).
@@ -256,6 +267,8 @@ export type SessionEntry = {
   quotaSuspension?: QuotaSuspension;
   /** Core-owned durable goal state for this thread/session. */
   goal?: SessionGoal;
+  /** Codex app-server native helper threads mirrored for readback only. */
+  codexNativeChildren?: SessionCodexNativeChild[];
   /** Timestamp (ms) when the current sessionId first became active. */
   sessionStartedAt?: number;
   /** Stable usage lineage key for transcript-backed rollups across sessionId rotations. */
@@ -704,6 +717,7 @@ export type SessionSystemPromptReport = {
       guidanceInjected: boolean;
       disabledByOpenClawModelProfile: boolean;
     };
+    workbenchCapability?: Record<string, unknown>;
   };
   systemPrompt: {
     chars: number;

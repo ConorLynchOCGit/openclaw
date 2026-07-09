@@ -140,6 +140,11 @@ describe("memory-wiki cli", () => {
         unsafeLocal: 0,
         other: 0,
       },
+      freshnessReadback: {
+        posture: "context-only",
+        authority: "Test fixture status readback is context-only.",
+        limitations: [],
+      },
       warnings: [],
     };
   }

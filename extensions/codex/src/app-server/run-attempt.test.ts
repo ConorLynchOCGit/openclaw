@@ -39,7 +39,7 @@ import {
 } from "./event-projector.js";
 import { buildCodexPluginAppCacheKey } from "./plugin-app-cache-key.js";
 import { buildCodexPluginThreadConfig } from "./plugin-thread-config.js";
-import type { CodexServerNotification } from "./protocol.js";
+import type { CodexServerNotification, JsonObject } from "./protocol.js";
 import {
   assistantMessage,
   createAppServerHarness,
@@ -452,6 +452,85 @@ describe("runCodexAppServerAttempt", () => {
         guidanceInjected: true,
         disabledByOpenClawModelProfile: false,
       },
+    });
+  });
+
+  it("attaches Codex workbench capability readback to the actual run startup path", async () => {
+    const sessionFile = path.join(tempDir, "coding-workbench-session.jsonl");
+    const workspaceDir = path.join(tempDir, "coding-workbench-workspace");
+    await fs.mkdir(path.join(workspaceDir, ".codex", "agents"), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir, ".codex", "config.toml"),
+      [
+        "[features]",
+        "multi_agent = true",
+        "",
+        "[agents]",
+        "max_threads = 6",
+        "max_depth = 1",
+        "",
+      ].join("\n"),
+    );
+    await fs.writeFile(
+      path.join(workspaceDir, ".codex", "agents", "codex_reviewer.toml"),
+      ['name = "codex_reviewer"', 'description = "Codex reviewer"', ""].join("\n"),
+    );
+    testing.setOpenClawCodingToolsFactoryForTests(() => [
+      createRuntimeDynamicTool("message"),
+      createRuntimeDynamicTool("sessions_history"),
+      createRuntimeDynamicTool("task"),
+    ]);
+    const events: Array<{ stream: string; data: Record<string, unknown> }> = [];
+    const { requests, waitForMethod, completeTurn } = createStartedThreadHarness();
+    const params = createParams(sessionFile, workspaceDir);
+    params.agentId = "coding";
+    params.sessionKey = "agent:coding:session-workbench";
+    params.disableTools = false;
+    params.runtimePlan = createCodexRuntimePlanFixture();
+    params.onAgentEvent = (event) => {
+      events.push(event);
+    };
+
+    const run = runCodexAppServerAttempt(params, {
+      pluginConfig: {
+        appServer: {
+          codeModeOnly: true,
+        },
+        codexPlugins: {
+          enabled: false,
+        },
+      },
+    });
+    await waitForMethod("turn/start");
+    await completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+    await run;
+
+    const startRequest = requests.find((request) => request.method === "thread/start");
+    const startParams = startRequest?.params as { dynamicTools?: unknown[]; config?: JsonObject };
+    expect(startParams.dynamicTools).toEqual([]);
+    expect(startParams.config?.["features.code_mode"]).toBe(true);
+    expect(startParams.config?.["features.code_mode_only"]).toBe(true);
+    expect(startParams.config?.["features.multi_agent"]).toBe(true);
+
+    const threadReady = events.find(
+      (event) =>
+        event.stream === "codex_app_server.lifecycle" &&
+        (event.data as { phase?: string }).phase === "thread_ready",
+    );
+    const nativeSurface = (threadReady?.data as { codexNativeSurface?: Record<string, unknown> })
+      ?.codexNativeSurface;
+    expect(nativeSurface).toMatchObject({
+      owner: "codex_app_server",
+      nativeToolSurfaceConfigured: true,
+      codeModeConfigured: true,
+      codeModeOnlyConfigured: true,
+    });
+    expect(nativeSurface?.workbenchCapability).toMatchObject({
+      schemaVersion: "openclaw.codex-workbench-capability.v1",
+      owner: "codex_app_server",
+      openclawDynamicTools: { count: 0, names: [] },
+      codexProjectConfig: { present: true, multiAgent: true, maxThreads: 6, maxDepth: 1 },
+      customAgents: { count: 1, names: ["codex_reviewer"], hasCodexReviewer: true },
     });
   });
 

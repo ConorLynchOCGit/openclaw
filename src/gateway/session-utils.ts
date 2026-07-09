@@ -2435,6 +2435,9 @@ export function buildGatewaySessionRow(params: {
                 },
               }
             : {}),
+          ...(entry.systemPromptReport?.codexNativeSurface
+            ? { codexNativeSurface: entry.systemPromptReport.codexNativeSurface }
+            : {}),
         }
       : undefined;
 

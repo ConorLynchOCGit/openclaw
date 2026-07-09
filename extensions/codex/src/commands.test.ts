@@ -18,6 +18,7 @@ import {
   readRecentCodexRateLimits,
   resetCodexRateLimitCacheForTests,
 } from "./app-server/rate-limit-cache.js";
+import type { CodexRuntimeReadinessReport } from "./app-server/readiness.js";
 import { resetSharedCodexAppServerClientForTests } from "./app-server/shared-client.js";
 import {
   resetCodexDiagnosticsFeedbackStateForTests,
@@ -1189,29 +1190,31 @@ describe("codex command", () => {
   it("formats /codex doctor readiness", async () => {
     const result = await handleCodexCommand(createContext("doctor"), {
       deps: createDeps({
-        buildCodexRuntimeReadinessReport: vi.fn(async () => ({
-          ok: true,
-          pluginRoot: "/app/dist/extensions/codex",
-          start: {
-            transport: "stdio",
-            command: "/app/node_modules/@openai/codex/bin/codex.js",
-            commandSource: "resolved-managed",
-            args: ["app-server", "--listen", "stdio://"],
-          },
-          appServer: {
-            requestTimeoutMs: 60_000,
-            turnCompletionIdleTimeoutMs: 60_000,
-            sandbox: "danger-full-access",
-            approvalsReviewer: "user",
-          },
-          checks: [
-            {
-              id: "codex.app_server.managed_runtime",
-              status: "ready",
-              message: "Managed Codex app-server runtime resolved.",
+        buildCodexRuntimeReadinessReport: vi.fn(
+          async (): Promise<CodexRuntimeReadinessReport> => ({
+            ok: true,
+            pluginRoot: "/app/dist/extensions/codex",
+            start: {
+              transport: "stdio" as const,
+              command: "/app/node_modules/@openai/codex/bin/codex.js",
+              commandSource: "resolved-managed",
+              args: ["app-server", "--listen", "stdio://"],
             },
-          ],
-        })),
+            appServer: {
+              requestTimeoutMs: 60_000,
+              turnCompletionIdleTimeoutMs: 60_000,
+              sandbox: "danger-full-access" as const,
+              approvalsReviewer: "user" as const,
+            },
+            checks: [
+              {
+                id: "codex.app_server.managed_runtime",
+                status: "ready",
+                message: "Managed Codex app-server runtime resolved.",
+              },
+            ],
+          }),
+        ),
       }),
     });
 

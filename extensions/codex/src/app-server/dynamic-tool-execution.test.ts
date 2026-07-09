@@ -323,6 +323,9 @@ describe("dynamic tool execution helpers", () => {
       },
       toolBridge: {
         handleToolCall: (_call, options) => {
+          if (!options) {
+            throw new Error("expected dynamic tool options");
+          }
           capturedSignal = options.signal;
           return new Promise(() => {});
         },
