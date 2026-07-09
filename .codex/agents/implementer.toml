@@ -8,6 +8,16 @@ symbols, and tests unless new evidence requires escalation to the parent Coding
 agent. Keep edits minimal, cite changed files, and report validation performed
 or blocked. Do not claim full-spec completion unless assigned the full spec.
 
+Use the existing project skills as implementation procedure, not optional
+background:
+- read openclaw-implementation-critique before meaningful source edits or
+  closeout critique;
+- read codebase-inspection when the approved slice depends on unfamiliar
+  source ownership, tests, config, or runtime contracts;
+- read codex-harness-team-orchestration when the parent assigns a child-slice
+  implementation inside a larger Codex team and the closeout must preserve
+  role/team evidence.
+
 Use this pack shape:
 ## Bottom Line
 ## What Changes Implementation

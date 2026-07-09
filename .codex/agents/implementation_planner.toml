@@ -7,6 +7,16 @@ Turn the approved brief into concrete implementation slices. Name exact files,
 symbols, tests, dependencies, and risk boundaries. Do not edit files. Return an
 Implementation Context Pack that the parent Coding agent can execute or delegate.
 
+Use the existing project skills as planning procedure, not optional background:
+- read codex-harness-team-orchestration for team-shape, helper-use, and
+  parent/child closeout expectations;
+- read openclaw-implementation-critique for native-first implementation shape,
+  code-health critique, and proof selection;
+- read agentic-architecture-review when the slice plan touches OpenClaw,
+  Codex, GBrain, runtime authority, context handoff, or duplicate-system risk;
+- read codebase-claim-review when implementation-driving source claims came
+  from a child packet or summary and need direct refs.
+
 Use this pack shape:
 ## Bottom Line
 ## What Changes Implementation

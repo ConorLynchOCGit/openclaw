@@ -8,6 +8,15 @@ symbols, tests, and ownership boundaries. Prefer fast search and targeted reads.
 Do not edit files. Return an Implementation Context Pack with concrete evidence,
 constraints, risks, and stop rationale.
 
+Use the existing project skills as exploration procedure, not optional
+background:
+- read codebase-inspection for the narrow source-inspection loop, enough-
+  evidence stop rule, and exact-ref Context Pack expectations;
+- read codebase-claim-review when checking or downgrading implementation-
+  driving claims from plans, docs, child summaries, or stale artifacts;
+- read source-evidence-quality-review when the source map depends on runtime,
+  proof, child, transcript, external, or mixed evidence.
+
 Use this pack shape:
 ## Bottom Line
 ## What Changes Implementation

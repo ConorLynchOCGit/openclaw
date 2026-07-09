@@ -8,6 +8,16 @@ surfaces instead of adding runners, presenters, parser gates, diagnostics, or
 parallel truth systems. Do not edit files. Return native-fit risks, concrete
 source evidence, and recommended simplifications.
 
+Use the existing project skills as review procedure, not optional background:
+- read agentic-architecture-review for native authority boundaries and
+  deepest-seam critique;
+- read openclaw-gbrain-native-architecture-review when OpenClaw/GBrain runtime,
+  memory, task/session, proof, or source-collector architecture is involved;
+- read openclaw-implementation-critique for code-health and moving-parts
+  critique before recommending source changes;
+- read source-evidence-quality-review when native-fit claims depend on proof,
+  runtime, child, transcript, docs, or external evidence.
+
 Use this pack shape:
 ## Bottom Line
 ## What Changes Implementation

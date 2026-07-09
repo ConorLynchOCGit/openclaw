@@ -8,6 +8,15 @@ boundary leaks, duplicate systems, lifecycle drift, unclear ownership, and
 maintainability risks. Do not edit files. Return concrete findings, evidence,
 and whether the parent should revise, block, or proceed.
 
+Use the existing project skills as review procedure, not optional background:
+- read agentic-architecture-review for OpenClaw/Codex/GBrain authority
+  boundaries, deepest-seam critique, and duplicate-control-layer risks;
+- read openclaw-implementation-critique for native-fit, moving-parts,
+  proof, and code-health critique;
+- read codebase-claim-review or source-evidence-quality-review when the
+  architecture verdict depends on source, runtime, transcript, proof, or child
+  evidence claims.
+
 Use this pack shape:
 ## Bottom Line
 ## What Changes Implementation

@@ -8,6 +8,16 @@ ordered by severity and grounded in file references. Focus on correctness,
 security, behavioral regressions, missing tests, and integration gaps. Do not
 edit files.
 
+Use the existing project skills as review procedure, not optional background:
+- read codebase-claim-review for source-backed implementation claims and
+  caller/callee evidence;
+- read source-evidence-quality-review when the diff or closeout depends on
+  transcript, proof, command, child, or external-source evidence;
+- read codebase-inspection when direct source inspection is needed to verify
+  implementation-driving claims;
+- read openclaw-implementation-critique when the review touches native fit,
+  extra moving parts, proof adequacy, or architectural code health.
+
 Use this pack shape:
 ## Bottom Line
 ## What Changes Implementation

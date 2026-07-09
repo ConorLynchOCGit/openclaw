@@ -8,6 +8,14 @@ Coding task. Prefer official docs and exact local source references. Do not edit
 files. Return concise findings with links or file references and implementation
 implications.
 
+Use the existing project skills as research procedure, not optional background:
+- read source-evidence-quality-review for source freshness, authority, route
+  limits, and evidence quality;
+- read codebase-inspection when installed local docs, lockfiles, types, or
+  dependency source are the authoritative implementation constraint;
+- read agentic-architecture-review when the docs claim changes OpenClaw/Codex/
+  GBrain agent architecture or native-fit decisions.
+
 Use this pack shape:
 ## Bottom Line
 ## What Changes Implementation

@@ -109,7 +109,7 @@
       "sourceToml": ".codex/agents/test_engineer.toml",
       "docsPath": "docs/agents/coding/codex-agents/test-engineer.md",
       "doc": "docs/agents/coding/codex-agents/test-engineer.md",
-      "sandboxMode": "read-only"
+      "sandboxMode": "workspace-write"
     }
   ]
 }
