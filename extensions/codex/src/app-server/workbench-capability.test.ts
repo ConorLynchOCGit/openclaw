@@ -23,12 +23,14 @@ describe("Codex workbench capability report", () => {
         "codex_reviewer.toml": [
           'name = "codex_reviewer"',
           'description = "Reviews Codex-native implementation runs."',
+          'model = "gpt-5.5"',
           'developer_instructions = "Review the workbench behavior."',
           "",
         ].join("\n"),
         "project_explorer.toml": [
           'name = "project_explorer"',
           'description = "Maps project surfaces."',
+          'model = "gpt-5.4-mini"',
           'developer_instructions = "Explore read-only."',
           "",
         ].join("\n"),
@@ -186,6 +188,10 @@ describe("Codex workbench capability report", () => {
       count: 2,
       names: ["codex_reviewer", "project_explorer"],
       files: ["codex_reviewer.toml", "project_explorer.toml"],
+      models: {
+        codex_reviewer: "gpt-5.5",
+        project_explorer: "gpt-5.4-mini",
+      },
       hasCodexReviewer: true,
     });
     expect(report.controlMethods.modelList).toEqual({ status: "ok", count: 1 });
@@ -269,6 +275,7 @@ describe("Codex workbench capability report", () => {
       count: 0,
       names: [],
       files: [],
+      models: {},
       hasCodexReviewer: false,
     });
     expect(report.openclawDynamicTools).toEqual({ count: 2, names: ["bash", "read"] });

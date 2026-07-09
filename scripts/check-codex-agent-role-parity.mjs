@@ -20,6 +20,7 @@ const repoRoot = process.cwd();
 const configPath = path.join(repoRoot, ".codex", "config.toml");
 const agentsDir = path.join(repoRoot, ".codex", "agents");
 const registryPath = path.join(repoRoot, ".agents", "codex-agents.json");
+const SUPPORTED_ROLE_MODELS = new Set(["gpt-5.5", "gpt-5.4", "gpt-5.4-mini"]);
 
 const errors = [];
 const warnings = [];
@@ -69,6 +70,19 @@ for (const agent of agents) {
   if (agent.fileId.includes("-")) {
     errors.push(`${repoPath(agent.path)} must use underscore agent id naming, not hyphen naming.`);
   }
+  if (!agent.model) {
+    errors.push(
+      `${repoPath(agent.path)} must set explicit model for live spawn_agent service-tier validation.`,
+    );
+  } else if (!SUPPORTED_ROLE_MODELS.has(agent.model)) {
+    errors.push(
+      `${repoPath(agent.path)} model (${agent.model}) is not supported; expected one of ${[
+        ...SUPPORTED_ROLE_MODELS,
+      ]
+        .sort()
+        .join(", ")}.`,
+    );
+  }
 }
 
 for (const entry of registryAgents) {
@@ -85,6 +99,15 @@ for (const entry of registryAgents) {
     errors.push(`.agents/codex-agents.json entry ${id} is missing tomlPath.`);
   } else if (!fs.existsSync(path.join(repoRoot, tomlPath))) {
     errors.push(`.agents/codex-agents.json entry ${id} points to missing ${tomlPath}.`);
+  }
+  const registryModel = typeof entry?.model === "string" ? entry.model.trim() : "";
+  const agent = agents.find((candidate) => candidate.id === id);
+  if (!registryModel) {
+    errors.push(`.agents/codex-agents.json entry ${id} is missing model.`);
+  } else if (agent?.model && registryModel !== agent.model) {
+    errors.push(
+      `.agents/codex-agents.json entry ${id} model (${registryModel}) diverges from ${repoPath(agent.path)} (${agent.model}).`,
+    );
   }
 }
 
@@ -159,6 +182,7 @@ function readCodexAgents(dir) {
         id: readTomlString(content, "name") ?? fileId,
         fileId,
         path: filePath,
+        model: readTomlString(content, "model"),
       };
     })
     .sort((left, right) => left.id.localeCompare(right.id));

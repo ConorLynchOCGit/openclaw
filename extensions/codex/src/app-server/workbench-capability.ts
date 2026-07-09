@@ -69,6 +69,7 @@ export type CodexCustomAgentCapability = {
   count: number;
   names: string[];
   files: string[];
+  models: Record<string, string>;
   hasCodexReviewer: boolean;
   error?: string;
 };
@@ -282,9 +283,15 @@ async function readCodexCustomAgents(workspaceDir: string): Promise<CodexCustomA
       .map((entry) => entry.name)
       .toSorted((left, right) => left.localeCompare(right));
     const names: string[] = [];
+    const models: Record<string, string> = {};
     for (const file of entries) {
       const content = await fs.readFile(path.join(dir, file), "utf8").catch(() => "");
-      names.push(readTomlString(content, "name") ?? file.replace(/\.toml$/u, ""));
+      const name = readTomlString(content, "name") ?? file.replace(/\.toml$/u, "");
+      names.push(name);
+      const model = readTomlString(content, "model");
+      if (model) {
+        models[name] = model;
+      }
     }
     const sortedNames = names.toSorted((left, right) => left.localeCompare(right));
     return {
@@ -292,6 +299,9 @@ async function readCodexCustomAgents(workspaceDir: string): Promise<CodexCustomA
       count: entries.length,
       names: sortedNames,
       files: entries,
+      models: Object.fromEntries(
+        Object.entries(models).toSorted(([left], [right]) => left.localeCompare(right)),
+      ),
       hasCodexReviewer: sortedNames.includes("codex_reviewer"),
     };
   } catch (error) {
@@ -300,6 +310,7 @@ async function readCodexCustomAgents(workspaceDir: string): Promise<CodexCustomA
       count: 0,
       names: [],
       files: [],
+      models: {},
       hasCodexReviewer: false,
       error: formatCapabilityError(error),
     };
