@@ -182,13 +182,36 @@ function expectSingleLogMessage(
 }
 
 describe("Codex app-server native code mode config", () => {
-  it("keeps Codex-native subagents primary while limiting OpenClaw spawn to OpenClaw delegation", () => {
+  it("keeps Codex-native subagents primary and does not invent OpenClaw tools when none are visible", () => {
     const instructions = buildDeveloperInstructions(createAttemptParams({ provider: "openai" }));
 
-    expect(instructions).toContain("Use Codex native `spawn_agent` for Codex subagents");
-    expect(instructions).toContain("including `codex_reviewer`");
+    expect(instructions).toContain("OpenClaw dynamic tools are not model-visible");
     expect(instructions).toContain(
-      "Use OpenClaw `sessions_spawn` only for OpenClaw or ACP delegation.",
+      "Use Codex `spawn_agent` as the inner coding-team delegation surface",
+    );
+    expect(instructions).toContain(
+      "use the Codex built-in `explorer` for read-heavy exploration and `worker` for review",
+    );
+    expect(instructions).toContain("runtime_child_surface_missing");
+    expect(instructions).not.toContain("OpenClaw has dynamic tools");
+  });
+
+  it("limits visible OpenClaw dynamic tools to their listed purpose", () => {
+    const instructions = buildDeveloperInstructions(createAttemptParams({ provider: "openai" }), {
+      dynamicTools: [
+        {
+          name: "sessions_spawn",
+          description: "Spawn OpenClaw session",
+          inputSchema: { type: "object" },
+        },
+      ],
+    });
+
+    expect(instructions).toContain(
+      "Only these OpenClaw dynamic tools are model-visible here: sessions_spawn.",
+    );
+    expect(instructions).toContain(
+      "`sessions_spawn` is also visible, it remains an OpenClaw outer-delegation tool",
     );
   });
 

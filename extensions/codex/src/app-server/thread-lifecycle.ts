@@ -1415,15 +1415,61 @@ export function buildDeveloperInstructions(
     includeLegacyGlobalGuidance: false,
   }).join("\n");
   const sections = [
-    "You are a personal agent running inside OpenClaw. OpenClaw has dynamic tools for OpenClaw-owned messaging, cron, sessions, media, gateway, and nodes.",
+    buildOpenClawCodexRuntimeBoundaryInstruction(options.dynamicTools),
     buildDeferredDynamicToolManifest(options.dynamicTools),
     buildSkillWorkshopInstruction(options.dynamicTools),
-    "Use Codex native `spawn_agent` for Codex subagents, including `codex_reviewer` when reviewing whether Coding stayed Codex-native. Use OpenClaw `sessions_spawn` only for OpenClaw or ACP delegation.",
     buildVisibleReplyInstruction(params, options.dynamicTools),
     nativeCommandGuidance,
     params.extraSystemPrompt,
+    buildCodexNativeCodingTeamInstruction(options.dynamicTools),
   ];
   return sections.filter((section) => typeof section === "string" && section.trim()).join("\n\n");
+}
+
+function buildOpenClawCodexRuntimeBoundaryInstruction(
+  dynamicTools: readonly CodexDynamicToolSpec[] | undefined,
+): string {
+  const dynamicToolNames = [
+    ...new Set((dynamicTools ?? []).map((tool) => tool.name.trim()).filter(Boolean)),
+  ].toSorted((left, right) => left.localeCompare(right));
+  if (dynamicToolNames.length === 0) {
+    return [
+      "You are running inside OpenClaw through the Codex app-server harness.",
+      "OpenClaw owns routing, session lineage, observation, mirroring, and receipt delivery.",
+      "OpenClaw dynamic tools are not model-visible in this Codex workbench turn; do not use OpenClaw task, sessions_spawn, sessions_history, or other OpenClaw tool names as the inner Coding team surface.",
+    ].join("\n");
+  }
+  return [
+    "You are running inside OpenClaw through the Codex app-server harness.",
+    "OpenClaw owns routing, session lineage, observation, mirroring, and receipt delivery.",
+    `Only these OpenClaw dynamic tools are model-visible here: ${dynamicToolNames.join(", ")}.`,
+    "Use OpenClaw dynamic tools only for their listed OpenClaw purpose; do not use them as a surrogate for Codex-native coding tools.",
+  ].join("\n");
+}
+
+function buildCodexNativeCodingTeamInstruction(
+  dynamicTools: readonly CodexDynamicToolSpec[] | undefined,
+): string {
+  const hasOpenClawSessionsSpawn = (dynamicTools ?? []).some(
+    (tool) => tool.name.trim() === "sessions_spawn",
+  );
+  const lines = [
+    "## Codex-Native Coding Team",
+    "",
+    "Use Codex-native tools for implementation: repo search/read/edit, command execution, apply_patch, and Codex `spawn_agent` when helper agents improve outcome, risk, validation, or wall time.",
+    "Prefer `rg` and bounded file reads for source inspection. When native parallel tool calls such as `multi_tool_use.parallel` are available, batch independent searches, reads, and validations instead of serial shell exploration.",
+    "Use Codex `spawn_agent` as the inner coding-team delegation surface. Do not use OpenClaw task/session tools as an inner Coding-team fallback.",
+    "When direct project custom-agent names such as `project_explorer`, `test_engineer`, `code_reviewer`, or `codex_reviewer` are not accepted by the live Codex spawn surface, use the Codex built-in `explorer` for read-heavy exploration and `worker` for review, validation, docs research, or implementation support; put `Role: <project role>` and the relevant role contract in the child message.",
+    "A failed direct custom-agent spawn does not prove that Codex subagents are unavailable if built-in `explorer` or `worker` still works. Retry once through the matching built-in Codex agent with the project role embedded in the prompt.",
+    "If a nontrivial task requires independent review or helper work and neither direct custom-role spawn nor built-in Codex spawn works, close as partial or blocked with `runtime_child_surface_missing`; do not claim full completion.",
+    "For completion language, distinguish full spec complete, slice complete, partial implementation, validation not run, reviewer blocked, proof pending, and deferred work. Do not collapse a bounded slice into full-spec completion.",
+  ];
+  if (hasOpenClawSessionsSpawn) {
+    lines.push(
+      "If `sessions_spawn` is also visible, it remains an OpenClaw outer-delegation tool for OpenClaw/ACP work, not the default inner Codex coding-team route.",
+    );
+  }
+  return lines.join("\n");
 }
 
 function buildDeferredDynamicToolManifest(

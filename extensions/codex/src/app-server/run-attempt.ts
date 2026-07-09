@@ -1109,7 +1109,9 @@ export async function runCodexAppServerAttempt(
       expectedTool: "spawn_agent" as const,
       owner: "codex_app_server" as const,
       listedInOpenClawDynamicTools: false as const,
-      guidanceInjected: renderedDeveloperInstructions.includes("Codex native `spawn_agent`"),
+      guidanceInjected:
+        renderedDeveloperInstructions.includes("Codex `spawn_agent`") ||
+        renderedDeveloperInstructions.includes("Codex native `spawn_agent`"),
       disabledByOpenClawModelProfile: shouldDisableCodexToolSearchForModel(params.modelId),
     },
   };
