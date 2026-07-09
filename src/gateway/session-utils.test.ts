@@ -290,6 +290,7 @@ describe("gateway session utils", () => {
         childPhase: "child_completed",
         childRole: "worker",
         childAgentPath: "agents/project_explorer.toml",
+        spawnReason: "inspect source seams",
       },
     });
 
@@ -308,6 +309,7 @@ describe("gateway session utils", () => {
         childThreadId: "child-thread-1",
         role: "worker",
         agentPath: "agents/project_explorer.toml",
+        objective: "inspect source seams",
         label: "project_explorer (worker)",
         status: "succeeded",
         terminalSummary: "Codex native subagent finished: inspected source seams.",

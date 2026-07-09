@@ -61,6 +61,7 @@ export type GatewaySessionCodexNativeChildRun = {
   childThreadId?: string;
   role?: string;
   agentPath?: string;
+  objective?: string;
   label?: string;
   status?: string;
   terminalOutcome?: string;

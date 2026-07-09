@@ -39,6 +39,7 @@ const TASK_WAIT_POLL_MS = 60_000;
 const TASK_RESULT_PARENT_INLINE_MAX_CHARS = 1_800;
 const TASK_RESULT_PARENT_PREVIEW_MAX_CHARS = 0;
 const RECEIPT_ONLY_PARENT_AGENT_IDS = new Set(["main"]);
+const CODEX_CODING_AGENT_IDS = new Set(["coding", "execution-coding"]);
 const DEFAULT_LIGHT_CONTEXT_AGENT_IDS = new Set([
   "codebase-researcher",
   "docs-standards-researcher",
@@ -186,6 +187,38 @@ function resolveRequesterAgentId(
 function shouldReturnReceiptOnlyToParent(params: { requesterAgentId?: string }) {
   const requesterAgentId = params.requesterAgentId?.trim().toLowerCase();
   return requesterAgentId !== undefined && RECEIPT_ONLY_PARENT_AGENT_IDS.has(requesterAgentId);
+}
+
+function isCodexCodingAgentId(agentId: string): boolean {
+  return CODEX_CODING_AGENT_IDS.has(agentId.trim().toLowerCase());
+}
+
+function resolveTaskToolContext(params: { agentId: string; requestedContext: unknown }) {
+  if (isCodexCodingAgentId(params.agentId)) {
+    return "isolated" as const;
+  }
+  return params.requestedContext === "fork" || params.requestedContext === "isolated"
+    ? params.requestedContext
+    : undefined;
+}
+
+function formatCodingTaskHandoffContract(agentId: string): string | undefined {
+  if (!isCodexCodingAgentId(agentId)) {
+    return undefined;
+  }
+  return [
+    "[Coding Artifact Handoff Contract]",
+    "If the task includes a workspace-visible prompt, spec, or artifact file path, read that file in full before implementation and treat it as authoritative scope.",
+    "The task text is route/scope guidance only when a prompt/spec/artifact file is referenced; do not work from a parent summary instead of the referenced file.",
+    "Live-agent paths must be workspace-relative paths such as docs/... or src/openclaw/..., or absolute paths under /home/node/.openclaw/workspace/.",
+    "Do not use host-absolute root or service-checkout provenance paths as execution/read paths. If only host-absolute refs are available, close blocked with runtime_visible_artifact_missing.",
+    "In final closeout, report each governing file ref with observed chars and sha256 digest, or explicitly state that the ref was unreadable and why.",
+  ].join("\n");
+}
+
+function renderTaskForChild(params: { agentId: string; task: string }): string {
+  const contract = formatCodingTaskHandoffContract(params.agentId);
+  return contract ? [contract, "[Task Scope]", params.task].join("\n\n") : params.task;
 }
 
 export async function buildTaskTranscriptFinalRef(params: {
@@ -386,6 +419,7 @@ export function createTaskTool(
       "When multiple independent child tasks are useful, call `task` multiple times in the same assistant turn so the runtime can execute them in parallel.",
       "Use one `task` call per independent specialist; do not pack unrelated work into one child prompt just to avoid multiple calls.",
       "For narrow source-scout or reviewer packets that do not need root workspace memory or parent transcript, set `lightContext: true` and include the needed objective/output instructions in the child task.",
+      "For Coding handoffs that depend on a full prompt/spec/artifact, pass the workspace-relative file path and chars/digest; do not summarize that artifact into the operative scope.",
       "Do not set `thinking` unless you intentionally need to override the target agent's role profile for this specific task; ordinary specialist tasks should omit it.",
     ],
     executionMode: "parallel",
@@ -412,8 +446,10 @@ export function createTaskTool(
         });
       }
       const taskName = taskNameResult.taskName;
-      const context =
-        params.context === "fork" || params.context === "isolated" ? params.context : undefined;
+      const context = resolveTaskToolContext({
+        agentId,
+        requestedContext: params.context,
+      });
       const lightContext = resolveTaskToolLightContext(agentId, params.lightContext);
       const cwd = readStringParam(params, "cwd");
       const renderedCwd = cwd ? renderLiveAgentPathReference(cwd) : undefined;
@@ -427,7 +463,7 @@ export function createTaskTool(
 
       const spawn = await spawnSubagentDirect(
         {
-          task: renderedTask.text,
+          task: renderTaskForChild({ agentId, task: renderedTask.text }),
           taskName,
           label,
           agentId,

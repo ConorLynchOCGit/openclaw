@@ -313,6 +313,9 @@ function buildCodexNativeChildRunsForSession(
         ...(readTaskMetadataString(metadata, "childAgentPath")
           ? { agentPath: readTaskMetadataString(metadata, "childAgentPath") }
           : {}),
+        ...(readTaskMetadataString(metadata, "spawnReason")
+          ? { objective: readTaskMetadataString(metadata, "spawnReason") }
+          : {}),
         ...(task.label ? { label: task.label } : {}),
         status: task.status,
         ...(task.terminalOutcome ? { terminalOutcome: task.terminalOutcome } : {}),

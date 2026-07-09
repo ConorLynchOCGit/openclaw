@@ -279,7 +279,12 @@ async function runGitRequest(root, request) {
       default:
         throw new Error(`unsupported git inspect kind ${request.kind}`);
     }
-    const output = await runCommand("git", args, root, maxBytes);
+    const output = await runCommand(
+      "git",
+      ["-c", `safe.directory=${root}`, ...args],
+      root,
+      maxBytes,
+    );
     const cappedStdout = capString(output.stdout, maxBytes);
     return {
       kind: request.kind,

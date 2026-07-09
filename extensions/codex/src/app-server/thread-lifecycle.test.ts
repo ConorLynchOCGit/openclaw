@@ -189,6 +189,10 @@ describe("Codex app-server native code mode config", () => {
     expect(instructions).toContain(
       "Use Codex `spawn_agent` as the inner coding-team delegation surface",
     );
+    expect(instructions).toContain("read that file in full before implementation");
+    expect(instructions).toContain("openclaw_repo_workbench");
+    expect(instructions).toContain("repo_search_many");
+    expect(instructions).toContain("Decide early whether the task merits");
     expect(instructions).toContain(
       "use the Codex built-in `explorer` for read-heavy exploration and `worker` for review",
     );

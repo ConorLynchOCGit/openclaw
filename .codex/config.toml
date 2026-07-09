@@ -4,3 +4,16 @@ multi_agent = true
 [agents]
 max_threads = 6
 max_depth = 2
+
+[mcp_servers.openclaw_repo_workbench]
+command = "node"
+args = [".agents/plugins/plugins/openclaw-coding-workbench/mcp/openclaw-repo-workbench.mjs"]
+cwd = "."
+startup_timeout_sec = 10
+tool_timeout_sec = 30
+enabled_tools = [
+  "repo_search_many",
+  "repo_read_many",
+  "repo_glob_many",
+  "git_inspect_many",
+]

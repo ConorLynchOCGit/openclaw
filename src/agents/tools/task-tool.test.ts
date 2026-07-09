@@ -160,18 +160,44 @@ describe("task tool", () => {
 
     expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        task: [
-          "Use docs/projects/execution-platform/prompts/proof.md",
-          "Patch src/openclaw/src/agents/tools/task-tool.ts",
-          "Check docs/agents/coding/AGENTS.md",
-        ].join("\n"),
+        task: expect.stringContaining(
+          [
+            "Use docs/projects/execution-platform/prompts/proof.md",
+            "Patch src/openclaw/src/agents/tools/task-tool.ts",
+            "Check docs/agents/coding/AGENTS.md",
+          ].join("\n"),
+        ),
         cwd: "src/openclaw",
       }),
       expect.anything(),
     );
     const spawnArgs = JSON.stringify(hoisted.spawnSubagentDirectMock.mock.calls[0]?.[0]);
+    expect(spawnArgs).toContain("Coding Artifact Handoff Contract");
+    expect(spawnArgs).toContain("read that file in full before implementation");
+    expect(spawnArgs).not.toContain("/root/");
+    expect(spawnArgs).not.toContain("/srv/");
     expect(spawnArgs).not.toContain("/root/services");
     expect(spawnArgs).not.toContain("/srv/openclaw-next");
+  });
+
+  it("forces Main-routed Coding tasks to isolated context even when fork is requested", async () => {
+    await createTaskTool({
+      agentSessionKey: "agent:main:operator",
+      requesterAgentIdOverride: "main",
+    }).execute("call-1", {
+      agentId: "coding",
+      task: "Read docs/projects/execution-platform/prompts/proof.md and implement it.",
+      context: "fork",
+    });
+
+    expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "coding",
+        context: "isolated",
+        task: expect.stringContaining("Coding Artifact Handoff Contract"),
+      }),
+      expect.anything(),
+    );
   });
 
   it("rejects unmapped host-only paths before child handoff", async () => {
