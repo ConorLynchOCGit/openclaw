@@ -21,6 +21,7 @@ export type CodexBundleMcpThreadConfig = {
 export type LoadCodexBundleMcpThreadConfigParams = {
   workspaceDir: string;
   cfg?: OpenClawConfig;
+  agentId?: string;
   toolsEnabled?: boolean;
   disableTools?: boolean;
   toolsAllow?: string[];

@@ -638,6 +638,7 @@ export async function runCodexAppServerAttempt(
   const bundleMcpThreadConfig = await loadCodexBundleMcpThreadConfig({
     workspaceDir: effectiveWorkspace,
     cfg: params.config,
+    agentId: sessionAgentId,
     toolsEnabled: supportsModelTools(params.model),
     disableTools: params.disableTools,
     toolsAllow: nodeExecBlocksNativeExecution ? [] : params.toolsAllow,
@@ -1104,7 +1105,7 @@ export async function runCodexAppServerAttempt(
     nativeToolSurfaceConfigured: nativeToolSurfaceEnabled,
     nativeToolSurfaceReason: nativeToolSurfaceDecision.reason,
     codeModeConfigured: nativeToolSurfaceEnabled,
-    codeModeOnlyConfigured: nativeToolSurfaceEnabled && appServer.codeModeOnly === true,
+    codeModeOnlyConfigured: nativeToolSurfaceEnabled && appServer.codeModeOnly,
     nativeSubagents: {
       expectedTool: "spawn_agent" as const,
       owner: "codex_app_server" as const,
@@ -1265,7 +1266,7 @@ export async function runCodexAppServerAttempt(
       ...(sandboxLabel ? { sandbox: sandboxLabel } : {}),
       ...(approvalPolicyLabel ? { approvalPolicy: approvalPolicyLabel } : {}),
       codeModeConfigured: nativeToolSurfaceEnabled,
-      codeModeOnlyConfigured: nativeToolSurfaceEnabled && appServer.codeModeOnly === true,
+      codeModeOnlyConfigured: nativeToolSurfaceEnabled && appServer.codeModeOnly,
       openclawDynamicToolNames: toolBridge.availableSpecs.map((tool) => tool.name),
       timeoutMs: appServer.requestTimeoutMs,
       signal: runAbortController.signal,

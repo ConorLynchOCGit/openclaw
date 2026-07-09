@@ -4,12 +4,15 @@
  * compatible with Codex's MCP config shape.
  */
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
 import {
   loadEnabledBundleMcpConfig,
   type BundleMcpConfig,
   type BundleMcpServerConfig,
 } from "../plugins/bundle-mcp.js";
+import { normalizeAgentId } from "../routing/session-key.js";
 import { isRecord } from "../utils.js";
 import {
   applyCommonServerConfig,
@@ -38,6 +41,23 @@ function isOpenClawLoopbackMcpServer(name: string, server: BundleMcpServerConfig
 }
 
 type CodexMcpToolApprovalMode = "auto" | "prompt" | "approve";
+const OPENCLAW_CODING_WORKBENCH_MCP_SERVER_NAME = "openclaw_repo_workbench";
+const OPENCLAW_CODING_WORKBENCH_PLUGIN_RELATIVE_ROOT = path.join(
+  ".agents",
+  "plugins",
+  "plugins",
+  "openclaw-coding-workbench",
+);
+const OPENCLAW_CODING_WORKBENCH_MCP_RELATIVE_SCRIPT = path.join(
+  "mcp",
+  "openclaw-repo-workbench.mjs",
+);
+const OPENCLAW_CODING_WORKBENCH_ENABLED_TOOLS = [
+  "repo_search_many",
+  "repo_read_many",
+  "repo_glob_many",
+  "git_inspect_many",
+] as const;
 
 const CODEX_MCP_TOOL_APPROVAL_MODES = new Set<CodexMcpToolApprovalMode>([
   "auto",
@@ -54,6 +74,10 @@ function normalizeCodexToolApprovalMode(value: unknown): CodexMcpToolApprovalMod
     CODEX_MCP_TOOL_APPROVAL_MODES.has(value as CodexMcpToolApprovalMode)
     ? (value as CodexMcpToolApprovalMode)
     : undefined;
+}
+
+function normalizePositiveInteger(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
 function resolveCodexDefaultToolsApprovalMode(
@@ -73,6 +97,20 @@ export function normalizeCodexMcpServerConfig(
 ): Record<string, unknown> {
   const next: Record<string, unknown> = {};
   applyCommonServerConfig(next, server);
+  const enabledTools = Array.isArray(server.enabled_tools)
+    ? server.enabled_tools.filter((value): value is string => typeof value === "string")
+    : undefined;
+  if (enabledTools && enabledTools.length > 0) {
+    next.enabled_tools = enabledTools;
+  }
+  const startupTimeoutSec = normalizePositiveInteger(server.startup_timeout_sec);
+  if (startupTimeoutSec) {
+    next.startup_timeout_sec = startupTimeoutSec;
+  }
+  const toolTimeoutSec = normalizePositiveInteger(server.tool_timeout_sec);
+  if (toolTimeoutSec) {
+    next.tool_timeout_sec = toolTimeoutSec;
+  }
   const defaultToolsApprovalMode = resolveCodexDefaultToolsApprovalMode(server);
   if (defaultToolsApprovalMode) {
     next.default_tools_approval_mode = defaultToolsApprovalMode;
@@ -139,26 +177,107 @@ function fingerprintCodexMcpServersConfig(config: CodexMcpServersConfig): string
     .digest("hex");
 }
 
+function isCodingAgentId(agentId: string | undefined): boolean {
+  return agentId ? normalizeAgentId(agentId) === "coding" : false;
+}
+
+function resolveCodingWorkbenchPaths(workspaceDir: string):
+  | {
+      repoRoot: string;
+      pluginRoot: string;
+      mcpScript: string;
+    }
+  | undefined {
+  const workspace = path.resolve(workspaceDir);
+  const candidates = [
+    {
+      repoRoot: workspace,
+      pluginRoot: path.join(workspace, OPENCLAW_CODING_WORKBENCH_PLUGIN_RELATIVE_ROOT),
+    },
+    {
+      repoRoot: path.join(workspace, "src", "openclaw"),
+      pluginRoot: path.join(
+        workspace,
+        "src",
+        "openclaw",
+        OPENCLAW_CODING_WORKBENCH_PLUGIN_RELATIVE_ROOT,
+      ),
+    },
+  ];
+  for (const candidate of candidates) {
+    const mcpScript = path.join(
+      candidate.pluginRoot,
+      OPENCLAW_CODING_WORKBENCH_MCP_RELATIVE_SCRIPT,
+    );
+    if (
+      fs.existsSync(path.join(candidate.repoRoot, "openclaw.mjs")) &&
+      fs.existsSync(path.join(candidate.repoRoot, "package.json")) &&
+      fs.existsSync(path.join(candidate.pluginRoot, ".codex-plugin", "plugin.json")) &&
+      fs.existsSync(mcpScript)
+    ) {
+      return { ...candidate, mcpScript };
+    }
+  }
+  return undefined;
+}
+
+function buildCodingWorkbenchMcpServer(
+  params: LoadCodexBundleMcpThreadConfigParams,
+): BundleMcpServerConfig | undefined {
+  if (!isCodingAgentId(params.agentId)) {
+    return undefined;
+  }
+  const paths = resolveCodingWorkbenchPaths(params.workspaceDir);
+  if (!paths) {
+    return undefined;
+  }
+  return {
+    command: "node",
+    args: [paths.mcpScript],
+    cwd: paths.pluginRoot,
+    env: {
+      OPENCLAW_REPO_WORKBENCH_ROOT: paths.repoRoot,
+    },
+    codex: {
+      defaultToolsApprovalMode: "approve",
+    },
+    enabled_tools: [...OPENCLAW_CODING_WORKBENCH_ENABLED_TOOLS],
+    startup_timeout_sec: 10,
+    tool_timeout_sec: 30,
+  };
+}
+
 /** Load bundle MCP config for one Codex app-server thread. */
 export function loadCodexBundleMcpThreadConfig(
   params: LoadCodexBundleMcpThreadConfigParams,
 ): CodexBundleMcpThreadConfig {
+  const codingWorkbenchServer = buildCodingWorkbenchMcpServer(params);
   const shouldCreateRuntime = shouldCreateBundleMcpRuntimeForAttempt({
     toolsEnabled: params.toolsEnabled ?? true,
     disableTools: params.disableTools,
     toolsAllow: params.toolsAllow,
   });
-  if (!shouldCreateRuntime) {
+  if (!shouldCreateRuntime && !codingWorkbenchServer) {
     return {
       diagnostics: [],
       evaluated: true,
     };
   }
-  const bundleMcp = loadEnabledBundleMcpConfig({
-    workspaceDir: params.workspaceDir,
-    cfg: params.cfg,
-  });
-  const mcpServers = buildCodexMcpServersConfig(bundleMcp.config);
+  const bundleMcp = shouldCreateRuntime
+    ? loadEnabledBundleMcpConfig({
+        workspaceDir: params.workspaceDir,
+        cfg: params.cfg,
+      })
+    : { config: { mcpServers: {} }, diagnostics: [] };
+  const mergedConfig: BundleMcpConfig = {
+    mcpServers: {
+      ...bundleMcp.config.mcpServers,
+      ...(codingWorkbenchServer
+        ? { [OPENCLAW_CODING_WORKBENCH_MCP_SERVER_NAME]: codingWorkbenchServer }
+        : {}),
+    },
+  };
+  const mcpServers = buildCodexMcpServersConfig(mergedConfig);
   if (Object.keys(mcpServers).length === 0) {
     return {
       diagnostics: bundleMcp.diagnostics,

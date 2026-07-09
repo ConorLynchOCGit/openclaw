@@ -229,7 +229,7 @@ describe("Codex workbench capability report", () => {
       names: ["GitHub"],
     });
     expect(report.nativeParallelToolCalls.status).toBe("not_proven");
-    expect(request.mock.calls.map(([method]) => method).sort()).toEqual([
+    expect(request.mock.calls.map(([method]) => method).toSorted()).toEqual([
       "app/list",
       "config/read",
       "experimentalFeature/list",
@@ -239,6 +239,12 @@ describe("Codex workbench capability report", () => {
       "plugin/list",
       "skills/list",
     ]);
+    expect(request.mock.calls.find(([method]) => method === "mcpServerStatus/list")?.[1]).toEqual({
+      cursor: null,
+      limit: 100,
+      detail: "toolsAndAuthOnly",
+      threadId: "thread-1",
+    });
   });
 
   it("reports unsupported app-server methods without failing capability readback", async () => {

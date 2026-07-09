@@ -132,6 +132,7 @@
     "!docs/images/**",
     "!docs/**/*.jpg",
     "!docs/**/*.png",
+    ".agents/plugins/",
     "src/agents/templates/",
     "scripts/crabbox-wrapper.mjs",
     "patches/",

@@ -244,7 +244,12 @@ describe("Codex app-server native code mode config", () => {
       "Deferred searchable OpenClaw dynamic tools available: image_generate, music_generate.",
     );
     expect(instructions).toContain("Use `tool_search` to load exact callable specs before use.");
-    expect(instructions).not.toContain("message,");
+    const deferredLine = instructions
+      .split("\n")
+      .find((line) => line.startsWith("Deferred searchable OpenClaw dynamic tools available:"));
+    expect(deferredLine).toBe(
+      "Deferred searchable OpenClaw dynamic tools available: image_generate, music_generate. Use `tool_search` to load exact callable specs before use.",
+    );
   });
 
   it("uses the shared Skill Workshop guidance when skill_workshop is available", () => {

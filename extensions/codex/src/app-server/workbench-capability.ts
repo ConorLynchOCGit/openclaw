@@ -244,7 +244,8 @@ function buildGeneratedSchemaMethodPresence(): CodexWorkbenchMethodPresence[] {
     { method: "turn/start", modelVisibleVia: "control_plane" },
   ];
   return methods.map((entry) => ({
-    ...entry,
+    method: entry.method,
+    modelVisibleVia: entry.modelVisibleVia,
     source: "installed_app_server_schema" as const,
     expectedOwner: "codex_app_server" as const,
   }));
@@ -383,6 +384,7 @@ async function probeMcpServers(
       cursor: null,
       limit: 100,
       detail: "toolsAndAuthOnly",
+      threadId: params.threadId,
     },
   );
   if (response.status !== "ok") {
@@ -474,6 +476,7 @@ async function probeAppList(
 
 type ProbeParams = {
   client: CodexAppServerClient;
+  threadId: string;
   workspaceDir: string;
   timeoutMs?: number;
   signal?: AbortSignal;
@@ -483,13 +486,15 @@ async function safeRequest<T>(
   params: ProbeParams,
   method: string,
   requestParams: JsonObject | undefined,
+  coerce?: (value: unknown) => T,
 ): Promise<{ status: "ok"; value: T } | CodexWorkbenchMethodFailureStatus> {
   try {
     const options = {
       ...(params.timeoutMs !== undefined ? { timeoutMs: params.timeoutMs } : {}),
       ...(params.signal ? { signal: params.signal } : {}),
     };
-    const value = await params.client.request<T>(method, requestParams, options);
+    const rawValue = await params.client.request(method, requestParams, options);
+    const value = coerce ? coerce(rawValue) : (rawValue as T);
     return { status: "ok", value };
   } catch (error) {
     if (error instanceof CodexAppServerRpcError && error.code === -32601) {
