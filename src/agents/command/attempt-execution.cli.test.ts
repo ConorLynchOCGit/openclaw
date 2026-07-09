@@ -1963,6 +1963,97 @@ describe("embedded attempt harness pinning", () => {
     });
   });
 
+  it("fresh Codex launch plans use the Codex harness instead of CLI aliases", async () => {
+    const sessionEntry: SessionEntry = {
+      sessionId: "coding-session",
+      updatedAt: Date.now(),
+    };
+    runEmbeddedAgentMock.mockResolvedValueOnce({
+      meta: { durationMs: 1 },
+    } satisfies EmbeddedAgentRunResult);
+
+    await runAgentAttempt({
+      providerOverride: "openai",
+      originalProvider: "openai",
+      modelOverride: "gpt-5.5",
+      cfg: {
+        agents: {
+          defaults: {
+            model: { primary: "openai/gpt-5.5", fallbacks: [] },
+            models: {
+              // Simulates an older CLI alias lookup surface that can still resolve
+              // OpenAI/Codex to codex-cli. The fresh launch contract must win.
+              "openai/gpt-5.5": { agentRuntime: { id: "codex-cli" } },
+            },
+          },
+          list: [
+            {
+              id: "coding",
+              model: { primary: "openai/gpt-5.5", fallbacks: [] },
+              models: {
+                "openai/gpt-5.5": {
+                  agentRuntime: { id: "codex" },
+                },
+              },
+            },
+          ],
+        },
+      } as OpenClawConfig,
+      sessionEntry,
+      sessionId: sessionEntry.sessionId,
+      sessionKey: "agent:coding:subagent:route",
+      sessionAgentId: "coding",
+      sessionFile: path.join(tmpDir, "session.jsonl"),
+      workspaceDir: tmpDir,
+      body: "implement",
+      isFallbackRetry: false,
+      resolvedThinkLevel: "medium",
+      timeoutMs: 1_000,
+      runId: "run-coding-codex-launch-plan-runtime",
+      opts: {
+        message: "implement",
+        launchExecutionPlan: {
+          runId: "run-coding-codex-launch-plan-runtime",
+          targetAgentId: "coding",
+          launchMode: "fresh",
+          source: { kind: "gateway" },
+          model: {
+            provider: "openai",
+            model: "gpt-5.5",
+          },
+          runtime: "codex",
+          fallbacks: [],
+          admission: {
+            model: {
+              primaryIdentityKey: modelIdentityKeyFromProviderModel("openai", "gpt-5.5"),
+              fallbackIdentityKeys: [],
+            },
+            runtime: { id: "codex", providerProfileKey: "openai-native" },
+            policyTraceId: "agent-model-policy",
+          },
+          policy: { overrideAuthorized: false, resumeAuthorized: false },
+        },
+      } as Parameters<typeof runAgentAttempt>[0]["opts"],
+      runContext: {} as Parameters<typeof runAgentAttempt>[0]["runContext"],
+      spawnedBy: undefined,
+      messageChannel: undefined,
+      skillsSnapshot: undefined,
+      resolvedVerboseLevel: undefined,
+      agentDir: tmpDir,
+      onAgentEvent: vi.fn(),
+      authProfileProvider: "openai",
+      sessionHasHistory: false,
+    });
+
+    expect(runCliAgentMock).not.toHaveBeenCalled();
+    expectMockArgFields(runEmbeddedAgentMock, {
+      provider: "openai",
+      model: "gpt-5.5",
+      agentHarnessId: "codex",
+      agentHarnessRuntimeOverride: "codex",
+    });
+  });
+
   it("forwards runtime toolsAllow into embedded attempts", async () => {
     const sessionEntry: SessionEntry = {
       sessionId: "tools-allow-session",

@@ -513,15 +513,20 @@ export function runAgentAttempt(params: {
   const bootstrapPromptWarningSignature =
     bootstrapPromptWarningSignaturesSeen[bootstrapPromptWarningSignaturesSeen.length - 1];
   const requestedAgentHarnessId = isRawModelRun ? "openclaw" : forcedLaunchRuntime;
+  // A fresh launch plan is the runtime contract. CLI aliases only apply to
+  // legacy/unplanned dispatch so planned Codex launches cannot become codex-cli.
+  const allowCliRuntimeDispatch = !forcedLaunchRuntime;
   const cliExecutionProvider = isRawModelRun
     ? params.providerOverride
-    : (resolveCliRuntimeExecutionProvider({
-        provider: params.providerOverride,
-        cfg: params.cfg,
-        agentId: params.sessionAgentId,
-        modelId: params.modelOverride,
-        authProfileId: params.sessionEntry?.authProfileOverride,
-      }) ?? params.providerOverride);
+    : allowCliRuntimeDispatch
+      ? (resolveCliRuntimeExecutionProvider({
+          provider: params.providerOverride,
+          cfg: params.cfg,
+          agentId: params.sessionAgentId,
+          modelId: params.modelOverride,
+          authProfileId: params.sessionEntry?.authProfileOverride,
+        }) ?? params.providerOverride)
+      : params.providerOverride;
   const agentHarnessPolicy = isRawModelRun
     ? ({ runtime: "openclaw", runtimeSource: "model" } as const)
     : forcedLaunchRuntime
@@ -583,7 +588,11 @@ export function runAgentAttempt(params: {
     (agentHarnessPolicy.runtime === "openclaw" && agentHarnessPolicy.runtimeSource !== "implicit"
       ? "openclaw"
       : undefined);
-  if (!isRawModelRun && isCliProvider(cliExecutionProvider, params.cfg)) {
+  if (
+    !isRawModelRun &&
+    allowCliRuntimeDispatch &&
+    isCliProvider(cliExecutionProvider, params.cfg)
+  ) {
     const cliSessionBinding = getCliSessionBinding(params.sessionEntry, cliExecutionProvider);
     const cliProcessCwd = params.cwd ? resolveUserPath(params.cwd) : params.workspaceDir;
     const cliPrompt =
