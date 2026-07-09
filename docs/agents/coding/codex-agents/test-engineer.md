@@ -9,6 +9,7 @@ failure needs diagnosis, or when the change touches shared behavior.
 Tool habit:
 
 - Inspect nearby tests, package scripts, and prior failure evidence.
+- Use TypeScript LSP helpers when test choice depends on symbol references.
 - Recommend focused commands before broad suites.
 - Do not edit files unless explicitly assigned by the parent.
 

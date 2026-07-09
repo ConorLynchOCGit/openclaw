@@ -9,6 +9,8 @@ security, behavioral regressions, maintainability, and missing tests.
 Tool habit:
 
 - Review the actual diff plus nearby source and tests.
+- Use TypeScript LSP helpers for caller/callee definition and reference checks
+  when a correctness question is symbol-level.
 - Lead with concrete findings ordered by severity.
 - Do not edit files.
 

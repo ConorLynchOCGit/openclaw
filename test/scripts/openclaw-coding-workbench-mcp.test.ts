@@ -38,6 +38,30 @@ type WorkbenchModule = {
     gitRoots?: string[];
     results: Array<{ status: string; stdout?: string; repoRoot?: string; error?: string }>;
   }>;
+  lspHoverTypescript(
+    input: unknown,
+    options?: unknown,
+  ): Promise<{
+    status: string;
+    display?: string;
+    error?: string;
+  }>;
+  lspDefinitionTypescript(
+    input: unknown,
+    options?: unknown,
+  ): Promise<{
+    status: string;
+    definitions?: Array<{ path?: string; line?: number; character?: number }>;
+    error?: string;
+  }>;
+  lspReferencesTypescript(
+    input: unknown,
+    options?: unknown,
+  ): Promise<{
+    status: string;
+    references?: Array<{ path?: string; line?: number; character?: number }>;
+    error?: string;
+  }>;
 };
 
 let tempDirs: string[] = [];
@@ -254,6 +278,40 @@ describe("openclaw-coding-workbench MCP helpers", () => {
       expect.arrayContaining([
         expect.objectContaining({ repoRoot: ".", status: "ok" }),
         expect.objectContaining({ repoRoot: "src/openclaw", status: "ok" }),
+      ]),
+    );
+  });
+
+  it("returns TypeScript hover, definition, and references through read-only LSP helpers", async () => {
+    const repo = await makeRepo();
+    const workbench = await loadWorkbench();
+
+    const hover = await workbench.lspHoverTypescript(
+      { file: "src/alpha.ts", line: 1, character: 14 },
+      optionsFor(repo),
+    );
+    const definition = await workbench.lspDefinitionTypescript(
+      { file: "src/alpha.ts", line: 2, character: 21 },
+      optionsFor(repo),
+    );
+    const references = await workbench.lspReferencesTypescript(
+      { file: "src/alpha.ts", line: 1, character: 14, maxResults: 10 },
+      optionsFor(repo),
+    );
+
+    expect(hover).toMatchObject({
+      status: "ok",
+      display: expect.stringContaining("alpha"),
+    });
+    expect(definition).toMatchObject({
+      status: "ok",
+      definitions: [expect.objectContaining({ path: "src/alpha.ts", line: 1 })],
+    });
+    expect(references.status).toBe("ok");
+    expect(references.references).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "src/alpha.ts", line: 1 }),
+        expect.objectContaining({ path: "src/alpha.ts", line: 2 }),
       ]),
     );
   });

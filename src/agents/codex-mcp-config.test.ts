@@ -229,7 +229,15 @@ describe("loadCodexBundleMcpThreadConfig", () => {
       command: "node",
       cwd: path.join(workspaceDir, ".agents", "plugins", "plugins", "openclaw-coding-workbench"),
       default_tools_approval_mode: "approve",
-      enabled_tools: ["repo_search_many", "repo_read_many", "repo_glob_many", "git_inspect_many"],
+      enabled_tools: [
+        "repo_search_many",
+        "repo_read_many",
+        "repo_glob_many",
+        "git_inspect_many",
+        "lsp_hover_typescript",
+        "lsp_definition_typescript",
+        "lsp_references_typescript",
+      ],
       startup_timeout_sec: 10,
       tool_timeout_sec: 30,
     });
@@ -250,7 +258,7 @@ describe("loadCodexBundleMcpThreadConfig", () => {
     expect(loaded.fingerprint).toMatch(/^[a-f0-9]{64}$/);
   });
 
-  it("does not project the Coding workbench MCP server when .codex/config.toml declares it", () => {
+  it("projects the Coding workbench MCP server even when .codex/config.toml declares it", () => {
     const workspaceDir = makeOpenClawRepoFixture({ nested: true });
     fs.mkdirSync(path.join(workspaceDir, ".codex"), { recursive: true });
     fs.writeFileSync(
@@ -271,8 +279,32 @@ describe("loadCodexBundleMcpThreadConfig", () => {
       disableTools: true,
     });
 
-    expect(loaded.configPatch).toBeUndefined();
-    expect(loaded.fingerprint).toBeUndefined();
+    expect(loaded.configPatch?.mcp_servers.openclaw_repo_workbench).toMatchObject({
+      command: "node",
+      cwd: path.join(
+        workspaceDir,
+        "src",
+        "openclaw",
+        ".agents",
+        "plugins",
+        "plugins",
+        "openclaw-coding-workbench",
+      ),
+      enabled_tools: [
+        "repo_search_many",
+        "repo_read_many",
+        "repo_glob_many",
+        "git_inspect_many",
+        "lsp_hover_typescript",
+        "lsp_definition_typescript",
+        "lsp_references_typescript",
+      ],
+      env: {
+        OPENCLAW_REPO_WORKBENCH_ROOT: workspaceDir,
+        OPENCLAW_REPO_WORKBENCH_SOURCE_ROOT: path.join(workspaceDir, "src", "openclaw"),
+      },
+    });
+    expect(loaded.fingerprint).toMatch(/^[a-f0-9]{64}$/);
     expect(loaded.evaluated).toBe(true);
   });
 

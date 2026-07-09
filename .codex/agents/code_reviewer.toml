@@ -9,8 +9,10 @@ ordered by severity and grounded in file references. Focus on correctness,
 security, behavioral regressions, missing tests, and integration gaps. Do not
 edit files. Start with `git_inspect_many` for changed files/status/diff shape,
 then use `repo_read_many` or `repo_search_many` for surrounding source. Use
-shell only for focused fallback or when running an explicit read-only command is
-the clearest evidence, and name the fallback reason.
+`lsp_definition_typescript` and `lsp_references_typescript` when correctness
+depends on TypeScript symbol callers/callees. Use shell only for focused
+fallback or when running an explicit read-only command is the clearest
+evidence, and name the fallback reason.
 
 Use the existing project skills as review procedure, not optional background:
 - read codebase-claim-review for source-backed implementation claims and

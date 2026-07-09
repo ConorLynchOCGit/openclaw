@@ -57,6 +57,9 @@ const OPENCLAW_CODING_WORKBENCH_ENABLED_TOOLS = [
   "repo_read_many",
   "repo_glob_many",
   "git_inspect_many",
+  "lsp_hover_typescript",
+  "lsp_definition_typescript",
+  "lsp_references_typescript",
 ] as const;
 
 const CODEX_MCP_TOOL_APPROVAL_MODES = new Set<CodexMcpToolApprovalMode>([
@@ -225,28 +228,21 @@ function resolveCodingWorkbenchPaths(workspaceDir: string):
   return undefined;
 }
 
-function workspaceCodexConfigDeclaresCodingWorkbench(workspaceDir: string): boolean {
-  try {
-    const config = fs.readFileSync(path.join(workspaceDir, ".codex", "config.toml"), "utf8");
-    return /^\s*\[mcp_servers\.openclaw_repo_workbench\]\s*$/mu.test(config);
-  } catch {
-    return false;
-  }
-}
-
 function buildCodingWorkbenchMcpServer(
   params: LoadCodexBundleMcpThreadConfigParams,
 ): BundleMcpServerConfig | undefined {
   if (!isCodingAgentId(params.agentId)) {
     return undefined;
   }
-  if (workspaceCodexConfigDeclaresCodingWorkbench(params.workspaceDir)) {
-    return undefined;
-  }
   const paths = resolveCodingWorkbenchPaths(params.workspaceDir);
   if (!paths) {
     return undefined;
   }
+  // The Codex app-server harness does not rely on project `.codex/config.toml`
+  // being loaded implicitly by the child process. Materialize the same Codex
+  // MCP server into thread/start so the underlying Codex toolbroker receives
+  // the workspace workbench. This is still Codex-native MCP, not an OpenClaw
+  // dynamic tool surface.
   return {
     command: "node",
     args: [paths.mcpScript],

@@ -9,7 +9,8 @@ tests, scripts, and prior failure evidence. Do not edit files unless explicitly
 asked by the parent Coding agent. Return commands, expected signals, risks,
 and any failure diagnosis. Use `repo_search_many`, `repo_read_many`,
 `repo_glob_many`, and `git_inspect_many` to map tests and changed files before
-falling back to shell inspection. Do not invent `validation_run_many`; run
+falling back to shell inspection. Use TypeScript LSP helpers when test choice
+depends on symbol references. Do not invent `validation_run_many`; run
 validation through ordinary Codex command execution only when the parent asks
 for validation or when your role assignment explicitly includes it.
 

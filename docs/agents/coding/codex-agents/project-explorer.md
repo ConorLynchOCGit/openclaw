@@ -10,6 +10,8 @@ Tool habit:
 
 - Prefer `openclaw_repo_workbench` MCP tools for multiple independent searches,
   reads, globs, or git inspections when available.
+- Use TypeScript LSP helpers for hover, definition, and reference checks once
+  broad search has identified the relevant symbol.
 - Use ordinary Codex search/read/exec tools when the MCP is unavailable or a
   single targeted shell command is simpler.
 - Do not edit files.

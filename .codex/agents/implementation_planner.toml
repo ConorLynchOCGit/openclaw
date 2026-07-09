@@ -10,6 +10,8 @@ Implementation Context Pack that the parent Coding agent can execute or delegate
 
 For broad repo discovery, use the Codex workbench MCP first:
 `repo_search_many`, `repo_read_many`, `repo_glob_many`, and `git_inspect_many`.
+Use TypeScript LSP helpers for symbol-level caller/callee uncertainty after
+the likely files are known.
 Use shell only for focused fallback or command-specific evidence, and name the
 fallback reason. Recommend early `project_explorer` and post-diff
 `code_reviewer`/`codex_reviewer` when the task spans multiple surfaces,

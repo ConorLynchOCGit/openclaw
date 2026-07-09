@@ -22,6 +22,9 @@ describe("OpenClaw Codex repo workbench plugin", () => {
     );
     expect(enabledTools.toSorted()).toEqual([
       "git_inspect_many",
+      "lsp_definition_typescript",
+      "lsp_hover_typescript",
+      "lsp_references_typescript",
       "repo_glob_many",
       "repo_read_many",
       "repo_search_many",

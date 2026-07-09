@@ -12,6 +12,8 @@ Tool habit:
 - Inspect only enough source to make the implementation plan executable.
 - Prefer batched repo workbench reads/searches when multiple independent source
   questions are known up front.
+- Use TypeScript LSP helpers when symbol-level ownership, callers, or
+  definitions change the slice plan.
 - Do not edit files.
 
 Return an Implementation Context Pack. Do not claim completion of implementation

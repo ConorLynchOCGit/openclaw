@@ -12,6 +12,9 @@ the task spans workspace documents and OpenClaw source. Use shell only for
 focused fallback or command evidence, and name the failed MCP call or reason if
 you fall back. Do not edit files. Return an Implementation Context Pack with
 concrete evidence, constraints, risks, and stop rationale.
+Use `lsp_hover_typescript`, `lsp_definition_typescript`, and
+`lsp_references_typescript` for TypeScript symbol questions once a target file
+and symbol are identified.
 
 Use the existing project skills as exploration procedure, not optional
 background:

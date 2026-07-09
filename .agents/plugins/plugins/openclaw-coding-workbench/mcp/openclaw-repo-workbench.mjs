@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,6 +15,7 @@ const DEFAULT_OUTPUT_BYTES = 64_000;
 const MAX_BATCH_ITEMS = 20;
 const MAX_READ_BYTES = 80_000;
 const MAX_RESULTS = 200;
+const DEFAULT_LSP_MAX_PROJECT_FILES = 80;
 const DEFAULT_EXCLUDE_GLOBS = [
   ".git/**",
   ".openclaw/**",
@@ -75,6 +76,13 @@ const GitRequestSchema = z.object({
   maxBytes: z.number().int().min(1).max(DEFAULT_OUTPUT_BYTES).optional(),
 });
 
+const LspLocationSchema = z.object({
+  file: z.string().min(1),
+  line: z.number().int().min(1),
+  character: z.number().int().min(1),
+  maxResults: z.number().int().min(1).max(MAX_RESULTS).optional(),
+});
+
 server.registerTool(
   "repo_search_many",
   {
@@ -123,6 +131,39 @@ server.registerTool(
   async (input) => result(await gitInspectMany(input)),
 );
 
+server.registerTool(
+  "lsp_hover_typescript",
+  {
+    title: "TypeScript Hover",
+    description:
+      "Return bounded TypeScript language-service hover details for a workspace file position.",
+    inputSchema: LspLocationSchema,
+  },
+  async (input) => result(await lspHoverTypescript(input)),
+);
+
+server.registerTool(
+  "lsp_definition_typescript",
+  {
+    title: "TypeScript Definition",
+    description:
+      "Return bounded TypeScript language-service definition locations for a workspace file position.",
+    inputSchema: LspLocationSchema,
+  },
+  async (input) => result(await lspDefinitionTypescript(input)),
+);
+
+server.registerTool(
+  "lsp_references_typescript",
+  {
+    title: "TypeScript References",
+    description:
+      "Return bounded TypeScript language-service references for a workspace file position.",
+    inputSchema: LspLocationSchema,
+  },
+  async (input) => result(await lspReferencesTypescript(input)),
+);
+
 if (isMainModule()) {
   const transport = new StdioServerTransport();
   await server.connect(transport);
@@ -167,6 +208,64 @@ export async function gitInspectMany(input, options = {}) {
   };
 }
 
+export async function lspHoverTypescript(input, options = {}) {
+  return await withTypeScriptLanguageService(
+    input,
+    options,
+    async ({ ts, service, file, position }) => {
+      const quickInfo = service.getQuickInfoAtPosition(file, position);
+      if (!quickInfo) {
+        return { status: "no_hover" };
+      }
+      return {
+        status: "ok",
+        display: ts.displayPartsToString(quickInfo.displayParts ?? []),
+        documentation: ts.displayPartsToString(quickInfo.documentation ?? []),
+        tags: (quickInfo.tags ?? []).map((tag) => ({
+          name: tag.name,
+          text: ts.displayPartsToString(tag.text ?? []),
+        })),
+      };
+    },
+  );
+}
+
+export async function lspDefinitionTypescript(input, options = {}) {
+  return await withTypeScriptLanguageService(
+    input,
+    options,
+    async ({ service, file, position, root }) => {
+      const definitions = service.getDefinitionAtPosition(file, position) ?? [];
+      return {
+        status: definitions.length > 0 ? "ok" : "no_definition",
+        definitions: definitions
+          .slice(0, input.maxResults ?? 40)
+          .map((definition) => formatLspSpan(root, definition.fileName, definition.textSpan)),
+        truncated: definitions.length > (input.maxResults ?? 40),
+      };
+    },
+  );
+}
+
+export async function lspReferencesTypescript(input, options = {}) {
+  return await withTypeScriptLanguageService(
+    input,
+    options,
+    async ({ service, file, position, root }) => {
+      const referenceGroups = service.findReferences(file, position) ?? [];
+      const references = referenceGroups.flatMap((group) => group.references);
+      return {
+        status: references.length > 0 ? "ok" : "no_references",
+        references: references.slice(0, input.maxResults ?? 80).map((reference) => ({
+          ...formatLspSpan(root, reference.fileName, reference.textSpan),
+          isDefinition: reference.isDefinition === true,
+        })),
+        truncated: references.length > (input.maxResults ?? 80),
+      };
+    },
+  );
+}
+
 export function resolveRepoRoot(cwd = process.cwd(), env = process.env) {
   const envRoot = env.OPENCLAW_REPO_WORKBENCH_ROOT?.trim();
   if (envRoot) {
@@ -193,6 +292,225 @@ export function resolveRepoRoot(cwd = process.cwd(), env = process.env) {
     current = parent;
   }
   throw new Error(`Unable to resolve OpenClaw repository root from ${cwd}`);
+}
+
+async function withTypeScriptLanguageService(input, options, run) {
+  const root = resolveRepoRoot(options.cwd ?? process.cwd(), options.env ?? process.env);
+  try {
+    const file = safeResolve(root, input.file);
+    const sourceText = await fs.readFile(file, "utf8");
+    const position = lineAndCharacterToPosition(sourceText, input.line, input.character);
+    const ts = await import("typescript");
+    const project = resolveTypeScriptProject(ts, root, file, options.env ?? process.env);
+    const service = createTypeScriptLanguageService(ts, project);
+    const resultPayload = await run({ ts, service, root, file, sourceText, position, project });
+    return {
+      schemaVersion: "openclaw.repo_workbench.typescript_lsp.v1",
+      root,
+      file: relative(root, file),
+      line: input.line,
+      character: input.character,
+      projectRoot: relative(root, project.projectRoot),
+      tsconfig: project.tsconfigPath ? relative(root, project.tsconfigPath) : undefined,
+      projectMode: project.mode,
+      projectFileCount: project.totalFileCount,
+      lspPartial: project.partial,
+      ...resultPayload,
+    };
+  } catch (error) {
+    return {
+      schemaVersion: "openclaw.repo_workbench.typescript_lsp.v1",
+      file: input.file,
+      line: input.line,
+      character: input.character,
+      status: "error",
+      error: formatError(error),
+    };
+  }
+}
+
+function resolveTypeScriptProject(ts, root, file, env = process.env) {
+  const configPath = findNearestTsConfig(root, path.dirname(file));
+  const projectMode = env.OPENCLAW_REPO_WORKBENCH_LSP_PROJECT_MODE?.trim();
+  if (!configPath || projectMode !== "tsconfig") {
+    return singleFileTypeScriptProject(ts, file, {
+      projectRoot: configPath ? path.dirname(configPath) : path.dirname(file),
+      tsconfigPath: configPath,
+      mode: configPath ? "single_file_bounded" : "single_file",
+      partial: Boolean(configPath),
+    });
+  }
+  const projectRoot = path.dirname(configPath);
+  const configFile = ts.readConfigFile(configPath, (filePath) => readFileSync(filePath, "utf8"));
+  if (configFile.error) {
+    throw new Error(formatTypeScriptDiagnostic(ts, configFile.error));
+  }
+  const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, projectRoot);
+  const projectFileNames = parsed.fileNames.includes(file)
+    ? parsed.fileNames
+    : [file, ...parsed.fileNames];
+  const maxProjectFiles = readLspMaxProjectFiles(env);
+  const useFullProject = projectFileNames.length <= maxProjectFiles;
+  const fileNames = useFullProject ? projectFileNames : [file];
+  return {
+    projectRoot,
+    tsconfigPath: configPath,
+    fileNames,
+    totalFileCount: projectFileNames.length,
+    mode: useFullProject ? "tsconfig" : "single_file_large_project",
+    partial: !useFullProject,
+    options: parsed.options,
+  };
+}
+
+function readLspMaxProjectFiles(env = process.env) {
+  const raw = env.OPENCLAW_REPO_WORKBENCH_LSP_MAX_PROJECT_FILES?.trim();
+  if (!raw) {
+    return DEFAULT_LSP_MAX_PROJECT_FILES;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_LSP_MAX_PROJECT_FILES;
+}
+
+function singleFileTypeScriptProject(ts, file, metadata) {
+  return {
+    projectRoot: metadata.projectRoot,
+    tsconfigPath: metadata.tsconfigPath,
+    fileNames: [file],
+    totalFileCount: 1,
+    mode: metadata.mode,
+    partial: metadata.partial,
+    options: defaultTypeScriptOptions(ts),
+  };
+}
+
+function defaultTypeScriptOptions(ts) {
+  return {
+    allowJs: true,
+    checkJs: false,
+    jsx: ts.JsxEmit.ReactJSX,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Bundler ?? ts.ModuleResolutionKind.NodeNext,
+    noLib: true,
+    noResolve: true,
+    skipLibCheck: true,
+    types: [],
+    target: ts.ScriptTarget.ES2022,
+  };
+}
+
+function findNearestTsConfig(root, startDir) {
+  let current = path.resolve(startDir);
+  while (current === root || isInside(root, current)) {
+    const candidate = path.join(current, "tsconfig.json");
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) {
+      break;
+    }
+    current = parent;
+  }
+  return undefined;
+}
+
+function createTypeScriptLanguageService(ts, project) {
+  const versions = new Map(project.fileNames.map((fileName) => [fileName, "0"]));
+  const bounded = project.mode === "single_file" || project.mode === "single_file_bounded";
+  const projectFiles = new Set(project.fileNames.map((fileName) => path.resolve(fileName)));
+  const host = {
+    getCompilationSettings: () => project.options,
+    getCurrentDirectory: () => project.projectRoot,
+    getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
+    getScriptFileNames: () => project.fileNames,
+    getScriptVersion: (fileName) => versions.get(fileName) ?? "0",
+    getScriptSnapshot: (fileName) => {
+      const resolved = path.resolve(fileName);
+      if (bounded && !projectFiles.has(resolved)) {
+        return undefined;
+      }
+      if (!existsSync(resolved)) {
+        return undefined;
+      }
+      return ts.ScriptSnapshot.fromString(readFileSync(resolved, "utf8"));
+    },
+    fileExists: (fileName) => {
+      const resolved = path.resolve(fileName);
+      return bounded ? projectFiles.has(resolved) : ts.sys.fileExists(fileName);
+    },
+    readFile: (fileName) => {
+      const resolved = path.resolve(fileName);
+      return bounded && !projectFiles.has(resolved) ? undefined : ts.sys.readFile(resolved);
+    },
+    readDirectory: bounded ? () => [] : ts.sys.readDirectory,
+    directoryExists: bounded ? () => false : ts.sys.directoryExists,
+    getDirectories: bounded ? () => [] : ts.sys.getDirectories,
+  };
+  return ts.createLanguageService(host, ts.createDocumentRegistry());
+}
+
+function lineAndCharacterToPosition(sourceText, line, character) {
+  const lines = sourceText.split(/\r?\n/u);
+  if (line > lines.length) {
+    throw new Error(`line ${line} is outside file with ${lines.length} lines`);
+  }
+  const targetLine = lines[line - 1] ?? "";
+  if (character > targetLine.length + 1) {
+    throw new Error(
+      `character ${character} is outside line ${line} with ${targetLine.length + 1} columns`,
+    );
+  }
+  let position = 0;
+  for (let index = 0; index < line - 1; index += 1) {
+    position += lines[index].length + 1;
+  }
+  return position + character - 1;
+}
+
+function formatLspSpan(root, fileName, textSpan) {
+  const resolved = path.resolve(fileName);
+  const location = isInside(root, resolved)
+    ? {
+        path: relative(root, resolved),
+        excluded: isPathExcluded(root, resolved),
+      }
+    : {
+        path: resolved,
+        outsideRoot: true,
+      };
+  let line = 1;
+  let character = 1;
+  try {
+    const sourceText = readFileSync(resolved, "utf8");
+    const lineAndCharacter = positionToLineAndCharacter(sourceText, textSpan.start);
+    line = lineAndCharacter.line;
+    character = lineAndCharacter.character;
+  } catch {
+    // Keep the file path even when a generated or external file cannot be read.
+  }
+  return {
+    ...location,
+    line,
+    character,
+    length: textSpan.length,
+  };
+}
+
+function positionToLineAndCharacter(sourceText, position) {
+  const prefix = sourceText.slice(0, position);
+  const lines = prefix.split(/\r?\n/u);
+  return {
+    line: lines.length,
+    character: (lines[lines.length - 1]?.length ?? 0) + 1,
+  };
+}
+
+function formatTypeScriptDiagnostic(ts, diagnostic) {
+  const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
+  return diagnostic.file
+    ? `${diagnostic.file.fileName}:${diagnostic.start ?? 0}: ${message}`
+    : message;
 }
 
 function resolveSourceRoot(root, env = process.env) {
@@ -427,15 +745,23 @@ function safeResolve(root, requestedPath, options = {}) {
 }
 
 function assertNotExcluded(root, resolved) {
+  if (isPathExcluded(root, resolved)) {
+    const rel = toPosix(relative(root, resolved));
+    throw new Error(`path is excluded from workbench access by default: ${rel}`);
+  }
+}
+
+function isPathExcluded(root, resolved) {
   const rel = toPosix(relative(root, resolved));
   if (!rel || rel === ".") {
-    return;
+    return false;
   }
   for (const glob of DEFAULT_EXCLUDE_GLOBS) {
     if (matchesExcludedGlob(rel, glob)) {
-      throw new Error(`path is excluded from workbench access by default: ${rel}`);
+      return true;
     }
   }
+  return false;
 }
 
 function matchesExcludedGlob(rel, glob) {
