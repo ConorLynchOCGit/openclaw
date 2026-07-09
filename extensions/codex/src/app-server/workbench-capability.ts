@@ -55,6 +55,15 @@ export type CodexWorkbenchConfigRead = CodexWorkbenchMethodStatus & {
   agentKeys?: string[];
 };
 
+export type CodexWorkbenchRoots = {
+  executionCwd: string;
+  workspaceRoot: string;
+  sourceRoot?: string;
+  workbenchRoot: string;
+  pluginRoot?: string;
+  mcpServers: string[];
+};
+
 export type CodexProjectConfigCapability = {
   source: ".codex/config.toml";
   present: boolean;
@@ -91,6 +100,7 @@ export type CodexWorkbenchCapabilityReport = {
     sandbox?: string;
     approvalPolicy?: string;
   };
+  codexWorkbench: CodexWorkbenchRoots;
   openclawDynamicTools: {
     count: number;
     names: string[];
@@ -180,6 +190,11 @@ export async function buildCodexWorkbenchCapabilityReport(params: {
     ...(params.sandbox ? { sandbox: params.sandbox } : {}),
     ...(params.approvalPolicy ? { approvalPolicy: params.approvalPolicy } : {}),
   };
+  const codexWorkbench = await buildCodexWorkbenchRoots({
+    cwd: params.cwd,
+    workspaceDir: params.workspaceDir,
+    mcpServers,
+  });
 
   return {
     schemaVersion: "openclaw.codex-workbench-capability.v1",
@@ -187,6 +202,7 @@ export async function buildCodexWorkbenchCapabilityReport(params: {
     observedAt: Date.now(),
     appServer,
     thread,
+    codexWorkbench,
     openclawDynamicTools: {
       count: params.openclawDynamicToolNames.length,
       names: [...params.openclawDynamicToolNames].toSorted((left, right) =>
@@ -249,6 +265,43 @@ function buildGeneratedSchemaMethodPresence(): CodexWorkbenchMethodPresence[] {
     source: "installed_app_server_schema" as const,
     expectedOwner: "codex_app_server" as const,
   }));
+}
+
+async function buildCodexWorkbenchRoots(params: {
+  cwd: string;
+  workspaceDir: string;
+  mcpServers: CodexWorkbenchMethodStatus & { count?: number; names?: string[] };
+}): Promise<CodexWorkbenchRoots> {
+  const sourceRoot = await resolveExistingDirectory(
+    path.join(params.workspaceDir, "src", "openclaw"),
+  );
+  return {
+    executionCwd: params.cwd,
+    workspaceRoot: params.workspaceDir,
+    ...(sourceRoot ? { sourceRoot } : {}),
+    workbenchRoot: params.workspaceDir,
+    ...(sourceRoot
+      ? {
+          pluginRoot: path.join(
+            sourceRoot,
+            ".agents",
+            "plugins",
+            "plugins",
+            "openclaw-coding-workbench",
+          ),
+        }
+      : {}),
+    mcpServers: params.mcpServers.status === "ok" ? (params.mcpServers.names ?? []) : [],
+  };
+}
+
+async function resolveExistingDirectory(candidate: string): Promise<string | undefined> {
+  try {
+    const stat = await fs.stat(candidate);
+    return stat.isDirectory() ? candidate : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function readCodexProjectConfig(workspaceDir: string): Promise<CodexProjectConfigCapability> {

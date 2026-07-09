@@ -17,3 +17,7 @@ enabled_tools = [
   "repo_glob_many",
   "git_inspect_many",
 ]
+
+[mcp_servers.openclaw_repo_workbench.env]
+OPENCLAW_REPO_WORKBENCH_ROOT = "/home/node/.openclaw/workspace"
+OPENCLAW_REPO_WORKBENCH_SOURCE_ROOT = "/home/node/.openclaw/workspace/src/openclaw"

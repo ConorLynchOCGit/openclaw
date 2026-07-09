@@ -10,6 +10,7 @@ import { buildCodexWorkbenchCapabilityReport } from "./workbench-capability.js";
 describe("Codex workbench capability report", () => {
   it("records app-server inventory, project config, and custom agents", async () => {
     const workspaceDir = await makeWorkspace({
+      sourceRoot: true,
       configToml: [
         "[features]",
         "multi_agent = true",
@@ -66,7 +67,12 @@ describe("Codex workbench capability report", () => {
         };
       }
       if (method === "mcpServerStatus/list") {
-        return { data: [{ name: "openai-docs", tools: { search: {} } }] };
+        return {
+          data: [
+            { name: "openai-docs", tools: { search: {} } },
+            { name: "openclaw_repo_workbench", tools: { repo_search_many: {} } },
+          ],
+        };
       }
       if (method === "skills/list") {
         return {
@@ -148,6 +154,22 @@ describe("Codex workbench capability report", () => {
       sandbox: "workspace-write",
       approvalPolicy: "never",
     });
+    expect(report.codexWorkbench).toEqual({
+      executionCwd: workspaceDir,
+      workspaceRoot: workspaceDir,
+      sourceRoot: path.join(workspaceDir, "src", "openclaw"),
+      workbenchRoot: workspaceDir,
+      pluginRoot: path.join(
+        workspaceDir,
+        "src",
+        "openclaw",
+        ".agents",
+        "plugins",
+        "plugins",
+        "openclaw-coding-workbench",
+      ),
+      mcpServers: ["openai-docs", "openclaw_repo_workbench"],
+    });
     expect(report.openclawDynamicTools).toEqual({ count: 0, names: [] });
     expect(report.codexNativeTools).toMatchObject({
       mode: "app-server-native",
@@ -210,8 +232,8 @@ describe("Codex workbench capability report", () => {
     });
     expect(report.controlMethods.mcpServerStatusList).toMatchObject({
       status: "ok",
-      count: 1,
-      names: ["openai-docs"],
+      count: 2,
+      names: ["openai-docs", "openclaw_repo_workbench"],
     });
     expect(report.controlMethods.skillsList).toMatchObject({
       status: "ok",
@@ -324,6 +346,7 @@ describe("Codex workbench capability report", () => {
 async function makeWorkspace(params: {
   configToml?: string;
   agents?: Record<string, string>;
+  sourceRoot?: boolean;
 }): Promise<string> {
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-codex-workbench-"));
   if (params.configToml !== undefined) {
@@ -338,6 +361,9 @@ async function makeWorkspace(params: {
         fs.writeFile(path.join(agentsDir, file), content),
       ),
     );
+  }
+  if (params.sourceRoot) {
+    await fs.mkdir(path.join(workspaceDir, "src", "openclaw"), { recursive: true });
   }
   return workspaceDir;
 }

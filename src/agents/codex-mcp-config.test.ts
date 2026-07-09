@@ -215,7 +215,7 @@ describe("loadCodexBundleMcpThreadConfig", () => {
     expect(loaded.evaluated).toBe(true);
   });
 
-  it("projects the Codex-native Coding workbench MCP server for coding agents", () => {
+  it("projects a compatibility Coding workbench MCP server for coding agents without a .codex declaration", () => {
     const workspaceDir = makeOpenClawRepoFixture();
 
     const loaded = loadCodexBundleMcpThreadConfig({
@@ -250,7 +250,33 @@ describe("loadCodexBundleMcpThreadConfig", () => {
     expect(loaded.fingerprint).toMatch(/^[a-f0-9]{64}$/);
   });
 
-  it("resolves the Coding workbench MCP server from the live runtime workspace layout", () => {
+  it("does not project the Coding workbench MCP server when .codex/config.toml declares it", () => {
+    const workspaceDir = makeOpenClawRepoFixture({ nested: true });
+    fs.mkdirSync(path.join(workspaceDir, ".codex"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspaceDir, ".codex", "config.toml"),
+      [
+        "[mcp_servers.openclaw_repo_workbench]",
+        'command = "node"',
+        'args = ["src/openclaw/.agents/plugins/plugins/openclaw-coding-workbench/mcp/openclaw-repo-workbench.mjs"]',
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const loaded = loadCodexBundleMcpThreadConfig({
+      workspaceDir,
+      agentId: "coding",
+      toolsEnabled: true,
+      disableTools: true,
+    });
+
+    expect(loaded.configPatch).toBeUndefined();
+    expect(loaded.fingerprint).toBeUndefined();
+    expect(loaded.evaluated).toBe(true);
+  });
+
+  it("resolves the compatibility Coding workbench MCP server from the live runtime workspace layout", () => {
     const workspaceDir = makeOpenClawRepoFixture({ nested: true });
 
     const loaded = loadCodexBundleMcpThreadConfig({
@@ -271,7 +297,8 @@ describe("loadCodexBundleMcpThreadConfig", () => {
         "openclaw-coding-workbench",
       ),
       env: {
-        OPENCLAW_REPO_WORKBENCH_ROOT: path.join(workspaceDir, "src", "openclaw"),
+        OPENCLAW_REPO_WORKBENCH_ROOT: workspaceDir,
+        OPENCLAW_REPO_WORKBENCH_SOURCE_ROOT: path.join(workspaceDir, "src", "openclaw"),
       },
     });
   });

@@ -1,27 +1,9 @@
 const LIVE_AGENT_WORKSPACE_ROOT = "/home/node/.openclaw/workspace";
 
 const HOST_PATH_PATTERN =
-  /\/(?:srv\/openclaw-next\/(?:home-repo|src\/openclaw|artifacts)|root\/services\/openclaw-roles\/live)(?:\/[^\s"'`<>()\]\[]*)?/g;
+  /\/(?:srv\/openclaw-next\/(?:home-repo|src\/openclaw|artifacts)|home\/node\/\.openclaw\/workspace)(?:\/[^\s"'`<>()\]\[]*)?/g;
 
-const DISALLOWED_HOST_PATH_PATTERN = /\/(?:srv|root)(?:\/[^\s"'`<>()\]\[]*)?/g;
-
-const ROOT_WORKSPACE_RELATIVE_PREFIXES = [
-  ".agents/",
-  ".codex/",
-  "artifacts/",
-  "business-ops/",
-  "concepts/",
-  "config/",
-  "decisions/",
-  "docs/",
-  "plans/",
-  "prompts/",
-  "templates/",
-];
-
-function normalizePosixPath(value: string): string {
-  return value.replaceAll("\\", "/").replace(/\/+/g, "/");
-}
+const DISALLOWED_HOST_PATH_PATTERN = /\/(?:srv|root|app)(?:\/[^\s"'`<>()\]\[]*)?/g;
 
 function stripTrailingPathPunctuation(value: string): { core: string; suffix: string } {
   const match = /[.,;:]+$/u.exec(value);
@@ -36,17 +18,6 @@ function stripTrailingPathPunctuation(value: string): { core: string; suffix: st
 
 function trimLeadingSlash(value: string): string {
   return value.replace(/^\/+/u, "");
-}
-
-function rootAuthoringPathToLiveRelative(relativePath: string): string {
-  const normalized = trimLeadingSlash(normalizePosixPath(relativePath));
-  if (!normalized) {
-    return ".";
-  }
-  if (ROOT_WORKSPACE_RELATIVE_PREFIXES.some((prefix) => normalized.startsWith(prefix))) {
-    return normalized;
-  }
-  return `src/openclaw/${normalized}`;
 }
 
 export function renderLiveAgentPathReference(value: string): string | undefined {
@@ -74,14 +45,6 @@ export function renderLiveAgentPathReference(value: string): string | undefined 
   }
   if (core.startsWith("/srv/openclaw-next/artifacts/")) {
     return `artifacts/${trimLeadingSlash(core.slice("/srv/openclaw-next/artifacts/".length))}${suffix}`;
-  }
-  if (core === "/root/services/openclaw-roles/live") {
-    return `src/openclaw${suffix}`;
-  }
-  if (core.startsWith("/root/services/openclaw-roles/live/")) {
-    return `${rootAuthoringPathToLiveRelative(
-      core.slice("/root/services/openclaw-roles/live/".length),
-    )}${suffix}`;
   }
   if (core === LIVE_AGENT_WORKSPACE_ROOT || core.startsWith(`${LIVE_AGENT_WORKSPACE_ROOT}/`)) {
     return `${trimLeadingSlash(core.slice(LIVE_AGENT_WORKSPACE_ROOT.length)) || "."}${suffix}`;

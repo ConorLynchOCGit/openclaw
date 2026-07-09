@@ -562,6 +562,50 @@ describe("runCodexAppServerAttempt", () => {
     });
   });
 
+  it("forces Coding Codex execution cwd to the live workspace instead of /app", async () => {
+    const sessionFile = path.join(tempDir, "coding-workspace-cwd-session.jsonl");
+    const workspaceDir = path.join(tempDir, "coding-live-workspace");
+    await fs.mkdir(path.join(workspaceDir, ".codex", "agents"), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir, ".codex", "config.toml"),
+      [
+        "[features]",
+        "multi_agent = true",
+        "",
+        "[agents]",
+        "max_threads = 6",
+        "max_depth = 2",
+        "",
+      ].join("\n"),
+    );
+    const { requests, waitForMethod, completeTurn } = createStartedThreadHarness();
+    const params = createParams(sessionFile, workspaceDir);
+    params.agentId = "coding";
+    params.sessionKey = "agent:coding:session-cwd";
+    params.cwd = "/app";
+    params.disableTools = true;
+    params.runtimePlan = createCodexRuntimePlanFixture();
+
+    const run = runCodexAppServerAttempt(params, {
+      pluginConfig: {
+        appServer: {
+          codeModeOnly: true,
+        },
+        codexPlugins: {
+          enabled: false,
+        },
+      },
+    });
+    await waitForMethod("turn/start");
+    await completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+    await run;
+
+    const startRequest = requests.find((request) => request.method === "thread/start");
+    const turnRequest = requests.find((request) => request.method === "turn/start");
+    expect((startRequest?.params as { cwd?: string } | undefined)?.cwd).toBe(workspaceDir);
+    expect((turnRequest?.params as { cwd?: string } | undefined)?.cwd).toBe(workspaceDir);
+  });
+
   it("recreates cached Codex workspace directories after cleanup removes them", async () => {
     const workspaceDir = path.join(tempDir, "cached-workspace");
 

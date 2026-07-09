@@ -15,6 +15,31 @@ const DEFAULT_OUTPUT_BYTES = 64_000;
 const MAX_BATCH_ITEMS = 20;
 const MAX_READ_BYTES = 80_000;
 const MAX_RESULTS = 200;
+const DEFAULT_EXCLUDE_GLOBS = [
+  ".git/**",
+  ".openclaw/**",
+  "artifacts/**",
+  "state/**",
+  "transcripts/**",
+  "sessions/**",
+  "logs/**",
+  "node_modules/**",
+  "dist/**",
+  "build/**",
+  "coverage/**",
+  ".turbo/**",
+  ".next/**",
+  "*.log",
+  "*.jsonl",
+  ".env",
+  ".env.*",
+  "**/.env",
+  "**/.env.*",
+  "**/*secret*",
+  "**/*token*",
+  "**/*credential*",
+  "**/*provider-prompt*",
+];
 
 const server = new McpServer({
   name: "openclaw_repo_workbench",
@@ -127,8 +152,19 @@ export async function repoGlobMany(input, options = {}) {
 export async function gitInspectMany(input, options = {}) {
   const root = resolveRepoRoot(options.cwd ?? process.cwd(), options.env ?? process.env);
   const requests = input.requests.slice(0, MAX_BATCH_ITEMS);
-  const results = await Promise.all(requests.map((request) => runGitRequest(root, request)));
-  return { schemaVersion: "openclaw.repo_workbench.git_inspect_many.v1", root, results };
+  const roots = resolveGitRoots(root, options.env ?? process.env);
+  const expandedRequests = requests.flatMap((request) =>
+    expandGitRequestRoots(root, roots, request).map((gitRoot) => ({ request, gitRoot })),
+  );
+  const results = await Promise.all(
+    expandedRequests.map(({ request, gitRoot }) => runGitRequest(root, gitRoot, request)),
+  );
+  return {
+    schemaVersion: "openclaw.repo_workbench.git_inspect_many.v1",
+    root,
+    gitRoots: roots.map((gitRoot) => relative(root, gitRoot)),
+    results,
+  };
 }
 
 export function resolveRepoRoot(cwd = process.cwd(), env = process.env) {
@@ -159,6 +195,41 @@ export function resolveRepoRoot(cwd = process.cwd(), env = process.env) {
   throw new Error(`Unable to resolve OpenClaw repository root from ${cwd}`);
 }
 
+function resolveSourceRoot(root, env = process.env) {
+  const envSourceRoot = env.OPENCLAW_REPO_WORKBENCH_SOURCE_ROOT?.trim();
+  if (envSourceRoot) {
+    const resolved = path.resolve(envSourceRoot);
+    if (isInside(root, resolved) && existsSync(path.join(resolved, ".git"))) {
+      return resolved;
+    }
+  }
+  const nested = path.join(root, "src", "openclaw");
+  return existsSync(path.join(nested, ".git")) ? nested : undefined;
+}
+
+function resolveGitRoots(root, env = process.env) {
+  const roots = [];
+  if (existsSync(path.join(root, ".git"))) {
+    roots.push(root);
+  }
+  const sourceRoot = resolveSourceRoot(root, env);
+  if (sourceRoot && !roots.includes(sourceRoot)) {
+    roots.push(sourceRoot);
+  }
+  return roots.length > 0 ? roots : [root];
+}
+
+function expandGitRequestRoots(root, gitRoots, request) {
+  if (request.path) {
+    const requested = safeResolve(root, request.path, { allowExcluded: true });
+    const containingRoot = gitRoots
+      .filter((gitRoot) => requested === gitRoot || requested.startsWith(`${gitRoot}${path.sep}`))
+      .toSorted((left, right) => right.length - left.length)[0];
+    return [containingRoot ?? root];
+  }
+  return gitRoots;
+}
+
 async function runSearchQuery(root, query) {
   try {
     const searchRoot = safeResolve(root, query.path ?? ".");
@@ -182,6 +253,9 @@ async function runSearchQuery(root, query) {
     }
     if (query.glob) {
       args.push("--glob", query.glob);
+    }
+    for (const excludeGlob of DEFAULT_EXCLUDE_GLOBS) {
+      args.push("--glob", `!${excludeGlob}`);
     }
     args.push("--", query.pattern, searchRoot);
     const output = await runCommand("rg", args, root, DEFAULT_OUTPUT_BYTES);
@@ -234,12 +308,12 @@ async function runGlobRequest(root, request) {
   try {
     const searchRoot = safeResolve(root, request.path ?? ".");
     const maxResults = request.maxResults ?? 100;
-    const output = await runCommand(
-      "rg",
-      ["--files", searchRoot, "--glob", request.pattern],
-      root,
-      DEFAULT_OUTPUT_BYTES,
-    );
+    const args = ["--files", "--glob", request.pattern];
+    for (const excludeGlob of DEFAULT_EXCLUDE_GLOBS) {
+      args.push("--glob", `!${excludeGlob}`);
+    }
+    args.push(searchRoot);
+    const output = await runCommand("rg", args, root, DEFAULT_OUTPUT_BYTES);
     const files = output.stdout
       .split(/\r?\n/u)
       .filter(Boolean)
@@ -258,10 +332,16 @@ async function runGlobRequest(root, request) {
   }
 }
 
-async function runGitRequest(root, request) {
+async function runGitRequest(root, gitRoot, request) {
   try {
     const maxBytes = request.maxBytes ?? 48_000;
-    const pathArgs = request.path ? ["--", safeResolve(root, request.path)] : [];
+    const requestedPath = request.path
+      ? safeResolve(root, request.path, { allowExcluded: true })
+      : undefined;
+    const gitRelativePath = requestedPath
+      ? path.relative(gitRoot, requestedPath) || "."
+      : undefined;
+    const pathArgs = gitRelativePath ? ["--", gitRelativePath] : [];
     let args;
     switch (request.kind) {
       case "status":
@@ -281,13 +361,14 @@ async function runGitRequest(root, request) {
     }
     const output = await runCommand(
       "git",
-      ["-c", `safe.directory=${root}`, ...args],
-      root,
+      ["-c", `safe.directory=${gitRoot}`, ...args],
+      gitRoot,
       maxBytes,
     );
     const cappedStdout = capString(output.stdout, maxBytes);
     return {
       kind: request.kind,
+      repoRoot: relative(root, gitRoot),
       path: request.path ?? ".",
       status: output.exitCode === 0 ? "ok" : "error",
       stdout: cappedStdout.value,
@@ -334,16 +415,81 @@ function outputResult(exitCode, stdout, stderr, maxBytes) {
   };
 }
 
-function safeResolve(root, requestedPath) {
+function safeResolve(root, requestedPath, options = {}) {
   const resolved = path.resolve(root, requestedPath);
-  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
+  if (!isInside(root, resolved)) {
     throw new Error(`path escapes repository root: ${requestedPath}`);
+  }
+  if (options.allowExcluded !== true) {
+    assertNotExcluded(root, resolved);
   }
   return resolved;
 }
 
+function assertNotExcluded(root, resolved) {
+  const rel = toPosix(relative(root, resolved));
+  if (!rel || rel === ".") {
+    return;
+  }
+  for (const glob of DEFAULT_EXCLUDE_GLOBS) {
+    if (matchesExcludedGlob(rel, glob)) {
+      throw new Error(`path is excluded from workbench access by default: ${rel}`);
+    }
+  }
+}
+
+function matchesExcludedGlob(rel, glob) {
+  const normalized = toPosix(rel);
+  const pattern = toPosix(glob);
+  if (pattern.endsWith("/**")) {
+    const prefix = pattern.slice(0, -3);
+    return normalized === prefix || normalized.startsWith(`${prefix}/`);
+  }
+  if (pattern.startsWith("**/") && pattern.endsWith("/**")) {
+    const segment = pattern.slice(3, -3);
+    return normalized.includes(`/${segment}/`) || normalized.startsWith(`${segment}/`);
+  }
+  if (pattern.startsWith("**/*")) {
+    const needle = pattern.slice(4).replaceAll("*", "").toLowerCase();
+    return needle.length > 0 && normalized.toLowerCase().includes(needle);
+  }
+  if (pattern.includes("*")) {
+    const regex = new RegExp(
+      `^${pattern
+        .split("*")
+        .map((part) => escapeRegExp(part))
+        .join(".*")}$`,
+      "iu",
+    );
+    const basenameRegex = new RegExp(
+      `(^|/)${pattern
+        .split("*")
+        .map((part) => escapeRegExp(part))
+        .join(".*")}$`,
+      "iu",
+    );
+    return regex.test(normalized) || basenameRegex.test(normalized);
+  }
+  if (pattern.startsWith("*.")) {
+    return normalized.endsWith(pattern.slice(1));
+  }
+  return normalized === pattern || normalized.endsWith(`/${pattern}`);
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+function isInside(root, resolved) {
+  return resolved === root || resolved.startsWith(`${root}${path.sep}`);
+}
+
 function relative(root, file) {
   return path.relative(root, file) || ".";
+}
+
+function toPosix(value) {
+  return value.replaceAll(path.sep, "/");
 }
 
 function capString(value, maxBytes) {

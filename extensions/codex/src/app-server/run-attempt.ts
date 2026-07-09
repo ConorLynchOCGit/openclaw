@@ -266,6 +266,7 @@ const CODEX_NATIVE_HOOK_RELAY_RENEW_INTERVAL_MS = 60_000;
 const CODEX_APP_SERVER_PROJECTED_CHARS_PER_TOKEN = 4;
 const CODEX_APP_SERVER_ACTIVE_NATIVE_TURN_WAIT_TIMEOUT_MS = 30_000;
 const ensuredCodexWorkspaceDirs = new Set<string>();
+const CODEX_NATIVE_CODING_EXECUTION_AGENT_IDS = new Set(["coding", "execution-coding"]);
 
 function estimateCodexAppServerProjectedTurnTokens(params: {
   prompt: string;
@@ -297,6 +298,11 @@ async function ensureCodexWorkspaceDirOnce(workspaceDir: string): Promise<void> 
   // the directory between attempts.
   await fs.mkdir(normalized, { recursive: true });
   ensuredCodexWorkspaceDirs.add(normalized);
+}
+
+function isCodexNativeCodingExecutionAgent(agentId: string | undefined): boolean {
+  const normalized = agentId?.trim().toLowerCase();
+  return normalized ? CODEX_NATIVE_CODING_EXECUTION_AGENT_IDS.has(normalized) : false;
 }
 
 function emitCodexAppServerEvent(
@@ -494,12 +500,16 @@ export async function runCodexAppServerAttempt(
       : sandbox.workspaceDir
     : resolvedWorkspace;
   const requestedCwd = params.cwd ? resolveUserPath(params.cwd) : undefined;
-  if (sandbox?.enabled && requestedCwd && requestedCwd !== resolvedWorkspace) {
+  const codingExecutionUsesWorkspaceCwd = isCodexNativeCodingExecutionAgent(sessionAgentId);
+  const effectiveRequestedCwd = codingExecutionUsesWorkspaceCwd ? undefined : requestedCwd;
+  if (sandbox?.enabled && effectiveRequestedCwd && effectiveRequestedCwd !== resolvedWorkspace) {
     throw new Error(
       "cwd override is not supported for sandboxed Codex app-server runs; omit cwd or use the agent workspace as cwd",
     );
   }
-  const effectiveCwd = sandbox?.enabled ? effectiveWorkspace : (requestedCwd ?? effectiveWorkspace);
+  const effectiveCwd = sandbox?.enabled
+    ? effectiveWorkspace
+    : (effectiveRequestedCwd ?? effectiveWorkspace);
   await ensureCodexWorkspaceDirOnce(effectiveWorkspace);
   preDynamicStartupStages.mark("effective-workspace");
   let policyAppServer = resolveCodexAppServerForOpenClawToolPolicy({

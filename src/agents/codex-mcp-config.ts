@@ -183,7 +183,8 @@ function isCodingAgentId(agentId: string | undefined): boolean {
 
 function resolveCodingWorkbenchPaths(workspaceDir: string):
   | {
-      repoRoot: string;
+      workbenchRoot: string;
+      sourceRoot?: string;
       pluginRoot: string;
       mcpScript: string;
     }
@@ -191,11 +192,13 @@ function resolveCodingWorkbenchPaths(workspaceDir: string):
   const workspace = path.resolve(workspaceDir);
   const candidates = [
     {
-      repoRoot: workspace,
+      workbenchRoot: workspace,
+      sourceRoot: workspace,
       pluginRoot: path.join(workspace, OPENCLAW_CODING_WORKBENCH_PLUGIN_RELATIVE_ROOT),
     },
     {
-      repoRoot: path.join(workspace, "src", "openclaw"),
+      workbenchRoot: workspace,
+      sourceRoot: path.join(workspace, "src", "openclaw"),
       pluginRoot: path.join(
         workspace,
         "src",
@@ -209,9 +212,10 @@ function resolveCodingWorkbenchPaths(workspaceDir: string):
       candidate.pluginRoot,
       OPENCLAW_CODING_WORKBENCH_MCP_RELATIVE_SCRIPT,
     );
+    const sourceRoot = candidate.sourceRoot;
     if (
-      fs.existsSync(path.join(candidate.repoRoot, "openclaw.mjs")) &&
-      fs.existsSync(path.join(candidate.repoRoot, "package.json")) &&
+      fs.existsSync(path.join(sourceRoot, "openclaw.mjs")) &&
+      fs.existsSync(path.join(sourceRoot, "package.json")) &&
       fs.existsSync(path.join(candidate.pluginRoot, ".codex-plugin", "plugin.json")) &&
       fs.existsSync(mcpScript)
     ) {
@@ -221,10 +225,22 @@ function resolveCodingWorkbenchPaths(workspaceDir: string):
   return undefined;
 }
 
+function workspaceCodexConfigDeclaresCodingWorkbench(workspaceDir: string): boolean {
+  try {
+    const config = fs.readFileSync(path.join(workspaceDir, ".codex", "config.toml"), "utf8");
+    return /^\s*\[mcp_servers\.openclaw_repo_workbench\]\s*$/mu.test(config);
+  } catch {
+    return false;
+  }
+}
+
 function buildCodingWorkbenchMcpServer(
   params: LoadCodexBundleMcpThreadConfigParams,
 ): BundleMcpServerConfig | undefined {
   if (!isCodingAgentId(params.agentId)) {
+    return undefined;
+  }
+  if (workspaceCodexConfigDeclaresCodingWorkbench(params.workspaceDir)) {
     return undefined;
   }
   const paths = resolveCodingWorkbenchPaths(params.workspaceDir);
@@ -236,7 +252,10 @@ function buildCodingWorkbenchMcpServer(
     args: [paths.mcpScript],
     cwd: paths.pluginRoot,
     env: {
-      OPENCLAW_REPO_WORKBENCH_ROOT: paths.repoRoot,
+      OPENCLAW_REPO_WORKBENCH_ROOT: paths.workbenchRoot,
+      ...(paths.sourceRoot && paths.sourceRoot !== paths.workbenchRoot
+        ? { OPENCLAW_REPO_WORKBENCH_SOURCE_ROOT: paths.sourceRoot }
+        : {}),
     },
     codex: {
       defaultToolsApprovalMode: "approve",
