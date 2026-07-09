@@ -23,6 +23,17 @@ export type CodexWorkbenchMethodStatus =
   | { status: "failed"; message: string };
 type CodexWorkbenchMethodFailureStatus = Exclude<CodexWorkbenchMethodStatus, { status: "ok" }>;
 
+export const CODEX_WORKBENCH_CAPABILITY_CONTROL_METHODS = Object.freeze([
+  "model/list",
+  "modelProvider/capabilities/read",
+  "config/read",
+  "experimentalFeature/list",
+  "mcpServerStatus/list",
+  "skills/list",
+  "plugin/list",
+  "app/list",
+] as const);
+
 export type CodexWorkbenchMethodPresence = {
   method: string;
   source: "installed_app_server_schema";
@@ -152,7 +163,9 @@ export async function buildCodexWorkbenchCapabilityReport(params: {
     probePluginList(params),
     probeAppList(params),
   ]);
-  const appServerVersion = params.client.getServerVersion();
+  const appServerVersion = (
+    params.client as { getServerVersion?: () => string | undefined }
+  ).getServerVersion?.();
   const appServer = {
     transport: params.appServerStart.transport,
     initialized: Boolean(appServerVersion),

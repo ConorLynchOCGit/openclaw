@@ -68,9 +68,37 @@ import { readCodexAppServerBinding, writeCodexAppServerBinding } from "./session
 import * as sharedClientModule from "./shared-client.js";
 import { createCodexTestModel } from "./test-support.js";
 import { buildTurnStartParams, startOrResumeThread } from "./thread-lifecycle.js";
+import { CODEX_WORKBENCH_CAPABILITY_CONTROL_METHODS } from "./workbench-capability.js";
+
+const CODEX_WORKBENCH_CAPABILITY_CONTROL_METHOD_SET = new Set<string>(
+  CODEX_WORKBENCH_CAPABILITY_CONTROL_METHODS,
+);
 
 function flushDiagnosticEvents() {
   return waitForDiagnosticEventsDrained();
+}
+
+function requestMethodsExcludingWorkbenchCapability(
+  requests: Array<{ method: string; params: unknown }>,
+): string[] {
+  return requests
+    .filter((request) => !isWorkbenchCapabilityControlRequest(request))
+    .map((request) => request.method);
+}
+
+function methodsExcludingWorkbenchCapability(methods: string[]): string[] {
+  return methods.filter((method) => !CODEX_WORKBENCH_CAPABILITY_CONTROL_METHOD_SET.has(method));
+}
+
+function isWorkbenchCapabilityControlRequest(request: {
+  method: string;
+  params: unknown;
+}): boolean {
+  if (request.method === "app/list") {
+    const params = request.params as { forceRefetch?: unknown } | undefined;
+    return params?.forceRefetch === false;
+  }
+  return CODEX_WORKBENCH_CAPABILITY_CONTROL_METHOD_SET.has(request.method);
 }
 
 function openSocket(url: string): Promise<WebSocket> {
@@ -467,7 +495,7 @@ describe("runCodexAppServerAttempt", () => {
         "",
         "[agents]",
         "max_threads = 6",
-        "max_depth = 1",
+        "max_depth = 2",
         "",
       ].join("\n"),
     );
@@ -529,7 +557,7 @@ describe("runCodexAppServerAttempt", () => {
       schemaVersion: "openclaw.codex-workbench-capability.v1",
       owner: "codex_app_server",
       openclawDynamicTools: { count: 0, names: [] },
-      codexProjectConfig: { present: true, multiAgent: true, maxThreads: 6, maxDepth: 1 },
+      codexProjectConfig: { present: true, multiAgent: true, maxThreads: 6, maxDepth: 2 },
       customAgents: { count: 1, names: ["codex_reviewer"], hasCodexReviewer: true },
     });
   });
@@ -3170,7 +3198,7 @@ describe("runCodexAppServerAttempt", () => {
       "invalid image_url base64 payload",
     );
 
-    expect(harness.requests.map((request) => request.method)).toEqual([
+    expect(requestMethodsExcludingWorkbenchCapability(harness.requests)).toEqual([
       "thread/start",
       "turn/start",
       "thread/unsubscribe",
@@ -3197,7 +3225,7 @@ describe("runCodexAppServerAttempt", () => {
       "unsupported image input",
     );
 
-    expect(harness.requests.map((request) => request.method)).toEqual([
+    expect(requestMethodsExcludingWorkbenchCapability(harness.requests)).toEqual([
       "thread/resume",
       "turn/start",
       "thread/unsubscribe",
@@ -3260,7 +3288,7 @@ describe("runCodexAppServerAttempt", () => {
     await harness.completeTurn({ threadId: "thread-existing", turnId: "turn-1" });
     await run;
 
-    expect(harness.requests.map((request) => request.method)).toEqual([
+    expect(requestMethodsExcludingWorkbenchCapability(harness.requests)).toEqual([
       "thread/resume",
       "turn/start",
       "turn/start",
@@ -3295,7 +3323,9 @@ describe("runCodexAppServerAttempt", () => {
     await new Promise((resolve) => {
       setTimeout(resolve, 20);
     });
-    expect(harness.requests.map((request) => request.method)).not.toContain("turn/start");
+    expect(requestMethodsExcludingWorkbenchCapability(harness.requests)).not.toContain(
+      "turn/start",
+    );
 
     await harness.notify({
       method: "turn/completed",
@@ -3308,7 +3338,7 @@ describe("runCodexAppServerAttempt", () => {
     await harness.completeTurn({ threadId: "thread-existing", turnId: "turn-1" });
     await run;
 
-    expect(harness.requests.map((request) => request.method)).toEqual([
+    expect(requestMethodsExcludingWorkbenchCapability(harness.requests)).toEqual([
       "thread/resume",
       "turn/start",
       "thread/unsubscribe",
@@ -3345,7 +3375,7 @@ describe("runCodexAppServerAttempt", () => {
       "cannot steer a review turn",
     );
 
-    expect(harness.requests.map((request) => request.method)).toEqual([
+    expect(requestMethodsExcludingWorkbenchCapability(harness.requests)).toEqual([
       "thread/resume",
       "turn/start",
       "thread/unsubscribe",
@@ -4183,7 +4213,7 @@ describe("runCodexAppServerAttempt", () => {
       | { config?: { apps?: Record<string, { enabled?: boolean }> } }
       | undefined;
     expect(threadStartParams?.config?.apps?.["google-calendar-app"]?.enabled).toBe(true);
-    expect(requests.map((entry) => entry.method)).not.toContain("app/list");
+    expect(requestMethodsExcludingWorkbenchCapability(requests)).not.toContain("app/list");
   });
 
   it("keys plugin app inventory by inherited API key fallback credentials", async () => {
@@ -4327,7 +4357,7 @@ describe("runCodexAppServerAttempt", () => {
     await completeTurn({ threadId: "thread-1", turnId: "turn-1" });
     await run;
 
-    expect(requests.map((entry) => entry.method)).toContain("app/list");
+    expect(requestMethodsExcludingWorkbenchCapability(requests)).toContain("app/list");
     const threadStart = requests.find((entry) => entry.method === "thread/start");
     const threadStartParams = threadStart?.params as
       | { config?: { apps?: Record<string, { enabled?: boolean }> } }
@@ -4785,7 +4815,7 @@ describe("runCodexAppServerAttempt", () => {
 
     const result = await run;
     expect(result.aborted).toBe(false);
-    expect(requests).toEqual([
+    expect(requests.map(methodsExcludingWorkbenchCapability)).toEqual([
       ["thread/resume"],
       ["thread/resume", "turn/start", "thread/unsubscribe"],
     ]);
@@ -4837,7 +4867,7 @@ describe("runCodexAppServerAttempt", () => {
 
     const result = await run;
     expect(result.aborted).toBe(false);
-    expect(requests).toEqual([
+    expect(requests.map(methodsExcludingWorkbenchCapability)).toEqual([
       ["thread/resume"],
       ["thread/resume"],
       ["thread/resume", "turn/start", "thread/unsubscribe"],

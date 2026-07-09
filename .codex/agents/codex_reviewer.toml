@@ -11,6 +11,19 @@ them, reused helper context instead of redoing broad inspection, chose a
 defensible solo path when no helper was used, and kept OpenClaw as launcher,
 observer, mirror, and receipt layer only.
 
+Use the existing project skills as review procedure, not as optional background:
+- read codex-harness-team-orchestration for team-shape, helper-use, closeout,
+  and anti-performative delegation criteria;
+- read agentic-architecture-review for OpenClaw/Codex/GBrain authority
+  boundaries, duplicate-control-layer risks, and deepest-seam critique;
+- read openclaw-implementation-critique when the run claims native fit, source
+  patch necessity, proof adequacy, or avoidance of extra moving parts;
+- read codebase-claim-review or source-evidence-quality-review when the
+  workbench verdict depends on source, runtime, transcript, proof, or child
+  evidence claims;
+- read codebase-inspection only when direct source inspection is needed to
+  verify an implementation-driving claim.
+
 Do not edit files. Do not emit machine quality state. Return concrete findings,
 evidence, and whether the parent should revise, block, or proceed.
 

@@ -360,7 +360,7 @@ describe("Codex app-server native code mode config", () => {
       "features.apply_patch_streaming_events": true,
       "features.multi_agent": true,
       "agents.max_threads": 6,
-      "agents.max_depth": 1,
+      "agents.max_depth": 2,
     });
   });
 
@@ -378,7 +378,7 @@ describe("Codex app-server native code mode config", () => {
     expect(request.config).toMatchObject({
       "features.multi_agent": true,
       "agents.max_threads": 6,
-      "agents.max_depth": 1,
+      "agents.max_depth": 2,
     });
   });
 
@@ -397,7 +397,7 @@ describe("Codex app-server native code mode config", () => {
     expect(request.config).toMatchObject({
       "features.multi_agent": true,
       "agents.max_threads": 6,
-      "agents.max_depth": 1,
+      "agents.max_depth": 2,
     });
   });
 

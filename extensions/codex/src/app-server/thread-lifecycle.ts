@@ -126,7 +126,7 @@ const CODEX_NATIVE_CODING_TEAM_AGENT_IDS = new Set(["coding", "execution-coding"
 const CODEX_NATIVE_CODING_TEAM_THREAD_CONFIG: JsonObject = {
   "features.multi_agent": true,
   "agents.max_threads": 6,
-  "agents.max_depth": 1,
+  "agents.max_depth": 2,
 };
 
 function isCodexNativeCodingTeamRun(
