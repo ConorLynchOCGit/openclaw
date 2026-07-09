@@ -70,7 +70,9 @@ export type CodexNativeSurfaceReport = {
   codeModeConfigured: boolean;
   codeModeOnlyConfigured: boolean;
   nativeSubagents: {
-    expectedTool: "spawn_agent";
+    expectedTool: "spawnAgent";
+    expectedItemType: "collabAgentToolCall";
+    legacyPromptAlias: "spawn_agent";
     owner: "codex_app_server";
     listedInOpenClawDynamicTools: false;
     guidanceInjected: boolean;

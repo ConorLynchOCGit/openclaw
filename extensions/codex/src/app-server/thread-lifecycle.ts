@@ -1,4 +1,6 @@
 // Codex plugin module implements thread lifecycle behavior.
+import fs from "node:fs";
+import path from "node:path";
 import {
   buildSkillWorkshopPromptSection,
   embeddedAgentLog,
@@ -129,6 +131,10 @@ const CODEX_NATIVE_CODING_TEAM_THREAD_CONFIG: JsonObject = {
   "agents.max_depth": 2,
 };
 
+export const CODEX_REPO_WORKBENCH_MCP_SERVER_NAME = "openclaw_repo_workbench";
+
+const CODEX_REPO_WORKBENCH_MCP_SCRIPT = path.join("scripts", "codex-repo-workbench-mcp.mjs");
+
 function isCodexNativeCodingTeamRun(
   params: Pick<EmbeddedRunAttemptParams, "agentId" | "sessionKey">,
 ): boolean {
@@ -141,6 +147,52 @@ function isCodexNativeCodingTeamRun(
     ?.trim()
     .toLowerCase();
   return sessionAgentId ? CODEX_NATIVE_CODING_TEAM_AGENT_IDS.has(sessionAgentId) : false;
+}
+
+export function resolveCodexRepoWorkbenchRoot(cwd: string): string {
+  const resolvedCwd = path.resolve(cwd);
+  const nestedOpenClawRepo = path.join(resolvedCwd, "src", "openclaw");
+  if (fs.existsSync(path.join(nestedOpenClawRepo, "openclaw.mjs"))) {
+    return nestedOpenClawRepo;
+  }
+  return resolvedCwd;
+}
+
+export function buildCodexRepoWorkbenchMcpThreadConfigPatch(params: {
+  cwd: string;
+  runParams: EmbeddedRunAttemptParams;
+  agentId?: string;
+  nativeCodeModeEnabled?: boolean;
+  userMcpServersEnabled?: boolean;
+}): JsonObject | undefined {
+  if (
+    params.nativeCodeModeEnabled === false ||
+    params.userMcpServersEnabled === false ||
+    process.env.OPENCLAW_CODEX_REPO_WORKBENCH_MCP_DISABLED === "1"
+  ) {
+    return undefined;
+  }
+  if (
+    !isCodexNativeCodingTeamRun({
+      agentId: params.agentId ?? params.runParams.agentId,
+      sessionKey: params.runParams.sessionKey,
+    })
+  ) {
+    return undefined;
+  }
+  const repoRoot = resolveCodexRepoWorkbenchRoot(params.cwd);
+  return {
+    mcp_servers: {
+      [CODEX_REPO_WORKBENCH_MCP_SERVER_NAME]: {
+        command: "node",
+        args: [path.join(repoRoot, CODEX_REPO_WORKBENCH_MCP_SCRIPT)],
+        env: {
+          OPENCLAW_CODEX_REPO_WORKBENCH_ROOT: repoRoot,
+        },
+        default_tools_approval_mode: "approve",
+      },
+    },
+  };
 }
 
 export type CodexThreadLifecycleTimingSpan = {
@@ -349,7 +401,20 @@ export async function startOrResumeThread(params: {
       : buildCodexUserMcpServersThreadConfigPatch(params.params.config, {
           agentId: params.agentId ?? params.params.agentId,
         });
-  const userMcpServersFingerprint = fingerprintUserMcpServersConfigPatch(userMcpServersConfigPatch);
+  const repoWorkbenchMcpConfigPatch = buildCodexRepoWorkbenchMcpThreadConfigPatch({
+    cwd: params.cwd,
+    runParams: params.params,
+    agentId: params.agentId,
+    nativeCodeModeEnabled: params.nativeCodeModeEnabled,
+    userMcpServersEnabled: params.userMcpServersEnabled,
+  });
+  const codexMcpServersConfigPatch = mergeCodexThreadConfigs(
+    repoWorkbenchMcpConfigPatch,
+    userMcpServersConfigPatch,
+  );
+  const userMcpServersFingerprint = fingerprintUserMcpServersConfigPatch(
+    codexMcpServersConfigPatch,
+  );
   const environmentSelectionFingerprint = fingerprintEnvironmentSelection(
     params.environmentSelection,
   );
@@ -568,7 +633,7 @@ export async function startOrResumeThread(params: {
         };
         const resumeConfig = mergeCodexThreadConfigs(
           params.config,
-          userMcpServersConfigPatch,
+          codexMcpServersConfigPatch,
           finalConfigPatch.configPatch,
         );
         const resumeParams = lifecycleTiming.measureSync("thread-resume-params", () =>
@@ -696,7 +761,7 @@ export async function startOrResumeThread(params: {
   const config = lifecycleTiming.measureSync("merge-thread-config", () =>
     mergeCodexThreadConfigs(
       params.config,
-      userMcpServersConfigPatch,
+      codexMcpServersConfigPatch,
       pluginThreadConfig?.configPatch,
       finalConfigPatch.configPatch,
     ),
@@ -1456,9 +1521,14 @@ function buildCodexNativeCodingTeamInstruction(
   const lines = [
     "## Codex-Native Coding Team",
     "",
-    "Use Codex-native tools for implementation: repo search/read/edit, command execution, apply_patch, and Codex `spawn_agent` when helper agents improve outcome, risk, validation, or wall time.",
-    "Prefer `rg` and bounded file reads for source inspection. When native parallel tool calls such as `multi_tool_use.parallel` are available, batch independent searches, reads, and validations instead of serial shell exploration.",
-    "Use Codex `spawn_agent` as the inner coding-team delegation surface. Do not use OpenClaw task/session tools as an inner Coding-team fallback.",
+    "Use Codex-native tools for implementation: repo search/read/edit, command execution, apply_patch, and Codex subagents.",
+    "Inside Codex exec, `API.list(...)`, `API.read(...)`, and `MCP.<server>...` are Code Mode globals for API/MCP declaration inspection; use them when inspecting tool/API contracts, not as a general repo-file search substitute.",
+    "When `MCP.openclaw_repo_workbench` is available, prefer its batched repo/search/read/git/validation tools (`repo_search_many`, `repo_read_many`, `repo_glob_many`, `git_inspect_many`, `validation_run_many`) for independent repo work instead of many serial shell calls.",
+    "For repo source inspection, prefer bounded `rg --files`, `rg`, and file reads, and delegate independent read-heavy mapping to Codex subagents when the task merits it. When native parallel tool calls such as `multi_tool_use.parallel` are available, batch independent searches, reads, and validations instead of serial shell exploration.",
+    "The canonical app-server collaboration item is `collabAgentToolCall` with tool `spawnAgent`; some Codex clients may describe the same surface as `spawn_agent`. Use the Codex subagent/collaboration surface, not OpenClaw task/session tools, as the inner Coding-team delegation surface.",
+    "Codex subagents are not automatic. Use them when the task merits delegation: multi-surface source inspection, independent validation, architecture review, post-diff review, docs research, or work that can run safely in parallel. Prefer `project_explorer` for source mapping, `implementation_planner` for slice planning, `test_engineer` for validation mapping, `code_reviewer` for post-diff review, and `codex_reviewer` for Codex-native workbench/team-shape review.",
+    "For broad proof or refactor packages, strongly prefer this native team shape unless it would add more coordination cost than value: spawn `project_explorer` for the implementation surface, spawn `test_engineer` for validation surface, implement the scoped patch in the parent or an `implementer` helper, then spawn `code_reviewer` or `codex_reviewer` before claiming complete.",
+    "A solo path is acceptable for narrow or low-risk changes; for nontrivial work, state why solo execution was the right fit in the final closeout.",
     "When direct project custom-agent names such as `project_explorer`, `test_engineer`, `code_reviewer`, or `codex_reviewer` are not accepted by the live Codex spawn surface, use the Codex built-in `explorer` for read-heavy exploration and `worker` for review, validation, docs research, or implementation support; put `Role: <project role>` and the relevant role contract in the child message.",
     "A failed direct custom-agent spawn does not prove that Codex subagents are unavailable if built-in `explorer` or `worker` still works. Retry once through the matching built-in Codex agent with the project role embedded in the prompt.",
     "If a nontrivial task requires independent review or helper work and neither direct custom-role spawn nor built-in Codex spawn works, close as partial or blocked with `runtime_child_surface_missing`; do not claim full completion.",

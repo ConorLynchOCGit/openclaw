@@ -1106,12 +1106,14 @@ export async function runCodexAppServerAttempt(
     codeModeConfigured: nativeToolSurfaceEnabled,
     codeModeOnlyConfigured: nativeToolSurfaceEnabled && appServer.codeModeOnly === true,
     nativeSubagents: {
-      expectedTool: "spawn_agent" as const,
+      expectedTool: "spawnAgent" as const,
+      expectedItemType: "collabAgentToolCall" as const,
+      legacyPromptAlias: "spawn_agent" as const,
       owner: "codex_app_server" as const,
       listedInOpenClawDynamicTools: false as const,
       guidanceInjected:
-        renderedDeveloperInstructions.includes("Codex `spawn_agent`") ||
-        renderedDeveloperInstructions.includes("Codex native `spawn_agent`"),
+        renderedDeveloperInstructions.includes("tool `spawnAgent`") ||
+        renderedDeveloperInstructions.includes("`collabAgentToolCall`"),
       disabledByOpenClawModelProfile: shouldDisableCodexToolSearchForModel(params.modelId),
     },
   };

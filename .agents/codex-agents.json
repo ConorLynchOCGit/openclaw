@@ -29,6 +29,7 @@
       "sourceToml": ".codex/agents/architect_reviewer.toml",
       "docsPath": "docs/agents/coding/codex-agents/architect-reviewer.md",
       "doc": "docs/agents/coding/codex-agents/architect-reviewer.md",
+      "model": "gpt-5.5",
       "sandboxMode": "read-only"
     },
     {
@@ -39,6 +40,7 @@
       "sourceToml": ".codex/agents/code_reviewer.toml",
       "docsPath": "docs/agents/coding/codex-agents/code-reviewer.md",
       "doc": "docs/agents/coding/codex-agents/code-reviewer.md",
+      "model": "gpt-5.5",
       "sandboxMode": "read-only"
     },
     {
@@ -49,6 +51,7 @@
       "sourceToml": ".codex/agents/codex_reviewer.toml",
       "docsPath": "docs/agents/coding/codex-agents/codex-reviewer.md",
       "doc": "docs/agents/coding/codex-agents/codex-reviewer.md",
+      "model": "gpt-5.5",
       "sandboxMode": "read-only"
     },
     {
@@ -59,6 +62,7 @@
       "sourceToml": ".codex/agents/docs_researcher.toml",
       "docsPath": "docs/agents/coding/codex-agents/docs-researcher.md",
       "doc": "docs/agents/coding/codex-agents/docs-researcher.md",
+      "model": "gpt-5.4-mini",
       "sandboxMode": "read-only"
     },
     {
@@ -69,6 +73,7 @@
       "sourceToml": ".codex/agents/implementation_planner.toml",
       "docsPath": "docs/agents/coding/codex-agents/implementation-planner.md",
       "doc": "docs/agents/coding/codex-agents/implementation-planner.md",
+      "model": "gpt-5.4",
       "sandboxMode": "read-only"
     },
     {
@@ -79,6 +84,7 @@
       "sourceToml": ".codex/agents/implementer.toml",
       "docsPath": "docs/agents/coding/codex-agents/implementer.md",
       "doc": "docs/agents/coding/codex-agents/implementer.md",
+      "model": "gpt-5.4",
       "sandboxMode": "workspace-write"
     },
     {
@@ -89,6 +95,7 @@
       "sourceToml": ".codex/agents/native_fit_reviewer.toml",
       "docsPath": "docs/agents/coding/codex-agents/native-fit-reviewer.md",
       "doc": "docs/agents/coding/codex-agents/native-fit-reviewer.md",
+      "model": "gpt-5.5",
       "sandboxMode": "read-only"
     },
     {
@@ -99,6 +106,7 @@
       "sourceToml": ".codex/agents/project_explorer.toml",
       "docsPath": "docs/agents/coding/codex-agents/project-explorer.md",
       "doc": "docs/agents/coding/codex-agents/project-explorer.md",
+      "model": "gpt-5.4-mini",
       "sandboxMode": "read-only"
     },
     {
@@ -109,6 +117,7 @@
       "sourceToml": ".codex/agents/test_engineer.toml",
       "docsPath": "docs/agents/coding/codex-agents/test-engineer.md",
       "doc": "docs/agents/coding/codex-agents/test-engineer.md",
+      "model": "gpt-5.4",
       "sandboxMode": "workspace-write"
     }
   ]

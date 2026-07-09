@@ -186,8 +186,9 @@ describe("Codex app-server native code mode config", () => {
     const instructions = buildDeveloperInstructions(createAttemptParams({ provider: "openai" }));
 
     expect(instructions).toContain("OpenClaw dynamic tools are not model-visible");
+    expect(instructions).toContain("collabAgentToolCall` with tool `spawnAgent`");
     expect(instructions).toContain(
-      "Use Codex `spawn_agent` as the inner coding-team delegation surface",
+      "`API.list(...)`, `API.read(...)`, and `MCP.<server>...` are Code Mode globals for API/MCP declaration inspection",
     );
     expect(instructions).toContain(
       "use the Codex built-in `explorer` for read-heavy exploration and `worker` for review",
@@ -244,7 +245,9 @@ describe("Codex app-server native code mode config", () => {
       "Deferred searchable OpenClaw dynamic tools available: image_generate, music_generate.",
     );
     expect(instructions).toContain("Use `tool_search` to load exact callable specs before use.");
-    expect(instructions).not.toContain("message,");
+    expect(instructions).not.toContain(
+      "Deferred searchable OpenClaw dynamic tools available: image_generate, message, music_generate.",
+    );
   });
 
   it("uses the shared Skill Workshop guidance when skill_workshop is available", () => {

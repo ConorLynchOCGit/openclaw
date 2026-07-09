@@ -20,6 +20,8 @@ const repoRoot = process.cwd();
 const configPath = path.join(repoRoot, ".codex", "config.toml");
 const agentsDir = path.join(repoRoot, ".codex", "agents");
 const registryPath = path.join(repoRoot, ".agents", "codex-agents.json");
+const homeRepoRoot = resolveHomeRepoRoot(repoRoot);
+const SUPPORTED_ROLE_MODELS = new Set(["gpt-5.5", "gpt-5.4", "gpt-5.4-mini"]);
 
 const errors = [];
 const warnings = [];
@@ -27,6 +29,10 @@ const warnings = [];
 const config = readCodexConfig(configPath);
 const agents = readCodexAgents(agentsDir);
 const registry = readRegistry(registryPath);
+const homeConfig = homeRepoRoot
+  ? readCodexConfig(path.join(homeRepoRoot, ".codex", "config.toml"))
+  : { present: false };
+const homeAgents = homeRepoRoot ? readCodexAgents(path.join(homeRepoRoot, ".codex", "agents")) : [];
 const registryAgents = Array.isArray(registry?.agents) ? registry.agents : [];
 const registryIds = new Set(
   registryAgents
@@ -34,6 +40,7 @@ const registryIds = new Set(
     .filter(Boolean),
 );
 const agentIds = new Set(agents.map((agent) => agent.id));
+const homeAgentIds = new Set(homeAgents.map((agent) => agent.id));
 
 if (!config.present) {
   errors.push(`Missing ${repoPath(configPath)}.`);
@@ -69,11 +76,25 @@ for (const agent of agents) {
   if (agent.fileId.includes("-")) {
     errors.push(`${repoPath(agent.path)} must use underscore agent id naming, not hyphen naming.`);
   }
+  if (!agent.model) {
+    errors.push(
+      `${repoPath(agent.path)} must set explicit model for live spawn_agent service-tier validation.`,
+    );
+  } else if (!SUPPORTED_ROLE_MODELS.has(agent.model)) {
+    errors.push(
+      `${repoPath(agent.path)} model (${agent.model}) is not supported; expected one of ${[
+        ...SUPPORTED_ROLE_MODELS,
+      ]
+        .sort()
+        .join(", ")}.`,
+    );
+  }
 }
 
 for (const entry of registryAgents) {
   const id = typeof entry?.id === "string" ? entry.id.trim() : "";
   const tomlPath = typeof entry?.tomlPath === "string" ? entry.tomlPath.trim() : "";
+  const docsPath = typeof entry?.docsPath === "string" ? entry.docsPath.trim() : "";
   if (!id) {
     errors.push(".agents/codex-agents.json contains an agent entry without id.");
     continue;
@@ -85,6 +106,30 @@ for (const entry of registryAgents) {
     errors.push(`.agents/codex-agents.json entry ${id} is missing tomlPath.`);
   } else if (!fs.existsSync(path.join(repoRoot, tomlPath))) {
     errors.push(`.agents/codex-agents.json entry ${id} points to missing ${tomlPath}.`);
+  }
+  const registryModel = typeof entry?.model === "string" ? entry.model.trim() : "";
+  const agent = agents.find((candidate) => candidate.id === id);
+  const homeAgent = homeAgents.find((candidate) => candidate.id === id);
+  if (!registryModel) {
+    errors.push(`.agents/codex-agents.json entry ${id} is missing model.`);
+  } else if (agent?.model && registryModel !== agent.model) {
+    errors.push(
+      `.agents/codex-agents.json entry ${id} model (${registryModel}) diverges from ${repoPath(agent.path)} (${agent.model}).`,
+    );
+  }
+  if (homeRepoRoot) {
+    if (!homeAgentIds.has(id)) {
+      errors.push(`Home repo is missing Codex custom agent ${id}.`);
+    } else if (homeAgent?.model && registryModel && homeAgent.model !== registryModel) {
+      errors.push(
+        `Home repo Codex agent ${id} model (${homeAgent.model}) diverges from registry (${registryModel}).`,
+      );
+    }
+    if (!docsPath) {
+      errors.push(`.agents/codex-agents.json entry ${id} is missing docsPath.`);
+    } else if (!fs.existsSync(path.join(homeRepoRoot, docsPath))) {
+      errors.push(`.agents/codex-agents.json entry ${id} points to missing home repo ${docsPath}.`);
+    }
   }
 }
 
@@ -99,6 +144,31 @@ if (registryConfig.maxThreads !== undefined && registryConfig.maxThreads !== con
 if (registryConfig.maxDepth !== undefined && registryConfig.maxDepth !== config.maxDepth) {
   errors.push(".agents/codex-agents.json config.maxDepth diverges from .codex/config.toml.");
 }
+if (homeRepoRoot) {
+  if (!homeConfig.present) {
+    errors.push(`Missing home repo .codex/config.toml at ${homeRepoRoot}.`);
+  } else {
+    if (homeConfig.multiAgent !== config.multiAgent) {
+      errors.push(
+        "Home repo .codex/config.toml multi_agent diverges from source .codex/config.toml.",
+      );
+    }
+    if (homeConfig.maxThreads !== config.maxThreads) {
+      errors.push(
+        "Home repo .codex/config.toml max_threads diverges from source .codex/config.toml.",
+      );
+    }
+    if (homeConfig.maxDepth !== config.maxDepth) {
+      errors.push(
+        "Home repo .codex/config.toml max_depth diverges from source .codex/config.toml.",
+      );
+    }
+  }
+} else {
+  warnings.push(
+    "Home repo not found; skipped home Codex role doc/model parity. Set OPENCLAW_HOME_REPO to enforce it.",
+  );
+}
 
 for (const file of agents.map((agent) => path.basename(agent.path))) {
   if (!file.endsWith(".toml")) {
@@ -109,9 +179,12 @@ for (const file of agents.map((agent) => path.basename(agent.path))) {
 const report = {
   ok: errors.length === 0,
   repoRoot,
+  homeRepoRoot,
   config,
+  homeConfig,
   requiredAgentIds: REQUIRED_AGENT_IDS,
   agentIds: [...agentIds].sort((left, right) => left.localeCompare(right)),
+  homeAgentIds: [...homeAgentIds].sort((left, right) => left.localeCompare(right)),
   registryAgentIds: [...registryIds].sort((left, right) => left.localeCompare(right)),
   errors,
   warnings,
@@ -159,9 +232,25 @@ function readCodexAgents(dir) {
         id: readTomlString(content, "name") ?? fileId,
         fileId,
         path: filePath,
+        model: readTomlString(content, "model"),
       };
     })
     .sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function resolveHomeRepoRoot(sourceRepoRoot) {
+  const candidates = [
+    process.env.OPENCLAW_HOME_REPO,
+    path.resolve(sourceRepoRoot, "..", "..", "home-repo"),
+    "/srv/openclaw-next/home-repo",
+  ].filter((candidate) => typeof candidate === "string" && candidate.trim());
+  for (const candidate of candidates) {
+    const resolved = path.resolve(candidate);
+    if (fs.existsSync(resolved)) {
+      return resolved;
+    }
+  }
+  return undefined;
 }
 
 function readRegistry(filePath) {

@@ -335,7 +335,9 @@ describe("gateway session utils", () => {
             codeModeConfigured: true,
             codeModeOnlyConfigured: false,
             nativeSubagents: {
-              expectedTool: "spawn_agent",
+              expectedTool: "spawnAgent",
+              expectedItemType: "collabAgentToolCall",
+              legacyPromptAlias: "spawn_agent",
               owner: "codex_app_server",
               listedInOpenClawDynamicTools: false,
               guidanceInjected: true,

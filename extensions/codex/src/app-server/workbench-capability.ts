@@ -38,7 +38,7 @@ export type CodexWorkbenchMethodPresence = {
   method: string;
   source: "installed_app_server_schema";
   expectedOwner: "codex_app_server";
-  modelVisibleVia: "code_mode" | "control_plane" | "mcp";
+  modelVisibleVia: "code_mode_event_surface" | "client_control_plane" | "mcp_namespace";
 };
 
 export type CodexWorkbenchProviderCapabilities = CodexWorkbenchMethodStatus & {
@@ -69,6 +69,7 @@ export type CodexCustomAgentCapability = {
   count: number;
   names: string[];
   files: string[];
+  models: Record<string, string>;
   hasCodexReviewer: boolean;
   error?: string;
 };
@@ -101,7 +102,9 @@ export type CodexWorkbenchCapabilityReport = {
     codeModeOnlyConfigured: boolean;
     expectedModelVisibleItemTypes: string[];
     expectedNativeMethodFamilies: string[];
-    expectedSubagentTool: "spawn_agent";
+    expectedSubagentTool: "spawnAgent";
+    expectedSubagentItemType: "collabAgentToolCall";
+    legacyPromptAlias: "spawn_agent";
   };
   generatedSchemaMethods: CodexWorkbenchMethodPresence[];
   codexProjectConfig: CodexProjectConfigCapability;
@@ -198,8 +201,18 @@ export async function buildCodexWorkbenchCapabilityReport(params: {
       codeModeConfigured: params.codeModeConfigured,
       codeModeOnlyConfigured: params.codeModeOnlyConfigured,
       expectedModelVisibleItemTypes: ["commandExecution", "fileChange", "mcpToolCall", "webSearch"],
-      expectedNativeMethodFamilies: ["fs/*", "command/exec/*", "fuzzyFileSearch", "mcpServer/*"],
-      expectedSubagentTool: "spawn_agent",
+      expectedNativeMethodFamilies: [
+        "Code Mode API.list/API.read for API/MCP declarations",
+        "Code Mode MCP.<server>",
+        "Codex MCP openclaw_repo_workbench repo_search_many/repo_read_many/repo_glob_many/git_inspect_many/validation_run_many",
+        "fs/*",
+        "command/exec/*",
+        "fuzzyFileSearch",
+        "mcpServer/*",
+      ],
+      expectedSubagentTool: "spawnAgent",
+      expectedSubagentItemType: "collabAgentToolCall",
+      legacyPromptAlias: "spawn_agent",
     },
     generatedSchemaMethods: buildGeneratedSchemaMethodPresence(),
     codexProjectConfig,
@@ -223,25 +236,25 @@ export async function buildCodexWorkbenchCapabilityReport(params: {
 
 function buildGeneratedSchemaMethodPresence(): CodexWorkbenchMethodPresence[] {
   const methods: Array<Pick<CodexWorkbenchMethodPresence, "method" | "modelVisibleVia">> = [
-    { method: "fs/readFile", modelVisibleVia: "code_mode" },
-    { method: "fs/readDirectory", modelVisibleVia: "code_mode" },
-    { method: "fs/writeFile", modelVisibleVia: "code_mode" },
-    { method: "fs/createDirectory", modelVisibleVia: "code_mode" },
-    { method: "fs/getMetadata", modelVisibleVia: "code_mode" },
-    { method: "fs/remove", modelVisibleVia: "code_mode" },
-    { method: "fs/copy", modelVisibleVia: "code_mode" },
-    { method: "command/exec", modelVisibleVia: "code_mode" },
-    { method: "command/exec/write", modelVisibleVia: "code_mode" },
-    { method: "command/exec/terminate", modelVisibleVia: "code_mode" },
-    { method: "command/exec/resize", modelVisibleVia: "code_mode" },
-    { method: "fuzzyFileSearch", modelVisibleVia: "code_mode" },
-    { method: "mcpServerStatus/list", modelVisibleVia: "control_plane" },
-    { method: "mcpServer/tool/call", modelVisibleVia: "mcp" },
-    { method: "modelProvider/capabilities/read", modelVisibleVia: "control_plane" },
-    { method: "config/read", modelVisibleVia: "control_plane" },
-    { method: "experimentalFeature/list", modelVisibleVia: "control_plane" },
-    { method: "review/start", modelVisibleVia: "code_mode" },
-    { method: "turn/start", modelVisibleVia: "control_plane" },
+    { method: "fs/readFile", modelVisibleVia: "code_mode_event_surface" },
+    { method: "fs/readDirectory", modelVisibleVia: "code_mode_event_surface" },
+    { method: "fs/writeFile", modelVisibleVia: "code_mode_event_surface" },
+    { method: "fs/createDirectory", modelVisibleVia: "code_mode_event_surface" },
+    { method: "fs/getMetadata", modelVisibleVia: "code_mode_event_surface" },
+    { method: "fs/remove", modelVisibleVia: "code_mode_event_surface" },
+    { method: "fs/copy", modelVisibleVia: "code_mode_event_surface" },
+    { method: "command/exec", modelVisibleVia: "code_mode_event_surface" },
+    { method: "command/exec/write", modelVisibleVia: "code_mode_event_surface" },
+    { method: "command/exec/terminate", modelVisibleVia: "code_mode_event_surface" },
+    { method: "command/exec/resize", modelVisibleVia: "code_mode_event_surface" },
+    { method: "fuzzyFileSearch", modelVisibleVia: "client_control_plane" },
+    { method: "mcpServerStatus/list", modelVisibleVia: "client_control_plane" },
+    { method: "mcpServer/tool/call", modelVisibleVia: "mcp_namespace" },
+    { method: "modelProvider/capabilities/read", modelVisibleVia: "client_control_plane" },
+    { method: "config/read", modelVisibleVia: "client_control_plane" },
+    { method: "experimentalFeature/list", modelVisibleVia: "client_control_plane" },
+    { method: "review/start", modelVisibleVia: "client_control_plane" },
+    { method: "turn/start", modelVisibleVia: "client_control_plane" },
   ];
   return methods.map((entry) => ({
     ...entry,
@@ -282,9 +295,15 @@ async function readCodexCustomAgents(workspaceDir: string): Promise<CodexCustomA
       .map((entry) => entry.name)
       .toSorted((left, right) => left.localeCompare(right));
     const names: string[] = [];
+    const models: Record<string, string> = {};
     for (const file of entries) {
       const content = await fs.readFile(path.join(dir, file), "utf8").catch(() => "");
-      names.push(readTomlString(content, "name") ?? file.replace(/\.toml$/u, ""));
+      const name = readTomlString(content, "name") ?? file.replace(/\.toml$/u, "");
+      names.push(name);
+      const model = readTomlString(content, "model");
+      if (model) {
+        models[name] = model;
+      }
     }
     const sortedNames = names.toSorted((left, right) => left.localeCompare(right));
     return {
@@ -292,6 +311,9 @@ async function readCodexCustomAgents(workspaceDir: string): Promise<CodexCustomA
       count: entries.length,
       names: sortedNames,
       files: entries,
+      models: Object.fromEntries(
+        Object.entries(models).toSorted(([left], [right]) => left.localeCompare(right)),
+      ),
       hasCodexReviewer: sortedNames.includes("codex_reviewer"),
     };
   } catch (error) {
@@ -300,6 +322,7 @@ async function readCodexCustomAgents(workspaceDir: string): Promise<CodexCustomA
       count: 0,
       names: [],
       files: [],
+      models: {},
       hasCodexReviewer: false,
       error: formatCapabilityError(error),
     };
