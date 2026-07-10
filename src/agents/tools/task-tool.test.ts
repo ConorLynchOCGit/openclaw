@@ -255,6 +255,23 @@ describe("task tool", () => {
     );
   });
 
+  it("allows runtime-visible /app mentions in child handoff prose", async () => {
+    await createTaskTool({
+      agentSessionKey: "agent:main:operator",
+      requesterAgentIdOverride: "main",
+    }).execute("call-1", {
+      agentId: "coding",
+      task: "Confirm the Coding cwd is the live workspace, not /app; do not use /app as project root.",
+    });
+
+    expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: expect.stringContaining("not /app"),
+      }),
+      expect.anything(),
+    );
+  });
+
   it("inlines bounded untruncated child finals for Planning", async () => {
     const packet = `# Reviewer Packet\n\n${"material evidence\n".repeat(450)}`.trim();
     hoisted.readLatestAssistantReplyMock.mockResolvedValue(packet);

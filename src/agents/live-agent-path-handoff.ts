@@ -4,7 +4,7 @@ const HOST_PATH_PATTERN =
   /\/(?:srv\/openclaw-next\/(?:home-repo|src\/openclaw|artifacts)|home\/node\/\.openclaw\/workspace)(?:\/[^\s"'`<>()\][]*)?/g;
 
 const DISALLOWED_HOST_PATH_PATTERN =
-  /(?:^|[\s"'`<>()\][{}])(?<path>\/(?:srv|root|app)(?:\/[^\s"'`<>()\][{}]*)?)(?=$|[\s"'`<>()\][{},.;:!?])/gu;
+  /(?:^|[\s"'`<>()\][{}])(?<path>\/(?:srv|root)(?:\/[^\s"'`<>()\][{}]*)?)(?=$|[\s"'`<>()\][{},.;:!?])/gu;
 
 function stripTrailingPathPunctuation(value: string): { core: string; suffix: string } {
   const match = /[.,;:]+$/u.exec(value);
