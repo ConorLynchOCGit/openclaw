@@ -483,7 +483,7 @@ describe("CodexNativeSubagentTaskMirror", () => {
     );
 
     mirror.handleNotification({
-      method: "item/started",
+      method: "rawResponseItem/completed",
       params: {
         threadId: "parent-thread",
         item: {
@@ -500,7 +500,7 @@ describe("CodexNativeSubagentTaskMirror", () => {
       },
     });
     mirror.handleNotification({
-      method: "item/completed",
+      method: "rawResponseItem/completed",
       params: {
         threadId: "parent-thread",
         item: {

@@ -66,7 +66,11 @@ export class CodexNativeSubagentTaskMirror {
       this.handleThreadStatusChanged(params);
       return;
     }
-    if (notification.method === "item/started" || notification.method === "item/completed") {
+    if (
+      notification.method === "item/started" ||
+      notification.method === "item/completed" ||
+      notification.method === "rawResponseItem/completed"
+    ) {
       this.handleNativeFunctionItem(params);
       this.handleCollabAgentItem(params);
     }
@@ -629,7 +633,7 @@ function readStringArray(value: JsonValue | undefined): string[] {
   return value.filter((entry): entry is string => typeof entry === "string" && entry.trim() !== "");
 }
 
-type NativeSubagentIdentity = {
+export type NativeSubagentIdentity = {
   nickname?: string;
   role?: string;
   agentPath?: string;
@@ -664,7 +668,7 @@ function resolveCollabItemSubagentIdentity(item: JsonObject): NativeSubagentIden
   };
 }
 
-function resolveNativeSpawnFunctionIdentity(item: JsonObject): NativeSubagentIdentity {
+export function resolveNativeSpawnFunctionIdentity(item: JsonObject): NativeSubagentIdentity {
   const args = readJsonObjectValue(item.arguments);
   const message = trimOptional(readString(args, "message"));
   const explicitRole =
@@ -762,7 +766,7 @@ function readJsonObjectValue(value: JsonValue | undefined): JsonObject {
   }
 }
 
-function readFunctionCallId(item: JsonObject): string | undefined {
+export function readFunctionCallId(item: JsonObject): string | undefined {
   return (
     trimOptional(readString(item, "call_id")) ??
     trimOptional(readString(item, "callId")) ??

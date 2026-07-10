@@ -29,6 +29,8 @@ import {
 import {
   codexNativeSubagentRunId,
   CodexNativeSubagentTaskMirror,
+  readFunctionCallId,
+  resolveNativeSpawnFunctionIdentity,
 } from "./native-subagent-task-mirror.js";
 import type { CodexServerNotification, JsonObject, JsonValue } from "./protocol.js";
 import { isJsonObject } from "./protocol.js";
@@ -121,6 +123,10 @@ export class CodexNativeSubagentMonitor {
   private readonly childStates = new Map<string, ChildState>();
   private readonly childThreadIdsByAgentPath = new Map<string, string>();
   private readonly transcriptPathsByChildThreadId = new Map<string, string>();
+  private readonly pendingSpawnIdentitiesByCallId = new Map<
+    string,
+    ReturnType<typeof resolveNativeSpawnFunctionIdentity>
+  >();
   private codexHome?: string;
   private transcriptPollDelaysMs: readonly number[];
   private taskRowReconcileTimer?: ReturnType<typeof setInterval>;
@@ -147,6 +153,7 @@ export class CodexNativeSubagentMonitor {
     this.childStates.clear();
     this.childThreadIdsByAgentPath.clear();
     this.transcriptPathsByChildThreadId.clear();
+    this.pendingSpawnIdentitiesByCallId.clear();
   }
 
   configure(options: MonitorOptions): void {
@@ -256,7 +263,11 @@ export class CodexNativeSubagentMonitor {
       const parentThreadId = childThreadId ? this.childThreadParents.get(childThreadId) : undefined;
       return parentThreadId ? this.parentStates.get(parentThreadId) : undefined;
     }
-    if (notification.method === "item/started" || notification.method === "item/completed") {
+    if (
+      notification.method === "item/started" ||
+      notification.method === "item/completed" ||
+      notification.method === "rawResponseItem/completed"
+    ) {
       const item = isJsonObject(params.item) ? params.item : undefined;
       const parentThreadId = item
         ? (readString(item, "senderThreadId") ?? readString(params, "threadId"))?.trim()
@@ -269,9 +280,32 @@ export class CodexNativeSubagentMonitor {
           (childParentThreadId ? this.parentStates.get(childParentThreadId) : undefined))
         : undefined;
       if (state && parentThreadId) {
+        const itemType = item ? readString(item, "type") : undefined;
+        const callId = item ? readFunctionCallId(item) : undefined;
+        if (
+          item &&
+          itemType === "function_call" &&
+          normalizeToolName(readString(item, "name")) === "spawnagent" &&
+          callId
+        ) {
+          this.pendingSpawnIdentitiesByCallId.set(
+            buildParentCallKey(parentThreadId, callId),
+            resolveNativeSpawnFunctionIdentity(item),
+          );
+        }
         const nativeSpawnOutputChildThreadId = readNativeSpawnFunctionOutputChildThreadId(item);
         if (nativeSpawnOutputChildThreadId) {
-          this.registerChildThread(parentThreadId, nativeSpawnOutputChildThreadId);
+          const identity = callId
+            ? this.pendingSpawnIdentitiesByCallId.get(buildParentCallKey(parentThreadId, callId))
+            : undefined;
+          this.registerChildThread(parentThreadId, nativeSpawnOutputChildThreadId, {
+            agentPath: identity?.agentPath,
+            role: identity?.role,
+            objective: identity?.spawnReason,
+          });
+          if (callId) {
+            this.pendingSpawnIdentitiesByCallId.delete(buildParentCallKey(parentThreadId, callId));
+          }
         }
         const isSpawnAgentTool = normalizeToolName(readString(item, "tool")) === "spawnagent";
         const childThreadIds = isSpawnAgentTool
@@ -433,14 +467,18 @@ export class CodexNativeSubagentMonitor {
     if (!taskRuntime) {
       return;
     }
+    const runId = codexNativeSubagentRunId(completion.childThreadId);
+    const eventMetadata = taskRuntime.listTaskRecords().find((task) => task.runId === runId)
+      ?.executionReceipt?.latestEvent?.metadata;
     taskRuntime.finalizeTaskRunByRunId({
-      runId: codexNativeSubagentRunId(completion.childThreadId),
+      runId,
       status: completion.status,
       endedAt: eventAt,
       lastEventAt: eventAt,
       ...(completion.status === "succeeded" ? {} : { error: completion.result }),
       progressSummary: completion.result,
       terminalSummary: completion.result,
+      ...(eventMetadata ? { eventMetadata } : {}),
     });
   }
 
@@ -809,6 +847,10 @@ function buildCompletionDedupeKey(
 
 function buildParentAgentPathKey(parentThreadId: string, agentPath: string): string {
   return `${parentThreadId}\0${agentPath}`;
+}
+
+function buildParentCallKey(parentThreadId: string, callId: string): string {
+  return `${parentThreadId.trim()}\0${callId.trim()}`;
 }
 
 function toThreadCompletion(

@@ -1411,6 +1411,37 @@ describe("runCodexAppServerAttempt", () => {
     ]);
   });
 
+  it("keeps OpenClaw skills out of the Codex-owned Coding workbench", async () => {
+    const sessionFile = path.join(tempDir, "session-coding-native-skills.jsonl");
+    const workspaceDir = path.join(tempDir, "workspace-coding-native-skills");
+    const harness = createStartedThreadHarness();
+    const params = createParams(sessionFile, workspaceDir);
+    params.agentId = "coding";
+    params.sessionKey = "agent:coding:subagent:child";
+    params.skillsSnapshot = {
+      prompt: "<available_skills><skill><name>openclaw-demo</name></skill></available_skills>",
+      skills: [],
+    };
+
+    const run = runCodexAppServerAttempt(params);
+    await harness.waitForMethod("turn/start");
+    await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+    const result = await run;
+
+    const turnStart = harness.requests.find((request) => request.method === "turn/start");
+    const turnStartParams = turnStart?.params as {
+      collaborationMode?: { settings?: { developer_instructions?: string | null } };
+    };
+    const collaborationInstructions =
+      turnStartParams.collaborationMode?.settings?.developer_instructions ?? "";
+    expect(collaborationInstructions).not.toContain("## OpenClaw Skills");
+    expect(collaborationInstructions).not.toContain("openclaw-demo");
+    expect(result.systemPromptReport?.skills).toMatchObject({
+      promptChars: 0,
+      entries: [],
+    });
+  });
+
   it("emits TUI-compatible tool events for Codex dynamic tool calls", async () => {
     const sessionFile = path.join(tempDir, "session-tool-events.jsonl");
     const workspaceDir = path.join(tempDir, "workspace-tool-events");

@@ -629,12 +629,21 @@ export function renderCodexSkillsCollaborationInstructions(params: {
   attempt: EmbeddedRunAttemptParams;
   skillsPrompt?: string;
 }): string | undefined {
-  if (!shouldInjectCodexOpenClawPromptContext(params.attempt)) {
+  if (
+    !shouldInjectCodexOpenClawPromptContext(params.attempt) ||
+    isCodexOwnedCodingAttempt(params.attempt)
+  ) {
     return undefined;
   }
   return params.skillsPrompt?.trim()
     ? ["## OpenClaw Skills", "", params.skillsPrompt.trim()].join("\n")
     : undefined;
+}
+
+function isCodexOwnedCodingAttempt(params: EmbeddedRunAttemptParams): boolean {
+  const agentId = params.agentId?.trim().toLowerCase();
+  const sessionKey = params.sessionKey?.trim().toLowerCase();
+  return agentId === "coding" || sessionKey?.startsWith("agent:coding:") === true;
 }
 
 /**

@@ -280,7 +280,7 @@ describe("CodexNativeSubagentMonitor", () => {
     });
 
     await client.notify({
-      method: "item/started",
+      method: "rawResponseItem/completed",
       params: {
         threadId: "parent-thread",
         item: {
@@ -297,7 +297,7 @@ describe("CodexNativeSubagentMonitor", () => {
       },
     });
     await client.notify({
-      method: "item/completed",
+      method: "rawResponseItem/completed",
       params: {
         threadId: "parent-thread",
         item: {
@@ -310,6 +310,34 @@ describe("CodexNativeSubagentMonitor", () => {
         },
       },
     });
+    const spawnMetadata = runtime.createRunningTaskRun.mock.calls[0]?.[0].eventMetadata;
+    runtime.listTaskRecords.mockReturnValue([
+      {
+        taskId: "codex-thread:child-thread",
+        runtime: "subagent",
+        taskKind: "codex-native",
+        requesterSessionKey: "agent:main:discord:channel:C123",
+        ownerKey: "agent:main:discord:channel:C123",
+        scopeKind: "session",
+        runId: "codex-thread:child-thread",
+        label: "Leibniz (codex_reviewer)",
+        task: "review parent-provided bounded evidence pack.",
+        status: "running",
+        deliveryStatus: "not_applicable",
+        notifyPolicy: "silent",
+        createdAt: 1,
+        executionReceipt: {
+          schema: "openclaw.task.execution_receipt.v1",
+          eventCount: 1,
+          updatedAt: 1,
+          latestEvent: {
+            at: 1,
+            kind: "running",
+            metadata: spawnMetadata,
+          },
+        },
+      },
+    ]);
     await client.notify(
       nativeCompletionNotification({
         agentPath: "child-thread",
@@ -336,6 +364,12 @@ describe("CodexNativeSubagentMonitor", () => {
         runId: "codex-thread:child-thread",
         status: "succeeded",
         terminalSummary: "review done",
+        eventMetadata: expect.objectContaining({
+          childRole: "codex_reviewer",
+          childAgentPath: "agents/codex_reviewer.toml",
+          childNickname: "Leibniz",
+          spawnReason: "review parent-provided bounded evidence pack.",
+        }),
       }),
     );
   });
