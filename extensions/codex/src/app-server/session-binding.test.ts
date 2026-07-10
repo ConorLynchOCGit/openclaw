@@ -62,6 +62,7 @@ describe("codex app-server session binding", () => {
       modelProvider: "openai",
       dynamicToolsFingerprint: "tools-v1",
       userMcpServersFingerprint: "user-mcp-v1",
+      mcpServerNames: ["gbrain", "openclaw_repo_workbench"],
       nativeHookRelayGeneration: "generation-v1",
     });
 
@@ -75,6 +76,7 @@ describe("codex app-server session binding", () => {
     expect(binding?.modelProvider).toBe("openai");
     expect(binding?.dynamicToolsFingerprint).toBe("tools-v1");
     expect(binding?.userMcpServersFingerprint).toBe("user-mcp-v1");
+    expect(binding?.mcpServerNames).toEqual(["gbrain", "openclaw_repo_workbench"]);
     expect(binding?.nativeHookRelayGeneration).toBe("generation-v1");
     const bindingStat = await fs.stat(resolveCodexAppServerBindingPath(sessionFile));
     expect(bindingStat.isFile()).toBe(true);

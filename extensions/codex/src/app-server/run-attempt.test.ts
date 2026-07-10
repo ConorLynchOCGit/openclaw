@@ -1130,6 +1130,7 @@ describe("runCodexAppServerAttempt", () => {
     });
     const binding = await readCodexAppServerBinding(sessionFile);
     expect(binding?.mcpServersFingerprint).toBe("mcp-v1");
+    expect(binding?.mcpServerNames).toEqual(["search"]);
   });
 
   it("starts a new Codex thread when the MCP server fingerprint changes", async () => {

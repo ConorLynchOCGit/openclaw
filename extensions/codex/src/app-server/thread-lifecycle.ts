@@ -571,6 +571,7 @@ export async function startOrResumeThread(params: {
           userMcpServersConfigPatch,
           finalConfigPatch.configPatch,
         );
+        const resumeMcpServerNames = readThreadConfigMcpServerNames(resumeConfig);
         const resumeParams = lifecycleTiming.measureSync("thread-resume-params", () =>
           buildThreadResumeParams(params.params, {
             threadId: binding.threadId,
@@ -611,6 +612,7 @@ export async function startOrResumeThread(params: {
               dynamicToolsFingerprint,
               dynamicToolsContainDeferred,
               userMcpServersFingerprint,
+              mcpServerNames: resumeMcpServerNames,
               mcpServersFingerprint: nextMcpServersFingerprint,
               nativeHookRelayGeneration:
                 finalConfigPatch.nativeHookRelayGeneration ?? binding.nativeHookRelayGeneration,
@@ -658,6 +660,7 @@ export async function startOrResumeThread(params: {
           dynamicToolsFingerprint,
           dynamicToolsContainDeferred,
           userMcpServersFingerprint,
+          mcpServerNames: resumeMcpServerNames,
           mcpServersFingerprint: nextMcpServersFingerprint,
           nativeHookRelayGeneration:
             finalConfigPatch.nativeHookRelayGeneration ?? binding.nativeHookRelayGeneration,
@@ -701,6 +704,7 @@ export async function startOrResumeThread(params: {
       finalConfigPatch.configPatch,
     ),
   );
+  const mcpServerNames = readThreadConfigMcpServerNames(config);
   const startParams = lifecycleTiming.measureSync("thread-start-params", () =>
     buildThreadStartParams(params.params, {
       cwd: params.cwd,
@@ -754,6 +758,7 @@ export async function startOrResumeThread(params: {
           dynamicToolsFingerprint,
           dynamicToolsContainDeferred,
           userMcpServersFingerprint,
+          mcpServerNames,
           mcpServersFingerprint: nextMcpServersFingerprint,
           nativeHookRelayGeneration: finalConfigPatch.nativeHookRelayGeneration,
           pluginAppsFingerprint: pluginThreadConfig?.fingerprint,
@@ -802,6 +807,7 @@ export async function startOrResumeThread(params: {
     dynamicToolsFingerprint,
     dynamicToolsContainDeferred,
     userMcpServersFingerprint,
+    mcpServerNames,
     mcpServersFingerprint: nextMcpServersFingerprint,
     nativeHookRelayGeneration: finalConfigPatch.nativeHookRelayGeneration,
     pluginAppsFingerprint: pluginThreadConfig?.fingerprint,
@@ -816,6 +822,21 @@ export async function startOrResumeThread(params: {
       ...(rotatedContextEngineBinding ? { rotatedContextEngineBinding } : {}),
     },
   };
+}
+
+function readThreadConfigMcpServerNames(config: JsonObject | undefined): string[] | undefined {
+  const rawServers = isJsonObject(config?.mcp_servers)
+    ? config.mcp_servers
+    : isJsonObject(config?.mcpServers)
+      ? config.mcpServers
+      : undefined;
+  if (!rawServers) {
+    return undefined;
+  }
+  const names = Object.keys(rawServers)
+    .filter((name) => name.trim().length > 0)
+    .toSorted((a, b) => a.localeCompare(b));
+  return names.length > 0 ? names : undefined;
 }
 
 export function buildContextEngineBinding(

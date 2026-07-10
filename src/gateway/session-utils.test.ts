@@ -384,6 +384,205 @@ describe("gateway session utils", () => {
     });
   });
 
+  test("session detail projects bounded Codex execution evidence from trajectory", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-session-codex-evidence-"));
+    const sessionId = "11111111-1111-4111-8111-111111111111";
+    const sessionKey = "agent:coding:session-codex-evidence";
+    const storePath = path.join(tempDir, "sessions.json");
+    const transcriptPath = path.join(tempDir, `${sessionId}.jsonl`);
+    fs.writeFileSync(transcriptPath, "", "utf8");
+    const trajectoryPath = path.join(tempDir, `${sessionId}.trajectory.jsonl`);
+    const base = {
+      traceSchema: "openclaw-trajectory",
+      schemaVersion: 1,
+      traceId: sessionId,
+      source: "runtime",
+      sessionId,
+      sessionKey,
+      runId: "run-1",
+      workspaceDir: "/home/node/.openclaw/workspace",
+      provider: "openai",
+      modelId: "gpt-5.5",
+      modelApi: "openai-chatgpt-responses",
+    };
+    const events = [
+      {
+        ...base,
+        type: "tool.call",
+        ts: "2026-07-10T01:00:00.000Z",
+        seq: 1,
+        sourceSeq: 1,
+        data: {
+          threadId: "thread-parent",
+          name: "bash",
+          arguments: { command: "/usr/bin/bash -lc pwd", cwd: "/home/node/.openclaw/workspace" },
+        },
+      },
+      {
+        ...base,
+        type: "tool.result",
+        ts: "2026-07-10T01:00:01.000Z",
+        seq: 2,
+        sourceSeq: 2,
+        data: { threadId: "thread-parent", name: "bash", status: "completed", isError: false },
+      },
+      {
+        ...base,
+        type: "tool.call",
+        ts: "2026-07-10T01:00:02.000Z",
+        seq: 3,
+        sourceSeq: 3,
+        data: {
+          threadId: "thread-parent",
+          name: "openclaw_repo_workbench.repo_search_many",
+          arguments: {
+            queries: [
+              { path: "business-ops", pattern: "onboarding" },
+              { path: "src/openclaw", pattern: "buildCodingWorkbenchMcpServer" },
+            ],
+          },
+        },
+      },
+      {
+        ...base,
+        type: "tool.result",
+        ts: "2026-07-10T01:00:03.000Z",
+        seq: 4,
+        sourceSeq: 4,
+        data: {
+          threadId: "thread-parent",
+          name: "openclaw_repo_workbench.repo_search_many",
+          status: "completed",
+          isError: false,
+          result: { result: { structuredContent: { root: "/home/node/.openclaw/workspace" } } },
+        },
+      },
+      {
+        ...base,
+        type: "tool.call",
+        ts: "2026-07-10T01:00:04.000Z",
+        seq: 5,
+        sourceSeq: 5,
+        data: {
+          threadId: "thread-parent",
+          name: "openclaw_repo_workbench.lsp_hover_typescript",
+          arguments: {
+            file: "src/openclaw/src/agents/codex-mcp-config.ts",
+            line: 231,
+            character: 10,
+          },
+        },
+      },
+      {
+        ...base,
+        type: "tool.result",
+        ts: "2026-07-10T01:00:05.000Z",
+        seq: 6,
+        sourceSeq: 6,
+        data: {
+          threadId: "thread-parent",
+          name: "openclaw_repo_workbench.lsp_hover_typescript",
+          status: "completed",
+          isError: false,
+          result: {
+            result: {
+              structuredContent: {
+                root: "/home/node/.openclaw/workspace",
+                file: "src/openclaw/src/agents/codex-mcp-config.ts",
+                projectMode: "single_file_bounded",
+                lspPartial: true,
+              },
+            },
+          },
+        },
+      },
+      {
+        ...base,
+        type: "model.completed",
+        ts: "2026-07-10T01:00:06.000Z",
+        seq: 7,
+        sourceSeq: 7,
+        data: { threadId: "thread-parent" },
+      },
+      {
+        ...base,
+        type: "session.ended",
+        ts: "2026-07-10T01:00:07.000Z",
+        seq: 8,
+        sourceSeq: 8,
+        data: { threadId: "thread-parent", status: "success" },
+      },
+    ];
+    fs.writeFileSync(
+      trajectoryPath,
+      `${events.map((event) => JSON.stringify(event)).join("\n")}\n`,
+      "utf8",
+    );
+    const cfg = { agents: { list: [{ id: "coding", default: true }] } } as OpenClawConfig;
+    const store = {
+      [sessionKey]: {
+        sessionId,
+        updatedAt: 2_000,
+      } satisfies SessionEntry,
+    };
+
+    const row = buildGatewaySessionRow({
+      cfg,
+      storePath,
+      store,
+      key: sessionKey,
+      entry: store[sessionKey],
+    });
+
+    expect(row.codexExecutionEvidence).toMatchObject({
+      source: "trajectory",
+      ref: `session:${sessionId}`,
+      bounded: true,
+      toolCallCount: 3,
+      toolResultCount: 3,
+      workspaceDirs: ["/home/node/.openclaw/workspace"],
+      threadIds: ["thread-parent"],
+      modelCompleted: true,
+      sessionEndedStatus: "success",
+    });
+    expect(row.codexExecutionEvidence?.mcpTools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          server: "openclaw_repo_workbench",
+          tool: "repo_search_many",
+          count: 1,
+          completed: 1,
+          paths: ["business-ops", "src/openclaw"],
+          roots: ["/home/node/.openclaw/workspace"],
+        }),
+        expect.objectContaining({
+          server: "openclaw_repo_workbench",
+          tool: "lsp_hover_typescript",
+          count: 1,
+          completed: 1,
+          paths: ["src/openclaw/src/agents/codex-mcp-config.ts"],
+          projectModes: ["single_file_bounded"],
+        }),
+      ]),
+    );
+    expect(row.codexExecutionEvidence?.lspTools).toEqual([
+      expect.objectContaining({
+        tool: "lsp_hover_typescript",
+        count: 1,
+        completed: 1,
+        files: ["src/openclaw/src/agents/codex-mcp-config.ts"],
+        projectModes: ["single_file_bounded"],
+        partial: true,
+      }),
+    ]);
+    expect(row.codexExecutionEvidence?.shell).toMatchObject({
+      count: 1,
+      completed: 1,
+      cwd: ["/home/node/.openclaw/workspace"],
+      commandSamples: ["/usr/bin/bash -lc pwd"],
+    });
+  });
+
   test("parseGroupKey handles group keys", () => {
     expect(parseGroupKey("discord:group:dev")).toEqual({
       channel: "discord",

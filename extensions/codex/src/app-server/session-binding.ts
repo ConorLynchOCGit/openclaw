@@ -69,6 +69,7 @@ export type CodexAppServerThreadBinding = {
   dynamicToolsFingerprint?: string;
   dynamicToolsContainDeferred?: boolean;
   userMcpServersFingerprint?: string;
+  mcpServerNames?: string[];
   mcpServersFingerprint?: string;
   nativeHookRelayGeneration?: string;
   pluginAppsFingerprint?: string;
@@ -190,6 +191,7 @@ export async function readCodexAppServerBinding(
         typeof parsed.userMcpServersFingerprint === "string"
           ? parsed.userMcpServersFingerprint
           : undefined,
+      mcpServerNames: readStringArray(parsed.mcpServerNames),
       mcpServersFingerprint:
         typeof parsed.mcpServersFingerprint === "string" ? parsed.mcpServersFingerprint : undefined,
       nativeHookRelayGeneration:
@@ -249,6 +251,7 @@ export async function writeCodexAppServerBinding(
       dynamicToolsFingerprint: binding.dynamicToolsFingerprint,
       dynamicToolsContainDeferred: binding.dynamicToolsContainDeferred,
       userMcpServersFingerprint: binding.userMcpServersFingerprint,
+      mcpServerNames: binding.mcpServerNames,
       mcpServersFingerprint: binding.mcpServersFingerprint,
       nativeHookRelayGeneration: binding.nativeHookRelayGeneration,
       pluginAppsFingerprint: binding.pluginAppsFingerprint,
@@ -264,6 +267,16 @@ export async function writeCodexAppServerBinding(
       `${JSON.stringify(payload, null, 2)}\n`,
     );
   });
+}
+
+function readStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const strings = value.filter(
+    (entry): entry is string => typeof entry === "string" && entry.trim() !== "",
+  );
+  return strings.length > 0 ? strings : undefined;
 }
 
 function readContextEngineBinding(value: unknown): CodexAppServerContextEngineBinding | undefined {

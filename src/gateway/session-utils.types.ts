@@ -72,6 +72,60 @@ export type GatewaySessionCodexNativeChildRun = {
   terminalSummary?: string;
 };
 
+export type GatewaySessionCodexExecutionEvidence = {
+  source: "trajectory";
+  ref: string;
+  derivedBy: "readCodexExecutionEvidenceProjection";
+  bounded: true;
+  observedEventCount: number;
+  toolCallCount: number;
+  toolResultCount: number;
+  workspaceDirs?: string[];
+  threadIds?: string[];
+  tools?: Array<{
+    name: string;
+    count: number;
+    completed?: number;
+    errored?: number;
+    lastStatus?: string;
+    lastEventSeq?: number;
+  }>;
+  mcpTools?: Array<{
+    server: string;
+    tool: string;
+    count: number;
+    completed?: number;
+    errored?: number;
+    lastStatus?: string;
+    lastEventSeq?: number;
+    paths?: string[];
+    roots?: string[];
+    projectModes?: string[];
+  }>;
+  lspTools?: Array<{
+    tool: string;
+    count: number;
+    completed?: number;
+    lastStatus?: string;
+    lastEventSeq?: number;
+    files?: string[];
+    projectModes?: string[];
+    partial?: boolean;
+  }>;
+  shell?: {
+    count: number;
+    completed?: number;
+    errored?: number;
+    cwd?: string[];
+    commandSamples?: string[];
+  };
+  modelCompleted?: boolean;
+  sessionEndedStatus?: string;
+  lastEventSeq?: number;
+  lastEventType?: string;
+  lastObservedAt?: string;
+};
+
 export type GatewaySessionRow = {
   key: string;
   agentId: string;
@@ -148,6 +202,7 @@ export type GatewaySessionRow = {
   parentSessionKey?: string;
   childSessions?: string[];
   codexNativeChildRuns?: GatewaySessionCodexNativeChildRun[];
+  codexExecutionEvidence?: GatewaySessionCodexExecutionEvidence;
   responseUsage?: "on" | "off" | "tokens" | "full";
   modelProvider?: string;
   model?: string;

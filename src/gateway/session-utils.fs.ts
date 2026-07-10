@@ -23,6 +23,7 @@ import {
   type IndexedTranscriptEntry,
 } from "./session-transcript-index.fs.js";
 import type {
+  GatewaySessionCodexExecutionEvidence,
   ReadbackProgressProjection,
   ReadbackFieldProvenance,
   SessionPreviewItem,
@@ -1653,6 +1654,7 @@ export function readRecentSessionUsageFromTranscript(
 const PREVIEW_READ_SIZES = [64 * 1024, 256 * 1024, 1024 * 1024];
 const PREVIEW_MAX_LINES = 200;
 const TRAJECTORY_PROGRESS_READ_BYTES = 256 * 1024;
+const CODEX_EXECUTION_EVIDENCE_READ_BYTES = 1024 * 1024;
 const ACTIVE_PROGRESS_TEXT_LIMIT = 160;
 
 type TranscriptContentEntry = {
@@ -2434,6 +2436,373 @@ function parseTrajectoryProgressEvents(
     }
   }
   return events;
+}
+
+type CodexExecutionToolStats = {
+  name: string;
+  count: number;
+  completed: number;
+  errored: number;
+  lastStatus?: string;
+  lastEventSeq?: number;
+};
+
+type CodexExecutionMcpToolStats = {
+  server: string;
+  tool: string;
+  count: number;
+  completed: number;
+  errored: number;
+  lastStatus?: string;
+  lastEventSeq?: number;
+  paths: Set<string>;
+  roots: Set<string>;
+  projectModes: Set<string>;
+};
+
+type CodexExecutionLspToolStats = {
+  tool: string;
+  count: number;
+  completed: number;
+  lastStatus?: string;
+  lastEventSeq?: number;
+  files: Set<string>;
+  projectModes: Set<string>;
+  partial?: boolean;
+};
+
+type CodexExecutionShellStats = {
+  count: number;
+  completed: number;
+  errored: number;
+  cwd: Set<string>;
+  commandSamples: string[];
+};
+
+function addBoundedSetValue(target: Set<string>, value: unknown, limit = 8): void {
+  if (target.size >= limit) {
+    return;
+  }
+  const text = boundedProgressText(value, 200);
+  if (text) {
+    target.add(text);
+  }
+}
+
+function addBoundedArrayValue(target: string[], value: unknown, limit = 5): void {
+  if (target.length >= limit) {
+    return;
+  }
+  const text = boundedProgressText(value, 240);
+  if (text && !target.includes(text)) {
+    target.push(text);
+  }
+}
+
+function trajectoryStatus(data: Record<string, unknown> | undefined): string | undefined {
+  return boundedProgressText(data?.status, 80);
+}
+
+function trajectoryStructuredContent(
+  data: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  const result = activeProgressRecord(data?.result);
+  const nestedResult = activeProgressRecord(result?.result);
+  return (
+    activeProgressRecord(data?.structuredContent) ??
+    activeProgressRecord(result?.structuredContent) ??
+    activeProgressRecord(nestedResult?.structuredContent)
+  );
+}
+
+function trajectoryResultRoot(data: Record<string, unknown> | undefined): string | undefined {
+  return (
+    boundedProgressText(trajectoryStructuredContent(data)?.root, 200) ??
+    boundedProgressText(activeProgressRecord(data?.result)?.root, 200)
+  );
+}
+
+function collectToolArgumentPaths(
+  data: Record<string, unknown> | undefined,
+  target: Set<string>,
+): void {
+  const args = activeProgressRecord(data?.arguments);
+  if (!args) {
+    return;
+  }
+  addBoundedSetValue(target, args.path);
+  addBoundedSetValue(target, args.file);
+  const queries = Array.isArray(args.queries) ? args.queries : [];
+  for (const query of queries) {
+    addBoundedSetValue(target, activeProgressRecord(query)?.path);
+  }
+  const files = Array.isArray(args.files) ? args.files : [];
+  for (const file of files) {
+    addBoundedSetValue(target, activeProgressRecord(file)?.path);
+  }
+}
+
+function extractMcpToolName(name: string): { server: string; tool: string } | undefined {
+  const dotIndex = name.indexOf(".");
+  if (dotIndex <= 0 || dotIndex === name.length - 1) {
+    return undefined;
+  }
+  return {
+    server: name.slice(0, dotIndex),
+    tool: name.slice(dotIndex + 1),
+  };
+}
+
+function sortCodexExecutionStats<T extends { count: number; lastEventSeq?: number }>(
+  values: Iterable<T>,
+): T[] {
+  return Array.from(values).sort(
+    (a, b) => b.count - a.count || (b.lastEventSeq ?? 0) - (a.lastEventSeq ?? 0),
+  );
+}
+
+function compactToolStats(stats: CodexExecutionToolStats) {
+  return {
+    name: stats.name,
+    count: stats.count,
+    ...(stats.completed > 0 ? { completed: stats.completed } : {}),
+    ...(stats.errored > 0 ? { errored: stats.errored } : {}),
+    ...(stats.lastStatus ? { lastStatus: stats.lastStatus } : {}),
+    ...(stats.lastEventSeq !== undefined ? { lastEventSeq: stats.lastEventSeq } : {}),
+  };
+}
+
+function compactMcpStats(stats: CodexExecutionMcpToolStats) {
+  return {
+    server: stats.server,
+    tool: stats.tool,
+    count: stats.count,
+    ...(stats.completed > 0 ? { completed: stats.completed } : {}),
+    ...(stats.errored > 0 ? { errored: stats.errored } : {}),
+    ...(stats.lastStatus ? { lastStatus: stats.lastStatus } : {}),
+    ...(stats.lastEventSeq !== undefined ? { lastEventSeq: stats.lastEventSeq } : {}),
+    ...(stats.paths.size > 0 ? { paths: Array.from(stats.paths) } : {}),
+    ...(stats.roots.size > 0 ? { roots: Array.from(stats.roots) } : {}),
+    ...(stats.projectModes.size > 0 ? { projectModes: Array.from(stats.projectModes) } : {}),
+  };
+}
+
+function compactLspStats(stats: CodexExecutionLspToolStats) {
+  return {
+    tool: stats.tool,
+    count: stats.count,
+    ...(stats.completed > 0 ? { completed: stats.completed } : {}),
+    ...(stats.lastStatus ? { lastStatus: stats.lastStatus } : {}),
+    ...(stats.lastEventSeq !== undefined ? { lastEventSeq: stats.lastEventSeq } : {}),
+    ...(stats.files.size > 0 ? { files: Array.from(stats.files) } : {}),
+    ...(stats.projectModes.size > 0 ? { projectModes: Array.from(stats.projectModes) } : {}),
+    ...(stats.partial !== undefined ? { partial: stats.partial } : {}),
+  };
+}
+
+export function readCodexExecutionEvidenceProjection(
+  sessionId: string,
+  storePath: string | undefined,
+  sessionFile: string | undefined,
+  agentId: string | undefined,
+): GatewaySessionCodexExecutionEvidence | undefined {
+  const filePath = resolveSessionTrajectoryRuntimeFileSync({
+    sessionId,
+    storePath,
+    sessionFile,
+    agentId,
+  });
+  if (!filePath) {
+    return undefined;
+  }
+  const lines = readRecentTrajectoryLines(filePath, CODEX_EXECUTION_EVIDENCE_READ_BYTES);
+  const events = parseTrajectoryProgressEvents(lines, sessionId);
+  if (events.length === 0) {
+    return undefined;
+  }
+
+  const tools = new Map<string, CodexExecutionToolStats>();
+  const mcpTools = new Map<string, CodexExecutionMcpToolStats>();
+  const lspTools = new Map<string, CodexExecutionLspToolStats>();
+  const shell: CodexExecutionShellStats = {
+    count: 0,
+    completed: 0,
+    errored: 0,
+    cwd: new Set<string>(),
+    commandSamples: [],
+  };
+  const workspaceDirs = new Set<string>();
+  const threadIds = new Set<string>();
+  let toolCallCount = 0;
+  let toolResultCount = 0;
+  let modelCompleted = false;
+  let sessionEndedStatus: string | undefined;
+  let lastEventSeq: number | undefined;
+  let lastEventType: string | undefined;
+  let lastObservedAt: string | undefined;
+
+  for (const { event, eventType, data } of events) {
+    const sourceSeq = finiteNumber(event.sourceSeq) ?? finiteNumber(event.seq);
+    if (sourceSeq !== undefined) {
+      lastEventSeq = sourceSeq;
+    }
+    lastEventType = eventType;
+    lastObservedAt = boundedProgressText(event.ts, 64) ?? lastObservedAt;
+    addBoundedSetValue(workspaceDirs, event.workspaceDir);
+    addBoundedSetValue(threadIds, data?.threadId);
+    if (eventType === "model.completed") {
+      modelCompleted = true;
+      continue;
+    }
+    if (eventType === "session.ended") {
+      sessionEndedStatus = boundedProgressText(data?.status, 80) ?? sessionEndedStatus;
+      continue;
+    }
+    if (eventType !== "tool.call" && eventType !== "tool.result") {
+      continue;
+    }
+    const name = activeProgressToolName(data);
+    if (!name) {
+      continue;
+    }
+    const status = trajectoryStatus(data);
+    const isResult = eventType === "tool.result";
+    if (isResult) {
+      toolResultCount += 1;
+    } else {
+      toolCallCount += 1;
+    }
+    const toolStats = tools.get(name) ?? {
+      name,
+      count: 0,
+      completed: 0,
+      errored: 0,
+    };
+    if (!isResult) {
+      toolStats.count += 1;
+    }
+    if (isResult && status === "completed") {
+      toolStats.completed += 1;
+    }
+    if (isResult && (data?.isError === true || status === "error" || status === "failed")) {
+      toolStats.errored += 1;
+    }
+    toolStats.lastStatus = status ?? toolStats.lastStatus;
+    toolStats.lastEventSeq = sourceSeq ?? toolStats.lastEventSeq;
+    tools.set(name, toolStats);
+
+    if (name === "bash") {
+      if (!isResult) {
+        shell.count += 1;
+        const args = activeProgressRecord(data?.arguments);
+        addBoundedSetValue(shell.cwd, args?.cwd);
+        addBoundedArrayValue(shell.commandSamples, args?.command);
+      } else if (status === "completed") {
+        shell.completed += 1;
+      } else if (data?.isError === true || status === "error" || status === "failed") {
+        shell.errored += 1;
+      }
+    }
+
+    const mcpName = extractMcpToolName(name);
+    if (!mcpName) {
+      continue;
+    }
+    const mcpKey = `${mcpName.server}.${mcpName.tool}`;
+    const mcpStats = mcpTools.get(mcpKey) ?? {
+      server: mcpName.server,
+      tool: mcpName.tool,
+      count: 0,
+      completed: 0,
+      errored: 0,
+      paths: new Set<string>(),
+      roots: new Set<string>(),
+      projectModes: new Set<string>(),
+    };
+    if (!isResult) {
+      mcpStats.count += 1;
+      collectToolArgumentPaths(data, mcpStats.paths);
+    }
+    if (isResult && status === "completed") {
+      mcpStats.completed += 1;
+    }
+    if (isResult && (data?.isError === true || status === "error" || status === "failed")) {
+      mcpStats.errored += 1;
+    }
+    const structured = trajectoryStructuredContent(data);
+    addBoundedSetValue(mcpStats.roots, trajectoryResultRoot(data));
+    addBoundedSetValue(mcpStats.projectModes, structured?.projectMode);
+    mcpStats.lastStatus = status ?? mcpStats.lastStatus;
+    mcpStats.lastEventSeq = sourceSeq ?? mcpStats.lastEventSeq;
+    mcpTools.set(mcpKey, mcpStats);
+
+    if (!mcpName.tool.startsWith("lsp_")) {
+      continue;
+    }
+    const lspStats = lspTools.get(mcpName.tool) ?? {
+      tool: mcpName.tool,
+      count: 0,
+      completed: 0,
+      files: new Set<string>(),
+      projectModes: new Set<string>(),
+    };
+    if (!isResult) {
+      lspStats.count += 1;
+      collectToolArgumentPaths(data, lspStats.files);
+    }
+    if (isResult && status === "completed") {
+      lspStats.completed += 1;
+    }
+    addBoundedSetValue(lspStats.files, structured?.file);
+    addBoundedSetValue(lspStats.projectModes, structured?.projectMode);
+    if (typeof structured?.lspPartial === "boolean") {
+      lspStats.partial = structured.lspPartial;
+    }
+    lspStats.lastStatus = status ?? lspStats.lastStatus;
+    lspStats.lastEventSeq = sourceSeq ?? lspStats.lastEventSeq;
+    lspTools.set(mcpName.tool, lspStats);
+  }
+
+  if (toolCallCount === 0 && toolResultCount === 0 && !modelCompleted && !sessionEndedStatus) {
+    return undefined;
+  }
+
+  return {
+    source: "trajectory",
+    ref: `session:${sessionId}`,
+    derivedBy: "readCodexExecutionEvidenceProjection",
+    bounded: true,
+    observedEventCount: events.length,
+    toolCallCount,
+    toolResultCount,
+    ...(workspaceDirs.size > 0 ? { workspaceDirs: Array.from(workspaceDirs) } : {}),
+    ...(threadIds.size > 0 ? { threadIds: Array.from(threadIds) } : {}),
+    ...(tools.size > 0
+      ? { tools: sortCodexExecutionStats(tools.values()).map(compactToolStats).slice(0, 20) }
+      : {}),
+    ...(mcpTools.size > 0
+      ? { mcpTools: sortCodexExecutionStats(mcpTools.values()).map(compactMcpStats).slice(0, 20) }
+      : {}),
+    ...(lspTools.size > 0
+      ? { lspTools: sortCodexExecutionStats(lspTools.values()).map(compactLspStats).slice(0, 10) }
+      : {}),
+    ...(shell.count > 0
+      ? {
+          shell: {
+            count: shell.count,
+            ...(shell.completed > 0 ? { completed: shell.completed } : {}),
+            ...(shell.errored > 0 ? { errored: shell.errored } : {}),
+            ...(shell.cwd.size > 0 ? { cwd: Array.from(shell.cwd) } : {}),
+            ...(shell.commandSamples.length > 0 ? { commandSamples: shell.commandSamples } : {}),
+          },
+        }
+      : {}),
+    ...(modelCompleted ? { modelCompleted } : {}),
+    ...(sessionEndedStatus ? { sessionEndedStatus } : {}),
+    ...(lastEventSeq !== undefined ? { lastEventSeq } : {}),
+    ...(lastEventType ? { lastEventType } : {}),
+    ...(lastObservedAt ? { lastObservedAt } : {}),
+  };
 }
 
 function activeProgressToolCallId(data: Record<string, unknown> | undefined): string | undefined {

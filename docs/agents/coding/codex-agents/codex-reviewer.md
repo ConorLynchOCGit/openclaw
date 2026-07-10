@@ -28,3 +28,8 @@ matter:
 correctness, or emit quality state. It returns a prose review artifact for the
 parent Coding session and for later OpenClaw Reviewer/operator inspection by
 exact ref.
+
+Prefer bounded native readback first: inspect `codexExecutionEvidence`,
+`codexNativeChildRuns`, and workbench-capability/session-detail fields before
+raw rollout/event logs. Use raw Codex rollout archaeology only when the bounded
+readback is absent, contradictory, or too thin to judge the workbench claim.

@@ -93,6 +93,7 @@ import {
 } from "./session-store-key.js";
 import {
   readLastAssistantTextFromTranscriptWithProvenance,
+  readCodexExecutionEvidenceProjection,
   readLatestTrajectoryProgressProjection,
   readRecentSessionUsageFromTranscript,
   readSessionTitleFieldsFromTranscriptAsync,
@@ -114,6 +115,7 @@ export {
   readFirstUserMessageFromTranscript,
   readLastAssistantTextFromTranscript,
   readLatestTrajectoryProgressProjection,
+  readCodexExecutionEvidenceProjection,
   readLatestSessionUsageFromTranscriptAsync,
   readLatestRecentSessionUsageFromTranscriptAsync,
   readRecentSessionUsageFromTranscriptAsync,
@@ -2172,6 +2174,10 @@ export function buildGatewaySessionRow(params: {
     ? params.storeChildSessionsByKey.get(key)
     : resolveChildSessionKeys(key, store, now);
   const codexNativeChildRuns = buildCodexNativeChildRunsForSession(key);
+  const codexExecutionEvidence =
+    !lightweight && entry?.sessionId
+      ? readCodexExecutionEvidenceProjection(entry.sessionId, storePath, undefined, sessionAgentId)
+      : undefined;
   const compactionCheckpoints = resolveProjectableCompactionCheckpoints(entry);
   const compactionCheckpointCount = Array.isArray(entry?.compactionCheckpoints)
     ? compactionCheckpoints.length
@@ -2498,6 +2504,7 @@ export function buildGatewaySessionRow(params: {
     parentSessionKey: entry?.parentSessionKey,
     childSessions,
     codexNativeChildRuns,
+    codexExecutionEvidence,
     responseUsage: entry?.responseUsage,
     modelProvider: rowModelProvider,
     model: rowModel,
