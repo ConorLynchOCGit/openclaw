@@ -2559,6 +2559,7 @@ type CodexExecutionThreadStats = {
   eventSeqEnd?: number;
   toolCallCount: number;
   toolResultCount: number;
+  peakConcurrentToolCalls: number;
   toolMix: CodexExecutionToolMix;
   mcpTools: Set<string>;
   lspTools: Set<string>;
@@ -2666,6 +2667,7 @@ function getCodexExecutionThreadStats(
     observedEventCount: 0,
     toolCallCount: 0,
     toolResultCount: 0,
+    peakConcurrentToolCalls: 0,
     toolMix: createCodexExecutionToolMix(),
     mcpTools: new Set<string>(),
     lspTools: new Set<string>(),
@@ -2781,6 +2783,9 @@ function compactCodexExecutionThreadStats(stats: CodexExecutionThreadStats) {
     ...(stats.eventSeqEnd !== undefined ? { eventSeqEnd: stats.eventSeqEnd } : {}),
     toolCallCount: stats.toolCallCount,
     toolResultCount: stats.toolResultCount,
+    ...(stats.peakConcurrentToolCalls > 0
+      ? { peakConcurrentToolCalls: stats.peakConcurrentToolCalls }
+      : {}),
     toolMix: compactToolMix(stats.toolMix),
     ...(stats.mcpTools.size > 0 ? { mcpTools: Array.from(stats.mcpTools).slice(0, 12) } : {}),
     ...(stats.lspTools.size > 0 ? { lspTools: Array.from(stats.lspTools).slice(0, 8) } : {}),
@@ -2830,6 +2835,9 @@ export function readCodexExecutionEvidenceProjection(
   const validationCommands: string[] = [];
   let toolCallCount = 0;
   let toolResultCount = 0;
+  let peakConcurrentToolCalls = 0;
+  const activeToolCalls = new Set<string>();
+  const activeToolCallsByThread = new Map<string, Set<string>>();
   let patchCount = 0;
   let modelCompleted = false;
   let sessionEndedStatus: string | undefined;
@@ -2880,6 +2888,27 @@ export function readCodexExecutionEvidenceProjection(
     }
     const status = trajectoryStatus(data);
     const isResult = eventType === "tool.result";
+    const toolCallId = activeProgressToolCallId(data);
+    if (toolCallId) {
+      const concurrencyThreadId = threadId ?? "unknown";
+      const threadCalls = activeToolCallsByThread.get(concurrencyThreadId) ?? new Set<string>();
+      const scopedCallId = `${concurrencyThreadId}\0${toolCallId}`;
+      if (isResult) {
+        activeToolCalls.delete(scopedCallId);
+        threadCalls.delete(toolCallId);
+      } else {
+        activeToolCalls.add(scopedCallId);
+        threadCalls.add(toolCallId);
+        peakConcurrentToolCalls = Math.max(peakConcurrentToolCalls, activeToolCalls.size);
+        if (threadStats) {
+          threadStats.peakConcurrentToolCalls = Math.max(
+            threadStats.peakConcurrentToolCalls,
+            threadCalls.size,
+          );
+        }
+      }
+      activeToolCallsByThread.set(concurrencyThreadId, threadCalls);
+    }
     if (isResult) {
       toolResultCount += 1;
       if (threadStats) {
@@ -3024,6 +3053,7 @@ export function readCodexExecutionEvidenceProjection(
     observedEventCount: events.length,
     toolCallCount,
     toolResultCount,
+    ...(peakConcurrentToolCalls > 0 ? { peakConcurrentToolCalls } : {}),
     toolMix: compactToolMix(toolMix),
     ...(byThread.size > 0
       ? {

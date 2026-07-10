@@ -80,6 +80,7 @@ export type GatewaySessionCodexExecutionEvidence = {
   observedEventCount: number;
   toolCallCount: number;
   toolResultCount: number;
+  peakConcurrentToolCalls?: number;
   toolMix?: {
     shell: number;
     mcp: number;
@@ -97,6 +98,7 @@ export type GatewaySessionCodexExecutionEvidence = {
     eventSeqEnd?: number;
     toolCallCount: number;
     toolResultCount: number;
+    peakConcurrentToolCalls?: number;
     toolMix?: {
       shell: number;
       mcp: number;
@@ -193,9 +195,29 @@ export type GatewaySessionRow = {
       generatedAt?: number;
     };
     tools?: {
+      surface?: "openclaw-dynamic";
       count?: number;
       names?: string[];
       schemaChars?: number;
+    };
+    openclawDynamicTools?: {
+      count?: number;
+      names?: string[];
+      schemaChars?: number;
+    };
+    codexNativeWorkbench?: {
+      active: boolean;
+      mode?: string;
+      codeModeConfigured?: boolean;
+      codeModeOnlyConfigured?: boolean;
+    };
+    codexMcpServers?: {
+      count: number;
+      names: string[];
+    };
+    codexCustomAgents?: {
+      count: number;
+      names: string[];
     };
     codexNativeSurface?: NonNullable<SessionEntry["systemPromptReport"]>["codexNativeSurface"];
   };

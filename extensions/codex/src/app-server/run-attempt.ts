@@ -1793,6 +1793,7 @@ export async function runCodexAppServerAttempt(
     taskRuntimeScope: params.agentHarnessTaskRuntimeScope,
     agentId: params.agentId,
     codexHome: appServer.start.env?.CODEX_HOME ?? resolveCodexAppServerHomeDir(agentDir),
+    trajectoryRecorder,
   });
   const notificationCleanup = client.addNotificationHandler(enqueueNotification);
   const requestCleanup = client.addRequestHandler(async (request) => {

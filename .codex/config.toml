@@ -11,6 +11,8 @@ args = [".agents/plugins/plugins/openclaw-coding-workbench/mcp/openclaw-repo-wor
 cwd = "."
 startup_timeout_sec = 10
 tool_timeout_sec = 30
+required = true
+supports_parallel_tool_calls = true
 enabled_tools = [
   "repo_search_many",
   "repo_read_many",

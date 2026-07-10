@@ -1349,6 +1349,25 @@ describe("buildAgentBootstrapSystemPromptSections", () => {
 });
 
 describe("buildSubagentSystemPrompt", () => {
+  it("keeps OpenClaw tool guidance out of Codex-owned children", () => {
+    const prompt = buildSubagentSystemPrompt({
+      childSessionKey: "agent:coding:subagent:abc",
+      task: "implement the scoped change",
+      childDepth: 1,
+      maxSpawnDepth: 2,
+      executionRuntime: "codex",
+      acpEnabled: true,
+      nativeCommandGuidanceLines: ["OpenClaw command guidance."],
+    });
+
+    expect(prompt).toContain("Use the Codex-native workbench");
+    expect(prompt).toContain("Keep OpenClaw outside the workbench");
+    expect(prompt).not.toContain("## Sub-Agent Spawning");
+    expect(prompt).not.toContain("sessions_spawn");
+    expect(prompt).not.toContain("sessions_yield");
+    expect(prompt).not.toContain("OpenClaw command guidance");
+  });
+
   it("renders depth-1 orchestrator guidance, labels, and recovery notes", () => {
     const prompt = buildSubagentSystemPrompt({
       childSessionKey: "agent:main:subagent:abc",

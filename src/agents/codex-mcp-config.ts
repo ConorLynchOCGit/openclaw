@@ -4,15 +4,12 @@
  * compatible with Codex's MCP config shape.
  */
 import crypto from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
 import {
   loadEnabledBundleMcpConfig,
   type BundleMcpConfig,
   type BundleMcpServerConfig,
 } from "../plugins/bundle-mcp.js";
-import { normalizeAgentId } from "../routing/session-key.js";
 import { isRecord } from "../utils.js";
 import {
   applyCommonServerConfig,
@@ -41,27 +38,6 @@ function isOpenClawLoopbackMcpServer(name: string, server: BundleMcpServerConfig
 }
 
 type CodexMcpToolApprovalMode = "auto" | "prompt" | "approve";
-const OPENCLAW_CODING_WORKBENCH_MCP_SERVER_NAME = "openclaw_repo_workbench";
-const OPENCLAW_CODING_WORKBENCH_PLUGIN_RELATIVE_ROOT = path.join(
-  ".agents",
-  "plugins",
-  "plugins",
-  "openclaw-coding-workbench",
-);
-const OPENCLAW_CODING_WORKBENCH_MCP_RELATIVE_SCRIPT = path.join(
-  "mcp",
-  "openclaw-repo-workbench.mjs",
-);
-const OPENCLAW_CODING_WORKBENCH_ENABLED_TOOLS = [
-  "repo_search_many",
-  "repo_read_many",
-  "repo_glob_many",
-  "git_inspect_many",
-  "lsp_hover_typescript",
-  "lsp_definition_typescript",
-  "lsp_references_typescript",
-] as const;
-
 const CODEX_MCP_TOOL_APPROVAL_MODES = new Set<CodexMcpToolApprovalMode>([
   "auto",
   "prompt",
@@ -180,119 +156,26 @@ function fingerprintCodexMcpServersConfig(config: CodexMcpServersConfig): string
     .digest("hex");
 }
 
-function isCodingAgentId(agentId: string | undefined): boolean {
-  return agentId ? normalizeAgentId(agentId) === "coding" : false;
-}
-
-function resolveCodingWorkbenchPaths(workspaceDir: string):
-  | {
-      workbenchRoot: string;
-      sourceRoot?: string;
-      pluginRoot: string;
-      mcpScript: string;
-    }
-  | undefined {
-  const workspace = path.resolve(workspaceDir);
-  const candidates = [
-    {
-      workbenchRoot: workspace,
-      sourceRoot: workspace,
-      pluginRoot: path.join(workspace, OPENCLAW_CODING_WORKBENCH_PLUGIN_RELATIVE_ROOT),
-    },
-    {
-      workbenchRoot: workspace,
-      sourceRoot: path.join(workspace, "src", "openclaw"),
-      pluginRoot: path.join(
-        workspace,
-        "src",
-        "openclaw",
-        OPENCLAW_CODING_WORKBENCH_PLUGIN_RELATIVE_ROOT,
-      ),
-    },
-  ];
-  for (const candidate of candidates) {
-    const mcpScript = path.join(
-      candidate.pluginRoot,
-      OPENCLAW_CODING_WORKBENCH_MCP_RELATIVE_SCRIPT,
-    );
-    const sourceRoot = candidate.sourceRoot;
-    if (
-      fs.existsSync(path.join(sourceRoot, "openclaw.mjs")) &&
-      fs.existsSync(path.join(sourceRoot, "package.json")) &&
-      fs.existsSync(path.join(candidate.pluginRoot, ".codex-plugin", "plugin.json")) &&
-      fs.existsSync(mcpScript)
-    ) {
-      return { ...candidate, mcpScript };
-    }
-  }
-  return undefined;
-}
-
-function buildCodingWorkbenchMcpServer(
-  params: LoadCodexBundleMcpThreadConfigParams,
-): BundleMcpServerConfig | undefined {
-  if (!isCodingAgentId(params.agentId)) {
-    return undefined;
-  }
-  const paths = resolveCodingWorkbenchPaths(params.workspaceDir);
-  if (!paths) {
-    return undefined;
-  }
-  // The Codex app-server harness does not rely on project `.codex/config.toml`
-  // being loaded implicitly by the child process. Materialize the same Codex
-  // MCP server into thread/start so the underlying Codex toolbroker receives
-  // the workspace workbench. This is still Codex-native MCP, not an OpenClaw
-  // dynamic tool surface.
-  return {
-    command: "node",
-    args: [paths.mcpScript],
-    cwd: paths.pluginRoot,
-    env: {
-      OPENCLAW_REPO_WORKBENCH_ROOT: paths.workbenchRoot,
-      ...(paths.sourceRoot && paths.sourceRoot !== paths.workbenchRoot
-        ? { OPENCLAW_REPO_WORKBENCH_SOURCE_ROOT: paths.sourceRoot }
-        : {}),
-    },
-    codex: {
-      defaultToolsApprovalMode: "approve",
-    },
-    enabled_tools: [...OPENCLAW_CODING_WORKBENCH_ENABLED_TOOLS],
-    startup_timeout_sec: 10,
-    tool_timeout_sec: 30,
-  };
-}
-
 /** Load bundle MCP config for one Codex app-server thread. */
 export function loadCodexBundleMcpThreadConfig(
   params: LoadCodexBundleMcpThreadConfigParams,
 ): CodexBundleMcpThreadConfig {
-  const codingWorkbenchServer = buildCodingWorkbenchMcpServer(params);
   const shouldCreateRuntime = shouldCreateBundleMcpRuntimeForAttempt({
     toolsEnabled: params.toolsEnabled ?? true,
     disableTools: params.disableTools,
     toolsAllow: params.toolsAllow,
   });
-  if (!shouldCreateRuntime && !codingWorkbenchServer) {
+  if (!shouldCreateRuntime) {
     return {
       diagnostics: [],
       evaluated: true,
     };
   }
-  const bundleMcp = shouldCreateRuntime
-    ? loadEnabledBundleMcpConfig({
-        workspaceDir: params.workspaceDir,
-        cfg: params.cfg,
-      })
-    : { config: { mcpServers: {} }, diagnostics: [] };
-  const mergedConfig: BundleMcpConfig = {
-    mcpServers: {
-      ...bundleMcp.config.mcpServers,
-      ...(codingWorkbenchServer
-        ? { [OPENCLAW_CODING_WORKBENCH_MCP_SERVER_NAME]: codingWorkbenchServer }
-        : {}),
-    },
-  };
-  const mcpServers = buildCodexMcpServersConfig(mergedConfig);
+  const bundleMcp = loadEnabledBundleMcpConfig({
+    workspaceDir: params.workspaceDir,
+    cfg: params.cfg,
+  });
+  const mcpServers = buildCodexMcpServersConfig(bundleMcp.config);
   if (Object.keys(mcpServers).length === 0) {
     return {
       diagnostics: bundleMcp.diagnostics,

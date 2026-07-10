@@ -405,8 +405,14 @@ describe("gateway session utils", () => {
               schemaVersion: "openclaw.codex-workbench-capability.v1",
               owner: "codex_app_server",
               openclawDynamicTools: { count: 0, names: [] },
+              codexNativeTools: { mode: "code" },
+              codexWorkbench: {
+                workbenchRoot: "/home/node/.openclaw/workspace",
+                mcpServers: ["openclaw_repo_workbench"],
+              },
               customAgents: {
                 count: 10,
+                names: ["codex_reviewer", "project_explorer"],
                 hasCodexReviewer: true,
                 hasCreativeQualityReviewer: true,
               },
@@ -446,6 +452,20 @@ describe("gateway session utils", () => {
           hasCodexReviewer: true,
           hasCreativeQualityReviewer: true,
         },
+      },
+    });
+    expect(row.promptContext).toMatchObject({
+      tools: { surface: "openclaw-dynamic", count: 0, names: [] },
+      openclawDynamicTools: { count: 0, names: [] },
+      codexNativeWorkbench: {
+        active: true,
+        mode: "code",
+        codeModeConfigured: true,
+      },
+      codexMcpServers: { count: 1, names: ["openclaw_repo_workbench"] },
+      codexCustomAgents: {
+        count: 2,
+        names: ["codex_reviewer", "project_explorer"],
       },
     });
   });
@@ -496,7 +516,11 @@ describe("gateway session utils", () => {
               owner: "codex_app_server",
               thread: { cwd: "/home/node/.openclaw/workspace" },
               openclawDynamicTools: { count: 0, names: [] },
-              codexWorkbench: { workbenchRoot: "/home/node/.openclaw/workspace" },
+              codexWorkbench: {
+                workbenchRoot: "/home/node/.openclaw/workspace",
+                mcpServers: ["openclaw_repo_workbench"],
+              },
+              codexNativeTools: { mode: "code" },
               customAgents: {
                 count: 10,
                 names: ["codex_reviewer", "creative_quality_reviewer", "project_explorer"],
@@ -547,6 +571,15 @@ describe("gateway session utils", () => {
         },
       },
     });
+    expect(row.promptContext).toMatchObject({
+      openclawDynamicTools: { count: 0, names: [] },
+      codexNativeWorkbench: { active: true, mode: "code" },
+      codexMcpServers: { count: 1, names: ["openclaw_repo_workbench"] },
+      codexCustomAgents: {
+        count: 3,
+        names: ["codex_reviewer", "creative_quality_reviewer", "project_explorer"],
+      },
+    });
   });
 
   test("session detail projects bounded Codex execution evidence from trajectory", () => {
@@ -579,26 +612,20 @@ describe("gateway session utils", () => {
         sourceSeq: 1,
         data: {
           threadId: "thread-parent",
+          toolCallId: "call-bash-pwd",
           name: "bash",
           arguments: { command: "/usr/bin/bash -lc pwd", cwd: "/home/node/.openclaw/workspace" },
         },
       },
       {
         ...base,
-        type: "tool.result",
+        type: "tool.call",
         ts: "2026-07-10T01:00:01.000Z",
         seq: 2,
         sourceSeq: 2,
-        data: { threadId: "thread-parent", name: "bash", status: "completed", isError: false },
-      },
-      {
-        ...base,
-        type: "tool.call",
-        ts: "2026-07-10T01:00:02.000Z",
-        seq: 3,
-        sourceSeq: 3,
         data: {
           threadId: "thread-parent",
+          toolCallId: "call-repo-search",
           name: "openclaw_repo_workbench.repo_search_many",
           arguments: {
             queries: [
@@ -611,11 +638,26 @@ describe("gateway session utils", () => {
       {
         ...base,
         type: "tool.result",
+        ts: "2026-07-10T01:00:02.000Z",
+        seq: 3,
+        sourceSeq: 3,
+        data: {
+          threadId: "thread-parent",
+          toolCallId: "call-bash-pwd",
+          name: "bash",
+          status: "completed",
+          isError: false,
+        },
+      },
+      {
+        ...base,
+        type: "tool.result",
         ts: "2026-07-10T01:00:03.000Z",
         seq: 4,
         sourceSeq: 4,
         data: {
           threadId: "thread-parent",
+          toolCallId: "call-repo-search",
           name: "openclaw_repo_workbench.repo_search_many",
           status: "completed",
           isError: false,
@@ -725,6 +767,7 @@ describe("gateway session utils", () => {
         sourceSeq: 12,
         data: {
           threadId: "thread-child",
+          toolCallId: "call-child-read",
           role: "codex_reviewer",
           objective: "review Codex workbench evidence",
           name: "openclaw_repo_workbench.repo_read_many",
@@ -741,6 +784,7 @@ describe("gateway session utils", () => {
         sourceSeq: 13,
         data: {
           threadId: "thread-child",
+          toolCallId: "call-child-read",
           role: "codex_reviewer",
           name: "openclaw_repo_workbench.repo_read_many",
           status: "completed",
@@ -784,6 +828,7 @@ describe("gateway session utils", () => {
       bounded: true,
       toolCallCount: 6,
       toolResultCount: 6,
+      peakConcurrentToolCalls: 2,
       patchCount: 1,
       validationCommands: ["node scripts/check-coding-runtime-readiness.mjs --json"],
       workspaceDirs: ["/home/node/.openclaw/workspace"],
@@ -826,6 +871,7 @@ describe("gateway session utils", () => {
           observedEventCount: 12,
           toolCallCount: 5,
           toolResultCount: 5,
+          peakConcurrentToolCalls: 2,
           toolMix: {
             shell: 2,
             mcp: 2,
@@ -843,6 +889,7 @@ describe("gateway session utils", () => {
           observedEventCount: 2,
           toolCallCount: 1,
           toolResultCount: 1,
+          peakConcurrentToolCalls: 1,
           toolMix: {
             shell: 0,
             mcp: 1,

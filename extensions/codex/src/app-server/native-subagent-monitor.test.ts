@@ -340,6 +340,95 @@ describe("CodexNativeSubagentMonitor", () => {
     );
   });
 
+  it("projects bounded child tool events into the parent trajectory with role identity", async () => {
+    const client = createClient();
+    const runtime = createRuntime();
+    const recordEvent = vi.fn();
+    const monitor = new CodexNativeSubagentMonitor(client, runtime);
+    monitor.registerParent({
+      parentThreadId: "parent-thread",
+      requesterSessionKey: "agent:main:discord:channel:C123",
+      taskRuntimeScope: createTaskScope(),
+      agentId: "main",
+      trajectoryRecorder: { recordEvent } as never,
+    });
+
+    await client.notify({
+      method: "thread/started",
+      params: {
+        thread: {
+          id: "child-thread",
+          preview: "map the implementation files",
+          status: { type: "active", activeFlags: [] },
+          source: {
+            subagent: {
+              thread_spawn: {
+                parent_thread_id: "parent-thread",
+                depth: 1,
+                agent_path: "agents/project_explorer.toml",
+                agent_nickname: "Noether",
+                agent_role: "project_explorer",
+              },
+            },
+          },
+        },
+      },
+    });
+    await client.notify({
+      method: "item/started",
+      params: {
+        threadId: "child-thread",
+        turnId: "child-turn",
+        item: {
+          id: "mcp-child-read",
+          type: "mcpToolCall",
+          server: "openclaw_repo_workbench",
+          tool: "repo_read_many",
+          arguments: { files: [{ path: "src/openclaw/src/agents/task.ts" }] },
+        },
+      },
+    });
+    await client.notify({
+      method: "item/completed",
+      params: {
+        threadId: "child-thread",
+        turnId: "child-turn",
+        item: {
+          id: "mcp-child-read",
+          type: "mcpToolCall",
+          server: "openclaw_repo_workbench",
+          tool: "repo_read_many",
+          status: "completed",
+          result: { structuredContent: { root: "/home/node/.openclaw/workspace" } },
+        },
+      },
+    });
+
+    expect(recordEvent).toHaveBeenNthCalledWith(
+      1,
+      "tool.call",
+      expect.objectContaining({
+        source: "codex-native",
+        threadId: "child-thread",
+        turnId: "child-turn",
+        role: "project_explorer",
+        objective: "map the implementation files",
+        name: "openclaw_repo_workbench.repo_read_many",
+      }),
+    );
+    expect(recordEvent).toHaveBeenNthCalledWith(
+      2,
+      "tool.result",
+      expect.objectContaining({
+        source: "codex-native",
+        threadId: "child-thread",
+        role: "project_explorer",
+        name: "openclaw_repo_workbench.repo_read_many",
+        status: "completed",
+      }),
+    );
+  });
+
   it("mirrors Codex-native subagent completion notifications without parent wakeups", async () => {
     const client = createClient();
     const runtime = createRuntime();

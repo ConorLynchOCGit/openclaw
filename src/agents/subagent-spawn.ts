@@ -37,6 +37,7 @@ import type { SubagentLifecycleHookRunner } from "../plugins/hooks.js";
 import { isValidAgentId, normalizeAgentId, parseAgentSessionKey } from "../routing/session-key.js";
 import { resolveUserPath } from "../utils.js";
 import type { DeliveryContext } from "../utils/delivery-context.types.js";
+import { resolveModelAgentRuntimeMetadata } from "./agent-runtime-metadata.js";
 import { listAgentIds, resolveAgentDir } from "./agent-scope-config.js";
 import type { BootstrapContextMode } from "./bootstrap-files.js";
 import { inheritedToolDenyPatch, normalizeInheritedToolDenylist } from "./inherited-tool-deny.js";
@@ -1356,6 +1357,14 @@ export async function spawnSubagentDirect(
   }
   const { resolvedModel, thinkingOverride } = plan;
   const resolvedModelMetadata = buildResolvedSubagentModelMetadata(resolvedModel);
+  const resolvedModelRef = splitModelRef(resolvedModel);
+  const childAgentRuntime = resolveModelAgentRuntimeMetadata({
+    cfg,
+    agentId: targetAgentId,
+    provider: resolvedModelRef.provider,
+    model: resolvedModelRef.model,
+    sessionKey: childSessionKey,
+  });
   const patchChildSession = async (patch: Record<string, unknown>): Promise<string | undefined> => {
     try {
       const target = resolveGatewaySessionStoreTarget({
@@ -1492,6 +1501,7 @@ export async function spawnSubagentDirect(
     }),
     childDepth,
     maxSpawnDepth,
+    executionRuntime: childAgentRuntime.id === "codex" ? "codex" : "openclaw",
   });
 
   let retainOnSessionKeep = false;

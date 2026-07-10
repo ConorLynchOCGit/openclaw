@@ -1,9 +1,10 @@
 const LIVE_AGENT_WORKSPACE_ROOT = "/home/node/.openclaw/workspace";
 
 const HOST_PATH_PATTERN =
-  /\/(?:srv\/openclaw-next\/(?:home-repo|src\/openclaw|artifacts)|home\/node\/\.openclaw\/workspace)(?:\/[^\s"'`<>()\]\[]*)?/g;
+  /\/(?:srv\/openclaw-next\/(?:home-repo|src\/openclaw|artifacts)|home\/node\/\.openclaw\/workspace)(?:\/[^\s"'`<>()\][]*)?/g;
 
-const DISALLOWED_HOST_PATH_PATTERN = /\/(?:srv|root|app)(?:\/[^\s"'`<>()\]\[]*)?/g;
+const DISALLOWED_HOST_PATH_PATTERN =
+  /(?:^|[\s"'`<>()\][{}])(?<path>\/(?:srv|root|app)(?:\/[^\s"'`<>()\][{}]*)?)(?=$|[\s"'`<>()\][{},.;:!?])/gu;
 
 function stripTrailingPathPunctuation(value: string): { core: string; suffix: string } {
   const match = /[.,;:]+$/u.exec(value);
@@ -66,7 +67,13 @@ export function renderLiveAgentHandoffText(value: string): {
     replacements.push({ from: match, to: replacement });
     return replacement;
   });
-  const rejectedHostPaths = Array.from(new Set(text.match(DISALLOWED_HOST_PATH_PATTERN) ?? []));
+  const rejectedHostPaths = Array.from(
+    new Set(
+      Array.from(text.matchAll(DISALLOWED_HOST_PATH_PATTERN), (match) => match.groups?.path).filter(
+        (candidate): candidate is string => Boolean(candidate),
+      ),
+    ),
+  );
   return {
     text,
     replacements,

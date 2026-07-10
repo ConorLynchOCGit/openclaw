@@ -14,6 +14,7 @@ import {
 } from "openclaw/plugin-sdk/agent-harness-task-runtime";
 import { asFiniteNumber, normalizeOptionalString } from "openclaw/plugin-sdk/string-coerce-runtime";
 import type { CodexAppServerClient } from "./client.js";
+import { normalizeCodexItemToolEvent } from "./codex-item-event-normalizer.js";
 import {
   extractCodexNativeSubagentCompletions,
   type CodexNativeSubagentCompletion,
@@ -31,6 +32,7 @@ import {
 } from "./native-subagent-task-mirror.js";
 import type { CodexServerNotification, JsonObject, JsonValue } from "./protocol.js";
 import { isJsonObject } from "./protocol.js";
+import type { CodexTrajectoryRecorder } from "./trajectory.js";
 
 type NativeSubagentMonitorRuntime = {
   createAgentHarnessTaskRuntime: typeof createAgentHarnessTaskRuntime;
@@ -43,6 +45,7 @@ type ParentState = {
   agentId?: string;
   taskRuntime?: AgentHarnessTaskRuntime;
   mirror?: CodexNativeSubagentTaskMirror;
+  trajectoryRecorder?: CodexTrajectoryRecorder | null;
   mirroredCompletionKeys: Set<string>;
 };
 
@@ -54,6 +57,8 @@ type ChildState = {
   transcriptPollTimer?: ReturnType<typeof setTimeout>;
   transcriptTerminal: boolean;
   noFinalCompletionFallbackTimer?: ReturnType<typeof setTimeout>;
+  role?: string;
+  objective?: string;
 };
 
 type TranscriptCompletion = CodexNativeSubagentCompletion & {
@@ -87,6 +92,7 @@ export function registerCodexNativeSubagentMonitor(params: {
   taskRuntimeScope?: AgentHarnessTaskRuntimeScope;
   agentId?: string;
   codexHome?: string;
+  trajectoryRecorder?: CodexTrajectoryRecorder | null;
   runtime?: NativeSubagentMonitorRuntime;
 }): void {
   let monitor = monitors.get(params.client);
@@ -103,6 +109,7 @@ export function registerCodexNativeSubagentMonitor(params: {
     requesterSessionKey: params.requesterSessionKey,
     taskRuntimeScope: params.taskRuntimeScope,
     agentId: params.agentId,
+    trajectoryRecorder: params.trajectoryRecorder,
   });
 }
 
@@ -154,6 +161,7 @@ export class CodexNativeSubagentMonitor {
     requesterSessionKey?: string;
     taskRuntimeScope?: AgentHarnessTaskRuntimeScope;
     agentId?: string;
+    trajectoryRecorder?: CodexTrajectoryRecorder | null;
   }): void {
     const parentThreadId = params.parentThreadId.trim();
     if (!parentThreadId) {
@@ -164,6 +172,7 @@ export class CodexNativeSubagentMonitor {
       existing.requesterSessionKey = params.requesterSessionKey ?? existing.requesterSessionKey;
       existing.taskRuntimeScope = params.taskRuntimeScope ?? existing.taskRuntimeScope;
       existing.agentId = params.agentId ?? existing.agentId;
+      existing.trajectoryRecorder = params.trajectoryRecorder ?? existing.trajectoryRecorder;
       this.ensureParentTaskRuntime(existing);
     } else {
       const state: ParentState = {
@@ -171,6 +180,7 @@ export class CodexNativeSubagentMonitor {
         requesterSessionKey: params.requesterSessionKey,
         taskRuntimeScope: params.taskRuntimeScope,
         agentId: params.agentId,
+        trajectoryRecorder: params.trajectoryRecorder,
         mirroredCompletionKeys: new Set<string>(),
       };
       this.ensureParentTaskRuntime(state);
@@ -196,6 +206,7 @@ export class CodexNativeSubagentMonitor {
         });
       }
     }
+    this.recordChildToolEvent(state, notification);
     await this.handleCompletionNotification(notification);
   }
 
@@ -229,9 +240,14 @@ export class CodexNativeSubagentMonitor {
       const parentThreadId = readSpawnParentThreadId(thread);
       const childThreadId = thread ? readString(thread, "id")?.trim() : undefined;
       const agentPath = readSpawnAgentPath(thread);
+      const spawn = readCodexSubagentThreadSpawnSourceFromThread(thread);
       const state = parentThreadId ? this.parentStates.get(parentThreadId) : undefined;
       if (state && childThreadId && parentThreadId) {
-        this.registerChildThread(parentThreadId, childThreadId, { agentPath });
+        this.registerChildThread(parentThreadId, childThreadId, {
+          agentPath,
+          role: normalizeOptionalString(spawn?.agent_role),
+          objective: normalizeOptionalString(thread ? readString(thread, "preview") : undefined),
+        });
       }
       return state;
     }
@@ -245,7 +261,13 @@ export class CodexNativeSubagentMonitor {
       const parentThreadId = item
         ? (readString(item, "senderThreadId") ?? readString(params, "threadId"))?.trim()
         : undefined;
-      const state = parentThreadId ? this.parentStates.get(parentThreadId) : undefined;
+      const childParentThreadId = parentThreadId
+        ? this.childThreadParents.get(parentThreadId)
+        : undefined;
+      const state = parentThreadId
+        ? (this.parentStates.get(parentThreadId) ??
+          (childParentThreadId ? this.parentStates.get(childParentThreadId) : undefined))
+        : undefined;
       if (state && parentThreadId) {
         const nativeSpawnOutputChildThreadId = readNativeSpawnFunctionOutputChildThreadId(item);
         if (nativeSpawnOutputChildThreadId) {
@@ -265,6 +287,36 @@ export class CodexNativeSubagentMonitor {
       return state;
     }
     return undefined;
+  }
+
+  private recordChildToolEvent(
+    state: ParentState | undefined,
+    notification: CodexServerNotification,
+  ): void {
+    if (!state?.trajectoryRecorder) {
+      return;
+    }
+    const params = isJsonObject(notification.params) ? notification.params : undefined;
+    const childThreadId = params ? readString(params, "threadId")?.trim() : undefined;
+    if (
+      !params ||
+      !childThreadId ||
+      this.childThreadParents.get(childThreadId) !== state.parentThreadId
+    ) {
+      return;
+    }
+    const child = this.childStates.get(childThreadId);
+    const event = normalizeCodexItemToolEvent({
+      method: notification.method,
+      notificationParams: params,
+      threadId: childThreadId,
+      turnId: readString(params, "turnId"),
+      role: child?.role,
+      objective: child?.objective,
+    });
+    if (event) {
+      state.trajectoryRecorder.recordEvent(event.type, event.data);
+    }
   }
 
   private async handleCompletionNotification(notification: CodexServerNotification): Promise<void> {
@@ -401,7 +453,12 @@ export class CodexNativeSubagentMonitor {
   private registerChildThread(
     parentThreadId: string,
     childThreadId: string,
-    options: { agentPath?: string; scheduleTranscriptPoll?: boolean } = {},
+    options: {
+      agentPath?: string;
+      role?: string;
+      objective?: string;
+      scheduleTranscriptPoll?: boolean;
+    } = {},
   ): void {
     const normalizedParentThreadId = parentThreadId.trim();
     const normalizedChildThreadId = childThreadId.trim();
@@ -430,6 +487,8 @@ export class CodexNativeSubagentMonitor {
       };
       this.childStates.set(normalizedChildThreadId, childState);
     }
+    childState.role = options.role ?? childState.role;
+    childState.objective = options.objective ?? childState.objective;
     if (options.scheduleTranscriptPoll !== false) {
       this.scheduleTranscriptPoll(childState);
     }

@@ -238,6 +238,50 @@ describe("task tool", () => {
     });
   });
 
+  it("does not treat slash-separated prose as a host path", async () => {
+    await createTaskTool({
+      agentSessionKey: "agent:planning:main",
+      requesterAgentIdOverride: "planning",
+    }).execute("call-1", {
+      agentId: "reviewer",
+      task: "Review policy/approval-route and docs/application-boundary.md.",
+    });
+
+    expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: "Review policy/approval-route and docs/application-boundary.md.",
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("inlines bounded untruncated child finals for Planning", async () => {
+    const packet = `# Reviewer Packet\n\n${"material evidence\n".repeat(450)}`.trim();
+    hoisted.readLatestAssistantReplyMock.mockResolvedValue(packet);
+
+    const result = await createTaskTool({
+      agentSessionKey: "agent:planning:main",
+      requesterAgentIdOverride: "planning",
+    }).execute("call-1", {
+      agentId: "reviewer",
+      task: "Review the complete candidate.",
+    });
+
+    expect(packet.length).toBeGreaterThan(1_800);
+    expect(packet.length).toBeLessThan(12_000);
+    expect(result.details).toMatchObject({
+      resultInline: true,
+      resultMode: "inline",
+      parentInlineLimitChars: 12_000,
+    });
+    const content = result.content[0];
+    expect(content?.type).toBe("text");
+    if (!content || content.type !== "text") {
+      throw new Error("Expected text tool result");
+    }
+    expect(content.text).toContain(packet);
+  });
+
   it("returns receipt-only task output to Main even when the delegated child result is small", async () => {
     const shortPlanningResult = "Brief Planning artifact that Main must not rewrite.";
     hoisted.readLatestAssistantReplyMock.mockResolvedValue(shortPlanningResult);

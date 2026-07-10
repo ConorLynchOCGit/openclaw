@@ -83,6 +83,7 @@ import {
 } from "../tasks/codex-native-subagent-task.js";
 import { listTasksForRelatedSessionKey } from "../tasks/task-registry.js";
 import type { TaskEventMetadata, TaskRecord } from "../tasks/task-registry.types.js";
+import { isRecord } from "../utils.js";
 import { normalizeSessionDeliveryFields } from "../utils/delivery-context.shared.js";
 import type { ModelCostConfig } from "../utils/usage-format.js";
 import { estimateUsageCost, resolveModelCostConfig } from "../utils/usage-format.js";
@@ -2443,6 +2444,24 @@ export function buildGatewaySessionRow(params: {
       : undefined);
   const skillsSnapshot = entry?.skillsSnapshot;
   const systemPromptReport = entry?.systemPromptReport;
+  const codexWorkbenchCapability = isRecord(codexNativeSurface?.workbenchCapability)
+    ? codexNativeSurface.workbenchCapability
+    : undefined;
+  const codexNativeTools = isRecord(codexWorkbenchCapability?.codexNativeTools)
+    ? codexWorkbenchCapability.codexNativeTools
+    : undefined;
+  const codexWorkbench = isRecord(codexWorkbenchCapability?.codexWorkbench)
+    ? codexWorkbenchCapability.codexWorkbench
+    : undefined;
+  const codexCustomAgents = isRecord(codexWorkbenchCapability?.customAgents)
+    ? codexWorkbenchCapability.customAgents
+    : undefined;
+  const codexMcpServerNames = Array.isArray(codexWorkbench?.mcpServers)
+    ? codexWorkbench.mcpServers.filter((name): name is string => typeof name === "string")
+    : [];
+  const codexCustomAgentNames = Array.isArray(codexCustomAgents?.names)
+    ? codexCustomAgents.names.filter((name): name is string => typeof name === "string")
+    : [];
   const promptContext =
     skillsSnapshot || systemPromptReport || codexNativeSurface
       ? {
@@ -2477,9 +2496,35 @@ export function buildGatewaySessionRow(params: {
           ...(systemPromptReport?.tools
             ? {
                 tools: {
+                  surface: "openclaw-dynamic" as const,
                   count: systemPromptReport.tools.entries.length,
                   names: systemPromptReport.tools.entries.map((tool) => tool.name),
                   schemaChars: systemPromptReport.tools.schemaChars,
+                },
+              }
+            : {}),
+          ...(codexNativeSurface
+            ? {
+                openclawDynamicTools: {
+                  count: systemPromptReport?.tools?.entries.length ?? 0,
+                  names: systemPromptReport?.tools?.entries.map((tool) => tool.name) ?? [],
+                  schemaChars: systemPromptReport?.tools?.schemaChars ?? 0,
+                },
+                codexNativeWorkbench: {
+                  active: codexNativeSurface.nativeToolSurfaceConfigured,
+                  ...(typeof codexNativeTools?.mode === "string"
+                    ? { mode: codexNativeTools.mode }
+                    : {}),
+                  codeModeConfigured: codexNativeSurface.codeModeConfigured,
+                  codeModeOnlyConfigured: codexNativeSurface.codeModeOnlyConfigured,
+                },
+                codexMcpServers: {
+                  count: codexMcpServerNames.length,
+                  names: codexMcpServerNames,
+                },
+                codexCustomAgents: {
+                  count: codexCustomAgentNames.length,
+                  names: codexCustomAgentNames,
                 },
               }
             : {}),

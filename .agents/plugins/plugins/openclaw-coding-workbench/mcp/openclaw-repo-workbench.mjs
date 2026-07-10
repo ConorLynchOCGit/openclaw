@@ -44,9 +44,22 @@ const DEFAULT_EXCLUDE_GLOBS = [
   "**/*provider-prompt*",
 ];
 
-const server = new McpServer({
-  name: "openclaw_repo_workbench",
-  version: "0.1.0",
+const server = new McpServer(
+  {
+    name: "openclaw_repo_workbench",
+    version: "0.1.0",
+  },
+  {
+    instructions:
+      "Prefer these read-only batched tools for broad repository discovery, multi-file reads, globs, git inspection, and TypeScript symbol lookup. Use native shell/exec for commands, tests, formatting, builds, exact one-off checks, or a concrete MCP limitation.",
+  },
+);
+
+const READ_ONLY_TOOL_ANNOTATIONS = Object.freeze({
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
 });
 
 const SearchQuerySchema = z.object({
@@ -99,7 +112,9 @@ server.registerTool(
   "repo_search_many",
   {
     title: "Search Many",
-    description: "Run multiple bounded ripgrep searches under the active repository root.",
+    description:
+      "Preferred broad-discovery tool: run multiple independent bounded ripgrep searches concurrently under the active workspace root.",
+    annotations: READ_ONLY_TOOL_ANNOTATIONS,
     inputSchema: z.object({
       queries: z.array(SearchQuerySchema).min(1).max(MAX_BATCH_ITEMS),
     }),
@@ -111,7 +126,9 @@ server.registerTool(
   "repo_read_many",
   {
     title: "Read Many",
-    description: "Read multiple files or line ranges under the active repository root.",
+    description:
+      "Preferred multi-file read tool: read multiple bounded files or line ranges concurrently under the active workspace root.",
+    annotations: READ_ONLY_TOOL_ANNOTATIONS,
     inputSchema: z.object({
       files: z.array(ReadRequestSchema).min(1).max(MAX_BATCH_ITEMS),
     }),
@@ -123,7 +140,9 @@ server.registerTool(
   "repo_glob_many",
   {
     title: "Glob Many",
-    description: "Resolve multiple bounded file globs under the active repository root.",
+    description:
+      "Preferred broad file-discovery tool: resolve multiple bounded globs concurrently under the active workspace root.",
+    annotations: READ_ONLY_TOOL_ANNOTATIONS,
     inputSchema: z.object({
       globs: z.array(GlobRequestSchema).min(1).max(MAX_BATCH_ITEMS),
     }),
@@ -135,7 +154,9 @@ server.registerTool(
   "git_inspect_many",
   {
     title: "Git Inspect Many",
-    description: "Run bounded read-only git status/diff inspection under the repository root.",
+    description:
+      "Preferred diff/status discovery tool: inspect the workspace and nested source git roots with bounded read-only requests.",
+    annotations: READ_ONLY_TOOL_ANNOTATIONS,
     inputSchema: z.object({
       requests: z.array(GitRequestSchema).min(1).max(MAX_BATCH_ITEMS),
     }),
@@ -149,6 +170,7 @@ server.registerTool(
     title: "TypeScript Hover",
     description:
       "Return bounded TypeScript language-service hover details for a workspace file position.",
+    annotations: READ_ONLY_TOOL_ANNOTATIONS,
     inputSchema: LspLocationSchema,
   },
   async (input) => result(await lspHoverTypescript(input)),
@@ -160,6 +182,7 @@ server.registerTool(
     title: "TypeScript Definition",
     description:
       "Return bounded TypeScript language-service definition locations for a workspace file position.",
+    annotations: READ_ONLY_TOOL_ANNOTATIONS,
     inputSchema: LspLocationSchema,
   },
   async (input) => result(await lspDefinitionTypescript(input)),
@@ -171,6 +194,7 @@ server.registerTool(
     title: "TypeScript References",
     description:
       "Return bounded TypeScript language-service references for a workspace file position.",
+    annotations: READ_ONLY_TOOL_ANNOTATIONS,
     inputSchema: LspLocationSchema,
   },
   async (input) => result(await lspReferencesTypescript(input)),

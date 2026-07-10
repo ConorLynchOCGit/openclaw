@@ -37,6 +37,7 @@ import { jsonResult, readStringParam, textResult } from "./common.js";
 
 const TASK_WAIT_POLL_MS = 60_000;
 const TASK_RESULT_PARENT_INLINE_MAX_CHARS = 1_800;
+const PLANNING_REVIEW_TASK_RESULT_INLINE_MAX_CHARS = 12_000;
 const TASK_RESULT_PARENT_PREVIEW_MAX_CHARS = 0;
 const RECEIPT_ONLY_PARENT_AGENT_IDS = new Set(["main"]);
 const CODEX_CODING_AGENT_IDS = new Set(["coding", "execution-coding"]);
@@ -166,10 +167,20 @@ function formatTaskResult(params: {
   ].join("\n");
 }
 
-function shouldInlineTaskResultForParent(replyText: string): boolean {
+function taskResultInlineLimitForRequester(requesterAgentId: string | undefined): number {
+  const normalized = requesterAgentId?.trim().toLowerCase();
+  return normalized === "planning" || normalized === "reviewer"
+    ? PLANNING_REVIEW_TASK_RESULT_INLINE_MAX_CHARS
+    : TASK_RESULT_PARENT_INLINE_MAX_CHARS;
+}
+
+function shouldInlineTaskResultForParent(params: {
+  replyText: string;
+  requesterAgentId?: string;
+}): boolean {
   return (
-    replyText.length <= TASK_RESULT_PARENT_INLINE_MAX_CHARS &&
-    !includesChildResultTruncationMarker(replyText)
+    params.replyText.length <= taskResultInlineLimitForRequester(params.requesterAgentId) &&
+    !includesChildResultTruncationMarker(params.replyText)
   );
 }
 
@@ -572,7 +583,8 @@ export function createTaskTool(
       const contentTruncated = includesChildResultTruncationMarker(replyText);
       const requesterAgentId = resolveRequesterAgentId(opts);
       const receiptOnly = shouldReturnReceiptOnlyToParent({ requesterAgentId });
-      const inlineResult = !receiptOnly && shouldInlineTaskResultForParent(replyText);
+      const inlineResult =
+        !receiptOnly && shouldInlineTaskResultForParent({ replyText, requesterAgentId });
       const resultRef = `openclaw-transcript://${encodeURIComponent(
         spawn.childSessionKey,
       )}#session`;
@@ -624,7 +636,7 @@ export function createTaskTool(
         previewOnly: !inlineResult,
         previewChars: previewText?.length ?? 0,
         displayTruncated: !inlineResult,
-        parentInlineLimitChars: TASK_RESULT_PARENT_INLINE_MAX_CHARS,
+        parentInlineLimitChars: taskResultInlineLimitForRequester(requesterAgentId),
         parentPreviewLimitChars: TASK_RESULT_PARENT_PREVIEW_MAX_CHARS,
         ...(wait.recoveryHistory?.length ? { recoveryHistory: wait.recoveryHistory } : {}),
         resolvedModel: spawn.resolvedModel,

@@ -25,6 +25,7 @@ import { generatedImageAssetFromBase64 } from "openclaw/plugin-sdk/image-generat
 import type { AssistantMessage, Usage } from "openclaw/plugin-sdk/llm";
 import { saveMediaBuffer } from "openclaw/plugin-sdk/media-store";
 import { asDateTimestampMs } from "openclaw/plugin-sdk/number-runtime";
+import { normalizeCodexItemToolEvent } from "./codex-item-event-normalizer.js";
 import { resolveCodexLocalRuntimeAttribution } from "./local-runtime-attribution.js";
 import {
   readCodexNotificationThreadId,
@@ -564,6 +565,26 @@ export class CodexAppServerEventProjector {
 
   private async handleItemStarted(params: JsonObject): Promise<void> {
     const item = readItem(params.item);
+    const trajectoryEvent = normalizeCodexItemToolEvent({
+      method: "item/started",
+      notificationParams: params,
+      threadId: this.threadId,
+      turnId: this.turnId,
+    });
+    if (trajectoryEvent) {
+      const toolCallId = String(trajectoryEvent.data.toolCallId ?? "");
+      const name = String(trajectoryEvent.data.name ?? "");
+      if (toolCallId) {
+        this.toolTrajectoryCallIds.add(toolCallId);
+        if (name) {
+          this.toolTrajectoryNamesById.set(toolCallId, name);
+        }
+        if (item) {
+          this.toolTrajectoryItemsById.set(toolCallId, item);
+        }
+      }
+      this.options.trajectoryRecorder?.recordEvent(trajectoryEvent.type, trajectoryEvent.data);
+    }
     const itemId = item?.id ?? readString(params, "itemId") ?? readString(params, "id");
     this.rememberAssistantPhase(item);
     if (itemId) {
@@ -609,6 +630,19 @@ export class CodexAppServerEventProjector {
 
   private async handleItemCompleted(params: JsonObject): Promise<void> {
     const item = readItem(params.item);
+    const trajectoryEvent = normalizeCodexItemToolEvent({
+      method: "item/completed",
+      notificationParams: params,
+      threadId: this.threadId,
+      turnId: this.turnId,
+    });
+    if (trajectoryEvent) {
+      const toolCallId = String(trajectoryEvent.data.toolCallId ?? "");
+      if (toolCallId) {
+        this.toolTrajectoryResultIds.add(toolCallId);
+      }
+      this.options.trajectoryRecorder?.recordEvent(trajectoryEvent.type, trajectoryEvent.data);
+    }
     const itemId = item?.id ?? readString(params, "itemId") ?? readString(params, "id");
     if (itemId) {
       this.activeItemIds.delete(itemId);
@@ -1074,7 +1108,6 @@ export class CodexAppServerEventProjector {
     const status = params.phase === "result" ? itemStatus(item) : "running";
     const args = itemToolArgs(item);
     const meta = itemMeta(item, this.toolProgressDetailMode());
-    this.recordToolTrajectoryEvent({ phase: params.phase, item, name, args, status });
     this.emitDiagnosticToolExecutionEvent({ phase: params.phase, item, name, status });
     if (params.phase === "result") {
       this.recordNativeToolError({ item, name, meta, status });
@@ -1141,43 +1174,6 @@ export class CodexAppServerEventProjector {
       ...(isMutatingNativeToolItem(params.item) ? { mutatingAction: true } : {}),
       ...(actionFingerprint ? { actionFingerprint } : {}),
     };
-  }
-
-  private recordToolTrajectoryEvent(params: {
-    phase: "start" | "result";
-    item: CodexThreadItem;
-    name: string;
-    args?: Record<string, unknown>;
-    status: ReturnType<typeof itemStatus>;
-  }): void {
-    if (params.phase === "start") {
-      this.toolTrajectoryCallIds.add(params.item.id);
-      this.toolTrajectoryNamesById.set(params.item.id, params.name);
-      this.toolTrajectoryItemsById.set(params.item.id, params.item);
-      this.options.trajectoryRecorder?.recordEvent("tool.call", {
-        threadId: this.threadId,
-        turnId: this.turnId,
-        itemId: params.item.id,
-        toolCallId: params.item.id,
-        name: params.name,
-        arguments: params.args,
-      });
-      return;
-    }
-    this.toolTrajectoryResultIds.add(params.item.id);
-    const toolResult = itemToolResult(params.item).result;
-    const output = itemOutputText(params.item, this.toolResultOutputTextByItem);
-    this.options.trajectoryRecorder?.recordEvent("tool.result", {
-      threadId: this.threadId,
-      turnId: this.turnId,
-      itemId: params.item.id,
-      toolCallId: params.item.id,
-      name: params.name,
-      status: params.status,
-      isError: isNonSuccessItemStatus(params.status),
-      ...(toolResult ? { result: toolResult } : {}),
-      ...(output ? { output } : {}),
-    });
   }
 
   private emitDiagnosticToolExecutionEvent(params: {

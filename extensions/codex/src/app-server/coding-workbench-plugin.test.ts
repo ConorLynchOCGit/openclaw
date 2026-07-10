@@ -11,6 +11,7 @@ const WORKBENCH_OPTIONS = { cwd: REPO_ROOT, env: {} };
 describe("OpenClaw Codex repo workbench plugin", () => {
   it("is declared as a project Codex MCP server with only read-only batched repo tools", async () => {
     const configToml = await fs.readFile(path.join(REPO_ROOT, ".codex/config.toml"), "utf8");
+    const serverSource = await fs.readFile(MCP_SERVER, "utf8");
     const mcpJson = JSON.parse(await fs.readFile(path.join(PLUGIN_ROOT, ".mcp.json"), "utf8")) as {
       mcpServers: Record<string, { enabled_tools?: string[] }>;
     };
@@ -20,6 +21,16 @@ describe("OpenClaw Codex repo workbench plugin", () => {
     expect(configToml).toContain(
       'args = [".agents/plugins/plugins/openclaw-coding-workbench/mcp/openclaw-repo-workbench.mjs"]',
     );
+    expect(configToml).toContain("required = true");
+    expect(configToml).toContain("supports_parallel_tool_calls = true");
+    expect(serverSource).toContain(
+      "Prefer these read-only batched tools for broad repository discovery",
+    );
+    expect(serverSource.match(/annotations: READ_ONLY_TOOL_ANNOTATIONS/gu)).toHaveLength(7);
+    expect(serverSource).toContain("readOnlyHint: true");
+    expect(serverSource).toContain("destructiveHint: false");
+    expect(serverSource).toContain("idempotentHint: true");
+    expect(serverSource).toContain("openWorldHint: false");
     expect(enabledTools.toSorted()).toEqual([
       "git_inspect_many",
       "lsp_definition_typescript",
