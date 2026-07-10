@@ -11,7 +11,10 @@ export type GatewaySessionDetailProjection = ReadbackProjection & {
   activeProgress: GatewaySessionRow["activeProgress"] | null;
   readbackProvenance: GatewaySessionRow["readbackProvenance"];
   session: GatewaySessionRow;
-};
+} & Omit<
+    GatewaySessionRow,
+    "key" | "sessionId" | "agentId" | "status" | "finalAssistantText" | "activeProgress"
+  >;
 
 export type GatewaySessionIdentityUnavailable = {
   status: "identity_unavailable";
@@ -65,6 +68,7 @@ export function buildGatewaySessionDetailProjection(params: {
   return {
     ok: true,
     detail: {
+      ...params.row,
       ...readback,
       key: resolvedKey,
       sessionKey: resolvedKey,
