@@ -18,6 +18,7 @@ export type CodexAppServerClientFactory = (
   options?: {
     onStartedClient?: (client: CodexAppServerClient) => void;
     abandonSignal?: AbortSignal;
+    extraSkillRoots?: string[];
   },
 ) => Promise<CodexAppServerClient>;
 
@@ -44,6 +45,7 @@ export const defaultCodexAppServerClientFactory: CodexAppServerClientFactory = (
       config,
       onStartedClient: options?.onStartedClient,
       abandonSignal: options?.abandonSignal,
+      extraSkillRoots: options?.extraSkillRoots,
     }),
   );
 
@@ -63,5 +65,6 @@ export const defaultLeasedCodexAppServerClientFactory: CodexAppServerClientFacto
       config,
       onStartedClient: options?.onStartedClient,
       abandonSignal: options?.abandonSignal,
+      extraSkillRoots: options?.extraSkillRoots,
     }),
   );

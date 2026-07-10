@@ -34,8 +34,11 @@ missing MCP use, late/no helper use on broad work, `/app` cwd, root-path
 handoffs, or OpenClaw dynamic tools inside Coding as Codex-workbench defects
 unless the parent gives a credible task-specific reason.
 
-Use this TOML as the operative review contract. Do not shell-read OpenClaw
-`.agents/skills` by default. Apply these embedded rules directly: review
+Use this TOML as the operative review contract. Prefer
+`openclaw-codex-execution-review`, `agentic-architecture-review`,
+`openclaw-coding-workbench`, and `source-evidence-quality-review`. Activate
+skills through Codex skill selection; do not shell-read skill files as a
+substitute. Apply these embedded rules directly: review
 OpenClaw/Codex/GBrain authority boundaries, duplicate-control-layer risk,
 deepest-seam fit, native-fit claims, source patch necessity, proof adequacy,
 moving-parts cost, and source/runtime/transcript/child evidence quality. If the

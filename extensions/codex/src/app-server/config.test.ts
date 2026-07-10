@@ -2085,6 +2085,27 @@ allowed_sandbox_modes = ["read-only", "workspace-write"]
     );
   });
 
+  it("uses sorted extra skill roots in shared-client keys", () => {
+    const startOptions = {
+      transport: "stdio" as const,
+      command: "codex",
+      args: ["app-server"],
+      headers: {},
+    };
+    const first = codexAppServerStartOptionsKey(startOptions, {
+      extraSkillRoots: ["/workspace/source-skills", "/workspace/shared-skills"],
+    });
+    const reordered = codexAppServerStartOptionsKey(startOptions, {
+      extraSkillRoots: ["/workspace/shared-skills", "/workspace/source-skills"],
+    });
+    const different = codexAppServerStartOptionsKey(startOptions, {
+      extraSkillRoots: ["/workspace/other-skills"],
+    });
+
+    expect(first).toBe(reordered);
+    expect(first).not.toBe(different);
+  });
+
   it("keeps runtime config keys aligned with manifest schema and UI hints", async () => {
     const manifest = JSON.parse(
       await fs.readFile(new URL("../../openclaw.plugin.json", import.meta.url), "utf8"),

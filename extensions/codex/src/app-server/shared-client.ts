@@ -2,6 +2,7 @@
  * Owns shared and isolated Codex app-server client startup, auth application,
  * lease tracking, and teardown.
  */
+import path from "node:path";
 import { resolveDefaultAgentDir } from "openclaw/plugin-sdk/agent-runtime";
 import {
   applyCodexAppServerAuthProfile,
@@ -111,6 +112,7 @@ type CodexAppServerClientOptions = {
   config?: Parameters<typeof resolveCodexAppServerAuthProfileIdForAgent>[0]["config"];
   onStartedClient?: (client: CodexAppServerClient) => void;
   abandonSignal?: AbortSignal;
+  extraSkillRoots?: string[];
 };
 
 type ResolvedCodexAppServerClientStartContext = {
@@ -118,6 +120,7 @@ type ResolvedCodexAppServerClientStartContext = {
   usesNativeAuth: boolean;
   authProfileId: string | undefined;
   startOptions: CodexAppServerStartOptions;
+  extraSkillRoots: string[];
 };
 
 async function resolveCodexAppServerClientStartContext(
@@ -143,7 +146,10 @@ async function resolveCodexAppServerClientStartContext(
     authProfileId: usesNativeAuth ? null : authProfileId,
     config: options?.config,
   });
-  return { agentDir, usesNativeAuth, authProfileId, startOptions };
+  const extraSkillRoots = [...new Set(options?.extraSkillRoots ?? [])]
+    .map((root) => path.resolve(root))
+    .toSorted();
+  return { agentDir, usesNativeAuth, authProfileId, startOptions, extraSkillRoots };
 }
 
 /** Gets or starts a shared Codex app-server client without retaining a lease. */
@@ -194,7 +200,7 @@ async function acquireSharedCodexAppServerClient(
   options?: CodexAppServerClientOptions,
   leaseOptions?: { leased: true },
 ): Promise<{ client: CodexAppServerClient; release?: () => void }> {
-  const { agentDir, usesNativeAuth, authProfileId, startOptions } =
+  const { agentDir, usesNativeAuth, authProfileId, startOptions, extraSkillRoots } =
     await resolveCodexAppServerClientStartContext(options);
   const fallbackApiKeyCacheKey = authProfileId
     ? undefined
@@ -203,6 +209,7 @@ async function acquireSharedCodexAppServerClient(
     authProfileId,
     agentDir: usesNativeAuth ? undefined : agentDir,
     fallbackApiKeyCacheKey,
+    extraSkillRoots,
   });
   const state = getSharedCodexAppServerClientState();
   const entry = getOrCreateSharedClientEntry(state, key);
@@ -231,6 +238,12 @@ async function acquireSharedCodexAppServerClient(
       client.addCloseHandler((closedClient) => clearSharedClientEntryIfCurrent(key, closedClient));
       try {
         await client.initialize();
+        await setCodexAppServerExtraSkillRoots({
+          client,
+          extraSkillRoots,
+          timeoutMs: options?.timeoutMs,
+          signal: options?.abandonSignal,
+        });
         await applyCodexAppServerAuthProfile({
           client,
           agentDir,
@@ -271,12 +284,18 @@ async function acquireSharedCodexAppServerClient(
 export async function createIsolatedCodexAppServerClient(
   options?: CodexAppServerClientOptions,
 ): Promise<CodexAppServerClient> {
-  const { agentDir, usesNativeAuth, authProfileId, startOptions } =
+  const { agentDir, usesNativeAuth, authProfileId, startOptions, extraSkillRoots } =
     await resolveCodexAppServerClientStartContext(options);
   const client = CodexAppServerClient.start(startOptions);
   const initialize = client.initialize();
   try {
     await withTimeout(initialize, options?.timeoutMs ?? 0, "codex app-server initialize timed out");
+    await setCodexAppServerExtraSkillRoots({
+      client,
+      extraSkillRoots,
+      timeoutMs: options?.timeoutMs,
+      signal: options?.abandonSignal,
+    });
     await applyCodexAppServerAuthProfile({
       client,
       agentDir,
@@ -290,6 +309,22 @@ export async function createIsolatedCodexAppServerClient(
     void initialize.catch(() => undefined);
     throw error;
   }
+}
+
+async function setCodexAppServerExtraSkillRoots(params: {
+  client: CodexAppServerClient;
+  extraSkillRoots: string[];
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}): Promise<void> {
+  if (params.extraSkillRoots.length === 0) {
+    return;
+  }
+  await params.client.request(
+    "skills/extraRoots/set",
+    { extraRoots: params.extraSkillRoots },
+    { timeoutMs: params.timeoutMs, signal: params.signal },
+  );
 }
 
 /** Clears and closes all shared clients for deterministic tests. */

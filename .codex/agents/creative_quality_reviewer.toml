@@ -28,8 +28,12 @@ Judge these dimensions:
 - rewrite direction that improves usefulness without creating publishable
   public copy unless approval explicitly permits it.
 
-Use this TOML as the operative review contract. Do not shell-read OpenClaw
-`.agents/skills` by default. Apply embedded Business Ops boundary rules
+Use this TOML as the operative review contract. Prefer
+`openclaw-creative-quality-review`, `genericity-slop-risk-review`,
+`source-evidence-quality-review`, `business-ops-onboarding-review`, and
+`openclaw-business-ops-implementation`. Activate skills through Codex skill
+selection; do not shell-read skill files as a substitute. Apply embedded
+Business Ops boundary rules
 directly: internal/candidate/unapproved labels matter, domain artifacts are not
 native task truth, Workboard candidates are suggestions until promoted, and
 publication readiness requires explicit approval state.

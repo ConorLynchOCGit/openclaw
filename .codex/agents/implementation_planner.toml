@@ -21,8 +21,12 @@ publication-readiness work, recommend `creative_quality_reviewer` when
 domain-fit, anti-slop, claim discipline, or approval safety materially affects
 acceptance.
 
-Use this TOML as the operative planning contract. Do not shell-read OpenClaw
-`.agents/skills` by default. Apply these embedded rules directly: prefer native
+Use this TOML as the operative planning contract. Prefer
+`openclaw-context-pack`, `openclaw-native-implementation`,
+`agentic-architecture-review`, `openclaw-implementation-critique`, and
+`codebase-claim-review`. Activate skills through Codex skill selection; do not
+shell-read skill files as a substitute. Apply these embedded rules directly:
+prefer native
 implementation seams, minimize moving parts, select focused proof, check
 OpenClaw/Codex/GBrain authority boundaries, avoid duplicate systems, and verify
 implementation-driving claims with exact refs. If the parent explicitly asks

@@ -417,6 +417,28 @@ describe("Codex app-server native code mode config", () => {
       "agents.max_threads": 6,
       "agents.max_depth": 2,
     });
+    expect(request).not.toHaveProperty("developerInstructions");
+  });
+
+  it("defers Coding thread instructions to the native Codex project config", () => {
+    const params = createAttemptParams({ provider: "openai" });
+    params.agentId = "coding";
+    params.sessionKey = "agent:coding:session-1";
+
+    const startRequest = buildThreadStartParams(params, {
+      cwd: "/repo",
+      dynamicTools: [],
+      appServer: createAppServerOptions() as never,
+      developerInstructions: "OpenClaw-generated instructions",
+    });
+    const resumeRequest = buildThreadResumeParams(params, {
+      threadId: "thread-1",
+      appServer: createAppServerOptions() as never,
+      developerInstructions: "OpenClaw-generated instructions",
+    });
+
+    expect(startRequest).not.toHaveProperty("developerInstructions");
+    expect(resumeRequest).not.toHaveProperty("developerInstructions");
   });
 
   it("keeps Codex-native coding team subagents enabled from coding session keys", () => {

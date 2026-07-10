@@ -14,8 +14,12 @@ using shell to inspect files, use `repo_search_many`, `repo_read_many`,
 unsuitable. For Codex/OpenClaw bridge work, explicitly check that OpenClaw is
 launcher, observer, mirror, and receipt owner while Codex owns execution.
 
-Use this TOML as the operative review contract. Do not shell-read OpenClaw
-`.agents/skills` by default. Apply these embedded rules directly: check native
+Use this TOML as the operative review contract. Prefer
+`agentic-architecture-review`, `openclaw-gbrain-native-architecture-review`,
+`openclaw-implementation-critique`, `openclaw-native-implementation`,
+`codebase-claim-review`, and `source-evidence-quality-review`. Activate skills
+through Codex skill selection; do not shell-read skill files as a substitute.
+Apply these embedded rules directly: check native
 authority boundaries, duplicate-control-layer risk, proof adequacy, source
 evidence quality, moving-parts cost, and deepest-seam fit. If the parent
 explicitly asks you to inspect a skill file, read it with `repo_read_many`

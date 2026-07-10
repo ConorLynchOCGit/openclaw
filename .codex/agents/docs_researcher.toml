@@ -13,8 +13,12 @@ needed. For local docs, lockfiles, or source docs, use `repo_search_many`,
 shell-based file inspection, use MCP or state why MCP is unavailable or
 unsuitable.
 
-Use this TOML as the operative research contract. Do not shell-read OpenClaw
-`.agents/skills` by default. Apply these embedded rules directly: check source
+Use this TOML as the operative research contract. Prefer
+`openclaw-context-pack`, `source-evidence-quality-review`,
+`codebase-claim-review`, and the source-owned `technical-documentation` skill.
+Use `openai-docs` when available for current OpenAI or Codex behavior. Activate
+skills through Codex skill selection; do not shell-read skill files as a
+substitute. Apply these embedded rules directly: check source
 freshness, source authority, evidence quality, local dependency docs/types,
 and architecture/native-fit implications. If the parent explicitly asks you to
 inspect a skill file, read it with `repo_read_many` unless MCP is unavailable.
@@ -32,3 +36,6 @@ Use this pack shape:
 ## Inspect Next
 ## Stop Rationale
 """
+
+[mcp_servers.openaiDeveloperDocs]
+url = "https://developers.openai.com/mcp"

@@ -577,8 +577,8 @@ describe("runCodexAppServerAttempt", () => {
     );
     const { requests, waitForMethod, completeTurn } = createStartedThreadHarness();
     const params = createParams(sessionFile, workspaceDir);
-    params.agentId = "coding";
-    params.sessionKey = "agent:coding:session-launch-evidence";
+    params.agentId = "reviewer";
+    params.sessionKey = "agent:reviewer:session-launch-evidence";
     params.disableTools = true;
     params.runtimePlan = createCodexRuntimePlanFixture();
 
@@ -1427,6 +1427,9 @@ describe("runCodexAppServerAttempt", () => {
     await harness.waitForMethod("turn/start");
     await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
     const result = await run;
+
+    const threadStart = harness.requests.find((request) => request.method === "thread/start");
+    expect(threadStart?.params).not.toHaveProperty("developerInstructions");
 
     const turnStart = harness.requests.find((request) => request.method === "turn/start");
     const turnStartParams = turnStart?.params as {

@@ -989,6 +989,7 @@ export function buildThreadStartParams(
     nativeCodeModeEnabled: options.nativeCodeModeEnabled,
     nativeCodeModeOnlyEnabled: options.nativeCodeModeOnlyEnabled,
   });
+  const useProjectDeveloperInstructions = isCodexNativeCodingTeamRun(params);
   return {
     model: modelSelection.model,
     ...(modelSelection.modelProvider ? { modelProvider: modelSelection.modelProvider } : {}),
@@ -1001,17 +1002,21 @@ export function buildThreadStartParams(
     serviceName: "OpenClaw",
     config: runtimeConfig,
     ...resolveCodexThreadEnvironmentSelection(options),
-    developerInstructions:
-      options.developerInstructions ??
-      buildDeveloperInstructions(params, {
-        dynamicTools: options.dynamicTools,
-        launchEvidence: {
-          cwd: options.cwd,
-          runtimeConfig,
-          nativeCodeModeEnabled: options.nativeCodeModeEnabled,
-          nativeCodeModeOnlyEnabled: options.nativeCodeModeOnlyEnabled,
-        },
-      }),
+    ...(!useProjectDeveloperInstructions
+      ? {
+          developerInstructions:
+            options.developerInstructions ??
+            buildDeveloperInstructions(params, {
+              dynamicTools: options.dynamicTools,
+              launchEvidence: {
+                cwd: options.cwd,
+                runtimeConfig,
+                nativeCodeModeEnabled: options.nativeCodeModeEnabled,
+                nativeCodeModeOnlyEnabled: options.nativeCodeModeOnlyEnabled,
+              },
+            }),
+        }
+      : {}),
     dynamicTools: options.dynamicTools,
     experimentalRawEvents: true,
     persistExtendedHistory: true,
@@ -1051,6 +1056,7 @@ export function buildThreadResumeParams(
     nativeCodeModeEnabled: options.nativeCodeModeEnabled,
     nativeCodeModeOnlyEnabled: options.nativeCodeModeOnlyEnabled,
   });
+  const useProjectDeveloperInstructions = isCodexNativeCodingTeamRun(params);
   return {
     threadId: options.threadId,
     model: modelSelection.model,
@@ -1061,16 +1067,20 @@ export function buildThreadResumeParams(
     ...(options.appServer.serviceTier ? { serviceTier: options.appServer.serviceTier } : {}),
     personality: CODEX_NATIVE_PERSONALITY_NONE,
     config: runtimeConfig,
-    developerInstructions:
-      options.developerInstructions ??
-      buildDeveloperInstructions(params, {
-        dynamicTools: options.dynamicTools,
-        launchEvidence: {
-          runtimeConfig,
-          nativeCodeModeEnabled: options.nativeCodeModeEnabled,
-          nativeCodeModeOnlyEnabled: options.nativeCodeModeOnlyEnabled,
-        },
-      }),
+    ...(!useProjectDeveloperInstructions
+      ? {
+          developerInstructions:
+            options.developerInstructions ??
+            buildDeveloperInstructions(params, {
+              dynamicTools: options.dynamicTools,
+              launchEvidence: {
+                runtimeConfig,
+                nativeCodeModeEnabled: options.nativeCodeModeEnabled,
+                nativeCodeModeOnlyEnabled: options.nativeCodeModeOnlyEnabled,
+              },
+            }),
+        }
+      : {}),
     persistExtendedHistory: true,
   };
 }

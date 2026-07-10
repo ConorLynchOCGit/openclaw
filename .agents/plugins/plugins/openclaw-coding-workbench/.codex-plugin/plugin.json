@@ -8,7 +8,6 @@
   "license": "MIT",
   "keywords": ["openclaw", "coding", "repo", "workbench"],
   "mcpServers": "./.mcp.json",
-  "skills": "./skills/",
   "interface": {
     "displayName": "OpenClaw Coding Workbench",
     "shortDescription": "Batched read-only repo inspection for OpenClaw Coding threads.",

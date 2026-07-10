@@ -240,6 +240,30 @@ describe("shared Codex app-server client", () => {
     expect(applyCall?.authProfileId).toBe("openai:work");
   });
 
+  it("sets process-scoped extra skill roots before returning the shared client", async () => {
+    const harness = createClientHarness();
+    vi.spyOn(CodexAppServerClient, "start").mockReturnValue(harness.client);
+
+    const clientPromise = getSharedCodexAppServerClient({
+      timeoutMs: 1000,
+      extraSkillRoots: ["/tmp/workspace/src/openclaw/.agents/skills"],
+    });
+    await sendInitializeResult(harness, "openclaw/0.125.0 (macOS; test)");
+    await vi.waitFor(() => expect(harness.writes.length).toBeGreaterThanOrEqual(3));
+    const extraRootsRequest = JSON.parse(harness.writes[2] ?? "{}") as {
+      id?: number;
+      method?: string;
+      params?: { extraRoots?: string[] };
+    };
+    expect(extraRootsRequest).toMatchObject({
+      method: "skills/extraRoots/set",
+      params: { extraRoots: ["/tmp/workspace/src/openclaw/.agents/skills"] },
+    });
+    harness.send({ id: extraRootsRequest.id, result: {} });
+
+    await expect(clientPromise).resolves.toBe(harness.client);
+  });
+
   it("skips target auth resolution when native source auth is requested", async () => {
     const harness = createClientHarness();
     vi.spyOn(CodexAppServerClient, "start").mockReturnValue(harness.client);

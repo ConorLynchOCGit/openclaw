@@ -95,6 +95,7 @@ export async function startCodexAttemptThread(params: {
   sessionAgentId: string;
   effectiveWorkspace: string;
   effectiveCwd: string;
+  extraSkillRoots: string[];
   dynamicTools: CodexDynamicToolSpec[];
   developerInstructions: string | undefined;
   finalConfigPatch?: Parameters<typeof startOrResumeThread>[0]["finalConfigPatch"];
@@ -213,6 +214,7 @@ export async function startCodexAttemptThread(params: {
                   }
                 },
                 abandonSignal: startupAbandonController.signal,
+                extraSkillRoots: params.extraSkillRoots,
               },
             );
             const activeStartupClient = startupClient;

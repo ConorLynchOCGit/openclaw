@@ -513,6 +513,8 @@ export async function runCodexAppServerAttempt(
     ? effectiveWorkspace
     : (effectiveRequestedCwd ?? effectiveWorkspace);
   await ensureCodexWorkspaceDirOnce(effectiveWorkspace);
+  const nestedSourceSkillRoot = path.join(effectiveWorkspace, "src/openclaw/.agents/skills");
+  const extraSkillRoots = (await pathExists(nestedSourceSkillRoot)) ? [nestedSourceSkillRoot] : [];
   preDynamicStartupStages.mark("effective-workspace");
   let policyAppServer = resolveCodexAppServerForOpenClawToolPolicy({
     appServer: configuredAppServer,
@@ -1243,6 +1245,7 @@ export async function runCodexAppServerAttempt(
       sessionAgentId,
       effectiveWorkspace,
       effectiveCwd,
+      extraSkillRoots,
       dynamicTools: toolBridge.specs,
       developerInstructions: promptBuild.developerInstructions,
       buildFinalConfigPatch: buildNativeHookRelayFinalConfigPatch,

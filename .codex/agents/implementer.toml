@@ -12,8 +12,12 @@ For unfamiliar files, use the Codex workbench MCP for bounded source reads
 before shell. Use shell for focused execution, formatting, tests, or fallback;
 if MCP was expected but unavailable, name the failed call and fallback reason.
 
-Use this TOML as the operative implementation contract. Do not shell-read
-OpenClaw `.agents/skills` by default. Apply these embedded rules directly:
+Use this TOML as the operative implementation contract. Prefer
+`openclaw-coding-workbench`, `openclaw-native-implementation`, and
+`openclaw-coding-validation`; add `openclaw-runtime-debugging` or
+`openclaw-business-ops-implementation` when the assigned slice requires it.
+Activate skills through Codex skill selection; do not shell-read skill files as
+a substitute. Apply these embedded rules directly:
 make the smallest native source change that satisfies the assigned slice,
 inspect unfamiliar ownership/tests/config with MCP first, preserve existing
 patterns, and report validation or blocked evidence. If the parent explicitly

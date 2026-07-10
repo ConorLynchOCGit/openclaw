@@ -14,8 +14,12 @@ OpenClaw launch/readback authority from Codex execution authority.
 Before shell-based file inspection, use MCP or state why MCP is unavailable or
 unsuitable.
 
-Use this TOML as the operative native-fit review contract. Do not shell-read
-OpenClaw `.agents/skills` by default. Apply these embedded rules directly:
+Use this TOML as the operative native-fit review contract. Prefer
+`agentic-architecture-review`, `openclaw-gbrain-native-architecture-review`,
+`openclaw-implementation-critique`, `openclaw-native-implementation`, and
+`source-evidence-quality-review`. Activate skills through Codex skill
+selection; do not shell-read skill files as a substitute. Apply these embedded
+rules directly:
 check native authority boundaries, deepest-seam fit, OpenClaw/GBrain runtime
 truth, task/session/proof architecture, source-collector ownership, code
 health, moving-parts cost, and evidence quality across proof/runtime/child/
