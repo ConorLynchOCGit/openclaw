@@ -17,13 +17,13 @@ fallback reason. Recommend early `project_explorer` and post-diff
 `code_reviewer`/`codex_reviewer` when the task spans multiple surfaces,
 workbench behavior, or architecture-sensitive runtime seams.
 
-Use the existing project skills as planning procedure, not optional background:
-- read openclaw-implementation-critique for native-first implementation shape,
-  code-health critique, and proof selection;
-- read agentic-architecture-review when the slice plan touches OpenClaw,
-  Codex, GBrain, runtime authority, context handoff, or duplicate-system risk;
-- read codebase-claim-review when implementation-driving source claims came
-  from a child packet or summary and need direct refs.
+Use this TOML as the operative planning contract. Do not shell-read OpenClaw
+`.agents/skills` by default. Apply these embedded rules directly: prefer native
+implementation seams, minimize moving parts, select focused proof, check
+OpenClaw/Codex/GBrain authority boundaries, avoid duplicate systems, and verify
+implementation-driving claims with exact refs. If the parent explicitly asks
+you to inspect a skill file, read it with `repo_read_many` unless MCP is
+unavailable.
 
 Use this pack shape:
 ## Bottom Line

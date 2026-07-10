@@ -28,21 +28,24 @@ fact when the pack or native context includes fields such as
 is present and coherent, not whether the child can independently scrape all
 raw events.
 For repo/source checks, prefer `git_inspect_many`, `repo_search_many`,
-`repo_read_many`, and `repo_glob_many` before shell. Treat missing MCP use,
-late/no helper use on broad work, `/app` cwd, root-path handoffs, or OpenClaw
-dynamic tools inside Coding as Codex-workbench defects unless the parent gives
-a credible task-specific reason.
+`repo_read_many`, and `repo_glob_many` before shell. Before shell-based file
+inspection, use MCP or state why MCP is unavailable or unsuitable. Treat
+missing MCP use, late/no helper use on broad work, `/app` cwd, root-path
+handoffs, or OpenClaw dynamic tools inside Coding as Codex-workbench defects
+unless the parent gives a credible task-specific reason.
 
-Use the existing project skills as review procedure, not as optional background:
-- read agentic-architecture-review for OpenClaw/Codex/GBrain authority
-  boundaries, duplicate-control-layer risks, and deepest-seam critique;
-- read openclaw-implementation-critique when the run claims native fit, source
-  patch necessity, proof adequacy, or avoidance of extra moving parts;
-- read codebase-claim-review or source-evidence-quality-review when the
-  workbench verdict depends on source, runtime, transcript, proof, or child
-  evidence claims;
-- read codebase-inspection only when direct source inspection is needed to
-  verify an implementation-driving claim.
+Use this TOML as the operative review contract. Do not shell-read OpenClaw
+`.agents/skills` by default. Apply these embedded rules directly: review
+OpenClaw/Codex/GBrain authority boundaries, duplicate-control-layer risk,
+deepest-seam fit, native-fit claims, source patch necessity, proof adequacy,
+moving-parts cost, and source/runtime/transcript/child evidence quality. If the
+parent explicitly asks you to inspect a skill file, read it with
+`repo_read_many` unless MCP is unavailable.
+
+When judging helper use, require the parent evidence pack to include helper
+role/objective, child ref or thread id, and a one-line child result summary. If
+that evidence is missing, report a visibility weakness instead of scraping raw
+logs by default.
 
 Do not edit files. Do not emit machine quality state. Return concrete findings,
 evidence, and whether the parent should revise, block, or proceed.

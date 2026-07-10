@@ -471,6 +471,68 @@ describe("CodexNativeSubagentTaskMirror", () => {
     );
   });
 
+  it("creates identified tasks from Codex-native spawn_agent function calls", () => {
+    const runtime = createRuntime();
+    const mirror = new CodexNativeSubagentTaskMirror(
+      {
+        parentThreadId: "parent-thread",
+        requesterSessionKey: "agent:main:main",
+        now: () => 41_000,
+      },
+      runtime,
+    );
+
+    mirror.handleNotification({
+      method: "item/started",
+      params: {
+        threadId: "parent-thread",
+        item: {
+          type: "function_call",
+          name: "spawn_agent",
+          call_id: "call-spawn",
+          arguments: JSON.stringify({
+            agent_type: "codex_reviewer",
+            message:
+              "Role: codex_reviewer. Objective: review parent-provided bounded evidence pack.",
+            fork_context: false,
+          }),
+        },
+      },
+    });
+    mirror.handleNotification({
+      method: "item/completed",
+      params: {
+        threadId: "parent-thread",
+        item: {
+          type: "function_call_output",
+          call_id: "call-spawn",
+          output: JSON.stringify({
+            agent_id: "child-thread",
+            nickname: "Leibniz",
+          }),
+        },
+      },
+    });
+
+    expect(runtime.tryCreateRunningTaskRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceId: "codex-thread:child-thread",
+        runId: "codex-thread:child-thread",
+        label: "Leibniz (codex_reviewer)",
+        task: "review parent-provided bounded evidence pack.",
+        progressSummary:
+          "Codex native subagent spawned (role: codex_reviewer; agent_path: agents/codex_reviewer.toml).",
+        eventMetadata: expect.objectContaining({
+          childPhase: "child_spawned",
+          childRole: "codex_reviewer",
+          childAgentPath: "agents/codex_reviewer.toml",
+          childNickname: "Leibniz",
+          spawnReason: "review parent-provided bounded evidence pack.",
+        }),
+      }),
+    );
+  });
+
   it("uses the notification thread id when collab agent items omit sender thread id", () => {
     const runtime = createRuntime();
     const mirror = new CodexNativeSubagentTaskMirror(

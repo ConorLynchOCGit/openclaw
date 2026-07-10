@@ -268,6 +268,78 @@ describe("CodexNativeSubagentMonitor", () => {
     );
   });
 
+  it("registers Codex-native spawn_agent function output child ids for completion", async () => {
+    const client = createClient();
+    const runtime = createRuntime();
+    const monitor = new CodexNativeSubagentMonitor(client, runtime);
+    monitor.registerParent({
+      parentThreadId: "parent-thread",
+      requesterSessionKey: "agent:main:discord:channel:C123",
+      taskRuntimeScope: createTaskScope(),
+      agentId: "main",
+    });
+
+    await client.notify({
+      method: "item/started",
+      params: {
+        threadId: "parent-thread",
+        item: {
+          type: "function_call",
+          name: "spawn_agent",
+          call_id: "call-spawn",
+          arguments: JSON.stringify({
+            agent_type: "codex_reviewer",
+            message:
+              "Role: codex_reviewer. Objective: review parent-provided bounded evidence pack.",
+            fork_context: false,
+          }),
+        },
+      },
+    });
+    await client.notify({
+      method: "item/completed",
+      params: {
+        threadId: "parent-thread",
+        item: {
+          type: "function_call_output",
+          call_id: "call-spawn",
+          output: JSON.stringify({
+            agent_id: "child-thread",
+            nickname: "Leibniz",
+          }),
+        },
+      },
+    });
+    await client.notify(
+      nativeCompletionNotification({
+        agentPath: "child-thread",
+        statusLabel: "completed",
+        result: "review done",
+      }),
+    );
+
+    expect(runtime.createRunningTaskRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "codex-thread:child-thread",
+        label: "Leibniz (codex_reviewer)",
+        task: "review parent-provided bounded evidence pack.",
+        eventMetadata: expect.objectContaining({
+          childRole: "codex_reviewer",
+          childAgentPath: "agents/codex_reviewer.toml",
+          childNickname: "Leibniz",
+          spawnReason: "review parent-provided bounded evidence pack.",
+        }),
+      }),
+    );
+    expect(runtime.finalizeTaskRunByRunId).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "codex-thread:child-thread",
+        status: "succeeded",
+        terminalSummary: "review done",
+      }),
+    );
+  });
+
   it("mirrors Codex-native subagent completion notifications without parent wakeups", async () => {
     const client = createClient();
     const runtime = createRuntime();

@@ -16,14 +16,12 @@ Use `lsp_hover_typescript`, `lsp_definition_typescript`, and
 `lsp_references_typescript` for TypeScript symbol questions once a target file
 and symbol are identified.
 
-Use the existing project skills as exploration procedure, not optional
-background:
-- read codebase-inspection for the narrow source-inspection loop, enough-
-  evidence stop rule, and exact-ref Context Pack expectations;
-- read codebase-claim-review when checking or downgrading implementation-
-  driving claims from plans, docs, child summaries, or stale artifacts;
-- read source-evidence-quality-review when the source map depends on runtime,
-  proof, child, transcript, external, or mixed evidence.
+Use this TOML as the operative exploration contract. Do not shell-read OpenClaw
+`.agents/skills` by default. Apply these embedded rules directly: inspect only
+until the implementation surface is clear, produce exact refs, downgrade stale
+or weak claims, separate source/runtime/proof/child evidence, and stop once the
+parent has enough to implement. If the parent explicitly asks you to inspect a
+skill file, read it with `repo_read_many` unless MCP is unavailable.
 
 Use this pack shape:
 ## Bottom Line

@@ -17,26 +17,55 @@ type WorkbenchModule = {
     input: unknown,
     options?: unknown,
   ): Promise<{
-    results: Array<{ status: string; matches?: string[]; error?: string }>;
+    results: Array<{
+      status: string;
+      matches?: string[];
+      error?: string;
+      effectiveMaxMatches?: number;
+      requestedMaxMatches?: number;
+      maxMatchesClamped?: boolean;
+    }>;
   }>;
   repoReadMany(
     input: unknown,
     options?: unknown,
   ): Promise<{
-    results: Array<{ status: string; content?: string; error?: string; totalLines?: number }>;
+    results: Array<{
+      status: string;
+      content?: string;
+      error?: string;
+      totalLines?: number;
+      effectiveMaxBytes?: number;
+      requestedMaxBytes?: number;
+      maxBytesClamped?: boolean;
+    }>;
   }>;
   repoGlobMany(
     input: unknown,
     options?: unknown,
   ): Promise<{
-    results: Array<{ status: string; files?: string[] }>;
+    results: Array<{
+      status: string;
+      files?: string[];
+      effectiveMaxResults?: number;
+      requestedMaxResults?: number;
+      maxResultsClamped?: boolean;
+    }>;
   }>;
   gitInspectMany(
     input: unknown,
     options?: unknown,
   ): Promise<{
     gitRoots?: string[];
-    results: Array<{ status: string; stdout?: string; repoRoot?: string; error?: string }>;
+    results: Array<{
+      status: string;
+      stdout?: string;
+      repoRoot?: string;
+      error?: string;
+      effectiveMaxBytes?: number;
+      requestedMaxBytes?: number;
+      maxBytesClamped?: boolean;
+    }>;
   }>;
   lspHoverTypescript(
     input: unknown,
@@ -51,6 +80,9 @@ type WorkbenchModule = {
     options?: unknown,
   ): Promise<{
     status: string;
+    effectiveMaxResults?: number;
+    requestedMaxResults?: number;
+    maxResultsClamped?: boolean;
     definitions?: Array<{ path?: string; line?: number; character?: number }>;
     error?: string;
   }>;
@@ -59,6 +91,9 @@ type WorkbenchModule = {
     options?: unknown,
   ): Promise<{
     status: string;
+    effectiveMaxResults?: number;
+    requestedMaxResults?: number;
+    maxResultsClamped?: boolean;
     references?: Array<{ path?: string; line?: number; character?: number }>;
     error?: string;
   }>;
@@ -158,6 +193,71 @@ describe("openclaw-coding-workbench MCP helpers", () => {
     expect(result.results[1]).toMatchObject({
       status: "error",
       error: expect.stringContaining("path escapes repository root"),
+    });
+  });
+
+  it("clamps optimistic size and result hints instead of failing schema-style", async () => {
+    const repo = await makeRepo();
+    const workbench = await loadWorkbench();
+
+    const read = await workbench.repoReadMany(
+      {
+        files: [{ path: "src/alpha.ts", maxBytes: 200_000 }],
+      },
+      optionsFor(repo),
+    );
+    const search = await workbench.repoSearchMany(
+      {
+        queries: [{ pattern: "alpha", path: "src", maxMatches: 2_000 }],
+      },
+      optionsFor(repo),
+    );
+    const glob = await workbench.repoGlobMany(
+      {
+        globs: [{ pattern: "src/**/*.ts", maxResults: 2_000 }],
+      },
+      optionsFor(repo),
+    );
+    const git = await workbench.gitInspectMany(
+      {
+        requests: [{ kind: "status", maxBytes: 200_000 }],
+      },
+      optionsFor(repo),
+    );
+    const definition = await workbench.lspDefinitionTypescript(
+      { file: "src/alpha.ts", line: 2, character: 21, maxResults: 2_000 },
+      optionsFor(repo),
+    );
+
+    expect(read.results[0]).toMatchObject({
+      status: "ok",
+      requestedMaxBytes: 200_000,
+      effectiveMaxBytes: 80_000,
+      maxBytesClamped: true,
+    });
+    expect(search.results[0]).toMatchObject({
+      status: "matched",
+      requestedMaxMatches: 2_000,
+      effectiveMaxMatches: 200,
+      maxMatchesClamped: true,
+    });
+    expect(glob.results[0]).toMatchObject({
+      status: "ok",
+      requestedMaxResults: 2_000,
+      effectiveMaxResults: 200,
+      maxResultsClamped: true,
+    });
+    expect(git.results[0]).toMatchObject({
+      status: "ok",
+      requestedMaxBytes: 200_000,
+      effectiveMaxBytes: 64_000,
+      maxBytesClamped: true,
+    });
+    expect(definition).toMatchObject({
+      status: "ok",
+      requestedMaxResults: 2_000,
+      effectiveMaxResults: 200,
+      maxResultsClamped: true,
     });
   });
 

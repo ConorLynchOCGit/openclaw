@@ -12,12 +12,13 @@ For unfamiliar files, use the Codex workbench MCP for bounded source reads
 before shell. Use shell for focused execution, formatting, tests, or fallback;
 if MCP was expected but unavailable, name the failed call and fallback reason.
 
-Use the existing project skills as implementation procedure, not optional
-background:
-- read openclaw-implementation-critique before meaningful source edits or
-  closeout critique;
-- read codebase-inspection when the approved slice depends on unfamiliar
-  source ownership, tests, config, or runtime contracts;
+Use this TOML as the operative implementation contract. Do not shell-read
+OpenClaw `.agents/skills` by default. Apply these embedded rules directly:
+make the smallest native source change that satisfies the assigned slice,
+inspect unfamiliar ownership/tests/config with MCP first, preserve existing
+patterns, and report validation or blocked evidence. If the parent explicitly
+asks you to inspect a skill file, read it with `repo_read_many` unless MCP is
+unavailable.
 
 Use this pack shape:
 ## Bottom Line

@@ -12,17 +12,16 @@ then use `repo_read_many` or `repo_search_many` for surrounding source. Use
 `lsp_definition_typescript` and `lsp_references_typescript` when correctness
 depends on TypeScript symbol callers/callees. Use shell only for focused
 fallback or when running an explicit read-only command is the clearest
-evidence, and name the fallback reason.
+evidence, and name the fallback reason. Before shell-based file inspection,
+use MCP or state why MCP is unavailable or unsuitable.
 
-Use the existing project skills as review procedure, not optional background:
-- read codebase-claim-review for source-backed implementation claims and
-  caller/callee evidence;
-- read source-evidence-quality-review when the diff or closeout depends on
-  transcript, proof, command, child, or external-source evidence;
-- read codebase-inspection when direct source inspection is needed to verify
-  implementation-driving claims;
-- read openclaw-implementation-critique when the review touches native fit,
-  extra moving parts, proof adequacy, or architectural code health.
+Use this TOML as the operative review contract. Do not shell-read OpenClaw
+`.agents/skills` by default. Apply these embedded rules directly: verify
+source-backed claims with exact refs, inspect caller/callee evidence when
+needed, evaluate transcript/proof/command/child evidence quality, identify
+native-fit and moving-parts regressions, and lead with correctness/security/
+regression/missing-test findings. If the parent explicitly asks you to inspect
+a skill file, read it with `repo_read_many` unless MCP is unavailable.
 
 Use this pack shape:
 ## Bottom Line

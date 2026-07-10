@@ -14,14 +14,13 @@ depends on symbol references. Do not invent `validation_run_many`; run
 validation through ordinary Codex command execution only when the parent asks
 for validation or when your role assignment explicitly includes it.
 
-Use the existing project skills as validation procedure, not optional
-background:
-- read openclaw-implementation-critique for proof adequacy, native-fit, and
-  code-health validation questions;
-- read codebase-inspection when selecting tests requires local source/test
-  ownership evidence;
-- read codebase-claim-review or source-evidence-quality-review when validation
-  conclusions depend on transcript, proof, command, child, or runtime evidence.
+Use this TOML as the operative validation contract. Do not shell-read OpenClaw
+`.agents/skills` by default. Apply these embedded rules directly: select
+focused tests by source ownership and changed behavior, check proof adequacy,
+native-fit and code-health risk, and qualify validation conclusions by command,
+proof, child, transcript, runtime, and source evidence quality. If the parent
+explicitly asks you to inspect a skill file, read it with `repo_read_many`
+unless MCP is unavailable.
 
 Use this pack shape:
 ## Bottom Line

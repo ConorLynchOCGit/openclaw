@@ -16,6 +16,7 @@ const MAX_BATCH_ITEMS = 20;
 const MAX_READ_BYTES = 80_000;
 const MAX_RESULTS = 200;
 const DEFAULT_LSP_MAX_PROJECT_FILES = 80;
+const PositiveIntSchema = z.number().int().min(1);
 const DEFAULT_EXCLUDE_GLOBS = [
   ".git/**",
   ".openclaw/**",
@@ -54,33 +55,43 @@ const SearchQuerySchema = z.object({
   literal: z.boolean().optional(),
   caseSensitive: z.boolean().optional(),
   contextLines: z.number().int().min(0).max(5).optional(),
-  maxMatches: z.number().int().min(1).max(MAX_RESULTS).optional(),
+  maxMatches: PositiveIntSchema.optional().describe(
+    `Optional match cap. Values above ${MAX_RESULTS} are accepted and clamped.`,
+  ),
 });
 
 const ReadRequestSchema = z.object({
   path: z.string().min(1),
   startLine: z.number().int().min(1).optional(),
   endLine: z.number().int().min(1).optional(),
-  maxBytes: z.number().int().min(1).max(MAX_READ_BYTES).optional(),
+  maxBytes: PositiveIntSchema.optional().describe(
+    `Optional byte cap. Values above ${MAX_READ_BYTES} are accepted and clamped.`,
+  ),
 });
 
 const GlobRequestSchema = z.object({
   pattern: z.string().min(1),
   path: z.string().optional(),
-  maxResults: z.number().int().min(1).max(MAX_RESULTS).optional(),
+  maxResults: PositiveIntSchema.optional().describe(
+    `Optional result cap. Values above ${MAX_RESULTS} are accepted and clamped.`,
+  ),
 });
 
 const GitRequestSchema = z.object({
   kind: z.enum(["status", "diff_stat", "changed_files", "diff_hunks"]),
   path: z.string().optional(),
-  maxBytes: z.number().int().min(1).max(DEFAULT_OUTPUT_BYTES).optional(),
+  maxBytes: PositiveIntSchema.optional().describe(
+    `Optional byte cap. Values above ${DEFAULT_OUTPUT_BYTES} are accepted and clamped.`,
+  ),
 });
 
 const LspLocationSchema = z.object({
   file: z.string().min(1),
   line: z.number().int().min(1),
   character: z.number().int().min(1),
-  maxResults: z.number().int().min(1).max(MAX_RESULTS).optional(),
+  maxResults: PositiveIntSchema.optional().describe(
+    `Optional result cap. Values above ${MAX_RESULTS} are accepted and clamped.`,
+  ),
 });
 
 server.registerTool(
@@ -236,12 +247,17 @@ export async function lspDefinitionTypescript(input, options = {}) {
     options,
     async ({ service, file, position, root }) => {
       const definitions = service.getDefinitionAtPosition(file, position) ?? [];
+      const maxResults = clampPositiveInt(input.maxResults, 40, MAX_RESULTS);
       return {
         status: definitions.length > 0 ? "ok" : "no_definition",
+        effectiveMaxResults: maxResults,
+        ...(input.maxResults && input.maxResults > maxResults
+          ? { requestedMaxResults: input.maxResults, maxResultsClamped: true }
+          : {}),
         definitions: definitions
-          .slice(0, input.maxResults ?? 40)
+          .slice(0, maxResults)
           .map((definition) => formatLspSpan(root, definition.fileName, definition.textSpan)),
-        truncated: definitions.length > (input.maxResults ?? 40),
+        truncated: definitions.length > maxResults,
       };
     },
   );
@@ -254,13 +270,18 @@ export async function lspReferencesTypescript(input, options = {}) {
     async ({ service, file, position, root }) => {
       const referenceGroups = service.findReferences(file, position) ?? [];
       const references = referenceGroups.flatMap((group) => group.references);
+      const maxResults = clampPositiveInt(input.maxResults, 80, MAX_RESULTS);
       return {
         status: references.length > 0 ? "ok" : "no_references",
-        references: references.slice(0, input.maxResults ?? 80).map((reference) => ({
+        effectiveMaxResults: maxResults,
+        ...(input.maxResults && input.maxResults > maxResults
+          ? { requestedMaxResults: input.maxResults, maxResultsClamped: true }
+          : {}),
+        references: references.slice(0, maxResults).map((reference) => ({
           ...formatLspSpan(root, reference.fileName, reference.textSpan),
           isDefinition: reference.isDefinition === true,
         })),
-        truncated: references.length > (input.maxResults ?? 80),
+        truncated: references.length > maxResults,
       };
     },
   );
@@ -551,7 +572,7 @@ function expandGitRequestRoots(root, gitRoots, request) {
 async function runSearchQuery(root, query) {
   try {
     const searchRoot = safeResolve(root, query.path ?? ".");
-    const maxMatches = query.maxMatches ?? 80;
+    const maxMatches = clampPositiveInt(query.maxMatches, 80, MAX_RESULTS);
     const args = [
       "--line-number",
       "--no-heading",
@@ -581,6 +602,10 @@ async function runSearchQuery(root, query) {
     return {
       pattern: query.pattern,
       path: relative(root, searchRoot),
+      effectiveMaxMatches: maxMatches,
+      ...(query.maxMatches && query.maxMatches > maxMatches
+        ? { requestedMaxMatches: query.maxMatches, maxMatchesClamped: true }
+        : {}),
       status: output.exitCode === 0 ? "matched" : output.exitCode === 1 ? "no_match" : "error",
       matches: lines,
       truncated: output.truncated || lines.length >= maxMatches,
@@ -606,7 +631,7 @@ async function readFileRequest(root, request) {
       throw new Error("endLine must be greater than or equal to startLine");
     }
     const selected = lines.slice(startLine - 1, endLine).join("\n");
-    const maxBytes = request.maxBytes ?? 24_000;
+    const maxBytes = clampPositiveInt(request.maxBytes, 24_000, MAX_READ_BYTES);
     const capped = capString(selected, maxBytes);
     return {
       path: relative(root, file),
@@ -614,6 +639,10 @@ async function readFileRequest(root, request) {
       startLine,
       endLine: Math.min(endLine, lines.length),
       totalLines: lines.length,
+      effectiveMaxBytes: maxBytes,
+      ...(request.maxBytes && request.maxBytes > maxBytes
+        ? { requestedMaxBytes: request.maxBytes, maxBytesClamped: true }
+        : {}),
       content: capped.value,
       truncated: capped.truncated,
     };
@@ -625,7 +654,7 @@ async function readFileRequest(root, request) {
 async function runGlobRequest(root, request) {
   try {
     const searchRoot = safeResolve(root, request.path ?? ".");
-    const maxResults = request.maxResults ?? 100;
+    const maxResults = clampPositiveInt(request.maxResults, 100, MAX_RESULTS);
     const args = ["--files", "--glob", request.pattern];
     for (const excludeGlob of DEFAULT_EXCLUDE_GLOBS) {
       args.push("--glob", `!${excludeGlob}`);
@@ -640,6 +669,10 @@ async function runGlobRequest(root, request) {
     return {
       pattern: request.pattern,
       path: relative(root, searchRoot),
+      effectiveMaxResults: maxResults,
+      ...(request.maxResults && request.maxResults > maxResults
+        ? { requestedMaxResults: request.maxResults, maxResultsClamped: true }
+        : {}),
       status: output.exitCode === 0 ? "ok" : output.exitCode === 1 ? "no_match" : "error",
       files,
       truncated: output.truncated || files.length >= maxResults,
@@ -652,7 +685,7 @@ async function runGlobRequest(root, request) {
 
 async function runGitRequest(root, gitRoot, request) {
   try {
-    const maxBytes = request.maxBytes ?? 48_000;
+    const maxBytes = clampPositiveInt(request.maxBytes, 48_000, DEFAULT_OUTPUT_BYTES);
     const requestedPath = request.path
       ? safeResolve(root, request.path, { allowExcluded: true })
       : undefined;
@@ -689,6 +722,10 @@ async function runGitRequest(root, gitRoot, request) {
       repoRoot: relative(root, gitRoot),
       path: request.path ?? ".",
       status: output.exitCode === 0 ? "ok" : "error",
+      effectiveMaxBytes: maxBytes,
+      ...(request.maxBytes && request.maxBytes > maxBytes
+        ? { requestedMaxBytes: request.maxBytes, maxBytesClamped: true }
+        : {}),
       stdout: cappedStdout.value,
       truncated: output.truncated || cappedStdout.truncated,
       ...(output.stderr ? { stderr: output.stderr } : {}),
@@ -701,6 +738,13 @@ async function runGitRequest(root, gitRoot, request) {
       error: formatError(error),
     };
   }
+}
+
+function clampPositiveInt(value, defaultValue, maxValue) {
+  if (!Number.isFinite(value)) {
+    return defaultValue;
+  }
+  return Math.min(Math.max(1, Math.trunc(value)), maxValue);
 }
 
 async function runCommand(command, args, cwd, maxBytes) {

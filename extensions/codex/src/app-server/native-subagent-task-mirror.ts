@@ -40,6 +40,8 @@ export class CodexNativeSubagentTaskMirror {
   private readonly failedMirrorThreadIds = new Set<string>();
   private readonly terminalRunIds = new Set<string>();
   private readonly identityByThreadId = new Map<string, NativeSubagentIdentity>();
+  private readonly pendingSpawnIdentitiesByCallId = new Map<string, NativeSubagentIdentity>();
+  private readonly pendingSpawnIdentityQueue: NativeSubagentIdentity[] = [];
   private readonly latestCollabStatusDetailByThreadId = new Map<string, string>();
   private readonly latestCollabTerminalDetailByThreadId = new Map<string, string>();
   private readonly now: () => number;
@@ -65,6 +67,7 @@ export class CodexNativeSubagentTaskMirror {
       return;
     }
     if (notification.method === "item/started" || notification.method === "item/completed") {
+      this.handleNativeFunctionItem(params);
       this.handleCollabAgentItem(params);
     }
   }
@@ -291,17 +294,108 @@ export class CodexNativeSubagentTaskMirror {
     }
   }
 
-  private createTaskFromCollabSpawnItem(threadId: string, item: JsonObject): void {
-    const normalizedThreadId = threadId.trim();
-    if (!normalizedThreadId || this.mirroredThreadIds.has(normalizedThreadId)) {
+  private handleNativeFunctionItem(params: JsonObject): void {
+    const item = isJsonObject(params.item) ? params.item : undefined;
+    if (!item) {
       return;
     }
-    this.mirroredThreadIds.add(normalizedThreadId);
+    const threadId = readString(params, "threadId")?.trim();
+    if (threadId && threadId !== this.params.parentThreadId) {
+      return;
+    }
+    const itemType = readString(item, "type");
+    if (itemType === "function_call") {
+      this.rememberNativeSpawnFunctionCall(item);
+      return;
+    }
+    if (itemType === "function_call_output") {
+      this.createTaskFromNativeSpawnFunctionOutput(item);
+    }
+  }
+
+  private rememberNativeSpawnFunctionCall(item: JsonObject): void {
+    if (normalizeToolName(readString(item, "name")) !== "spawnagent") {
+      return;
+    }
+    const identity = resolveNativeSpawnFunctionIdentity(item);
+    if (!hasNativeSubagentIdentity(identity)) {
+      return;
+    }
+    const callId = readFunctionCallId(item);
+    if (callId) {
+      this.pendingSpawnIdentitiesByCallId.set(callId, identity);
+    }
+    this.pendingSpawnIdentityQueue.push(identity);
+  }
+
+  private createTaskFromNativeSpawnFunctionOutput(item: JsonObject): void {
+    const callId = readFunctionCallId(item);
+    const output = readJsonObjectValue(item.output);
+    const childThreadId =
+      trimOptional(readString(output, "agent_id")) ??
+      trimOptional(readString(output, "agentId")) ??
+      trimOptional(readString(output, "thread_id")) ??
+      trimOptional(readString(output, "threadId"));
+    if (!childThreadId) {
+      return;
+    }
+    const pendingIdentity =
+      (callId ? this.pendingSpawnIdentitiesByCallId.get(callId) : undefined) ??
+      this.pendingSpawnIdentityQueue.shift();
+    if (callId) {
+      this.pendingSpawnIdentitiesByCallId.delete(callId);
+    }
+    const outputIdentity = {
+      nickname: trimOptional(readString(output, "nickname")),
+    };
+    const identity = mergeNativeSubagentIdentity(pendingIdentity, outputIdentity);
+    this.createOrIdentifyTaskFromSpawn({
+      threadId: childThreadId,
+      identity,
+      prompt: identity.spawnReason,
+    });
+  }
+
+  private createTaskFromCollabSpawnItem(threadId: string, item: JsonObject): void {
     const prompt = trimOptional(readString(item, "prompt"));
     const identity = {
       ...resolveCollabItemSubagentIdentity(item),
       ...(prompt ? { spawnReason: prompt } : {}),
     };
+    this.createOrIdentifyTaskFromSpawn({ threadId, identity, prompt });
+  }
+
+  private createOrIdentifyTaskFromSpawn(params: {
+    threadId: string;
+    identity: NativeSubagentIdentity;
+    prompt?: string;
+  }): void {
+    const normalizedThreadId = params.threadId.trim();
+    if (!normalizedThreadId) {
+      return;
+    }
+    if (this.mirroredThreadIds.has(normalizedThreadId)) {
+      const previousIdentity = this.identityByThreadId.get(normalizedThreadId);
+      const mergedIdentity = mergeNativeSubagentIdentity(previousIdentity, params.identity);
+      if (!sameNativeSubagentIdentity(previousIdentity, mergedIdentity)) {
+        this.identityByThreadId.set(normalizedThreadId, mergedIdentity);
+        const progressSummary = nativeSubagentStartSummary("identified", mergedIdentity);
+        this.runtime.recordTaskRunProgressByRunId({
+          runId: codexNativeSubagentRunId(normalizedThreadId),
+          lastEventAt: this.now(),
+          progressSummary,
+          eventSummary: progressSummary,
+          eventMetadata: this.buildEventMetadata({
+            threadId: normalizedThreadId,
+            identity: mergedIdentity,
+            phase: "child_identified",
+          }),
+        });
+      }
+      return;
+    }
+    this.mirroredThreadIds.add(normalizedThreadId);
+    const identity = params.identity;
     this.identityByThreadId.set(normalizedThreadId, identity);
     const label = formatNativeSubagentLabel(identity) ?? "Codex subagent";
     const runId = codexNativeSubagentRunId(normalizedThreadId);
@@ -311,7 +405,8 @@ export class CodexNativeSubagentTaskMirror {
       agentId: this.params.agentId,
       runId,
       label,
-      task: prompt ?? `Codex native subagent${label === "Codex subagent" ? "" : ` ${label}`}`,
+      task:
+        params.prompt ?? `Codex native subagent${label === "Codex subagent" ? "" : ` ${label}`}`,
       notifyPolicy: "silent",
       deliveryStatus: "not_applicable",
       preferMetadata: true,
@@ -569,6 +664,28 @@ function resolveCollabItemSubagentIdentity(item: JsonObject): NativeSubagentIden
   };
 }
 
+function resolveNativeSpawnFunctionIdentity(item: JsonObject): NativeSubagentIdentity {
+  const args = readJsonObjectValue(item.arguments);
+  const message = trimOptional(readString(args, "message"));
+  const explicitRole =
+    extractSpawnMessageRole(message) ??
+    trimOptional(readString(args, "agent_type")) ??
+    trimOptional(readString(args, "agentType")) ??
+    trimOptional(readString(args, "role"));
+  const agentPath =
+    trimOptional(readString(args, "agent_path")) ??
+    trimOptional(readString(args, "agentPath")) ??
+    roleToAgentPath(explicitRole);
+  return {
+    role: explicitRole,
+    agentPath,
+    spawnReason:
+      extractSpawnMessageObjective(message) ??
+      trimOptional(readString(args, "objective")) ??
+      trimOptional(readString(args, "task")),
+  };
+}
+
 function mergeNativeSubagentIdentity(
   previous: NativeSubagentIdentity | undefined,
   next: NativeSubagentIdentity,
@@ -590,6 +707,15 @@ function sameNativeSubagentIdentity(
     trimOptional(left?.role) === trimOptional(right?.role) &&
     trimOptional(left?.agentPath) === trimOptional(right?.agentPath) &&
     trimOptional(left?.spawnReason) === trimOptional(right?.spawnReason)
+  );
+}
+
+function hasNativeSubagentIdentity(identity: NativeSubagentIdentity): boolean {
+  return Boolean(
+    trimOptional(identity.nickname) ??
+    trimOptional(identity.role) ??
+    trimOptional(identity.agentPath) ??
+    trimOptional(identity.spawnReason),
   );
 }
 
@@ -621,6 +747,29 @@ function readString(value: JsonObject, key: string): string | undefined {
   return typeof entry === "string" ? entry : undefined;
 }
 
+function readJsonObjectValue(value: JsonValue | undefined): JsonObject {
+  if (isJsonObject(value)) {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return {};
+  }
+  try {
+    const parsed: JsonValue = JSON.parse(value);
+    return isJsonObject(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function readFunctionCallId(item: JsonObject): string | undefined {
+  return (
+    trimOptional(readString(item, "call_id")) ??
+    trimOptional(readString(item, "callId")) ??
+    trimOptional(readString(item, "id"))
+  );
+}
+
 function readNullableString(value: JsonObject, key: string): string | null | undefined {
   const entry = value[key];
   return typeof entry === "string" || entry === null ? entry : undefined;
@@ -628,6 +777,29 @@ function readNullableString(value: JsonObject, key: string): string | null | und
 
 function normalizeToolName(value: string | undefined): string | undefined {
   return value?.replace(/[^a-z0-9]/giu, "").toLowerCase();
+}
+
+function roleToAgentPath(role: string | undefined): string | undefined {
+  const normalized = trimOptional(role);
+  if (
+    !normalized ||
+    normalized === "default" ||
+    normalized === "worker" ||
+    normalized === "explorer"
+  ) {
+    return undefined;
+  }
+  return `agents/${normalized}.toml`;
+}
+
+function extractSpawnMessageRole(message: string | undefined): string | undefined {
+  const match = message?.match(/(?:^|\n)\s*Role:\s*([A-Za-z0-9_-]+)/u);
+  return trimOptional(match?.[1]);
+}
+
+function extractSpawnMessageObjective(message: string | undefined): string | undefined {
+  const match = message?.match(/(?:^|[\n.])\s*Objective:\s*([^\n]+)/u);
+  return trimOptional(match?.[1]);
 }
 
 function normalizeCollabToolCallStatus(value: string | undefined): string | undefined {

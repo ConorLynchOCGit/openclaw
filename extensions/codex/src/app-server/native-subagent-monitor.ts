@@ -247,6 +247,10 @@ export class CodexNativeSubagentMonitor {
         : undefined;
       const state = parentThreadId ? this.parentStates.get(parentThreadId) : undefined;
       if (state && parentThreadId) {
+        const nativeSpawnOutputChildThreadId = readNativeSpawnFunctionOutputChildThreadId(item);
+        if (nativeSpawnOutputChildThreadId) {
+          this.registerChildThread(parentThreadId, nativeSpawnOutputChildThreadId);
+        }
         const isSpawnAgentTool = normalizeToolName(readString(item, "tool")) === "spawnagent";
         const childThreadIds = isSpawnAgentTool
           ? new Set([
@@ -802,6 +806,36 @@ function readObjectStringKeys(value: JsonValue | undefined): string[] {
     return [];
   }
   return Object.keys(value).filter((entry) => entry.trim() !== "");
+}
+
+function readNativeSpawnFunctionOutputChildThreadId(
+  item: JsonObject | undefined,
+): string | undefined {
+  if (readString(item, "type") !== "function_call_output") {
+    return undefined;
+  }
+  const output = readJsonObjectValue(item?.output);
+  return (
+    readString(output, "agent_id") ??
+    readString(output, "agentId") ??
+    readString(output, "thread_id") ??
+    readString(output, "threadId")
+  )?.trim();
+}
+
+function readJsonObjectValue(value: JsonValue | undefined): JsonObject {
+  if (isJsonObject(value)) {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return {};
+  }
+  try {
+    const parsed: JsonValue = JSON.parse(value);
+    return isJsonObject(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 function normalizeToolName(value: string | undefined): string | undefined {

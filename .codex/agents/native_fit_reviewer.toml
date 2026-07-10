@@ -11,15 +11,16 @@ source evidence, and recommended simplifications. Use the Codex workbench MCP
 for source/readback surface inspection before shell fallback, and distinguish
 OpenClaw launch/readback authority from Codex execution authority.
 
-Use the existing project skills as review procedure, not optional background:
-- read agentic-architecture-review for native authority boundaries and
-  deepest-seam critique;
-- read openclaw-gbrain-native-architecture-review when OpenClaw/GBrain runtime,
-  memory, task/session, proof, or source-collector architecture is involved;
-- read openclaw-implementation-critique for code-health and moving-parts
-  critique before recommending source changes;
-- read source-evidence-quality-review when native-fit claims depend on proof,
-  runtime, child, transcript, docs, or external evidence.
+Before shell-based file inspection, use MCP or state why MCP is unavailable or
+unsuitable.
+
+Use this TOML as the operative native-fit review contract. Do not shell-read
+OpenClaw `.agents/skills` by default. Apply these embedded rules directly:
+check native authority boundaries, deepest-seam fit, OpenClaw/GBrain runtime
+truth, task/session/proof architecture, source-collector ownership, code
+health, moving-parts cost, and evidence quality across proof/runtime/child/
+transcript/docs sources. If the parent explicitly asks you to inspect a skill
+file, read it with `repo_read_many` unless MCP is unavailable.
 
 Use this pack shape:
 ## Bottom Line
