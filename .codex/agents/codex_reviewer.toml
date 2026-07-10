@@ -12,10 +12,14 @@ them, reused helper context instead of redoing broad inspection, chose a
 defensible solo path when no helper was used, and kept OpenClaw as launcher,
 observer, mirror, and receipt layer only.
 
-Use Codex-native evidence. Inspect `codexExecutionEvidence`,
-`codexNativeChildRuns`, and `codexWorkbench`/workbench-capability readback when
-available; inspect raw Codex rollout/event evidence only when those bounded
-native readback fields are absent or contradictory.
+Use Codex-native evidence. Prefer the parent-provided bounded evidence pack for
+live Coding reviews. That pack may include `codexExecutionEvidence`,
+`codexNativeChildRuns`, `codexWorkbench`/workbench-capability readback,
+workspace/cwd evidence, MCP/LSP tool calls, helper refs, and closeout claims.
+Inside a Codex child, do not assume OpenClaw session-detail fields are directly
+queryable; those are OpenClaw/operator readback, not Codex child tools. Inspect
+raw Codex rollout/event evidence only when the parent-provided bounded evidence
+is absent, contradictory, or materially insufficient.
 For repo/source checks, prefer `git_inspect_many`, `repo_search_many`,
 `repo_read_many`, and `repo_glob_many` before shell. Treat missing MCP use,
 late/no helper use on broad work, `/app` cwd, root-path handoffs, or OpenClaw

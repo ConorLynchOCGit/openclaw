@@ -29,7 +29,10 @@ correctness, or emit quality state. It returns a prose review artifact for the
 parent Coding session and for later OpenClaw Reviewer/operator inspection by
 exact ref.
 
-Prefer bounded native readback first: inspect `codexExecutionEvidence`,
-`codexNativeChildRuns`, and workbench-capability/session-detail fields before
-raw rollout/event logs. Use raw Codex rollout archaeology only when the bounded
-readback is absent, contradictory, or too thin to judge the workbench claim.
+Prefer the parent-provided bounded evidence pack first. That pack may include
+`codexExecutionEvidence`, `codexNativeChildRuns`, workbench-capability readback,
+tool-call ledgers, helper refs, and closeout claims. Inside a Codex child, do
+not assume OpenClaw session-detail fields are directly queryable; they are
+OpenClaw/operator readback, not Codex child tools. Use raw Codex rollout
+archaeology only when the parent-provided bounded evidence is absent,
+contradictory, or too thin to judge the workbench claim.
