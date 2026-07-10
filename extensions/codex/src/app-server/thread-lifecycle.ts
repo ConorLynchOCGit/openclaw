@@ -985,6 +985,10 @@ export function buildThreadStartParams(
     agentDir: params.agentDir,
     config: params.config,
   });
+  const runtimeConfig = buildCodexRuntimeThreadConfigForRun(params, options.config, {
+    nativeCodeModeEnabled: options.nativeCodeModeEnabled,
+    nativeCodeModeOnlyEnabled: options.nativeCodeModeOnlyEnabled,
+  });
   return {
     model: modelSelection.model,
     ...(modelSelection.modelProvider ? { modelProvider: modelSelection.modelProvider } : {}),
@@ -995,14 +999,19 @@ export function buildThreadStartParams(
     ...(options.appServer.serviceTier ? { serviceTier: options.appServer.serviceTier } : {}),
     personality: CODEX_NATIVE_PERSONALITY_NONE,
     serviceName: "OpenClaw",
-    config: buildCodexRuntimeThreadConfigForRun(params, options.config, {
-      nativeCodeModeEnabled: options.nativeCodeModeEnabled,
-      nativeCodeModeOnlyEnabled: options.nativeCodeModeOnlyEnabled,
-    }),
+    config: runtimeConfig,
     ...resolveCodexThreadEnvironmentSelection(options),
     developerInstructions:
       options.developerInstructions ??
-      buildDeveloperInstructions(params, { dynamicTools: options.dynamicTools }),
+      buildDeveloperInstructions(params, {
+        dynamicTools: options.dynamicTools,
+        launchEvidence: {
+          cwd: options.cwd,
+          runtimeConfig,
+          nativeCodeModeEnabled: options.nativeCodeModeEnabled,
+          nativeCodeModeOnlyEnabled: options.nativeCodeModeOnlyEnabled,
+        },
+      }),
     dynamicTools: options.dynamicTools,
     experimentalRawEvents: true,
     persistExtendedHistory: true,
@@ -1038,6 +1047,10 @@ export function buildThreadResumeParams(
     agentDir: params.agentDir,
     config: params.config,
   });
+  const runtimeConfig = buildCodexRuntimeThreadConfigForRun(params, options.config, {
+    nativeCodeModeEnabled: options.nativeCodeModeEnabled,
+    nativeCodeModeOnlyEnabled: options.nativeCodeModeOnlyEnabled,
+  });
   return {
     threadId: options.threadId,
     model: modelSelection.model,
@@ -1047,13 +1060,17 @@ export function buildThreadResumeParams(
     sandbox: options.appServer.sandbox,
     ...(options.appServer.serviceTier ? { serviceTier: options.appServer.serviceTier } : {}),
     personality: CODEX_NATIVE_PERSONALITY_NONE,
-    config: buildCodexRuntimeThreadConfigForRun(params, options.config, {
-      nativeCodeModeEnabled: options.nativeCodeModeEnabled,
-      nativeCodeModeOnlyEnabled: options.nativeCodeModeOnlyEnabled,
-    }),
+    config: runtimeConfig,
     developerInstructions:
       options.developerInstructions ??
-      buildDeveloperInstructions(params, { dynamicTools: options.dynamicTools }),
+      buildDeveloperInstructions(params, {
+        dynamicTools: options.dynamicTools,
+        launchEvidence: {
+          runtimeConfig,
+          nativeCodeModeEnabled: options.nativeCodeModeEnabled,
+          nativeCodeModeOnlyEnabled: options.nativeCodeModeOnlyEnabled,
+        },
+      }),
     persistExtendedHistory: true,
   };
 }
@@ -1427,9 +1444,19 @@ function compareJsonFingerprint(left: JsonValue, right: JsonValue): number {
   return JSON.stringify(left).localeCompare(JSON.stringify(right));
 }
 
+type CodexDeveloperInstructionLaunchEvidence = {
+  cwd?: string;
+  runtimeConfig?: JsonObject;
+  nativeCodeModeEnabled?: boolean;
+  nativeCodeModeOnlyEnabled?: boolean;
+};
+
 export function buildDeveloperInstructions(
   params: EmbeddedRunAttemptParams,
-  options: { dynamicTools?: readonly CodexDynamicToolSpec[] } = {},
+  options: {
+    dynamicTools?: readonly CodexDynamicToolSpec[];
+    launchEvidence?: CodexDeveloperInstructionLaunchEvidence;
+  } = {},
 ): string {
   const nativeCommandGuidance = listRegisteredPluginAgentPromptGuidance({
     surface: "codex_app_server",
@@ -1437,6 +1464,7 @@ export function buildDeveloperInstructions(
   }).join("\n");
   const sections = [
     buildOpenClawCodexRuntimeBoundaryInstruction(options.dynamicTools),
+    buildCodexLaunchEvidenceCapsule(options.dynamicTools, options.launchEvidence),
     buildDeferredDynamicToolManifest(options.dynamicTools),
     buildSkillWorkshopInstruction(options.dynamicTools),
     buildVisibleReplyInstruction(params, options.dynamicTools),
@@ -1445,6 +1473,39 @@ export function buildDeveloperInstructions(
     buildCodexNativeCodingTeamInstruction(options.dynamicTools),
   ];
   return sections.filter((section) => typeof section === "string" && section.trim()).join("\n\n");
+}
+
+function buildCodexLaunchEvidenceCapsule(
+  dynamicTools: readonly CodexDynamicToolSpec[] | undefined,
+  launchEvidence: CodexDeveloperInstructionLaunchEvidence | undefined,
+): string | undefined {
+  if (!launchEvidence) {
+    return undefined;
+  }
+  const dynamicToolNames = [
+    ...new Set((dynamicTools ?? []).map((tool) => tool.name.trim()).filter(Boolean)),
+  ].toSorted((left, right) => left.localeCompare(right));
+  const mcpServerNames = readThreadConfigMcpServerNames(launchEvidence.runtimeConfig) ?? [];
+  const codeModeConfigured = launchEvidence.nativeCodeModeEnabled !== false;
+  const codeModeOnlyConfigured =
+    launchEvidence.nativeCodeModeOnlyEnabled === true ||
+    launchEvidence.runtimeConfig?.["features.code_mode_only"] === true;
+  const lines = [
+    "## Codex Launch Evidence Capsule",
+    "",
+    "This is bounded model-visible launch-contract evidence for the current Codex thread. It mirrors the operator readback class of facts but does not grant tools, prove success, retry, validate quality, or replace runtime events.",
+    `- owner: codex_app_server`,
+    `- executionCwd: ${launchEvidence.cwd ?? "not provided on this resumed turn"}`,
+    `- openclawDynamicTools.count: ${dynamicToolNames.length}`,
+    `- openclawDynamicTools.names: ${dynamicToolNames.length ? dynamicToolNames.join(", ") : "none"}`,
+    `- codeModeConfigured: ${codeModeConfigured ? "true" : "false"}`,
+    `- codeModeOnlyConfigured: ${codeModeOnlyConfigured ? "true" : "false"}`,
+    `- expectedSubagentTool: spawn_agent`,
+    `- mcpServers: ${mcpServerNames.length ? mcpServerNames.join(", ") : "none declared in thread config"}`,
+    "",
+    "When reviewing Coding workbench behavior, use this capsule for launch-contract facts such as absent OpenClaw dynamic tools. Use event/readback evidence for what actually happened during the turn.",
+  ];
+  return lines.join("\n");
 }
 
 function buildOpenClawCodexRuntimeBoundaryInstruction(

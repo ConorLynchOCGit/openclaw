@@ -355,6 +355,31 @@ describe("Codex app-server native code mode config", () => {
     expect(request.personality).toBe("none");
   });
 
+  it("injects bounded Codex launch evidence into default developer instructions", () => {
+    const request = buildThreadStartParams(createAttemptParams({ provider: "openai" }), {
+      cwd: "/home/node/.openclaw/workspace",
+      dynamicTools: [],
+      appServer: createAppServerOptions() as never,
+      config: {
+        mcp_servers: {
+          openclaw_repo_workbench: { command: "node" },
+        },
+      },
+    });
+
+    const instructions = request.developerInstructions ?? "";
+    expect(instructions).toContain("## Codex Launch Evidence Capsule");
+    expect(instructions).toContain("executionCwd: /home/node/.openclaw/workspace");
+    expect(instructions).toContain("openclawDynamicTools.count: 0");
+    expect(instructions).toContain("openclawDynamicTools.names: none");
+    expect(instructions).toContain("codeModeConfigured: true");
+    expect(instructions).toContain("expectedSubagentTool: spawn_agent");
+    expect(instructions).toContain("mcpServers: openclaw_repo_workbench");
+    expect(instructions).toContain(
+      "Use event/readback evidence for what actually happened during the turn",
+    );
+  });
+
   it("disables Codex tool-search features for nano models", () => {
     const request = buildThreadStartParams(
       createAttemptParams({ provider: "openai", modelId: "gpt-5.4-nano" }),
