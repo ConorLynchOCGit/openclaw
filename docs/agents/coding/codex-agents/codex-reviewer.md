@@ -36,3 +36,10 @@ not assume OpenClaw session-detail fields are directly queryable; they are
 OpenClaw/operator readback, not Codex child tools. Use raw Codex rollout
 archaeology only when the parent-provided bounded evidence is absent,
 contradictory, or too thin to judge the workbench claim.
+
+Do not downgrade a coherent pack solely because it lacks raw-log negative proof
+for absent OpenClaw dynamic tools. Tool-surface absence is a
+launch-contract/operator-readback fact; when the pack or native context includes
+fields such as `promptContext.tools.count: 0` or
+`codexNativeSurface.openclawDynamicTools.count: 0`, judge whether those fields
+are coherent rather than requiring the child to scrape raw events.

@@ -20,6 +20,13 @@ Inside a Codex child, do not assume OpenClaw session-detail fields are directly
 queryable; those are OpenClaw/operator readback, not Codex child tools. Inspect
 raw Codex rollout/event evidence only when the parent-provided bounded evidence
 is absent, contradictory, or materially insufficient.
+Do not downgrade a coherent bounded evidence pack only because it avoids raw-log
+negative proof. Tool-surface absence is a launch-contract/operator-readback
+fact when the pack or native context includes fields such as
+`promptContext.tools.count: 0` or
+`codexNativeSurface.openclawDynamicTools.count: 0`; review whether that evidence
+is present and coherent, not whether the child can independently scrape all
+raw events.
 For repo/source checks, prefer `git_inspect_many`, `repo_search_many`,
 `repo_read_many`, and `repo_glob_many` before shell. Treat missing MCP use,
 late/no helper use on broad work, `/app` cwd, root-path handoffs, or OpenClaw
