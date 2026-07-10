@@ -200,6 +200,7 @@ import {
   scheduleCodexNativeHookRelayUnregister,
 } from "./native-hook-relay.js";
 import { registerCodexNativeSubagentMonitor } from "./native-subagent-monitor.js";
+import { readCodexSubagentThreadSpawnSourceFromThread } from "./native-subagent-source.js";
 import { describeCodexNotificationCorrelation } from "./notification-correlation.js";
 import { isCodexAppServerProfilerEnabled } from "./profiler-flag.js";
 import {
@@ -2964,9 +2965,7 @@ function isNativeSubagentActivityForThread(
 
   if (notification.method === "thread/started") {
     const thread = isJsonObject(params.thread) ? params.thread : undefined;
-    const source = isJsonObject(thread?.source) ? thread.source : undefined;
-    const subAgent = isJsonObject(source?.subAgent) ? source.subAgent : undefined;
-    const spawn = isJsonObject(subAgent?.thread_spawn) ? subAgent.thread_spawn : undefined;
+    const spawn = readCodexSubagentThreadSpawnSourceFromThread(thread);
     if (spawn?.parent_thread_id !== parentThreadId) {
       return false;
     }

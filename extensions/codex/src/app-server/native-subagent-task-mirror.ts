@@ -3,6 +3,7 @@
  * runtime rows so parent sessions can observe child progress.
  */
 import type { AgentHarnessTaskRuntime } from "openclaw/plugin-sdk/agent-harness-task-runtime";
+import { readCodexSubagentThreadSpawnSource } from "./native-subagent-source.js";
 import { CODEX_NATIVE_SUBAGENT_RUN_ID_PREFIX } from "./native-subagent-task-ids.js";
 import type {
   CodexServerNotification,
@@ -454,18 +455,7 @@ export function readSubagentThreadSpawnSource(
   source: CodexSessionSource | null | undefined,
   parentThreadId: string,
 ): CodexSubAgentThreadSpawnSource | undefined {
-  if (!source || typeof source !== "object" || !("subAgent" in source)) {
-    return undefined;
-  }
-  const subAgent = source.subAgent;
-  if (!subAgent || typeof subAgent !== "object" || !("thread_spawn" in subAgent)) {
-    return undefined;
-  }
-  const spawn = subAgent.thread_spawn;
-  if (!spawn || typeof spawn !== "object") {
-    return undefined;
-  }
-  return spawn.parent_thread_id === parentThreadId ? spawn : undefined;
+  return readCodexSubagentThreadSpawnSource(source, parentThreadId);
 }
 
 function readThreadStartedNotification(

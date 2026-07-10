@@ -225,7 +225,8 @@ export type CodexSessionSource =
   | "appServer"
   | "unknown"
   | { custom: string }
-  | { subAgent: CodexSubAgentSource };
+  | { subAgent: CodexSubAgentSource }
+  | { subagent: CodexSubAgentSource };
 
 export type CodexThreadStartedNotification = {
   thread: CodexThread;

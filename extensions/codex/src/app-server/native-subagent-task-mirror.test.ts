@@ -96,6 +96,67 @@ describe("CodexNativeSubagentTaskMirror", () => {
     });
   });
 
+  it("reads lowercase Codex subagent thread sources with role identity", () => {
+    const runtime = createRuntime();
+    const mirror = new CodexNativeSubagentTaskMirror(
+      {
+        parentThreadId: "parent-thread",
+        requesterSessionKey: "agent:main:main",
+        agentId: "main",
+        now: () => 21_000,
+      },
+      runtime,
+    );
+
+    mirror.handleNotification({
+      method: "thread/started",
+      params: {
+        thread: {
+          id: "child-thread",
+          preview: "review the substrate proof",
+          createdAt: 11,
+          status: { type: "active", activeFlags: [] },
+          source: {
+            subagent: {
+              thread_spawn: {
+                parent_thread_id: "parent-thread",
+                depth: 1,
+                agent_path: null,
+                agent_nickname: "Banach",
+                agent_role: "codex_reviewer",
+              },
+            },
+          },
+        },
+      },
+    });
+
+    expect(runtime.tryCreateRunningTaskRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "codex-thread:child-thread",
+        label: "Banach (codex_reviewer)",
+        task: "review the substrate proof",
+        progressSummary: "Codex native subagent started (role: codex_reviewer).",
+        eventMetadata: expect.objectContaining({
+          childRole: "codex_reviewer",
+          childNickname: "Banach",
+          spawnReason: "review the substrate proof",
+        }),
+      }),
+    );
+    expect(runtime.recordTaskRunProgressByRunId).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "codex-thread:child-thread",
+        eventMetadata: expect.objectContaining({
+          childPhase: "child_active",
+          childRole: "codex_reviewer",
+          childNickname: "Banach",
+          spawnReason: "review the substrate proof",
+        }),
+      }),
+    );
+  });
+
   it("ignores subagent threads spawned by a different parent thread", () => {
     const runtime = createRuntime();
     const mirror = new CodexNativeSubagentTaskMirror(

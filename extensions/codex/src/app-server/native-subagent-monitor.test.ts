@@ -211,6 +211,63 @@ describe("CodexNativeSubagentMonitor", () => {
     );
   });
 
+  it("mirrors lowercase Codex subagent thread sources with role identity", async () => {
+    const client = createClient();
+    const runtime = createRuntime();
+    const monitor = new CodexNativeSubagentMonitor(client, runtime);
+    monitor.registerParent({
+      parentThreadId: "parent-thread",
+      requesterSessionKey: "agent:main:discord:channel:C123",
+      taskRuntimeScope: createTaskScope(),
+      agentId: "main",
+    });
+
+    await client.notify({
+      method: "thread/started",
+      params: {
+        thread: {
+          id: "child-thread",
+          preview: "review the substrate proof",
+          status: { type: "active", activeFlags: [] },
+          source: {
+            subagent: {
+              thread_spawn: {
+                parent_thread_id: "parent-thread",
+                depth: 1,
+                agent_path: null,
+                agent_nickname: "Banach",
+                agent_role: "codex_reviewer",
+              },
+            },
+          },
+        },
+      },
+    });
+
+    expect(runtime.createRunningTaskRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "codex-thread:child-thread",
+        label: "Banach (codex_reviewer)",
+        task: "review the substrate proof",
+        eventMetadata: expect.objectContaining({
+          childRole: "codex_reviewer",
+          childNickname: "Banach",
+          spawnReason: "review the substrate proof",
+        }),
+      }),
+    );
+    expect(runtime.recordTaskRunProgressByRunId).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "codex-thread:child-thread",
+        eventMetadata: expect.objectContaining({
+          childPhase: "child_active",
+          childRole: "codex_reviewer",
+          childNickname: "Banach",
+        }),
+      }),
+    );
+  });
+
   it("mirrors Codex-native subagent completion notifications without parent wakeups", async () => {
     const client = createClient();
     const runtime = createRuntime();

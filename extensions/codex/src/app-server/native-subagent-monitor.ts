@@ -19,6 +19,7 @@ import {
   type CodexNativeSubagentCompletion,
   type CodexNativeSubagentNotificationCompletion,
 } from "./native-subagent-notification.js";
+import { readCodexSubagentThreadSpawnSourceFromThread } from "./native-subagent-source.js";
 import {
   CODEX_NATIVE_SUBAGENT_RUN_ID_PREFIX,
   CODEX_NATIVE_SUBAGENT_RUNTIME,
@@ -777,17 +778,11 @@ function noFinalCompletionFallbackDelayMs(delays: readonly number[]): number {
 }
 
 function readSpawnParentThreadId(thread: JsonObject | undefined): string | undefined {
-  const source = isJsonObject(thread?.source) ? thread.source : undefined;
-  const subAgent = isJsonObject(source?.subAgent) ? source.subAgent : undefined;
-  const spawn = isJsonObject(subAgent?.thread_spawn) ? subAgent.thread_spawn : undefined;
-  return readString(spawn, "parent_thread_id")?.trim();
+  return readCodexSubagentThreadSpawnSourceFromThread(thread)?.parent_thread_id.trim();
 }
 
 function readSpawnAgentPath(thread: JsonObject | undefined): string | undefined {
-  const source = isJsonObject(thread?.source) ? thread.source : undefined;
-  const subAgent = isJsonObject(source?.subAgent) ? source.subAgent : undefined;
-  const spawn = isJsonObject(subAgent?.thread_spawn) ? subAgent.thread_spawn : undefined;
-  return readString(spawn, "agent_path")?.trim();
+  return readCodexSubagentThreadSpawnSourceFromThread(thread)?.agent_path?.trim();
 }
 
 function readString(record: JsonObject | undefined, key: string): string | undefined {
