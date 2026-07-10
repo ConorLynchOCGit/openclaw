@@ -306,6 +306,8 @@ function buildCodexNativeChildRunsForSession(
     .map((task) => {
       const metadata = task.executionReceipt?.latestEvent?.metadata;
       const childThreadId = resolveCodexChildThreadId(task, metadata);
+      const metadataLabel = formatCodexNativeChildRunLabel(metadata);
+      const label = chooseCodexNativeChildRunLabel(task.label, metadataLabel);
       return {
         source: "codex-native" as const,
         taskId: task.taskId,
@@ -320,7 +322,7 @@ function buildCodexNativeChildRunsForSession(
         ...(readTaskMetadataString(metadata, "spawnReason")
           ? { objective: readTaskMetadataString(metadata, "spawnReason") }
           : {}),
-        ...(task.label ? { label: task.label } : {}),
+        ...(label ? { label } : {}),
         status: task.status,
         ...(task.terminalOutcome ? { terminalOutcome: task.terminalOutcome } : {}),
         ...(task.startedAt !== undefined ? { startedAt: task.startedAt } : {}),
@@ -331,6 +333,20 @@ function buildCodexNativeChildRunsForSession(
       };
     });
   return children.length > 0 ? children : undefined;
+}
+
+function chooseCodexNativeChildRunLabel(
+  taskLabel: string | undefined,
+  metadataLabel: string | undefined,
+): string | undefined {
+  const normalizedTaskLabel = taskLabel?.trim();
+  if (!normalizedTaskLabel || normalizedTaskLabel === "Codex subagent") {
+    return metadataLabel ?? normalizedTaskLabel;
+  }
+  if (metadataLabel?.includes("(") && !normalizedTaskLabel.includes("(")) {
+    return metadataLabel;
+  }
+  return normalizedTaskLabel;
 }
 
 function isProjectableCompactionCheckpoint(
@@ -703,6 +719,17 @@ function buildSessionListRowContext(params: {
     storeChildSessionsByKey: buildStoreChildSessionIndex(params.store, params.now),
     now: params.now,
   });
+}
+
+function formatCodexNativeChildRunLabel(
+  metadata: TaskEventMetadata | undefined,
+): string | undefined {
+  const nickname = readTaskMetadataString(metadata, "childNickname");
+  const role = readTaskMetadataString(metadata, "childRole");
+  if (nickname && role && nickname !== role) {
+    return `${nickname} (${role})`;
+  }
+  return nickname ?? role;
 }
 
 function buildSessionListRowContextFromParts(params: {

@@ -157,6 +157,106 @@ describe("CodexNativeSubagentTaskMirror", () => {
     );
   });
 
+  it("upgrades a generic collab-spawn task when native thread identity arrives later", () => {
+    const runtime = createRuntime();
+    const mirror = new CodexNativeSubagentTaskMirror(
+      {
+        parentThreadId: "parent-thread",
+        requesterSessionKey: "agent:main:main",
+        agentId: "main",
+        now: () => 22_000,
+      },
+      runtime,
+    );
+
+    mirror.handleNotification({
+      method: "item/started",
+      params: {
+        threadId: "parent-thread",
+        item: {
+          type: "collabAgentToolCall",
+          tool: "spawn_agent",
+          receiverThreadIds: ["child-thread"],
+          prompt: "review bounded substrate evidence",
+        },
+      },
+    });
+    mirror.handleNotification({
+      method: "thread/started",
+      params: {
+        thread: {
+          id: "child-thread",
+          preview: "short native preview",
+          createdAt: 12,
+          status: { type: "active", activeFlags: [] },
+          source: {
+            subagent: {
+              thread_spawn: {
+                parent_thread_id: "parent-thread",
+                depth: 1,
+                agent_path: "agents/codex_reviewer.toml",
+                agent_nickname: "Banach",
+                agent_role: "codex_reviewer",
+              },
+            },
+          },
+        },
+      },
+    });
+    mirror.handleNotification({
+      method: "item/completed",
+      params: {
+        threadId: "parent-thread",
+        item: {
+          type: "collabAgentToolCall",
+          tool: "wait",
+          agentsStates: {
+            "child-thread": {
+              status: "completed",
+              message: "review complete",
+            },
+          },
+        },
+      },
+    });
+
+    expect(runtime.tryCreateRunningTaskRun).toHaveBeenCalledTimes(1);
+    expect(runtime.tryCreateRunningTaskRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "codex-thread:child-thread",
+        label: "Codex subagent",
+        task: "review bounded substrate evidence",
+      }),
+    );
+    expect(runtime.recordTaskRunProgressByRunId).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "codex-thread:child-thread",
+        progressSummary:
+          "Codex native subagent identified (role: codex_reviewer; agent_path: agents/codex_reviewer.toml).",
+        eventMetadata: expect.objectContaining({
+          childPhase: "child_identified",
+          childRole: "codex_reviewer",
+          childAgentPath: "agents/codex_reviewer.toml",
+          childNickname: "Banach",
+          spawnReason: "review bounded substrate evidence",
+        }),
+      }),
+    );
+    expect(runtime.finalizeTaskRunByRunId).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "codex-thread:child-thread",
+        status: "succeeded",
+        eventMetadata: expect.objectContaining({
+          childPhase: "child_completed",
+          childRole: "codex_reviewer",
+          childAgentPath: "agents/codex_reviewer.toml",
+          childNickname: "Banach",
+          spawnReason: "review bounded substrate evidence",
+        }),
+      }),
+    );
+  });
+
   it("ignores subagent threads spawned by a different parent thread", () => {
     const runtime = createRuntime();
     const mirror = new CodexNativeSubagentTaskMirror(

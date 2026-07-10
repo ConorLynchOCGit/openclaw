@@ -80,13 +80,34 @@ export class CodexNativeSubagentTaskMirror {
       return;
     }
     const threadId = thread.id.trim();
-    if (!threadId || this.mirroredThreadIds.has(threadId)) {
+    if (!threadId) {
       return;
     }
-    this.mirroredThreadIds.add(threadId);
     const runId = codexNativeSubagentRunId(threadId);
     const spawnReason = trimOptional(thread.preview);
     const identity = resolveThreadSubagentIdentity(thread, spawn, spawnReason);
+    if (this.mirroredThreadIds.has(threadId)) {
+      const previousIdentity = this.identityByThreadId.get(threadId);
+      const mergedIdentity = mergeNativeSubagentIdentity(previousIdentity, identity);
+      if (!sameNativeSubagentIdentity(previousIdentity, mergedIdentity)) {
+        this.identityByThreadId.set(threadId, mergedIdentity);
+        const progressSummary = nativeSubagentStartSummary("identified", mergedIdentity);
+        this.runtime.recordTaskRunProgressByRunId({
+          runId,
+          lastEventAt: this.now(),
+          progressSummary,
+          eventSummary: progressSummary,
+          eventMetadata: this.buildEventMetadata({
+            threadId,
+            identity: mergedIdentity,
+            phase: "child_identified",
+          }),
+        });
+      }
+      this.applyStatus(threadId, thread.status);
+      return;
+    }
+    this.mirroredThreadIds.add(threadId);
     this.identityByThreadId.set(threadId, identity);
     const label = formatNativeSubagentLabel(identity) ?? "Codex subagent";
     const task =
@@ -548,6 +569,30 @@ function resolveCollabItemSubagentIdentity(item: JsonObject): NativeSubagentIden
   };
 }
 
+function mergeNativeSubagentIdentity(
+  previous: NativeSubagentIdentity | undefined,
+  next: NativeSubagentIdentity,
+): NativeSubagentIdentity {
+  return {
+    nickname: trimOptional(next.nickname) ?? trimOptional(previous?.nickname),
+    role: trimOptional(next.role) ?? trimOptional(previous?.role),
+    agentPath: trimOptional(next.agentPath) ?? trimOptional(previous?.agentPath),
+    spawnReason: trimOptional(previous?.spawnReason) ?? trimOptional(next.spawnReason),
+  };
+}
+
+function sameNativeSubagentIdentity(
+  left: NativeSubagentIdentity | undefined,
+  right: NativeSubagentIdentity | undefined,
+): boolean {
+  return (
+    trimOptional(left?.nickname) === trimOptional(right?.nickname) &&
+    trimOptional(left?.role) === trimOptional(right?.role) &&
+    trimOptional(left?.agentPath) === trimOptional(right?.agentPath) &&
+    trimOptional(left?.spawnReason) === trimOptional(right?.spawnReason)
+  );
+}
+
 function formatNativeSubagentLabel(identity: NativeSubagentIdentity): string | undefined {
   const nickname = trimOptional(identity.nickname);
   const role = trimOptional(identity.role);
@@ -558,7 +603,7 @@ function formatNativeSubagentLabel(identity: NativeSubagentIdentity): string | u
 }
 
 function nativeSubagentStartSummary(
-  verb: "started" | "spawned",
+  verb: "started" | "spawned" | "identified",
   identity: NativeSubagentIdentity,
 ): string {
   const role = trimOptional(identity.role);

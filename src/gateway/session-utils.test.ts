@@ -317,6 +317,64 @@ describe("gateway session utils", () => {
     ]);
   });
 
+  test("session detail derives Codex-native child labels from role metadata", () => {
+    const cfg = { agents: { list: [{ id: "coding", default: true }] } } as OpenClawConfig;
+    const sessionKey = "agent:coding:session-generic-child-label";
+    const store = {
+      [sessionKey]: {
+        sessionId: "session-generic-child-label",
+        updatedAt: 3_000,
+      } satisfies SessionEntry,
+    };
+    createTaskRecord({
+      runtime: "subagent",
+      taskKind: "codex-native",
+      sourceId: "codex-thread:child-thread-2",
+      requesterSessionKey: sessionKey,
+      agentId: "coding",
+      runId: "codex-thread:child-thread-2",
+      label: "Codex subagent",
+      task: "Review bounded substrate evidence",
+      status: "succeeded",
+      deliveryStatus: "not_applicable",
+      notifyPolicy: "silent",
+      startedAt: 3_100,
+      lastEventAt: 3_500,
+      terminalSummary: "Codex native subagent finished: review complete.",
+      eventMetadata: {
+        codexNativeSubagent: true,
+        parentThreadId: "parent-thread",
+        childThreadId: "child-thread-2",
+        childPhase: "child_completed",
+        childRole: "codex_reviewer",
+        childNickname: "Banach",
+        childAgentPath: "agents/codex_reviewer.toml",
+        spawnReason: "review bounded substrate evidence",
+      },
+    });
+
+    const row = buildGatewaySessionRow({
+      cfg,
+      storePath: "",
+      store,
+      key: sessionKey,
+      entry: store[sessionKey],
+    });
+
+    expect(row.codexNativeChildRuns).toEqual([
+      expect.objectContaining({
+        source: "codex-native",
+        runId: "codex-thread:child-thread-2",
+        childThreadId: "child-thread-2",
+        role: "codex_reviewer",
+        agentPath: "agents/codex_reviewer.toml",
+        objective: "review bounded substrate evidence",
+        label: "Banach (codex_reviewer)",
+        status: "succeeded",
+      }),
+    ]);
+  });
+
   test("session detail projects Codex-native workbench capability readback", () => {
     const cfg = { agents: { list: [{ id: "coding", default: true }] } } as OpenClawConfig;
     const sessionKey = "agent:coding:session-workbench";
