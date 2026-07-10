@@ -52,6 +52,16 @@
       "sandboxMode": "read-only"
     },
     {
+      "id": "creative_quality_reviewer",
+      "name": "creative_quality_reviewer",
+      "tomlPath": ".codex/agents/creative_quality_reviewer.toml",
+      "toml": ".codex/agents/creative_quality_reviewer.toml",
+      "sourceToml": ".codex/agents/creative_quality_reviewer.toml",
+      "docsPath": "docs/agents/coding/codex-agents/creative-quality-reviewer.md",
+      "doc": "docs/agents/coding/codex-agents/creative-quality-reviewer.md",
+      "sandboxMode": "read-only"
+    },
+    {
       "id": "docs_researcher",
       "name": "docs_researcher",
       "tomlPath": ".codex/agents/docs_researcher.toml",

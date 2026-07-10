@@ -558,7 +558,12 @@ describe("runCodexAppServerAttempt", () => {
       owner: "codex_app_server",
       openclawDynamicTools: { count: 0, names: [] },
       codexProjectConfig: { present: true, multiAgent: true, maxThreads: 6, maxDepth: 2 },
-      customAgents: { count: 1, names: ["codex_reviewer"], hasCodexReviewer: true },
+      customAgents: {
+        count: 1,
+        names: ["codex_reviewer"],
+        hasCodexReviewer: true,
+        hasCreativeQualityReviewer: false,
+      },
     });
   });
 

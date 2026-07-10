@@ -10,6 +10,7 @@ const REQUIRED_AGENT_IDS = [
   "native_fit_reviewer",
   "architect_reviewer",
   "code_reviewer",
+  "creative_quality_reviewer",
   "docs_researcher",
   "codex_reviewer",
 ];

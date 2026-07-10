@@ -80,6 +80,8 @@ export type GatewaySessionCodexExecutionEvidence = {
   observedEventCount: number;
   toolCallCount: number;
   toolResultCount: number;
+  patchCount?: number;
+  validationCommands?: string[];
   workspaceDirs?: string[];
   threadIds?: string[];
   tools?: Array<{

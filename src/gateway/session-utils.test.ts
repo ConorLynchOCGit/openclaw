@@ -405,7 +405,11 @@ describe("gateway session utils", () => {
               schemaVersion: "openclaw.codex-workbench-capability.v1",
               owner: "codex_app_server",
               openclawDynamicTools: { count: 0, names: [] },
-              customAgents: { count: 9, hasCodexReviewer: true },
+              customAgents: {
+                count: 10,
+                hasCodexReviewer: true,
+                hasCreativeQualityReviewer: true,
+              },
               nativeParallelToolCalls: { status: "not_proven" },
             },
           },
@@ -437,7 +441,11 @@ describe("gateway session utils", () => {
         schemaVersion: "openclaw.codex-workbench-capability.v1",
         owner: "codex_app_server",
         openclawDynamicTools: { count: 0, names: [] },
-        customAgents: { count: 9, hasCodexReviewer: true },
+        customAgents: {
+          count: 10,
+          hasCodexReviewer: true,
+          hasCreativeQualityReviewer: true,
+        },
       },
     });
   });
@@ -490,9 +498,10 @@ describe("gateway session utils", () => {
               openclawDynamicTools: { count: 0, names: [] },
               codexWorkbench: { workbenchRoot: "/home/node/.openclaw/workspace" },
               customAgents: {
-                count: 9,
-                names: ["codex_reviewer", "project_explorer"],
+                count: 10,
+                names: ["codex_reviewer", "creative_quality_reviewer", "project_explorer"],
                 hasCodexReviewer: true,
+                hasCreativeQualityReviewer: true,
               },
               nativeParallelToolCalls: { status: "not_proven" },
             },
@@ -531,7 +540,11 @@ describe("gateway session utils", () => {
         thread: { cwd: "/home/node/.openclaw/workspace" },
         openclawDynamicTools: { count: 0, names: [] },
         codexWorkbench: { workbenchRoot: "/home/node/.openclaw/workspace" },
-        customAgents: { count: 9, hasCodexReviewer: true },
+        customAgents: {
+          count: 10,
+          hasCodexReviewer: true,
+          hasCreativeQualityReviewer: true,
+        },
       },
     });
   });
@@ -650,18 +663,66 @@ describe("gateway session utils", () => {
       },
       {
         ...base,
-        type: "model.completed",
+        type: "tool.call",
         ts: "2026-07-10T01:00:06.000Z",
         seq: 7,
         sourceSeq: 7,
+        data: {
+          threadId: "thread-parent",
+          name: "apply_patch",
+          arguments: { input: "*** Begin Patch\n*** End Patch\n" },
+        },
+      },
+      {
+        ...base,
+        type: "tool.result",
+        ts: "2026-07-10T01:00:07.000Z",
+        seq: 8,
+        sourceSeq: 8,
+        data: {
+          threadId: "thread-parent",
+          name: "apply_patch",
+          status: "completed",
+          isError: false,
+        },
+      },
+      {
+        ...base,
+        type: "tool.call",
+        ts: "2026-07-10T01:00:08.000Z",
+        seq: 9,
+        sourceSeq: 9,
+        data: {
+          threadId: "thread-parent",
+          name: "bash",
+          arguments: {
+            command: "node scripts/check-coding-runtime-readiness.mjs --json",
+            cwd: "/home/node/.openclaw/workspace",
+          },
+        },
+      },
+      {
+        ...base,
+        type: "tool.result",
+        ts: "2026-07-10T01:00:09.000Z",
+        seq: 10,
+        sourceSeq: 10,
+        data: { threadId: "thread-parent", name: "bash", status: "completed", isError: false },
+      },
+      {
+        ...base,
+        type: "model.completed",
+        ts: "2026-07-10T01:00:10.000Z",
+        seq: 11,
+        sourceSeq: 11,
         data: { threadId: "thread-parent" },
       },
       {
         ...base,
         type: "session.ended",
-        ts: "2026-07-10T01:00:07.000Z",
-        seq: 8,
-        sourceSeq: 8,
+        ts: "2026-07-10T01:00:11.000Z",
+        seq: 12,
+        sourceSeq: 12,
         data: { threadId: "thread-parent", status: "success" },
       },
     ];
@@ -690,8 +751,10 @@ describe("gateway session utils", () => {
       source: "trajectory",
       ref: `session:${sessionId}`,
       bounded: true,
-      toolCallCount: 3,
-      toolResultCount: 3,
+      toolCallCount: 5,
+      toolResultCount: 5,
+      patchCount: 1,
+      validationCommands: ["node scripts/check-coding-runtime-readiness.mjs --json"],
       workspaceDirs: ["/home/node/.openclaw/workspace"],
       threadIds: ["thread-parent"],
       modelCompleted: true,
@@ -728,10 +791,13 @@ describe("gateway session utils", () => {
       }),
     ]);
     expect(row.codexExecutionEvidence?.shell).toMatchObject({
-      count: 1,
-      completed: 1,
+      count: 2,
+      completed: 2,
       cwd: ["/home/node/.openclaw/workspace"],
-      commandSamples: ["/usr/bin/bash -lc pwd"],
+      commandSamples: [
+        "/usr/bin/bash -lc pwd",
+        "node scripts/check-coding-runtime-readiness.mjs --json",
+      ],
     });
   });
 

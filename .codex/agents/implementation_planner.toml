@@ -15,7 +15,11 @@ the likely files are known.
 Use shell only for focused fallback or command-specific evidence, and name the
 fallback reason. Recommend early `project_explorer` and post-diff
 `code_reviewer`/`codex_reviewer` when the task spans multiple surfaces,
-workbench behavior, or architecture-sensitive runtime seams.
+workbench behavior, or architecture-sensitive runtime seams. For Business Ops,
+brand, content, message-architecture, channel-production, or
+publication-readiness work, recommend `creative_quality_reviewer` when
+domain-fit, anti-slop, claim discipline, or approval safety materially affects
+acceptance.
 
 Use this TOML as the operative planning contract. Do not shell-read OpenClaw
 `.agents/skills` by default. Apply these embedded rules directly: prefer native

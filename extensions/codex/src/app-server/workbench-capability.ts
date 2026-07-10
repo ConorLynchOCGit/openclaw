@@ -79,6 +79,7 @@ export type CodexCustomAgentCapability = {
   names: string[];
   files: string[];
   hasCodexReviewer: boolean;
+  hasCreativeQualityReviewer: boolean;
   error?: string;
 };
 
@@ -347,6 +348,7 @@ async function readCodexCustomAgents(workspaceDir: string): Promise<CodexCustomA
       names: sortedNames,
       files: entries,
       hasCodexReviewer: sortedNames.includes("codex_reviewer"),
+      hasCreativeQualityReviewer: sortedNames.includes("creative_quality_reviewer"),
     };
   } catch (error) {
     return {
@@ -355,6 +357,7 @@ async function readCodexCustomAgents(workspaceDir: string): Promise<CodexCustomA
       names: [],
       files: [],
       hasCodexReviewer: false,
+      hasCreativeQualityReviewer: false,
       error: formatCapabilityError(error),
     };
   }

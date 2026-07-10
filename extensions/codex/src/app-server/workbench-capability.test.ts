@@ -209,6 +209,7 @@ describe("Codex workbench capability report", () => {
       names: ["codex_reviewer", "project_explorer"],
       files: ["codex_reviewer.toml", "project_explorer.toml"],
       hasCodexReviewer: true,
+      hasCreativeQualityReviewer: false,
     });
     expect(report.controlMethods.modelList).toEqual({ status: "ok", count: 1 });
     expect(report.controlMethods.modelProviderCapabilitiesRead).toEqual({
@@ -298,6 +299,7 @@ describe("Codex workbench capability report", () => {
       names: [],
       files: [],
       hasCodexReviewer: false,
+      hasCreativeQualityReviewer: false,
     });
     expect(report.openclawDynamicTools).toEqual({ count: 2, names: ["bash", "read"] });
     expect(report.controlMethods.modelList.status).toBe("unsupported");

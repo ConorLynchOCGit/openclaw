@@ -2153,6 +2153,12 @@ function activeProgressValidationClass(
   if (!command) {
     return undefined;
   }
+  if (
+    /\b(validate|validation|check|smoke|doctor)\b/u.test(command) ||
+    /\bnode\s+scripts\/check-[^\s]+/u.test(command)
+  ) {
+    return "check";
+  }
   if (/\b(typecheck|tsc)\b/u.test(command)) {
     return "typecheck";
   }
@@ -2169,6 +2175,18 @@ function activeProgressValidationClass(
     return "build";
   }
   return undefined;
+}
+
+function isPatchToolName(name: string): boolean {
+  const normalized = name.replace(/[^a-z0-9]/giu, "").toLowerCase();
+  return normalized === "applypatch";
+}
+
+function isLikelyValidationCommand(command: string | undefined): boolean {
+  if (!command) {
+    return false;
+  }
+  return activeProgressValidationClass({ command }) !== undefined;
 }
 
 function activeProgressOutputSummary(
@@ -2662,8 +2680,10 @@ export function readCodexExecutionEvidenceProjection(
   };
   const workspaceDirs = new Set<string>();
   const threadIds = new Set<string>();
+  const validationCommands: string[] = [];
   let toolCallCount = 0;
   let toolResultCount = 0;
+  let patchCount = 0;
   let modelCompleted = false;
   let sessionEndedStatus: string | undefined;
   let lastEventSeq: number | undefined;
@@ -2720,12 +2740,20 @@ export function readCodexExecutionEvidenceProjection(
     toolStats.lastEventSeq = sourceSeq ?? toolStats.lastEventSeq;
     tools.set(name, toolStats);
 
+    if (!isResult && isPatchToolName(name)) {
+      patchCount += 1;
+    }
+
     if (name === "bash") {
       if (!isResult) {
         shell.count += 1;
         const args = activeProgressRecord(data?.arguments);
         addBoundedSetValue(shell.cwd, args?.cwd);
-        addBoundedArrayValue(shell.commandSamples, args?.command);
+        const command = activeProgressCommand(data) ?? boundedProgressText(args?.command, 240);
+        addBoundedArrayValue(shell.commandSamples, command);
+        if (isLikelyValidationCommand(command)) {
+          addBoundedArrayValue(validationCommands, command, 8);
+        }
       } else if (status === "completed") {
         shell.completed += 1;
       } else if (data?.isError === true || status === "error" || status === "failed") {
@@ -2804,6 +2832,8 @@ export function readCodexExecutionEvidenceProjection(
     observedEventCount: events.length,
     toolCallCount,
     toolResultCount,
+    ...(patchCount > 0 ? { patchCount } : {}),
+    ...(validationCommands.length > 0 ? { validationCommands } : {}),
     ...(workspaceDirs.size > 0 ? { workspaceDirs: Array.from(workspaceDirs) } : {}),
     ...(threadIds.size > 0 ? { threadIds: Array.from(threadIds) } : {}),
     ...(tools.size > 0
