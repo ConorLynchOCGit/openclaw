@@ -24,6 +24,7 @@ import {
 } from "./session-transcript-index.fs.js";
 import type {
   GatewaySessionCodexExecutionEvidence,
+  GatewaySessionRow,
   ReadbackProgressProjection,
   ReadbackFieldProvenance,
   SessionPreviewItem,
@@ -1655,6 +1656,7 @@ const PREVIEW_READ_SIZES = [64 * 1024, 256 * 1024, 1024 * 1024];
 const PREVIEW_MAX_LINES = 200;
 const TRAJECTORY_PROGRESS_READ_BYTES = 256 * 1024;
 const CODEX_EXECUTION_EVIDENCE_READ_BYTES = 1024 * 1024;
+const CODEX_LAUNCH_EVIDENCE_READ_BYTES = 256 * 1024;
 const ACTIVE_PROGRESS_TEXT_LIMIT = 160;
 
 type TranscriptContentEntry = {
@@ -2020,6 +2022,33 @@ function readRecentTrajectoryLines(filePath: string, maxBytes: number): string[]
       .toString("utf-8", 0, bytesRead)
       .split(/\r?\n/)
       .slice(readStart > 0 ? 1 : 0)
+      .filter((line) => line.trim().length > 0);
+  } catch {
+    return [];
+  } finally {
+    if (fd !== null) {
+      fs.closeSync(fd);
+    }
+  }
+}
+
+function readInitialTrajectoryLines(filePath: string, maxBytes: number): string[] {
+  let fd: number | null = null;
+  try {
+    fd = fs.openSync(filePath, "r");
+    const stat = fs.fstatSync(fd);
+    if (stat.size === 0) {
+      return [];
+    }
+    const readLen = Math.min(stat.size, Math.max(1024, Math.floor(maxBytes)));
+    const buf = Buffer.alloc(readLen);
+    const bytesRead = fs.readSync(fd, buf, 0, readLen, 0);
+    if (bytesRead <= 0) {
+      return [];
+    }
+    return buf
+      .toString("utf-8", 0, bytesRead)
+      .split(/\r?\n/)
       .filter((line) => line.trim().length > 0);
   } catch {
     return [];
@@ -2803,6 +2832,39 @@ export function readCodexExecutionEvidenceProjection(
     ...(lastEventType ? { lastEventType } : {}),
     ...(lastObservedAt ? { lastObservedAt } : {}),
   };
+}
+
+type GatewaySessionCodexNativeSurface = NonNullable<
+  NonNullable<GatewaySessionRow["promptContext"]>["codexNativeSurface"]
+>;
+
+export function readCodexNativeSurfaceProjection(
+  sessionId: string,
+  storePath: string | undefined,
+  sessionFile: string | undefined,
+  agentId: string | undefined,
+): GatewaySessionCodexNativeSurface | undefined {
+  const filePath = resolveSessionTrajectoryRuntimeFileSync({
+    sessionId,
+    storePath,
+    sessionFile,
+    agentId,
+  });
+  if (!filePath) {
+    return undefined;
+  }
+  const lines = readInitialTrajectoryLines(filePath, CODEX_LAUNCH_EVIDENCE_READ_BYTES);
+  const events = parseTrajectoryProgressEvents(lines, sessionId);
+  for (const { eventType, data } of events) {
+    if (eventType !== "session.started") {
+      continue;
+    }
+    const surface = activeProgressRecord(data?.codexNativeSurface);
+    if (surface?.owner === "codex_app_server") {
+      return surface as GatewaySessionCodexNativeSurface;
+    }
+  }
+  return undefined;
 }
 
 function activeProgressToolCallId(data: Record<string, unknown> | undefined): string | undefined {

@@ -1444,7 +1444,7 @@ function compareJsonFingerprint(left: JsonValue, right: JsonValue): number {
   return JSON.stringify(left).localeCompare(JSON.stringify(right));
 }
 
-type CodexDeveloperInstructionLaunchEvidence = {
+export type CodexDeveloperInstructionLaunchEvidence = {
   cwd?: string;
   runtimeConfig?: JsonObject;
   nativeCodeModeEnabled?: boolean;
@@ -1475,7 +1475,7 @@ export function buildDeveloperInstructions(
   return sections.filter((section) => typeof section === "string" && section.trim()).join("\n\n");
 }
 
-function buildCodexLaunchEvidenceCapsule(
+export function buildCodexLaunchEvidenceCapsule(
   dynamicTools: readonly CodexDynamicToolSpec[] | undefined,
   launchEvidence: CodexDeveloperInstructionLaunchEvidence | undefined,
 ): string | undefined {

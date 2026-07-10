@@ -228,6 +228,7 @@ import {
 } from "./session-binding.js";
 import { rotateOversizedCodexAppServerStartupBinding } from "./startup-binding.js";
 import {
+  buildCodexLaunchEvidenceCapsule,
   buildDeveloperInstructions,
   buildContextEngineBinding,
   buildTurnCollaborationMode,
@@ -814,6 +815,12 @@ export async function runCodexAppServerAttempt(
   const baseDeveloperInstructions = joinPresentSections(
     buildDeveloperInstructions(params, {
       dynamicTools: toolBridge.availableSpecs,
+    }),
+    buildCodexLaunchEvidenceCapsule(toolBridge.availableSpecs, {
+      cwd: effectiveCwd,
+      runtimeConfig: bundleMcpThreadConfig.configPatch as JsonObject | undefined,
+      nativeCodeModeEnabled: nativeToolSurfaceEnabled,
+      nativeCodeModeOnlyEnabled: nativeToolSurfaceEnabled && appServer.codeModeOnly,
     }),
     workspaceBootstrapContext.developerInstructions,
   );

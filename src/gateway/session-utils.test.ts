@@ -384,6 +384,100 @@ describe("gateway session utils", () => {
     });
   });
 
+  test("session detail recovers Codex-native launch surface from trajectory", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-session-codex-surface-"));
+    const sessionId = "22222222-2222-4222-8222-222222222222";
+    const sessionKey = "agent:coding:session-codex-surface";
+    const storePath = path.join(tempDir, "sessions.json");
+    const transcriptPath = path.join(tempDir, `${sessionId}.jsonl`);
+    fs.writeFileSync(transcriptPath, "", "utf8");
+    const trajectoryPath = path.join(tempDir, `${sessionId}.trajectory.jsonl`);
+    fs.writeFileSync(
+      trajectoryPath,
+      `${JSON.stringify({
+        traceSchema: "openclaw-trajectory",
+        schemaVersion: 1,
+        traceId: sessionId,
+        source: "runtime",
+        sessionId,
+        sessionKey,
+        runId: "run-1",
+        workspaceDir: "/home/node/.openclaw/workspace",
+        provider: "openai",
+        modelId: "gpt-5.5",
+        modelApi: "openai-chatgpt-responses",
+        type: "session.started",
+        ts: "2026-07-10T01:00:00.000Z",
+        seq: 1,
+        sourceSeq: 1,
+        data: {
+          threadId: "thread-parent",
+          codexNativeSurface: {
+            owner: "codex_app_server",
+            nativeToolSurfaceConfigured: true,
+            nativeToolSurfaceReason: "enabled",
+            codeModeConfigured: true,
+            codeModeOnlyConfigured: false,
+            nativeSubagents: {
+              expectedTool: "spawn_agent",
+              owner: "codex_app_server",
+              listedInOpenClawDynamicTools: false,
+              guidanceInjected: true,
+              disabledByOpenClawModelProfile: false,
+            },
+            workbenchCapability: {
+              schemaVersion: "openclaw.codex-workbench-capability.v1",
+              owner: "codex_app_server",
+              thread: { cwd: "/home/node/.openclaw/workspace" },
+              openclawDynamicTools: { count: 0, names: [] },
+              codexWorkbench: { workbenchRoot: "/home/node/.openclaw/workspace" },
+              customAgents: {
+                count: 9,
+                names: ["codex_reviewer", "project_explorer"],
+                hasCodexReviewer: true,
+              },
+              nativeParallelToolCalls: { status: "not_proven" },
+            },
+          },
+        },
+      })}\n`,
+      "utf8",
+    );
+
+    const cfg = { agents: { list: [{ id: "coding", default: true }] } } as OpenClawConfig;
+    const store = {
+      [sessionKey]: {
+        sessionId,
+        updatedAt: 2_000,
+      } satisfies SessionEntry,
+    };
+
+    const row = buildGatewaySessionRow({
+      cfg,
+      storePath,
+      store,
+      key: sessionKey,
+      entry: store[sessionKey],
+    });
+
+    expect(row.promptContext?.codexNativeSurface).toMatchObject({
+      owner: "codex_app_server",
+      nativeToolSurfaceConfigured: true,
+      codeModeConfigured: true,
+      nativeSubagents: {
+        expectedTool: "spawn_agent",
+        listedInOpenClawDynamicTools: false,
+      },
+      workbenchCapability: {
+        schemaVersion: "openclaw.codex-workbench-capability.v1",
+        thread: { cwd: "/home/node/.openclaw/workspace" },
+        openclawDynamicTools: { count: 0, names: [] },
+        codexWorkbench: { workbenchRoot: "/home/node/.openclaw/workspace" },
+        customAgents: { count: 9, hasCodexReviewer: true },
+      },
+    });
+  });
+
   test("session detail projects bounded Codex execution evidence from trajectory", () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-session-codex-evidence-"));
     const sessionId = "11111111-1111-4111-8111-111111111111";

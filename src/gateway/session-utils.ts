@@ -94,6 +94,7 @@ import {
 import {
   readLastAssistantTextFromTranscriptWithProvenance,
   readCodexExecutionEvidenceProjection,
+  readCodexNativeSurfaceProjection,
   readLatestTrajectoryProgressProjection,
   readRecentSessionUsageFromTranscript,
   readSessionTitleFieldsFromTranscriptAsync,
@@ -116,6 +117,7 @@ export {
   readLastAssistantTextFromTranscript,
   readLatestTrajectoryProgressProjection,
   readCodexExecutionEvidenceProjection,
+  readCodexNativeSurfaceProjection,
   readLatestSessionUsageFromTranscriptAsync,
   readLatestRecentSessionUsageFromTranscriptAsync,
   readRecentSessionUsageFromTranscriptAsync,
@@ -2402,51 +2404,59 @@ export function buildGatewaySessionRow(params: {
       : updatedAt
         ? "own"
         : undefined;
+  const codexNativeSurface =
+    entry?.systemPromptReport?.codexNativeSurface ??
+    (!lightweight && entry?.sessionId
+      ? readCodexNativeSurfaceProjection(
+          entry.sessionId,
+          storePath,
+          entry.sessionFile,
+          sessionAgentId,
+        )
+      : undefined);
+  const skillsSnapshot = entry?.skillsSnapshot;
+  const systemPromptReport = entry?.systemPromptReport;
   const promptContext =
-    entry?.skillsSnapshot || entry?.systemPromptReport
+    skillsSnapshot || systemPromptReport || codexNativeSurface
       ? {
-          ...(entry.skillsSnapshot || entry.systemPromptReport?.skills
+          ...(skillsSnapshot || systemPromptReport?.skills
             ? {
                 skills: {
                   promptChars:
-                    entry.systemPromptReport?.skills?.promptChars ??
-                    entry.skillsSnapshot?.prompt?.length ??
-                    entry.skillsSnapshot?.promptRef?.bytes,
-                  promptHash:
-                    entry.systemPromptReport?.skills?.hash ?? entry.skillsSnapshot?.promptRef?.hash,
-                  promptRef: entry.skillsSnapshot?.promptRef,
+                    systemPromptReport?.skills?.promptChars ??
+                    skillsSnapshot?.prompt?.length ??
+                    skillsSnapshot?.promptRef?.bytes,
+                  promptHash: systemPromptReport?.skills?.hash ?? skillsSnapshot?.promptRef?.hash,
+                  promptRef: skillsSnapshot?.promptRef,
                   skillCount:
-                    entry.systemPromptReport?.skills?.entries?.length ??
-                    entry.skillsSnapshot?.skills?.length,
+                    systemPromptReport?.skills?.entries?.length ?? skillsSnapshot?.skills?.length,
                   skillNames:
-                    entry.systemPromptReport?.skills?.entries?.map((skill) => skill.name) ??
-                    entry.skillsSnapshot?.skills?.map((skill) => skill.name),
-                  skillFilter: entry.skillsSnapshot?.skillFilter,
+                    systemPromptReport?.skills?.entries?.map((skill) => skill.name) ??
+                    skillsSnapshot?.skills?.map((skill) => skill.name),
+                  skillFilter: skillsSnapshot?.skillFilter,
                 },
               }
             : {}),
-          ...(entry.systemPromptReport?.systemPrompt
+          ...(systemPromptReport?.systemPrompt
             ? {
                 systemPrompt: {
-                  chars: entry.systemPromptReport.systemPrompt.chars,
-                  hash: entry.systemPromptReport.systemPrompt.hash,
-                  source: entry.systemPromptReport.source,
-                  generatedAt: entry.systemPromptReport.generatedAt,
+                  chars: systemPromptReport.systemPrompt.chars,
+                  hash: systemPromptReport.systemPrompt.hash,
+                  source: systemPromptReport.source,
+                  generatedAt: systemPromptReport.generatedAt,
                 },
               }
             : {}),
-          ...(entry.systemPromptReport?.tools
+          ...(systemPromptReport?.tools
             ? {
                 tools: {
-                  count: entry.systemPromptReport.tools.entries.length,
-                  names: entry.systemPromptReport.tools.entries.map((tool) => tool.name),
-                  schemaChars: entry.systemPromptReport.tools.schemaChars,
+                  count: systemPromptReport.tools.entries.length,
+                  names: systemPromptReport.tools.entries.map((tool) => tool.name),
+                  schemaChars: systemPromptReport.tools.schemaChars,
                 },
               }
             : {}),
-          ...(entry.systemPromptReport?.codexNativeSurface
-            ? { codexNativeSurface: entry.systemPromptReport.codexNativeSurface }
-            : {}),
+          ...(codexNativeSurface ? { codexNativeSurface } : {}),
         }
       : undefined;
 

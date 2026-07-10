@@ -562,6 +562,52 @@ describe("runCodexAppServerAttempt", () => {
     });
   });
 
+  it("injects bounded launch evidence into the actual run-attempt developer instructions", async () => {
+    const sessionFile = path.join(tempDir, "coding-launch-evidence-session.jsonl");
+    const workspaceDir = path.join(tempDir, "coding-launch-evidence-workspace");
+    await fs.mkdir(path.join(workspaceDir, ".codex", "agents"), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir, ".codex", "config.toml"),
+      ["[features]", "multi_agent = true", "", "[agents]", "max_threads = 6", ""].join("\n"),
+    );
+    const { requests, waitForMethod, completeTurn } = createStartedThreadHarness();
+    const params = createParams(sessionFile, workspaceDir);
+    params.agentId = "coding";
+    params.sessionKey = "agent:coding:session-launch-evidence";
+    params.disableTools = true;
+    params.runtimePlan = createCodexRuntimePlanFixture();
+
+    const run = runCodexAppServerAttempt(params, {
+      pluginConfig: {
+        appServer: {
+          codeModeOnly: true,
+        },
+        codexPlugins: {
+          enabled: false,
+        },
+      },
+    });
+    await waitForMethod("turn/start");
+    await completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+    await run;
+
+    const startRequest = requests.find((request) => request.method === "thread/start");
+    const startParams = startRequest?.params as { developerInstructions?: string } | undefined;
+    const instructions = startParams?.developerInstructions ?? "";
+
+    expect(instructions).toContain("## Codex Launch Evidence Capsule");
+    expect(instructions).toContain(`- executionCwd: ${workspaceDir}`);
+    expect(instructions).toContain("- openclawDynamicTools.count: 0");
+    expect(instructions).toContain("- openclawDynamicTools.names: none");
+    expect(instructions).toContain("- codeModeConfigured: true");
+    expect(instructions).toContain("- codeModeOnlyConfigured: true");
+    expect(instructions).toContain("- expectedSubagentTool: spawn_agent");
+    expect(instructions).toContain("- mcpServers:");
+    expect(instructions).toContain(
+      "Use event/readback evidence for what actually happened during the turn.",
+    );
+  });
+
   it("forces Coding Codex execution cwd to the live workspace instead of /app", async () => {
     const sessionFile = path.join(tempDir, "coding-workspace-cwd-session.jsonl");
     const workspaceDir = path.join(tempDir, "coding-live-workspace");
