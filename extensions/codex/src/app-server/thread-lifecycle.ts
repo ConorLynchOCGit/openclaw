@@ -1518,12 +1518,14 @@ function buildOpenClawCodexRuntimeBoundaryInstruction(
     return [
       "You are running inside OpenClaw through the Codex app-server harness.",
       "OpenClaw owns routing, session lineage, observation, mirroring, and receipt delivery.",
+      "Codex owns implementation work inside this thread.",
       "OpenClaw dynamic tools are not model-visible in this Codex workbench turn; do not use OpenClaw task, sessions_spawn, sessions_history, or other OpenClaw tool names as the inner Coding team surface.",
     ].join("\n");
   }
   return [
     "You are running inside OpenClaw through the Codex app-server harness.",
     "OpenClaw owns routing, session lineage, observation, mirroring, and receipt delivery.",
+    "Codex owns implementation work inside this thread.",
     `Only these OpenClaw dynamic tools are model-visible here: ${dynamicToolNames.join(", ")}.`,
     "Use OpenClaw dynamic tools only for their listed OpenClaw purpose; do not use them as a surrogate for Codex-native coding tools.",
   ].join("\n");
@@ -1536,22 +1538,15 @@ function buildCodexNativeCodingTeamInstruction(
     (tool) => tool.name.trim() === "sessions_spawn",
   );
   const lines = [
-    "## Codex-Native Coding Team",
+    "## Coding Scope And Closeout Boundary",
     "",
     "If the task includes a workspace-visible prompt, spec, or artifact file path, read that file in full before implementation and report observed chars plus sha256 digest in closeout. Treat the file body as authoritative scope; do not work from a parent summary when a required file ref cannot be read.",
-    "Use Codex-native tools for implementation: repo search/read/edit, command execution, apply_patch, and Codex `spawn_agent` when helper agents improve outcome, risk, validation, or wall time.",
-    "When multiple independent repo searches, file reads, globs, or git inspections are known up front and the `openclaw_repo_workbench` MCP is attached, prefer its batched read-only tools (`repo_search_many`, `repo_read_many`, `repo_glob_many`, `git_inspect_many`) over serial shell exploration. Use shell for precise one-off commands, validation commands, or when MCP is unavailable or unsuitable.",
-    "Prefer `rg` and bounded file reads for source inspection. When native parallel tool calls such as `multi_tool_use.parallel` are available, batch independent searches, reads, and validations instead of serial shell exploration.",
-    "Use Codex `spawn_agent` as the inner coding-team delegation surface. Do not use OpenClaw task/session tools as an inner Coding-team fallback.",
-    "Decide early whether the task merits `project_explorer`, implementation, validation, documentation, or reviewer helpers before doing broad parent inspection. Consume helper context packs instead of redoing broad helper work in the parent.",
-    "When direct project custom-agent names such as `project_explorer`, `test_engineer`, `code_reviewer`, or `codex_reviewer` are not accepted by the live Codex spawn surface, use the Codex built-in `explorer` for read-heavy exploration and `worker` for review, validation, docs research, or implementation support; put `Role: <project role>` and the relevant role contract in the child message.",
-    "A failed direct custom-agent spawn does not prove that Codex subagents are unavailable if built-in `explorer` or `worker` still works. Retry once through the matching built-in Codex agent with the project role embedded in the prompt.",
-    "If a nontrivial task requires independent review or helper work and neither direct custom-role spawn nor built-in Codex spawn works, close as partial or blocked with `runtime_child_surface_missing`; do not claim full completion.",
     "For completion language, distinguish full spec complete, slice complete, partial implementation, validation not run, reviewer blocked, proof pending, and deferred work. Do not collapse a bounded slice into full-spec completion.",
+    "Use the loaded Codex workspace instructions, `.codex/config.toml`, and `.codex/agents/*.toml` for repository inspection, implementation, helper-team, and review behavior.",
   ];
   if (hasOpenClawSessionsSpawn) {
     lines.push(
-      "If `sessions_spawn` is also visible, it remains an OpenClaw outer-delegation tool for OpenClaw/ACP work, not the default inner Codex coding-team route.",
+      "If `sessions_spawn` is also visible, it remains an OpenClaw outer-delegation tool for OpenClaw/ACP work, not the default inner Codex implementation route.",
     );
   }
   return lines.join("\n");

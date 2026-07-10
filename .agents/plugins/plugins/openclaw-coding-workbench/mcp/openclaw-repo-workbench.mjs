@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -215,6 +216,10 @@ export async function gitInspectMany(input, options = {}) {
     schemaVersion: "openclaw.repo_workbench.git_inspect_many.v1",
     root,
     gitRoots: roots.map((gitRoot) => relative(root, gitRoot)),
+    gitRootLabels: roots.map((gitRoot) => ({
+      label: gitRoot === root ? "workspace" : "nested_source",
+      path: relative(root, gitRoot),
+    })),
     results,
   };
 }
@@ -576,6 +581,7 @@ async function runSearchQuery(root, query) {
     const args = [
       "--line-number",
       "--no-heading",
+      "--with-filename",
       "--color",
       "never",
       "--max-count",
@@ -599,14 +605,21 @@ async function runSearchQuery(root, query) {
     args.push("--", query.pattern, searchRoot);
     const output = await runCommand("rg", args, root, DEFAULT_OUTPUT_BYTES);
     const lines = output.stdout.split(/\r?\n/u).filter(Boolean).slice(0, maxMatches);
+    const items = parseRipgrepItems(root, lines);
     return {
+      request: query,
       pattern: query.pattern,
       path: relative(root, searchRoot),
+      limits: {
+        maxMatches,
+        outputBytes: DEFAULT_OUTPUT_BYTES,
+      },
       effectiveMaxMatches: maxMatches,
       ...(query.maxMatches && query.maxMatches > maxMatches
         ? { requestedMaxMatches: query.maxMatches, maxMatchesClamped: true }
         : {}),
       status: output.exitCode === 0 ? "matched" : output.exitCode === 1 ? "no_match" : "error",
+      items,
       matches: lines,
       truncated: output.truncated || lines.length >= maxMatches,
       ...(output.stderr ? { stderr: output.stderr } : {}),
@@ -633,17 +646,28 @@ async function readFileRequest(root, request) {
     const selected = lines.slice(startLine - 1, endLine).join("\n");
     const maxBytes = clampPositiveInt(request.maxBytes, 24_000, MAX_READ_BYTES);
     const capped = capString(selected, maxBytes);
+    const selectedByteLength = Buffer.byteLength(selected, "utf8");
+    const lineNumberedContent = lines
+      .slice(startLine - 1, Math.min(endLine, lines.length))
+      .map((line, index) => `${startLine + index}: ${line}`)
+      .join("\n");
+    const cappedLineNumbered = capString(lineNumberedContent, maxBytes);
     return {
+      request,
       path: relative(root, file),
       status: "ok",
       startLine,
       endLine: Math.min(endLine, lines.length),
       totalLines: lines.length,
+      byteLength: selectedByteLength,
+      contentByteLength: Buffer.byteLength(capped.value, "utf8"),
+      sha256: sha256(selected),
       effectiveMaxBytes: maxBytes,
       ...(request.maxBytes && request.maxBytes > maxBytes
         ? { requestedMaxBytes: request.maxBytes, maxBytesClamped: true }
         : {}),
       content: capped.value,
+      lineNumberedContent: cappedLineNumbered.value,
       truncated: capped.truncated,
     };
   } catch (error) {
@@ -667,14 +691,20 @@ async function runGlobRequest(root, request) {
       .map((file) => relative(root, path.resolve(file)))
       .slice(0, maxResults);
     return {
+      request,
       pattern: request.pattern,
       path: relative(root, searchRoot),
+      limits: {
+        maxResults,
+        outputBytes: DEFAULT_OUTPUT_BYTES,
+      },
       effectiveMaxResults: maxResults,
       ...(request.maxResults && request.maxResults > maxResults
         ? { requestedMaxResults: request.maxResults, maxResultsClamped: true }
         : {}),
       status: output.exitCode === 0 ? "ok" : output.exitCode === 1 ? "no_match" : "error",
       files,
+      fileCount: files.length,
       truncated: output.truncated || files.length >= maxResults,
       ...(output.stderr ? { stderr: output.stderr } : {}),
     };
@@ -718,10 +748,15 @@ async function runGitRequest(root, gitRoot, request) {
     );
     const cappedStdout = capString(output.stdout, maxBytes);
     return {
+      request,
       kind: request.kind,
       repoRoot: relative(root, gitRoot),
+      repoRootLabel: gitRoot === root ? "workspace" : "nested_source",
       path: request.path ?? ".",
       status: output.exitCode === 0 ? "ok" : "error",
+      limits: {
+        maxBytes,
+      },
       effectiveMaxBytes: maxBytes,
       ...(request.maxBytes && request.maxBytes > maxBytes
         ? { requestedMaxBytes: request.maxBytes, maxBytesClamped: true }
@@ -775,6 +810,28 @@ function outputResult(exitCode, stdout, stderr, maxBytes) {
     stderr: cappedStderr.value,
     truncated: cappedStdout.truncated || cappedStderr.truncated,
   };
+}
+
+function parseRipgrepItems(root, lines) {
+  return lines.map((line) => {
+    const parsed = /^(.*?)([:-])(\d+)\2(.*)$/u.exec(line);
+    if (!parsed) {
+      return { text: line };
+    }
+    const [, filePath, separator, lineNumber, text] = parsed;
+    const resolved = path.resolve(filePath);
+    const displayPath = isInside(root, resolved) ? relative(root, resolved) : filePath;
+    return {
+      path: displayPath,
+      line: Number.parseInt(lineNumber, 10),
+      text,
+      ...(separator === "-" ? { context: true } : {}),
+    };
+  });
+}
+
+function sha256(value) {
+  return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
 function safeResolve(root, requestedPath, options = {}) {

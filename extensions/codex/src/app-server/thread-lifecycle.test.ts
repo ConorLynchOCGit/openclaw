@@ -186,17 +186,14 @@ describe("Codex app-server native code mode config", () => {
     const instructions = buildDeveloperInstructions(createAttemptParams({ provider: "openai" }));
 
     expect(instructions).toContain("OpenClaw dynamic tools are not model-visible");
-    expect(instructions).toContain(
-      "Use Codex `spawn_agent` as the inner coding-team delegation surface",
-    );
+    expect(instructions).toContain("Codex owns implementation work inside this thread");
     expect(instructions).toContain("read that file in full before implementation");
-    expect(instructions).toContain("openclaw_repo_workbench");
-    expect(instructions).toContain("repo_search_many");
-    expect(instructions).toContain("Decide early whether the task merits");
-    expect(instructions).toContain(
-      "use the Codex built-in `explorer` for read-heavy exploration and `worker` for review",
-    );
-    expect(instructions).toContain("runtime_child_surface_missing");
+    expect(instructions).toContain("completion language");
+    expect(instructions).toContain("`.codex/config.toml`");
+    expect(instructions).not.toContain("repo_search_many");
+    expect(instructions).not.toContain("Prefer `rg`");
+    expect(instructions).not.toContain("Decide early whether the task merits");
+    expect(instructions).not.toContain("runtime_child_surface_missing");
     expect(instructions).not.toContain("OpenClaw has dynamic tools");
   });
 
@@ -217,6 +214,7 @@ describe("Codex app-server native code mode config", () => {
     expect(instructions).toContain(
       "`sessions_spawn` is also visible, it remains an OpenClaw outer-delegation tool",
     );
+    expect(instructions).not.toContain("Use Codex `spawn_agent`");
   });
 
   it("summarizes deferred dynamic tool names in developer instructions", () => {

@@ -38,25 +38,45 @@ describe("OpenClaw Codex repo workbench plugin", () => {
         input: unknown,
         options: unknown,
       ) => Promise<{
-        results: Array<{ status: string; matches?: string[] }>;
+        results: Array<{
+          status: string;
+          request?: unknown;
+          limits?: unknown;
+          matches?: string[];
+          items?: Array<{ path?: string; line?: number; text?: string }>;
+        }>;
       }>;
       repoReadMany: (
         input: unknown,
         options: unknown,
       ) => Promise<{
-        results: Array<{ status: string; content?: string }>;
+        results: Array<{
+          status: string;
+          content?: string;
+          lineNumberedContent?: string;
+          byteLength?: number;
+          contentByteLength?: number;
+          sha256?: string;
+        }>;
       }>;
       repoGlobMany: (
         input: unknown,
         options: unknown,
       ) => Promise<{
-        results: Array<{ status: string; files?: string[] }>;
+        results: Array<{ status: string; files?: string[]; fileCount?: number; limits?: unknown }>;
       }>;
       gitInspectMany: (
         input: unknown,
         options: unknown,
       ) => Promise<{
-        results: Array<{ status: string; stdout?: string }>;
+        gitRootLabels?: Array<{ label: string; path: string }>;
+        results: Array<{
+          status: string;
+          stdout?: string;
+          repoRootLabel?: string;
+          request?: unknown;
+          limits?: unknown;
+        }>;
       }>;
     };
 
@@ -78,9 +98,33 @@ describe("OpenClaw Codex repo workbench plugin", () => {
     );
 
     expect(search.results[0]?.status).toBe("matched");
+    expect(search.results[0]?.request).toMatchObject({
+      pattern: "openclaw_repo_workbench",
+      path: ".codex/config.toml",
+    });
+    expect(search.results[0]?.limits).toMatchObject({ maxMatches: 80 });
+    expect(search.results[0]?.items?.[0]).toMatchObject({
+      path: ".codex/config.toml",
+      line: expect.any(Number),
+      text: expect.any(String),
+    });
     expect(read.results[0]?.status).toBe("ok");
     expect(read.results[0]?.content).toContain("Execution Coding Codex Agents");
+    expect(read.results[0]?.lineNumberedContent).toContain("1: # Execution Coding Codex Agents");
+    expect(read.results[0]?.byteLength).toEqual(expect.any(Number));
+    expect(read.results[0]?.contentByteLength).toEqual(expect.any(Number));
+    expect(read.results[0]?.sha256).toMatch(/^[a-f0-9]{64}$/u);
     expect(glob.results[0]?.files).toContain(".codex/agents/codex_reviewer.toml");
+    expect(glob.results[0]?.fileCount).toBeGreaterThan(0);
+    expect(glob.results[0]?.limits).toMatchObject({ maxResults: 20 });
+    expect(git.gitRootLabels).toEqual(
+      expect.arrayContaining([expect.objectContaining({ label: "workspace", path: "." })]),
+    );
     expect(git.results[0]).toMatchObject({ status: "ok" });
+    expect(git.results[0]).toMatchObject({
+      repoRootLabel: "workspace",
+      request: { kind: "status", path: ".codex/config.toml" },
+      limits: { maxBytes: 48000 },
+    });
   });
 });

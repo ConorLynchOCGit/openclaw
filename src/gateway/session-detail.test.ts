@@ -36,6 +36,48 @@ describe("buildGatewaySessionDetailProjection", () => {
         observedEventCount: 12,
         toolCallCount: 4,
         toolResultCount: 4,
+        toolMix: {
+          shell: 1,
+          mcp: 2,
+          lsp: 0,
+          spawnAgent: 1,
+          waitAgent: 0,
+          applyPatch: 0,
+        },
+        byThread: [
+          {
+            threadId: "thread-parent",
+            observedEventCount: 8,
+            toolCallCount: 3,
+            toolResultCount: 3,
+            toolMix: {
+              shell: 1,
+              mcp: 1,
+              lsp: 0,
+              spawnAgent: 1,
+              waitAgent: 0,
+              applyPatch: 0,
+            },
+            mcpTools: ["openclaw_repo_workbench.repo_search_many"],
+          },
+          {
+            threadId: "thread-child",
+            role: "codex_reviewer",
+            objective: "review substrate proof evidence",
+            observedEventCount: 4,
+            toolCallCount: 1,
+            toolResultCount: 1,
+            toolMix: {
+              shell: 0,
+              mcp: 1,
+              lsp: 0,
+              spawnAgent: 0,
+              waitAgent: 0,
+              applyPatch: 0,
+            },
+            mcpTools: ["openclaw_repo_workbench.repo_read_many"],
+          },
+        ],
         workspaceDirs: ["/home/node/.openclaw/workspace"],
         mcpTools: [
           {
@@ -81,6 +123,16 @@ describe("buildGatewaySessionDetailProjection", () => {
     expect(result.detail.codexExecutionEvidence?.mcpTools?.[0]).toMatchObject({
       server: "openclaw_repo_workbench",
       tool: "repo_search_many",
+    });
+    expect(result.detail.codexExecutionEvidence?.toolMix).toMatchObject({
+      shell: 1,
+      mcp: 2,
+      spawnAgent: 1,
+    });
+    expect(result.detail.codexExecutionEvidence?.byThread?.[1]).toMatchObject({
+      threadId: "thread-child",
+      role: "codex_reviewer",
+      mcpTools: ["openclaw_repo_workbench.repo_read_many"],
     });
     expect(result.detail.codexNativeChildRuns?.[0]).toMatchObject({
       role: "codex_reviewer",

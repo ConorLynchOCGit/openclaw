@@ -2182,6 +2182,21 @@ function isPatchToolName(name: string): boolean {
   return normalized === "applypatch";
 }
 
+function isShellToolName(name: string): boolean {
+  const normalized = name.replace(/[^a-z0-9]/giu, "").toLowerCase();
+  return normalized === "bash" || normalized === "execcommand" || normalized === "commandexec";
+}
+
+function isSpawnAgentToolName(name: string): boolean {
+  const normalized = name.replace(/[^a-z0-9]/giu, "").toLowerCase();
+  return normalized === "spawnagent";
+}
+
+function isWaitAgentToolName(name: string): boolean {
+  const normalized = name.replace(/[^a-z0-9]/giu, "").toLowerCase();
+  return normalized === "waitagent";
+}
+
 function isLikelyValidationCommand(command: string | undefined): boolean {
   if (!command) {
     return false;
@@ -2526,6 +2541,43 @@ type CodexExecutionShellStats = {
   commandSamples: string[];
 };
 
+type CodexExecutionToolMix = {
+  shell: number;
+  mcp: number;
+  lsp: number;
+  spawnAgent: number;
+  waitAgent: number;
+  applyPatch: number;
+};
+
+type CodexExecutionThreadStats = {
+  threadId: string;
+  role?: string;
+  objective?: string;
+  observedEventCount: number;
+  eventSeqStart?: number;
+  eventSeqEnd?: number;
+  toolCallCount: number;
+  toolResultCount: number;
+  toolMix: CodexExecutionToolMix;
+  mcpTools: Set<string>;
+  lspTools: Set<string>;
+  shellSamples: string[];
+  validationCommands: string[];
+  patchCount: number;
+};
+
+function createCodexExecutionToolMix(): CodexExecutionToolMix {
+  return {
+    shell: 0,
+    mcp: 0,
+    lsp: 0,
+    spawnAgent: 0,
+    waitAgent: 0,
+    applyPatch: 0,
+  };
+}
+
 function addBoundedSetValue(target: Set<string>, value: unknown, limit = 8): void {
   if (target.size >= limit) {
     return;
@@ -2589,6 +2641,67 @@ function collectToolArgumentPaths(
   }
 }
 
+function readCodexThreadRole(data: Record<string, unknown> | undefined): string | undefined {
+  return (
+    boundedProgressText(data?.role, 80) ??
+    boundedProgressText(data?.agentRole, 80) ??
+    boundedProgressText(data?.agent, 80)
+  );
+}
+
+function readCodexThreadObjective(data: Record<string, unknown> | undefined): string | undefined {
+  return boundedProgressText(data?.objective, 160) ?? boundedProgressText(data?.task, 160);
+}
+
+function getCodexExecutionThreadStats(
+  target: Map<string, CodexExecutionThreadStats>,
+  threadId: string,
+): CodexExecutionThreadStats {
+  const existing = target.get(threadId);
+  if (existing) {
+    return existing;
+  }
+  const created: CodexExecutionThreadStats = {
+    threadId,
+    observedEventCount: 0,
+    toolCallCount: 0,
+    toolResultCount: 0,
+    toolMix: createCodexExecutionToolMix(),
+    mcpTools: new Set<string>(),
+    lspTools: new Set<string>(),
+    shellSamples: [],
+    validationCommands: [],
+    patchCount: 0,
+  };
+  target.set(threadId, created);
+  return created;
+}
+
+function incrementCodexExecutionToolMix(
+  mix: CodexExecutionToolMix,
+  name: string,
+  mcpName: { server: string; tool: string } | undefined,
+): void {
+  if (isShellToolName(name)) {
+    mix.shell += 1;
+  }
+  if (mcpName) {
+    mix.mcp += 1;
+    if (mcpName.tool.startsWith("lsp_")) {
+      mix.lsp += 1;
+    }
+  }
+  if (isSpawnAgentToolName(name)) {
+    mix.spawnAgent += 1;
+  }
+  if (isWaitAgentToolName(name)) {
+    mix.waitAgent += 1;
+  }
+  if (isPatchToolName(name)) {
+    mix.applyPatch += 1;
+  }
+}
+
 function extractMcpToolName(name: string): { server: string; tool: string } | undefined {
   const dotIndex = name.indexOf(".");
   if (dotIndex <= 0 || dotIndex === name.length - 1) {
@@ -2647,6 +2760,38 @@ function compactLspStats(stats: CodexExecutionLspToolStats) {
   };
 }
 
+function compactToolMix(stats: CodexExecutionToolMix) {
+  return {
+    shell: stats.shell,
+    mcp: stats.mcp,
+    lsp: stats.lsp,
+    spawnAgent: stats.spawnAgent,
+    waitAgent: stats.waitAgent,
+    applyPatch: stats.applyPatch,
+  };
+}
+
+function compactCodexExecutionThreadStats(stats: CodexExecutionThreadStats) {
+  return {
+    threadId: stats.threadId,
+    ...(stats.role ? { role: stats.role } : {}),
+    ...(stats.objective ? { objective: stats.objective } : {}),
+    observedEventCount: stats.observedEventCount,
+    ...(stats.eventSeqStart !== undefined ? { eventSeqStart: stats.eventSeqStart } : {}),
+    ...(stats.eventSeqEnd !== undefined ? { eventSeqEnd: stats.eventSeqEnd } : {}),
+    toolCallCount: stats.toolCallCount,
+    toolResultCount: stats.toolResultCount,
+    toolMix: compactToolMix(stats.toolMix),
+    ...(stats.mcpTools.size > 0 ? { mcpTools: Array.from(stats.mcpTools).slice(0, 12) } : {}),
+    ...(stats.lspTools.size > 0 ? { lspTools: Array.from(stats.lspTools).slice(0, 8) } : {}),
+    ...(stats.shellSamples.length > 0 ? { shellSamples: stats.shellSamples.slice(0, 5) } : {}),
+    ...(stats.validationCommands.length > 0
+      ? { validationCommands: stats.validationCommands.slice(0, 5) }
+      : {}),
+    ...(stats.patchCount > 0 ? { patchCount: stats.patchCount } : {}),
+  };
+}
+
 export function readCodexExecutionEvidenceProjection(
   sessionId: string,
   storePath: string | undefined,
@@ -2678,6 +2823,8 @@ export function readCodexExecutionEvidenceProjection(
     cwd: new Set<string>(),
     commandSamples: [],
   };
+  const toolMix = createCodexExecutionToolMix();
+  const byThread = new Map<string, CodexExecutionThreadStats>();
   const workspaceDirs = new Set<string>();
   const threadIds = new Set<string>();
   const validationCommands: string[] = [];
@@ -2698,7 +2845,24 @@ export function readCodexExecutionEvidenceProjection(
     lastEventType = eventType;
     lastObservedAt = boundedProgressText(event.ts, 64) ?? lastObservedAt;
     addBoundedSetValue(workspaceDirs, event.workspaceDir);
-    addBoundedSetValue(threadIds, data?.threadId);
+    const threadId = boundedProgressText(data?.threadId, 200);
+    addBoundedSetValue(threadIds, threadId);
+    const threadStats = threadId ? getCodexExecutionThreadStats(byThread, threadId) : undefined;
+    if (threadStats) {
+      threadStats.observedEventCount += 1;
+      if (sourceSeq !== undefined) {
+        threadStats.eventSeqStart =
+          threadStats.eventSeqStart === undefined
+            ? sourceSeq
+            : Math.min(threadStats.eventSeqStart, sourceSeq);
+        threadStats.eventSeqEnd =
+          threadStats.eventSeqEnd === undefined
+            ? sourceSeq
+            : Math.max(threadStats.eventSeqEnd, sourceSeq);
+      }
+      threadStats.role = threadStats.role ?? readCodexThreadRole(data);
+      threadStats.objective = threadStats.objective ?? readCodexThreadObjective(data);
+    }
     if (eventType === "model.completed") {
       modelCompleted = true;
       continue;
@@ -2718,8 +2882,14 @@ export function readCodexExecutionEvidenceProjection(
     const isResult = eventType === "tool.result";
     if (isResult) {
       toolResultCount += 1;
+      if (threadStats) {
+        threadStats.toolResultCount += 1;
+      }
     } else {
       toolCallCount += 1;
+      if (threadStats) {
+        threadStats.toolCallCount += 1;
+      }
     }
     const toolStats = tools.get(name) ?? {
       name,
@@ -2740,19 +2910,36 @@ export function readCodexExecutionEvidenceProjection(
     toolStats.lastEventSeq = sourceSeq ?? toolStats.lastEventSeq;
     tools.set(name, toolStats);
 
-    if (!isResult && isPatchToolName(name)) {
-      patchCount += 1;
+    const mcpName = extractMcpToolName(name);
+    if (!isResult) {
+      incrementCodexExecutionToolMix(toolMix, name, mcpName);
+      if (threadStats) {
+        incrementCodexExecutionToolMix(threadStats.toolMix, name, mcpName);
+      }
     }
 
-    if (name === "bash") {
+    if (!isResult && isPatchToolName(name)) {
+      patchCount += 1;
+      if (threadStats) {
+        threadStats.patchCount += 1;
+      }
+    }
+
+    if (isShellToolName(name)) {
       if (!isResult) {
         shell.count += 1;
         const args = activeProgressRecord(data?.arguments);
         addBoundedSetValue(shell.cwd, args?.cwd);
         const command = activeProgressCommand(data) ?? boundedProgressText(args?.command, 240);
         addBoundedArrayValue(shell.commandSamples, command);
+        if (threadStats) {
+          addBoundedArrayValue(threadStats.shellSamples, command);
+        }
         if (isLikelyValidationCommand(command)) {
           addBoundedArrayValue(validationCommands, command, 8);
+          if (threadStats) {
+            addBoundedArrayValue(threadStats.validationCommands, command, 8);
+          }
         }
       } else if (status === "completed") {
         shell.completed += 1;
@@ -2761,9 +2948,14 @@ export function readCodexExecutionEvidenceProjection(
       }
     }
 
-    const mcpName = extractMcpToolName(name);
     if (!mcpName) {
       continue;
+    }
+    if (!isResult && threadStats) {
+      threadStats.mcpTools.add(`${mcpName.server}.${mcpName.tool}`);
+      if (mcpName.tool.startsWith("lsp_")) {
+        threadStats.lspTools.add(mcpName.tool);
+      }
     }
     const mcpKey = `${mcpName.server}.${mcpName.tool}`;
     const mcpStats = mcpTools.get(mcpKey) ?? {
@@ -2832,6 +3024,19 @@ export function readCodexExecutionEvidenceProjection(
     observedEventCount: events.length,
     toolCallCount,
     toolResultCount,
+    toolMix: compactToolMix(toolMix),
+    ...(byThread.size > 0
+      ? {
+          byThread: Array.from(byThread.values())
+            .sort(
+              (left, right) =>
+                (left.eventSeqStart ?? Number.MAX_SAFE_INTEGER) -
+                (right.eventSeqStart ?? Number.MAX_SAFE_INTEGER),
+            )
+            .map(compactCodexExecutionThreadStats)
+            .slice(0, 12),
+        }
+      : {}),
     ...(patchCount > 0 ? { patchCount } : {}),
     ...(validationCommands.length > 0 ? { validationCommands } : {}),
     ...(workspaceDirs.size > 0 ? { workspaceDirs: Array.from(workspaceDirs) } : {}),

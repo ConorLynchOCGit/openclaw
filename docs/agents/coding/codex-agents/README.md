@@ -10,6 +10,13 @@ Repo inspection:
   should prefer the Codex-native `openclaw_repo_workbench` MCP when available.
 - The workbench is read-only. It is not a validation runner and must not become
   an OpenClaw-side surrogate workbench.
+- Exact one-file lookup can use direct Codex file read or MCP.
+- Tests, builds, validation, formatting, and command-specific evidence use
+  ordinary Codex command execution.
+- Edits use Codex-native edit/patch behavior.
+- Broad shell exploration before MCP/helper use on a broad task requires a
+  short fallback reason. Focused shell commands do not.
+- Do not invent `validation_run_many` or a fake `multi_tool_use.parallel`.
 
 Core helpers:
 
@@ -26,10 +33,27 @@ Reviewer boundaries:
   and missing tests.
 - `codex_reviewer`: Codex-native team/workbench behavior, helper use, parent
   rework, and OpenClaw dynamic-tool leakage.
+- `creative_quality_reviewer`: Business Ops creative, message, channel, and
+  publication-readiness review.
 - `native_fit_reviewer`: OpenClaw/GBrain/Codex architecture fit, duplicate
   authority, and control-layer risk.
 - `architect_reviewer`: module boundaries, APIs, lifecycle, data models, and
   maintainability.
+
+Team shape:
+
+- Do not spawn unbounded or autonomous helper trees. Delegate when task shape
+  merits it, using the smallest team shape that covers the risk.
+- `solo`: one or two known files, a small patch, low ambiguity, and low review
+  risk.
+- `light team`: broad read-heavy docs/source/domain work, validation risk, or
+  review risk. Use `project_explorer` or built-in `explorer` before broad
+  parent inspection, and use the smallest reviewer set that can catch the
+  material failure mode.
+- `architecture team`: cross-runtime, OpenClaw/Codex/GBrain, deploy/proof,
+  tool/readback behavior, or multi-surface changes. Include planning,
+  native-fit/architecture, validation, and review roles when they affect the
+  decision.
 
 Do not spawn all reviewers by default. Coding chooses the smallest reviewer set
 whose trigger applies and records skipped-reviewer rationale in closeout for

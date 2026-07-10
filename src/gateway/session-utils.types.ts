@@ -80,6 +80,37 @@ export type GatewaySessionCodexExecutionEvidence = {
   observedEventCount: number;
   toolCallCount: number;
   toolResultCount: number;
+  toolMix?: {
+    shell: number;
+    mcp: number;
+    lsp: number;
+    spawnAgent: number;
+    waitAgent: number;
+    applyPatch: number;
+  };
+  byThread?: Array<{
+    threadId: string;
+    role?: string;
+    objective?: string;
+    observedEventCount: number;
+    eventSeqStart?: number;
+    eventSeqEnd?: number;
+    toolCallCount: number;
+    toolResultCount: number;
+    toolMix?: {
+      shell: number;
+      mcp: number;
+      lsp: number;
+      spawnAgent: number;
+      waitAgent: number;
+      applyPatch: number;
+    };
+    mcpTools?: string[];
+    lspTools?: string[];
+    shellSamples?: string[];
+    validationCommands?: string[];
+    patchCount?: number;
+  }>;
   patchCount?: number;
   validationCommands?: string[];
   workspaceDirs?: string[];
