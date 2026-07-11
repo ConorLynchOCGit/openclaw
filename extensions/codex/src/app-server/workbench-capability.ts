@@ -67,9 +67,11 @@ export type CodexWorkbenchRoots = {
 export type CodexProjectConfigCapability = {
   source: ".codex/config.toml";
   present: boolean;
-  multiAgent?: boolean;
-  maxThreads?: number;
-  maxDepth?: number;
+  multiAgentVersion?: "v1" | "v2";
+  maxConcurrentThreadsPerSession?: number;
+  toolNamespace?: string;
+  spawnAgentMetadataVisible?: boolean;
+  directModelOnly?: boolean;
   error?: string;
 };
 
@@ -312,15 +314,31 @@ async function readCodexProjectConfig(workspaceDir: string): Promise<CodexProjec
   const source = ".codex/config.toml" as const;
   try {
     const content = await fs.readFile(path.join(workspaceDir, source), "utf8");
-    const multiAgent = readTomlBoolean(content, "features", "multi_agent");
-    const maxThreads = readTomlNumber(content, "agents", "max_threads");
-    const maxDepth = readTomlNumber(content, "agents", "max_depth");
+    const multiAgentV2 = readTomlBoolean(content, "features.multi_agent_v2", "enabled");
+    const multiAgentV1 = readTomlBoolean(content, "features", "multi_agent");
+    const multiAgentVersion = multiAgentV2 ? "v2" : multiAgentV1 ? "v1" : undefined;
+    const maxConcurrentThreadsPerSession = multiAgentV2
+      ? readTomlNumber(content, "features.multi_agent_v2", "max_concurrent_threads_per_session")
+      : readTomlNumber(content, "agents", "max_threads");
+    const toolNamespace = multiAgentV2
+      ? readTomlScalar(content, "features.multi_agent_v2", "tool_namespace")
+      : undefined;
+    const hideSpawnAgentMetadata = multiAgentV2
+      ? readTomlBoolean(content, "features.multi_agent_v2", "hide_spawn_agent_metadata")
+      : undefined;
+    const nonCodeModeOnly = multiAgentV2
+      ? readTomlBoolean(content, "features.multi_agent_v2", "non_code_mode_only")
+      : undefined;
     return {
       source,
       present: true,
-      ...(multiAgent !== undefined ? { multiAgent } : {}),
-      ...(maxThreads !== undefined ? { maxThreads } : {}),
-      ...(maxDepth !== undefined ? { maxDepth } : {}),
+      ...(multiAgentVersion ? { multiAgentVersion } : {}),
+      ...(maxConcurrentThreadsPerSession !== undefined ? { maxConcurrentThreadsPerSession } : {}),
+      ...(toolNamespace ? { toolNamespace } : {}),
+      ...(hideSpawnAgentMetadata !== undefined
+        ? { spawnAgentMetadataVisible: !hideSpawnAgentMetadata }
+        : {}),
+      ...(nonCodeModeOnly !== undefined ? { directModelOnly: nonCodeModeOnly } : {}),
     };
   } catch (error) {
     return {

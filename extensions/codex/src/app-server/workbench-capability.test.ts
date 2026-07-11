@@ -12,12 +12,12 @@ describe("Codex workbench capability report", () => {
     const workspaceDir = await makeWorkspace({
       sourceRoot: true,
       configToml: [
-        "[features]",
-        "multi_agent = true",
-        "",
-        "[agents]",
-        "max_threads = 8",
-        "max_depth = 2",
+        "[features.multi_agent_v2]",
+        "enabled = true",
+        "max_concurrent_threads_per_session = 8",
+        "hide_spawn_agent_metadata = false",
+        "non_code_mode_only = true",
+        'tool_namespace = "agents"',
         "",
       ].join("\n"),
       agents: {
@@ -51,11 +51,13 @@ describe("Codex workbench capability report", () => {
           config: {
             features: {
               code_mode: true,
-              multi_agent: true,
-            },
-            agents: {
-              max_threads: 8,
-              max_depth: 2,
+              multi_agent_v2: {
+                enabled: true,
+                max_concurrent_threads_per_session: 8,
+                hide_spawn_agent_metadata: false,
+                non_code_mode_only: true,
+                tool_namespace: "agents",
+              },
             },
           },
           layers: [{ name: "global" }, { name: "project" }],
@@ -202,9 +204,11 @@ describe("Codex workbench capability report", () => {
     );
     expect(report.codexProjectConfig).toMatchObject({
       present: true,
-      multiAgent: true,
-      maxThreads: 8,
-      maxDepth: 2,
+      multiAgentVersion: "v2",
+      maxConcurrentThreadsPerSession: 8,
+      toolNamespace: "agents",
+      spawnAgentMetadataVisible: true,
+      directModelOnly: true,
     });
     expect(report.customAgents).toMatchObject({
       count: 2,
@@ -224,9 +228,9 @@ describe("Codex workbench capability report", () => {
       status: "ok",
       includeLayers: true,
       layerCount: 2,
-      configKeyCount: 2,
-      featureKeys: ["code_mode", "multi_agent"],
-      agentKeys: ["max_depth", "max_threads"],
+      configKeyCount: 1,
+      featureKeys: ["code_mode", "multi_agent_v2"],
+      agentKeys: [],
     });
     expect(report.controlMethods.experimentalFeatureList).toEqual({
       status: "ok",

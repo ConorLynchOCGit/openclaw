@@ -490,12 +490,12 @@ describe("runCodexAppServerAttempt", () => {
     await fs.writeFile(
       path.join(workspaceDir, ".codex", "config.toml"),
       [
-        "[features]",
-        "multi_agent = true",
-        "",
-        "[agents]",
-        "max_threads = 6",
-        "max_depth = 2",
+        "[features.multi_agent_v2]",
+        "enabled = true",
+        "max_concurrent_threads_per_session = 6",
+        "hide_spawn_agent_metadata = false",
+        "non_code_mode_only = true",
+        'tool_namespace = "agents"',
         "",
       ].join("\n"),
     );
@@ -538,7 +538,8 @@ describe("runCodexAppServerAttempt", () => {
     expect(startParams.dynamicTools).toEqual([]);
     expect(startParams.config?.["features.code_mode"]).toBe(true);
     expect(startParams.config?.["features.code_mode_only"]).toBe(true);
-    expect(startParams.config?.["features.multi_agent"]).toBe(true);
+    expect(startParams.config).not.toHaveProperty("features.multi_agent");
+    expect(startParams.config).not.toHaveProperty("features.multi_agent_v2");
 
     const threadReady = events.find(
       (event) =>
@@ -557,7 +558,14 @@ describe("runCodexAppServerAttempt", () => {
       schemaVersion: "openclaw.codex-workbench-capability.v1",
       owner: "codex_app_server",
       openclawDynamicTools: { count: 0, names: [] },
-      codexProjectConfig: { present: true, multiAgent: true, maxThreads: 6, maxDepth: 2 },
+      codexProjectConfig: {
+        present: true,
+        multiAgentVersion: "v2",
+        maxConcurrentThreadsPerSession: 6,
+        toolNamespace: "agents",
+        spawnAgentMetadataVisible: true,
+        directModelOnly: true,
+      },
       customAgents: {
         count: 1,
         names: ["codex_reviewer"],
@@ -573,7 +581,12 @@ describe("runCodexAppServerAttempt", () => {
     await fs.mkdir(path.join(workspaceDir, ".codex", "agents"), { recursive: true });
     await fs.writeFile(
       path.join(workspaceDir, ".codex", "config.toml"),
-      ["[features]", "multi_agent = true", "", "[agents]", "max_threads = 6", ""].join("\n"),
+      [
+        "[features.multi_agent_v2]",
+        "enabled = true",
+        "max_concurrent_threads_per_session = 6",
+        "",
+      ].join("\n"),
     );
     const { requests, waitForMethod, completeTurn } = createStartedThreadHarness();
     const params = createParams(sessionFile, workspaceDir);
@@ -620,12 +633,9 @@ describe("runCodexAppServerAttempt", () => {
     await fs.writeFile(
       path.join(workspaceDir, ".codex", "config.toml"),
       [
-        "[features]",
-        "multi_agent = true",
-        "",
-        "[agents]",
-        "max_threads = 6",
-        "max_depth = 2",
+        "[features.multi_agent_v2]",
+        "enabled = true",
+        "max_concurrent_threads_per_session = 6",
         "",
       ].join("\n"),
     );

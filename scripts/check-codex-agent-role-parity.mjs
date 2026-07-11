@@ -39,14 +39,34 @@ const agentIds = new Set(agents.map((agent) => agent.id));
 if (!config.present) {
   errors.push(`Missing ${repoPath(configPath)}.`);
 }
-if (!config.multiAgent) {
-  errors.push(".codex/config.toml must enable [features] multi_agent = true.");
+if (!config.multiAgentV2) {
+  errors.push(".codex/config.toml must enable [features.multi_agent_v2] enabled = true.");
 }
-if (config.maxThreads === undefined || config.maxThreads < 2) {
-  errors.push(".codex/config.toml must set [agents] max_threads >= 2.");
+if (
+  config.maxConcurrentThreadsPerSession === undefined ||
+  config.maxConcurrentThreadsPerSession < 2
+) {
+  errors.push(
+    ".codex/config.toml must set [features.multi_agent_v2] max_concurrent_threads_per_session >= 2.",
+  );
 }
-if (config.maxDepth === undefined || config.maxDepth < 1) {
-  errors.push(".codex/config.toml must set [agents] max_depth >= 1.");
+if (config.hideSpawnAgentMetadata !== false) {
+  errors.push(".codex/config.toml must expose v2 purpose-role metadata.");
+}
+if (!config.nonCodeModeOnly) {
+  errors.push(
+    ".codex/config.toml must expose v2 collaboration directly to the model, outside Code Mode.",
+  );
+}
+if (config.toolNamespace !== "agents") {
+  errors.push('.codex/config.toml must use the non-reserved v2 tool namespace "agents".');
+}
+if (
+  config.legacyMultiAgent !== undefined ||
+  config.legacyMaxThreads !== undefined ||
+  config.legacyMaxDepth !== undefined
+) {
+  errors.push(".codex/config.toml must not mix legacy v1 multi-agent keys into the v2 contract.");
 }
 
 if (!fs.existsSync(agentsDir)) {
@@ -89,16 +109,24 @@ for (const entry of registryAgents) {
   }
 }
 
-const registryConfig =
-  registry?.config && typeof registry.config === "object" ? registry.config : {};
-if (registryConfig.multiAgent !== undefined && registryConfig.multiAgent !== config.multiAgent) {
-  errors.push(".agents/codex-agents.json config.multiAgent diverges from .codex/config.toml.");
+const registryRuntime =
+  registry?.runtime && typeof registry.runtime === "object" ? registry.runtime : {};
+if (registryRuntime.multiAgentVersion !== "v2") {
+  errors.push('.agents/codex-agents.json runtime.multiAgentVersion must be "v2".');
 }
-if (registryConfig.maxThreads !== undefined && registryConfig.maxThreads !== config.maxThreads) {
-  errors.push(".agents/codex-agents.json config.maxThreads diverges from .codex/config.toml.");
+if (
+  registryRuntime.maxConcurrentThreadsPerSession !== undefined &&
+  registryRuntime.maxConcurrentThreadsPerSession !== config.maxConcurrentThreadsPerSession
+) {
+  errors.push(
+    ".agents/codex-agents.json runtime.maxConcurrentThreadsPerSession diverges from .codex/config.toml.",
+  );
 }
-if (registryConfig.maxDepth !== undefined && registryConfig.maxDepth !== config.maxDepth) {
-  errors.push(".agents/codex-agents.json config.maxDepth diverges from .codex/config.toml.");
+if (
+  registryRuntime.toolNamespace !== undefined &&
+  registryRuntime.toolNamespace !== config.toolNamespace
+) {
+  errors.push(".agents/codex-agents.json runtime.toolNamespace diverges from .codex/config.toml.");
 }
 
 for (const file of agents.map((agent) => path.basename(agent.path))) {
@@ -122,7 +150,7 @@ if (json) {
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 } else if (report.ok) {
   process.stdout.write(
-    `Codex agent role parity OK (${report.agentIds.length} agents, max_threads=${config.maxThreads}, max_depth=${config.maxDepth}).\n`,
+    `Codex agent role parity OK (${report.agentIds.length} agents, v2 concurrency=${config.maxConcurrentThreadsPerSession}, namespace=${config.toolNamespace}).\n`,
   );
 } else {
   process.stderr.write(
@@ -139,9 +167,22 @@ function readCodexConfig(filePath) {
   const content = fs.readFileSync(filePath, "utf8");
   return {
     present: true,
-    multiAgent: readTomlBoolean(content, "features", "multi_agent"),
-    maxThreads: readTomlNumber(content, "agents", "max_threads"),
-    maxDepth: readTomlNumber(content, "agents", "max_depth"),
+    multiAgentV2: readTomlBoolean(content, "features.multi_agent_v2", "enabled"),
+    maxConcurrentThreadsPerSession: readTomlNumber(
+      content,
+      "features.multi_agent_v2",
+      "max_concurrent_threads_per_session",
+    ),
+    hideSpawnAgentMetadata: readTomlBoolean(
+      content,
+      "features.multi_agent_v2",
+      "hide_spawn_agent_metadata",
+    ),
+    nonCodeModeOnly: readTomlBoolean(content, "features.multi_agent_v2", "non_code_mode_only"),
+    toolNamespace: readTomlStringInSection(content, "features.multi_agent_v2", "tool_namespace"),
+    legacyMultiAgent: readTomlBoolean(content, "features", "multi_agent"),
+    legacyMaxThreads: readTomlNumber(content, "agents", "max_threads"),
+    legacyMaxDepth: readTomlNumber(content, "agents", "max_depth"),
   };
 }
 
@@ -195,6 +236,10 @@ function readTomlNumber(content, section, key) {
 function readTomlString(content, key) {
   const match = new RegExp(`^\\s*${escapeRegExp(key)}\\s*=\\s*"([^"]*)"`, "mu").exec(content);
   return match?.[1]?.trim() || undefined;
+}
+
+function readTomlStringInSection(content, section, key) {
+  return readTomlScalar(content, section, key);
 }
 
 function readTomlScalar(content, section, key) {

@@ -12,13 +12,9 @@
     "sourceRepoConfig": ".codex/config.toml",
     "homeRepoAgentsDir": ".codex/agents",
     "sourceRepoAgentsDir": ".codex/agents",
-    "maxThreads": 6,
-    "maxDepth": 2
-  },
-  "config": {
-    "multiAgent": true,
-    "maxThreads": 6,
-    "maxDepth": 2
+    "multiAgentVersion": "v2",
+    "maxConcurrentThreadsPerSession": 6,
+    "toolNamespace": "agents"
   },
   "agents": [
     {

@@ -397,8 +397,8 @@ describe("Codex app-server native code mode config", () => {
     });
   });
 
-  it("keeps Codex-native coding team subagents enabled for coding runs", () => {
-    const params = createAttemptParams({ provider: "openai", modelId: "gpt-5.4-nano" });
+  it("defers the Coding team version and limits to native Codex project config", () => {
+    const params = createAttemptParams({ provider: "openai", modelId: "gpt-5.6-sol" });
     params.agentId = "coding";
     params.sessionKey = "agent:coding:session-1";
 
@@ -413,8 +413,9 @@ describe("Codex app-server native code mode config", () => {
       "features.code_mode": true,
       "features.code_mode_only": false,
       "features.apply_patch_streaming_events": true,
-      "features.multi_agent": true,
     });
+    expect(request.config).not.toHaveProperty("features.multi_agent");
+    expect(request.config).not.toHaveProperty("features.multi_agent_v2");
     expect(request.config).not.toHaveProperty("agents.max_threads");
     expect(request.config).not.toHaveProperty("agents.max_depth");
     expect(request).not.toHaveProperty("developerInstructions");
@@ -441,8 +442,8 @@ describe("Codex app-server native code mode config", () => {
     expect(resumeRequest).not.toHaveProperty("developerInstructions");
   });
 
-  it("keeps Codex-native coding team subagents enabled from coding session keys", () => {
-    const params = createAttemptParams({ provider: "openai", modelId: "gpt-5.4-nano" });
+  it("does not inject a multi-agent version from coding session keys", () => {
+    const params = createAttemptParams({ provider: "openai", modelId: "gpt-5.6-sol" });
     params.sessionKey = "agent:coding:session-1";
 
     const request = buildThreadStartParams(params, {
@@ -452,15 +453,14 @@ describe("Codex app-server native code mode config", () => {
       developerInstructions: "test instructions",
     });
 
-    expect(request.config).toMatchObject({
-      "features.multi_agent": true,
-    });
+    expect(request.config).not.toHaveProperty("features.multi_agent");
+    expect(request.config).not.toHaveProperty("features.multi_agent_v2");
     expect(request.config).not.toHaveProperty("agents.max_threads");
     expect(request.config).not.toHaveProperty("agents.max_depth");
   });
 
-  it("keeps Codex-native coding team subagents enabled for execution-coding runs", () => {
-    const params = createAttemptParams({ provider: "openai", modelId: "gpt-5.4-nano" });
+  it("does not inject a multi-agent version for execution-coding runs", () => {
+    const params = createAttemptParams({ provider: "openai", modelId: "gpt-5.6-sol" });
     params.agentId = "execution-coding";
     params.sessionKey = "agent:execution-coding:session-1";
 
@@ -471,9 +471,8 @@ describe("Codex app-server native code mode config", () => {
       developerInstructions: "test instructions",
     });
 
-    expect(request.config).toMatchObject({
-      "features.multi_agent": true,
-    });
+    expect(request.config).not.toHaveProperty("features.multi_agent");
+    expect(request.config).not.toHaveProperty("features.multi_agent_v2");
     expect(request.config).not.toHaveProperty("agents.max_threads");
     expect(request.config).not.toHaveProperty("agents.max_depth");
   });
