@@ -131,6 +131,15 @@ export type CodexThreadResumeResponse = {
   modelProvider?: string | null;
 };
 
+export type CodexThreadReadParams = JsonObject & {
+  threadId: string;
+  includeTurns?: boolean;
+};
+
+export type CodexThreadReadResponse = {
+  thread: CodexThread;
+};
+
 export type CodexThreadInjectItemsParams = JsonObject & {
   threadId: string;
   items: JsonValue[];
@@ -185,6 +194,7 @@ export type CodexTurn = {
 export type CodexThread = {
   id: string;
   sessionId?: string;
+  parentThreadId?: string | null;
   name?: string | null;
   preview?: string | null;
   createdAt?: number | null;
@@ -525,6 +535,7 @@ type CodexAppServerRequestParamsOverride = {
   "environment/add": { environmentId: string; execServerUrl: string };
   "thread/fork": CodexThreadForkParams;
   "thread/inject_items": CodexThreadInjectItemsParams;
+  "thread/read": CodexThreadReadParams;
   "thread/start": CodexThreadStartParams;
   "thread/unsubscribe": CodexThreadUnsubscribeParams;
   "turn/interrupt": CodexTurnInterruptParams;
@@ -552,6 +563,7 @@ type CodexAppServerRequestResultMap = {
   "thread/fork": CodexThreadForkResponse;
   "thread/inject_items": JsonValue;
   "thread/list": JsonValue;
+  "thread/read": CodexThreadReadResponse;
   "thread/resume": CodexThreadResumeResponse;
   "thread/start": CodexThreadStartResponse;
   "thread/unsubscribe": JsonValue;

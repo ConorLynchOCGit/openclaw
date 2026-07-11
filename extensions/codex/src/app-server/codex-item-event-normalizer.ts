@@ -6,6 +6,7 @@ import {
 
 const TOOL_ITEM_TYPES = new Set([
   "commandExecution",
+  "dynamicToolCall",
   "fileChange",
   "mcpToolCall",
   "webSearch",
@@ -62,11 +63,36 @@ function normalizeName(item: JsonObject, itemType: string): string | undefined {
   if (!tool) {
     return undefined;
   }
+  if (
+    itemType === "collabAgentToolCall" ||
+    (itemType === "dynamicToolCall" && readString(item, "namespace") === "agents")
+  ) {
+    return normalizeCollaborationToolName(tool);
+  }
   if (itemType === "mcpToolCall") {
     const server = readString(item, "server");
     return server ? `${server}.${tool}` : tool;
   }
   return tool;
+}
+
+function normalizeCollaborationToolName(tool: string): string {
+  const normalized = tool.replace(/[^a-z0-9]/giu, "").toLowerCase();
+  switch (normalized) {
+    case "spawnagent":
+      return "spawn_agent";
+    case "sendinput":
+      return "send_input";
+    case "resumeagent":
+      return "resume_agent";
+    case "wait":
+    case "waitagent":
+      return "wait_agent";
+    case "closeagent":
+      return "close_agent";
+    default:
+      return tool;
+  }
 }
 
 function normalizeFileChanges(item: JsonObject): Array<{ path: string; kind: string }> {
@@ -99,6 +125,9 @@ function normalizeArguments(item: JsonObject, itemType: string): Record<string, 
     });
   }
   if (itemType === "mcpToolCall") {
+    return sanitizeCodexToolArguments(item.arguments) ?? {};
+  }
+  if (itemType === "dynamicToolCall") {
     return sanitizeCodexToolArguments(item.arguments) ?? {};
   }
   return sanitizeCodexAgentEventRecord({
@@ -142,6 +171,13 @@ function normalizeResult(item: JsonObject, itemType: string): Record<string, unk
       durationMs: readNumber(item, "durationMs"),
       error: isJsonObject(item.error) ? item.error : readString(item, "error"),
       structuredContent: boundedMcpStructuredContent(item),
+    });
+  }
+  if (itemType === "dynamicToolCall") {
+    return sanitizeCodexAgentEventRecord({
+      durationMs: readNumber(item, "durationMs"),
+      success: typeof item.success === "boolean" ? item.success : undefined,
+      error: isJsonObject(item.error) ? item.error : readString(item, "error"),
     });
   }
   if (itemType === "webSearch") {
@@ -192,6 +228,9 @@ export function normalizeCodexItemToolEvent(params: {
     itemId,
     toolCallId: itemId,
     name,
+    ...(itemType === "dynamicToolCall" && readString(item, "namespace")
+      ? { namespace: readString(item, "namespace") }
+      : {}),
     ...(params.role ? { role: params.role } : {}),
     ...(params.objective ? { objective: params.objective } : {}),
   };

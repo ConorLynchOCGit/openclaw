@@ -72,8 +72,71 @@ export class CodexNativeSubagentTaskMirror {
       notification.method === "rawResponseItem/completed"
     ) {
       this.handleNativeFunctionItem(params);
+      this.handleDynamicAgentItem(params);
       this.handleCollabAgentItem(params);
+      this.handleSubAgentActivityItem(params);
     }
+  }
+
+  private handleDynamicAgentItem(params: JsonObject): void {
+    const item = isJsonObject(params.item) ? params.item : undefined;
+    if (
+      !item ||
+      readString(item, "type") !== "dynamicToolCall" ||
+      readString(item, "namespace") !== "agents" ||
+      normalizeToolName(readString(item, "tool")) !== "spawnagent"
+    ) {
+      return;
+    }
+    const threadId = readString(params, "threadId")?.trim();
+    if (threadId !== this.params.parentThreadId) {
+      return;
+    }
+    const identity = resolveNativeSpawnFunctionIdentity(item);
+    const callId = readFunctionCallId(item);
+    if (callId) {
+      if (!this.pendingSpawnIdentitiesByCallId.has(callId)) {
+        this.pendingSpawnIdentitiesByCallId.set(callId, identity);
+      }
+      return;
+    }
+    this.pendingSpawnIdentityQueue.push(identity);
+  }
+
+  private handleSubAgentActivityItem(params: JsonObject): void {
+    const item = isJsonObject(params.item) ? params.item : undefined;
+    if (
+      !item ||
+      readString(item, "type") !== "subAgentActivity" ||
+      normalizeToolName(readString(item, "kind")) !== "started"
+    ) {
+      return;
+    }
+    const threadId = readString(params, "threadId")?.trim();
+    if (threadId !== this.params.parentThreadId) {
+      return;
+    }
+    const childThreadId = trimOptional(readString(item, "agentThreadId"));
+    if (!childThreadId) {
+      return;
+    }
+    const callId = readFunctionCallId(item);
+    const pendingIdentity = callId
+      ? this.pendingSpawnIdentitiesByCallId.get(callId)
+      : this.pendingSpawnIdentityQueue.shift();
+    if (callId) {
+      this.pendingSpawnIdentitiesByCallId.delete(callId);
+    }
+    const agentPath = trimOptional(readString(item, "agentPath"));
+    const activityIdentity = agentPath
+      ? { agentPath, spawnReason: taskNameFromAgentPath(agentPath) }
+      : undefined;
+    const identity = mergeNativeSubagentIdentity(activityIdentity, pendingIdentity ?? {});
+    this.createOrIdentifyTaskFromSpawn({
+      threadId: childThreadId,
+      identity,
+      prompt: identity.spawnReason,
+    });
   }
 
   private handleThreadStarted(params: JsonObject): void {
@@ -118,7 +181,8 @@ export class CodexNativeSubagentTaskMirror {
     this.identityByThreadId.set(threadId, identity);
     const label = formatNativeSubagentLabel(identity) ?? "Codex subagent";
     const task =
-      spawnReason ?? `Codex native subagent${label === "Codex subagent" ? "" : ` ${label}`}`;
+      identity.spawnReason ??
+      `Codex native subagent${label === "Codex subagent" ? "" : ` ${label}`}`;
     const createdAt = secondsToMillis(thread.createdAt) ?? this.now();
     const taskRecord = this.runtime.tryCreateRunningTaskRun({
       sourceId: runId,
@@ -645,13 +709,22 @@ function resolveThreadSubagentIdentity(
   spawn: CodexSubAgentThreadSpawnSource,
   spawnReason?: string,
 ): NativeSubagentIdentity {
-  const normalizedSpawnReason = trimOptional(spawnReason);
+  const normalizedSpawnReason =
+    trimOptional(spawnReason) ?? taskNameFromAgentPath(spawn.agent_path);
   return {
     nickname: trimOptional(spawn.agent_nickname) ?? trimOptional(thread.agentNickname),
     role: trimOptional(spawn.agent_role) ?? trimOptional(thread.agentRole),
     agentPath: trimOptional(spawn.agent_path),
     ...(normalizedSpawnReason ? { spawnReason: normalizedSpawnReason } : {}),
   };
+}
+
+function taskNameFromAgentPath(agentPath: string | null | undefined): string | undefined {
+  const normalized = trimOptional(agentPath)?.replace(/\/+$/u, "");
+  if (!normalized) {
+    return undefined;
+  }
+  return trimOptional(normalized.slice(normalized.lastIndexOf("/") + 1));
 }
 
 function resolveCollabItemSubagentIdentity(item: JsonObject): NativeSubagentIdentity {
@@ -686,7 +759,10 @@ export function resolveNativeSpawnFunctionIdentity(item: JsonObject): NativeSuba
     spawnReason:
       extractSpawnMessageObjective(message) ??
       trimOptional(readString(args, "objective")) ??
-      trimOptional(readString(args, "task")),
+      trimOptional(readString(args, "task")) ??
+      trimOptional(readString(args, "task_name")) ??
+      trimOptional(readString(args, "taskName")) ??
+      message,
   };
 }
 

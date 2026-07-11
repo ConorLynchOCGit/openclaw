@@ -30,6 +30,17 @@ describe("normalizeCodexItemToolEvent", () => {
         name: "openclaw_repo_workbench.repo_read_many",
       },
       {
+        type: "dynamicToolCall",
+        item: {
+          id: "spawn-1",
+          type: "dynamicToolCall",
+          namespace: "agents",
+          tool: "spawn_agent",
+          arguments: { agent_type: "project_explorer", task_name: "map-one-seam" },
+        },
+        name: "spawn_agent",
+      },
+      {
         type: "webSearch",
         item: { id: "web-1", type: "webSearch", query: "Codex app-server" },
         name: "web_search",
@@ -88,6 +99,29 @@ describe("normalizeCodexItemToolEvent", () => {
       });
     },
   );
+
+  it("normalizes Codex v2 wait lifecycle names to the model-visible tool name", () => {
+    const event = normalizeCodexItemToolEvent({
+      method: "item/started",
+      notificationParams: {
+        threadId: "parent-thread",
+        item: {
+          id: "wait-1",
+          type: "collabAgentToolCall",
+          tool: "wait",
+          status: "inProgress",
+        },
+      },
+    });
+
+    expect(event).toMatchObject({
+      type: "tool.call",
+      data: {
+        name: "wait_agent",
+        threadId: "parent-thread",
+      },
+    });
+  });
 
   it("keeps child role/objective and bounded MCP result metadata", () => {
     const event = normalizeCodexItemToolEvent({

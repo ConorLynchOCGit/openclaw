@@ -16,7 +16,9 @@ import type { CodexServerNotification } from "./protocol.js";
 function createClient() {
   const handlers = new Set<(notification: CodexServerNotification) => Promise<void> | void>();
   const closeHandlers = new Set<() => void>();
+  const request = vi.fn(async () => ({}));
   return {
+    request,
     addNotificationHandler(
       handler: (notification: CodexServerNotification) => Promise<void> | void,
     ) {
@@ -459,6 +461,128 @@ describe("CodexNativeSubagentMonitor", () => {
         role: "project_explorer",
         name: "openclaw_repo_workbench.repo_read_many",
         status: "completed",
+      }),
+    );
+  });
+
+  it("registers Codex v2 children from subagent activity before projecting child tools", async () => {
+    const client = createClient();
+    client.request.mockResolvedValue({
+      thread: {
+        id: "child-v2-thread",
+        parentThreadId: "parent-thread",
+        preview: "",
+        agentRole: "project_explorer",
+        source: {
+          subAgent: {
+            thread_spawn: {
+              parent_thread_id: "parent-thread",
+              depth: 1,
+              agent_path: "/root/v2_workspace_probe",
+              agent_role: "project_explorer",
+            },
+          },
+        },
+      },
+    });
+    const runtime = createRuntime();
+    const recordEvent = vi.fn();
+    const monitor = new CodexNativeSubagentMonitor(client, runtime);
+    monitor.registerParent({
+      parentThreadId: "parent-thread",
+      requesterSessionKey: "agent:coding:main",
+      taskRuntimeScope: createTaskScope("agent:coding:main"),
+      agentId: "coding",
+      trajectoryRecorder: { recordEvent } as never,
+    });
+
+    await client.notify({
+      method: "item/completed",
+      params: {
+        threadId: "parent-thread",
+        turnId: "parent-turn",
+        item: {
+          id: "call-v2-spawn",
+          type: "subAgentActivity",
+          kind: "started",
+          agentThreadId: "child-v2-thread",
+          agentPath: "/root/v2_workspace_probe",
+        },
+      },
+    });
+    await client.notify({
+      method: "item/started",
+      params: {
+        threadId: "child-v2-thread",
+        turnId: "child-turn",
+        item: {
+          id: "mcp-child-read",
+          type: "mcpToolCall",
+          server: "openclaw_repo_workbench",
+          tool: "repo_read_many",
+          arguments: { files: [{ path: ".codex/config.toml" }] },
+        },
+      },
+    });
+
+    expect(runtime.createRunningTaskRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "codex-thread:child-v2-thread",
+        label: "project_explorer",
+        task: "v2_workspace_probe",
+      }),
+    );
+    expect(client.request).toHaveBeenCalledWith(
+      "thread/read",
+      {
+        threadId: "child-v2-thread",
+        includeTurns: false,
+      },
+      { timeoutMs: 5_000 },
+    );
+    expect(recordEvent).toHaveBeenCalledWith(
+      "tool.call",
+      expect.objectContaining({
+        threadId: "child-v2-thread",
+        role: "project_explorer",
+        objective: "v2_workspace_probe",
+        name: "openclaw_repo_workbench.repo_read_many",
+      }),
+    );
+  });
+
+  it("keeps v2 child visibility non-blocking when native metadata read is unavailable", async () => {
+    const client = createClient();
+    client.request.mockRejectedValue(new Error("thread/read unavailable"));
+    const runtime = createRuntime();
+    const monitor = new CodexNativeSubagentMonitor(client, runtime);
+    monitor.registerParent({
+      parentThreadId: "parent-thread",
+      requesterSessionKey: "agent:coding:main",
+      taskRuntimeScope: createTaskScope("agent:coding:main"),
+      agentId: "coding",
+    });
+
+    await client.notify({
+      method: "item/completed",
+      params: {
+        threadId: "parent-thread",
+        turnId: "parent-turn",
+        item: {
+          id: "call-v2-spawn",
+          type: "subAgentActivity",
+          kind: "started",
+          agentThreadId: "child-v2-thread",
+          agentPath: "/root/v2_workspace_probe",
+        },
+      },
+    });
+
+    expect(client.request).toHaveBeenCalledTimes(1);
+    expect(runtime.createRunningTaskRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "codex-thread:child-v2-thread",
+        task: "v2_workspace_probe",
       }),
     );
   });

@@ -2991,6 +2991,22 @@ function isNativeSubagentActivityForThread(
   }
 
   const item = isJsonObject(params.item) ? params.item : undefined;
+  const notificationThreadId =
+    typeof params.threadId === "string" && params.threadId.trim()
+      ? params.threadId.trim()
+      : undefined;
+  if (notificationThreadId && childThreadIds.has(notificationThreadId)) {
+    return true;
+  }
+  if (
+    item?.type === "subAgentActivity" &&
+    notificationThreadId === parentThreadId &&
+    typeof item.agentThreadId === "string" &&
+    item.agentThreadId.trim()
+  ) {
+    childThreadIds.add(item.agentThreadId.trim());
+    return true;
+  }
   if (item?.type !== "collabAgentToolCall") {
     return false;
   }

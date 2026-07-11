@@ -506,12 +506,33 @@ describe("runCodexAppServerAttempt turn watches", () => {
     await harness.notify({
       method: "item/started",
       params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
         item: {
-          type: "collabAgentToolCall",
-          tool: "spawnAgent",
-          senderThreadId: "thread-1",
-          receiverThreadIds: ["child-thread"],
-          prompt: "Inspect relevant source and return a bounded packet.",
+          id: "call-v2-spawn",
+          type: "dynamicToolCall",
+          namespace: "agents",
+          tool: "spawn_agent",
+          arguments: {
+            agent_type: "project_explorer",
+            task_name: "inspect-one-seam",
+            message: "Inspect relevant source and return a bounded packet.",
+          },
+          status: "inProgress",
+        },
+      },
+    });
+    await harness.notify({
+      method: "item/completed",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        item: {
+          id: "call-v2-spawn",
+          type: "subAgentActivity",
+          kind: "started",
+          agentThreadId: "child-thread",
+          agentPath: "/root/inspect-one-seam",
         },
       },
     });
@@ -520,10 +541,17 @@ describe("runCodexAppServerAttempt turn watches", () => {
       setTimeout(resolve, 60);
     });
     await harness.notify({
-      method: "thread/status/changed",
+      method: "item/started",
       params: {
         threadId: "child-thread",
-        status: { type: "active", activeFlags: ["reading"] },
+        turnId: "child-turn",
+        item: {
+          id: "child-read",
+          type: "mcpToolCall",
+          server: "openclaw_repo_workbench",
+          tool: "repo_read_many",
+          arguments: { files: [{ path: ".codex/config.toml" }] },
+        },
       },
     });
 
@@ -541,7 +569,9 @@ describe("runCodexAppServerAttempt turn watches", () => {
     expect(harness.request.mock.calls.some(([method]) => method === "turn/interrupt")).toBe(false);
     const progressReasons = onRunProgress.mock.calls.map(([info]) => info.reason);
     expect(progressReasons).toContain("notification:item/started");
-    expect(progressReasons).toContain("notification:thread/status/changed");
+    expect(progressReasons.filter((reason) => reason === "notification:item/started")).toHaveLength(
+      2,
+    );
   });
 
   it("does not count non-turn app-server requests as turn attempt progress", async () => {

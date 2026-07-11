@@ -32,7 +32,13 @@ import {
   readFunctionCallId,
   resolveNativeSpawnFunctionIdentity,
 } from "./native-subagent-task-mirror.js";
-import type { CodexServerNotification, JsonObject, JsonValue } from "./protocol.js";
+import type {
+  CodexServerNotification,
+  CodexThread,
+  CodexThreadReadResponse,
+  JsonObject,
+  JsonValue,
+} from "./protocol.js";
 import { isJsonObject } from "./protocol.js";
 import type { CodexTrajectoryRecorder } from "./trajectory.js";
 
@@ -73,6 +79,11 @@ type MonitorOptions = {
   transcriptPollDelaysMs?: readonly number[];
   taskRowReconcileIntervalMs?: number;
 };
+
+type NativeSubagentMonitorClient = Pick<
+  CodexAppServerClient,
+  "addNotificationHandler" | "addCloseHandler" | "request"
+>;
 
 const DEFAULT_TRANSCRIPT_POLL_DELAYS_MS = [
   2_000, 5_000, 10_000, 15_000, 30_000, 60_000, 120_000, 300_000,
@@ -127,12 +138,13 @@ export class CodexNativeSubagentMonitor {
     string,
     ReturnType<typeof resolveNativeSpawnFunctionIdentity>
   >();
+  private readonly threadMetadataReads = new Map<string, Promise<void>>();
   private codexHome?: string;
   private transcriptPollDelaysMs: readonly number[];
   private taskRowReconcileTimer?: ReturnType<typeof setInterval>;
 
   constructor(
-    client: Pick<CodexAppServerClient, "addNotificationHandler" | "addCloseHandler">,
+    private readonly client: NativeSubagentMonitorClient,
     private readonly runtime: NativeSubagentMonitorRuntime = defaultRuntime,
     options: MonitorOptions = {},
   ) {
@@ -154,6 +166,7 @@ export class CodexNativeSubagentMonitor {
     this.childThreadIdsByAgentPath.clear();
     this.transcriptPathsByChildThreadId.clear();
     this.pendingSpawnIdentitiesByCallId.clear();
+    this.threadMetadataReads.clear();
   }
 
   configure(options: MonitorOptions): void {
@@ -203,6 +216,19 @@ export class CodexNativeSubagentMonitor {
 
   async handleNotification(notification: CodexServerNotification): Promise<void> {
     const state = this.resolveMirrorState(notification);
+    const v2ChildThreadId = readV2StartedChildThreadId(notification, state?.parentThreadId);
+    const notificationThreadId = readNotificationThreadId(notification);
+    const registeredChildThreadId =
+      state &&
+      notificationThreadId &&
+      this.childThreadParents.get(notificationThreadId) === state.parentThreadId
+        ? notificationThreadId
+        : undefined;
+    const childThreadId = v2ChildThreadId ?? registeredChildThreadId;
+    const childState = childThreadId ? this.childStates.get(childThreadId) : undefined;
+    if (state && childThreadId && (!childState?.role || !childState.objective)) {
+      await this.enrichChildThreadFromAppServer(state.parentThreadId, childThreadId);
+    }
     if (state?.mirror) {
       try {
         state.mirror.handleNotification(notification);
@@ -293,6 +319,43 @@ export class CodexNativeSubagentMonitor {
             resolveNativeSpawnFunctionIdentity(item),
           );
         }
+        if (
+          item &&
+          itemType === "dynamicToolCall" &&
+          readString(item, "namespace") === "agents" &&
+          normalizeToolName(readString(item, "tool")) === "spawnagent" &&
+          callId
+        ) {
+          this.pendingSpawnIdentitiesByCallId.set(
+            buildParentCallKey(parentThreadId, callId),
+            resolveNativeSpawnFunctionIdentity(item),
+          );
+        }
+        if (
+          item &&
+          itemType === "subAgentActivity" &&
+          normalizeToolName(readString(item, "kind")) === "started"
+        ) {
+          const childThreadId = normalizeOptionalString(readString(item, "agentThreadId"));
+          if (childThreadId) {
+            const identity = callId
+              ? this.pendingSpawnIdentitiesByCallId.get(buildParentCallKey(parentThreadId, callId))
+              : undefined;
+            this.registerChildThread(parentThreadId, childThreadId, {
+              agentPath:
+                identity?.agentPath ?? normalizeOptionalString(readString(item, "agentPath")),
+              role: identity?.role,
+              objective:
+                identity?.spawnReason ?? taskNameFromAgentPath(readString(item, "agentPath")),
+              scheduleTranscriptPoll: false,
+            });
+            if (callId) {
+              this.pendingSpawnIdentitiesByCallId.delete(
+                buildParentCallKey(parentThreadId, callId),
+              );
+            }
+          }
+        }
         const nativeSpawnOutputChildThreadId = readNativeSpawnFunctionOutputChildThreadId(item);
         if (nativeSpawnOutputChildThreadId) {
           const identity = callId
@@ -351,6 +414,73 @@ export class CodexNativeSubagentMonitor {
     if (event) {
       state.trajectoryRecorder.recordEvent(event.type, event.data);
     }
+  }
+
+  private async enrichChildThreadFromAppServer(
+    parentThreadId: string,
+    childThreadId: string,
+  ): Promise<void> {
+    const key = `${parentThreadId}\u0000${childThreadId}`;
+    const existing = this.threadMetadataReads.get(key);
+    if (existing) {
+      await existing;
+      return;
+    }
+    const read = (async () => {
+      try {
+        const response = await this.client.request<CodexThreadReadResponse>(
+          "thread/read",
+          {
+            threadId: childThreadId,
+            includeTurns: false,
+          },
+          { timeoutMs: 5_000 },
+        );
+        const thread = isJsonObject(response?.thread)
+          ? (response.thread as CodexThread)
+          : undefined;
+        if (!thread || thread.id !== childThreadId) {
+          return;
+        }
+        const source = readCodexSubagentThreadSpawnSourceFromThread(
+          thread as unknown as JsonObject,
+          parentThreadId,
+        );
+        if (!source && thread.parentThreadId !== parentThreadId) {
+          embeddedAgentLog.warn(
+            "Ignoring Codex native subagent thread metadata for another parent",
+            {
+              parentThreadId,
+              childThreadId,
+              observedParentThreadId: thread.parentThreadId,
+            },
+          );
+          return;
+        }
+        const role = normalizeOptionalString(source?.agent_role ?? thread.agentRole);
+        const objective =
+          normalizeOptionalString(thread.preview) ?? taskNameFromAgentPath(source?.agent_path);
+        this.registerChildThread(parentThreadId, childThreadId, {
+          agentPath: normalizeOptionalString(source?.agent_path),
+          role,
+          objective,
+          scheduleTranscriptPoll: false,
+        });
+        const state = this.parentStates.get(parentThreadId);
+        state?.mirror?.handleNotification({
+          method: "thread/started",
+          params: { thread: thread as unknown as JsonObject },
+        });
+      } catch (error) {
+        embeddedAgentLog.debug("Failed to read Codex native subagent thread metadata", {
+          parentThreadId,
+          childThreadId,
+          error: formatErrorMessage(error),
+        });
+      }
+    })();
+    this.threadMetadataReads.set(key, read);
+    await read;
   }
 
   private async handleCompletionNotification(notification: CodexServerNotification): Promise<void> {
@@ -845,12 +975,44 @@ function buildCompletionDedupeKey(
   return `${parentThreadId}:${completion.childThreadId}:${completion.status}:${hash}`;
 }
 
+function readV2StartedChildThreadId(
+  notification: CodexServerNotification,
+  parentThreadId: string | undefined,
+): string | undefined {
+  if (!parentThreadId || notification.method !== "item/completed") {
+    return undefined;
+  }
+  const params = isJsonObject(notification.params) ? notification.params : undefined;
+  const item = isJsonObject(params?.item) ? params.item : undefined;
+  if (
+    readString(params, "threadId") !== parentThreadId ||
+    readString(item, "type") !== "subAgentActivity" ||
+    normalizeToolName(readString(item, "kind")) !== "started"
+  ) {
+    return undefined;
+  }
+  return normalizeOptionalString(readString(item, "agentThreadId"));
+}
+
+function readNotificationThreadId(notification: CodexServerNotification): string | undefined {
+  const params = isJsonObject(notification.params) ? notification.params : undefined;
+  return normalizeOptionalString(readString(params, "threadId"));
+}
+
 function buildParentAgentPathKey(parentThreadId: string, agentPath: string): string {
   return `${parentThreadId}\0${agentPath}`;
 }
 
 function buildParentCallKey(parentThreadId: string, callId: string): string {
   return `${parentThreadId.trim()}\0${callId.trim()}`;
+}
+
+function taskNameFromAgentPath(agentPath: string | null | undefined): string | undefined {
+  const normalized = normalizeOptionalString(agentPath)?.replace(/\/+$/u, "");
+  if (!normalized) {
+    return undefined;
+  }
+  return normalizeOptionalString(normalized.slice(normalized.lastIndexOf("/") + 1));
 }
 
 function toThreadCompletion(
