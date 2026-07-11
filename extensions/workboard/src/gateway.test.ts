@@ -47,6 +47,7 @@ describe("workboard gateway methods", () => {
     expect([...methods.keys()]).toEqual([
       "workboard.cards.list",
       "workboard.cards.create",
+      "workboard.cards.promoteBusinessOpsCandidate",
       "workboard.cards.update",
       "workboard.cards.move",
       "workboard.cards.delete",
@@ -97,6 +98,9 @@ describe("workboard gateway methods", () => {
     });
     expect(methods.get("workboard.cards.export")?.opts).toEqual({ scope: "operator.read" });
     expect(methods.get("workboard.cards.create")?.opts).toEqual({ scope: "operator.write" });
+    expect(methods.get("workboard.cards.promoteBusinessOpsCandidate")?.opts).toEqual({
+      scope: "operator.write",
+    });
     expect(methods.get("workboard.cards.runs")?.opts).toEqual({ scope: "operator.read" });
     expect(methods.get("workboard.cards.attachments.get")?.opts).toEqual({
       scope: "operator.read",
@@ -350,6 +354,48 @@ describe("workboard gateway methods", () => {
     } as never);
     expect(blockRespond.mock.calls[0]?.[1]).toMatchObject({
       card: { status: "blocked" },
+    });
+  });
+
+  it("keeps gateway Business Ops promotion preview read-only until approved", async () => {
+    type RegisteredMethod = {
+      handler: Parameters<OpenClawPluginApi["registerGatewayMethod"]>[1];
+      opts: Parameters<OpenClawPluginApi["registerGatewayMethod"]>[2];
+    };
+    const methods = new Map<string, RegisteredMethod>();
+    const store = new WorkboardStore(createMemoryStore());
+    const api = {
+      registerGatewayMethod: vi.fn(
+        (method: string, handler: RegisteredMethod["handler"], opts: RegisteredMethod["opts"]) => {
+          methods.set(method, { handler, opts });
+        },
+      ),
+    } as unknown as OpenClawPluginApi;
+    registerWorkboardGatewayMethods({ api, store });
+    const input = {
+      candidateId: "AA-GATEWAY-1",
+      sourceRef: "business-ops/candidates.md#AA-GATEWAY-1",
+      projectRef: "business-ops/projects/american-atomics",
+      ownerMode: "human",
+      decisionBoundary: "Internal only.",
+      approvalNote: "Reviewed.",
+      title: "Gateway promotion",
+    };
+    const previewRespond = vi.fn();
+    await methods.get("workboard.cards.promoteBusinessOpsCandidate")?.handler({
+      params: input,
+      respond: previewRespond,
+    } as never);
+    expect(previewRespond.mock.calls[0]?.[1]).toMatchObject({ approved: false, action: "create" });
+    expect(await store.list()).toHaveLength(0);
+    const approveRespond = vi.fn();
+    await methods.get("workboard.cards.promoteBusinessOpsCandidate")?.handler({
+      params: { ...input, approved: true },
+      respond: approveRespond,
+    } as never);
+    expect(approveRespond.mock.calls[0]?.[1]).toMatchObject({
+      approved: true,
+      card: { metadata: { businessOpsPromotion: { candidateId: "AA-GATEWAY-1" } } },
     });
   });
 });

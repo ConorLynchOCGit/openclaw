@@ -59,6 +59,7 @@ export type GatewaySessionCodexNativeChildRun = {
   taskId: string;
   runId?: string;
   childThreadId?: string;
+  finalRef?: string;
   role?: string;
   agentPath?: string;
   objective?: string;
@@ -85,6 +86,9 @@ export type GatewaySessionCodexExecutionEvidence = {
     shell: number;
     mcp: number;
     lsp: number;
+    browser: number;
+    image: number;
+    collaboration: number;
     spawnAgent: number;
     waitAgent: number;
     applyPatch: number;
@@ -103,6 +107,9 @@ export type GatewaySessionCodexExecutionEvidence = {
       shell: number;
       mcp: number;
       lsp: number;
+      browser: number;
+      image: number;
+      collaboration: number;
       spawnAgent: number;
       waitAgent: number;
       applyPatch: number;
@@ -153,6 +160,10 @@ export type GatewaySessionCodexExecutionEvidence = {
     errored?: number;
     cwd?: string[];
     commandSamples?: string[];
+  };
+  nativeParallelActivity?: {
+    observed: true;
+    peakConcurrentToolCalls: number;
   };
   modelCompleted?: boolean;
   sessionEndedStatus?: string;
@@ -247,6 +258,7 @@ export type GatewaySessionRow = {
   outputTokens?: number;
   totalTokens?: number;
   totalTokensFresh?: boolean;
+  usageCostState?: "provisional" | "settled" | "unavailable";
   goal?: SessionGoal;
   estimatedCostUsd?: number;
   status?: SessionRunStatus;

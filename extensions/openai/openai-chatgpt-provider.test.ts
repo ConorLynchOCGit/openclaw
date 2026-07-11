@@ -120,6 +120,51 @@ describe("OpenAI provider Codex transport hooks", () => {
     });
   });
 
+  it("keeps GPT-5.6 on live Codex metadata and exposes max reasoning", () => {
+    const provider = buildOpenAIProvider();
+    const model = provider.resolveDynamicModel?.({
+      provider: "openai",
+      modelId: "gpt-5.6-sol",
+      providerConfig: { api: "openai-chatgpt-responses" },
+      modelRegistry: {
+        find: () => ({
+          provider: "openai",
+          id: "gpt-5.6-sol",
+          name: "GPT-5.6-Sol",
+          api: "openai-chatgpt-responses",
+          baseUrl: "https://chatgpt.com/backend-api/codex",
+          reasoning: true,
+          thinkingLevelMap: { xhigh: "xhigh", max: "max" },
+          input: ["text", "image"],
+          cost: { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 6.25 },
+          contextWindow: 372_000,
+          maxTokens: 128_000,
+        }),
+      },
+    } as never);
+
+    expect(model).toMatchObject({
+      id: "gpt-5.6-sol",
+      api: "openai-chatgpt-responses",
+      baseUrl: "https://chatgpt.com/backend-api/codex",
+      contextWindow: 372_000,
+      contextTokens: 272_000,
+      thinkingLevelMap: { xhigh: "xhigh", max: "max" },
+    });
+    expect(
+      provider.resolveThinkingProfile?.({ provider: "openai", modelId: "gpt-5.6-sol" } as never)
+        ?.levels,
+    ).toEqual([
+      { id: "off" },
+      { id: "minimal" },
+      { id: "low" },
+      { id: "medium" },
+      { id: "high" },
+      { id: "xhigh" },
+      { id: "max" },
+    ]);
+  });
+
   it("keeps cloned Codex-backed OpenAI models on the Codex Responses transport", () => {
     const provider = buildOpenAIProvider();
 

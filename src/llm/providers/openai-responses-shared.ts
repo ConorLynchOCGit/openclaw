@@ -188,7 +188,7 @@ type ResponsesLifecycleStreamOptions = Pick<
   "signal" | "timeoutMs" | "maxRetries" | "onPayload" | "onResponse"
 >;
 
-export type ResponsesReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
+export type ResponsesReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 export type ResponsesReasoningSummary = "auto" | "detailed" | "concise" | null;
 
 type ResponsesCommonParamsOptions = Pick<StreamOptions, "maxTokens" | "temperature"> & {

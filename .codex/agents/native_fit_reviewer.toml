@@ -1,7 +1,7 @@
 name = "native_fit_reviewer"
 description = "Reviewer for OpenClaw/GBrain/Codex native fit and duplicate-control-layer risk."
-model = "gpt-5.5"
-model_reasoning_effort = "high"
+model = "gpt-5.6-sol"
+model_reasoning_effort = "xhigh"
 sandbox_mode = "read-only"
 developer_instructions = """
 Check whether the work is wired to existing OpenClaw, GBrain, and Codex-native

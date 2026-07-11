@@ -124,6 +124,7 @@ describe("Codex workbench capability report", () => {
     const report = await buildCodexWorkbenchCapabilityReport({
       client,
       threadId: "thread-1",
+      processCwd: "/app",
       cwd: workspaceDir,
       workspaceDir,
       appServerStart: {
@@ -149,6 +150,7 @@ describe("Codex workbench capability report", () => {
     });
     expect(report.thread).toMatchObject({
       threadId: "thread-1",
+      processCwd: "/app",
       cwd: workspaceDir,
       workspaceDir,
       sandbox: "workspace-write",

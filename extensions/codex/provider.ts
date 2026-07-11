@@ -33,7 +33,7 @@ const DEFAULT_DISCOVERY_TIMEOUT_MS = 2500;
 const LIVE_DISCOVERY_ENV = "OPENCLAW_CODEX_DISCOVERY_LIVE";
 const MODEL_DISCOVERY_PAGE_LIMIT = 100;
 const CODEX_APP_SERVER_SETUP_METHOD_ID = "app-server";
-const CODEX_DEFAULT_MODEL_REF = `${CODEX_PROVIDER_ID}/${FALLBACK_CODEX_MODELS[0].id}`;
+const CODEX_DEFAULT_MODEL_REF = `${CODEX_PROVIDER_ID}/${FALLBACK_CODEX_MODELS.find((model) => model.isDefault)?.id ?? FALLBACK_CODEX_MODELS[0].id}`;
 const codexCatalogLog = createSubsystemLogger("codex/catalog");
 
 type CodexModelLister = (options: {
@@ -141,6 +141,7 @@ export function buildCodexProvider(options: BuildCodexProviderOptions = {}): Pro
         { id: "medium" },
         { id: "high" },
         ...(isKnownXHighCodexModel(modelId) ? [{ id: "xhigh" as const }] : []),
+        ...(supportsMaxCodexModel(modelId) ? [{ id: "max" as const }] : []),
       ],
     }),
     resolveSystemPromptContribution: ({ config, modelId }) =>
@@ -298,9 +299,15 @@ function isKnownXHighCodexModel(modelId: string): boolean {
 export function isModernCodexModel(modelId: string): boolean {
   const lower = modelId.trim().toLowerCase();
   return (
+    supportsMaxCodexModel(lower) ||
     lower === "gpt-5.5" ||
     lower === "gpt-5.4" ||
     lower === "gpt-5.4-mini" ||
     lower === "gpt-5.3-codex-spark"
   );
+}
+
+/** Returns true when Codex app-server exposes the native max effort for this model family. */
+export function supportsMaxCodexModel(modelId: string): boolean {
+  return /^gpt-5\.6-(?:sol|terra|luna)(?:-|$)/u.test(modelId.trim().toLowerCase());
 }

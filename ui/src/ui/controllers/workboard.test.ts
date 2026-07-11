@@ -15,6 +15,7 @@ import {
   saveWorkboardCardDraft,
   startWorkboardCard,
   stopWorkboardCard,
+  submitBusinessOpsPromotion,
   syncWorkboardLifecycle,
   type WorkboardCard,
   type WorkboardTaskSummary,
@@ -91,6 +92,55 @@ describe("workboard controller", () => {
 
     expect(client.request).toHaveBeenCalledWith("workboard.cards.list", {});
     expect(getWorkboardState(host).cards).toEqual([sampleCard]);
+  });
+
+  it("previews Business Ops promotion without mutation and applies explicit approval", async () => {
+    const host = {};
+    const state = getWorkboardState(host);
+    Object.assign(state, {
+      promotionCandidateId: "AA-UI-1",
+      promotionSourceRef: "business-ops/candidates.md#AA-UI-1",
+      promotionProjectRef: "business-ops/projects/american-atomics",
+      promotionTitle: "Review campaign revision",
+      promotionOwnerMode: "human",
+      promotionDecisionBoundary: "Internal work only.",
+      promotionApprovalNote: "Operator reviewed.",
+    });
+    const promotedCard = {
+      ...sampleCard,
+      title: "Review campaign revision",
+      sourceUrl: "business-ops/candidates.md#AA-UI-1",
+      metadata: {
+        businessOpsPromotion: {
+          candidateId: "AA-UI-1",
+          projectRef: "business-ops/projects/american-atomics",
+          ownerMode: "human",
+          decisionBoundary: "Internal work only.",
+          promotedBy: "operator",
+          promotedAt: 10,
+          approvalNote: "Operator reviewed.",
+        },
+      },
+    } satisfies WorkboardCard;
+    const client = createClient((_method, params) =>
+      (params as { approved?: boolean }).approved
+        ? { approved: true, action: "create", changes: ["card"], card: promotedCard }
+        : { approved: false, action: "create", changes: ["card"] },
+    );
+
+    await submitBusinessOpsPromotion({ host, client: client as never, approved: false });
+    expect(client.request).toHaveBeenNthCalledWith(
+      1,
+      "workboard.cards.promoteBusinessOpsCandidate",
+      expect.objectContaining({ approved: false, candidateId: "AA-UI-1" }),
+    );
+    expect(state.cards).toEqual([]);
+    expect(state.promotionPreview).toMatchObject({ approved: false, action: "create" });
+
+    await submitBusinessOpsPromotion({ host, client: client as never, approved: true });
+    expect(state.cards).toEqual([promotedCard]);
+    expect(state.detailCardId).toBe(promotedCard.id);
+    expect(state.promotionOpen).toBe(false);
   });
 
   it("links loaded cards to matching Gateway tasks", async () => {

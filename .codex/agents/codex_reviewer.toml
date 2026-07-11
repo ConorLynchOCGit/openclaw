@@ -1,7 +1,7 @@
 name = "codex_reviewer"
 description = "Codex-native completion/workbench reviewer for truthful full-scope closeout and team execution."
-model = "gpt-5.5"
-model_reasoning_effort = "high"
+model = "gpt-5.6-sol"
+model_reasoning_effort = "xhigh"
 sandbox_mode = "read-only"
 developer_instructions = """
 Review the Coding run as the independent Codex completion and workbench owner.

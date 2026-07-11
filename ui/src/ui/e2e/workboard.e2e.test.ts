@@ -493,4 +493,137 @@ describeControlUiE2e("Control UI Workboard mocked Gateway E2E", () => {
       "utf-8",
     );
   });
+
+  it("previews and explicitly approves one Business Ops commitment on desktop and mobile", async () => {
+    const artifacts: ProofArtifacts = { screenshots: [], videos: [] };
+    const promotedCard = card({
+      id: "card-business-ops",
+      title: "Run campaign revision cycle",
+      priority: "high",
+      labels: ["business-ops", "investor-comms"],
+      sourceUrl:
+        "business-ops/companies/american-atomics/projects/investor-content-system/workboard-candidate-actions.md#AA-CAND-014",
+      metadata: {
+        businessOpsPromotion: {
+          candidateId: "AA-CAND-014",
+          projectRef: "business-ops/companies/american-atomics/projects/investor-content-system",
+          ownerMode: "shared",
+          targetWindow: "After claim and asset review",
+          decisionBoundary: "Internal execution only; publication approval remains separate.",
+          promotedBy: "operator",
+          promotedAt: baseTime + 10,
+          approvalNote: "Proceed with internal revision and learning work only.",
+        },
+        comments: [
+          {
+            id: "learning-1",
+            body: "Proposed Business Ops learning (review required): Compare revision dispositions with the measurement baseline.",
+            createdAt: baseTime + 10,
+          },
+        ],
+      },
+      updatedAt: baseTime + 10,
+    });
+    const recorded = await newRecordedPage("workboard-business-ops-promotion");
+    const gateway = await installMockGateway(recorded.page, {
+      methodResponses: {
+        "config.get": workboardConfigSnapshot(),
+        "sessions.list": sessionsListResponse([sessionRow()]),
+        "tasks.list": { nextCursor: null, tasks: [] },
+        "workboard.cards.list": cardsListResponse([]),
+      },
+    });
+    try {
+      const response = await recorded.page.goto(`${server.baseUrl}workboard`);
+      expect(response?.status()).toBe(200);
+      await statusColumn(recorded.page, "Todo").waitFor({ state: "visible" });
+      await recorded.page.getByRole("button", { name: "Promote candidate" }).click();
+      const dialog = recorded.page.getByRole("dialog", { name: "Business Ops promotion" });
+      await dialog.getByLabel("Candidate ID").fill("AA-CAND-014");
+      await dialog
+        .getByLabel("Source reference")
+        .fill(
+          "business-ops/companies/american-atomics/projects/investor-content-system/workboard-candidate-actions.md#AA-CAND-014",
+        );
+      await dialog
+        .getByLabel("Project reference")
+        .fill("business-ops/companies/american-atomics/projects/investor-content-system");
+      await dialog.getByLabel("Title").fill(promotedCard.title);
+      await dialog.getByLabel("Owner mode").selectOption("shared");
+      await dialog.getByLabel("Target window").fill("After claim and asset review");
+      await dialog
+        .getByLabel("Decision boundary")
+        .fill("Internal execution only; publication approval remains separate.");
+      await dialog
+        .getByLabel("Approval note")
+        .fill("Proceed with internal revision and learning work only.");
+      await dialog
+        .getByLabel("Proposed learning")
+        .fill("Compare revision dispositions with the measurement baseline.");
+      await captureScreenshot(recorded.page, artifacts, "09-business-ops-promotion-draft");
+
+      await gateway.deferNext("workboard.cards.promoteBusinessOpsCandidate");
+      const previewBefore = (
+        await gateway.getRequests("workboard.cards.promoteBusinessOpsCandidate")
+      ).length;
+      await dialog.getByRole("button", { name: "Preview" }).click();
+      const previewRequest = await waitForNextRequest(
+        gateway,
+        "workboard.cards.promoteBusinessOpsCandidate",
+        previewBefore,
+      );
+      expect(requestParams(previewRequest)).toMatchObject({
+        approved: false,
+        candidateId: "AA-CAND-014",
+        targetWindow: "After claim and asset review",
+      });
+      expect(await cardInColumn(recorded.page, "Todo", promotedCard.title).count()).toBe(0);
+      await gateway.resolveDeferred("workboard.cards.promoteBusinessOpsCandidate", {
+        approved: false,
+        action: "create",
+        changes: ["card"],
+      });
+      await dialog.getByText("Create one commitment").waitFor({ state: "visible" });
+      await captureScreenshot(recorded.page, artifacts, "10-business-ops-promotion-preview");
+
+      await gateway.deferNext("workboard.cards.promoteBusinessOpsCandidate");
+      const approvalBefore = (
+        await gateway.getRequests("workboard.cards.promoteBusinessOpsCandidate")
+      ).length;
+      await dialog.getByRole("button", { name: "Approve commitment" }).click();
+      const approvalRequest = await waitForNextRequest(
+        gateway,
+        "workboard.cards.promoteBusinessOpsCandidate",
+        approvalBefore,
+      );
+      expect(requestParams(approvalRequest)).toMatchObject({ approved: true });
+      await gateway.resolveDeferred("workboard.cards.promoteBusinessOpsCandidate", {
+        approved: true,
+        action: "create",
+        changes: ["card"],
+        card: promotedCard,
+      });
+      const details = recorded.page.locator(".workboard-detail");
+      await details.getByText("Business Ops provenance").waitFor({ state: "visible" });
+      await details.getByText("AA-CAND-014", { exact: true }).waitFor({ state: "visible" });
+      await details.getByText("After claim and asset review").waitFor({ state: "visible" });
+      await details
+        .getByText("Compare revision dispositions with the measurement baseline.", {
+          exact: true,
+        })
+        .waitFor({ state: "visible" });
+      await captureScreenshot(recorded.page, artifacts, "11-business-ops-promotion-approved");
+
+      await recorded.page.setViewportSize({ width: 390, height: 844 });
+      await details.waitFor({ state: "visible" });
+      await captureScreenshot(recorded.page, artifacts, "12-business-ops-promotion-mobile");
+    } finally {
+      await closeRecordedPage(recorded, artifacts, "workboard-business-ops-promotion");
+    }
+    await writeFile(
+      path.join(artifactDir, "manifest-business-ops-promotion.json"),
+      `${JSON.stringify(artifacts, null, 2)}\n`,
+      "utf-8",
+    );
+  });
 });

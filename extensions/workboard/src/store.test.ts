@@ -37,6 +37,179 @@ function createMemoryStore<T = PersistedWorkboardCard>(options?: {
 }
 
 describe("WorkboardStore", () => {
+  it("previews and idempotently approves Business Ops candidates through native card surfaces", async () => {
+    const store = new WorkboardStore(createMemoryStore());
+    const parent = await store.create({ title: "Refresh source claims", status: "todo" });
+    const input = {
+      candidateId: "AA-CAND-014",
+      sourceRef:
+        "business-ops/projects/american-atomics/investor-content-system/candidate-actions.md#AA-CAND-014",
+      projectRef: "business-ops/projects/american-atomics/investor-content-system",
+      ownerMode: "shared",
+      targetWindow: "2026 Q3, after operator review",
+      decisionBoundary:
+        "Internal execution only; publication and securities approval remain separate.",
+      promotedBy: "operator:test",
+      approvalNote: "Promote the internal revision cycle, not any public claim.",
+      proposedLearning: "Compare revision dispositions against the campaign measurement baseline.",
+      title: "Run American Atomics campaign revision cycle",
+      notes: "Acceptance: claim, asset, creative, approval, and measurement evidence are linked.",
+      status: "todo",
+      priority: "high",
+      labels: ["business-ops", "investor-comms"],
+      agentId: "business-ops",
+      boardId: "investor-comms",
+      parents: [parent.id],
+    };
+
+    const preview = await store.promoteBusinessOpsCandidate(input);
+    expect(preview).toMatchObject({
+      approved: false,
+      action: "create",
+      changes: ["card"],
+      preview: {
+        promotion: {
+          candidateId: "AA-CAND-014",
+          ownerMode: "shared",
+          targetWindow: "2026 Q3, after operator review",
+        },
+      },
+    });
+    expect(await store.list()).toHaveLength(1);
+
+    const approved = await store.promoteBusinessOpsCandidate({ ...input, approved: true });
+    expect(approved.action).toBe("create");
+    expect(approved.card).toMatchObject({
+      title: input.title,
+      status: "todo",
+      priority: "high",
+      agentId: "business-ops",
+      sourceUrl: input.sourceRef,
+      metadata: {
+        automation: { boardId: "investor-comms" },
+        businessOpsPromotion: {
+          candidateId: "AA-CAND-014",
+          projectRef: input.projectRef,
+          ownerMode: "shared",
+          targetWindow: input.targetWindow,
+          promotedBy: "operator:test",
+          approvalNote: input.approvalNote,
+        },
+        links: [expect.objectContaining({ type: "parent", targetCardId: parent.id })],
+        comments: [
+          expect.objectContaining({ body: expect.stringContaining("promotion approved") }),
+          expect.objectContaining({ body: expect.stringContaining("review required") }),
+        ],
+      },
+    });
+    expect(approved.card?.metadata?.automation?.scheduledAt).toBeUndefined();
+    const commentCount = approved.card?.metadata?.comments?.length;
+    const eventCount = approved.card?.events?.length;
+
+    const repeated = await store.promoteBusinessOpsCandidate({ ...input, approved: true });
+    expect(repeated).toMatchObject({
+      approved: true,
+      action: "unchanged",
+      changes: [],
+      existingCardId: approved.card?.id,
+      card: { id: approved.card?.id },
+    });
+    expect(repeated.card?.metadata?.comments).toHaveLength(commentCount ?? 0);
+    expect(repeated.card?.events).toHaveLength(eventCount ?? 0);
+  });
+
+  it("updates one promoted card and reconciles native parents without scheduling target windows", async () => {
+    const store = new WorkboardStore(createMemoryStore());
+    const firstParent = await store.create({ title: "First source check", status: "todo" });
+    const secondParent = await store.create({ title: "Rights check", status: "todo" });
+    const base = {
+      candidateId: "AA-CAND-015",
+      sourceRef: "business-ops/american-atomics/candidates.md#AA-CAND-015",
+      projectRef: "business-ops/projects/american-atomics",
+      ownerMode: "human",
+      decisionBoundary: "Internal candidate work only.",
+      approvalNote: "Operator owns the first pass.",
+      title: "Review campaign revision candidate",
+      parents: [firstParent.id],
+      approved: true,
+    };
+    const created = await store.promoteBusinessOpsCandidate(base);
+    const updated = await store.promoteBusinessOpsCandidate({
+      ...base,
+      ownerMode: "agent",
+      agentId: "business-ops",
+      targetWindow: "After claim refresh",
+      approvalNote: "Assign the bounded internal review to Business Ops.",
+      parents: [secondParent.id],
+    });
+    expect(updated).toMatchObject({
+      action: "update",
+      existingCardId: created.card?.id,
+      card: {
+        id: created.card?.id,
+        agentId: "business-ops",
+        metadata: {
+          businessOpsPromotion: {
+            ownerMode: "agent",
+            targetWindow: "After claim refresh",
+          },
+          links: [expect.objectContaining({ type: "parent", targetCardId: secondParent.id })],
+        },
+      },
+    });
+    expect(updated.card?.metadata?.links).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "parent", targetCardId: firstParent.id }),
+      ]),
+    );
+    expect(updated.card?.metadata?.automation?.scheduledAt).toBeUndefined();
+  });
+
+  it("keeps Business Ops provenance exclusive to the dedicated promotion operation", async () => {
+    const store = new WorkboardStore(createMemoryStore());
+    const forged = {
+      businessOpsPromotion: {
+        candidateId: "forged",
+        projectRef: "business-ops/forged",
+        ownerMode: "human",
+        decisionBoundary: "none",
+        promotedBy: "agent",
+        promotedAt: 1,
+        approvalNote: "forged",
+      },
+    };
+    await expect(store.create({ title: "Forged", metadata: forged })).rejects.toThrow(
+      /promoteBusinessOpsCandidate/,
+    );
+    const card = await store.create({ title: "Ordinary card" });
+    await expect(store.update(card.id, { metadata: forged })).rejects.toThrow(
+      /promoteBusinessOpsCandidate/,
+    );
+    await expect(
+      store.promoteBusinessOpsCandidate({
+        candidateId: "agent-without-owner",
+        sourceRef: "business-ops/candidates.md#agent-without-owner",
+        projectRef: "business-ops/project",
+        ownerMode: "agent",
+        decisionBoundary: "Internal only.",
+        approvalNote: "Needs an owner.",
+        title: "Invalid owner",
+      }),
+    ).rejects.toThrow(/requires an agentId/);
+    await expect(
+      store.promoteBusinessOpsCandidate({
+        candidateId: "scheduled-target",
+        sourceRef: "business-ops/candidates.md#scheduled-target",
+        projectRef: "business-ops/project",
+        ownerMode: "human",
+        decisionBoundary: "Internal only.",
+        approvalNote: "Target only.",
+        title: "Invalid scheduled status",
+        status: "scheduled",
+      }),
+    ).rejects.toThrow(/target windows never schedule/);
+  });
+
   it("persists boards, cards, subscriptions, and attachment blobs in sqlite", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-workboard-sqlite-"));
     const dbPath = path.join(dir, "workboard.sqlite");

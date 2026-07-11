@@ -11,11 +11,7 @@ describe("mapThinkingLevelToReasoningEffort", () => {
     expect(mapThinkingLevelToReasoningEffort("adaptive")).toBe("medium");
   });
 
-  it('maps "max" to "xhigh"', () => {
-    expect(mapThinkingLevelToReasoningEffort("max")).toBe("xhigh");
-  });
-
-  it.each(["minimal", "low", "medium", "high", "xhigh"] as const)(
+  it.each(["minimal", "low", "medium", "high", "xhigh", "max"] as const)(
     "passes through %s unchanged",
     (level) => {
       expect(mapThinkingLevelToReasoningEffort(level)).toBe(level);

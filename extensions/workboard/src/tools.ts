@@ -314,6 +314,66 @@ export function createWorkboardTools(params: {
       },
     },
     {
+      name: "workboard_promote_business_ops_candidate",
+      label: "Workboard Promote Business Ops Candidate",
+      description:
+        "Preview or explicitly approve one Business Ops candidate as a native Workboard commitment. Preview is the default and never mutates. Target windows are display-only and never schedule execution.",
+      parameters: Type.Object(
+        {
+          candidateId: Type.String({ description: "Stable Business Ops candidate row id." }),
+          sourceRef: Type.String({ description: "Workspace-visible source artifact or row ref." }),
+          projectRef: Type.String({ description: "Workspace-visible Business Ops project ref." }),
+          ownerMode: Type.String({ description: "human, agent, or shared." }),
+          decisionBoundary: Type.String({
+            description: "What approval commits and what remains explicitly unapproved.",
+          }),
+          approvalNote: Type.String({ description: "Operator approval rationale or disposition." }),
+          title: Type.String({ description: "Native Workboard card title." }),
+          notes: Type.Optional(
+            Type.String({ description: "Acceptance requirements and context." }),
+          ),
+          status: Type.Optional(
+            Type.String({ description: "triage, backlog, todo, or blocked. Default todo." }),
+          ),
+          priority: Type.Optional(Type.String({ description: "low, normal, high, or urgent." })),
+          labels: Type.Optional(Type.Array(Type.String(), { description: "Native card labels." })),
+          agentId: Type.Optional(
+            Type.String({ description: "Required for agent ownership; optional for shared work." }),
+          ),
+          boardId: Type.Optional(Type.String({ description: "Native Workboard board id." })),
+          parents: Type.Optional(
+            Type.Array(Type.String(), { description: "Native parent dependency card ids." }),
+          ),
+          targetWindow: Type.Optional(
+            Type.String({
+              description: "Display-only target window; never an execution schedule.",
+            }),
+          ),
+          promotedBy: Type.Optional(
+            Type.String({ description: "Approval actor. Default operator." }),
+          ),
+          proposedLearning: Type.Optional(
+            Type.String({
+              description: "Review-required learning proposal; never writes Business Ops truth.",
+            }),
+          ),
+          approved: Type.Optional(
+            Type.Boolean({ description: "Set true only after operator approval. Default false." }),
+          ),
+        },
+        { additionalProperties: false },
+      ),
+      execute: async (_toolCallId, rawParams) => {
+        const result = await store.promoteBusinessOpsCandidate(
+          rawParams as Record<string, unknown>,
+        );
+        return jsonResult({
+          ...result,
+          ...(result.card ? { card: redactClaimToken(result.card) } : {}),
+        });
+      },
+    },
+    {
       name: "workboard_link",
       label: "Workboard Link",
       description:

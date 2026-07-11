@@ -22,6 +22,7 @@ import {
   createResponsesAssistantOutput,
   resolveResponsesReasoningEffort,
   runResponsesStreamLifecycle,
+  type ResponsesReasoningEffort,
 } from "./openai-responses-shared.js";
 import { buildBaseOptions } from "./simple-options.js";
 
@@ -73,7 +74,7 @@ function formatOpenAIResponsesError(error: unknown): string {
 
 // OpenAI Responses-specific options
 export interface OpenAIResponsesOptions extends StreamOptions {
-  reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
+  reasoningEffort?: ResponsesReasoningEffort;
   reasoningSummary?: "auto" | "detailed" | "concise" | null;
   replayResponsesItemIds?: boolean;
   serviceTier?: ResponseCreateParamsStreaming["service_tier"];

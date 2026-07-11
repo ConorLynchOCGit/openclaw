@@ -6,6 +6,12 @@ import {
 } from "./openai-reasoning-effort.js";
 
 describe("OpenAI reasoning effort support", () => {
+  it.each(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"])("preserves max for %s", (id) => {
+    const model = { provider: "openai", id };
+    expect(resolveOpenAISupportedReasoningEfforts(model)).toContain("max");
+    expect(resolveOpenAIReasoningEffortForModel({ model, effort: "max" })).toBe("max");
+  });
+
   it.each([
     { provider: "openai", id: "gpt-5.5" },
     { provider: "openai", id: "gpt-5.5" },

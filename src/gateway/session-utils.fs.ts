@@ -2197,6 +2197,39 @@ function isWaitAgentToolName(name: string): boolean {
   return normalized === "waitagent";
 }
 
+function normalizedCodexToolName(name: string): string {
+  return name.replace(/[^a-z0-9]/giu, "").toLowerCase();
+}
+
+function isBrowserToolName(name: string): boolean {
+  const normalized = normalizedCodexToolName(name);
+  return (
+    normalized.includes("browser") ||
+    normalized.includes("playwright") ||
+    normalized.includes("computeruse")
+  );
+}
+
+function isImageToolName(name: string): boolean {
+  const normalized = normalizedCodexToolName(name);
+  return (
+    normalized.includes("image") ||
+    normalized.includes("screenshot") ||
+    normalized.includes("vision")
+  );
+}
+
+function isCollaborationToolName(name: string): boolean {
+  const normalized = normalizedCodexToolName(name);
+  return (
+    normalized === "spawnagent" ||
+    normalized === "waitagent" ||
+    normalized === "sendinput" ||
+    normalized === "closeagent" ||
+    normalized === "resumeagent"
+  );
+}
+
 function isLikelyValidationCommand(command: string | undefined): boolean {
   if (!command) {
     return false;
@@ -2545,6 +2578,9 @@ type CodexExecutionToolMix = {
   shell: number;
   mcp: number;
   lsp: number;
+  browser: number;
+  image: number;
+  collaboration: number;
   spawnAgent: number;
   waitAgent: number;
   applyPatch: number;
@@ -2573,6 +2609,9 @@ function createCodexExecutionToolMix(): CodexExecutionToolMix {
     shell: 0,
     mcp: 0,
     lsp: 0,
+    browser: 0,
+    image: 0,
+    collaboration: 0,
     spawnAgent: 0,
     waitAgent: 0,
     applyPatch: 0,
@@ -2693,6 +2732,15 @@ function incrementCodexExecutionToolMix(
       mix.lsp += 1;
     }
   }
+  if (isBrowserToolName(name)) {
+    mix.browser += 1;
+  }
+  if (isImageToolName(name)) {
+    mix.image += 1;
+  }
+  if (isCollaborationToolName(name)) {
+    mix.collaboration += 1;
+  }
   if (isSpawnAgentToolName(name)) {
     mix.spawnAgent += 1;
   }
@@ -2718,7 +2766,7 @@ function extractMcpToolName(name: string): { server: string; tool: string } | un
 function sortCodexExecutionStats<T extends { count: number; lastEventSeq?: number }>(
   values: Iterable<T>,
 ): T[] {
-  return Array.from(values).sort(
+  return Array.from(values).toSorted(
     (a, b) => b.count - a.count || (b.lastEventSeq ?? 0) - (a.lastEventSeq ?? 0),
   );
 }
@@ -2767,6 +2815,9 @@ function compactToolMix(stats: CodexExecutionToolMix) {
     shell: stats.shell,
     mcp: stats.mcp,
     lsp: stats.lsp,
+    browser: stats.browser,
+    image: stats.image,
+    collaboration: stats.collaboration,
     spawnAgent: stats.spawnAgent,
     waitAgent: stats.waitAgent,
     applyPatch: stats.applyPatch,
@@ -3054,11 +3105,19 @@ export function readCodexExecutionEvidenceProjection(
     toolCallCount,
     toolResultCount,
     ...(peakConcurrentToolCalls > 0 ? { peakConcurrentToolCalls } : {}),
+    ...(peakConcurrentToolCalls > 1
+      ? {
+          nativeParallelActivity: {
+            observed: true as const,
+            peakConcurrentToolCalls,
+          },
+        }
+      : {}),
     toolMix: compactToolMix(toolMix),
     ...(byThread.size > 0
       ? {
           byThread: Array.from(byThread.values())
-            .sort(
+            .toSorted(
               (left, right) =>
                 (left.eventSeqStart ?? Number.MAX_SAFE_INTEGER) -
                 (right.eventSeqStart ?? Number.MAX_SAFE_INTEGER),

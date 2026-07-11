@@ -462,4 +462,43 @@ describe("workboard tools", () => {
     );
     expect(Buffer.from(attachment.contentBase64 as string, "base64").toString("utf8")).toBe("done");
   });
+
+  it("previews Business Ops promotion without mutation and approves explicitly", async () => {
+    const keyed = createMemoryStore();
+    const api = {
+      runtime: { state: { openKeyedStore: vi.fn(() => keyed) } },
+    } as unknown as OpenClawPluginApi;
+    const store = new WorkboardStore(keyed);
+    const tools = new Map(
+      createWorkboardTools({ api, store, context: { agentId: "main" } as never }).map((tool) => [
+        tool.name,
+        tool,
+      ]),
+    );
+    const input = {
+      candidateId: "AA-TOOL-1",
+      sourceRef: "business-ops/american-atomics/candidates.md#AA-TOOL-1",
+      projectRef: "business-ops/projects/american-atomics",
+      ownerMode: "human",
+      decisionBoundary: "Internal work only.",
+      approvalNote: "Operator review complete.",
+      title: "Review investor campaign candidate",
+    };
+    const preview = readPayload(
+      await tools.get("workboard_promote_business_ops_candidate")?.execute("preview", input),
+    );
+    expect(preview).toMatchObject({ approved: false, action: "create" });
+    expect(await store.list()).toEqual([]);
+
+    const approved = readPayload(
+      await tools
+        .get("workboard_promote_business_ops_candidate")
+        ?.execute("approve", { ...input, approved: true }),
+    );
+    expect(approved).toMatchObject({
+      approved: true,
+      action: "create",
+      card: { metadata: { businessOpsPromotion: { candidateId: "AA-TOOL-1" } } },
+    });
+  });
 });

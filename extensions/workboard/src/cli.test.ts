@@ -152,4 +152,41 @@ describe("registerWorkboardCli", () => {
       program.parseAsync(["workboard", "show", prefix], { from: "user" }),
     ).rejects.toThrow("Ambiguous card id prefix");
   });
+
+  it("previews then approves Business Ops promotion from the dedicated CLI command", async () => {
+    const store = new WorkboardStore(createMemoryStore());
+    const program = createProgram(store);
+    const args = [
+      "workboard",
+      "promote-business-ops",
+      "Review",
+      "campaign",
+      "candidate",
+      "--candidate",
+      "AA-CLI-1",
+      "--source",
+      "business-ops/candidates.md#AA-CLI-1",
+      "--project",
+      "business-ops/projects/american-atomics",
+      "--owner-mode",
+      "human",
+      "--boundary",
+      "Internal only",
+      "--approval-note",
+      "Reviewed",
+      "--json",
+    ];
+    const preview = await captureStdout(async () => {
+      await program.parseAsync(args, { from: "user" });
+    });
+    expect(JSON.parse(preview)).toMatchObject({ approved: false, action: "create" });
+    expect(await store.list()).toHaveLength(0);
+    const approved = await captureStdout(async () => {
+      await program.parseAsync([...args, "--approve"], { from: "user" });
+    });
+    expect(JSON.parse(approved)).toMatchObject({
+      approved: true,
+      card: { metadata: { businessOpsPromotion: { candidateId: "AA-CLI-1" } } },
+    });
+  });
 });

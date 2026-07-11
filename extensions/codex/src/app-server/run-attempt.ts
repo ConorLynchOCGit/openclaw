@@ -1281,6 +1281,7 @@ export async function runCodexAppServerAttempt(
     const workbenchCapability = await buildCodexWorkbenchCapabilityReport({
       client,
       threadId: thread.threadId,
+      processCwd: process.cwd(),
       cwd: codexExecutionCwd,
       workspaceDir: effectiveWorkspace,
       appServerStart: appServer.start,

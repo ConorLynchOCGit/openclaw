@@ -112,4 +112,42 @@ describe("handleWorkboardCommand", () => {
       }),
     );
   });
+
+  it("previews Business Ops promotion without mutation and requires write access to approve", async () => {
+    const store = new WorkboardStore(createMemoryStore());
+    const api = createApi();
+    const input = {
+      candidateId: "AA-SLASH-1",
+      sourceRef: "business-ops/candidates.md#AA-SLASH-1",
+      projectRef: "business-ops/projects/american-atomics",
+      ownerMode: "human",
+      decisionBoundary: "Internal only.",
+      approvalNote: "Reviewed.",
+      title: "Slash command promotion",
+    };
+    await expect(
+      handleWorkboardCommand({
+        api,
+        store,
+        args: `promote-business-ops ${JSON.stringify(input)}`,
+      }),
+    ).resolves.toMatchObject({ text: expect.stringContaining("preview: create") });
+    expect(await store.list()).toHaveLength(0);
+    await expect(
+      handleWorkboardCommand({
+        api,
+        store,
+        args: `promote-business-ops ${JSON.stringify({ ...input, approved: true })}`,
+      }),
+    ).resolves.toMatchObject({ isError: true, text: expect.stringContaining("operator.write") });
+    await expect(
+      handleWorkboardCommand({
+        api,
+        store,
+        args: `promote-business-ops ${JSON.stringify({ ...input, approved: true })}`,
+        gatewayClientScopes: ["operator.write"],
+      }),
+    ).resolves.toMatchObject({ text: expect.stringContaining("approved: create") });
+    expect(await store.list()).toHaveLength(1);
+  });
 });

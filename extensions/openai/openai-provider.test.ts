@@ -347,6 +347,20 @@ describe("buildOpenAIProvider", () => {
       Response.json({
         models: [
           {
+            slug: "gpt-5.6-sol",
+            display_name: "GPT-5.6-Sol",
+            visibility: "list",
+            supported_reasoning_levels: [
+              { effort: "high", description: "high" },
+              { effort: "xhigh", description: "xhigh" },
+              { effort: "max", description: "max" },
+            ],
+            input_modalities: ["text", "image"],
+            context_window: 372_000,
+            max_context_window: 372_000,
+            max_output_tokens: 128_000,
+          },
+          {
             slug: "gpt-5.5",
             display_name: "GPT-5.5",
             visibility: "list",
@@ -416,7 +430,20 @@ describe("buildOpenAIProvider", () => {
       expect(openai?.api).toBe("openai-chatgpt-responses");
       expect(openai?.auth).toBe("oauth");
       expect(openai?.baseUrl).toBe("https://chatgpt.com/backend-api/codex");
-      expect(openai?.models.map((model) => model.id)).toEqual(["gpt-5.5", "gpt-5.3-codex-spark"]);
+      expect(openai?.models.map((model) => model.id)).toEqual([
+        "gpt-5.6-sol",
+        "gpt-5.5",
+        "gpt-5.3-codex-spark",
+      ]);
+      expect(openai?.models.find((model) => model.id === "gpt-5.6-sol")).toMatchObject({
+        name: "GPT-5.6-Sol",
+        reasoning: true,
+        input: ["text", "image"],
+        contextWindow: 372_000,
+        maxTokens: 128_000,
+        thinkingLevelMap: { xhigh: "xhigh", max: "max" },
+        cost: { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 6.25 },
+      });
       expect(openai?.models.find((model) => model.id === "gpt-5.3-codex-spark")).toMatchObject({
         name: "GPT-5.3 Codex Spark",
         reasoning: true,

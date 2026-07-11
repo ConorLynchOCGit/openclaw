@@ -537,7 +537,7 @@ describe("createOpenAIThinkingLevelWrapper", () => {
   });
 
   it("passes through all thinking levels correctly on reasoning-capable models", () => {
-    const levels = ["minimal", "low", "medium", "high", "xhigh"] as const;
+    const levels = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
     for (const level of levels) {
       const { baseStreamFn, payloads } = createPayloadCapture({
         initialReasoning: { effort: "none" },

@@ -19,6 +19,7 @@ import {
   createResponsesAssistantOutput,
   resolveResponsesReasoningEffort,
   runResponsesStreamLifecycle,
+  type ResponsesReasoningEffort,
 } from "./openai-responses-shared.js";
 import { buildBaseOptions } from "./simple-options.js";
 
@@ -61,7 +62,7 @@ function formatAzureOpenAIError(error: unknown): string {
 
 // Azure OpenAI Responses-specific options
 export interface AzureOpenAIResponsesOptions extends StreamOptions {
-  reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
+  reasoningEffort?: ResponsesReasoningEffort;
   reasoningSummary?: "auto" | "detailed" | "concise" | null;
   azureApiVersion?: string;
   azureResourceName?: string;

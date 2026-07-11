@@ -1147,6 +1147,14 @@ describe("resolveReasoningEffort (#71946)", () => {
       },
     );
 
+    it.each(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] as const)(
+      "passes max through for %s",
+      (modelId) => {
+        expect(resolveReasoningEffort("minimal", modelId)).toBe("low");
+        expect(resolveReasoningEffort("max", modelId)).toBe("max");
+      },
+    );
+
     it.each(["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex-spark"] as const)(
       "passes 'low' / 'medium' / 'high' / 'xhigh' through unchanged for %s",
       (modelId) => {
@@ -1188,7 +1196,7 @@ describe("resolveReasoningEffort (#71946)", () => {
       expect(resolveReasoningEffort("adaptive", "gpt-4o")).toBeNull();
     });
 
-    it("returns null for 'max' (non-effort enum value)", () => {
+    it("returns null for 'max' on models that do not expose max", () => {
       expect(resolveReasoningEffort("max", "gpt-5.5")).toBeNull();
       expect(resolveReasoningEffort("max", "gpt-4o")).toBeNull();
     });

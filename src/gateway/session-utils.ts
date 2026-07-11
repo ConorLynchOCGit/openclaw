@@ -293,6 +293,10 @@ function resolveCodexChildThreadId(task: TaskRecord, metadata: TaskEventMetadata
     : undefined;
 }
 
+function isTerminalTaskStatus(status: TaskRecord["status"]): boolean {
+  return status !== "queued" && status !== "running";
+}
+
 function buildCodexNativeChildRunsForSession(
   sessionKey: string,
 ): GatewaySessionRow["codexNativeChildRuns"] {
@@ -314,6 +318,9 @@ function buildCodexNativeChildRunsForSession(
       taskId: task.taskId,
       ...(task.runId ? { runId: task.runId } : {}),
       ...(childThreadId ? { childThreadId } : {}),
+      ...(childThreadId && isTerminalTaskStatus(task.status)
+        ? { finalRef: `${CODEX_NATIVE_SUBAGENT_RUN_ID_PREFIX}${childThreadId}` }
+        : {}),
       ...(readTaskMetadataString(metadata, "childRole")
         ? { role: readTaskMetadataString(metadata, "childRole") }
         : {}),
@@ -2323,6 +2330,12 @@ export function buildGatewaySessionRow(params: {
         }),
       ));
 
+  const hasUsageOrCost =
+    entry?.inputTokens !== undefined ||
+    entry?.outputTokens !== undefined ||
+    totalTokens !== undefined ||
+    estimatedCostUsd !== undefined;
+
   let derivedTitle: string | undefined;
   let lastMessagePreview: string | undefined;
   let finalAssistantText: string | null | undefined;
@@ -2456,6 +2469,12 @@ export function buildGatewaySessionRow(params: {
       },
     };
   }
+  const usageCostState =
+    rowStatus === "running"
+      ? "provisional"
+      : rowStatus && hasUsageOrCost
+        ? "settled"
+        : "unavailable";
 
   const thinkingProvider = rowModelProvider ?? DEFAULT_PROVIDER;
   const thinkingModel = rowModel ?? DEFAULT_MODEL;
@@ -2627,6 +2646,7 @@ export function buildGatewaySessionRow(params: {
     outputTokens: entry?.outputTokens,
     totalTokens,
     totalTokensFresh,
+    usageCostState,
     goal,
     estimatedCostUsd,
     status: rowStatus,

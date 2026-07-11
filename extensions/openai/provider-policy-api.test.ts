@@ -16,9 +16,22 @@ describe("OpenAI provider policy artifact", () => {
       provider: "openai",
       modelId: "gpt-5.4-mini",
     });
+    const solProfile = resolveThinkingProfile({
+      provider: "openai",
+      modelId: "gpt-5.6-sol",
+    });
 
     expect(codexProfile?.levels.map((level) => level.id)).toContain("xhigh");
     expect(openaiProfile?.levels.map((level) => level.id)).not.toContain("xhigh");
     expect(openaiMiniProfile?.levels.map((level) => level.id)).toContain("xhigh");
+    expect(solProfile?.levels.map((level) => level.id)).toEqual([
+      "off",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]);
   });
 });

@@ -9,7 +9,14 @@ import {
   uniqueStrings,
 } from "@openclaw/normalization-core/string-normalization";
 
-export type OpenAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+export type OpenAIReasoningEffort =
+  | "none"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max";
 
 export type OpenAIApiReasoningEffort = OpenAIReasoningEffort | (string & {});
 
@@ -24,6 +31,7 @@ type OpenAIReasoningModel = {
 const GPT_5_REASONING_EFFORTS = ["minimal", "low", "medium", "high"] as const;
 const GPT_51_REASONING_EFFORTS = ["none", "low", "medium", "high"] as const;
 const GPT_52_REASONING_EFFORTS = ["none", "low", "medium", "high", "xhigh"] as const;
+const GPT_56_REASONING_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 const GPT_CODEX_REASONING_EFFORTS = ["low", "medium", "high", "xhigh"] as const;
 const GPT_PRO_REASONING_EFFORTS = ["medium", "high", "xhigh"] as const;
 const GPT_5_PRO_REASONING_EFFORTS = ["high"] as const;
@@ -86,6 +94,9 @@ export function resolveOpenAISupportedReasoningEfforts(
   if (/^gpt-5(?:\.\d+)?-codex(?:-|$)/u.test(id)) {
     return GPT_CODEX_REASONING_EFFORTS;
   }
+  if (/^gpt-5\.6-(?:sol|terra|luna)(?:-|$)/u.test(id)) {
+    return GPT_56_REASONING_EFFORTS;
+  }
   if (id === "gpt-5-pro") {
     return GPT_5_PRO_REASONING_EFFORTS;
   }
@@ -136,7 +147,10 @@ export function resolveOpenAIReasoningEffortForModel(params: {
   if ((requested === "minimal" || requested === "low") && supported.includes("medium")) {
     return "medium";
   }
-  if (requested === "xhigh" && supported.includes("high")) {
+  if (requested === "max" && supported.includes("xhigh")) {
+    return "xhigh";
+  }
+  if ((requested === "xhigh" || requested === "max") && supported.includes("high")) {
     return "high";
   }
   return supported.find((effort) => effort !== "none");

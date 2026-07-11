@@ -20,6 +20,30 @@ const DEFAULT_MAX_TOKENS = 128_000;
 /** Offline fallback catalog used when live app-server discovery is unavailable. */
 export const FALLBACK_CODEX_MODELS = [
   {
+    id: "gpt-5.6-sol",
+    model: "gpt-5.6-sol",
+    displayName: "GPT-5.6-Sol",
+    description: "Frontier Codex model for complex professional coding work.",
+    inputModalities: ["text", "image"],
+    supportedReasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
+  },
+  {
+    id: "gpt-5.6-terra",
+    model: "gpt-5.6-terra",
+    displayName: "GPT-5.6-Terra",
+    description: "Balanced Codex model for implementation and review work.",
+    inputModalities: ["text", "image"],
+    supportedReasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
+  },
+  {
+    id: "gpt-5.6-luna",
+    model: "gpt-5.6-luna",
+    displayName: "GPT-5.6-Luna",
+    description: "Cost-efficient Codex model for high-volume work.",
+    inputModalities: ["text", "image"],
+    supportedReasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
+  },
+  {
     id: "gpt-5.5",
     model: "gpt-5.5",
     displayName: "gpt-5.5",
@@ -49,6 +73,7 @@ export function buildCodexModelDefinition(model: {
   supportedReasoningEfforts: string[];
 }): ModelDefinitionConfig {
   const id = model.id.trim() || model.model.trim();
+  const supportedReasoningEfforts = new Set(model.supportedReasoningEfforts);
   return {
     id,
     name: model.displayName?.trim() || id,
@@ -58,8 +83,17 @@ export function buildCodexModelDefinition(model: {
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: DEFAULT_CONTEXT_WINDOW,
     maxTokens: DEFAULT_MAX_TOKENS,
+    ...(supportedReasoningEfforts.has("xhigh") || supportedReasoningEfforts.has("max")
+      ? {
+          thinkingLevelMap: {
+            ...(supportedReasoningEfforts.has("xhigh") ? { xhigh: "xhigh" } : {}),
+            ...(supportedReasoningEfforts.has("max") ? { max: "max" } : {}),
+          },
+        }
+      : {}),
     compat: {
       supportsReasoningEffort: model.supportedReasoningEfforts.length > 0,
+      supportedReasoningEfforts: model.supportedReasoningEfforts,
       supportsUsageInStreaming: true,
     },
   };

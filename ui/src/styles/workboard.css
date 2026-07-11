@@ -161,6 +161,58 @@
   box-shadow: var(--shadow-xl);
 }
 
+.workboard-promotion {
+  width: min(900px, calc(100vw - 44px));
+}
+
+.workboard textarea.input.workboard-promotion__textarea {
+  min-height: 112px;
+  resize: vertical;
+}
+
+.workboard textarea.input.workboard-promotion__compact-textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.workboard-promotion__preview {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.6fr) minmax(0, 1.4fr);
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+}
+
+.workboard-promotion__preview > div {
+  display: grid;
+  gap: 4px;
+}
+
+.workboard-promotion__preview span {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.workboard-promotion__preview ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-content: start;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workboard-promotion__preview li {
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
 .workboard-modal__header {
   display: flex;
   justify-content: space-between;
@@ -652,6 +704,7 @@
 .workboard-card__badges span,
 .workboard-agent-chip,
 .workboard-card__archived,
+.workboard-card__boundary-chip,
 .workboard-live,
 .workboard-lifecycle,
 .workboard-labels span {
@@ -665,6 +718,12 @@
   font-size: 0.72rem;
   line-height: 1;
   white-space: nowrap;
+}
+
+.workboard-card__boundary-chip {
+  border: 1px solid color-mix(in srgb, var(--warn) 28%, transparent);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  color: color-mix(in srgb, var(--warn) 82%, var(--text));
 }
 
 .workboard-card__badges svg {
@@ -887,12 +946,41 @@
   text-transform: uppercase;
 }
 
+.workboard-detail__promotion h4 {
+  margin: 12px 0 4px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
 .workboard-detail__section p {
   margin: 0;
   color: var(--text);
   font-size: 0.86rem;
   line-height: 1.45;
   white-space: pre-wrap;
+}
+
+.workboard-detail__boundary {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--warn) 30%, var(--border));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--warn) 10%, var(--panel));
+}
+
+.workboard-detail__boundary strong {
+  color: color-mix(in srgb, var(--warn) 84%, var(--text));
+  font-size: 0.76rem;
+  text-transform: uppercase;
+}
+
+.workboard-detail__boundary span {
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.4;
 }
 
 .workboard-detail__grid {
@@ -927,6 +1015,13 @@
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.workboard-detail__row--wrap strong {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .workboard-detail__list {
@@ -1046,6 +1141,10 @@
   }
 
   .workboard-detail__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workboard-promotion__preview {
     grid-template-columns: 1fr;
   }
 }

@@ -1,7 +1,7 @@
 name = "implementer"
 description = "Focused implementation agent for a non-overlapping approved source slice."
-model = "gpt-5.4"
-model_reasoning_effort = "medium"
+model = "gpt-5.6-terra"
+model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"
 developer_instructions = """
 Implement only the assigned non-overlapping slice. Stay within the named files,

@@ -101,6 +101,22 @@ export function registerWorkboardGatewayMethods(params: {
   );
 
   api.registerGatewayMethod(
+    "workboard.cards.promoteBusinessOpsCandidate",
+    async ({ params: requestParams, respond }) => {
+      try {
+        const result = await store.promoteBusinessOpsCandidate(requestParams);
+        respond(true, {
+          ...result,
+          ...(result.card ? { card: redactClaimToken(result.card) } : {}),
+        });
+      } catch (error) {
+        respondError(respond, error);
+      }
+    },
+    { scope: WRITE_SCOPE },
+  );
+
+  api.registerGatewayMethod(
     "workboard.cards.update",
     async ({ params: requestParams, respond }) => {
       try {

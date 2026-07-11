@@ -73,6 +73,7 @@ export const WORKBOARD_DIAGNOSTIC_KINDS = [
 ] as const;
 export const WORKBOARD_DIAGNOSTIC_SEVERITIES = ["warning", "error", "critical"] as const;
 export const WORKBOARD_NOTIFICATION_KINDS = ["completed", "failed", "stale"] as const;
+export const WORKBOARD_OWNER_MODES = ["human", "agent", "shared"] as const;
 
 export type WorkboardStatus = (typeof WORKBOARD_STATUSES)[number];
 export type WorkboardPriority = (typeof WORKBOARD_PRIORITIES)[number];
@@ -87,6 +88,7 @@ export type WorkboardTemplateId = (typeof WORKBOARD_TEMPLATE_IDS)[number];
 export type WorkboardDiagnosticKind = (typeof WORKBOARD_DIAGNOSTIC_KINDS)[number];
 export type WorkboardDiagnosticSeverity = (typeof WORKBOARD_DIAGNOSTIC_SEVERITIES)[number];
 export type WorkboardNotificationKind = (typeof WORKBOARD_NOTIFICATION_KINDS)[number];
+export type WorkboardOwnerMode = (typeof WORKBOARD_OWNER_MODES)[number];
 
 export type WorkboardExecution = {
   id: string;
@@ -282,6 +284,17 @@ export type WorkboardNotificationSubscription = {
   updatedAt: number;
 };
 
+export type WorkboardBusinessOpsPromotion = {
+  candidateId: string;
+  projectRef: string;
+  ownerMode: WorkboardOwnerMode;
+  decisionBoundary: string;
+  promotedBy: string;
+  promotedAt: number;
+  approvalNote: string;
+  targetWindow?: string;
+};
+
 export type WorkboardMetadata = {
   attempts?: WorkboardRunAttempt[];
   comments?: WorkboardComment[];
@@ -300,6 +313,7 @@ export type WorkboardMetadata = {
   stale?: WorkboardStaleState;
   lifecycleStatusSourceUpdatedAt?: number;
   failureCount?: number;
+  businessOpsPromotion?: WorkboardBusinessOpsPromotion;
 };
 
 export type WorkboardCard = {

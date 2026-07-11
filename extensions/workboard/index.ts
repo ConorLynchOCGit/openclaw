@@ -32,6 +32,7 @@ export default definePluginEntry({
       names: [
         "workboard_list",
         "workboard_create",
+        "workboard_promote_business_ops_candidate",
         "workboard_link",
         "workboard_read",
         "workboard_claim",

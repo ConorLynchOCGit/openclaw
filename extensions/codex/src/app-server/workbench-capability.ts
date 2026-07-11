@@ -96,6 +96,7 @@ export type CodexWorkbenchCapabilityReport = {
   };
   thread: {
     threadId: string;
+    processCwd: string;
     cwd: string;
     workspaceDir: string;
     sandbox?: string;
@@ -138,6 +139,7 @@ export async function buildCodexWorkbenchCapabilityReport(params: {
   threadId: string;
   cwd: string;
   workspaceDir: string;
+  processCwd?: string;
   appServerStart: {
     transport: string;
     command?: string;
@@ -186,6 +188,7 @@ export async function buildCodexWorkbenchCapabilityReport(params: {
   };
   const thread = {
     threadId: params.threadId,
+    processCwd: params.processCwd ?? process.cwd(),
     cwd: params.cwd,
     workspaceDir: params.workspaceDir,
     ...(params.sandbox ? { sandbox: params.sandbox } : {}),

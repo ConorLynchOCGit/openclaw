@@ -23,6 +23,7 @@ import {
   WORKBOARD_EVENT_KINDS,
   WORKBOARD_LINK_TYPES,
   WORKBOARD_NOTIFICATION_KINDS,
+  WORKBOARD_OWNER_MODES,
   WORKBOARD_PRIORITIES,
   WORKBOARD_PROOF_STATUSES,
   WORKBOARD_STATUSES,
@@ -33,6 +34,7 @@ import {
   type WorkboardAttemptStatus,
   type WorkboardAutomation,
   type WorkboardBoardMetadata,
+  type WorkboardBusinessOpsPromotion,
   type WorkboardClaim,
   type WorkboardComment,
   type WorkboardDiagnostic,
@@ -51,6 +53,7 @@ import {
   type WorkboardNotification,
   type WorkboardNotificationKind,
   type WorkboardNotificationSubscription,
+  type WorkboardOwnerMode,
   type WorkboardOrchestrationSettings,
   type WorkboardPriority,
   type WorkboardProof,
@@ -286,6 +289,52 @@ export type WorkboardNotificationEventsInput = WorkboardNotificationListOptions 
 export type WorkboardMutationScope = {
   ownerId?: unknown;
   token?: unknown;
+};
+
+export type WorkboardBusinessOpsPromotionInput = {
+  candidateId?: unknown;
+  sourceRef?: unknown;
+  projectRef?: unknown;
+  ownerMode?: unknown;
+  targetWindow?: unknown;
+  decisionBoundary?: unknown;
+  promotedBy?: unknown;
+  approvalNote?: unknown;
+  proposedLearning?: unknown;
+  approved?: unknown;
+  title?: unknown;
+  notes?: unknown;
+  status?: unknown;
+  priority?: unknown;
+  labels?: unknown;
+  agentId?: unknown;
+  boardId?: unknown;
+  parents?: unknown;
+};
+
+export type WorkboardBusinessOpsPromotionAction = "create" | "update" | "unchanged";
+
+export type WorkboardBusinessOpsPromotionPreview = {
+  title: string;
+  notes?: string;
+  status: WorkboardStatus;
+  priority: WorkboardPriority;
+  labels: string[];
+  sourceRef: string;
+  boardId: string;
+  parents: string[];
+  promotion: Omit<WorkboardBusinessOpsPromotion, "promotedAt">;
+  agentId?: string;
+  proposedLearning?: string;
+};
+
+export type WorkboardBusinessOpsPromotionResult = {
+  approved: boolean;
+  action: WorkboardBusinessOpsPromotionAction;
+  changes: string[];
+  preview: WorkboardBusinessOpsPromotionPreview;
+  existingCardId?: string;
+  card?: WorkboardCard;
 };
 
 export type WorkboardDiagnosticsResult = {
@@ -1204,6 +1253,77 @@ function normalizeProofInput(input: WorkboardProofInput, now: number): Workboard
   };
 }
 
+function normalizeBusinessOpsPromotion(
+  value: unknown,
+  fallback?: WorkboardBusinessOpsPromotion,
+): WorkboardBusinessOpsPromotion | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return fallback;
+  }
+  const record = value as Record<string, unknown>;
+  const candidateId = normalizeBoundedString(
+    record.candidateId,
+    fallback?.candidateId,
+    180,
+    "Business Ops candidate id",
+  );
+  const projectRef = normalizeBoundedString(
+    record.projectRef,
+    fallback?.projectRef,
+    1000,
+    "Business Ops project ref",
+  );
+  const decisionBoundary = normalizeBoundedString(
+    record.decisionBoundary,
+    fallback?.decisionBoundary,
+    1200,
+    "Business Ops decision boundary",
+  );
+  const promotedBy = normalizeBoundedString(
+    record.promotedBy,
+    fallback?.promotedBy,
+    180,
+    "Business Ops promotion actor",
+  );
+  const approvalNote = normalizeBoundedString(
+    record.approvalNote,
+    fallback?.approvalNote,
+    2000,
+    "Business Ops approval note",
+  );
+  const promotedAt = normalizeTimestamp(record.promotedAt, fallback?.promotedAt ?? 0);
+  const targetWindow = normalizeBoundedString(
+    record.targetWindow,
+    fallback?.targetWindow,
+    240,
+    "Business Ops target window",
+  );
+  const ownerMode = WORKBOARD_OWNER_MODES.includes(record.ownerMode as WorkboardOwnerMode)
+    ? (record.ownerMode as WorkboardOwnerMode)
+    : fallback?.ownerMode;
+  if (
+    !candidateId ||
+    !projectRef ||
+    !ownerMode ||
+    !decisionBoundary ||
+    !promotedBy ||
+    !promotedAt ||
+    !approvalNote
+  ) {
+    return fallback;
+  }
+  return {
+    candidateId,
+    projectRef,
+    ownerMode,
+    decisionBoundary,
+    promotedBy,
+    promotedAt,
+    approvalNote,
+    ...(targetWindow ? { targetWindow } : {}),
+  };
+}
+
 function normalizeMetadata(
   value: unknown,
   fallback: WorkboardMetadata = {},
@@ -1323,6 +1443,9 @@ function normalizeMetadata(
       typeof record.failureCount === "number" && Number.isFinite(record.failureCount)
         ? Math.max(0, Math.trunc(record.failureCount))
         : fallback.failureCount,
+    businessOpsPromotion: Object.hasOwn(record, "businessOpsPromotion")
+      ? normalizeBusinessOpsPromotion(record.businessOpsPromotion, fallback.businessOpsPromotion)
+      : fallback.businessOpsPromotion,
   });
 }
 
@@ -1429,6 +1552,7 @@ function removeUndefinedMetadataFields(metadata: WorkboardMetadata): WorkboardMe
     "stale",
     "lifecycleStatusSourceUpdatedAt",
     "failureCount",
+    "businessOpsPromotion",
   ] as const) {
     const value = next[key];
     if (
@@ -2184,6 +2308,187 @@ function cardChildIds(card: WorkboardCard): string[] {
     .filter((id, index, ids) => ids.indexOf(id) === index);
 }
 
+const BUSINESS_OPS_PROMOTION_STATUSES = new Set<WorkboardStatus>([
+  "triage",
+  "backlog",
+  "todo",
+  "blocked",
+]);
+
+const BUSINESS_OPS_LEARNING_PREFIX = "Proposed Business Ops learning (review required): ";
+
+function hasBusinessOpsPromotionMetadata(value: unknown): boolean {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.hasOwn(value as Record<string, unknown>, "businessOpsPromotion"),
+  );
+}
+
+function normalizeBusinessOpsPromotionPreview(
+  input: WorkboardBusinessOpsPromotionInput,
+  existing?: WorkboardCard,
+): WorkboardBusinessOpsPromotionPreview {
+  const candidateId = normalizeBoundedString(
+    input.candidateId,
+    existing?.metadata?.businessOpsPromotion?.candidateId,
+    180,
+    "Business Ops candidate id",
+  );
+  const sourceRef = normalizeBoundedString(
+    input.sourceRef,
+    existing?.sourceUrl,
+    2000,
+    "Business Ops source ref",
+  );
+  const projectRef = normalizeBoundedString(
+    input.projectRef,
+    existing?.metadata?.businessOpsPromotion?.projectRef,
+    1000,
+    "Business Ops project ref",
+  );
+  const decisionBoundary = normalizeBoundedString(
+    input.decisionBoundary,
+    existing?.metadata?.businessOpsPromotion?.decisionBoundary,
+    1200,
+    "Business Ops decision boundary",
+  );
+  const approvalNote = normalizeBoundedString(
+    input.approvalNote,
+    existing?.metadata?.businessOpsPromotion?.approvalNote,
+    2000,
+    "Business Ops approval note",
+  );
+  const promotedBy = normalizeBoundedString(
+    input.promotedBy,
+    existing?.metadata?.businessOpsPromotion?.promotedBy ?? "operator",
+    180,
+    "Business Ops promotion actor",
+  );
+  const ownerMode = WORKBOARD_OWNER_MODES.includes(input.ownerMode as WorkboardOwnerMode)
+    ? (input.ownerMode as WorkboardOwnerMode)
+    : existing?.metadata?.businessOpsPromotion?.ownerMode;
+  if (
+    !candidateId ||
+    !sourceRef ||
+    !projectRef ||
+    !ownerMode ||
+    !decisionBoundary ||
+    !approvalNote ||
+    !promotedBy
+  ) {
+    throw new Error(
+      "candidateId, sourceRef, projectRef, ownerMode, decisionBoundary, and approvalNote are required.",
+    );
+  }
+  const status = existing?.status ?? normalizeStatus(input.status, "todo");
+  if (!existing && !BUSINESS_OPS_PROMOTION_STATUSES.has(status)) {
+    throw new Error(
+      "Business Ops promotion status must be triage, backlog, todo, or blocked; target windows never schedule execution.",
+    );
+  }
+  const agentId =
+    input.agentId === undefined ? existing?.agentId : normalizeOptionalString(input.agentId);
+  if (ownerMode === "human" && agentId) {
+    throw new Error("human-owned Business Ops work cannot assign an agentId.");
+  }
+  if (ownerMode === "agent" && !agentId) {
+    throw new Error("agent-owned Business Ops work requires an agentId.");
+  }
+  const targetWindow = normalizeBoundedString(
+    input.targetWindow,
+    existing?.metadata?.businessOpsPromotion?.targetWindow,
+    240,
+    "Business Ops target window",
+  );
+  const proposedLearning = normalizeBoundedString(
+    input.proposedLearning,
+    undefined,
+    2000,
+    "proposed Business Ops learning",
+  );
+  const preview: WorkboardBusinessOpsPromotionPreview = {
+    title: normalizeTitle(input.title ?? existing?.title),
+    status,
+    priority: normalizePriority(input.priority, existing?.priority ?? "normal"),
+    labels: input.labels === undefined ? (existing?.labels ?? []) : normalizeLabels(input.labels),
+    sourceRef,
+    boardId: normalizeBoardIdRequired(
+      input.boardId ?? existing?.metadata?.automation?.boardId ?? "default",
+    ),
+    parents: normalizeStringList(
+      input.parents ?? (existing ? cardParentIds(existing) : []),
+      "parents",
+      120,
+    ).toSorted(),
+    promotion: {
+      candidateId,
+      projectRef,
+      ownerMode,
+      decisionBoundary,
+      promotedBy,
+      approvalNote,
+      ...(targetWindow ? { targetWindow } : {}),
+    },
+    ...(normalizeNotes(input.notes ?? existing?.notes)
+      ? { notes: normalizeNotes(input.notes ?? existing?.notes) }
+      : {}),
+    ...(agentId ? { agentId } : {}),
+    ...(proposedLearning ? { proposedLearning } : {}),
+  };
+  return preview;
+}
+
+function businessOpsPromotionChanges(
+  existing: WorkboardCard | undefined,
+  preview: WorkboardBusinessOpsPromotionPreview,
+): string[] {
+  if (!existing) {
+    return ["card"];
+  }
+  const changes: string[] = [];
+  const compare = (field: string, before: unknown, after: unknown) => {
+    if (JSON.stringify(before ?? null) !== JSON.stringify(after ?? null)) {
+      changes.push(field);
+    }
+  };
+  compare("title", existing.title, preview.title);
+  compare("notes", existing.notes, preview.notes);
+  compare("status", existing.status, preview.status);
+  compare("priority", existing.priority, preview.priority);
+  compare("labels", existing.labels, preview.labels);
+  compare("agentId", existing.agentId, preview.agentId);
+  compare("sourceRef", existing.sourceUrl, preview.sourceRef);
+  compare("boardId", cardBoardId(existing), preview.boardId);
+  compare("parents", cardParentIds(existing).toSorted(), preview.parents);
+  const current = existing.metadata?.businessOpsPromotion;
+  compare(
+    "promotion",
+    current
+      ? {
+          candidateId: current.candidateId,
+          projectRef: current.projectRef,
+          ownerMode: current.ownerMode,
+          decisionBoundary: current.decisionBoundary,
+          promotedBy: current.promotedBy,
+          approvalNote: current.approvalNote,
+          ...(current.targetWindow ? { targetWindow: current.targetWindow } : {}),
+        }
+      : undefined,
+    preview.promotion,
+  );
+  if (
+    preview.proposedLearning &&
+    !(existing.metadata?.comments ?? []).some(
+      (comment) => comment.body === `${BUSINESS_OPS_LEARNING_PREFIX}${preview.proposedLearning}`,
+    )
+  ) {
+    changes.push("proposedLearning");
+  }
+  return changes;
+}
+
 function latestRunningAttempt(card: WorkboardCard): WorkboardRunAttempt | undefined {
   return card.metadata?.attempts?.findLast((attempt) => attempt.status === "running");
 }
@@ -2474,13 +2779,23 @@ export class WorkboardStore {
     input: WorkboardLinkedCreateInput,
     scope?: WorkboardMutationScope,
   ): Promise<WorkboardCard> {
+    if (hasBusinessOpsPromotionMetadata(input.metadata)) {
+      throw new Error("Business Ops promotion provenance requires promoteBusinessOpsCandidate().");
+    }
     return await this.enqueueMutation(async () => await this.createDirect(input, scope));
   }
 
   private async createDirect(
     input: WorkboardLinkedCreateInput,
     scope?: WorkboardMutationScope,
+    options: { allowBusinessOpsPromotionMetadata?: boolean } = {},
   ): Promise<WorkboardCard> {
+    if (
+      !options.allowBusinessOpsPromotionMetadata &&
+      hasBusinessOpsPromotionMetadata(input.metadata)
+    ) {
+      throw new Error("Business Ops promotion provenance requires promoteBusinessOpsCandidate().");
+    }
     const now = Date.now();
     const requestedStatus = normalizeStatus(input.status, "todo");
     const cards = await this.list();
@@ -2624,6 +2939,7 @@ export class WorkboardStore {
       async () =>
         await this.updateCard(id, patch, {
           allowMetadataDependencyLinks: false,
+          allowBusinessOpsPromotionMetadata: false,
           enforceStatusHolds: true,
         }),
     );
@@ -2632,11 +2948,21 @@ export class WorkboardStore {
   private async updateCard(
     id: string,
     patch: WorkboardCardPatch,
-    options: { allowMetadataDependencyLinks?: boolean; enforceStatusHolds?: boolean } = {},
+    options: {
+      allowMetadataDependencyLinks?: boolean;
+      allowBusinessOpsPromotionMetadata?: boolean;
+      enforceStatusHolds?: boolean;
+    } = {},
   ): Promise<WorkboardCard> {
     const existing = await this.get(id);
     if (!existing) {
       throw new Error(`card not found: ${id}`);
+    }
+    if (
+      options.allowBusinessOpsPromotionMetadata === false &&
+      hasBusinessOpsPromotionMetadata(patch.metadata)
+    ) {
+      throw new Error("Business Ops promotion provenance requires promoteBusinessOpsCandidate().");
     }
     const lifecycleStatusSourceUpdatedAt = lifecycleStatusSourceUpdatedAtFromPatch(patch.metadata);
     const existingLifecycleStatusSourceUpdatedAt =
@@ -2979,6 +3305,186 @@ export class WorkboardStore {
       child = await this.linkCards(parentId, child.id);
     }
     return child;
+  }
+
+  private async replaceParentsDirect(
+    childId: string,
+    desiredParentIds: readonly string[],
+    now = Date.now(),
+  ): Promise<WorkboardCard> {
+    let child = await this.get(childId);
+    if (!child) {
+      throw new Error(`card not found: ${childId}`);
+    }
+    const stableChildId = child.id;
+    const desired = [
+      ...new Set(desiredParentIds.map((id) => id.trim()).filter(Boolean)),
+    ].toSorted();
+    const current = cardParentIds(child).toSorted();
+    if (JSON.stringify(current) === JSON.stringify(desired)) {
+      return child;
+    }
+    if (!new Set<WorkboardStatus>(["triage", "backlog", "todo"]).has(child.status)) {
+      throw new Error(
+        "parent dependencies can only be revised before work becomes active or blocked.",
+      );
+    }
+    const cards = new Map((await this.list()).map((card) => [card.id, card]));
+    for (const parentId of desired) {
+      if (parentId === child.id) {
+        throw new Error("parent and child cards must differ.");
+      }
+      if (!cards.has(parentId)) {
+        throw new Error(`card not found: ${parentId}`);
+      }
+      if (await this.dependsOn(parentId, child.id)) {
+        throw new Error("dependency link would create a cycle.");
+      }
+    }
+    for (const parentId of current.filter((id) => !desired.includes(id))) {
+      const parent = await this.get(parentId);
+      child = (await this.get(child.id)) ?? child;
+      if (parent) {
+        await this.updateCard(parent.id, {
+          metadata: {
+            ...parent.metadata,
+            links: (parent.metadata?.links ?? []).filter(
+              (link) => !(link.type === "child" && link.targetCardId === stableChildId),
+            ),
+          },
+        });
+      }
+      child = await this.updateCard(child.id, {
+        metadata: {
+          ...child.metadata,
+          links: (child.metadata?.links ?? []).filter(
+            (link) => !(link.type === "parent" && link.targetCardId === parentId),
+          ),
+        },
+      });
+    }
+    for (const parentId of desired.filter((id) => !current.includes(id))) {
+      child = await this.linkCardsDirect(parentId, child.id, now);
+    }
+    return child;
+  }
+
+  async promoteBusinessOpsCandidate(
+    input: WorkboardBusinessOpsPromotionInput,
+  ): Promise<WorkboardBusinessOpsPromotionResult> {
+    return await this.enqueueMutation(async () => {
+      const candidateId = normalizeBoundedString(
+        input.candidateId,
+        undefined,
+        180,
+        "Business Ops candidate id",
+      );
+      const projectRef = normalizeBoundedString(
+        input.projectRef,
+        undefined,
+        1000,
+        "Business Ops project ref",
+      );
+      if (!candidateId || !projectRef) {
+        throw new Error("candidateId and projectRef are required.");
+      }
+      const matches = (await this.list()).filter(
+        (card) =>
+          card.metadata?.businessOpsPromotion?.candidateId === candidateId &&
+          card.metadata.businessOpsPromotion.projectRef === projectRef,
+      );
+      if (matches.length > 1) {
+        throw new Error(
+          `multiple Workboard cards claim Business Ops candidate ${candidateId}; reconcile them before promotion.`,
+        );
+      }
+      const existing = matches[0];
+      const preview = normalizeBusinessOpsPromotionPreview(input, existing);
+      const changes = businessOpsPromotionChanges(existing, preview);
+      const action: WorkboardBusinessOpsPromotionAction = existing
+        ? changes.length > 0
+          ? "update"
+          : "unchanged"
+        : "create";
+      const result: WorkboardBusinessOpsPromotionResult = {
+        approved: input.approved === true,
+        action,
+        changes,
+        preview,
+        ...(existing ? { existingCardId: existing.id } : {}),
+      };
+      if (input.approved !== true) {
+        return result;
+      }
+      if (existing && action === "unchanged") {
+        return { ...result, card: existing };
+      }
+      const now = Date.now();
+      const promotion: WorkboardBusinessOpsPromotion = {
+        ...preview.promotion,
+        promotedAt: now,
+      };
+      const approvalBody = `Business Ops promotion approved by ${promotion.promotedBy}: ${promotion.approvalNote}`;
+      const learningBody = preview.proposedLearning
+        ? `${BUSINESS_OPS_LEARNING_PREFIX}${preview.proposedLearning}`
+        : undefined;
+      const appendComments = (comments: readonly WorkboardComment[] = []): WorkboardComment[] => {
+        const next = [...comments];
+        for (const body of [approvalBody, learningBody]) {
+          if (body && !next.some((comment) => comment.body === body)) {
+            next.push({ id: randomUUID(), body, createdAt: now });
+          }
+        }
+        return next.slice(-MAX_CARD_COMMENTS);
+      };
+      if (!existing) {
+        const card = await this.createDirect(
+          {
+            title: preview.title,
+            notes: preview.notes ?? null,
+            status: preview.status,
+            priority: preview.priority,
+            labels: preview.labels,
+            agentId: preview.agentId ?? null,
+            sourceUrl: preview.sourceRef,
+            boardId: preview.boardId,
+            parents: preview.parents,
+            metadata: {
+              businessOpsPromotion: promotion,
+              comments: appendComments(),
+            },
+          },
+          undefined,
+          { allowBusinessOpsPromotionMetadata: true },
+        );
+        return { ...result, card };
+      }
+      let current = await this.replaceParentsDirect(existing.id, preview.parents, now);
+      current = await this.updateCard(
+        current.id,
+        {
+          title: preview.title,
+          notes: preview.notes ?? null,
+          status: preview.status,
+          priority: preview.priority,
+          labels: preview.labels,
+          agentId: preview.agentId ?? null,
+          sourceUrl: preview.sourceRef,
+          boardId: preview.boardId,
+          metadata: {
+            ...current.metadata,
+            businessOpsPromotion: promotion,
+            comments: appendComments(current.metadata?.comments),
+          },
+        },
+        {
+          allowBusinessOpsPromotionMetadata: true,
+          allowMetadataDependencyLinks: true,
+          enforceStatusHolds: true,
+        },
+      );
+      return { ...result, card: current };
+    });
   }
 
   private async dependencyTargetStatus(card: WorkboardCard, now: number): Promise<WorkboardStatus> {

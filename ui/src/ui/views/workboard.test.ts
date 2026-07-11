@@ -81,6 +81,91 @@ describe("renderWorkboard", () => {
     expect(container.querySelector(".workboard-card__priority")?.textContent).toContain("high");
   });
 
+  it("opens the dedicated Business Ops promotion preview dialog", async () => {
+    const host = {};
+    const state = getWorkboardState(host);
+    state.loaded = true;
+    const container = document.createElement("div");
+    const props = {
+      host,
+      client: null,
+      connected: true,
+      canWrite: true,
+      pluginEnabled: true,
+      agentsList: null,
+      sessions: [],
+      onOpenSession: () => undefined,
+      onRequestUpdate: () => renderInto(container, props),
+    } satisfies WorkboardRenderProps;
+    renderInto(container, props);
+    const button = [...container.querySelectorAll<HTMLButtonElement>("button")].find((entry) =>
+      entry.textContent?.includes("Promote candidate"),
+    );
+    expect(button).toBeDefined();
+    button?.click();
+    await nextFrame();
+    expect(container.querySelector("#workboard-business-ops-promotion-modal")).not.toBeNull();
+    expect(container.textContent).toContain("Business Ops promotion");
+    expect(container.textContent).toContain("Decision boundary");
+    expect(container.textContent).toContain("Proposed learning");
+    expect(container.querySelector(".workboard-main")?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("shows Business Ops provenance and learning on the native card detail surface", () => {
+    const host = {};
+    const state = getWorkboardState(host);
+    state.loaded = true;
+    state.detailCardId = "card-promotion";
+    state.cards = [
+      {
+        id: "card-promotion",
+        title: "Run campaign revision cycle",
+        status: "todo",
+        priority: "high",
+        labels: ["business-ops"],
+        sourceUrl: "business-ops/candidates.md#AA-UI-2",
+        position: 1000,
+        createdAt: 1,
+        updatedAt: 2,
+        metadata: {
+          businessOpsPromotion: {
+            candidateId: "AA-UI-2",
+            projectRef: "business-ops/projects/american-atomics",
+            ownerMode: "shared",
+            targetWindow: "After source refresh",
+            decisionBoundary: "Internal execution only; no publication approval.",
+            promotedBy: "operator",
+            promotedAt: 2,
+            approvalNote: "Proceed with the internal revision cycle.",
+          },
+          comments: [
+            {
+              id: "comment-learning",
+              body: "Proposed Business Ops learning (review required): Test voice consistency after revision two.",
+              createdAt: 2,
+            },
+          ],
+        },
+      },
+    ];
+    const container = document.createElement("div");
+    renderInto(container, {
+      host,
+      client: null,
+      connected: true,
+      pluginEnabled: true,
+      agentsList: null,
+      sessions: [],
+      onOpenSession: () => undefined,
+    });
+    const detail = container.querySelector(".workboard-detail");
+    expect(detail?.textContent).toContain("Business Ops provenance");
+    expect(detail?.textContent).toContain("AA-UI-2");
+    expect(detail?.textContent).toContain("After source refresh");
+    expect(detail?.textContent).toContain("Internal execution only; no publication approval.");
+    expect(detail?.textContent).toContain("Test voice consistency after revision two.");
+  });
+
   it("does not render Invalid Date for Date-invalid card timestamps", () => {
     const host = {};
     const state = getWorkboardState(host);

@@ -50,6 +50,9 @@ const PROVIDER_ID = "openai";
 const OPENAI_CODEX_BASE_URL = OPENAI_CODEX_RESPONSES_BASE_URL;
 const OPENAI_CODEX_LOGIN_ASSISTANT_PRIORITY = -30;
 const OPENAI_CODEX_DEVICE_PAIRING_ASSISTANT_PRIORITY = -10;
+const OPENAI_CODEX_GPT_56_MODEL_IDS = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] as const;
+const OPENAI_CODEX_GPT_56_CONTEXT_WINDOW = 372_000;
+const OPENAI_CODEX_GPT_56_CONTEXT_TOKENS = 272_000;
 const OPENAI_CODEX_GPT_55_MODEL_ID = "gpt-5.5";
 const OPENAI_CODEX_GPT_55_PRO_MODEL_ID = "gpt-5.5-pro";
 const OPENAI_CODEX_GPT_54_MODEL_ID = "gpt-5.4";
@@ -100,6 +103,7 @@ const OPENAI_CODEX_GPT_55_PRO_TEMPLATE_MODEL_IDS = [
   ...OPENAI_CODEX_GPT_54_TEMPLATE_MODEL_IDS,
 ] as const;
 const OPENAI_CODEX_MODERN_MODEL_IDS = [
+  ...OPENAI_CODEX_GPT_56_MODEL_IDS,
   OPENAI_CODEX_GPT_55_MODEL_ID,
   OPENAI_CODEX_GPT_55_PRO_MODEL_ID,
   OPENAI_CODEX_GPT_54_MODEL_ID,
@@ -215,6 +219,17 @@ function resolveCodexForwardCompatModel(ctx: ProviderResolveDynamicModelContext)
   const trimmedModelId = ctx.modelId.trim();
   const lower = normalizeLowercaseStringOrEmpty(trimmedModelId);
   const synthBaseUrl = ctx.providerConfig?.baseUrl ?? OPENAI_CODEX_BASE_URL;
+
+  if ((OPENAI_CODEX_GPT_56_MODEL_IDS as readonly string[]).includes(lower)) {
+    const model = ctx.modelRegistry.find(PROVIDER_ID, trimmedModelId) as
+      | ProviderRuntimeModel
+      | undefined;
+    return withDefaultCodexContextMetadata({
+      model: withCodexTransport(model, synthBaseUrl),
+      contextWindow: OPENAI_CODEX_GPT_56_CONTEXT_WINDOW,
+      contextTokens: OPENAI_CODEX_GPT_56_CONTEXT_TOKENS,
+    });
+  }
 
   if (lower === OPENAI_CODEX_GPT_55_MODEL_ID) {
     const model = ctx.modelRegistry.find(PROVIDER_ID, trimmedModelId) as
@@ -577,6 +592,9 @@ export function buildOpenAICodexProviderHooks(): Pick<
         return false;
       }
       const id = ctx.modelId.trim().toLowerCase();
+      if ((OPENAI_CODEX_GPT_56_MODEL_IDS as readonly string[]).includes(id)) {
+        return true;
+      }
       return [
         OPENAI_CODEX_GPT_55_MODEL_ID,
         OPENAI_CODEX_GPT_55_PRO_MODEL_ID,

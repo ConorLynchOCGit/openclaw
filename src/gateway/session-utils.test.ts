@@ -307,6 +307,7 @@ describe("gateway session utils", () => {
         source: "codex-native",
         runId: "codex-thread:child-thread-1",
         childThreadId: "child-thread-1",
+        finalRef: "codex-thread:child-thread-1",
         role: "worker",
         agentPath: "agents/project_explorer.toml",
         objective: "inspect source seams",
@@ -373,6 +374,50 @@ describe("gateway session utils", () => {
         status: "succeeded",
       }),
     ]);
+  });
+
+  test("session detail labels live usage as provisional and terminal usage as settled", () => {
+    const cfg = { agents: { list: [{ id: "coding", default: true }] } } as OpenClawConfig;
+    const runningEntry = {
+      sessionId: "session-running-usage",
+      updatedAt: 2_000,
+      status: "running",
+      inputTokens: 120,
+      outputTokens: 30,
+      estimatedCostUsd: 0.01,
+    } satisfies SessionEntry;
+    const terminalEntry = {
+      sessionId: "session-terminal-usage",
+      updatedAt: 3_000,
+      status: "done",
+      inputTokens: 200,
+      outputTokens: 50,
+      totalTokens: 250,
+      totalTokensFresh: true,
+      estimatedCostUsd: 0.02,
+    } satisfies SessionEntry;
+    const store = {
+      "agent:coding:running-usage": runningEntry,
+      "agent:coding:terminal-usage": terminalEntry,
+    };
+
+    const running = buildGatewaySessionRow({
+      cfg,
+      storePath: "",
+      store,
+      key: "agent:coding:running-usage",
+      entry: runningEntry,
+    });
+    const terminal = buildGatewaySessionRow({
+      cfg,
+      storePath: "",
+      store,
+      key: "agent:coding:terminal-usage",
+      entry: terminalEntry,
+    });
+
+    expect(running.usageCostState).toBe("provisional");
+    expect(terminal.usageCostState).toBe("settled");
   });
 
   test("session detail projects Codex-native workbench capability readback", () => {
@@ -753,18 +798,99 @@ describe("gateway session utils", () => {
       },
       {
         ...base,
-        type: "model.completed",
+        type: "tool.call",
         ts: "2026-07-10T01:00:10.000Z",
         seq: 11,
         sourceSeq: 11,
+        data: {
+          threadId: "thread-parent",
+          toolCallId: "call-browser",
+          name: "browser",
+          arguments: { url: "http://127.0.0.1/workboard" },
+        },
+      },
+      {
+        ...base,
+        type: "tool.result",
+        ts: "2026-07-10T01:00:10.200Z",
+        seq: 12,
+        sourceSeq: 12,
+        data: {
+          threadId: "thread-parent",
+          toolCallId: "call-browser",
+          name: "browser",
+          status: "completed",
+          isError: false,
+        },
+      },
+      {
+        ...base,
+        type: "tool.call",
+        ts: "2026-07-10T01:00:10.300Z",
+        seq: 13,
+        sourceSeq: 13,
+        data: {
+          threadId: "thread-parent",
+          toolCallId: "call-image",
+          name: "view_image",
+          arguments: { path: "/tmp/workboard.png" },
+        },
+      },
+      {
+        ...base,
+        type: "tool.result",
+        ts: "2026-07-10T01:00:10.400Z",
+        seq: 14,
+        sourceSeq: 14,
+        data: {
+          threadId: "thread-parent",
+          toolCallId: "call-image",
+          name: "view_image",
+          status: "completed",
+          isError: false,
+        },
+      },
+      {
+        ...base,
+        type: "tool.call",
+        ts: "2026-07-10T01:00:10.500Z",
+        seq: 15,
+        sourceSeq: 15,
+        data: {
+          threadId: "thread-parent",
+          toolCallId: "call-spawn",
+          name: "spawn_agent",
+          arguments: { agent_type: "codex_reviewer" },
+        },
+      },
+      {
+        ...base,
+        type: "tool.result",
+        ts: "2026-07-10T01:00:10.600Z",
+        seq: 16,
+        sourceSeq: 16,
+        data: {
+          threadId: "thread-parent",
+          toolCallId: "call-spawn",
+          name: "spawn_agent",
+          status: "completed",
+          isError: false,
+        },
+      },
+      {
+        ...base,
+        type: "model.completed",
+        ts: "2026-07-10T01:00:10.700Z",
+        seq: 17,
+        sourceSeq: 17,
         data: { threadId: "thread-parent" },
       },
       {
         ...base,
         type: "tool.call",
-        ts: "2026-07-10T01:00:10.200Z",
-        seq: 12,
-        sourceSeq: 12,
+        ts: "2026-07-10T01:00:10.800Z",
+        seq: 18,
+        sourceSeq: 18,
         data: {
           threadId: "thread-child",
           toolCallId: "call-child-read",
@@ -779,9 +905,9 @@ describe("gateway session utils", () => {
       {
         ...base,
         type: "tool.result",
-        ts: "2026-07-10T01:00:10.400Z",
-        seq: 13,
-        sourceSeq: 13,
+        ts: "2026-07-10T01:00:10.900Z",
+        seq: 19,
+        sourceSeq: 19,
         data: {
           threadId: "thread-child",
           toolCallId: "call-child-read",
@@ -796,8 +922,8 @@ describe("gateway session utils", () => {
         ...base,
         type: "session.ended",
         ts: "2026-07-10T01:00:11.000Z",
-        seq: 14,
-        sourceSeq: 14,
+        seq: 20,
+        sourceSeq: 20,
         data: { threadId: "thread-parent", status: "success" },
       },
     ];
@@ -826,9 +952,10 @@ describe("gateway session utils", () => {
       source: "trajectory",
       ref: `session:${sessionId}`,
       bounded: true,
-      toolCallCount: 6,
-      toolResultCount: 6,
+      toolCallCount: 9,
+      toolResultCount: 9,
       peakConcurrentToolCalls: 2,
+      nativeParallelActivity: { observed: true, peakConcurrentToolCalls: 2 },
       patchCount: 1,
       validationCommands: ["node scripts/check-coding-runtime-readiness.mjs --json"],
       workspaceDirs: ["/home/node/.openclaw/workspace"],
@@ -837,7 +964,10 @@ describe("gateway session utils", () => {
         shell: 2,
         mcp: 3,
         lsp: 1,
-        spawnAgent: 0,
+        browser: 1,
+        image: 1,
+        collaboration: 1,
+        spawnAgent: 1,
         waitAgent: 0,
         applyPatch: 1,
       },
@@ -868,15 +998,18 @@ describe("gateway session utils", () => {
       expect.arrayContaining([
         expect.objectContaining({
           threadId: "thread-parent",
-          observedEventCount: 12,
-          toolCallCount: 5,
-          toolResultCount: 5,
+          observedEventCount: 18,
+          toolCallCount: 8,
+          toolResultCount: 8,
           peakConcurrentToolCalls: 2,
           toolMix: {
             shell: 2,
             mcp: 2,
             lsp: 1,
-            spawnAgent: 0,
+            browser: 1,
+            image: 1,
+            collaboration: 1,
+            spawnAgent: 1,
             waitAgent: 0,
             applyPatch: 1,
           },
@@ -894,6 +1027,9 @@ describe("gateway session utils", () => {
             shell: 0,
             mcp: 1,
             lsp: 0,
+            browser: 0,
+            image: 0,
+            collaboration: 0,
             spawnAgent: 0,
             waitAgent: 0,
             applyPatch: 0,

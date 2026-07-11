@@ -200,6 +200,87 @@ export function registerWorkboardCli(params: { program: Command; store: Workboar
       }
     });
 
+  workboard
+    .command("promote-business-ops")
+    .argument("<title...>", "Native Workboard commitment title")
+    .description("Preview or approve a Business Ops candidate promotion")
+    .requiredOption("--candidate <id>", "Stable Business Ops candidate row id")
+    .requiredOption("--source <ref>", "Workspace-visible source artifact or row ref")
+    .requiredOption("--project <ref>", "Workspace-visible Business Ops project ref")
+    .requiredOption("--owner-mode <mode>", "human, agent, or shared")
+    .requiredOption("--boundary <text>", "Approval decision boundary")
+    .requiredOption("--approval-note <text>", "Operator approval rationale")
+    .option("--target-window <text>", "Display-only target window")
+    .option("--promoted-by <actor>", "Approval actor", "operator")
+    .option("--agent <id>", "Assigned agent id")
+    .option("--board <id>", "Board id")
+    .option("--parents <ids>", "Comma-separated native parent card ids")
+    .option("--notes <text>", "Acceptance requirements and context")
+    .option("--status <status>", "triage, backlog, todo, or blocked", "todo")
+    .option("--priority <priority>", "Priority", "normal")
+    .option("--labels <items>", "Comma-separated labels")
+    .option("--proposed-learning <text>", "Review-required Business Ops learning proposal")
+    .option("--approve", "Mutate only after explicit operator approval", false)
+    .option("--json", "Print JSON", false)
+    .action(
+      async (
+        title: string[],
+        options: JsonOptions & {
+          candidate: string;
+          source: string;
+          project: string;
+          ownerMode: string;
+          boundary: string;
+          approvalNote: string;
+          targetWindow?: string;
+          promotedBy?: string;
+          agent?: string;
+          board?: string;
+          parents?: string;
+          notes?: string;
+          status?: string;
+          priority?: string;
+          labels?: string;
+          proposedLearning?: string;
+          approve?: boolean;
+        },
+      ) => {
+        const result = await params.store.promoteBusinessOpsCandidate({
+          candidateId: options.candidate,
+          sourceRef: options.source,
+          projectRef: options.project,
+          ownerMode: options.ownerMode,
+          decisionBoundary: options.boundary,
+          approvalNote: options.approvalNote,
+          targetWindow: options.targetWindow,
+          promotedBy: options.promotedBy,
+          agentId: options.agent,
+          boardId: options.board,
+          parents: options.parents?.split(","),
+          notes: options.notes,
+          status: options.status,
+          priority: options.priority,
+          labels: splitLabels(options.labels),
+          proposedLearning: options.proposedLearning,
+          approved: options.approve === true,
+          title: title.join(" "),
+        });
+        if (options.json) {
+          writeJson({
+            ...result,
+            ...(result.card ? { card: redactClaimToken(result.card) } : {}),
+          });
+        } else {
+          writeLine(
+            `${result.approved ? "approved" : "preview"}: ${result.action}${result.existingCardId ? ` ${result.existingCardId.slice(0, 8)}` : ""}`,
+          );
+          if (result.changes.length) {
+            writeLine(`changes: ${result.changes.join(", ")}`);
+          }
+        }
+      },
+    );
+
   addGatewayClientOptions(
     workboard
       .command("dispatch")

@@ -237,6 +237,19 @@ export type WorkboardAutomation = {
   lastDispatchAt?: number;
 };
 
+export type WorkboardOwnerMode = "human" | "agent" | "shared";
+
+export type WorkboardBusinessOpsPromotion = {
+  candidateId: string;
+  projectRef: string;
+  ownerMode: WorkboardOwnerMode;
+  decisionBoundary: string;
+  promotedBy: string;
+  promotedAt: number;
+  approvalNote: string;
+  targetWindow?: string;
+};
+
 export type WorkboardMetadata = {
   attempts?: WorkboardRunAttempt[];
   comments?: WorkboardComment[];
@@ -255,6 +268,15 @@ export type WorkboardMetadata = {
   stale?: WorkboardStaleState;
   lifecycleStatusSourceUpdatedAt?: number;
   failureCount?: number;
+  businessOpsPromotion?: WorkboardBusinessOpsPromotion;
+};
+
+export type WorkboardBusinessOpsPromotionResult = {
+  approved: boolean;
+  action: "create" | "update" | "unchanged";
+  changes: string[];
+  existingCardId?: string;
+  card?: WorkboardCard;
 };
 
 export type WorkboardCard = {
@@ -367,6 +389,24 @@ export type WorkboardUiState = {
   draftSessionKey: string;
   draftTemplateId: WorkboardTemplateId | "";
   draftCommentBody: string;
+  promotionOpen: boolean;
+  promotionBusy: boolean;
+  promotionError: string | null;
+  promotionPreview: WorkboardBusinessOpsPromotionResult | null;
+  promotionCandidateId: string;
+  promotionSourceRef: string;
+  promotionProjectRef: string;
+  promotionTitle: string;
+  promotionNotes: string;
+  promotionOwnerMode: WorkboardOwnerMode;
+  promotionAgentId: string;
+  promotionTargetWindow: string;
+  promotionDecisionBoundary: string;
+  promotionApprovalNote: string;
+  promotionParents: string;
+  promotionLabels: string;
+  promotionPriority: WorkboardPriority;
+  promotionProposedLearning: string;
   detailCardId: string | null;
   detailCommentBody: string;
   busyCardId: string | null;
@@ -414,6 +454,24 @@ function createDefaultState(): WorkboardUiState {
     draftSessionKey: "",
     draftTemplateId: "",
     draftCommentBody: "",
+    promotionOpen: false,
+    promotionBusy: false,
+    promotionError: null,
+    promotionPreview: null,
+    promotionCandidateId: "",
+    promotionSourceRef: "",
+    promotionProjectRef: "",
+    promotionTitle: "",
+    promotionNotes: "",
+    promotionOwnerMode: "human",
+    promotionAgentId: "",
+    promotionTargetWindow: "",
+    promotionDecisionBoundary: "",
+    promotionApprovalNote: "",
+    promotionParents: "",
+    promotionLabels: "business-ops",
+    promotionPriority: "normal",
+    promotionProposedLearning: "",
     detailCardId: null,
     detailCommentBody: "",
     busyCardId: null,
@@ -835,6 +893,37 @@ function normalizeMetadata(value: unknown): WorkboardMetadata | undefined {
       }
     : undefined;
   const automation = normalizeAutomation(value.automation);
+  const businessOpsRecord = isRecord(value.businessOpsPromotion)
+    ? value.businessOpsPromotion
+    : null;
+  const businessOpsOwnerMode: WorkboardOwnerMode | undefined =
+    businessOpsRecord?.ownerMode === "human" ||
+    businessOpsRecord?.ownerMode === "agent" ||
+    businessOpsRecord?.ownerMode === "shared"
+      ? businessOpsRecord.ownerMode
+      : undefined;
+  const businessOpsPromotion =
+    businessOpsRecord &&
+    typeof businessOpsRecord.candidateId === "string" &&
+    typeof businessOpsRecord.projectRef === "string" &&
+    businessOpsOwnerMode &&
+    typeof businessOpsRecord.decisionBoundary === "string" &&
+    typeof businessOpsRecord.promotedBy === "string" &&
+    typeof businessOpsRecord.promotedAt === "number" &&
+    typeof businessOpsRecord.approvalNote === "string"
+      ? {
+          candidateId: businessOpsRecord.candidateId,
+          projectRef: businessOpsRecord.projectRef,
+          ownerMode: businessOpsOwnerMode,
+          decisionBoundary: businessOpsRecord.decisionBoundary,
+          promotedBy: businessOpsRecord.promotedBy,
+          promotedAt: businessOpsRecord.promotedAt,
+          approvalNote: businessOpsRecord.approvalNote,
+          ...(typeof businessOpsRecord.targetWindow === "string"
+            ? { targetWindow: businessOpsRecord.targetWindow }
+            : {}),
+        }
+      : undefined;
   const lifecycleStatusSourceUpdatedAt =
     typeof value.lifecycleStatusSourceUpdatedAt === "number" &&
     Number.isFinite(value.lifecycleStatusSourceUpdatedAt)
@@ -860,6 +949,7 @@ function normalizeMetadata(value: unknown): WorkboardMetadata | undefined {
     ...(stale ? { stale } : {}),
     ...(lifecycleStatusSourceUpdatedAt !== undefined ? { lifecycleStatusSourceUpdatedAt } : {}),
     ...(typeof value.failureCount === "number" ? { failureCount: value.failureCount } : {}),
+    ...(businessOpsPromotion ? { businessOpsPromotion } : {}),
   };
   return Object.keys(metadata).length ? metadata : undefined;
 }
@@ -1261,6 +1351,114 @@ function draftPayload(state: WorkboardUiState) {
     sessionKey: state.draftSessionKey,
     ...(state.draftTemplateId ? { templateId: state.draftTemplateId } : {}),
   };
+}
+
+export function resetBusinessOpsPromotionState(state: WorkboardUiState) {
+  state.promotionOpen = false;
+  state.promotionBusy = false;
+  state.promotionError = null;
+  state.promotionPreview = null;
+  state.promotionCandidateId = "";
+  state.promotionSourceRef = "";
+  state.promotionProjectRef = "";
+  state.promotionTitle = "";
+  state.promotionNotes = "";
+  state.promotionOwnerMode = "human";
+  state.promotionAgentId = "";
+  state.promotionTargetWindow = "";
+  state.promotionDecisionBoundary = "";
+  state.promotionApprovalNote = "";
+  state.promotionParents = "";
+  state.promotionLabels = "business-ops";
+  state.promotionPriority = "normal";
+  state.promotionProposedLearning = "";
+}
+
+function businessOpsPromotionPayload(state: WorkboardUiState, approved: boolean) {
+  return {
+    candidateId: state.promotionCandidateId,
+    sourceRef: state.promotionSourceRef,
+    projectRef: state.promotionProjectRef,
+    ownerMode: state.promotionOwnerMode,
+    title: state.promotionTitle,
+    notes: state.promotionNotes,
+    priority: state.promotionPriority,
+    labels: normalizeDraftLabels(state.promotionLabels),
+    agentId: state.promotionAgentId,
+    targetWindow: state.promotionTargetWindow,
+    decisionBoundary: state.promotionDecisionBoundary,
+    approvalNote: state.promotionApprovalNote,
+    parents: state.promotionParents
+      .split(/[\n,]/)
+      .map((entry) => entry.trim())
+      .filter((entry, index, entries) => Boolean(entry) && entries.indexOf(entry) === index),
+    proposedLearning: state.promotionProposedLearning,
+    approved,
+  };
+}
+
+function normalizeBusinessOpsPromotionResult(
+  payload: unknown,
+): WorkboardBusinessOpsPromotionResult {
+  if (!isRecord(payload)) {
+    throw new Error("workboard response did not include a Business Ops promotion result");
+  }
+  const action =
+    payload.action === "create" || payload.action === "update" || payload.action === "unchanged"
+      ? payload.action
+      : null;
+  if (typeof payload.approved !== "boolean" || !action) {
+    throw new Error("workboard response included an invalid Business Ops promotion result");
+  }
+  const card = normalizeCard(payload.card);
+  return {
+    approved: payload.approved,
+    action,
+    changes: normalizeStringArray(payload.changes),
+    ...(typeof payload.existingCardId === "string"
+      ? { existingCardId: payload.existingCardId }
+      : {}),
+    ...(card ? { card } : {}),
+  };
+}
+
+export async function submitBusinessOpsPromotion(params: {
+  host: WorkboardHost;
+  client: GatewayBrowserClient | null;
+  approved: boolean;
+  requestUpdate?: () => void;
+}) {
+  const state = getWorkboardState(params.host);
+  if (!params.client || state.promotionBusy) {
+    return;
+  }
+  state.promotionBusy = true;
+  state.promotionError = null;
+  if (!params.approved) {
+    state.promotionPreview = null;
+  }
+  params.requestUpdate?.();
+  try {
+    const payload = await params.client.request(
+      "workboard.cards.promoteBusinessOpsCandidate",
+      businessOpsPromotionPayload(state, params.approved),
+    );
+    const result = normalizeBusinessOpsPromotionResult(payload);
+    state.promotionPreview = result;
+    if (params.approved) {
+      if (!result.card) {
+        throw new Error("approved promotion did not return a Workboard card");
+      }
+      replaceCard(state, result.card);
+      state.detailCardId = result.card.id;
+      state.promotionOpen = false;
+    }
+  } catch (error) {
+    state.promotionError = formatError(error);
+  } finally {
+    state.promotionBusy = false;
+    params.requestUpdate?.();
+  }
 }
 
 function isFailedSessionStatus(status: GatewaySessionRow["status"]): boolean {

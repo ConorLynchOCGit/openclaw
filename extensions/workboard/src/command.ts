@@ -89,6 +89,7 @@ export async function handleWorkboardCommand(params: {
         "/workboard list",
         "/workboard show <card-id>",
         "/workboard create <title>",
+        "/workboard promote-business-ops <json>",
         "/workboard dispatch",
       ].join("\n"),
     };
@@ -118,6 +119,44 @@ export async function handleWorkboardCommand(params: {
     }
     const card = await params.store.create({ title });
     return { text: `Created ${card.id.slice(0, 8)} ${card.title}` };
+  }
+  if (action === "promote-business-ops") {
+    let input: Record<string, unknown>;
+    try {
+      const parsed = JSON.parse(rest.join(" ")) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("input must be a JSON object");
+      }
+      input = parsed as Record<string, unknown>;
+    } catch (error) {
+      return {
+        text: `Usage: /workboard promote-business-ops <json> (${error instanceof Error ? error.message : "invalid JSON"})`,
+        isError: true,
+      };
+    }
+    if (input.approved === true) {
+      const accessError = requireWriteAccess(params);
+      if (accessError) {
+        return accessError;
+      }
+    }
+    try {
+      const result = await params.store.promoteBusinessOpsCandidate(input);
+      return {
+        text: [
+          `${result.approved ? "approved" : "preview"}: ${result.action}`,
+          result.existingCardId ? `card: ${result.existingCardId}` : undefined,
+          result.changes.length ? `changes: ${result.changes.join(", ")}` : "changes: none",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      };
+    } catch (error) {
+      return {
+        text: error instanceof Error ? error.message : "Business Ops promotion failed.",
+        isError: true,
+      };
+    }
   }
   if (action === "dispatch") {
     const accessError = requireWriteAccess(params);

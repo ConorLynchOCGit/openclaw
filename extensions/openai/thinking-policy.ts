@@ -10,6 +10,9 @@ const OPENAI_THINKING_BASE_LEVELS = [
 ] as const satisfies ProviderThinkingProfile["levels"];
 
 const OPENAI_XHIGH_MODEL_IDS = [
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
   "gpt-5.5",
   "gpt-5.5-pro",
   "gpt-5.4",
@@ -19,6 +22,9 @@ const OPENAI_XHIGH_MODEL_IDS = [
 ] as const;
 
 const OPENAI_CODEX_XHIGH_MODEL_IDS = [
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
   "gpt-5.5",
   "gpt-5.5-pro",
   "gpt-5.4",
@@ -30,6 +36,8 @@ const OPENAI_UNIFIED_XHIGH_MODEL_IDS = [
   ...OPENAI_XHIGH_MODEL_IDS,
   ...OPENAI_CODEX_XHIGH_MODEL_IDS,
 ] as const;
+
+const OPENAI_MAX_MODEL_IDS = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] as const;
 
 function normalizeModelId(value: string): string {
   return value.trim().toLowerCase();
@@ -52,6 +60,9 @@ function buildOpenAIThinkingProfile(params: {
       ...OPENAI_THINKING_BASE_LEVELS,
       ...(matchesExactOrPrefix(params.modelId, params.xhighModelIds)
         ? [{ id: "xhigh" as const }]
+        : []),
+      ...(matchesExactOrPrefix(params.modelId, OPENAI_MAX_MODEL_IDS)
+        ? [{ id: "max" as const }]
         : []),
     ],
   };

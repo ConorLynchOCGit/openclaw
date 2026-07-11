@@ -19,7 +19,13 @@ afterEach(() => {
 function expectStaticFallbackCatalog(
   result: Awaited<ReturnType<typeof buildCodexProviderCatalog>>,
 ) {
-  expect(result.provider.models.map((model) => model.id)).toEqual(["gpt-5.5", "gpt-5.4-mini"]);
+  expect(result.provider.models.map((model) => model.id)).toEqual([
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "gpt-5.5",
+    "gpt-5.4-mini",
+  ]);
 }
 
 function createFakeCodexClient(): CodexAppServerClient {
@@ -121,7 +127,11 @@ describe("codex provider", () => {
       name: "gpt-5.4",
       reasoning: true,
       input: ["text", "image"],
-      compat: { supportsReasoningEffort: true, supportsUsageInStreaming: true },
+      compat: {
+        supportsReasoningEffort: true,
+        supportsUsageInStreaming: true,
+        supportedReasoningEfforts: ["low", "medium", "high", "xhigh"],
+      },
     });
   });
 
@@ -343,13 +353,42 @@ describe("codex provider", () => {
     expectRecordFields(model, {
       id: "o4-mini",
       reasoning: true,
-      compat: { supportsReasoningEffort: true, supportsUsageInStreaming: true },
+      compat: {
+        supportsReasoningEffort: true,
+        supportsUsageInStreaming: true,
+        supportedReasoningEfforts: ["medium"],
+      },
     });
     expect(
       provider
         .resolveThinkingProfile?.({ provider: "codex", modelId: "o4-mini" } as never)
         ?.levels.some((level) => level.id === "xhigh"),
     ).toBe(true);
+  });
+
+  it("preserves live GPT-5.6 max reasoning metadata", () => {
+    const provider = buildCodexProvider();
+    const model = provider.resolveDynamicModel?.({
+      provider: "codex",
+      modelId: "gpt-5.6-sol",
+      modelRegistry: { find: () => null },
+    } as never);
+
+    expectRecordFields(model, {
+      id: "gpt-5.6-sol",
+      input: ["text", "image"],
+      thinkingLevelMap: { xhigh: "xhigh", max: "max" },
+      compat: {
+        supportsReasoningEffort: true,
+        supportedReasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
+        supportsUsageInStreaming: true,
+      },
+    });
+    expect(
+      provider
+        .resolveThinkingProfile?.({ provider: "codex", modelId: "gpt-5.6-sol" } as never)
+        ?.levels.map((level) => level.id),
+    ).toEqual(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
   });
 
   it("declares synthetic auth because the harness owns Codex credentials", () => {
@@ -493,7 +532,7 @@ describe("codex provider", () => {
 
     expect(
       result && "provider" in result ? result.provider.models.map((model) => model.id) : [],
-    ).toEqual(["gpt-5.5", "gpt-5.4-mini"]);
+    ).toEqual(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4-mini"]);
   });
 
   it("adds the GPT-5 prompt overlay to Codex provider runs", () => {

@@ -13,9 +13,11 @@ import {
   getWorkboardState,
   loadWorkboard,
   moveWorkboardCard,
+  resetBusinessOpsPromotionState,
   saveWorkboardCardDraft,
   startWorkboardCard,
   stopWorkboardCard,
+  submitBusinessOpsPromotion,
   syncWorkboardLifecycle,
   WORKBOARD_PRIORITIES,
   type WorkboardDependencyState,
@@ -24,6 +26,7 @@ import {
   type WorkboardCard,
   type WorkboardEvent,
   type WorkboardLifecycle,
+  type WorkboardOwnerMode,
   type WorkboardPriority,
   type WorkboardStatus,
   type WorkboardTaskSummary,
@@ -56,6 +59,9 @@ const workboardCardModalId = "workboard-card-modal";
 const workboardCardDetailDrawerId = "workboard-card-detail-drawer";
 const workboardCardDetailTitleId = "workboard-card-detail-title";
 const workboardCardDetailDescriptionId = "workboard-card-detail-description";
+const workboardPromotionModalId = "workboard-business-ops-promotion-modal";
+const workboardPromotionModalTitleId = "workboard-business-ops-promotion-title";
+const workboardPromotionModalDescriptionId = "workboard-business-ops-promotion-description";
 
 const FOCUSABLE_SELECTOR = [
   "a[href]",
@@ -1010,6 +1016,327 @@ function renderCardModal(props: WorkboardProps) {
   `;
 }
 
+function invalidateBusinessOpsPromotion(state: WorkboardUiState) {
+  state.promotionPreview = null;
+  state.promotionError = null;
+}
+
+function openBusinessOpsPromotion(state: WorkboardUiState) {
+  resetBusinessOpsPromotionState(state);
+  state.promotionOpen = true;
+}
+
+function renderBusinessOpsPromotionModal(props: WorkboardProps) {
+  const state = getWorkboardState(props.host);
+  if (!state.promotionOpen) {
+    return nothing;
+  }
+  const agents = props.agentsList?.agents ?? [];
+  const ready = Boolean(
+    state.promotionCandidateId.trim() &&
+    state.promotionSourceRef.trim() &&
+    state.promotionProjectRef.trim() &&
+    state.promotionTitle.trim() &&
+    state.promotionDecisionBoundary.trim() &&
+    state.promotionApprovalNote.trim() &&
+    (state.promotionOwnerMode !== "agent" || state.promotionAgentId),
+  );
+  const update = () => {
+    invalidateBusinessOpsPromotion(state);
+    props.onRequestUpdate?.();
+  };
+  const preview = state.promotionPreview;
+  return html`
+    <div
+      class="workboard-modal"
+      role="presentation"
+      @click=${(event: MouseEvent) => {
+        if (event.target === event.currentTarget) {
+          resetBusinessOpsPromotionState(state);
+          props.onRequestUpdate?.();
+        }
+      }}
+    >
+      <form
+        id=${workboardPromotionModalId}
+        class="workboard-draft workboard-promotion"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby=${workboardPromotionModalTitleId}
+        aria-describedby=${workboardPromotionModalDescriptionId}
+        tabindex="-1"
+        ${ref((element) => syncWorkboardDialog(element, "[data-workboard-autofocus='true']"))}
+        @keydown=${(event: KeyboardEvent) =>
+          handleWorkboardDialogKeydown(event, props, () => resetBusinessOpsPromotionState(state))}
+        @submit=${(event: SubmitEvent) => {
+          event.preventDefault();
+          if (!ready || state.promotionBusy) {
+            return;
+          }
+          void submitBusinessOpsPromotion({
+            host: props.host,
+            client: props.client,
+            approved: false,
+            requestUpdate: props.onRequestUpdate,
+          });
+        }}
+      >
+        <div class="workboard-modal__header">
+          <div>
+            <h2 id=${workboardPromotionModalTitleId}>${t("workboard.promotionTitle")}</h2>
+            <p id=${workboardPromotionModalDescriptionId}>${t("workboard.promotionSubtitle")}</p>
+          </div>
+          <button
+            class="btn btn--icon workboard-card__icon"
+            type="button"
+            title=${t("common.cancel")}
+            aria-label=${t("common.cancel")}
+            @click=${() => {
+              resetBusinessOpsPromotionState(state);
+              props.onRequestUpdate?.();
+            }}
+          >
+            ${icons.x}
+          </button>
+        </div>
+
+        <div class="workboard-draft__meta">
+          <label class="workboard-field">
+            <span>${t("workboard.promotionCandidateId")}</span>
+            <input
+              class="input"
+              data-workboard-autofocus="true"
+              .value=${state.promotionCandidateId}
+              @input=${(event: InputEvent) => {
+                state.promotionCandidateId = (event.currentTarget as HTMLInputElement).value;
+                update();
+              }}
+            />
+          </label>
+          <label class="workboard-field">
+            <span>${t("workboard.promotionOwnerMode")}</span>
+            <select
+              class="input"
+              .value=${state.promotionOwnerMode}
+              @change=${(event: Event) => {
+                state.promotionOwnerMode = (event.currentTarget as HTMLSelectElement)
+                  .value as WorkboardOwnerMode;
+                if (state.promotionOwnerMode === "human") {
+                  state.promotionAgentId = "";
+                }
+                update();
+              }}
+            >
+              <option value="human">${t("workboard.ownerModeHuman")}</option>
+              <option value="agent">${t("workboard.ownerModeAgent")}</option>
+              <option value="shared">${t("workboard.ownerModeShared")}</option>
+            </select>
+          </label>
+          <label class="workboard-field workboard-field--wide">
+            <span>${t("workboard.promotionSourceRef")}</span>
+            <input
+              class="input"
+              .value=${state.promotionSourceRef}
+              @input=${(event: InputEvent) => {
+                state.promotionSourceRef = (event.currentTarget as HTMLInputElement).value;
+                update();
+              }}
+            />
+          </label>
+          <label class="workboard-field workboard-field--wide">
+            <span>${t("workboard.promotionProjectRef")}</span>
+            <input
+              class="input"
+              .value=${state.promotionProjectRef}
+              @input=${(event: InputEvent) => {
+                state.promotionProjectRef = (event.currentTarget as HTMLInputElement).value;
+                update();
+              }}
+            />
+          </label>
+          <label class="workboard-field workboard-field--wide">
+            <span>${t("workboard.fieldTitle")}</span>
+            <input
+              class="input workboard-draft__title"
+              .value=${state.promotionTitle}
+              @input=${(event: InputEvent) => {
+                state.promotionTitle = (event.currentTarget as HTMLInputElement).value;
+                update();
+              }}
+            />
+          </label>
+          <label class="workboard-field workboard-field--wide">
+            <span>${t("workboard.fieldNotes")}</span>
+            <textarea
+              class="input workboard-promotion__textarea"
+              .value=${state.promotionNotes}
+              @input=${(event: InputEvent) => {
+                state.promotionNotes = (event.currentTarget as HTMLTextAreaElement).value;
+                update();
+              }}
+            ></textarea>
+          </label>
+          <label class="workboard-field">
+            <span>${t("workboard.fieldAgent")}</span>
+            <select
+              class="input"
+              ?disabled=${state.promotionOwnerMode === "human"}
+              .value=${state.promotionAgentId}
+              @change=${(event: Event) => {
+                state.promotionAgentId = (event.currentTarget as HTMLSelectElement).value;
+                update();
+              }}
+            >
+              <option value="">${t("workboard.noAgent")}</option>
+              ${agents.map(
+                (agent) => html`
+                  <option value=${agent.id}>
+                    ${agent.name ?? agent.identity?.name ?? agent.id}
+                  </option>
+                `,
+              )}
+            </select>
+          </label>
+          <label class="workboard-field">
+            <span>${t("workboard.fieldPriority")}</span>
+            <select
+              class="input"
+              .value=${state.promotionPriority}
+              @change=${(event: Event) => {
+                state.promotionPriority = (event.currentTarget as HTMLSelectElement)
+                  .value as WorkboardPriority;
+                update();
+              }}
+            >
+              ${WORKBOARD_PRIORITIES.map(
+                (priority) => html`<option value=${priority}>${priority}</option>`,
+              )}
+            </select>
+          </label>
+          <label class="workboard-field">
+            <span>${t("workboard.promotionTargetWindow")}</span>
+            <input
+              class="input"
+              .value=${state.promotionTargetWindow}
+              @input=${(event: InputEvent) => {
+                state.promotionTargetWindow = (event.currentTarget as HTMLInputElement).value;
+                update();
+              }}
+            />
+          </label>
+          <label class="workboard-field">
+            <span>${t("workboard.fieldLabels")}</span>
+            <input
+              class="input"
+              .value=${state.promotionLabels}
+              @input=${(event: InputEvent) => {
+                state.promotionLabels = (event.currentTarget as HTMLInputElement).value;
+                update();
+              }}
+            />
+          </label>
+          <label class="workboard-field workboard-field--wide">
+            <span>${t("workboard.promotionParents")}</span>
+            <textarea
+              class="input workboard-promotion__compact-textarea"
+              .value=${state.promotionParents}
+              @input=${(event: InputEvent) => {
+                state.promotionParents = (event.currentTarget as HTMLTextAreaElement).value;
+                update();
+              }}
+            ></textarea>
+          </label>
+          <label class="workboard-field workboard-field--wide">
+            <span>${t("workboard.promotionDecisionBoundary")}</span>
+            <textarea
+              class="input workboard-promotion__compact-textarea"
+              .value=${state.promotionDecisionBoundary}
+              @input=${(event: InputEvent) => {
+                state.promotionDecisionBoundary = (
+                  event.currentTarget as HTMLTextAreaElement
+                ).value;
+                update();
+              }}
+            ></textarea>
+          </label>
+          <label class="workboard-field workboard-field--wide">
+            <span>${t("workboard.promotionApprovalNote")}</span>
+            <textarea
+              class="input workboard-promotion__compact-textarea"
+              .value=${state.promotionApprovalNote}
+              @input=${(event: InputEvent) => {
+                state.promotionApprovalNote = (event.currentTarget as HTMLTextAreaElement).value;
+                update();
+              }}
+            ></textarea>
+          </label>
+          <label class="workboard-field workboard-field--wide">
+            <span>${t("workboard.promotionProposedLearning")}</span>
+            <textarea
+              class="input workboard-promotion__compact-textarea"
+              .value=${state.promotionProposedLearning}
+              @input=${(event: InputEvent) => {
+                state.promotionProposedLearning = (
+                  event.currentTarget as HTMLTextAreaElement
+                ).value;
+                update();
+              }}
+            ></textarea>
+          </label>
+        </div>
+
+        ${state.promotionError
+          ? html`<div class="callout danger">${state.promotionError}</div>`
+          : nothing}
+        ${preview
+          ? html`
+              <section class="workboard-promotion__preview" aria-live="polite">
+                <div>
+                  <strong>${t(`workboard.promotionAction.${preview.action}`)}</strong>
+                  <span>${t("workboard.promotionPreviewReady")}</span>
+                </div>
+                <ul>
+                  ${(preview.changes.length ? preview.changes : ["none"]).map(
+                    (change) => html`<li>${change}</li>`,
+                  )}
+                </ul>
+              </section>
+            `
+          : nothing}
+        <div class="workboard-modal__actions">
+          <button class="btn" ?disabled=${!ready || state.promotionBusy}>
+            ${icons.eye} ${t("workboard.promotionPreview")}
+          </button>
+          <button
+            class="btn primary"
+            type="button"
+            ?disabled=${!preview || !ready || state.promotionBusy}
+            @click=${() =>
+              submitBusinessOpsPromotion({
+                host: props.host,
+                client: props.client,
+                approved: true,
+                requestUpdate: props.onRequestUpdate,
+              })}
+          >
+            ${icons.check} ${t("workboard.promotionApprove")}
+          </button>
+          <button
+            class="btn"
+            type="button"
+            @click=${() => {
+              resetBusinessOpsPromotionState(state);
+              props.onRequestUpdate?.();
+            }}
+          >
+            ${t("common.cancel")}
+          </button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+
 function formatLifecycle(lifecycle: WorkboardLifecycle): {
   label: string;
   detail: string;
@@ -1281,7 +1608,7 @@ function renderStartExecutionControls(props: WorkboardProps, card: WorkboardCard
   `;
 }
 
-function renderDetailRow(label: string, value: unknown) {
+function renderDetailRow(label: string, value: unknown, options: { wrap?: boolean } = {}) {
   if (typeof value !== "string" && typeof value !== "number") {
     return nothing;
   }
@@ -1290,7 +1617,7 @@ function renderDetailRow(label: string, value: unknown) {
     return nothing;
   }
   return html`
-    <div class="workboard-detail__row">
+    <div class="workboard-detail__row ${options.wrap ? "workboard-detail__row--wrap" : ""}">
       <span>${label}</span>
       <strong>${text}</strong>
     </div>
@@ -1341,6 +1668,14 @@ function renderCardDetailsPanel(props: WorkboardProps) {
   const workerLogs = card.metadata?.workerLogs ?? [];
   const workerProtocol = card.metadata?.workerProtocol;
   const automation = card.metadata?.automation;
+  const promotion = card.metadata?.businessOpsPromotion;
+  const proposedLearning = comments
+    .filter((comment) =>
+      comment.body.startsWith("Proposed Business Ops learning (review required): "),
+    )
+    .map((comment) =>
+      comment.body.slice("Proposed Business Ops learning (review required): ".length),
+    );
   const events = (card.events ?? []).slice(-6).toReversed();
   const busy = state.busyCardId === card.id;
   const showStartControls = writable && cardCanStart(state, props.sessions, card);
@@ -1391,6 +1726,14 @@ function renderCardDetailsPanel(props: WorkboardProps) {
                 : (lifecycle.session?.displayName ?? formatted.detail)}
             </span>
           </div>
+          ${promotion
+            ? html`
+                <div class="workboard-detail__boundary">
+                  <strong>${t("workboard.promotionInternalOnly")}</strong>
+                  <span>${promotion.decisionBoundary}</span>
+                </div>
+              `
+            : nothing}
           <div class="workboard-detail__grid">
             ${renderDetailRow(t("workboard.fieldStatus"), formatStatusLabel(card.status))}
             ${renderDetailRow(
@@ -1412,7 +1755,43 @@ function renderCardDetailsPanel(props: WorkboardProps) {
               </section>
             `
           : nothing}
+        ${promotion
+          ? html`
+              <section class="workboard-detail__section workboard-detail__promotion">
+                <h3>${t("workboard.promotionDetailTitle")}</h3>
+                <div class="workboard-detail__grid">
+                  ${renderDetailRow(t("workboard.promotionCandidateId"), promotion.candidateId)}
+                  ${renderDetailRow(t("workboard.promotionSourceRef"), card.sourceUrl, {
+                    wrap: true,
+                  })}
+                  ${renderDetailRow(t("workboard.promotionProjectRef"), promotion.projectRef, {
+                    wrap: true,
+                  })}
+                  ${renderDetailRow(
+                    t("workboard.promotionOwnerMode"),
+                    t(
+                      `workboard.ownerMode${promotion.ownerMode[0]?.toUpperCase()}${promotion.ownerMode.slice(1)}`,
+                    ),
+                  )}
+                  ${renderDetailRow(
+                    t("workboard.promotionTargetWindow"),
+                    promotion.targetWindow ?? t("workboard.promotionNoTargetWindow"),
+                  )}
+                  ${renderDetailRow(t("workboard.promotionActor"), promotion.promotedBy)}
+                  ${renderDetailRow(
+                    t("workboard.promotionApprovedAt"),
+                    formatTime(promotion.promotedAt),
+                  )}
+                </div>
+                <h4>${t("workboard.promotionDecisionBoundary")}</h4>
+                <p>${promotion.decisionBoundary}</p>
+                <h4>${t("workboard.promotionApprovalNote")}</h4>
+                <p>${promotion.approvalNote}</p>
+              </section>
+            `
+          : nothing}
         ${renderDependencyDetailList(dependencies)}
+        ${renderDetailList(t("workboard.promotionLearningTitle"), proposedLearning)}
         ${renderDetailList(t("workboard.fieldLabels"), card.labels)}
         ${renderDetailList(
           t("workboard.badgeAttempts", { count: String(attempts.length) }),
@@ -1654,6 +2033,11 @@ function renderCard(props: WorkboardProps, card: WorkboardCard) {
             ? html`<span class="workboard-card__archived">${t("workboard.archived")}</span>`
             : nothing}
           ${live ? html`<span class="workboard-live">${t("workboard.live")}</span>` : nothing}
+          ${card.metadata?.businessOpsPromotion
+            ? html`<span class="workboard-card__boundary-chip">
+                ${t("workboard.promotionInternalOnly")}
+              </span>`
+            : nothing}
           ${syncing ? html`<span class="workboard-live">${t("common.saving")}</span>` : nothing}
         </div>
         <div class="workboard-card__quick-actions">
@@ -1890,7 +2274,7 @@ export function renderWorkboard(props: WorkboardProps) {
   for (const card of filtered) {
     byStatus.get(card.status)?.push(card);
   }
-  const dialogOpen = state.draftOpen || Boolean(getVisibleDetailCard(state));
+  const dialogOpen = state.draftOpen || state.promotionOpen || Boolean(getVisibleDetailCard(state));
 
   return html`
     <section class="workboard">
@@ -2003,6 +2387,25 @@ export function renderWorkboard(props: WorkboardProps) {
                   <button
                     class="btn"
                     type="button"
+                    title=${t("workboard.promotionTitle")}
+                    aria-haspopup="dialog"
+                    aria-expanded=${state.promotionOpen ? "true" : "false"}
+                    aria-controls=${workboardPromotionModalId}
+                    @click=${(event: MouseEvent) => {
+                      rememberWorkboardReturnFocus(event.currentTarget);
+                      openBusinessOpsPromotion(state);
+                      props.onRequestUpdate?.();
+                    }}
+                  >
+                    ${icons.fileText} ${t("workboard.promotionButton")}
+                  </button>
+                `
+              : nothing}
+            ${writable
+              ? html`
+                  <button
+                    class="btn"
+                    type="button"
                     title=${t("workboard.dispatch")}
                     ?disabled=${state.loading}
                     @click=${() =>
@@ -2043,7 +2446,8 @@ export function renderWorkboard(props: WorkboardProps) {
           ${state.statuses.map((status) => renderColumn(props, status, byStatus.get(status) ?? []))}
         </div>
       </div>
-      ${renderCardModal(props)} ${renderCardDetailsPanel(props)}
+      ${renderCardModal(props)} ${renderBusinessOpsPromotionModal(props)}
+      ${renderCardDetailsPanel(props)}
     </section>
   `;
 }
