@@ -8,6 +8,16 @@ type CodexPackageManifest = {
   devDependencies?: Record<string, string>;
 };
 
+type CodexShrinkwrap = {
+  packages?: Record<
+    string,
+    {
+      dependencies?: Record<string, string>;
+      version?: string;
+    }
+  >;
+};
+
 describe("codex package manifest", () => {
   it("keeps runtime dependencies in the package manifest", () => {
     const packageJson = JSON.parse(
@@ -16,6 +26,19 @@ describe("codex package manifest", () => {
 
     expect(packageJson.devDependencies).toHaveProperty("@openclaw/plugin-sdk");
     expect(packageJson.dependencies?.["@openai/codex"]).toBe(
+      MANAGED_CODEX_APP_SERVER_PACKAGE_VERSION,
+    );
+  });
+
+  it("keeps the managed Codex runtime pin aligned with npm shrinkwrap", () => {
+    const shrinkwrap = JSON.parse(
+      fs.readFileSync(new URL("../npm-shrinkwrap.json", import.meta.url), "utf8"),
+    ) as CodexShrinkwrap;
+
+    expect(shrinkwrap.packages?.[""]?.dependencies?.["@openai/codex"]).toBe(
+      MANAGED_CODEX_APP_SERVER_PACKAGE_VERSION,
+    );
+    expect(shrinkwrap.packages?.["node_modules/@openai/codex"]?.version).toBe(
       MANAGED_CODEX_APP_SERVER_PACKAGE_VERSION,
     );
   });

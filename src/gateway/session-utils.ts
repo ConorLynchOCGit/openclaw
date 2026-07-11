@@ -296,43 +296,43 @@ function resolveCodexChildThreadId(task: TaskRecord, metadata: TaskEventMetadata
 function buildCodexNativeChildRunsForSession(
   sessionKey: string,
 ): GatewaySessionRow["codexNativeChildRuns"] {
-  const children = listTasksForRelatedSessionKey(sessionKey)
+  const tasks = listTasksForRelatedSessionKey(sessionKey)
     .filter(isCodexNativeSubagentTask)
-    .slice()
-    .sort(
+    .toSorted(
       (a, b) =>
         (b.lastEventAt ?? b.endedAt ?? b.startedAt ?? b.createdAt) -
         (a.lastEventAt ?? a.endedAt ?? a.startedAt ?? a.createdAt),
-    )
-    .map((task) => {
-      const metadata = task.executionReceipt?.latestEvent?.metadata;
-      const childThreadId = resolveCodexChildThreadId(task, metadata);
-      const metadataLabel = formatCodexNativeChildRunLabel(metadata);
-      const label = chooseCodexNativeChildRunLabel(task.label, metadataLabel);
-      return {
-        source: "codex-native" as const,
-        taskId: task.taskId,
-        ...(task.runId ? { runId: task.runId } : {}),
-        ...(childThreadId ? { childThreadId } : {}),
-        ...(readTaskMetadataString(metadata, "childRole")
-          ? { role: readTaskMetadataString(metadata, "childRole") }
-          : {}),
-        ...(readTaskMetadataString(metadata, "childAgentPath")
-          ? { agentPath: readTaskMetadataString(metadata, "childAgentPath") }
-          : {}),
-        ...(readTaskMetadataString(metadata, "spawnReason")
-          ? { objective: readTaskMetadataString(metadata, "spawnReason") }
-          : {}),
-        ...(label ? { label } : {}),
-        status: task.status,
-        ...(task.terminalOutcome ? { terminalOutcome: task.terminalOutcome } : {}),
-        ...(task.startedAt !== undefined ? { startedAt: task.startedAt } : {}),
-        ...(task.endedAt !== undefined ? { endedAt: task.endedAt } : {}),
-        ...(task.lastEventAt !== undefined ? { lastEventAt: task.lastEventAt } : {}),
-        ...(task.progressSummary ? { progressSummary: task.progressSummary } : {}),
-        ...(task.terminalSummary ? { terminalSummary: task.terminalSummary } : {}),
-      };
+    );
+  const children: NonNullable<GatewaySessionRow["codexNativeChildRuns"]> = [];
+  for (const task of tasks) {
+    const metadata = task.executionReceipt?.latestEvent?.metadata;
+    const childThreadId = resolveCodexChildThreadId(task, metadata);
+    const metadataLabel = formatCodexNativeChildRunLabel(metadata);
+    const label = chooseCodexNativeChildRunLabel(task.label, metadataLabel);
+    children.push({
+      source: "codex-native" as const,
+      taskId: task.taskId,
+      ...(task.runId ? { runId: task.runId } : {}),
+      ...(childThreadId ? { childThreadId } : {}),
+      ...(readTaskMetadataString(metadata, "childRole")
+        ? { role: readTaskMetadataString(metadata, "childRole") }
+        : {}),
+      ...(readTaskMetadataString(metadata, "childAgentPath")
+        ? { agentPath: readTaskMetadataString(metadata, "childAgentPath") }
+        : {}),
+      ...(readTaskMetadataString(metadata, "spawnReason")
+        ? { objective: readTaskMetadataString(metadata, "spawnReason") }
+        : {}),
+      ...(label ? { label } : {}),
+      status: task.status,
+      ...(task.terminalOutcome ? { terminalOutcome: task.terminalOutcome } : {}),
+      ...(task.startedAt !== undefined ? { startedAt: task.startedAt } : {}),
+      ...(task.endedAt !== undefined ? { endedAt: task.endedAt } : {}),
+      ...(task.lastEventAt !== undefined ? { lastEventAt: task.lastEventAt } : {}),
+      ...(task.progressSummary ? { progressSummary: task.progressSummary } : {}),
+      ...(task.terminalSummary ? { terminalSummary: task.terminalSummary } : {}),
     });
+  }
   return children.length > 0 ? children : undefined;
 }
 
@@ -515,6 +515,40 @@ function shouldKeepStoreOnlyChildLink(entry: SessionEntry, now: number): boolean
   );
 }
 
+function shouldKeepChildLinkForParentEpisode(params: {
+  child: SessionEntry;
+  parent: SessionEntry | undefined;
+  now: number;
+}): boolean {
+  if (shouldKeepStoreOnlyChildLink(params.child, params.now)) {
+    return true;
+  }
+  const parentStartedAt = params.parent?.startedAt;
+  if (!isFinitePositiveTimestamp(parentStartedAt)) {
+    return false;
+  }
+  const childEpisodeAt = isFinitePositiveTimestamp(params.child.startedAt)
+    ? params.child.startedAt
+    : isFinitePositiveTimestamp(params.child.endedAt)
+      ? params.child.endedAt
+      : params.child.updatedAt;
+  if (!isFinitePositiveTimestamp(childEpisodeAt) || childEpisodeAt < parentStartedAt) {
+    return false;
+  }
+  const parentEndedAt = isFinitePositiveTimestamp(params.parent?.endedAt)
+    ? params.parent.endedAt
+    : isTerminalSessionStatus(params.parent?.status) &&
+        isFinitePositiveTimestamp(params.parent?.updatedAt)
+      ? params.parent.updatedAt
+      : undefined;
+  if (parentEndedAt !== undefined) {
+    return (
+      childEpisodeAt <= parentEndedAt && params.now - parentEndedAt <= RECENT_ENDED_CHILD_SESSION_MS
+    );
+  }
+  return params.parent?.status === "running" || !isTerminalSessionStatus(params.parent?.status);
+}
+
 type SessionListRowContext = {
   storeChildSessionsByKey: Map<string, string[]>;
   selectedModelByOverrideRef: Map<string, ReturnType<typeof resolveSessionModelRef>>;
@@ -648,10 +682,17 @@ function buildStoreChildSessionIndex(
     if (parentKeys.length === 0) {
       continue;
     }
-    if (!shouldKeepStoreOnlyChildLink(entry, now) && !hasKeepableStoreDescendant(store, key, now)) {
-      continue;
-    }
     for (const parentKey of parentKeys) {
+      if (
+        !shouldKeepChildLinkForParentEpisode({
+          child: entry,
+          parent: store[parentKey],
+          now,
+        }) &&
+        !hasKeepableStoreDescendant(store, key, now)
+      ) {
+        continue;
+      }
       addChildSessionKey(childSessionsByKey, parentKey, key);
     }
   }
@@ -679,7 +720,13 @@ function hasKeepableStoreDescendant(
     if (!parentKeys.includes(parentKey)) {
       continue;
     }
-    if (shouldKeepStoreOnlyChildLink(entry, now)) {
+    if (
+      shouldKeepChildLinkForParentEpisode({
+        child: entry,
+        parent: store[parentKey],
+        now,
+      })
+    ) {
       return true;
     }
     if (hasKeepableStoreDescendant(store, key, now, seen)) {
@@ -702,7 +749,11 @@ function resolveStoreChildSessionKeysFromCandidates(params: {
       continue;
     }
     if (
-      !shouldKeepStoreOnlyChildLink(entry, params.now) &&
+      !shouldKeepChildLinkForParentEpisode({
+        child: entry,
+        parent: params.store[params.key],
+        now: params.now,
+      }) &&
       !hasKeepableStoreDescendant(params.store, childKey, params.now)
     ) {
       continue;
@@ -825,8 +876,7 @@ function readActiveDescendantTrajectoryProgress(params: {
   const seen = new Set<string>([params.parentKey]);
   let best: ReadbackProgressProjection | undefined;
 
-  for (let index = 0; index < queued.length; index += 1) {
-    const childKey = queued[index];
+  for (const childKey of queued) {
     if (!childKey || seen.has(childKey)) {
       continue;
     }
@@ -2937,7 +2987,11 @@ function filterSessionEntries(params: {
         return false;
       }
       return (
-        (shouldKeepStoreOnlyChildLink(entry, now) ||
+        (shouldKeepChildLinkForParentEpisode({
+          child: entry,
+          parent: params.store[spawnedBy],
+          now,
+        }) ||
           hasKeepableStoreDescendant(params.store, key, now)) &&
         (entry?.spawnedBy === spawnedBy || entry?.parentSessionKey === spawnedBy)
       );

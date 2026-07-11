@@ -204,8 +204,17 @@ function isCodexCodingAgentId(agentId: string): boolean {
   return CODEX_CODING_AGENT_IDS.has(agentId.trim().toLowerCase());
 }
 
-function resolveTaskToolContext(params: { agentId: string; requestedContext: unknown }) {
-  if (isCodexCodingAgentId(params.agentId)) {
+function resolveTaskToolContext(params: {
+  agentId: string;
+  requesterAgentId?: string;
+  requestedContext: unknown;
+}) {
+  const targetAgentId = params.agentId.trim().toLowerCase();
+  const requesterAgentId = params.requesterAgentId?.trim().toLowerCase();
+  if (
+    isCodexCodingAgentId(params.agentId) ||
+    (requesterAgentId !== undefined && requesterAgentId !== targetAgentId)
+  ) {
     return "isolated" as const;
   }
   return params.requestedContext === "fork" || params.requestedContext === "isolated"
@@ -221,6 +230,7 @@ function formatCodingTaskHandoffContract(agentId: string): string | undefined {
     "[Coding Artifact Handoff Contract]",
     "If the task includes a workspace-visible prompt, spec, or artifact file path, read that file in full before implementation and treat it as authoritative scope.",
     "The task text is route/scope guidance only when a prompt/spec/artifact file is referenced; do not work from a parent summary instead of the referenced file.",
+    "An OpenClaw transcript/session receipt is transport evidence, not a Codex work artifact. If a required plan has no ordinary workspace-visible file path, do not search session stores or the workspace to reconstruct it; close blocked with workspace_artifact_path_missing.",
     "Live-agent paths must be workspace-relative paths such as docs/... or src/openclaw/..., or absolute paths under /home/node/.openclaw/workspace/.",
     "Do not use host-absolute root or service-checkout provenance paths as execution/read paths. If only host-absolute refs are available, close blocked with runtime_visible_artifact_missing.",
     "In final closeout, report each governing file ref with observed chars and sha256 digest, or explicitly state that the ref was unreadable and why.",
@@ -459,6 +469,7 @@ export function createTaskTool(
       const taskName = taskNameResult.taskName;
       const context = resolveTaskToolContext({
         agentId,
+        requesterAgentId: resolveRequesterAgentId(opts),
         requestedContext: params.context,
       });
       const lightContext = resolveTaskToolLightContext(agentId, params.lightContext);

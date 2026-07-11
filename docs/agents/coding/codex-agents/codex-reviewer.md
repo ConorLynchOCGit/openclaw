@@ -1,7 +1,9 @@
 # codex_reviewer
 
-`codex_reviewer` is the Codex-native reviewer for Coding team behavior. It
-reviews whether the Coding parent used the Codex workbench correctly.
+`codex_reviewer` is the Codex-native completion and workbench reviewer. It
+reviews whether the Coding parent used the Codex workbench correctly and
+whether its completion claim matches the exact governing artifacts and actual
+diff/validation evidence.
 
 It is distinct from:
 
@@ -23,6 +25,8 @@ matter:
   inspection?
 - Were validation/review/delegation choices proportionate to risk?
 - Did OpenClaw remain launcher, observer, mirror, and receipt layer only?
+- Did every explicit requirement, prohibition, outcome, and acceptance
+  condition receive implementation evidence or an honest remaining-work status?
 
 `codex_reviewer` is read-only. It does not gate the runtime, retry work, own code
 correctness, or emit quality state. It returns a prose review artifact for the
@@ -36,6 +40,11 @@ not assume OpenClaw session-detail fields are directly queryable; they are
 OpenClaw/operator readback, not Codex child tools. Use raw Codex rollout
 archaeology only when the parent-provided bounded evidence is absent,
 contradictory, or too thin to judge the workbench claim.
+
+Read the exact governing prompt/spec/plan paths supplied by the parent. Block a
+full-completion claim when an outcome is absent, a prohibition was weakened,
+validation is missing, or only a first slice was implemented. Return `partial`
+with exact remaining work when the implemented subset is valid.
 
 Do not downgrade a coherent pack solely because it lacks raw-log negative proof
 for absent OpenClaw dynamic tools. Tool-surface absence is a

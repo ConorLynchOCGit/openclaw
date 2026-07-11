@@ -174,6 +174,8 @@ describe("task tool", () => {
     const spawnArgs = JSON.stringify(hoisted.spawnSubagentDirectMock.mock.calls[0]?.[0]);
     expect(spawnArgs).toContain("Coding Artifact Handoff Contract");
     expect(spawnArgs).toContain("read that file in full before implementation");
+    expect(spawnArgs).toContain("workspace_artifact_path_missing");
+    expect(spawnArgs).toContain("transport evidence, not a Codex work artifact");
     expect(spawnArgs).not.toContain("/root/");
     expect(spawnArgs).not.toContain("/srv/");
     expect(spawnArgs).not.toContain("/root/services");
@@ -215,6 +217,44 @@ describe("task tool", () => {
         agentId: "coding",
         context: "isolated",
         task: expect.stringContaining("Coding Artifact Handoff Contract"),
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("forces all cross-agent foreground tasks to isolated context when fork is requested", async () => {
+    await createTaskTool({
+      agentSessionKey: "agent:main:operator",
+      requesterAgentIdOverride: "main",
+    }).execute("call-1", {
+      agentId: "planning",
+      task: "Produce the complete plan at plans/proof-plan.md.",
+      context: "fork",
+    });
+
+    expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "planning",
+        context: "isolated",
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("preserves same-agent fork context", async () => {
+    await createTaskTool({
+      agentSessionKey: "agent:planning:operator",
+      requesterAgentIdOverride: "planning",
+    }).execute("call-1", {
+      agentId: "planning",
+      task: "Continue this Planning-owned thread context.",
+      context: "fork",
+    });
+
+    expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "planning",
+        context: "fork",
       }),
       expect.anything(),
     );

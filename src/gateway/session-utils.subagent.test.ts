@@ -1009,6 +1009,49 @@ describe("listSessionsFromStore subagent metadata", () => {
     expect(filtered.sessions.map((session) => session.key)).toStrictEqual([]);
   });
 
+  test("keeps an earlier terminal child visible through the current parent work episode", () => {
+    resetSubagentRegistryForTests({ persist: false });
+    const now = Date.now();
+    const parentKey = "agent:main:proof-run";
+    const childKey = "agent:planning:subagent:early-plan";
+    const store: Record<string, SessionEntry> = {
+      [parentKey]: {
+        sessionId: "sess-proof-run",
+        startedAt: now - 65 * 60_000,
+        updatedAt: now,
+        status: "done",
+        endedAt: now - 1_000,
+      } as SessionEntry,
+      [childKey]: {
+        sessionId: "sess-early-plan",
+        spawnedBy: parentKey,
+        startedAt: now - 60 * 60_000,
+        updatedAt: now - 31 * 60_000,
+        status: "done",
+        endedAt: now - 31 * 60_000,
+      } as SessionEntry,
+    };
+
+    const all = listSessionsFromStore({
+      cfg,
+      storePath: "/tmp/sessions.json",
+      store,
+      opts: {},
+      now,
+    });
+    const parent = all.sessions.find((session) => session.key === parentKey);
+    expect(parent?.childSessions).toEqual([childKey]);
+
+    const filtered = listSessionsFromStore({
+      cfg,
+      storePath: "/tmp/sessions.json",
+      store,
+      opts: { spawnedBy: parentKey },
+      now,
+    });
+    expect(filtered.sessions.map((session) => session.key)).toEqual([childKey]);
+  });
+
   test("does not reattach stale orphan store-only child links without lifecycle fields", () => {
     resetSubagentRegistryForTests({ persist: false });
     const now = Date.now();

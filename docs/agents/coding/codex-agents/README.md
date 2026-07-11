@@ -31,8 +31,9 @@ Reviewer boundaries:
 
 - `code_reviewer`: diff correctness, regressions, security, maintainability,
   and missing tests.
-- `codex_reviewer`: Codex-native team/workbench behavior, helper use, parent
-  rework, and OpenClaw dynamic-tool leakage.
+- `codex_reviewer`: truthful full-scope completion plus Codex-native
+  team/workbench behavior, helper use, parent rework, and OpenClaw dynamic-tool
+  leakage.
 - `creative_quality_reviewer`: Business Ops creative, message, channel, and
   publication-readiness review.
 - `native_fit_reviewer`: OpenClaw/GBrain/Codex architecture fit, duplicate
@@ -44,12 +45,17 @@ Team shape:
 
 - Do not spawn unbounded or autonomous helper trees. Delegate when task shape
   merits it, using the smallest team shape that covers the risk.
+- The Coding parent spawns one layer of direct purpose-agent children; leaf
+  children do not recursively delegate.
+- Prefer bounded decision episodes: one uncertainty, a small evidence budget,
+  one Context Pack, then parent action. Do not assign one child a whole-project
+  tour or continuously stream ordinary findings.
 - `solo`: one or two known files, a small patch, low ambiguity, and low review
   risk.
 - `light team`: broad read-heavy docs/source/domain work, validation risk, or
-  review risk. Use `project_explorer` or built-in `explorer` before broad
-  parent inspection, and use the smallest reviewer set that can catch the
-  material failure mode.
+  review risk. Use the canonical `project_explorer` before broad parent
+  inspection, and use the smallest reviewer set that can catch the material
+  failure mode.
 - `architecture team`: cross-runtime, OpenClaw/Codex/GBrain, deploy/proof,
   tool/readback behavior, or multi-surface changes. Include planning,
   native-fit/architecture, validation, and review roles when they affect the
@@ -58,3 +64,8 @@ Team shape:
 Do not spawn all reviewers by default. Coding chooses the smallest reviewer set
 whose trigger applies and records skipped-reviewer rationale in closeout for
 nontrivial work.
+
+For long, multi-surface, or spec-driven work, use `codex_reviewer` to reconcile
+the exact governing artifacts, diff, validation, helper evidence, and proposed
+completion claim. A valid first slice remains `partial` until the full objective
+is complete.

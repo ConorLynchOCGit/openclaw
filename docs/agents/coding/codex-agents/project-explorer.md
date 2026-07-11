@@ -1,7 +1,7 @@
 # project_explorer
 
-`project_explorer` is the read-only Codex helper for bounded source, caller,
-test, and architecture mapping before implementation.
+`project_explorer` is the read-only Codex helper for one bounded source,
+caller, test, or architecture decision before implementation.
 
 Use it early for broad or unfamiliar source surfaces, especially when the parent
 Coding session would otherwise run repeated searches across multiple directories.
@@ -19,3 +19,8 @@ Tool habit:
 Return an Implementation Context Pack with exact files, symbols, tests,
 ownership boundaries, constraints, risks, and stop rationale. The parent Coding
 session should consume this pack instead of redoing broad exploration.
+
+Use a bounded decision episode: one concrete question, a small evidence budget,
+one compact Context Pack, then stop. Put independent follow-up questions in
+`Inspect Next`. Interrupt early only for a plan-invalidating blocker; do not
+stream ordinary provisional findings or turn the mission into a repo tour.

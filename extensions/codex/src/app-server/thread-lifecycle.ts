@@ -123,10 +123,10 @@ const CODEX_TOOL_SEARCH_UNSUPPORTED_THREAD_CONFIG: JsonObject = {
 
 const CODEX_NATIVE_CODING_TEAM_AGENT_IDS = new Set(["coding", "execution-coding"]);
 
+// The project .codex/config.toml owns team size and depth; thread start only
+// keeps multi-agent mode enabled for Coding even when model defaults disable it.
 const CODEX_NATIVE_CODING_TEAM_THREAD_CONFIG: JsonObject = {
   "features.multi_agent": true,
-  "agents.max_threads": 6,
-  "agents.max_depth": 2,
 };
 
 function isCodexNativeCodingTeamRun(

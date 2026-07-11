@@ -414,9 +414,9 @@ describe("Codex app-server native code mode config", () => {
       "features.code_mode_only": false,
       "features.apply_patch_streaming_events": true,
       "features.multi_agent": true,
-      "agents.max_threads": 6,
-      "agents.max_depth": 2,
     });
+    expect(request.config).not.toHaveProperty("agents.max_threads");
+    expect(request.config).not.toHaveProperty("agents.max_depth");
     expect(request).not.toHaveProperty("developerInstructions");
   });
 
@@ -454,9 +454,9 @@ describe("Codex app-server native code mode config", () => {
 
     expect(request.config).toMatchObject({
       "features.multi_agent": true,
-      "agents.max_threads": 6,
-      "agents.max_depth": 2,
     });
+    expect(request.config).not.toHaveProperty("agents.max_threads");
+    expect(request.config).not.toHaveProperty("agents.max_depth");
   });
 
   it("keeps Codex-native coding team subagents enabled for execution-coding runs", () => {
@@ -473,9 +473,9 @@ describe("Codex app-server native code mode config", () => {
 
     expect(request.config).toMatchObject({
       "features.multi_agent": true,
-      "agents.max_threads": 6,
-      "agents.max_depth": 2,
     });
+    expect(request.config).not.toHaveProperty("agents.max_threads");
+    expect(request.config).not.toHaveProperty("agents.max_depth");
   });
 
   it("removes Codex model personality on thread/resume", () => {
