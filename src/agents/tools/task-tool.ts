@@ -39,6 +39,7 @@ const TASK_WAIT_POLL_MS = 60_000;
 const TASK_RESULT_PARENT_INLINE_MAX_CHARS = 1_800;
 const PLANNING_REVIEW_TASK_RESULT_INLINE_MAX_CHARS = 12_000;
 const TASK_RESULT_PARENT_PREVIEW_MAX_CHARS = 0;
+const TASK_RESULT_RECEIPT_LEAD_MAX_CHARS = 160;
 const RECEIPT_ONLY_PARENT_AGENT_IDS = new Set(["main"]);
 const CODEX_CODING_AGENT_IDS = new Set(["coding", "execution-coding"]);
 const DEFAULT_LIGHT_CONTEXT_AGENT_IDS = new Set([
@@ -108,6 +109,8 @@ function formatTaskResult(params: {
   receiptOnly: boolean;
   resultRef: string;
   transcriptFinalRef: string;
+  receiptLeadLine?: string;
+  inspectCommand: string;
   previewText?: string;
   previewChars?: number;
   recoveryHistory?: Array<{ source: string; status: string; error?: string }>;
@@ -120,7 +123,17 @@ function formatTaskResult(params: {
     return [
       `<task_receipt ref="${escapeXmlAttr(
         params.transcriptFinalRef,
-      )}" chars="${params.contentChars}" digest="${escapeXmlAttr(params.contentDigest)}">`,
+      )}" source="transcript" transportStatus="completed" chars="${params.contentChars}" digest="${escapeXmlAttr(params.contentDigest)}">`,
+      ...(params.receiptLeadLine
+        ? [
+            '  <task_receipt_lead modelAuthored="true">',
+            escapeXmlText(params.receiptLeadLine),
+            "  </task_receipt_lead>",
+          ]
+        : []),
+      "  <inspect_command>",
+      escapeXmlText(params.inspectCommand),
+      "  </inspect_command>",
       ...formatTaskRecoveryHistory(params.recoveryHistory),
       "</task_receipt>",
     ].join("\n");
@@ -237,9 +250,23 @@ function formatCodingTaskHandoffContract(agentId: string): string | undefined {
   ].join("\n");
 }
 
+function formatTaskCloseoutContract(): string {
+  return [
+    "[Task Closeout Contract]",
+    'Start the final response with exactly one model-authored line: "Verdict: complete", "Verdict: partial", or "Verdict: blocked".',
+    "Choose the verdict from your own domain judgment and the governing requirements. Transport completion alone is not semantic completion.",
+    "The runtime may carry that exact lead line in a parent receipt, but it will not interpret it, enforce it, or turn it into quality state.",
+  ].join("\n");
+}
+
 function renderTaskForChild(params: { agentId: string; task: string }): string {
   const contract = formatCodingTaskHandoffContract(params.agentId);
-  return contract ? [contract, "[Task Scope]", params.task].join("\n\n") : params.task;
+  return [
+    ...(contract ? [contract] : []),
+    formatTaskCloseoutContract(),
+    "[Task Scope]",
+    params.task,
+  ].join("\n\n");
 }
 
 export async function buildTaskTranscriptFinalRef(params: {
@@ -289,6 +316,17 @@ function buildTaskResultPreview(replyText: string, inlineResult: boolean): strin
     return undefined;
   }
   return trimmed.slice(0, TASK_RESULT_PARENT_PREVIEW_MAX_CHARS);
+}
+
+function buildTaskReceiptLeadLine(replyText: string): string | undefined {
+  const firstLine = replyText
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (!firstLine || firstLine.length > TASK_RESULT_RECEIPT_LEAD_MAX_CHARS) {
+    return undefined;
+  }
+  return /^(?:Verdict): (?:complete|partial|blocked)$/u.test(firstLine) ? firstLine : undefined;
 }
 
 async function waitForForegroundTaskResult(params: {
@@ -603,6 +641,8 @@ export function createTaskTool(
         childSessionKey: spawn.childSessionKey,
         cfg: opts?.config,
       });
+      const receiptLeadLine = buildTaskReceiptLeadLine(replyText);
+      const inspectCommand = `openclaw sessions show ${spawn.childSessionKey} --agent ${agentId}`;
       const previewText = buildTaskResultPreview(replyText, inlineResult);
       const text = formatTaskResult({
         childSessionKey: spawn.childSessionKey,
@@ -618,6 +658,8 @@ export function createTaskTool(
         receiptOnly,
         resultRef,
         transcriptFinalRef,
+        receiptLeadLine,
+        inspectCommand,
         previewText,
         previewChars: previewText?.length ?? 0,
         recoveryHistory: wait.recoveryHistory,
@@ -644,6 +686,8 @@ export function createTaskTool(
         resultRef,
         resultSource: "transcript",
         transcriptFinalRef,
+        ...(receiptLeadLine ? { receiptLeadLine } : {}),
+        inspectCommand,
         previewOnly: !inlineResult,
         previewChars: previewText?.length ?? 0,
         displayTruncated: !inlineResult,

@@ -461,6 +461,8 @@ function compactTaskToolEventResult(result: unknown): unknown {
     "resultMode",
     "resultRef",
     "transcriptFinalRef",
+    "receiptLeadLine",
+    "inspectCommand",
     "parentInlineLimitChars",
     "partialResultChars",
     "partialResultTruncated",

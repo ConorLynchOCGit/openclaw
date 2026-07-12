@@ -73,7 +73,7 @@ describe("task tool", () => {
     expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
       expect.objectContaining({
         agentId: "codebase-researcher",
-        task: "Inspect source and return a Context Pack.",
+        task: expect.stringContaining("Inspect source and return a Context Pack."),
         taskName: "codebase_scan",
         mode: "run",
         cleanup: "keep",
@@ -289,7 +289,9 @@ describe("task tool", () => {
 
     expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        task: "Review policy/approval-route and docs/application-boundary.md.",
+        task: expect.stringContaining(
+          "Review policy/approval-route and docs/application-boundary.md.",
+        ),
       }),
       expect.anything(),
     );
@@ -378,8 +380,10 @@ describe("task tool", () => {
     expect(content.text).toContain(`digest="${digestText(shortPlanningResult)}"`);
     expect(content.text).not.toContain('agentId="planning"');
     expect(content.text).not.toContain('status="completed"');
-    expect(content.text).not.toContain('source="transcript"');
-    expect(content.text).not.toContain("<inspect_command>");
+    expect(content.text).toContain('source="transcript"');
+    expect(content.text).toContain('transportStatus="completed"');
+    expect(content.text).toContain("<inspect_command>");
+    expect(content.text).not.toContain("<task_receipt_lead");
     expect(content.text).not.toContain("<task_result>");
     expect(content.text).not.toContain("<task_result_preview");
     expect(content.text).not.toContain(shortPlanningResult);
@@ -409,6 +413,35 @@ describe("task tool", () => {
     });
     expect(content.text).toContain("<task_receipt");
     expect(content.text).not.toContain(shortPlanningResult);
+  });
+
+  it("carries only an exact model-authored verdict line in Main's receipt", async () => {
+    const childResult = "Verdict: partial\n\nSubstantive child-owned artifact prose stays out.";
+    hoisted.readLatestAssistantReplyMock.mockResolvedValue(childResult);
+
+    const result = await createTaskTool({
+      agentSessionKey: "agent:main:operator",
+      requesterAgentIdOverride: "main",
+    }).execute("call-1", {
+      agentId: "business-ops",
+      task: "Produce a truthful domain closeout.",
+    });
+
+    expect(result.details).toMatchObject({
+      resultInline: false,
+      resultMode: "pointer",
+      receiptLeadLine: "Verdict: partial",
+      inspectCommand:
+        "openclaw sessions show agent:codebase-researcher:subagent:child --agent business-ops",
+    });
+    const content = result.content[0];
+    expect(content?.type).toBe("text");
+    if (!content || content.type !== "text") {
+      throw new Error("Expected text tool result");
+    }
+    expect(content.text).toContain('<task_receipt_lead modelAuthored="true">');
+    expect(content.text).toContain("Verdict: partial");
+    expect(content.text).not.toContain("Substantive child-owned artifact prose stays out.");
   });
 
   it("returns native child transcript pointers instead of large child finals as parent context", async () => {

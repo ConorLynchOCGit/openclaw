@@ -1986,6 +1986,9 @@ describe("control UI credential redaction (issue #72283)", () => {
             contentTruncated: false,
             resultChars: childPacket.length,
             resultTruncated: false,
+            receiptLeadLine: "Verdict: partial",
+            inspectCommand:
+              "openclaw sessions show agent:codebase-researcher:subagent:child --agent codebase-researcher",
           },
         },
       } as never,
@@ -2006,6 +2009,9 @@ describe("control UI credential redaction (issue #72283)", () => {
       contentDigest: "sha256:child",
       contentChars: childPacket.length,
       resultChars: childPacket.length,
+      receiptLeadLine: "Verdict: partial",
+      inspectCommand:
+        "openclaw sessions show agent:codebase-researcher:subagent:child --agent codebase-researcher",
     });
     const serialized = JSON.stringify(resultEvent.data?.result);
     expect(serialized).not.toContain("planner evidence");
