@@ -41,18 +41,20 @@ describe("WorkboardStore", () => {
     const store = new WorkboardStore(createMemoryStore());
     const parent = await store.create({ title: "Refresh source claims", status: "todo" });
     const input = {
-      candidateId: "AA-CAND-014",
+      candidateId: "AA-CYCLE-001",
       sourceRef:
-        "business-ops/projects/american-atomics/investor-content-system/candidate-actions.md#AA-CAND-014",
-      projectRef: "business-ops/projects/american-atomics/investor-content-system",
+        "business-ops/companies/american-atomics/projects/investor-content-system/campaign-revision-cycle.md#exact-native-workboard-preview-intent",
+      projectRef: "business-ops/companies/american-atomics/projects/investor-content-system",
       ownerMode: "shared",
-      targetWindow: "2026 Q3, after operator review",
+      targetWindow: "After source, asset-rights, and reviewer-route intake",
       decisionBoundary:
-        "Internal execution only; publication and securities approval remain separate.",
+        "Internal revision review only; no claim, legal/securities, publication, external-record, or learning acceptance authority.",
       promotedBy: "operator:test",
-      approvalNote: "Promote the internal revision cycle, not any public claim.",
-      proposedLearning: "Compare revision dispositions against the campaign measurement baseline.",
-      title: "Run American Atomics campaign revision cycle",
+      approvalNote:
+        "Operator approves one native internal review commitment only; candidate content remains unpublished and unapproved.",
+      proposedLearning:
+        "A known/unknown/next-proof structure may improve internal credibility scores versus a generic macro hook; review after approved evidence exists.",
+      title: "Review American Atomics proof-before-promotion revision packet",
       notes: "Acceptance: claim, asset, creative, approval, and measurement evidence are linked.",
       status: "todo",
       priority: "high",
@@ -69,9 +71,9 @@ describe("WorkboardStore", () => {
       changes: ["card"],
       preview: {
         promotion: {
-          candidateId: "AA-CAND-014",
+          candidateId: "AA-CYCLE-001",
           ownerMode: "shared",
-          targetWindow: "2026 Q3, after operator review",
+          targetWindow: "After source, asset-rights, and reviewer-route intake",
         },
       },
     });
@@ -88,7 +90,7 @@ describe("WorkboardStore", () => {
       metadata: {
         automation: { boardId: "investor-comms" },
         businessOpsPromotion: {
-          candidateId: "AA-CAND-014",
+          candidateId: "AA-CYCLE-001",
           projectRef: input.projectRef,
           ownerMode: "shared",
           targetWindow: input.targetWindow,

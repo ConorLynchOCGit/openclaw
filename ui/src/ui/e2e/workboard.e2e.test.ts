@@ -498,26 +498,28 @@ describeControlUiE2e("Control UI Workboard mocked Gateway E2E", () => {
     const artifacts: ProofArtifacts = { screenshots: [], videos: [] };
     const promotedCard = card({
       id: "card-business-ops",
-      title: "Run campaign revision cycle",
+      title: "Review American Atomics proof-before-promotion revision packet",
       priority: "high",
       labels: ["business-ops", "investor-comms"],
       sourceUrl:
-        "business-ops/companies/american-atomics/projects/investor-content-system/workboard-candidate-actions.md#AA-CAND-014",
+        "business-ops/companies/american-atomics/projects/investor-content-system/campaign-revision-cycle.md#exact-native-workboard-preview-intent",
       metadata: {
         businessOpsPromotion: {
-          candidateId: "AA-CAND-014",
+          candidateId: "AA-CYCLE-001",
           projectRef: "business-ops/companies/american-atomics/projects/investor-content-system",
           ownerMode: "shared",
-          targetWindow: "After claim and asset review",
-          decisionBoundary: "Internal execution only; publication approval remains separate.",
+          targetWindow: "After source, asset-rights, and reviewer-route intake",
+          decisionBoundary:
+            "Internal revision review only; no claim, legal/securities, publication, external-record, or learning acceptance authority.",
           promotedBy: "operator",
           promotedAt: baseTime + 10,
-          approvalNote: "Proceed with internal revision and learning work only.",
+          approvalNote:
+            "Operator approves one native internal review commitment only; candidate content remains unpublished and unapproved.",
         },
         comments: [
           {
             id: "learning-1",
-            body: "Proposed Business Ops learning (review required): Compare revision dispositions with the measurement baseline.",
+            body: "Proposed Business Ops learning (review required): A known/unknown/next-proof structure may improve internal credibility scores versus a generic macro hook; review after approved evidence exists.",
             createdAt: baseTime + 10,
           },
         ],
@@ -539,27 +541,35 @@ describeControlUiE2e("Control UI Workboard mocked Gateway E2E", () => {
       await statusColumn(recorded.page, "Todo").waitFor({ state: "visible" });
       await recorded.page.getByRole("button", { name: "Promote candidate" }).click();
       const dialog = recorded.page.getByRole("dialog", { name: "Business Ops promotion" });
-      await dialog.getByLabel("Candidate ID").fill("AA-CAND-014");
+      await dialog.getByLabel("Candidate ID").fill("AA-CYCLE-001");
       await dialog
         .getByLabel("Source reference")
         .fill(
-          "business-ops/companies/american-atomics/projects/investor-content-system/workboard-candidate-actions.md#AA-CAND-014",
+          "business-ops/companies/american-atomics/projects/investor-content-system/campaign-revision-cycle.md#exact-native-workboard-preview-intent",
         );
       await dialog
         .getByLabel("Project reference")
         .fill("business-ops/companies/american-atomics/projects/investor-content-system");
       await dialog.getByLabel("Title").fill(promotedCard.title);
       await dialog.getByLabel("Owner mode").selectOption("shared");
-      await dialog.getByLabel("Target window").fill("After claim and asset review");
+      await dialog
+        .getByLabel("Target window")
+        .fill("After source, asset-rights, and reviewer-route intake");
       await dialog
         .getByLabel("Decision boundary")
-        .fill("Internal execution only; publication approval remains separate.");
+        .fill(
+          "Internal revision review only; no claim, legal/securities, publication, external-record, or learning acceptance authority.",
+        );
       await dialog
         .getByLabel("Approval note")
-        .fill("Proceed with internal revision and learning work only.");
+        .fill(
+          "Operator approves one native internal review commitment only; candidate content remains unpublished and unapproved.",
+        );
       await dialog
         .getByLabel("Proposed learning")
-        .fill("Compare revision dispositions with the measurement baseline.");
+        .fill(
+          "A known/unknown/next-proof structure may improve internal credibility scores versus a generic macro hook; review after approved evidence exists.",
+        );
       await captureScreenshot(recorded.page, artifacts, "09-business-ops-promotion-draft");
 
       await gateway.deferNext("workboard.cards.promoteBusinessOpsCandidate");
@@ -574,8 +584,8 @@ describeControlUiE2e("Control UI Workboard mocked Gateway E2E", () => {
       );
       expect(requestParams(previewRequest)).toMatchObject({
         approved: false,
-        candidateId: "AA-CAND-014",
-        targetWindow: "After claim and asset review",
+        candidateId: "AA-CYCLE-001",
+        targetWindow: "After source, asset-rights, and reviewer-route intake",
       });
       expect(await cardInColumn(recorded.page, "Todo", promotedCard.title).count()).toBe(0);
       await gateway.resolveDeferred("workboard.cards.promoteBusinessOpsCandidate", {
@@ -605,12 +615,17 @@ describeControlUiE2e("Control UI Workboard mocked Gateway E2E", () => {
       });
       const details = recorded.page.locator(".workboard-detail");
       await details.getByText("Business Ops provenance").waitFor({ state: "visible" });
-      await details.getByText("AA-CAND-014", { exact: true }).waitFor({ state: "visible" });
-      await details.getByText("After claim and asset review").waitFor({ state: "visible" });
+      await details.getByText("AA-CYCLE-001", { exact: true }).waitFor({ state: "visible" });
       await details
-        .getByText("Compare revision dispositions with the measurement baseline.", {
-          exact: true,
-        })
+        .getByText("After source, asset-rights, and reviewer-route intake")
+        .waitFor({ state: "visible" });
+      await details
+        .getByText(
+          "A known/unknown/next-proof structure may improve internal credibility scores versus a generic macro hook; review after approved evidence exists.",
+          {
+            exact: true,
+          },
+        )
         .waitFor({ state: "visible" });
       await captureScreenshot(recorded.page, artifacts, "11-business-ops-promotion-approved");
 
