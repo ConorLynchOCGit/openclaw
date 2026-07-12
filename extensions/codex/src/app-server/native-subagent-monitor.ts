@@ -14,7 +14,10 @@ import {
 } from "openclaw/plugin-sdk/agent-harness-task-runtime";
 import { asFiniteNumber, normalizeOptionalString } from "openclaw/plugin-sdk/string-coerce-runtime";
 import type { CodexAppServerClient } from "./client.js";
-import { normalizeCodexItemToolEvent } from "./codex-item-event-normalizer.js";
+import {
+  normalizeCodexItemToolEvent,
+  normalizeCodexRawImageToolEvents,
+} from "./codex-item-event-normalizer.js";
 import {
   extractCodexNativeSubagentCompletions,
   type CodexNativeSubagentCompletion,
@@ -35,7 +38,6 @@ import {
 } from "./native-subagent-task-mirror.js";
 import type {
   CodexServerNotification,
-  CodexThread,
   CodexThreadReadResponse,
   JsonObject,
   JsonValue,
@@ -56,6 +58,7 @@ type ParentState = {
   mirror?: CodexNativeSubagentTaskMirror;
   trajectoryRecorder?: CodexTrajectoryRecorder | null;
   mirroredCompletionKeys: Set<string>;
+  trajectoryEventKeys: Set<string>;
 };
 
 type ChildState = {
@@ -206,6 +209,7 @@ export class CodexNativeSubagentMonitor {
         agentId: params.agentId,
         trajectoryRecorder: params.trajectoryRecorder,
         mirroredCompletionKeys: new Set<string>(),
+        trajectoryEventKeys: new Set<string>(),
       };
       this.ensureParentTaskRuntime(state);
       this.parentStates.set(parentThreadId, {
@@ -416,6 +420,19 @@ export class CodexNativeSubagentMonitor {
       return;
     }
     const child = this.childStates.get(childThreadId);
+    if (notification.method === "rawResponseItem/completed") {
+      for (const event of normalizeCodexRawImageToolEvents({
+        method: notification.method,
+        notificationParams: params,
+        threadId: childThreadId,
+        turnId: readString(params, "turnId"),
+        role: child?.role,
+        objective: child?.objective,
+      })) {
+        this.recordChildTrajectoryEvent(state, event);
+      }
+      return;
+    }
     const event = normalizeCodexItemToolEvent({
       method: notification.method,
       notificationParams: params,
@@ -425,8 +442,25 @@ export class CodexNativeSubagentMonitor {
       objective: child?.objective,
     });
     if (event) {
-      state.trajectoryRecorder.recordEvent(event.type, event.data);
+      this.recordChildTrajectoryEvent(state, event);
     }
+  }
+
+  private recordChildTrajectoryEvent(
+    state: ParentState,
+    event: ReturnType<typeof normalizeCodexRawImageToolEvents>[number],
+  ): void {
+    const threadId = typeof event.data.threadId === "string" ? event.data.threadId : "unknown";
+    const toolCallId =
+      typeof event.data.toolCallId === "string" ? event.data.toolCallId : undefined;
+    const eventKey = toolCallId ? `${event.type}\0${threadId}\0${toolCallId}` : undefined;
+    if (eventKey && state.trajectoryEventKeys.has(eventKey)) {
+      return;
+    }
+    if (eventKey) {
+      state.trajectoryEventKeys.add(eventKey);
+    }
+    state.trajectoryRecorder?.recordEvent(event.type, event.data);
   }
 
   private async enrichChildThreadFromAppServer(
@@ -449,16 +483,11 @@ export class CodexNativeSubagentMonitor {
           },
           { timeoutMs: 5_000 },
         );
-        const thread = isJsonObject(response?.thread)
-          ? (response.thread as CodexThread)
-          : undefined;
+        const thread = response?.thread;
         if (!thread || thread.id !== childThreadId) {
           return;
         }
-        const source = readCodexSubagentThreadSpawnSourceFromThread(
-          thread as unknown as JsonObject,
-          parentThreadId,
-        );
+        const source = readCodexSubagentThreadSpawnSourceFromThread(thread, parentThreadId);
         if (!source && thread.parentThreadId !== parentThreadId) {
           embeddedAgentLog.warn(
             "Ignoring Codex native subagent thread metadata for another parent",

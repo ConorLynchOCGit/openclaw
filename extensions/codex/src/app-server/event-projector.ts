@@ -25,7 +25,10 @@ import { generatedImageAssetFromBase64 } from "openclaw/plugin-sdk/image-generat
 import type { AssistantMessage, Usage } from "openclaw/plugin-sdk/llm";
 import { saveMediaBuffer } from "openclaw/plugin-sdk/media-store";
 import { asDateTimestampMs } from "openclaw/plugin-sdk/number-runtime";
-import { normalizeCodexItemToolEvent } from "./codex-item-event-normalizer.js";
+import {
+  normalizeCodexItemToolEvent,
+  normalizeCodexRawImageToolEvents,
+} from "./codex-item-event-normalizer.js";
 import { resolveCodexLocalRuntimeAttribution } from "./local-runtime-attribution.js";
 import {
   readCodexNotificationThreadId,
@@ -181,6 +184,7 @@ export class CodexAppServerEventProjector {
   private readonly toolTrajectoryResultIds = new Set<string>();
   private readonly toolTrajectoryNamesById = new Map<string, string>();
   private readonly toolTrajectoryItemsById = new Map<string, CodexThreadItem>();
+  private readonly rawToolTrajectoryAliases = new Map<string, string>();
   private readonly transcriptToolProgressCallIds = new Set<string>();
   private lastNativeToolError: EmbeddedRunAttemptResult["lastToolError"];
   private readonly nativeGeneratedMediaUrls = new Set<string>();
@@ -572,9 +576,9 @@ export class CodexAppServerEventProjector {
       turnId: this.turnId,
     });
     if (trajectoryEvent) {
-      const toolCallId = String(trajectoryEvent.data.toolCallId ?? "");
-      const name = String(trajectoryEvent.data.name ?? "");
-      if (toolCallId) {
+      const toolCallId = readString(trajectoryEvent.data, "toolCallId") ?? "";
+      const name = readString(trajectoryEvent.data, "name") ?? "";
+      if (toolCallId && !this.hasToolTrajectoryEvent(this.toolTrajectoryCallIds, toolCallId)) {
         this.toolTrajectoryCallIds.add(toolCallId);
         if (name) {
           this.toolTrajectoryNamesById.set(toolCallId, name);
@@ -582,8 +586,8 @@ export class CodexAppServerEventProjector {
         if (item) {
           this.toolTrajectoryItemsById.set(toolCallId, item);
         }
+        this.options.trajectoryRecorder?.recordEvent(trajectoryEvent.type, trajectoryEvent.data);
       }
-      this.options.trajectoryRecorder?.recordEvent(trajectoryEvent.type, trajectoryEvent.data);
     }
     const itemId = item?.id ?? readString(params, "itemId") ?? readString(params, "id");
     this.rememberAssistantPhase(item);
@@ -637,11 +641,17 @@ export class CodexAppServerEventProjector {
       turnId: this.turnId,
     });
     if (trajectoryEvent) {
-      const toolCallId = String(trajectoryEvent.data.toolCallId ?? "");
-      if (toolCallId) {
-        this.toolTrajectoryResultIds.add(toolCallId);
+      const toolCallId = readString(trajectoryEvent.data, "toolCallId") ?? "";
+      if (toolCallId && !this.hasToolTrajectoryEvent(this.toolTrajectoryResultIds, toolCallId)) {
+        const correlatedId =
+          this.findToolTrajectoryEventId(this.toolTrajectoryCallIds, toolCallId) ?? toolCallId;
+        this.toolTrajectoryResultIds.add(correlatedId);
+        this.options.trajectoryRecorder?.recordEvent(trajectoryEvent.type, {
+          ...trajectoryEvent.data,
+          itemId: correlatedId,
+          toolCallId: correlatedId,
+        });
       }
-      this.options.trajectoryRecorder?.recordEvent(trajectoryEvent.type, trajectoryEvent.data);
     }
     const itemId = item?.id ?? readString(params, "itemId") ?? readString(params, "id");
     if (itemId) {
@@ -818,6 +828,7 @@ export class CodexAppServerEventProjector {
       return;
     }
     const wasStarted = this.activeItemIds.has(item.id);
+    this.recordSnapshotToolTrajectory(item, wasStarted);
     if (!wasStarted) {
       this.emitStandardItemEvent({ phase: "start", item });
       this.emitNormalizedToolItemEvent({ phase: "start", item });
@@ -826,6 +837,56 @@ export class CodexAppServerEventProjector {
     this.emitStandardItemEvent({ phase: "end", item });
     this.emitNormalizedToolItemEvent({ phase: "result", item });
     this.completedItemIds.add(item.id);
+  }
+
+  private recordSnapshotToolTrajectory(item: CodexThreadItem, wasStarted: boolean): void {
+    const trajectoryRecorder = this.options.trajectoryRecorder;
+    if (!trajectoryRecorder) {
+      return;
+    }
+    const notificationParams = {
+      threadId: this.threadId,
+      turnId: this.turnId,
+      item: item as unknown as JsonObject,
+    };
+    if (!wasStarted && !this.hasToolTrajectoryEvent(this.toolTrajectoryCallIds, item.id)) {
+      const call = normalizeCodexItemToolEvent({
+        method: "item/started",
+        notificationParams,
+        threadId: this.threadId,
+        turnId: this.turnId,
+      });
+      if (call) {
+        this.toolTrajectoryCallIds.add(item.id);
+        this.toolTrajectoryNamesById.set(item.id, readString(call.data, "name") ?? "");
+        this.toolTrajectoryItemsById.set(item.id, item);
+        trajectoryRecorder.recordEvent(call.type, call.data);
+      }
+    }
+    if (this.hasToolTrajectoryEvent(this.toolTrajectoryResultIds, item.id)) {
+      return;
+    }
+    const result = normalizeCodexItemToolEvent({
+      method: "item/completed",
+      notificationParams,
+      threadId: this.threadId,
+      turnId: this.turnId,
+    });
+    if (!result) {
+      return;
+    }
+    const correlatedId =
+      this.findToolTrajectoryEventId(this.toolTrajectoryCallIds, item.id) ?? item.id;
+    const streamedOutput = this.toolResultOutputTextByItem.get(item.id)?.trimEnd();
+    const aggregatedOutput = readItemString(item, "aggregatedOutput")?.trimEnd();
+    const output = streamedOutput || aggregatedOutput;
+    this.toolTrajectoryResultIds.add(correlatedId);
+    trajectoryRecorder.recordEvent(result.type, {
+      ...result.data,
+      itemId: correlatedId,
+      toolCallId: correlatedId,
+      ...(output ? { output } : {}),
+    });
   }
 
   private isCurrentTurnSnapshotItem(item: CodexThreadItem): boolean {
@@ -895,6 +956,7 @@ export class CodexAppServerEventProjector {
     if (!item) {
       return;
     }
+    this.recordRawToolTrajectoryEvidence(params, item);
     await this.recordRawGeneratedImageMedia(item);
     if (readString(item, "role") !== "assistant") {
       return;
@@ -913,6 +975,118 @@ export class CodexAppServerEventProjector {
     if (phase === "commentary") {
       this.emitCommentaryProgress({ itemId, text });
     }
+  }
+
+  private recordRawToolTrajectoryEvidence(params: JsonObject, item: JsonObject): void {
+    const trajectoryRecorder = this.options.trajectoryRecorder;
+    if (!trajectoryRecorder) {
+      return;
+    }
+
+    for (const event of normalizeCodexRawImageToolEvents({
+      method: "rawResponseItem/completed",
+      notificationParams: params,
+      threadId: this.threadId,
+      turnId: this.turnId,
+    })) {
+      const toolCallId = readString(event.data, "toolCallId") ?? "";
+      if (!toolCallId) {
+        continue;
+      }
+      if (event.type === "tool.call") {
+        if (this.toolTrajectoryCallIds.has(toolCallId)) {
+          continue;
+        }
+        this.toolTrajectoryCallIds.add(toolCallId);
+        this.toolTrajectoryNamesById.set(toolCallId, "image_input");
+      } else {
+        if (this.toolTrajectoryResultIds.has(toolCallId)) {
+          continue;
+        }
+        this.toolTrajectoryResultIds.add(toolCallId);
+      }
+      trajectoryRecorder.recordEvent(event.type, event.data);
+    }
+
+    const itemType = readString(item, "type");
+    const rawCallId = readString(item, "call_id") ?? readString(item, "callId");
+    if (!rawCallId) {
+      return;
+    }
+    if (itemType === "function_call") {
+      const namespace = readString(item, "namespace");
+      const rawName = readString(item, "name");
+      const normalizedName = rawName?.replace(/[^a-z0-9]/giu, "").toLowerCase();
+      if (namespace !== "agents" || normalizedName !== "spawnagent") {
+        return;
+      }
+      const rawItemId = readString(item, "id");
+      this.registerRawToolTrajectoryAliases(rawCallId, rawItemId ? [rawItemId] : []);
+      this.toolTrajectoryNamesById.set(rawCallId, "spawn_agent");
+      if (this.hasToolTrajectoryEvent(this.toolTrajectoryCallIds, rawCallId)) {
+        return;
+      }
+      this.toolTrajectoryCallIds.add(rawCallId);
+      trajectoryRecorder.recordEvent("tool.call", {
+        source: "codex-native",
+        threadId: this.threadId,
+        turnId: this.turnId,
+        itemId: rawCallId,
+        toolCallId: rawCallId,
+        name: "spawn_agent",
+        namespace: "agents",
+        arguments: {},
+      });
+      return;
+    }
+    if (
+      itemType !== "function_call_output" ||
+      this.toolTrajectoryNamesById.get(rawCallId) !== "spawn_agent" ||
+      this.hasToolTrajectoryEvent(this.toolTrajectoryResultIds, rawCallId)
+    ) {
+      return;
+    }
+    const spawnResult = readRawSpawnResult(item);
+    const correlatedId =
+      this.findToolTrajectoryEventId(this.toolTrajectoryCallIds, rawCallId) ?? rawCallId;
+    this.toolTrajectoryResultIds.add(correlatedId);
+    trajectoryRecorder.recordEvent("tool.result", {
+      source: "codex-native",
+      threadId: this.threadId,
+      turnId: this.turnId,
+      itemId: correlatedId,
+      toolCallId: correlatedId,
+      name: "spawn_agent",
+      namespace: "agents",
+      status: spawnResult.accepted ? "completed" : "failed",
+      isError: !spawnResult.accepted,
+      result: spawnResult,
+    });
+  }
+
+  private registerRawToolTrajectoryAliases(canonicalId: string, aliases: string[]): void {
+    for (const alias of aliases) {
+      if (alias && alias !== canonicalId) {
+        this.rawToolTrajectoryAliases.set(alias, canonicalId);
+      }
+    }
+  }
+
+  private hasToolTrajectoryEvent(recorded: Set<string>, id: string): boolean {
+    return this.findToolTrajectoryEventId(recorded, id) !== undefined;
+  }
+
+  private findToolTrajectoryEventId(recorded: Set<string>, id: string): string | undefined {
+    const canonicalId = this.rawToolTrajectoryAliases.get(id) ?? id;
+    if (recorded.has(canonicalId)) {
+      return canonicalId;
+    }
+    for (const [alias, target] of this.rawToolTrajectoryAliases) {
+      if (target === canonicalId && recorded.has(alias)) {
+        return alias;
+      }
+    }
+    return undefined;
   }
 
   private recordNativeGeneratedMedia(item: CodexThreadItem | undefined): void {
@@ -1463,7 +1637,7 @@ export class CodexAppServerEventProjector {
       (id) => !this.toolTranscriptResultIds.has(id),
     );
     const missingTrajectoryIds = [...this.toolTrajectoryCallIds].filter(
-      (id) => !this.toolTrajectoryResultIds.has(id),
+      (id) => !this.hasToolTrajectoryEvent(this.toolTrajectoryResultIds, id),
     );
     if (missingTranscriptIds.length === 0 && missingTrajectoryIds.length === 0) {
       return;
@@ -1490,6 +1664,7 @@ export class CodexAppServerEventProjector {
       this.toolTrajectoryResultIds.add(id);
       const text = formatMissingToolResultError({ id, name });
       this.options.trajectoryRecorder?.recordEvent("tool.result", {
+        source: "codex-native",
         threadId: this.threadId,
         turnId: this.turnId,
         itemId: id,
@@ -1803,7 +1978,30 @@ function readNotificationTurnId(record: JsonObject): string | undefined {
   return readCodexNotificationTurnId(record);
 }
 
-function readString(record: JsonObject, key: string): string | undefined {
+function readRawJsonObject(value: unknown): JsonObject | undefined {
+  if (isJsonObject(value)) {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isJsonObject(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function readRawSpawnResult(item: JsonObject): {
+  accepted: boolean;
+} {
+  const output = readRawJsonObject(item.output);
+  const taskName = output ? readString(output, "task_name")?.trim() : undefined;
+  return { accepted: Boolean(taskName) };
+}
+
+function readString(record: Record<string, unknown>, key: string): string | undefined {
   const value = record[key];
   return typeof value === "string" ? value : undefined;
 }

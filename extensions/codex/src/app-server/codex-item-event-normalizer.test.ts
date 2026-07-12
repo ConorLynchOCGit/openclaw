@@ -1,8 +1,65 @@
 import { describe, expect, it } from "vitest";
-import { normalizeCodexItemToolEvent } from "./codex-item-event-normalizer.js";
+import {
+  normalizeCodexItemToolEvent,
+  normalizeCodexRawImageToolEvents,
+} from "./codex-item-event-normalizer.js";
 import type { JsonObject } from "./protocol.js";
 
 describe("normalizeCodexItemToolEvent", () => {
+  it("projects raw Code Mode image output without retaining image bytes", () => {
+    const events = normalizeCodexRawImageToolEvents({
+      method: "rawResponseItem/completed",
+      notificationParams: {
+        threadId: "child-thread",
+        turnId: "child-turn",
+        item: {
+          type: "custom_tool_call_output",
+          call_id: "call-image",
+          output: [
+            { type: "input_text", text: "loaded" },
+            { type: "input_image", image_url: "data:image/png;base64,secret-bytes" },
+          ],
+        },
+      },
+      role: "test_engineer",
+      objective: "inspect visual evidence",
+    });
+
+    expect(events).toEqual([
+      {
+        type: "tool.call",
+        data: {
+          source: "codex-native",
+          threadId: "child-thread",
+          turnId: "child-turn",
+          itemId: "image-input:call-image",
+          toolCallId: "image-input:call-image",
+          name: "image_input",
+          role: "test_engineer",
+          objective: "inspect visual evidence",
+          arguments: { imageCount: 1 },
+        },
+      },
+      {
+        type: "tool.result",
+        data: {
+          source: "codex-native",
+          threadId: "child-thread",
+          turnId: "child-turn",
+          itemId: "image-input:call-image",
+          toolCallId: "image-input:call-image",
+          name: "image_input",
+          role: "test_engineer",
+          objective: "inspect visual evidence",
+          status: "completed",
+          isError: false,
+          result: { imageCount: 1 },
+        },
+      },
+    ]);
+    expect(JSON.stringify(events)).not.toContain("secret-bytes");
+  });
+
   it("normalizes native command, file, MCP, and web items", () => {
     const cases = [
       {
@@ -92,10 +149,7 @@ describe("normalizeCodexItemToolEvent", () => {
         data: {
           threadId: "parent-thread",
           name: "spawn_agent",
-          arguments: {
-            prompt: "inspect the source",
-            receiverThreadIds: ["child-thread"],
-          },
+          arguments: {},
         },
       });
     },

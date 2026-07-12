@@ -1633,6 +1633,7 @@ describe("CodexAppServerEventProjector", () => {
       text: "🛠️ `run tests (workspace)`",
     });
     expect(trajectoryRecorder.recordEvent).toHaveBeenCalledWith("tool.call", {
+      source: "codex-native",
       threadId: THREAD_ID,
       turnId: TURN_ID,
       itemId: "cmd-snapshot",
@@ -1641,6 +1642,7 @@ describe("CodexAppServerEventProjector", () => {
       arguments: { command: "pnpm test extensions/codex", cwd: "/workspace" },
     });
     expect(trajectoryRecorder.recordEvent).toHaveBeenCalledWith("tool.result", {
+      source: "codex-native",
       threadId: THREAD_ID,
       turnId: TURN_ID,
       itemId: "cmd-snapshot",
@@ -1651,6 +1653,243 @@ describe("CodexAppServerEventProjector", () => {
       result: { status: "completed", exitCode: 0, durationMs: 42 },
       output: "ok",
     });
+  });
+
+  it("records raw V2 spawns and Code Mode image presentation as trajectory evidence", async () => {
+    const trajectoryRecorder = {
+      filePath: "trajectory.jsonl",
+      recordEvent: vi.fn(),
+      flush: vi.fn(async () => undefined),
+    };
+    const projector = await createProjector(await createParams(), { trajectoryRecorder });
+
+    await projector.handleNotification(
+      forCurrentTurn("rawResponseItem/completed", {
+        item: {
+          type: "function_call",
+          id: "spawn-item",
+          call_id: "spawn-call",
+          namespace: "agents",
+          name: "spawn_agent",
+          arguments: JSON.stringify({
+            agent_type: "project_explorer",
+            task_name: "map-one-seam",
+            message: "Find the source owner.",
+          }),
+        },
+      }),
+    );
+    await projector.handleNotification(
+      forCurrentTurn("rawResponseItem/completed", {
+        item: {
+          type: "function_call_output",
+          call_id: "spawn-call",
+          output: '{"task_name":"map-one-seam"}',
+        },
+      }),
+    );
+    await projector.handleNotification(
+      forCurrentTurn("item/started", {
+        item: {
+          type: "dynamicToolCall",
+          id: "spawn-item",
+          namespace: "agents",
+          tool: "spawn_agent",
+          arguments: { task_name: "map-one-seam" },
+          status: "inProgress",
+        },
+      }),
+    );
+    await projector.handleNotification(
+      forCurrentTurn("item/completed", {
+        item: {
+          type: "dynamicToolCall",
+          id: "spawn-item",
+          namespace: "agents",
+          tool: "spawn_agent",
+          arguments: { task_name: "map-one-seam" },
+          status: "completed",
+          success: true,
+        },
+      }),
+    );
+    await projector.handleNotification(
+      forCurrentTurn("rawResponseItem/completed", {
+        item: {
+          type: "custom_tool_call_output",
+          call_id: "image-call",
+          output: [
+            { type: "input_text", text: "loaded" },
+            { type: "input_image", image_url: "data:image/png;base64,not-retained" },
+          ],
+        },
+      }),
+    );
+
+    expect(trajectoryRecorder.recordEvent).toHaveBeenCalledWith(
+      "tool.call",
+      expect.objectContaining({
+        toolCallId: "spawn-call",
+        itemId: "spawn-call",
+        name: "spawn_agent",
+        namespace: "agents",
+        arguments: {},
+      }),
+    );
+    expect(trajectoryRecorder.recordEvent).toHaveBeenCalledWith(
+      "tool.result",
+      expect.objectContaining({
+        toolCallId: "spawn-call",
+        name: "spawn_agent",
+        status: "completed",
+        isError: false,
+        result: { accepted: true },
+      }),
+    );
+    expect(trajectoryRecorder.recordEvent).toHaveBeenCalledWith(
+      "tool.call",
+      expect.objectContaining({
+        toolCallId: "image-input:image-call",
+        name: "image_input",
+        arguments: { imageCount: 1 },
+      }),
+    );
+    expect(trajectoryRecorder.recordEvent).toHaveBeenCalledWith(
+      "tool.result",
+      expect.objectContaining({
+        toolCallId: "image-input:image-call",
+        name: "image_input",
+        status: "completed",
+      }),
+    );
+    const spawnEvents = trajectoryRecorder.recordEvent.mock.calls.filter(
+      ([, data]) => data.name === "spawn_agent",
+    );
+    expect(spawnEvents).toHaveLength(2);
+    expect(JSON.stringify(trajectoryRecorder.recordEvent.mock.calls)).not.toContain("not-retained");
+  });
+
+  it("keeps canonical-first V2 spawn evidence minimal and correlated", async () => {
+    const trajectoryRecorder = {
+      filePath: "trajectory.jsonl",
+      recordEvent: vi.fn(),
+      flush: vi.fn(async () => undefined),
+    };
+    const projector = await createProjector(await createParams(), { trajectoryRecorder });
+
+    await projector.handleNotification(
+      forCurrentTurn("item/started", {
+        item: {
+          type: "dynamicToolCall",
+          id: "canonical-spawn",
+          namespace: "agents",
+          tool: "spawn_agent",
+          arguments: { agent_type: "project_explorer", task_name: "map-one-seam" },
+          status: "inProgress",
+        },
+      }),
+    );
+    await projector.handleNotification(
+      forCurrentTurn("rawResponseItem/completed", {
+        item: {
+          type: "function_call",
+          id: "canonical-spawn",
+          call_id: "canonical-call",
+          namespace: "agents",
+          name: "spawn_agent",
+          arguments: '{"agent_type":"project_explorer","task_name":"map-one-seam"}',
+        },
+      }),
+    );
+    await projector.handleNotification(
+      forCurrentTurn("item/completed", {
+        item: {
+          type: "dynamicToolCall",
+          id: "canonical-spawn",
+          namespace: "agents",
+          tool: "spawn_agent",
+          arguments: { agent_type: "project_explorer", task_name: "map-one-seam" },
+          status: "completed",
+          success: true,
+        },
+      }),
+    );
+    await projector.handleNotification(
+      forCurrentTurn("rawResponseItem/completed", {
+        item: {
+          type: "function_call_output",
+          call_id: "canonical-call",
+          output: '{"task_name":"map-one-seam"}',
+        },
+      }),
+    );
+
+    const spawnEvents = trajectoryRecorder.recordEvent.mock.calls.filter(
+      ([, data]) => data.name === "spawn_agent",
+    );
+    expect(spawnEvents).toHaveLength(2);
+    expect(spawnEvents[0]).toEqual([
+      "tool.call",
+      expect.objectContaining({
+        itemId: "canonical-spawn",
+        toolCallId: "canonical-spawn",
+        arguments: {},
+      }),
+    ]);
+    expect(spawnEvents[1]).toEqual([
+      "tool.result",
+      expect.objectContaining({
+        itemId: "canonical-spawn",
+        toolCallId: "canonical-spawn",
+        status: "completed",
+        result: { accepted: true },
+      }),
+    ]);
+  });
+
+  it("records a raw V2 spawn failure without manufacturing acceptance", async () => {
+    const trajectoryRecorder = {
+      filePath: "trajectory.jsonl",
+      recordEvent: vi.fn(),
+      flush: vi.fn(async () => undefined),
+    };
+    const projector = await createProjector(await createParams(), { trajectoryRecorder });
+
+    await projector.handleNotification(
+      forCurrentTurn("rawResponseItem/completed", {
+        item: {
+          type: "function_call",
+          id: "failed-spawn-item",
+          call_id: "failed-spawn-call",
+          namespace: "agents",
+          name: "spawn_agent",
+          arguments: '{"agent_type":"test_engineer","task_name":"run-tests"}',
+        },
+      }),
+    );
+    await projector.handleNotification(
+      forCurrentTurn("rawResponseItem/completed", {
+        item: {
+          type: "function_call_output",
+          call_id: "failed-spawn-call",
+          output: '{"error":"capacity unavailable"}',
+        },
+      }),
+    );
+
+    expect(trajectoryRecorder.recordEvent).toHaveBeenCalledWith(
+      "tool.result",
+      expect.objectContaining({
+        toolCallId: "failed-spawn-call",
+        name: "spawn_agent",
+        status: "failed",
+        isError: true,
+        result: { accepted: false },
+      }),
+    );
+    expect(JSON.stringify(trajectoryRecorder.recordEvent.mock.calls)).not.toContain(
+      "capacity unavailable",
+    );
   });
 
   it("delivers completed assistant text when a native tool call finishes without a matching result", async () => {
@@ -1721,6 +1960,7 @@ describe("CodexAppServerEventProjector", () => {
       },
     ]);
     expect(trajectoryRecorder.recordEvent).toHaveBeenCalledWith("tool.call", {
+      source: "codex-native",
       threadId: THREAD_ID,
       turnId: TURN_ID,
       itemId: "cmd-denied",
@@ -1732,6 +1972,7 @@ describe("CodexAppServerEventProjector", () => {
       },
     });
     expect(trajectoryRecorder.recordEvent).toHaveBeenCalledWith("tool.result", {
+      source: "codex-native",
       threadId: THREAD_ID,
       turnId: TURN_ID,
       itemId: "cmd-denied",

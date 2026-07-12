@@ -439,6 +439,30 @@ describe("CodexNativeSubagentMonitor", () => {
         },
       },
     });
+    await client.notify({
+      method: "rawResponseItem/completed",
+      params: {
+        threadId: "child-thread",
+        turnId: "child-turn",
+        item: {
+          type: "custom_tool_call_output",
+          call_id: "image-call",
+          output: [{ type: "input_image", image_url: "data:image/png;base64,not-retained" }],
+        },
+      },
+    });
+    await client.notify({
+      method: "rawResponseItem/completed",
+      params: {
+        threadId: "child-thread",
+        turnId: "child-turn",
+        item: {
+          type: "custom_tool_call_output",
+          call_id: "image-call",
+          output: [{ type: "input_image", image_url: "data:image/png;base64,not-retained" }],
+        },
+      },
+    });
 
     expect(recordEvent).toHaveBeenNthCalledWith(
       1,
@@ -463,6 +487,28 @@ describe("CodexNativeSubagentMonitor", () => {
         status: "completed",
       }),
     );
+    expect(recordEvent).toHaveBeenNthCalledWith(
+      3,
+      "tool.call",
+      expect.objectContaining({
+        threadId: "child-thread",
+        role: "project_explorer",
+        name: "image_input",
+        arguments: { imageCount: 1 },
+      }),
+    );
+    expect(recordEvent).toHaveBeenNthCalledWith(
+      4,
+      "tool.result",
+      expect.objectContaining({
+        threadId: "child-thread",
+        role: "project_explorer",
+        name: "image_input",
+        status: "completed",
+      }),
+    );
+    expect(recordEvent).toHaveBeenCalledTimes(4);
+    expect(JSON.stringify(recordEvent.mock.calls)).not.toContain("not-retained");
   });
 
   it("registers Codex v2 children from subagent activity before projecting child tools", async () => {

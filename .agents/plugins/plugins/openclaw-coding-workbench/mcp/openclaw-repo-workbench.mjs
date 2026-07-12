@@ -16,6 +16,7 @@ const DEFAULT_OUTPUT_BYTES = 64_000;
 const MAX_BATCH_ITEMS = 20;
 const MAX_READ_BYTES = 80_000;
 const MAX_RESULTS = 200;
+const MAX_SEARCH_CONTEXT_LINES = 5;
 const DEFAULT_LSP_MAX_PROJECT_FILES = 80;
 const PositiveIntSchema = z.number().int().min(1);
 const DEFAULT_EXCLUDE_GLOBS = [
@@ -68,7 +69,14 @@ const SearchQuerySchema = z.object({
   glob: z.string().optional(),
   literal: z.boolean().optional(),
   caseSensitive: z.boolean().optional(),
-  contextLines: z.number().int().min(0).max(5).optional(),
+  contextLines: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .describe(
+      `Optional context-line count. Values above ${MAX_SEARCH_CONTEXT_LINES} are accepted and clamped.`,
+    ),
   maxMatches: PositiveIntSchema.optional().describe(
     `Optional match cap. Values above ${MAX_RESULTS} are accepted and clamped.`,
   ),
@@ -602,6 +610,7 @@ async function runSearchQuery(root, query) {
   try {
     const searchRoot = safeResolve(root, query.path ?? ".");
     const maxMatches = clampPositiveInt(query.maxMatches, 80, MAX_RESULTS);
+    const contextLines = Math.min(query.contextLines ?? 0, MAX_SEARCH_CONTEXT_LINES);
     const args = [
       "--line-number",
       "--no-heading",
@@ -617,8 +626,8 @@ async function runSearchQuery(root, query) {
     if (query.caseSensitive === false) {
       args.push("-i");
     }
-    if (query.contextLines && query.contextLines > 0) {
-      args.push("-C", String(query.contextLines));
+    if (contextLines > 0) {
+      args.push("-C", String(contextLines));
     }
     if (query.glob) {
       args.push("--glob", query.glob);
@@ -639,6 +648,10 @@ async function runSearchQuery(root, query) {
         outputBytes: DEFAULT_OUTPUT_BYTES,
       },
       effectiveMaxMatches: maxMatches,
+      effectiveContextLines: contextLines,
+      ...(query.contextLines && query.contextLines > contextLines
+        ? { requestedContextLines: query.contextLines, contextLinesClamped: true }
+        : {}),
       ...(query.maxMatches && query.maxMatches > maxMatches
         ? { requestedMaxMatches: query.maxMatches, maxMatchesClamped: true }
         : {}),

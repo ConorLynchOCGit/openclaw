@@ -19,6 +19,73 @@ export type NormalizedCodexItemToolEvent = {
   data: Record<string, unknown>;
 };
 
+/**
+ * Projects image content returned by Codex Code Mode into bounded execution
+ * evidence. The image bytes stay in Codex; OpenClaw records only that pixels
+ * were actually presented to the model.
+ */
+export function normalizeCodexRawImageToolEvents(params: {
+  method: string;
+  notificationParams: JsonObject;
+  threadId?: string;
+  turnId?: string;
+  role?: string;
+  objective?: string;
+}): NormalizedCodexItemToolEvent[] {
+  if (params.method !== "rawResponseItem/completed") {
+    return [];
+  }
+  const item = isJsonObject(params.notificationParams.item)
+    ? params.notificationParams.item
+    : undefined;
+  if (!item || readString(item, "type") !== "custom_tool_call_output") {
+    return [];
+  }
+  const output = Array.isArray(item.output) ? item.output : [];
+  const imageCount = output.filter(
+    (entry) => isJsonObject(entry) && readString(entry, "type") === "input_image",
+  ).length;
+  if (imageCount === 0) {
+    return [];
+  }
+  const rawCallId =
+    readString(item, "call_id") ?? readString(item, "callId") ?? readString(item, "id");
+  if (!rawCallId) {
+    return [];
+  }
+  const toolCallId = `image-input:${rawCallId}`;
+  const threadId = params.threadId ?? readString(params.notificationParams, "threadId");
+  const turnId = params.turnId ?? readString(params.notificationParams, "turnId");
+  const common = {
+    source: "codex-native",
+    ...(threadId ? { threadId } : {}),
+    ...(turnId ? { turnId } : {}),
+    itemId: toolCallId,
+    toolCallId,
+    name: "image_input",
+    ...(params.role ? { role: params.role } : {}),
+    ...(params.objective ? { objective: params.objective } : {}),
+  };
+  return [
+    {
+      type: "tool.call",
+      data: {
+        ...common,
+        arguments: { imageCount },
+      },
+    },
+    {
+      type: "tool.result",
+      data: {
+        ...common,
+        status: "completed",
+        isError: false,
+        result: { imageCount },
+      },
+    },
+  ];
+}
+
 function readString(record: JsonObject | undefined, key: string): string | undefined {
   const value = record?.[key];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
@@ -159,6 +226,7 @@ function boundedMcpStructuredContent(item: JsonObject): Record<string, unknown> 
 function normalizeResult(item: JsonObject, itemType: string): Record<string, unknown> {
   if (itemType === "commandExecution") {
     return sanitizeCodexAgentEventRecord({
+      status: normalizeStatus(item),
       exitCode: readNumber(item, "exitCode"),
       durationMs: readNumber(item, "durationMs"),
     });
@@ -239,7 +307,7 @@ export function normalizeCodexItemToolEvent(params: {
       type: "tool.call",
       data: {
         ...common,
-        arguments: normalizeArguments(item, itemType),
+        arguments: name === "spawn_agent" ? {} : normalizeArguments(item, itemType),
       },
     };
   }
@@ -250,7 +318,10 @@ export function normalizeCodexItemToolEvent(params: {
       ...common,
       status,
       isError: status === "failed" || status === "blocked",
-      result: normalizeResult(item, itemType),
+      result:
+        name === "spawn_agent"
+          ? { accepted: status === "completed" }
+          : normalizeResult(item, itemType),
     },
   };
 }

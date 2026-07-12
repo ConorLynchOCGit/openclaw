@@ -24,6 +24,9 @@ type WorkbenchModule = {
       effectiveMaxMatches?: number;
       requestedMaxMatches?: number;
       maxMatchesClamped?: boolean;
+      effectiveContextLines?: number;
+      requestedContextLines?: number;
+      contextLinesClamped?: boolean;
     }>;
   }>;
   repoReadMany(
@@ -208,7 +211,7 @@ describe("openclaw-coding-workbench MCP helpers", () => {
     );
     const search = await workbench.repoSearchMany(
       {
-        queries: [{ pattern: "alpha", path: "src", maxMatches: 2_000 }],
+        queries: [{ pattern: "alpha", path: "src", maxMatches: 2_000, contextLines: 8 }],
       },
       optionsFor(repo),
     );
@@ -240,6 +243,9 @@ describe("openclaw-coding-workbench MCP helpers", () => {
       requestedMaxMatches: 2_000,
       effectiveMaxMatches: 200,
       maxMatchesClamped: true,
+      requestedContextLines: 8,
+      effectiveContextLines: 5,
+      contextLinesClamped: true,
     });
     expect(glob.results[0]).toMatchObject({
       status: "ok",
