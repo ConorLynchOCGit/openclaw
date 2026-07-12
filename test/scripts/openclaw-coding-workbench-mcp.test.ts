@@ -83,6 +83,10 @@ type WorkbenchModule = {
     options?: unknown,
   ): Promise<{
     status: string;
+    projectMode?: string;
+    projectFileCount?: number;
+    lspPartial?: boolean;
+    projectFileLimitReached?: boolean;
     effectiveMaxResults?: number;
     requestedMaxResults?: number;
     maxResultsClamped?: boolean;
@@ -117,6 +121,32 @@ async function makeRepo(): Promise<string> {
   await fs.writeFile(
     path.join(tempDir, "src", "alpha.ts"),
     ["export const alpha = 1;", "export const beta = alpha + 1;", ""].join("\n"),
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(tempDir, "src", "gamma.ts"),
+    ['import { alpha } from "./alpha.js";', "export const gamma = alpha + 2;", ""].join("\n"),
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(tempDir, "src", "unrelated.ts"),
+    "export const unrelated = 3;\n",
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(tempDir, "tsconfig.json"),
+    JSON.stringify(
+      {
+        compilerOptions: {
+          module: "ESNext",
+          moduleResolution: "Bundler",
+          target: "ES2022",
+        },
+        include: ["src/**/*.ts"],
+      },
+      null,
+      2,
+    ) + "\n",
     "utf8",
   );
   await execFileAsync("git", ["init"], { cwd: tempDir });
@@ -288,10 +318,11 @@ describe("openclaw-coding-workbench MCP helpers", () => {
     expect(search.results[0].status).toBe("matched");
     expect(search.results[0].matches?.join("\n")).toContain("alpha.ts");
     expect(search.results[1].status).toBe("no_match");
-    expect(glob.results[0]).toMatchObject({
-      status: "ok",
-      files: ["src/alpha.ts"],
-    });
+    expect(glob.results[0].status).toBe("ok");
+    expect(glob.results[0].files).toHaveLength(3);
+    expect(glob.results[0].files).toEqual(
+      expect.arrayContaining(["src/alpha.ts", "src/gamma.ts", "src/unrelated.ts"]),
+    );
   });
 
   it("reports bounded git status without mutating the repository", async () => {
@@ -420,5 +451,113 @@ describe("openclaw-coding-workbench MCP helpers", () => {
         expect.objectContaining({ path: "src/alpha.ts", line: 2 }),
       ]),
     );
+  });
+
+  it("resolves cross-file definitions through a bounded TypeScript dependency closure", async () => {
+    const repo = await makeRepo();
+    const workbench = await loadWorkbench();
+    const options = optionsFor(repo);
+    options.env.OPENCLAW_REPO_WORKBENCH_LSP_MAX_PROJECT_FILES = "2";
+
+    const definition = await workbench.lspDefinitionTypescript(
+      { file: "src/gamma.ts", line: 2, character: 22 },
+      options,
+    );
+
+    expect(definition).toMatchObject({
+      status: "ok",
+      projectMode: "tsconfig_dependency_closure",
+      projectFileCount: 2,
+      lspPartial: true,
+      projectFileLimitReached: false,
+      definitions: [expect.objectContaining({ path: "src/alpha.ts", line: 1 })],
+    });
+  });
+
+  it("stops TypeScript dependency traversal at the configured file budget", async () => {
+    const repo = await makeRepo();
+    await fs.writeFile(
+      path.join(repo, "src", "chain-root.ts"),
+      'import { middle } from "./chain-middle.js";\nexport const root = middle;\n',
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(repo, "src", "chain-middle.ts"),
+      'import { leaf } from "./chain-leaf.js";\nexport const middle = leaf;\n',
+      "utf8",
+    );
+    await fs.writeFile(path.join(repo, "src", "chain-leaf.ts"), "export const leaf = 1;\n", "utf8");
+    const workbench = await loadWorkbench();
+    const options = optionsFor(repo);
+    options.env.OPENCLAW_REPO_WORKBENCH_LSP_MAX_PROJECT_FILES = "2";
+
+    const definition = await workbench.lspDefinitionTypescript(
+      { file: "src/chain-root.ts", line: 2, character: 21 },
+      options,
+    );
+
+    expect(definition).toMatchObject({
+      status: "ok",
+      projectMode: "tsconfig_dependency_closure",
+      projectFileCount: 2,
+      lspPartial: true,
+      projectFileLimitReached: true,
+      definitions: [expect.objectContaining({ path: "src/chain-middle.ts", line: 2 })],
+    });
+  });
+
+  it("rejects TypeScript dependencies that escape the workspace through symlinks", async () => {
+    const repo = await makeRepo();
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-workbench-outside-"));
+    tempDirs.push(outside);
+    await fs.writeFile(path.join(outside, "outside.ts"), "export const outside = 1;\n", "utf8");
+    await fs.symlink(path.join(outside, "outside.ts"), path.join(repo, "src", "linked.ts"));
+    await fs.writeFile(
+      path.join(repo, "src", "symlink-root.ts"),
+      'import { outside } from "./linked.js";\nexport const root = outside;\n',
+      "utf8",
+    );
+    const workbench = await loadWorkbench();
+
+    const definition = await workbench.lspDefinitionTypescript(
+      { file: "src/symlink-root.ts", line: 2, character: 21 },
+      optionsFor(repo),
+    );
+
+    expect(definition).toMatchObject({
+      status: "ok",
+      projectMode: "tsconfig_dependency_closure",
+      projectFileCount: 1,
+      definitions: [expect.objectContaining({ path: "src/symlink-root.ts", line: 1 })],
+    });
+    expect(definition.definitions).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: expect.stringContaining("outside") }),
+      ]),
+    );
+  });
+
+  it("rejects tsconfig inheritance outside the workspace", async () => {
+    const repo = await makeRepo();
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-workbench-config-"));
+    tempDirs.push(outside);
+    const externalConfig = path.join(outside, "tsconfig.external.json");
+    await fs.writeFile(externalConfig, '{"compilerOptions":{"strict":true}}\n', "utf8");
+    await fs.writeFile(
+      path.join(repo, "tsconfig.json"),
+      JSON.stringify({ extends: externalConfig, include: ["src/**/*.ts"] }) + "\n",
+      "utf8",
+    );
+    const workbench = await loadWorkbench();
+
+    const definition = await workbench.lspDefinitionTypescript(
+      { file: "src/gamma.ts", line: 2, character: 22 },
+      optionsFor(repo),
+    );
+
+    expect(definition).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("tsconfig.external.json"),
+    });
   });
 });

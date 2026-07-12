@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,7 +17,7 @@ const MAX_BATCH_ITEMS = 20;
 const MAX_READ_BYTES = 80_000;
 const MAX_RESULTS = 200;
 const MAX_SEARCH_CONTEXT_LINES = 5;
-const DEFAULT_LSP_MAX_PROJECT_FILES = 80;
+const DEFAULT_LSP_MAX_LOADED_FILES = 24;
 const PositiveIntSchema = z.number().int().min(1);
 const DEFAULT_EXCLUDE_GLOBS = [
   ".git/**",
@@ -189,7 +189,7 @@ server.registerTool(
   {
     title: "TypeScript Definition",
     description:
-      "Return bounded TypeScript language-service definition locations for a workspace file position.",
+      "Return bounded cross-file TypeScript language-service definition locations for a workspace file position.",
     annotations: READ_ONLY_TOOL_ANNOTATIONS,
     inputSchema: LspLocationSchema,
   },
@@ -314,10 +314,11 @@ export async function lspReferencesTypescript(input, options = {}) {
         ...(input.maxResults && input.maxResults > maxResults
           ? { requestedMaxResults: input.maxResults, maxResultsClamped: true }
           : {}),
-        references: references.slice(0, maxResults).map((reference) => ({
-          ...formatLspSpan(root, reference.fileName, reference.textSpan),
-          isDefinition: reference.isDefinition === true,
-        })),
+        references: references.slice(0, maxResults).map((reference) =>
+          Object.assign(formatLspSpan(root, reference.fileName, reference.textSpan), {
+            isDefinition: reference.isDefinition === true,
+          }),
+        ),
         truncated: references.length > maxResults,
       };
     },
@@ -353,9 +354,15 @@ export function resolveRepoRoot(cwd = process.cwd(), env = process.env) {
 }
 
 async function withTypeScriptLanguageService(input, options, run) {
-  const root = resolveRepoRoot(options.cwd ?? process.cwd(), options.env ?? process.env);
+  const root = realpathSync(
+    resolveRepoRoot(options.cwd ?? process.cwd(), options.env ?? process.env),
+  );
   try {
-    const file = safeResolve(root, input.file);
+    const requestedFile = safeResolve(root, input.file);
+    const file = resolveExistingPathInside(root, requestedFile);
+    if (!file) {
+      throw new Error(`TypeScript file is outside the active workspace: ${input.file}`);
+    }
     const sourceText = await fs.readFile(file, "utf8");
     const position = lineAndCharacterToPosition(sourceText, input.line, input.character);
     const ts = await import("typescript");
@@ -371,8 +378,9 @@ async function withTypeScriptLanguageService(input, options, run) {
       projectRoot: relative(root, project.projectRoot),
       tsconfig: project.tsconfigPath ? relative(root, project.tsconfigPath) : undefined,
       projectMode: project.mode,
-      projectFileCount: project.totalFileCount,
-      lspPartial: project.partial,
+      projectFileCount: project.loadedFileCount?.() ?? project.fileNames.length,
+      lspPartial: project.partial || project.fileLimitReached?.() === true,
+      projectFileLimitReached: project.fileLimitReached?.() === true,
       ...resultPayload,
     };
   } catch (error) {
@@ -390,7 +398,7 @@ async function withTypeScriptLanguageService(input, options, run) {
 function resolveTypeScriptProject(ts, root, file, env = process.env) {
   const configPath = findNearestTsConfig(root, path.dirname(file));
   const projectMode = env.OPENCLAW_REPO_WORKBENCH_LSP_PROJECT_MODE?.trim();
-  if (!configPath || projectMode !== "tsconfig") {
+  if (!configPath || projectMode === "single_file") {
     return singleFileTypeScriptProject(ts, file, {
       projectRoot: configPath ? path.dirname(configPath) : path.dirname(file),
       tsconfigPath: configPath,
@@ -399,39 +407,67 @@ function resolveTypeScriptProject(ts, root, file, env = process.env) {
     });
   }
   const projectRoot = path.dirname(configPath);
-  const configFile = ts.readConfigFile(configPath, (filePath) => readFileSync(filePath, "utf8"));
-  if (configFile.error) {
-    throw new Error(formatTypeScriptDiagnostic(ts, configFile.error));
-  }
-  const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, projectRoot);
-  const projectFileNames = parsed.fileNames.includes(file)
-    ? parsed.fileNames
-    : [file, ...parsed.fileNames];
-  const maxProjectFiles = readLspMaxProjectFiles(env);
-  const useFullProject = projectFileNames.length <= maxProjectFiles;
-  const fileNames = useFullProject ? projectFileNames : [file];
+  const parsed = parseTypeScriptConfigForFile(ts, root, configPath, file);
   return {
+    workspaceRoot: root,
     projectRoot,
     tsconfigPath: configPath,
-    fileNames,
-    totalFileCount: projectFileNames.length,
-    mode: useFullProject ? "tsconfig" : "single_file_large_project",
-    partial: !useFullProject,
-    options: parsed.options,
+    fileNames: [file],
+    maxLoadedFiles: readLspMaxLoadedFiles(env),
+    mode: "tsconfig_dependency_closure",
+    partial: true,
+    options: {
+      ...parsed.options,
+      noLib: true,
+      noResolve: false,
+      skipLibCheck: true,
+      types: [],
+    },
   };
 }
 
-function readLspMaxProjectFiles(env = process.env) {
+function parseTypeScriptConfigForFile(ts, root, configPath, file) {
+  let fatalDiagnostic;
+  const parsed = ts.getParsedCommandLineOfConfigFile(
+    configPath,
+    {},
+    {
+      ...ts.sys,
+      fileExists: (fileName) => resolveExistingPathInside(root, fileName) !== undefined,
+      readFile: (fileName) => {
+        const resolved = resolveExistingPathInside(root, fileName);
+        return resolved ? ts.sys.readFile(resolved) : undefined;
+      },
+      readDirectory: () => [file],
+      onUnRecoverableConfigFileDiagnostic: (diagnostic) => {
+        fatalDiagnostic = diagnostic;
+      },
+    },
+  );
+  if (!parsed) {
+    const detail = fatalDiagnostic
+      ? formatTypeScriptDiagnostic(ts, fatalDiagnostic)
+      : `unable to parse ${configPath}`;
+    throw new Error(detail);
+  }
+  if (parsed.errors.length > 0) {
+    throw new Error(formatTypeScriptDiagnostic(ts, parsed.errors[0]));
+  }
+  return parsed;
+}
+
+function readLspMaxLoadedFiles(env = process.env) {
   const raw = env.OPENCLAW_REPO_WORKBENCH_LSP_MAX_PROJECT_FILES?.trim();
   if (!raw) {
-    return DEFAULT_LSP_MAX_PROJECT_FILES;
+    return DEFAULT_LSP_MAX_LOADED_FILES;
   }
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_LSP_MAX_PROJECT_FILES;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_LSP_MAX_LOADED_FILES;
 }
 
 function singleFileTypeScriptProject(ts, file, metadata) {
   return {
+    workspaceRoot: metadata.projectRoot,
     projectRoot: metadata.projectRoot,
     tsconfigPath: metadata.tsconfigPath,
     fileNames: [file],
@@ -474,38 +510,85 @@ function findNearestTsConfig(root, startDir) {
 }
 
 function createTypeScriptLanguageService(ts, project) {
-  const versions = new Map(project.fileNames.map((fileName) => [fileName, "0"]));
-  const bounded = project.mode === "single_file" || project.mode === "single_file_bounded";
+  const maxLoadedFiles = project.maxLoadedFiles ?? project.fileNames.length;
+  const loadedFiles = new Set(project.fileNames.map((fileName) => path.resolve(fileName)));
+  let fileLimitReached = false;
   const projectFiles = new Set(project.fileNames.map((fileName) => path.resolve(fileName)));
+  project.loadedFileCount = () => loadedFiles.size;
+  project.fileLimitReached = () => fileLimitReached;
+
+  const resolveReadableFile = (fileName) => {
+    const resolved = path.resolve(fileName);
+    const canonical = resolveExistingPathInside(project.workspaceRoot, resolved);
+    if (!canonical) {
+      return undefined;
+    }
+    if (!isTypeScriptSourceFile(canonical) || loadedFiles.has(canonical)) {
+      return canonical;
+    }
+    if (loadedFiles.size >= maxLoadedFiles) {
+      fileLimitReached = true;
+      return undefined;
+    }
+    loadedFiles.add(canonical);
+    return canonical;
+  };
+
+  const isolated = project.mode === "single_file" || project.mode === "single_file_bounded";
   const host = {
     getCompilationSettings: () => project.options,
     getCurrentDirectory: () => project.projectRoot,
     getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options),
     getScriptFileNames: () => project.fileNames,
-    getScriptVersion: (fileName) => versions.get(fileName) ?? "0",
+    getScriptVersion: () => "0",
     getScriptSnapshot: (fileName) => {
       const resolved = path.resolve(fileName);
-      if (bounded && !projectFiles.has(resolved)) {
+      if (isolated && !projectFiles.has(resolved)) {
         return undefined;
       }
-      if (!existsSync(resolved)) {
+      const readable = resolveReadableFile(resolved);
+      if (!readable) {
         return undefined;
       }
-      return ts.ScriptSnapshot.fromString(readFileSync(resolved, "utf8"));
+      return ts.ScriptSnapshot.fromString(readFileSync(readable, "utf8"));
     },
     fileExists: (fileName) => {
       const resolved = path.resolve(fileName);
-      return bounded ? projectFiles.has(resolved) : ts.sys.fileExists(fileName);
+      return isolated ? projectFiles.has(resolved) : resolveReadableFile(resolved) !== undefined;
     },
     readFile: (fileName) => {
       const resolved = path.resolve(fileName);
-      return bounded && !projectFiles.has(resolved) ? undefined : ts.sys.readFile(resolved);
+      if (isolated && !projectFiles.has(resolved)) {
+        return undefined;
+      }
+      const readable = resolveReadableFile(resolved);
+      if (!readable) {
+        return undefined;
+      }
+      return ts.sys.readFile(readable);
     },
-    readDirectory: bounded ? () => [] : ts.sys.readDirectory,
-    directoryExists: bounded ? () => false : ts.sys.directoryExists,
-    getDirectories: bounded ? () => [] : ts.sys.getDirectories,
+    readDirectory: () => [],
+    directoryExists: isolated
+      ? () => false
+      : (directoryName) =>
+          isInside(project.workspaceRoot, path.resolve(directoryName)) &&
+          ts.sys.directoryExists(directoryName),
+    getDirectories: () => [],
   };
   return ts.createLanguageService(host, ts.createDocumentRegistry());
+}
+
+function isTypeScriptSourceFile(fileName) {
+  return /(?:\.d)?\.(?:c|m)?(?:j|t)sx?$/iu.test(fileName);
+}
+
+function resolveExistingPathInside(root, candidate) {
+  try {
+    const canonical = realpathSync(path.resolve(candidate));
+    return isInside(root, canonical) ? canonical : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function lineAndCharacterToPosition(sourceText, line, character) {
