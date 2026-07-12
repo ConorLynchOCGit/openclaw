@@ -3,6 +3,7 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createSubagentSpawnTestConfig,
+  installSessionStoreCaptureMock,
   loadSubagentSpawnModuleForTest,
   setupAcceptedSubagentGatewayMock,
 } from "./subagent-spawn.test-helpers.js";
@@ -37,6 +38,7 @@ const hoisted = vi.hoisted(() => ({
   callGatewayMock: vi.fn(),
   configOverride: {} as Record<string, unknown>,
   registerSubagentRunMock: vi.fn(),
+  updateSessionStoreMock: vi.fn(),
   resolveSandboxRuntimeStatusMock: vi.fn<
     (params: { sessionKey?: string }) => { sandboxed: boolean }
   >(() => ({ sandboxed: false })),
@@ -64,6 +66,7 @@ const hoisted = vi.hoisted(() => ({
 
 let spawnSubagentDirect: typeof import("./subagent-spawn.js").spawnSubagentDirect;
 let resetSubagentRegistryForTests: typeof import("./subagent-registry.js").resetSubagentRegistryForTests;
+let persistedSessionStore: Record<string, Record<string, unknown>> | undefined;
 
 function createConfigOverride(overrides?: Record<string, unknown>) {
   return createSubagentSpawnTestConfig("/tmp/workspace-main", {
@@ -139,6 +142,7 @@ describe("spawnSubagentDirect workspace inheritance", () => {
       callGatewayMock: hoisted.callGatewayMock,
       getRuntimeConfig: () => hoisted.configOverride,
       registerSubagentRunMock: hoisted.registerSubagentRunMock,
+      updateSessionStoreMock: hoisted.updateSessionStoreMock,
       hookRunner: hoisted.hookRunner,
       resolveAgentConfig: resolveTestAgentConfig,
       resolveAgentWorkspaceDir: resolveTestAgentWorkspace,
@@ -152,6 +156,13 @@ describe("spawnSubagentDirect workspace inheritance", () => {
     resetSubagentRegistryForTests();
     hoisted.callGatewayMock.mockClear();
     hoisted.registerSubagentRunMock.mockClear();
+    hoisted.updateSessionStoreMock.mockReset();
+    persistedSessionStore = undefined;
+    installSessionStoreCaptureMock(hoisted.updateSessionStoreMock, {
+      onStore: (store) => {
+        persistedSessionStore = store;
+      },
+    });
     hoisted.resolveSandboxRuntimeStatusMock.mockReset();
     hoisted.resolveSandboxRuntimeStatusMock.mockImplementation(() => ({ sandboxed: false }));
     hoisted.hookRunner.hasHooks.mockReset();
@@ -235,6 +246,48 @@ describe("spawnSubagentDirect workspace inheritance", () => {
       ([request]) => (request as { method?: string }).method === "agent",
     )?.[0] as { params?: Record<string, unknown> } | undefined;
     expect(agentCall?.params).not.toHaveProperty("workspaceDir");
+  });
+
+  it.each([
+    [".", "/tmp/workspace-ops"],
+    ["src/openclaw", "/tmp/workspace-ops/src/openclaw"],
+    ["/tmp/explicit-task-repo", "/tmp/explicit-task-repo"],
+  ])("resolves child cwd %s against the target agent workspace", async (cwd, expectedCwd) => {
+    hoisted.configOverride = createConfigOverride({
+      agents: {
+        list: [
+          {
+            id: "main",
+            workspace: "/tmp/workspace-main",
+            subagents: {
+              allowAgents: ["ops"],
+            },
+          },
+          {
+            id: "ops",
+            workspace: "/tmp/workspace-ops",
+          },
+        ],
+      },
+    });
+
+    const result = await spawnSubagentDirect(
+      {
+        task: "inspect child cwd",
+        agentId: "ops",
+        cwd,
+      },
+      {
+        agentSessionKey: "agent:main:main",
+        workspaceDir: "/tmp/workspace-main",
+      },
+    );
+
+    expect(result.status).toBe("accepted");
+    const childEntry = Object.values(persistedSessionStore ?? {}).find(
+      (entry) => entry.spawnedWorkspaceDir === "/tmp/workspace-ops",
+    );
+    expect(childEntry?.spawnedCwd).toBe(expectedCwd);
   });
 
   it("rejects explicit cwd overrides for sandboxed native subagent spawns", async () => {

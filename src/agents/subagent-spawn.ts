@@ -206,6 +206,23 @@ export type SpawnSubagentContext = {
   inheritedToolDenylist?: string[];
 };
 
+function resolveSpawnedCwd(params: {
+  requestedCwd?: string;
+  spawnedWorkspaceDir?: string;
+}): string | undefined {
+  const requestedCwd = normalizeOptionalString(params.requestedCwd);
+  if (!requestedCwd) {
+    return undefined;
+  }
+  if (path.isAbsolute(requestedCwd) || requestedCwd.startsWith("~")) {
+    return resolveUserPath(requestedCwd);
+  }
+  const workspaceDir = normalizeOptionalString(params.spawnedWorkspaceDir);
+  return workspaceDir
+    ? path.resolve(resolveUserPath(workspaceDir), requestedCwd)
+    : resolveUserPath(requestedCwd);
+}
+
 export type SpawnSubagentResult = {
   status: "accepted" | "forbidden" | "error";
   childSessionKey?: string;
@@ -1245,7 +1262,6 @@ export async function spawnSubagentDirect(
   }
   const targetAgentId = requestedAgentId ? normalizeAgentId(requestedAgentId) : requesterAgentId;
   const requestedCwd = normalizeOptionalString(params.cwd);
-  const spawnedCwd = requestedCwd ? resolveUserPath(requestedCwd) : undefined;
   const toolSpawnMetadata = mapToolContextToSpawnedRunMetadata({
     agentGroupId: ctx.agentGroupId,
     agentGroupChannel: ctx.agentGroupChannel,
@@ -1258,6 +1274,12 @@ export async function spawnSubagentDirect(
     config: cfg,
     targetAgentId,
     explicitWorkspaceDir: inheritedWorkspaceDir,
+  });
+  // Model-facing task paths are workspace-relative. Resolve them against the
+  // target agent workspace, never the gateway process cwd (usually /app).
+  const spawnedCwd = resolveSpawnedCwd({
+    requestedCwd,
+    spawnedWorkspaceDir,
   });
   const requesterOrigin = normalizeDeliveryContext({
     channel: ctx.agentChannel,
