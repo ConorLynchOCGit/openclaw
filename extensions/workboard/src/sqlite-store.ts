@@ -27,7 +27,7 @@ import type {
 } from "./types.js";
 
 const WORKBOARD_DB_RELATIVE_PATH = ["plugins", "workboard", "workboard.sqlite"] as const;
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const WORKBOARD_SQLITE_BUSY_TIMEOUT_MS = 5000;
 const WORKBOARD_SQLITE_DIR_MODE = 0o700;
 const WORKBOARD_SQLITE_FILE_MODE = 0o600;
@@ -183,6 +183,7 @@ function ensureWorkboardSchema(db: DatabaseSync): void {
       execution_started_at INTEGER,
       execution_updated_at INTEGER,
       automation_json TEXT,
+      business_ops_promotion_json TEXT,
       claim_json TEXT,
       template_id TEXT,
       archived_at INTEGER,
@@ -355,6 +356,12 @@ function ensureWorkboardSchema(db: DatabaseSync): void {
     "workboard_cards",
     "lifecycle_status_source_updated_at",
     "lifecycle_status_source_updated_at INTEGER",
+  );
+  ensureColumn(
+    db,
+    "workboard_cards",
+    "business_ops_promotion_json",
+    "business_ops_promotion_json TEXT",
   );
   db.prepare(
     "INSERT OR IGNORE INTO workboard_schema_migrations (id, applied_at) VALUES (?, ?)",
@@ -651,6 +658,9 @@ function readMetadata(db: DatabaseSync, row: Row): WorkboardMetadata | undefined
     .prepare("SELECT * FROM workboard_worker_protocol WHERE card_id = ?")
     .get(cardId) as Row | undefined;
   const automation = parseJson(row.automation_json) as WorkboardMetadata["automation"] | undefined;
+  const businessOpsPromotion = parseJson(row.business_ops_promotion_json) as
+    | WorkboardMetadata["businessOpsPromotion"]
+    | undefined;
   const claim = parseJson(row.claim_json) as WorkboardMetadata["claim"] | undefined;
   const stale = parseJson(row.stale_json) as WorkboardMetadata["stale"] | undefined;
   const lifecycleStatusSourceUpdatedAt = numberValue(row, "lifecycle_status_source_updated_at");
@@ -674,6 +684,7 @@ function readMetadata(db: DatabaseSync, row: Row): WorkboardMetadata | undefined
         }
       : {}),
     ...(automation ? { automation } : {}),
+    ...(businessOpsPromotion ? { businessOpsPromotion } : {}),
     ...(claim ? { claim } : {}),
     ...(diagnostics.length > 0 ? { diagnostics } : {}),
     ...(notifications.length > 0 ? { notifications } : {}),
@@ -762,15 +773,15 @@ function insertCard(db: DatabaseSync, card: WorkboardCard): void {
         source_url, position, created_at, updated_at, started_at, completed_at,
         execution_id, execution_kind, execution_engine, execution_mode, execution_status,
         execution_model, execution_session_key, execution_run_id, execution_started_at,
-        execution_updated_at, automation_json, claim_json, template_id, archived_at, stale_json,
-        lifecycle_status_source_updated_at, failure_count
+        execution_updated_at, automation_json, business_ops_promotion_json, claim_json, template_id,
+        archived_at, stale_json, lifecycle_status_source_updated_at, failure_count
       ) VALUES (
         @id, @board_id, @title, @notes, @status, @priority, @agent_id, @session_key, @run_id,
         @task_id, @source_url, @position, @created_at, @updated_at, @started_at, @completed_at,
         @execution_id, @execution_kind, @execution_engine, @execution_mode, @execution_status,
         @execution_model, @execution_session_key, @execution_run_id, @execution_started_at,
-        @execution_updated_at, @automation_json, @claim_json, @template_id, @archived_at,
-        @stale_json, @lifecycle_status_source_updated_at, @failure_count
+        @execution_updated_at, @automation_json, @business_ops_promotion_json, @claim_json,
+        @template_id, @archived_at, @stale_json, @lifecycle_status_source_updated_at, @failure_count
       )
       ON CONFLICT(id) DO UPDATE SET
         board_id = excluded.board_id,
@@ -799,6 +810,7 @@ function insertCard(db: DatabaseSync, card: WorkboardCard): void {
         execution_started_at = excluded.execution_started_at,
         execution_updated_at = excluded.execution_updated_at,
         automation_json = excluded.automation_json,
+        business_ops_promotion_json = excluded.business_ops_promotion_json,
         claim_json = excluded.claim_json,
         template_id = excluded.template_id,
         archived_at = excluded.archived_at,
@@ -834,6 +846,7 @@ function insertCard(db: DatabaseSync, card: WorkboardCard): void {
     execution_started_at: bindNull(execution?.startedAt),
     execution_updated_at: bindNull(execution?.updatedAt),
     automation_json: jsonValue(metadata?.automation),
+    business_ops_promotion_json: jsonValue(metadata?.businessOpsPromotion),
     claim_json: jsonValue(metadata?.claim),
     template_id: bindNull(metadata?.templateId),
     archived_at: bindNull(metadata?.archivedAt),

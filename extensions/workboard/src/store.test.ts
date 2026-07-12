@@ -167,6 +167,81 @@ describe("WorkboardStore", () => {
     expect(updated.card?.metadata?.automation?.scheduledAt).toBeUndefined();
   });
 
+  it("persists Business Ops promotion identity through sqlite and replays idempotently", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-workboard-promotion-sqlite-"));
+    const dbPath = path.join(dir, "workboard.sqlite");
+    try {
+      const legacyStores = createWorkboardSqliteStores({ dbPath });
+      legacyStores.close();
+      const legacyDb = new DatabaseSync(dbPath);
+      legacyDb.exec("ALTER TABLE workboard_cards DROP COLUMN business_ops_promotion_json");
+      legacyDb.prepare("DELETE FROM workboard_schema_migrations WHERE id = ?").run("schema-3");
+      legacyDb.close();
+
+      const stores = createWorkboardSqliteStores({ dbPath });
+      const store = new WorkboardStore(stores.cards, {
+        boards: stores.boards,
+        subscriptions: stores.subscriptions,
+        attachments: stores.attachments,
+      });
+      const input = {
+        candidateId: "AA-SQLITE-001",
+        sourceRef: "business-ops/american-atomics/candidates.md#AA-SQLITE-001",
+        projectRef: "business-ops/projects/american-atomics",
+        ownerMode: "shared",
+        targetWindow: "After source review; not a scheduled execution time",
+        decisionBoundary: "Internal candidate work only.",
+        promotedBy: "operator:test",
+        approvalNote: "Approve one internal review commitment.",
+        proposedLearning: "Review before accepting this learning.",
+        title: "Review persisted Business Ops candidate",
+        status: "todo",
+        agentId: "business-ops",
+        boardId: "sqlite-promotion",
+        approved: true,
+      };
+
+      const approved = await store.promoteBusinessOpsCandidate(input);
+      expect(approved.card?.metadata?.businessOpsPromotion).toMatchObject({
+        candidateId: input.candidateId,
+        projectRef: input.projectRef,
+        ownerMode: "shared",
+        targetWindow: input.targetWindow,
+      });
+
+      const replay = await store.promoteBusinessOpsCandidate(input);
+      expect(replay).toMatchObject({
+        approved: true,
+        action: "unchanged",
+        changes: [],
+        existingCardId: approved.card?.id,
+        card: { id: approved.card?.id },
+      });
+      expect(await store.list({ boardId: input.boardId })).toHaveLength(1);
+      stores.close();
+
+      const reopenedStores = createWorkboardSqliteStores({ dbPath });
+      const reopened = new WorkboardStore(reopenedStores.cards, {
+        boards: reopenedStores.boards,
+        subscriptions: reopenedStores.subscriptions,
+        attachments: reopenedStores.attachments,
+      });
+      expect(await reopened.get(approved.card?.id ?? "")).toMatchObject({
+        metadata: {
+          businessOpsPromotion: {
+            candidateId: input.candidateId,
+            projectRef: input.projectRef,
+            ownerMode: "shared",
+            targetWindow: input.targetWindow,
+          },
+        },
+      });
+      reopenedStores.close();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("keeps Business Ops provenance exclusive to the dedicated promotion operation", async () => {
     const store = new WorkboardStore(createMemoryStore());
     const forged = {
