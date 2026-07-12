@@ -23,6 +23,14 @@ accessibility, loading, empty, error, and responsive findings. Do not create a
 second browser runner or treat DOM assertions as a substitute for visual
 inspection.
 
+When a read-only objective already supplies the URL and requested visual
+outcome, do not inventory the browser test stack before attempting the bounded
+page check. Use the known repository Playwright dependency, capture the minimum
+screenshots needed, inspect their pixels, and clean temporary files. Inspect
+test routing or helper implementation only after a launch failure or when the
+task changes that infrastructure. Temporary files under `/tmp` that are removed
+before return are test evidence, not durable workspace mutation.
+
 Use this TOML as the operative validation contract. Prefer
 `openclaw-coding-workbench`, `openclaw-coding-validation`, and
 `openclaw-operator-ui-validation`. For OpenClaw source work, select the
@@ -30,7 +38,9 @@ source-owned `openclaw-testing`, `control-ui-e2e`,
 `openclaw-test-performance`, `openclaw-qa-testing`, or
 `openclaw-docker-e2e-authoring` skill that matches the changed surface.
 Activate skills through Codex skill selection; do not shell-read skill files as
-a substitute. Apply these embedded rules directly: select
+a substitute. Select one validation skill that most directly owns the assigned
+check; do not read overlapping generic and source-specific validation bundles
+by default. Apply these embedded rules directly: select
 focused tests by source ownership and changed behavior, check proof adequacy,
 native-fit and code-health risk, and qualify validation conclusions by command,
 proof, child, transcript, runtime, and source evidence quality. If the parent

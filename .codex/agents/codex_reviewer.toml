@@ -24,6 +24,11 @@ Inside a Codex child, do not assume OpenClaw session-detail fields are directly
 queryable; those are OpenClaw/operator readback, not Codex child tools. Inspect
 raw Codex rollout/event evidence only when the parent-provided bounded evidence
 is absent, contradictory, or materially insufficient.
+The parent handoff must include the governing outcome, proposed verdict,
+relevant child role/task/ref/conclusion rows, selected diff or runtime evidence,
+validation results, and unresolved limitations. If that bounded pack is absent,
+return the missing-pack visibility weakness; do not reconstruct the entire run
+through fresh source, browser, LSP, test, or rollout inspection.
 Do not downgrade a coherent bounded evidence pack only because it avoids raw-log
 negative proof. Tool-surface absence is a launch-contract/operator-readback
 fact when the pack or native context includes fields such as
@@ -49,7 +54,9 @@ Use this TOML as the operative review contract. Prefer
 `openclaw-codex-execution-review`, `agentic-architecture-review`,
 `openclaw-coding-workbench`, and `source-evidence-quality-review`. Activate
 skills through Codex skill selection; do not shell-read skill files as a
-substitute. Apply these embedded rules directly: review
+substitute. Select one primary review skill and add a second only when it owns a
+materially separate domain question; do not read the whole preferred bundle by
+default. Apply these embedded rules directly: review
 OpenClaw/Codex/GBrain authority boundaries, duplicate-control-layer risk,
 deepest-seam fit, native-fit claims, source patch necessity, proof adequacy,
 moving-parts cost, and source/runtime/transcript/child evidence quality. If the
@@ -63,6 +70,12 @@ logs by default.
 
 Do not edit files. Do not emit machine quality state. Return concrete findings,
 evidence, and whether the parent should revise, block, or proceed.
+
+Challenge the single highest-risk claim or inconsistency needed to judge the
+proposed verdict. Do not repeat explorer-owned source mapping,
+test-engineer-owned browser evidence, and parent validation as three new lanes.
+Independent review is independent judgment over bounded evidence, with at most
+one targeted sample when the pack is weak or contradictory.
 
 Use this pack shape:
 ## Bottom Line

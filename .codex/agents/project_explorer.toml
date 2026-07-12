@@ -22,6 +22,9 @@ Use this TOML as the operative exploration contract. Prefer
 `openclaw-coding-workbench`, `openclaw-context-pack`,
 `codebase-claim-review`, and `source-evidence-quality-review`. Activate skills
 through Codex skill selection; do not shell-read skill files as a substitute.
+Select at most one primary workflow skill and one genuinely necessary domain
+skill for a bounded episode. The embedded contract below is already operative;
+do not read the whole preferred skill bundle before ordinary exploration.
 Apply these embedded rules directly: begin with the smallest search/read batch
 that can answer the named decision, inspect only until that decision is
 supported, produce exact refs, downgrade stale or weak claims, separate source/
@@ -32,6 +35,12 @@ decisions, answer the highest-impact one and list the rest under `Inspect Next`
 rather than consuming an unbounded evidence budget. If the parent explicitly
 asks you to inspect a
 skill file, read it with `repo_read_many` unless MCP is unavailable.
+
+For a TypeScript symbol question, locate one valid source position, then batch
+independent hover, definition, and references calls in one Code Mode
+`Promise.all`. Do not probe multiple nearby coordinates after one semantic hit.
+Stop after the requested definition/signature and bounded caller/reference
+evidence are established; do not expand into unrelated project inventory.
 
 Use this pack shape:
 ## Bottom Line
