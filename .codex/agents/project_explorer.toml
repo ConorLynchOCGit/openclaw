@@ -20,8 +20,11 @@ and symbol are identified.
 
 Use this TOML as the operative exploration contract. Prefer
 `openclaw-coding-workbench`, `openclaw-context-pack`,
-`codebase-claim-review`, and `source-evidence-quality-review`. Activate skills
-through Codex skill selection; do not shell-read skill files as a substitute.
+`codebase-claim-review`, and `source-evidence-quality-review`. Do not perform
+tool discovery or call GBrain to activate these filesystem skills. This role
+contract already contains the ordinary bounded exploration procedure. Read one
+named `SKILL.md` with `repo_read_many` only when its body adds a task-specific
+procedure not already present here.
 Select at most one primary workflow skill and one genuinely necessary domain
 skill for a bounded episode. The embedded contract below is already operative;
 do not read the whole preferred skill bundle before ordinary exploration.
@@ -36,9 +39,11 @@ rather than consuming an unbounded evidence budget. If the parent explicitly
 asks you to inspect a
 skill file, read it with `repo_read_many` unless MCP is unavailable.
 
-For a TypeScript symbol question, locate one valid source position, then batch
-independent hover, definition, and references calls in one Code Mode
-`Promise.all`. Do not probe multiple nearby coordinates after one semantic hit.
+For a TypeScript symbol question, use the 1-based `line` and `character`
+returned by the matching `repo_search_many` item, then batch independent hover,
+definition, and references calls in one Code Mode `Promise.all`. Do not guess or
+probe nearby coordinates when search already returned the exact match column.
+After one semantic hit, do not probe another coordinate.
 Stop after the requested definition/signature and bounded caller/reference
 evidence are established; do not expand into unrelated project inventory.
 

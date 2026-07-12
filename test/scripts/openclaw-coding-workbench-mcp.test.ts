@@ -20,6 +20,13 @@ type WorkbenchModule = {
     results: Array<{
       status: string;
       matches?: string[];
+      items?: Array<{
+        path?: string;
+        line?: number;
+        character?: number;
+        text?: string;
+        context?: boolean;
+      }>;
       error?: string;
       effectiveMaxMatches?: number;
       requestedMaxMatches?: number;
@@ -317,6 +324,15 @@ describe("openclaw-coding-workbench MCP helpers", () => {
 
     expect(search.results[0].status).toBe("matched");
     expect(search.results[0].matches?.join("\n")).toContain("alpha.ts");
+    expect(search.results[0].matches?.join("\n")).not.toContain(":14:export const alpha");
+    expect(search.results[0].items).toContainEqual(
+      expect.objectContaining({
+        path: "src/alpha.ts",
+        line: 1,
+        character: 14,
+        text: "export const alpha = 1;",
+      }),
+    );
     expect(search.results[1].status).toBe("no_match");
     expect(glob.results[0].status).toBe("ok");
     expect(glob.results[0].files).toHaveLength(3);

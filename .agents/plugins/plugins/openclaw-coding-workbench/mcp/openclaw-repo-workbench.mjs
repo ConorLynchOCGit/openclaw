@@ -109,8 +109,18 @@ const GitRequestSchema = z.object({
 
 const LspLocationSchema = z.object({
   file: z.string().min(1),
-  line: z.number().int().min(1),
-  character: z.number().int().min(1),
+  line: z
+    .number()
+    .int()
+    .min(1)
+    .describe("1-based source line. Reuse repo_search_many items[].line when available."),
+  character: z
+    .number()
+    .int()
+    .min(1)
+    .describe(
+      "1-based source character. Reuse repo_search_many items[].character from the matching line.",
+    ),
   maxResults: PositiveIntSchema.optional().describe(
     `Optional result cap. Values above ${MAX_RESULTS} are accepted and clamped.`,
   ),
@@ -121,7 +131,7 @@ server.registerTool(
   {
     title: "Search Many",
     description:
-      "Preferred broad-discovery tool: run multiple independent bounded ripgrep searches concurrently under the active workspace root.",
+      "Preferred broad-discovery tool: run multiple independent bounded ripgrep searches concurrently under the active workspace root. Match items include 1-based line and character coordinates that can be passed directly to the TypeScript LSP tools.",
     annotations: READ_ONLY_TOOL_ANNOTATIONS,
     inputSchema: z.object({
       queries: z.array(SearchQuerySchema).min(1).max(MAX_BATCH_ITEMS),
@@ -696,6 +706,7 @@ async function runSearchQuery(root, query) {
     const contextLines = Math.min(query.contextLines ?? 0, MAX_SEARCH_CONTEXT_LINES);
     const args = [
       "--line-number",
+      "--column",
       "--no-heading",
       "--with-filename",
       "--color",
@@ -740,7 +751,7 @@ async function runSearchQuery(root, query) {
         : {}),
       status: output.exitCode === 0 ? "matched" : output.exitCode === 1 ? "no_match" : "error",
       items,
-      matches: lines,
+      matches: lines.map(stripRipgrepMatchColumn),
       truncated: output.truncated || lines.length >= maxMatches,
       ...(output.stderr ? { stderr: output.stderr } : {}),
     };
@@ -934,20 +945,37 @@ function outputResult(exitCode, stdout, stderr, maxBytes) {
 
 function parseRipgrepItems(root, lines) {
   return lines.map((line) => {
-    const parsed = /^(.*?)([:-])(\d+)\2(.*)$/u.exec(line);
-    if (!parsed) {
+    const match = /^(.*?):(\d+):(\d+):(.*)$/u.exec(line);
+    if (match) {
+      const [, filePath, lineNumber, character, text] = match;
+      const resolved = path.resolve(filePath);
+      const displayPath = isInside(root, resolved) ? relative(root, resolved) : filePath;
+      return {
+        path: displayPath,
+        line: Number.parseInt(lineNumber, 10),
+        character: Number.parseInt(character, 10),
+        text,
+      };
+    }
+    const context = /^(.*?)-(\d+)-(.*)$/u.exec(line);
+    if (!context) {
       return { text: line };
     }
-    const [, filePath, separator, lineNumber, text] = parsed;
+    const [, filePath, lineNumber, text] = context;
     const resolved = path.resolve(filePath);
     const displayPath = isInside(root, resolved) ? relative(root, resolved) : filePath;
     return {
       path: displayPath,
       line: Number.parseInt(lineNumber, 10),
       text,
-      ...(separator === "-" ? { context: true } : {}),
+      context: true,
     };
   });
+}
+
+function stripRipgrepMatchColumn(line) {
+  const match = /^(.*?):(\d+):\d+:(.*)$/u.exec(line);
+  return match ? `${match[1]}:${match[2]}:${match[3]}` : line;
 }
 
 function sha256(value) {
