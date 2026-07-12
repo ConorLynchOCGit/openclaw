@@ -102,7 +102,10 @@ export async function startCodexAttemptThread(params: {
   buildFinalConfigPatch?: Parameters<typeof startOrResumeThread>[0]["buildFinalConfigPatch"];
   nativeHookRelayGeneration?: string;
   bundleMcpThreadConfig: CodexBundleMcpThreadConfig;
-  nativeToolSurfaceEnabled: boolean;
+  nativeExecutionAllowed: boolean;
+  codeModeEnabled: boolean;
+  codeModeOnly: boolean;
+  codeModeDirectOnlyToolNamespaces?: readonly string[];
   sandboxExecServerEnabled: boolean;
   sandbox: CodexSandboxContext;
   contextEngineProjection: CodexContextEngineThreadBootstrapProjection | undefined;
@@ -137,12 +140,12 @@ export async function startCodexAttemptThread(params: {
         const threadConfig = mergeCodexThreadConfigs(
           params.bundleMcpThreadConfig?.configPatch as JsonObject | undefined,
         );
-        const nativeToolSurfaceRestricted = !params.nativeToolSurfaceEnabled;
+        const nativeToolSurfaceRestricted = !params.nativeExecutionAllowed;
         const pluginThreadConfigRequired =
           nativeToolSurfaceRestricted || shouldBuildCodexPluginThreadConfig(params.pluginConfig);
         // Restricted runs still need a plugin thread config so thread/start
         // carries the explicit apps._default denial patch without app/list.
-        const pluginThreadConfigPluginConfig = params.nativeToolSurfaceEnabled
+        const pluginThreadConfigPluginConfig = params.nativeExecutionAllowed
           ? params.pluginConfig
           : disableCodexPluginThreadConfig(params.pluginConfig);
         const pluginAppCacheKeyInput = {
@@ -253,7 +256,7 @@ export async function startCodexAttemptThread(params: {
             try {
               startupSandboxEnvironment = shouldRequireCodexSandboxExecServerEnvironment({
                 sandbox: params.sandbox,
-                nativeToolSurfaceEnabled: params.nativeToolSurfaceEnabled,
+                nativeToolSurfaceEnabled: params.nativeExecutionAllowed,
                 sandboxExecServerEnabled: params.sandboxExecServerEnabled,
               })
                 ? await ensureCodexSandboxExecServerEnvironment({
@@ -271,7 +274,7 @@ export async function startCodexAttemptThread(params: {
               }
               if (
                 params.sandbox?.enabled &&
-                params.nativeToolSurfaceEnabled &&
+                params.nativeExecutionAllowed &&
                 params.sandboxExecServerEnabled &&
                 !startupSandboxEnvironment
               ) {
@@ -285,12 +288,12 @@ export async function startCodexAttemptThread(params: {
             }
             const startupEnvironmentSelection = resolveCodexSandboxEnvironmentSelection(
               startupSandboxEnvironment,
-              params.nativeToolSurfaceEnabled,
+              params.nativeExecutionAllowed,
             );
             const startupExecutionCwd = resolveCodexAppServerExecutionCwd({
               effectiveCwd: params.effectiveCwd,
               environment: startupSandboxEnvironment,
-              nativeToolSurfaceEnabled: params.nativeToolSurfaceEnabled,
+              nativeToolSurfaceEnabled: params.nativeExecutionAllowed,
             });
             const startupSandboxPolicy = startupSandboxEnvironment
               ? resolveCodexExternalSandboxPolicyForOpenClawSandbox(params.sandbox)
@@ -308,9 +311,10 @@ export async function startCodexAttemptThread(params: {
                 finalConfigPatch: params.finalConfigPatch,
                 buildFinalConfigPatch: params.buildFinalConfigPatch,
                 nativeHookRelayGeneration: params.nativeHookRelayGeneration,
-                nativeCodeModeEnabled: params.nativeToolSurfaceEnabled,
-                nativeCodeModeOnlyEnabled: params.appServer.codeModeOnly,
-                userMcpServersEnabled: params.nativeToolSurfaceEnabled,
+                nativeCodeModeEnabled: params.codeModeEnabled,
+                nativeCodeModeOnlyEnabled: params.codeModeOnly,
+                nativeCodeModeDirectOnlyToolNamespaces: params.codeModeDirectOnlyToolNamespaces,
+                userMcpServersEnabled: params.nativeExecutionAllowed,
                 mcpServersFingerprint: params.bundleMcpThreadConfig.fingerprint,
                 mcpServersFingerprintEvaluated: params.bundleMcpThreadConfig.evaluated,
                 environmentSelection: startupEnvironmentSelection,

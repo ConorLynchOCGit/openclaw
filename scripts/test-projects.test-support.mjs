@@ -282,6 +282,7 @@ const TOOLING_ISOLATED_TEST_TARGET = "test/scripts/openclaw-e2e-instance.test.ts
 const TUI_VITEST_CONFIG = "test/vitest/vitest.tui.config.ts";
 const TUI_PTY_VITEST_CONFIG = "test/vitest/vitest.tui-pty.config.ts";
 const UI_VITEST_CONFIG = "test/vitest/vitest.ui.config.ts";
+const UI_BROWSER_VITEST_CONFIG = "ui/vitest.config.ts";
 const UI_E2E_VITEST_CONFIG = "test/vitest/vitest.ui-e2e.config.ts";
 const UTILS_VITEST_CONFIG = "test/vitest/vitest.utils.config.ts";
 const WIZARD_VITEST_CONFIG = "test/vitest/vitest.wizard.config.ts";
@@ -378,6 +379,7 @@ const VITEST_CONFIG_BY_KIND = {
   tui: TUI_VITEST_CONFIG,
   tuiPty: TUI_PTY_VITEST_CONFIG,
   ui: UI_VITEST_CONFIG,
+  uiBrowser: UI_BROWSER_VITEST_CONFIG,
   uiE2e: UI_E2E_VITEST_CONFIG,
   utils: UTILS_VITEST_CONFIG,
   wizard: WIZARD_VITEST_CONFIG,
@@ -1928,6 +1930,9 @@ function classifyTarget(arg, cwd) {
   if (isControlUiE2eTarget(relative)) {
     return "uiE2e";
   }
+  if (relative.startsWith("ui/src/") && relative.endsWith(".browser.test.ts")) {
+    return "uiBrowser";
+  }
   if (relative.startsWith("ui/src/")) {
     if (isUnitUiTestTarget(relative)) {
       return "unitUi";
@@ -2368,6 +2373,7 @@ export function buildVitestRunPlans(
     "agentsTools",
     "plugin",
     "ui",
+    "uiBrowser",
     "uiE2e",
     "unitSrc",
     "unitSecurity",

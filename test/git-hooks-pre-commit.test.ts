@@ -69,6 +69,21 @@ afterEach(() => {
 });
 
 describe("git-hooks/pre-commit (integration)", () => {
+  it("uses the installed local node tool without invoking package resolution", () => {
+    const dir = makeTempRepoRoot(tempDirs, "openclaw-pre-commit-local-tool-");
+    writeExecutable(
+      dir,
+      "pnpm",
+      "#!/usr/bin/env bash\necho 'pnpm package resolution should not run' >&2\nexit 99\n",
+    );
+
+    expect(
+      run(process.cwd(), "bash", ["scripts/pre-commit/run-node-tool.sh", "oxfmt", "--version"], {
+        PATH: `${dir}:${process.env.PATH ?? ""}`,
+      }),
+    ).toMatch(/\d/u);
+  });
+
   it("does not treat staged filenames as git-add flags (e.g. --all)", () => {
     const dir = makeTempRepoRoot(tempDirs, "openclaw-pre-commit-");
     run(dir, "git", ["init", "-q", "--initial-branch=main"]);

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { normalizeCodexItemToolEvent } from "./codex-item-event-normalizer.js";
+import type { JsonObject } from "./protocol.js";
 
 describe("normalizeCodexItemToolEvent", () => {
   it("normalizes native command, file, MCP, and web items", () => {
@@ -45,7 +46,7 @@ describe("normalizeCodexItemToolEvent", () => {
         item: { id: "web-1", type: "webSearch", query: "Codex app-server" },
         name: "web_search",
       },
-    ] as const;
+    ];
 
     for (const testCase of cases) {
       const event = normalizeCodexItemToolEvent({
@@ -53,7 +54,7 @@ describe("normalizeCodexItemToolEvent", () => {
         notificationParams: {
           threadId: "thread-1",
           turnId: "turn-1",
-          item: testCase.item,
+          item: testCase.item as unknown as JsonObject,
         },
       });
       expect(event).toMatchObject({

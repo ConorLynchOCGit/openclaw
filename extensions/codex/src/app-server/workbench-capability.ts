@@ -120,10 +120,6 @@ export type CodexWorkbenchCapabilityReport = {
   generatedSchemaMethods: CodexWorkbenchMethodPresence[];
   codexProjectConfig: CodexProjectConfigCapability;
   customAgents: CodexCustomAgentCapability;
-  nativeParallelToolCalls: {
-    status: "not_proven";
-    note: string;
-  };
   controlMethods: {
     modelList: CodexWorkbenchMethodStatus & { count?: number };
     modelProviderCapabilitiesRead: CodexWorkbenchProviderCapabilities;
@@ -226,10 +222,6 @@ export async function buildCodexWorkbenchCapabilityReport(params: {
     generatedSchemaMethods: buildGeneratedSchemaMethodPresence(),
     codexProjectConfig,
     customAgents,
-    nativeParallelToolCalls: {
-      status: "not_proven",
-      note: "Native parallel tool-call support must be proven by a dedicated raw-event probe; this startup report does not infer it.",
-    },
     controlMethods: {
       modelList,
       modelProviderCapabilitiesRead: modelProviderCapabilities,

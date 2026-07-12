@@ -60,8 +60,8 @@ type CodexBootstrapContext = {
 export type CodexSystemPromptReport = NonNullable<EmbeddedRunAttemptResult["systemPromptReport"]>;
 export type CodexNativeSurfaceReport = {
   owner: "codex_app_server";
-  nativeToolSurfaceConfigured: boolean;
-  nativeToolSurfaceReason:
+  nativeExecutionAllowed: boolean;
+  nativeExecutionReason:
     | "enabled"
     | "memory_flush"
     | "node_exec_policy"

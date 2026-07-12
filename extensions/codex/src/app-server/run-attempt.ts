@@ -148,6 +148,7 @@ import {
   filterCodexDynamicToolsForAllowlist,
   formatCodexDynamicToolBuildStageSummary,
   includeForcedCodexDynamicToolAllow,
+  isCodexNativeCodingAgent,
   isCodexNativeExecutionBlockedByNodeExecHost,
   resolveCodexAppServerNativeToolSurfaceDecision,
   resolveCodexAppServerHookChannelId,
@@ -234,6 +235,7 @@ import {
   buildContextEngineBinding,
   buildTurnCollaborationMode,
   buildTurnStartParams,
+  CODEX_REPO_WORKBENCH_DIRECT_NAMESPACE,
   codexDynamicToolsFingerprint,
   type CodexAppServerThreadLifecycleBinding,
   type CodexContextEngineThreadBootstrapProjection,
@@ -659,17 +661,20 @@ export async function runCodexAppServerAttempt(
   });
   preDynamicStartupStages.mark("bundle-mcp");
   const sandboxExecServerEnabled = isCodexSandboxExecServerEnabled(pluginConfig);
-  const nativeToolSurfaceDecision = resolveCodexAppServerNativeToolSurfaceDecision(
-    params,
-    sandbox,
-    {
-      agentId: sessionAgentId,
-      runtimeSessionKey: sandboxSessionKey,
-      sandboxExecServerEnabled,
-    },
-  );
-  const nativeToolSurfaceEnabled = nativeToolSurfaceDecision.enabled;
-  preDynamicStartupStages.mark("native-tool-surface");
+  const nativeExecutionDecision = resolveCodexAppServerNativeToolSurfaceDecision(params, sandbox, {
+    agentId: sessionAgentId,
+    runtimeSessionKey: sandboxSessionKey,
+    sandboxExecServerEnabled,
+  });
+  const nativeExecutionAllowed = nativeExecutionDecision.enabled;
+  const isNativeCodingRun = isCodexNativeCodingAgent(sessionAgentId);
+  const codeModeEnabled = nativeExecutionAllowed;
+  const codeModeOnly = nativeExecutionAllowed && (isNativeCodingRun || appServer.codeModeOnly);
+  const codeModeDirectOnlyToolNamespaces =
+    nativeExecutionAllowed && isNativeCodingRun
+      ? [CODEX_REPO_WORKBENCH_DIRECT_NAMESPACE]
+      : undefined;
+  preDynamicStartupStages.mark("native-execution-profile");
   for (const diagnostic of bundleMcpThreadConfig.diagnostics) {
     embeddedAgentLog.warn(`bundle-mcp: ${diagnostic.pluginId}: ${diagnostic.message}`);
   }
@@ -694,8 +699,11 @@ export async function runCodexAppServerAttempt(
         hasStartupBinding: Boolean(startupBinding?.threadId),
         startupAuthProfileId: startupAuthProfileId ?? null,
         bundleMcpDiagnosticCount: bundleMcpThreadConfig.diagnostics.length,
-        nativeToolSurfaceEnabled,
-        nativeToolSurfaceReason: nativeToolSurfaceDecision.reason,
+        nativeExecutionAllowed,
+        nativeExecutionReason: nativeExecutionDecision.reason,
+        codeModeEnabled,
+        codeModeOnly,
+        codeModeDirectOnlyToolNamespaces,
       },
     );
   }
@@ -707,7 +715,7 @@ export async function runCodexAppServerAttempt(
     effectiveCwd,
     sandboxSessionKey,
     sandbox,
-    nativeToolSurfaceEnabled,
+    nativeToolSurfaceEnabled: nativeExecutionAllowed,
     runAbortController,
     sessionAgentId,
     pluginConfig,
@@ -724,7 +732,7 @@ export async function runCodexAppServerAttempt(
     effectiveCwd,
     sandboxSessionKey,
     sandbox,
-    nativeToolSurfaceEnabled,
+    nativeToolSurfaceEnabled: nativeExecutionAllowed,
     runAbortController,
     sessionAgentId,
     pluginConfig,
@@ -822,8 +830,8 @@ export async function runCodexAppServerAttempt(
     buildCodexLaunchEvidenceCapsule(toolBridge.availableSpecs, {
       cwd: effectiveCwd,
       runtimeConfig: bundleMcpThreadConfig.configPatch as JsonObject | undefined,
-      nativeCodeModeEnabled: nativeToolSurfaceEnabled,
-      nativeCodeModeOnlyEnabled: nativeToolSurfaceEnabled && appServer.codeModeOnly,
+      nativeCodeModeEnabled: codeModeEnabled,
+      nativeCodeModeOnlyEnabled: codeModeOnly,
     }),
     workspaceBootstrapContext.developerInstructions,
   );
@@ -928,7 +936,7 @@ export async function runCodexAppServerAttempt(
   if (activeContextEngine) {
     try {
       await applyActiveContextEngineProjection(
-        !nativeToolSurfaceEnabled ? undefined : startupBinding,
+        !nativeExecutionAllowed ? undefined : startupBinding,
       );
     } catch (assembleErr) {
       embeddedAgentLog.warn("context engine assemble failed; using Codex baseline prompt", {
@@ -1122,10 +1130,10 @@ export async function runCodexAppServerAttempt(
   const renderedDeveloperInstructions = buildRenderedCodexDeveloperInstructions();
   const codexNativeSurfaceReport: CodexNativeSurfaceReport = {
     owner: "codex_app_server" as const,
-    nativeToolSurfaceConfigured: nativeToolSurfaceEnabled,
-    nativeToolSurfaceReason: nativeToolSurfaceDecision.reason,
-    codeModeConfigured: nativeToolSurfaceEnabled,
-    codeModeOnlyConfigured: nativeToolSurfaceEnabled && appServer.codeModeOnly,
+    nativeExecutionAllowed,
+    nativeExecutionReason: nativeExecutionDecision.reason,
+    codeModeConfigured: codeModeEnabled,
+    codeModeOnlyConfigured: codeModeOnly,
     nativeSubagents: {
       expectedTool: "spawn_agent" as const,
       owner: "codex_app_server" as const,
@@ -1250,7 +1258,10 @@ export async function runCodexAppServerAttempt(
       developerInstructions: promptBuild.developerInstructions,
       buildFinalConfigPatch: buildNativeHookRelayFinalConfigPatch,
       bundleMcpThreadConfig,
-      nativeToolSurfaceEnabled,
+      nativeExecutionAllowed,
+      codeModeEnabled,
+      codeModeOnly,
+      codeModeDirectOnlyToolNamespaces,
       sandboxExecServerEnabled,
       sandbox,
       contextEngineProjection,
@@ -1287,8 +1298,8 @@ export async function runCodexAppServerAttempt(
       appServerStart: appServer.start,
       ...(sandboxLabel ? { sandbox: sandboxLabel } : {}),
       ...(approvalPolicyLabel ? { approvalPolicy: approvalPolicyLabel } : {}),
-      codeModeConfigured: nativeToolSurfaceEnabled,
-      codeModeOnlyConfigured: nativeToolSurfaceEnabled && appServer.codeModeOnly,
+      codeModeConfigured: codeModeEnabled,
+      codeModeOnlyConfigured: codeModeOnly,
       openclawDynamicToolNames: toolBridge.availableSpecs.map((tool) => tool.name),
       timeoutMs: appServer.requestTimeoutMs,
       signal: runAbortController.signal,

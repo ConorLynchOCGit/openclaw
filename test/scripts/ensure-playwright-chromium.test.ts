@@ -1,12 +1,29 @@
 // Ensure Playwright Chromium tests cover ensure playwright chromium script behavior.
 import { describe, expect, it, vi } from "vitest";
 import {
+  buildChromiumLaunchProbeArgs,
   ensurePlaywrightChromium,
   resolvePlaywrightInstallRunner,
   shouldInstallPlaywrightSystemDependencies,
 } from "../../scripts/ensure-playwright-chromium.mjs";
 
 describe("ensurePlaywrightChromium", () => {
+  it("builds a real headless page-render and screenshot launch probe", () => {
+    expect(
+      buildChromiumLaunchProbeArgs({
+        profileDir: "/tmp/profile",
+        screenshotPath: "/tmp/probe.png",
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        "--headless=new",
+        "--no-sandbox",
+        "--user-data-dir=/tmp/profile",
+        "--screenshot=/tmp/probe.png",
+        expect.stringContaining("data:text/html"),
+      ]),
+    );
+  });
   it("does nothing when the browser binary exists and runs", () => {
     const spawnSync = vi.fn(() => ({ status: 0 }));
 
@@ -133,7 +150,7 @@ describe("ensurePlaywrightChromium", () => {
       }),
     ).toBe(0);
     expect(spawnSync).toHaveBeenCalledWith(
-      "pnpm",
+      expect.stringMatching(/(?:^|\/)pnpm$/u),
       ["--dir", "ui", "exec", "playwright", "install", "chromium"],
       {
         cwd: "/repo",
@@ -169,7 +186,7 @@ describe("ensurePlaywrightChromium", () => {
     ).toBe(0);
     expect(spawnSync).toHaveBeenNthCalledWith(
       2,
-      "pnpm",
+      expect.stringMatching(/(?:^|\/)pnpm$/u),
       ["--dir", "ui", "exec", "playwright", "install", "chromium"],
       {
         cwd: "/repo",
@@ -181,7 +198,7 @@ describe("ensurePlaywrightChromium", () => {
     );
     expect(spawnSync).toHaveBeenNthCalledWith(
       4,
-      "pnpm",
+      expect.stringMatching(/(?:^|\/)pnpm$/u),
       ["--dir", "ui", "exec", "playwright", "install", "--with-deps", "chromium"],
       {
         cwd: "/repo",
@@ -218,7 +235,7 @@ describe("ensurePlaywrightChromium", () => {
     ).toBe(0);
     expect(spawnSync).toHaveBeenNthCalledWith(
       1,
-      "pnpm",
+      expect.stringMatching(/(?:^|\/)pnpm$/u),
       ["--dir", "ui", "exec", "playwright", "install", "chromium"],
       {
         cwd: "/repo",
@@ -230,7 +247,7 @@ describe("ensurePlaywrightChromium", () => {
     );
     expect(spawnSync).toHaveBeenNthCalledWith(
       2,
-      "pnpm",
+      expect.stringMatching(/(?:^|\/)pnpm$/u),
       ["--dir", "ui", "exec", "playwright", "install", "--with-deps", "chromium"],
       {
         cwd: "/repo",
@@ -290,7 +307,7 @@ describe("ensurePlaywrightChromium", () => {
     });
     expect(spawnSync).toHaveBeenNthCalledWith(
       2,
-      "pnpm",
+      expect.stringMatching(/(?:^|\/)pnpm$/u),
       ["--dir", "ui", "exec", "playwright", "install", "chromium"],
       {
         cwd: "/repo",

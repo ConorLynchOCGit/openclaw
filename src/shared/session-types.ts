@@ -1,3 +1,13 @@
+import type { ChatType } from "../channels/chat-type.js";
+import type {
+  SessionCompactionCheckpoint,
+  SessionEntry,
+  SessionGoal,
+} from "../config/sessions/types.js";
+import type { PluginSessionExtensionProjection } from "../plugins/host-hooks.js";
+import type { DeliveryContext } from "../utils/delivery-context.types.js";
+import type { ReadbackProgressProjection } from "./readback-progress.js";
+
 /** Agent identity fields returned by gateway session listing APIs. */
 export type GatewayAgentIdentity = {
   name?: string;
@@ -37,6 +47,278 @@ export type GatewayAgentRow = {
   thinkingLevels?: GatewayThinkingLevelOption[];
   thinkingOptions?: string[];
   thinkingDefault?: string;
+};
+
+/** Runtime status surfaced for the latest session run. */
+export type SessionRunStatus = "running" | "done" | "failed" | "killed" | "timeout";
+
+export type ReadbackFieldProvenance = {
+  source:
+    | "session-store"
+    | "session-transcript"
+    | "task-registry"
+    | "task-receipt"
+    | "trajectory"
+    | "codex-native-subagent"
+    | "artifact-registry"
+    | "gbrain-pointer";
+  ref: string;
+  eventType?: string;
+  eventSeq?: number;
+  derivedBy?: string;
+  bounded?: boolean;
+  note?: string;
+};
+
+export type SessionReadbackProvenance = {
+  status?: ReadbackFieldProvenance;
+  activeProgress?: ReadbackProgressProjection;
+  finalAssistantText?: ReadbackFieldProvenance;
+};
+
+export type SessionCompactionCheckpointPreview = Pick<
+  SessionCompactionCheckpoint,
+  "checkpointId" | "createdAt" | "reason"
+>;
+
+export type GatewaySessionCodexNativeChildRun = {
+  source: "codex-native";
+  taskId: string;
+  runId?: string;
+  childThreadId?: string;
+  parentThreadId?: string;
+  finalRef?: string;
+  role?: string;
+  agentPath?: string;
+  objective?: string;
+  taskName?: string;
+  model?: string;
+  reasoningEffort?: string;
+  label?: string;
+  status?: string;
+  terminalOutcome?: string;
+  startedAt?: number;
+  endedAt?: number;
+  lastEventAt?: number;
+  progressSummary?: string;
+  terminalSummary?: string;
+  usage?: {
+    inputTokens?: number;
+    outputTokens?: number;
+    cachedInputTokens?: number;
+    reasoningOutputTokens?: number;
+    totalTokens?: number;
+  };
+};
+
+export type GatewaySessionCodexTeamUsage = {
+  state: "provisional" | "settled";
+  childCount: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedInputTokens?: number;
+  reasoningOutputTokens?: number;
+  totalTokens?: number;
+};
+
+export type GatewaySessionCodexToolMix = {
+  shell: number;
+  mcp: number;
+  lsp: number;
+  browser: number;
+  image: number;
+  collaboration: number;
+  spawnAgent: number;
+  waitAgent: number;
+  applyPatch: number;
+};
+
+export type GatewaySessionCodexExecutionEvidence = {
+  source: "trajectory";
+  ref: string;
+  derivedBy: "readCodexExecutionEvidenceProjection";
+  bounded: true;
+  observedEventCount: number;
+  toolCallCount: number;
+  toolResultCount: number;
+  peakConcurrentToolCalls?: number;
+  toolMix?: GatewaySessionCodexToolMix;
+  byThread?: Array<{
+    threadId: string;
+    role?: string;
+    objective?: string;
+    observedEventCount: number;
+    eventSeqStart?: number;
+    eventSeqEnd?: number;
+    toolCallCount: number;
+    toolResultCount: number;
+    peakConcurrentToolCalls?: number;
+    toolMix?: GatewaySessionCodexToolMix;
+    mcpTools?: string[];
+    lspTools?: string[];
+    shellSamples?: string[];
+    validationCommands?: string[];
+    patchCount?: number;
+  }>;
+  patchCount?: number;
+  validationCommands?: string[];
+  workspaceDirs?: string[];
+  threadIds?: string[];
+  tools?: Array<{
+    name: string;
+    count: number;
+    completed?: number;
+    errored?: number;
+    lastStatus?: string;
+    lastEventSeq?: number;
+  }>;
+  mcpTools?: Array<{
+    server: string;
+    tool: string;
+    count: number;
+    completed?: number;
+    errored?: number;
+    lastStatus?: string;
+    lastEventSeq?: number;
+    paths?: string[];
+    roots?: string[];
+    projectModes?: string[];
+  }>;
+  lspTools?: Array<{
+    tool: string;
+    count: number;
+    completed?: number;
+    lastStatus?: string;
+    lastEventSeq?: number;
+    files?: string[];
+    projectModes?: string[];
+    partial?: boolean;
+  }>;
+  shell?: {
+    count: number;
+    completed?: number;
+    errored?: number;
+    cwd?: string[];
+    commandSamples?: string[];
+  };
+  nativeParallelActivity?: {
+    observed: true;
+    peakConcurrentToolCalls: number;
+  };
+  modelCompleted?: boolean;
+  sessionEndedStatus?: string;
+  lastEventSeq?: number;
+  lastEventType?: string;
+  lastObservedAt?: string;
+};
+
+/** Canonical transport row shared by gateway producers and UI consumers. */
+export type GatewaySessionRow = {
+  key: string;
+  agentId?: string;
+  spawnedBy?: string;
+  spawnedWorkspaceDir?: string;
+  spawnedCwd?: string;
+  forkedFromParent?: boolean;
+  spawnDepth?: number;
+  subagentRole?: SessionEntry["subagentRole"];
+  subagentControlScope?: SessionEntry["subagentControlScope"];
+  kind: "cron" | "direct" | "group" | "global" | "unknown";
+  label?: string;
+  displayName?: string;
+  derivedTitle?: string;
+  lastMessagePreview?: string;
+  finalAssistantText?: string | null;
+  activeProgress?: ReadbackProgressProjection | null;
+  readbackProvenance?: SessionReadbackProvenance;
+  promptContext?: {
+    skills?: {
+      promptChars?: number;
+      promptHash?: string;
+      promptRef?: NonNullable<SessionEntry["skillsSnapshot"]>["promptRef"];
+      skillCount?: number;
+      skillNames?: string[];
+      skillFilter?: string[];
+    };
+    systemPrompt?: {
+      chars?: number;
+      hash?: string;
+      source?: NonNullable<SessionEntry["systemPromptReport"]>["source"];
+      generatedAt?: number;
+    };
+    openclawDynamicTools?: {
+      count?: number;
+      names?: string[];
+      schemaChars?: number;
+    };
+    codexNativeWorkbench?: {
+      active: boolean;
+      mode?: string;
+      codeModeConfigured?: boolean;
+      codeModeOnlyConfigured?: boolean;
+    };
+    codexMcpServers?: { count: number; names: string[] };
+    codexCustomAgents?: { count: number; names: string[] };
+    codexNativeSurface?: NonNullable<SessionEntry["systemPromptReport"]>["codexNativeSurface"];
+  };
+  channel?: string;
+  surface?: string;
+  subject?: string;
+  groupChannel?: string;
+  room?: string;
+  space?: string;
+  chatType?: ChatType;
+  origin?: SessionEntry["origin"];
+  updatedAt: number | null;
+  lastObservedActivityAt?: number | null;
+  lastObservedActivitySource?: "own" | "direct-child" | "descendant";
+  sessionId?: string;
+  systemSent?: boolean;
+  abortedLastRun?: boolean;
+  thinkingLevel?: string;
+  thinkingLevels?: GatewayThinkingLevelOption[];
+  thinkingOptions?: string[];
+  thinkingDefault?: string;
+  fastMode?: boolean;
+  verboseLevel?: string;
+  traceLevel?: string;
+  reasoningLevel?: string;
+  elevatedLevel?: string;
+  sendPolicy?: "allow" | "deny";
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  totalTokensFresh?: boolean;
+  usageCostState?: "provisional" | "settled" | "unavailable";
+  goal?: SessionGoal;
+  estimatedCostUsd?: number;
+  status?: SessionRunStatus;
+  archived?: boolean;
+  hasActiveRun?: boolean;
+  subagentRunState?: "active" | "interrupted" | "historical";
+  hasActiveSubagentRun?: boolean;
+  startedAt?: number;
+  endedAt?: number;
+  runtimeMs?: number;
+  parentSessionKey?: string;
+  childSessions?: string[];
+  codexNativeChildRuns?: GatewaySessionCodexNativeChildRun[];
+  codexTeamUsage?: GatewaySessionCodexTeamUsage;
+  codexExecutionEvidence?: GatewaySessionCodexExecutionEvidence;
+  responseUsage?: "on" | "off" | "tokens" | "full";
+  modelProvider?: string;
+  model?: string;
+  agentRuntime?: GatewayAgentRuntime;
+  contextTokens?: number;
+  contextBudgetStatus?: SessionEntry["contextBudgetStatus"];
+  deliveryContext?: DeliveryContext;
+  lastChannel?: SessionEntry["lastChannel"];
+  lastTo?: string;
+  lastAccountId?: string;
+  lastThreadId?: SessionEntry["lastThreadId"];
+  compactionCheckpointCount?: number;
+  latestCompactionCheckpoint?: SessionCompactionCheckpointPreview;
+  pluginExtensions?: PluginSessionExtensionProjection[];
 };
 
 /** Generic base for paged session-list responses. */

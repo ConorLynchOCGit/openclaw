@@ -260,12 +260,25 @@ describe("gateway session utils", () => {
   });
 
   test("session detail projects mirrored Codex-native child runs", () => {
-    const cfg = { agents: { list: [{ id: "coding", default: true }] } } as OpenClawConfig;
+    const cfg = {
+      agents: {
+        defaults: {
+          model: { primary: "openai/gpt-5.6-sol" },
+          models: { "openai/gpt-5.6-sol": { agentRuntime: { id: "codex" } } },
+        },
+        list: [{ id: "coding", default: true }],
+      },
+    } as OpenClawConfig;
     const sessionKey = "agent:coding:session-1";
     const store = {
       [sessionKey]: {
         sessionId: "session-1",
         updatedAt: 2_000,
+        status: "done",
+        inputTokens: 10,
+        outputTokens: 5,
+        totalTokens: 15,
+        totalTokensFresh: true,
       } satisfies SessionEntry,
     };
     createTaskRecord({
@@ -290,6 +303,14 @@ describe("gateway session utils", () => {
         childPhase: "child_completed",
         childRole: "worker",
         childAgentPath: "agents/project_explorer.toml",
+        childTaskName: "source-seam-inventory",
+        childModel: "gpt-5.6-terra",
+        childReasoningEffort: "medium",
+        childInputTokens: 120,
+        childOutputTokens: 30,
+        childCachedInputTokens: 20,
+        childReasoningOutputTokens: 10,
+        childTotalTokens: 150,
         spawnReason: "inspect source seams",
       },
     });
@@ -307,15 +328,35 @@ describe("gateway session utils", () => {
         source: "codex-native",
         runId: "codex-thread:child-thread-1",
         childThreadId: "child-thread-1",
+        parentThreadId: "parent-thread",
         finalRef: "codex-thread:child-thread-1",
         role: "worker",
         agentPath: "agents/project_explorer.toml",
         objective: "inspect source seams",
+        taskName: "source-seam-inventory",
+        model: "gpt-5.6-terra",
+        reasoningEffort: "medium",
         label: "project_explorer (worker)",
         status: "succeeded",
         terminalSummary: "Codex native subagent finished: inspected source seams.",
+        usage: {
+          inputTokens: 120,
+          outputTokens: 30,
+          cachedInputTokens: 20,
+          reasoningOutputTokens: 10,
+          totalTokens: 150,
+        },
       }),
     ]);
+    expect(row.codexTeamUsage).toEqual({
+      state: "settled",
+      childCount: 1,
+      inputTokens: 130,
+      outputTokens: 35,
+      cachedInputTokens: 20,
+      reasoningOutputTokens: 10,
+      totalTokens: 165,
+    });
   });
 
   test("session detail derives Codex-native child labels from role metadata", () => {
@@ -420,6 +461,34 @@ describe("gateway session utils", () => {
     expect(terminal.usageCostState).toBe("settled");
   });
 
+  test("Codex sessions do not fabricate dollar cost from local model pricing", () => {
+    const cfg = createModelDefaultsConfig({
+      primary: "openai/gpt-5.6-sol",
+      agentRuntime: { id: "codex" },
+    });
+    const entry = {
+      sessionId: "session-codex-cost",
+      updatedAt: 3_000,
+      status: "done",
+      inputTokens: 200,
+      outputTokens: 50,
+      totalTokens: 250,
+      totalTokensFresh: true,
+      estimatedCostUsd: 0.02,
+    } satisfies SessionEntry;
+    const row = buildGatewaySessionRow({
+      cfg,
+      storePath: "",
+      store: { "agent:main:codex-cost": entry },
+      key: "agent:main:codex-cost",
+      entry,
+    });
+
+    expect(row.agentRuntime?.id).toBe("codex");
+    expect(row.estimatedCostUsd).toBeUndefined();
+    expect(row.usageCostState).toBe("settled");
+  });
+
   test("session detail projects Codex-native workbench capability readback", () => {
     const cfg = { agents: { list: [{ id: "coding", default: true }] } } as OpenClawConfig;
     const sessionKey = "agent:coding:session-workbench";
@@ -435,8 +504,8 @@ describe("gateway session utils", () => {
           workspaceDir: "/home/node/.openclaw/workspace",
           codexNativeSurface: {
             owner: "codex_app_server",
-            nativeToolSurfaceConfigured: true,
-            nativeToolSurfaceReason: "enabled",
+            nativeExecutionAllowed: true,
+            nativeExecutionReason: "enabled",
             codeModeConfigured: true,
             codeModeOnlyConfigured: false,
             nativeSubagents: {
@@ -461,7 +530,6 @@ describe("gateway session utils", () => {
                 hasCodexReviewer: true,
                 hasCreativeQualityReviewer: true,
               },
-              nativeParallelToolCalls: { status: "not_proven" },
             },
           },
           systemPrompt: {
@@ -486,7 +554,7 @@ describe("gateway session utils", () => {
 
     expect(row.promptContext?.codexNativeSurface).toMatchObject({
       owner: "codex_app_server",
-      nativeToolSurfaceConfigured: true,
+      nativeExecutionAllowed: true,
       codeModeConfigured: true,
       workbenchCapability: {
         schemaVersion: "openclaw.codex-workbench-capability.v1",
@@ -545,8 +613,8 @@ describe("gateway session utils", () => {
           threadId: "thread-parent",
           codexNativeSurface: {
             owner: "codex_app_server",
-            nativeToolSurfaceConfigured: true,
-            nativeToolSurfaceReason: "enabled",
+            nativeExecutionAllowed: true,
+            nativeExecutionReason: "enabled",
             codeModeConfigured: true,
             codeModeOnlyConfigured: false,
             nativeSubagents: {
@@ -572,7 +640,6 @@ describe("gateway session utils", () => {
                 hasCodexReviewer: true,
                 hasCreativeQualityReviewer: true,
               },
-              nativeParallelToolCalls: { status: "not_proven" },
             },
           },
         },
@@ -598,7 +665,7 @@ describe("gateway session utils", () => {
 
     expect(row.promptContext?.codexNativeSurface).toMatchObject({
       owner: "codex_app_server",
-      nativeToolSurfaceConfigured: true,
+      nativeExecutionAllowed: true,
       codeModeConfigured: true,
       nativeSubagents: {
         expectedTool: "spawn_agent",

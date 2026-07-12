@@ -1,8 +1,9 @@
 // Control UI test helper supports control ui e2e setup.
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { createServer as createNetServer } from "node:net";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Page } from "playwright";
@@ -92,6 +93,7 @@ export const systemChromiumExecutableCandidates = [
   "/usr/bin/google-chrome",
   "/usr/bin/google-chrome-stable",
 ] as const;
+const chromiumLaunchProbeCache = new Map<string, boolean>();
 
 function resolveRepoRoot(): string {
   const here = path.dirname(fileURLToPath(import.meta.url));
@@ -120,7 +122,43 @@ export function canRunPlaywrightChromium(chromiumExecutablePath: string): boolea
   if (!existsSync(chromiumExecutablePath)) {
     return false;
   }
-  return spawnSync(chromiumExecutablePath, ["--version"], { stdio: "ignore" }).status === 0;
+  const cached = chromiumLaunchProbeCache.get(chromiumExecutablePath);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const probeRoot = mkdtempSync(path.join(tmpdir(), "openclaw-chromium-probe-"));
+  const screenshotPath = path.join(probeRoot, "probe.png");
+  const configHome = path.join(probeRoot, "config");
+  const cacheHome = path.join(probeRoot, "cache");
+  const profileDir = path.join(probeRoot, "profile");
+  mkdirSync(configHome, { recursive: true });
+  mkdirSync(cacheHome, { recursive: true });
+  mkdirSync(profileDir, { recursive: true });
+  try {
+    const result = spawnSync(
+      chromiumExecutablePath,
+      [
+        "--headless=new",
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        `--user-data-dir=${profileDir}`,
+        `--screenshot=${screenshotPath}`,
+        "--window-size=320,200",
+        "data:text/html,<title>OpenClaw browser probe</title><main>ready</main>",
+      ],
+      {
+        env: { ...process.env, XDG_CONFIG_HOME: configHome, XDG_CACHE_HOME: cacheHome },
+        stdio: "ignore",
+        timeout: 15_000,
+      },
+    );
+    const runnable =
+      result.status === 0 && existsSync(screenshotPath) && statSync(screenshotPath).size > 0;
+    chromiumLaunchProbeCache.set(chromiumExecutablePath, runnable);
+    return runnable;
+  } finally {
+    rmSync(probeRoot, { force: true, recursive: true });
+  }
 }
 
 export async function startControlUiE2eServer(): Promise<ControlUiE2eServer> {

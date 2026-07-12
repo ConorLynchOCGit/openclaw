@@ -558,6 +558,8 @@ describe("CodexNativeSubagentTaskMirror", () => {
           arguments: {
             agent_type: "project_explorer",
             task_name: "v2_workspace_probe",
+            model: "gpt-5.6-terra",
+            reasoning_effort: "medium",
             message: "Inspect the workspace and return one bounded context pack.",
             fork_turns: "none",
           },
@@ -591,7 +593,51 @@ describe("CodexNativeSubagentTaskMirror", () => {
           childThreadId: "child-v2-thread",
           childRole: "project_explorer",
           childAgentPath: "agents/project_explorer.toml",
+          childTaskName: "v2_workspace_probe",
+          childModel: "gpt-5.6-terra",
+          childReasoningEffort: "medium",
           spawnReason: "v2_workspace_probe",
+        }),
+      }),
+    );
+
+    mirror.handleNotification({
+      method: "thread/tokenUsage/updated",
+      params: {
+        threadId: "child-v2-thread",
+        turnId: "child-turn",
+        tokenUsage: {
+          total: {
+            inputTokens: 120,
+            outputTokens: 30,
+            cachedInputTokens: 20,
+            reasoningOutputTokens: 10,
+            totalTokens: 150,
+          },
+          last: {},
+        },
+      },
+    });
+    mirror.handleNotification({
+      method: "thread/status/changed",
+      params: {
+        threadId: "child-v2-thread",
+        status: { type: "idle" },
+      },
+    });
+
+    expect(runtime.finalizeTaskRunByRunId).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "codex-thread:child-v2-thread",
+        eventMetadata: expect.objectContaining({
+          childTaskName: "v2_workspace_probe",
+          childModel: "gpt-5.6-terra",
+          childReasoningEffort: "medium",
+          childInputTokens: 120,
+          childOutputTokens: 30,
+          childCachedInputTokens: 20,
+          childReasoningOutputTokens: 10,
+          childTotalTokens: 150,
         }),
       }),
     );

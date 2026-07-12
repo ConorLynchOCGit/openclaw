@@ -257,7 +257,6 @@ describe("Codex workbench capability report", () => {
       count: 1,
       names: ["GitHub"],
     });
-    expect(report.nativeParallelToolCalls.status).toBe("not_proven");
     expect(request.mock.calls.map(([method]) => method).toSorted()).toEqual([
       "app/list",
       "config/read",

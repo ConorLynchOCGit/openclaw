@@ -27,6 +27,7 @@ import {
   CODEX_NATIVE_SUBAGENT_TASK_KIND,
 } from "./native-subagent-task-ids.js";
 import {
+  boundNativeSubagentText,
   codexNativeSubagentRunId,
   CodexNativeSubagentTaskMirror,
   readFunctionCallId,
@@ -67,6 +68,9 @@ type ChildState = {
   noFinalCompletionFallbackTimer?: ReturnType<typeof setTimeout>;
   role?: string;
   objective?: string;
+  taskName?: string;
+  model?: string;
+  reasoningEffort?: string;
 };
 
 type TranscriptCompletion = CodexNativeSubagentCompletion & {
@@ -284,7 +288,10 @@ export class CodexNativeSubagentMonitor {
       }
       return state;
     }
-    if (notification.method === "thread/status/changed") {
+    if (
+      notification.method === "thread/status/changed" ||
+      notification.method === "thread/tokenUsage/updated"
+    ) {
       const childThreadId = readString(params, "threadId")?.trim();
       const parentThreadId = childThreadId ? this.childThreadParents.get(childThreadId) : undefined;
       return parentThreadId ? this.parentStates.get(parentThreadId) : undefined;
@@ -345,6 +352,9 @@ export class CodexNativeSubagentMonitor {
               agentPath:
                 identity?.agentPath ?? normalizeOptionalString(readString(item, "agentPath")),
               role: identity?.role,
+              taskName: identity?.taskName,
+              model: identity?.model,
+              reasoningEffort: identity?.reasoningEffort,
               objective:
                 identity?.spawnReason ?? taskNameFromAgentPath(readString(item, "agentPath")),
               scheduleTranscriptPoll: false,
@@ -364,6 +374,9 @@ export class CodexNativeSubagentMonitor {
           this.registerChildThread(parentThreadId, nativeSpawnOutputChildThreadId, {
             agentPath: identity?.agentPath,
             role: identity?.role,
+            taskName: identity?.taskName,
+            model: identity?.model,
+            reasoningEffort: identity?.reasoningEffort,
             objective: identity?.spawnReason,
           });
           if (callId) {
@@ -605,9 +618,13 @@ export class CodexNativeSubagentMonitor {
       status: completion.status,
       endedAt: eventAt,
       lastEventAt: eventAt,
-      ...(completion.status === "succeeded" ? {} : { error: completion.result }),
-      progressSummary: completion.result,
-      terminalSummary: completion.result,
+      ...(completion.status === "succeeded"
+        ? {}
+        : { error: boundNativeSubagentText(completion.result) ?? completion.status }),
+      progressSummary:
+        boundNativeSubagentText(completion.result) ?? "Codex native subagent completed.",
+      terminalSummary:
+        boundNativeSubagentText(completion.result) ?? "Codex native subagent completed.",
       ...(eventMetadata ? { eventMetadata } : {}),
     });
   }
@@ -625,6 +642,9 @@ export class CodexNativeSubagentMonitor {
       agentPath?: string;
       role?: string;
       objective?: string;
+      taskName?: string;
+      model?: string;
+      reasoningEffort?: string;
       scheduleTranscriptPoll?: boolean;
     } = {},
   ): void {
@@ -657,6 +677,9 @@ export class CodexNativeSubagentMonitor {
     }
     childState.role = options.role ?? childState.role;
     childState.objective = options.objective ?? childState.objective;
+    childState.taskName = options.taskName ?? childState.taskName;
+    childState.model = options.model ?? childState.model;
+    childState.reasoningEffort = options.reasoningEffort ?? childState.reasoningEffort;
     if (options.scheduleTranscriptPoll !== false) {
       this.scheduleTranscriptPoll(childState);
     }

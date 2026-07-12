@@ -103,6 +103,7 @@ import {
 } from "./session-utils.fs.js";
 import type {
   GatewayAgentRow,
+  GatewaySessionCodexNativeChildRun,
   GatewaySessionRow,
   GatewaySessionsDefaults,
   SessionRunStatus,
@@ -275,6 +276,14 @@ function readTaskMetadataString(
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function readTaskMetadataNumber(
+  metadata: TaskEventMetadata | undefined,
+  key: string,
+): number | undefined {
+  const value = metadata?.[key];
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
 function isCodexNativeSubagentTask(task: TaskRecord): boolean {
   return (
     task.runtime === CODEX_NATIVE_SUBAGENT_RUNTIME &&
@@ -318,6 +327,9 @@ function buildCodexNativeChildRunsForSession(
       taskId: task.taskId,
       ...(task.runId ? { runId: task.runId } : {}),
       ...(childThreadId ? { childThreadId } : {}),
+      ...(readTaskMetadataString(metadata, "parentThreadId")
+        ? { parentThreadId: readTaskMetadataString(metadata, "parentThreadId") }
+        : {}),
       ...(childThreadId && isTerminalTaskStatus(task.status)
         ? { finalRef: `${CODEX_NATIVE_SUBAGENT_RUN_ID_PREFIX}${childThreadId}` }
         : {}),
@@ -330,6 +342,15 @@ function buildCodexNativeChildRunsForSession(
       ...(readTaskMetadataString(metadata, "spawnReason")
         ? { objective: readTaskMetadataString(metadata, "spawnReason") }
         : {}),
+      ...(readTaskMetadataString(metadata, "childTaskName")
+        ? { taskName: readTaskMetadataString(metadata, "childTaskName") }
+        : {}),
+      ...(readTaskMetadataString(metadata, "childModel")
+        ? { model: readTaskMetadataString(metadata, "childModel") }
+        : {}),
+      ...(readTaskMetadataString(metadata, "childReasoningEffort")
+        ? { reasoningEffort: readTaskMetadataString(metadata, "childReasoningEffort") }
+        : {}),
       ...(label ? { label } : {}),
       status: task.status,
       ...(task.terminalOutcome ? { terminalOutcome: task.terminalOutcome } : {}),
@@ -338,9 +359,57 @@ function buildCodexNativeChildRunsForSession(
       ...(task.lastEventAt !== undefined ? { lastEventAt: task.lastEventAt } : {}),
       ...(task.progressSummary ? { progressSummary: task.progressSummary } : {}),
       ...(task.terminalSummary ? { terminalSummary: task.terminalSummary } : {}),
+      ...buildCodexNativeChildUsage(metadata),
     });
   }
   return children.length > 0 ? children : undefined;
+}
+
+function buildCodexNativeChildUsage(metadata: TaskEventMetadata | undefined): {
+  usage?: GatewaySessionCodexNativeChildRun["usage"];
+} {
+  const usage = {
+    inputTokens: readTaskMetadataNumber(metadata, "childInputTokens"),
+    outputTokens: readTaskMetadataNumber(metadata, "childOutputTokens"),
+    cachedInputTokens: readTaskMetadataNumber(metadata, "childCachedInputTokens"),
+    reasoningOutputTokens: readTaskMetadataNumber(metadata, "childReasoningOutputTokens"),
+    totalTokens: readTaskMetadataNumber(metadata, "childTotalTokens"),
+  };
+  return Object.values(usage).some((value) => value !== undefined) ? { usage } : {};
+}
+
+function buildCodexTeamUsage(params: {
+  state: "provisional" | "settled";
+  parentInputTokens?: number;
+  parentOutputTokens?: number;
+  parentTotalTokens?: number;
+  children?: GatewaySessionRow["codexNativeChildRuns"];
+}): GatewaySessionRow["codexTeamUsage"] {
+  const childUsage = params.children?.map((child) => child.usage).filter(Boolean) ?? [];
+  if (
+    params.parentInputTokens === undefined &&
+    params.parentOutputTokens === undefined &&
+    params.parentTotalTokens === undefined &&
+    childUsage.length === 0
+  ) {
+    return undefined;
+  }
+  const sum = (values: Array<number | undefined>): number | undefined => {
+    const present = values.filter((value): value is number => value !== undefined);
+    return present.length > 0 ? present.reduce((total, value) => total + value, 0) : undefined;
+  };
+  return {
+    state: params.state,
+    childCount: params.children?.length ?? 0,
+    inputTokens: sum([params.parentInputTokens, ...childUsage.map((usage) => usage?.inputTokens)]),
+    outputTokens: sum([
+      params.parentOutputTokens,
+      ...childUsage.map((usage) => usage?.outputTokens),
+    ]),
+    cachedInputTokens: sum(childUsage.map((usage) => usage?.cachedInputTokens)),
+    reasoningOutputTokens: sum(childUsage.map((usage) => usage?.reasoningOutputTokens)),
+    totalTokens: sum([params.parentTotalTokens, ...childUsage.map((usage) => usage?.totalTokens)]),
+  };
 }
 
 function chooseCodexNativeChildRunLabel(
@@ -2300,15 +2369,18 @@ export function buildGatewaySessionRow(params: {
     acpRuntime: acpMeta != null,
     acpBackend: acpMeta?.backend,
   });
-  const estimatedCostUsd = lightweight
-    ? resolveNonNegativeNumber(entry?.estimatedCostUsd)
-    : (resolveEstimatedSessionCostUsd({
-        cfg,
-        provider: rowModelProvider,
-        model: rowModel,
-        entry,
-        rowContext: params.rowContext,
-      }) ?? resolveNonNegativeNumber(transcriptUsage?.estimatedCostUsd));
+  const estimatedCostUsd =
+    agentRuntime.id === "codex"
+      ? undefined
+      : lightweight
+        ? resolveNonNegativeNumber(entry?.estimatedCostUsd)
+        : (resolveEstimatedSessionCostUsd({
+            cfg,
+            provider: rowModelProvider,
+            model: rowModel,
+            entry,
+            rowContext: params.rowContext,
+          }) ?? resolveNonNegativeNumber(transcriptUsage?.estimatedCostUsd));
   const contextTokens = lightweight
     ? (resolvePositiveNumber(entry?.contextTokens) ??
       resolvePositiveNumber(
@@ -2475,6 +2547,16 @@ export function buildGatewaySessionRow(params: {
       : rowStatus && hasUsageOrCost
         ? "settled"
         : "unavailable";
+  const codexTeamUsage =
+    agentRuntime.id === "codex"
+      ? buildCodexTeamUsage({
+          state: rowStatus === "running" ? "provisional" : "settled",
+          parentInputTokens: resolveNonNegativeNumber(entry?.inputTokens),
+          parentOutputTokens: resolveNonNegativeNumber(entry?.outputTokens),
+          parentTotalTokens: resolveNonNegativeNumber(totalTokens),
+          children: codexNativeChildRuns,
+        })
+      : undefined;
 
   const thinkingProvider = rowModelProvider ?? DEFAULT_PROVIDER;
   const thinkingModel = rowModel ?? DEFAULT_MODEL;
@@ -2580,7 +2662,7 @@ export function buildGatewaySessionRow(params: {
                   schemaChars: systemPromptReport?.tools?.schemaChars ?? 0,
                 },
                 codexNativeWorkbench: {
-                  active: codexNativeSurface.nativeToolSurfaceConfigured,
+                  active: codexNativeSurface.nativeExecutionAllowed,
                   ...(typeof codexNativeTools?.mode === "string"
                     ? { mode: codexNativeTools.mode }
                     : {}),
@@ -2656,6 +2738,7 @@ export function buildGatewaySessionRow(params: {
     parentSessionKey: entry?.parentSessionKey,
     childSessions,
     codexNativeChildRuns,
+    codexTeamUsage,
     codexExecutionEvidence,
     responseUsage: entry?.responseUsage,
     modelProvider: rowModelProvider,
@@ -3114,9 +3197,10 @@ export function listSessionsFromStore(params: {
   store: Record<string, SessionEntry>;
   modelCatalog?: ModelCatalogEntry[];
   opts: SessionsListParams;
+  now?: number;
 }): SessionsListResult {
   const { cfg, storePath, store, opts } = params;
-  const now = Date.now();
+  const now = params.now ?? Date.now();
   const sessionListTranscriptUsageMaxBytes = 64 * 1024;
   const sessionListTranscriptFieldRows = 100;
   let rowContext: SessionListRowContext | undefined;

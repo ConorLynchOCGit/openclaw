@@ -1,12 +1,14 @@
 // Control UI type declarations define types contracts.
 export type UpdateAvailable = import("../../../src/infra/update-startup.js").UpdateAvailable;
-import type { SessionGoal } from "../../../src/config/sessions/types.js";
 import type { CronJobBase } from "../../../src/cron/types-shared.js";
 import type { ConfigUiHints } from "../../../src/shared/config-ui-hints-types.js";
-import type { ReadbackProgressProjection } from "../../../src/shared/readback-progress.js";
 import type {
   GatewayAgentRuntime,
   GatewayAgentRow as SharedGatewayAgentRow,
+  GatewaySessionRow as SharedGatewaySessionRow,
+  ReadbackFieldProvenance as SharedReadbackFieldProvenance,
+  SessionReadbackProvenance as SharedSessionReadbackProvenance,
+  SessionRunStatus as SharedSessionRunStatus,
   SessionsListResultBase,
   SessionsPatchResultBase,
 } from "../../../src/shared/session-types.js";
@@ -389,28 +391,9 @@ export type AgentsFilesSetResult = {
   file: AgentFileEntry;
 };
 
-export type SessionRunStatus = "running" | "done" | "failed" | "killed" | "timeout";
-export type ReadbackFieldProvenance = {
-  source:
-    | "session-store"
-    | "session-transcript"
-    | "task-registry"
-    | "trajectory"
-    | "codex-native-subagent"
-    | "artifact-registry"
-    | "gbrain-pointer";
-  ref: string;
-  eventType?: string;
-  eventSeq?: number;
-  derivedBy?: string;
-  bounded?: boolean;
-  note?: string;
-};
-export type SessionReadbackProvenance = {
-  status?: ReadbackFieldProvenance;
-  activeProgress?: ReadbackProgressProjection;
-  finalAssistantText?: ReadbackFieldProvenance;
-};
+export type SessionRunStatus = SharedSessionRunStatus;
+export type ReadbackFieldProvenance = SharedReadbackFieldProvenance;
+export type SessionReadbackProvenance = SharedSessionReadbackProvenance;
 export type SubagentRunState = "active" | "interrupted" | "historical";
 
 export type SessionCompactionCheckpointReason =
@@ -445,55 +428,7 @@ export type SessionCompactionCheckpointPreview = Pick<
   "checkpointId" | "createdAt" | "reason"
 >;
 
-export type GatewaySessionRow = {
-  key: string;
-  spawnedBy?: string;
-  kind: "cron" | "direct" | "group" | "global" | "unknown";
-  label?: string;
-  displayName?: string;
-  derivedTitle?: string;
-  lastMessagePreview?: string;
-  finalAssistantText?: string | null;
-  activeProgress?: ReadbackProgressProjection | null;
-  readbackProvenance?: SessionReadbackProvenance;
-  surface?: string;
-  subject?: string;
-  room?: string;
-  space?: string;
-  updatedAt: number | null;
-  sessionId?: string;
-  systemSent?: boolean;
-  abortedLastRun?: boolean;
-  thinkingLevel?: string;
-  thinkingLevels?: GatewayThinkingLevelOption[];
-  thinkingOptions?: string[];
-  thinkingDefault?: string;
-  fastMode?: boolean;
-  verboseLevel?: string;
-  reasoningLevel?: string;
-  elevatedLevel?: string;
-  inputTokens?: number;
-  outputTokens?: number;
-  totalTokens?: number;
-  totalTokensFresh?: boolean;
-  status?: SessionRunStatus;
-  archived?: boolean;
-  hasActiveRun?: boolean;
-  subagentRunState?: SubagentRunState;
-  hasActiveSubagentRun?: boolean;
-  startedAt?: number;
-  endedAt?: number;
-  runtimeMs?: number;
-  parentSessionKey?: string;
-  childSessions?: string[];
-  model?: string;
-  modelProvider?: string;
-  agentRuntime?: GatewayAgentRuntime;
-  contextTokens?: number;
-  compactionCheckpointCount?: number;
-  latestCompactionCheckpoint?: SessionCompactionCheckpointPreview;
-  goal?: SessionGoal;
-};
+export type GatewaySessionRow = SharedGatewaySessionRow;
 
 export type SessionsListResult = SessionsListResultBase<GatewaySessionsDefaults, GatewaySessionRow>;
 

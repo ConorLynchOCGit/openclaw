@@ -44,6 +44,7 @@ export class CodexNativeSubagentTaskMirror {
   private readonly pendingSpawnIdentityQueue: NativeSubagentIdentity[] = [];
   private readonly latestCollabStatusDetailByThreadId = new Map<string, string>();
   private readonly latestCollabTerminalDetailByThreadId = new Map<string, string>();
+  private readonly tokenUsageByThreadId = new Map<string, NativeSubagentTokenUsage>();
   private readonly now: () => number;
 
   constructor(
@@ -64,6 +65,10 @@ export class CodexNativeSubagentTaskMirror {
     }
     if (notification.method === "thread/status/changed") {
       this.handleThreadStatusChanged(params);
+      return;
+    }
+    if (notification.method === "thread/tokenUsage/updated") {
+      this.handleTokenUsageUpdated(params);
       return;
     }
     if (
@@ -219,6 +224,32 @@ export class CodexNativeSubagentTaskMirror {
       return;
     }
     this.applyStatus(notification.threadId, notification.status);
+  }
+
+  private handleTokenUsageUpdated(params: JsonObject): void {
+    const threadId = trimOptional(readString(params, "threadId"));
+    if (!threadId || !this.mirroredThreadIds.has(threadId)) {
+      return;
+    }
+    const tokenUsage = isJsonObject(params.tokenUsage) ? params.tokenUsage : undefined;
+    const total = tokenUsage && isJsonObject(tokenUsage.total) ? tokenUsage.total : undefined;
+    if (!total) {
+      return;
+    }
+    const usage = {
+      inputTokens: readFiniteNumber(total, "inputTokens", "input_tokens"),
+      outputTokens: readFiniteNumber(total, "outputTokens", "output_tokens"),
+      cachedInputTokens: readFiniteNumber(total, "cachedInputTokens", "cached_input_tokens"),
+      reasoningOutputTokens: readFiniteNumber(
+        total,
+        "reasoningOutputTokens",
+        "reasoning_output_tokens",
+      ),
+      totalTokens: readFiniteNumber(total, "totalTokens", "total_tokens"),
+    } satisfies NativeSubagentTokenUsage;
+    if (Object.values(usage).some((value) => value !== undefined)) {
+      this.tokenUsageByThreadId.set(threadId, usage);
+    }
   }
 
   private applyStatus(threadId: string, status: CodexThreadStatus | null | undefined): void {
@@ -603,6 +634,7 @@ export class CodexNativeSubagentTaskMirror {
   }): NativeSubagentTaskEventMetadata {
     const identity = params.identity ?? this.identityByThreadId.get(params.threadId);
     const spawnReason = trimOptional(identity?.spawnReason);
+    const tokenUsage = this.tokenUsageByThreadId.get(params.threadId);
     return {
       codexNativeSubagent: true,
       parentThreadId: this.params.parentThreadId,
@@ -611,7 +643,25 @@ export class CodexNativeSubagentTaskMirror {
       ...(identity?.role ? { childRole: identity.role } : {}),
       ...(identity?.agentPath ? { childAgentPath: identity.agentPath } : {}),
       ...(identity?.nickname ? { childNickname: identity.nickname } : {}),
+      ...(identity?.taskName ? { childTaskName: identity.taskName } : {}),
+      ...(identity?.model ? { childModel: identity.model } : {}),
+      ...(identity?.reasoningEffort ? { childReasoningEffort: identity.reasoningEffort } : {}),
       ...(spawnReason ? { spawnReason } : {}),
+      ...(tokenUsage?.inputTokens !== undefined
+        ? { childInputTokens: tokenUsage.inputTokens }
+        : {}),
+      ...(tokenUsage?.outputTokens !== undefined
+        ? { childOutputTokens: tokenUsage.outputTokens }
+        : {}),
+      ...(tokenUsage?.cachedInputTokens !== undefined
+        ? { childCachedInputTokens: tokenUsage.cachedInputTokens }
+        : {}),
+      ...(tokenUsage?.reasoningOutputTokens !== undefined
+        ? { childReasoningOutputTokens: tokenUsage.reasoningOutputTokens }
+        : {}),
+      ...(tokenUsage?.totalTokens !== undefined
+        ? { childTotalTokens: tokenUsage.totalTokens }
+        : {}),
     };
   }
 
@@ -702,6 +752,17 @@ export type NativeSubagentIdentity = {
   role?: string;
   agentPath?: string;
   spawnReason?: string;
+  taskName?: string;
+  model?: string;
+  reasoningEffort?: string;
+};
+
+type NativeSubagentTokenUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedInputTokens?: number;
+  reasoningOutputTokens?: number;
+  totalTokens?: number;
 };
 
 function resolveThreadSubagentIdentity(
@@ -738,6 +799,12 @@ function resolveCollabItemSubagentIdentity(item: JsonObject): NativeSubagentIden
       trimOptional(readString(item, "role")),
     agentPath:
       trimOptional(readString(item, "agent_path")) ?? trimOptional(readString(item, "agentPath")),
+    taskName:
+      trimOptional(readString(item, "task_name")) ?? trimOptional(readString(item, "taskName")),
+    model: trimOptional(readString(item, "model")),
+    reasoningEffort:
+      trimOptional(readString(item, "reasoning_effort")) ??
+      trimOptional(readString(item, "reasoningEffort")),
   };
 }
 
@@ -753,15 +820,21 @@ export function resolveNativeSpawnFunctionIdentity(item: JsonObject): NativeSuba
     trimOptional(readString(args, "agent_path")) ??
     trimOptional(readString(args, "agentPath")) ??
     roleToAgentPath(explicitRole);
+  const taskName =
+    trimOptional(readString(args, "task_name")) ?? trimOptional(readString(args, "taskName"));
   return {
     role: explicitRole,
     agentPath,
+    taskName,
+    model: trimOptional(readString(args, "model")),
+    reasoningEffort:
+      trimOptional(readString(args, "reasoning_effort")) ??
+      trimOptional(readString(args, "reasoningEffort")),
     spawnReason:
       extractSpawnMessageObjective(message) ??
       trimOptional(readString(args, "objective")) ??
       trimOptional(readString(args, "task")) ??
-      trimOptional(readString(args, "task_name")) ??
-      trimOptional(readString(args, "taskName")) ??
+      taskName ??
       message,
   };
 }
@@ -775,6 +848,9 @@ function mergeNativeSubagentIdentity(
     role: trimOptional(next.role) ?? trimOptional(previous?.role),
     agentPath: trimOptional(next.agentPath) ?? trimOptional(previous?.agentPath),
     spawnReason: trimOptional(previous?.spawnReason) ?? trimOptional(next.spawnReason),
+    taskName: trimOptional(next.taskName) ?? trimOptional(previous?.taskName),
+    model: trimOptional(next.model) ?? trimOptional(previous?.model),
+    reasoningEffort: trimOptional(next.reasoningEffort) ?? trimOptional(previous?.reasoningEffort),
   };
 }
 
@@ -786,7 +862,10 @@ function sameNativeSubagentIdentity(
     trimOptional(left?.nickname) === trimOptional(right?.nickname) &&
     trimOptional(left?.role) === trimOptional(right?.role) &&
     trimOptional(left?.agentPath) === trimOptional(right?.agentPath) &&
-    trimOptional(left?.spawnReason) === trimOptional(right?.spawnReason)
+    trimOptional(left?.spawnReason) === trimOptional(right?.spawnReason) &&
+    trimOptional(left?.taskName) === trimOptional(right?.taskName) &&
+    trimOptional(left?.model) === trimOptional(right?.model) &&
+    trimOptional(left?.reasoningEffort) === trimOptional(right?.reasoningEffort)
   );
 }
 
@@ -795,7 +874,10 @@ function hasNativeSubagentIdentity(identity: NativeSubagentIdentity): boolean {
     trimOptional(identity.nickname) ??
     trimOptional(identity.role) ??
     trimOptional(identity.agentPath) ??
-    trimOptional(identity.spawnReason),
+    trimOptional(identity.spawnReason) ??
+    trimOptional(identity.taskName) ??
+    trimOptional(identity.model) ??
+    trimOptional(identity.reasoningEffort),
   );
 }
 
@@ -946,11 +1028,33 @@ function secondsToMillis(value: number | null | undefined): number | undefined {
 
 function nativeSubagentSummary(prefix: string, detail: string | null | undefined): string {
   const normalizedPrefix = prefix.replace(/[.:]\s*$/u, "").trim();
-  const normalizedDetail = trimOptional(detail);
+  const normalizedDetail = boundNativeSubagentText(detail);
   if (!normalizedDetail) {
     return `${normalizedPrefix}.`;
   }
   return `${normalizedPrefix}: ${normalizedDetail}`;
+}
+
+/** Bounds child prose used in task/session display while exact thread refs remain available. */
+export function boundNativeSubagentText(
+  value: string | null | undefined,
+  maxChars = 800,
+): string | undefined {
+  const normalized = trimOptional(value)?.replace(/\s+/gu, " ");
+  if (!normalized || normalized.length <= maxChars) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(1, maxChars - 1)).trimEnd()}…`;
+}
+
+function readFiniteNumber(value: JsonObject, ...keys: string[]): number | undefined {
+  for (const key of keys) {
+    const candidate = value[key];
+    if (typeof candidate === "number" && Number.isFinite(candidate) && candidate >= 0) {
+      return candidate;
+    }
+  }
+  return undefined;
 }
 
 function activeFlagsSummary(activeFlags: string[] | undefined): string | undefined {

@@ -701,8 +701,8 @@ export type SessionSystemPromptReport = {
   };
   codexNativeSurface?: {
     owner: "codex_app_server";
-    nativeToolSurfaceConfigured: boolean;
-    nativeToolSurfaceReason:
+    nativeExecutionAllowed: boolean;
+    nativeExecutionReason:
       | "enabled"
       | "memory_flush"
       | "node_exec_policy"

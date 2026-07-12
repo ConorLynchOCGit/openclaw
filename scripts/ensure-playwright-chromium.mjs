@@ -1,8 +1,16 @@
 #!/usr/bin/env node
 // Ensures Playwright Chromium is installed or a usable system browser is available.
 import { spawnSync as spawnSyncImpl } from "node:child_process";
-import { existsSync as existsSyncImpl, realpathSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import {
+  existsSync as existsSyncImpl,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  statSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { resolvePnpmRunner } from "./pnpm-runner.mjs";
@@ -31,13 +39,55 @@ export const systemChromiumExecutableCandidates = [
 ];
 
 /**
- * Checks whether a Chromium executable can start enough to print its version.
+ * Checks whether Chromium can launch, render a page, write a screenshot, and exit.
  */
 export function canRunChromiumExecutable(executablePath, spawnSync = spawnSyncImpl) {
-  const result = spawnSync(executablePath, ["--version"], {
+  const version = spawnSync(executablePath, ["--version"], {
     stdio: "ignore",
   });
-  return result.status === 0;
+  if (version.status !== 0) {
+    return false;
+  }
+  if (spawnSync !== spawnSyncImpl) {
+    return true;
+  }
+  const probeRoot = mkdtempSync(join(tmpdir(), "openclaw-chromium-probe-"));
+  const screenshotPath = join(probeRoot, "probe.png");
+  const configHome = join(probeRoot, "config");
+  const cacheHome = join(probeRoot, "cache");
+  const profileDir = join(probeRoot, "profile");
+  mkdirSync(configHome, { recursive: true });
+  mkdirSync(cacheHome, { recursive: true });
+  mkdirSync(profileDir, { recursive: true });
+  try {
+    const result = spawnSync(
+      executablePath,
+      buildChromiumLaunchProbeArgs({ profileDir, screenshotPath }),
+      {
+        env: { ...process.env, XDG_CONFIG_HOME: configHome, XDG_CACHE_HOME: cacheHome },
+        stdio: "ignore",
+        timeout: 15_000,
+      },
+    );
+    if (result.status !== 0) {
+      return false;
+    }
+    return existsSyncImpl(screenshotPath) && statSync(screenshotPath).size > 0;
+  } finally {
+    rmSync(probeRoot, { force: true, recursive: true });
+  }
+}
+
+export function buildChromiumLaunchProbeArgs({ profileDir, screenshotPath }) {
+  return [
+    "--headless=new",
+    "--no-sandbox",
+    "--disable-dev-shm-usage",
+    `--user-data-dir=${profileDir}`,
+    `--screenshot=${screenshotPath}`,
+    "--window-size=320,200",
+    "data:text/html,<title>OpenClaw browser probe</title><main>ready</main>",
+  ];
 }
 
 /**

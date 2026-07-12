@@ -40,7 +40,7 @@ export function emitSessionsChanged(
     ? buildGatewaySessionDetailProjection({
         row: sessionRow,
         requestedSessionKey: payload.sessionKey ?? sessionRow.key,
-        agentId: sessionRow.agentId,
+        agentId: sessionRow.agentId ?? payload.agentId ?? defaultAgentId,
       })
     : null;
   const readbackDetail = readbackProjection?.ok ? readbackProjection.detail : null;

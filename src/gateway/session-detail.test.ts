@@ -18,7 +18,17 @@ describe("buildGatewaySessionDetailProjection", () => {
       promptContext: {
         codexNativeSurface: {
           owner: "codex_app_server",
-          openclawDynamicTools: { count: 0, names: [] },
+          nativeExecutionAllowed: true,
+          nativeExecutionReason: "enabled",
+          codeModeConfigured: true,
+          codeModeOnlyConfigured: true,
+          nativeSubagents: {
+            expectedTool: "spawn_agent",
+            owner: "codex_app_server",
+            listedInOpenClawDynamicTools: false,
+            guidanceInjected: true,
+            disabledByOpenClawModelProfile: false,
+          },
           workbenchCapability: {
             workspaceRoot: "/home/node/.openclaw/workspace",
             sourceRoot: "/home/node/.openclaw/workspace/src/openclaw",
@@ -122,7 +132,9 @@ describe("buildGatewaySessionDetailProjection", () => {
     }
     expect(result.detail.promptContext?.codexNativeSurface).toMatchObject({
       owner: "codex_app_server",
-      openclawDynamicTools: { count: 0, names: [] },
+      nativeExecutionAllowed: true,
+      codeModeConfigured: true,
+      codeModeOnlyConfigured: true,
     });
     expect(result.detail.promptContext?.codexNativeSurface?.workbenchCapability).toMatchObject({
       workspaceRoot: "/home/node/.openclaw/workspace",
