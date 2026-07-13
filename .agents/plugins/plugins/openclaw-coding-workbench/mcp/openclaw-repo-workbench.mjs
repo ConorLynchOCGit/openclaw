@@ -72,7 +72,12 @@ const READ_ONLY_TOOL_ANNOTATIONS = Object.freeze({
 
 const SearchQuerySchema = z.object({
   pattern: z.string().min(1),
-  path: z.string().optional(),
+  path: z
+    .string()
+    .optional()
+    .describe(
+      'Optional workspace-relative root. Omit or use "." for one bounded ownership/location discovery query when the owner path is unresolved; use a narrower path once the owner is known.',
+    ),
   glob: z.string().optional(),
   literal: z.boolean().optional(),
   caseSensitive: z.boolean().optional(),
@@ -183,7 +188,7 @@ server.registerTool(
   {
     title: "Search Many",
     description:
-      "Preferred broad-discovery tool: run multiple independent bounded ripgrep searches concurrently under the active workspace root. Returns one compact item representation with 1-based line/character anchors, caps the complete response at 16 KB, and marks omitted hits so the caller can narrow the path or pattern.",
+      'Preferred broad-discovery tool: run multiple independent bounded ripgrep searches concurrently under the active workspace root. When ownership or location is unresolved, include one distinctive query with path "." before narrowing to presumed repos. Returns one compact item representation with 1-based line/character anchors, caps the complete response at 16 KB, and marks omitted hits so the caller can narrow the path or pattern.',
     annotations: READ_ONLY_TOOL_ANNOTATIONS,
     outputSchema: SearchManyOutputSchema,
     inputSchema: z.object({

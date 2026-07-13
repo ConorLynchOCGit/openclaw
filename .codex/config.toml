@@ -32,6 +32,13 @@ ranges through the Workbench MCP, use at most one compact parallel discovery
 batch before synthesis, and name any shell fallback reason. Stop when the one
 assigned decision is supported. Return exact refs and a compact result pack, not
 raw tool output or a broader project inventory.
+When implementation ownership or location is unresolved, do not begin by
+assuming the owner repo. Include one bounded workspace-root search using the
+most distinctive terms from the assigned decision, then narrow to the returned
+owner paths. Skip that search when an authoritative file, symbol, or owner is
+already supplied. A claim that an implementation, owner, or consumer does not
+exist must name the searched roots and remain qualified when any plausible
+workspace root was not covered.
 """
 multi_agent_mode_hint_text = """
 Use subagents proactively when task shape merits independent exploration,

@@ -49,6 +49,17 @@ first two expose a named contradiction, a missing authority ref, or evidence
 insufficient to answer the assigned decision; state that reason before the call.
 Do not continue merely to make the packet exhaustive.
 
+Do not presuppose ownership while investigating ownership. When the owner or
+implementation location is unresolved across the workspace, stage one must
+include one bounded search from `path: "."` using distinctive domain terms,
+identifiers, or likely persisted object names from the brief. Use the remaining
+queries for narrower candidate roots. Skip workspace-wide discovery when the
+brief supplies an authoritative file, symbol, or owner. Before concluding that
+an implementation, owner, or consumer does not exist, state the searched roots
+and confirm that every plausible workspace root was covered; otherwise report
+only that it was not found in the named roots and put the missing root under
+`Inspect Next`.
+
 Do not enumerate `ALL_TOOLS` or inspect schemas for tools already named in this
 contract. If a direct named call fails because the installed schema differs,
 inspect that one tool definition once, retry it once, and report the mismatch.

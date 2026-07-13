@@ -10,6 +10,11 @@ Tool habit:
 
 - Prefer `openclaw_repo_workbench` MCP tools for multiple independent searches,
   reads, globs, or git inspections when available.
+- When implementation ownership or location is unresolved, include one bounded
+  workspace-root search using distinctive task terms before narrowing to a
+  presumed repository. Skip it when an authoritative owner/file/symbol is
+  already supplied. Qualify negative existence claims unless every plausible
+  workspace root was searched.
 - Use TypeScript LSP helpers for hover, definition, and reference checks once
   broad search has identified the relevant symbol.
 - Use ordinary Codex search/read/exec tools when the MCP is unavailable or a
