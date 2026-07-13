@@ -74,6 +74,10 @@ type WorkbenchModule = {
     }>;
     omitted: Array<{
       path: string;
+      requestedStartLine: number;
+      requestedEndLine: number;
+      totalLines: number;
+      sha256: string;
       nextStartLine: number;
       reason: string;
     }>;
@@ -259,7 +263,11 @@ describe("openclaw-coding-workbench MCP helpers", () => {
 
     const result = await workbench.repoReadMany(
       {
-        files: [{ path: "src/alpha.ts", startLine: 1, endLine: 1 }, { path: "../outside.txt" }],
+        files: [
+          { path: "src/alpha.ts", startLine: 1, endLine: 1 },
+          { path: "../outside.txt" },
+          { path: "src/missing.ts" },
+        ],
       },
       optionsFor(repo),
     );
@@ -274,6 +282,11 @@ describe("openclaw-coding-workbench MCP helpers", () => {
     expect(result.results[1]).toMatchObject({
       status: "error",
       error: expect.stringContaining("path escapes repository root"),
+    });
+    expect(result.results[2]).toMatchObject({
+      path: "src/missing.ts",
+      status: "error",
+      error: expect.stringContaining("ENOENT"),
     });
   });
 
@@ -370,6 +383,9 @@ describe("openclaw-coding-workbench MCP helpers", () => {
     expect(read.coverage.truncated).toBeGreaterThan(0);
     expect(read.omitted.length).toBeGreaterThan(0);
     expect(read.omitted.every((item) => item.reason.includes("aggregate"))).toBe(true);
+    expect(read.omitted.every((item) => item.requestedEndLine >= item.nextStartLine)).toBe(true);
+    expect(read.omitted.every((item) => item.totalLines >= item.requestedEndLine)).toBe(true);
+    expect(read.omitted.every((item) => /^[a-f0-9]{64}$/u.test(item.sha256))).toBe(true);
     expect(serialized).not.toContain('"content"');
     expect(serialized).not.toContain('"lineNumberedContent"');
     expect(serialized).not.toContain('"request"');
@@ -378,15 +394,26 @@ describe("openclaw-coding-workbench MCP helpers", () => {
       (item) => item.status === "ok" && item.truncated && item.nextStartLine,
     );
     expect(truncated).toBeDefined();
-    const continuation = await workbench.repoReadMany(
-      {
-        files: [{ path: truncated?.path, startLine: truncated?.nextStartLine }],
-      },
-      optionsFor(repo),
-    );
-    expect(continuation.results[0]?.text).toMatch(
-      new RegExp(`^${truncated?.nextStartLine}: `, "u"),
-    );
+    const chunks = [truncated?.text ?? ""];
+    let nextStartLine = truncated?.nextStartLine;
+    while (nextStartLine) {
+      const continuation = await workbench.repoReadMany(
+        {
+          files: [{ path: truncated?.path, startLine: nextStartLine }],
+        },
+        optionsFor(repo),
+      );
+      const result = continuation.results[0];
+      expect(result?.text).toMatch(new RegExp(`^${nextStartLine}: `, "u"));
+      chunks.push(result?.text ?? "");
+      nextStartLine = result?.nextStartLine;
+    }
+    const completeSource = await fs.readFile(path.join(repo, truncated?.path ?? ""), "utf8");
+    const completeNumberedText = completeSource
+      .split(/\r?\n/u)
+      .map((line, lineIndex) => `${lineIndex + 1}: ${line}`)
+      .join("\n");
+    expect(chunks.join("\n")).toBe(completeNumberedText);
 
     const toolResult = workbench.mcpResult(read);
     expect(toolResult).toEqual({ structuredContent: read });
@@ -438,8 +465,28 @@ describe("openclaw-coding-workbench MCP helpers", () => {
       expect(readTool?.outputSchema).toMatchObject({
         type: "object",
         properties: expect.objectContaining({
-          results: expect.any(Object),
-          omitted: expect.any(Object),
+          results: expect.objectContaining({
+            type: "array",
+            items: expect.objectContaining({
+              properties: expect.objectContaining({
+                path: expect.any(Object),
+                text: expect.any(Object),
+                sha256: expect.any(Object),
+                nextStartLine: expect.any(Object),
+              }),
+            }),
+          }),
+          omitted: expect.objectContaining({
+            type: "array",
+            items: expect.objectContaining({
+              properties: expect.objectContaining({
+                path: expect.any(Object),
+                requestedStartLine: expect.any(Object),
+                requestedEndLine: expect.any(Object),
+                nextStartLine: expect.any(Object),
+              }),
+            }),
+          }),
           coverage: expect.any(Object),
         }),
       });

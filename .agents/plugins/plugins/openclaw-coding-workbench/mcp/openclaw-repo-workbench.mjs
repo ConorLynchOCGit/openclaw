@@ -162,6 +162,34 @@ const SearchManyOutputSchema = z.object({
     omittedItems: z.number().int(),
   }),
 });
+const ReadResultOutputSchema = z.object({
+  path: z.string(),
+  status: z.enum(["ok", "error"]),
+  requestedStartLine: z.number().int().optional(),
+  requestedEndLine: z.number().int().optional(),
+  returnedStartLine: z.number().int().optional(),
+  returnedEndLine: z.number().int().optional(),
+  totalLines: z.number().int().optional(),
+  sourceBytes: z.number().int().optional(),
+  returnedBytes: z.number().int().optional(),
+  sha256: z.string().optional(),
+  effectiveMaxBytes: z.number().int().optional(),
+  requestedMaxBytes: z.number().int().optional(),
+  maxBytesClamped: z.boolean().optional(),
+  text: z.string().optional(),
+  truncated: z.boolean().optional(),
+  nextStartLine: z.number().int().optional(),
+  error: z.string().optional(),
+});
+const OmittedReadOutputSchema = z.object({
+  path: z.string(),
+  requestedStartLine: z.number().int(),
+  requestedEndLine: z.number().int(),
+  totalLines: z.number().int(),
+  sha256: z.string(),
+  nextStartLine: z.number().int(),
+  reason: z.enum(["aggregate_text_budget", "aggregate_response_budget"]),
+});
 const ReadManyOutputSchema = z.object({
   schemaVersion: z.literal("openclaw.repo_workbench.read_many.v2"),
   root: z.string(),
@@ -171,8 +199,8 @@ const ReadManyOutputSchema = z.object({
     maxTextBytes: z.number().int(),
     maxResponseBytes: z.number().int(),
   }),
-  results: z.array(LooseResultSchema),
-  omitted: z.array(LooseResultSchema),
+  results: z.array(ReadResultOutputSchema),
+  omitted: z.array(OmittedReadOutputSchema),
   coverage: z.object({
     requested: z.number().int(),
     returned: z.number().int(),
@@ -1030,7 +1058,9 @@ function omittedRead(request, result, reason) {
   return {
     path: result.path ?? request.path,
     requestedStartLine: request.startLine ?? 1,
-    ...(request.endLine ? { requestedEndLine: request.endLine } : {}),
+    requestedEndLine: request.endLine ?? result.totalLines,
+    totalLines: result.totalLines,
+    sha256: result.sha256,
     nextStartLine: result.nextStartLine ?? result.returnedStartLine ?? request.startLine ?? 1,
     reason,
   };
