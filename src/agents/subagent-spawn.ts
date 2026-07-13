@@ -1571,6 +1571,7 @@ export async function spawnSubagentDirect(
     childDepth,
     maxSpawnDepth,
     persistentSession: spawnMode === "session",
+    parentSessionKey: spawnedByKey,
     task,
   });
 

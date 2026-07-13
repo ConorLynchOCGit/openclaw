@@ -98,12 +98,15 @@ function parseOpenClawTranscriptRef(value: string): OpenClawTranscriptRef | unde
   };
 }
 
-function isDirectParentSessionTranscriptRef(params: {
+function isDirectParentSessionTarget(params: {
   ref: OpenClawTranscriptRef | undefined;
   requesterSessionKey: string;
   resolvedSessionKey: string;
 }): boolean {
-  if (params.ref?.scope !== "session" || !params.requesterSessionKey.trim()) {
+  if (
+    (params.ref !== undefined && params.ref.scope !== "session") ||
+    !params.requesterSessionKey.trim()
+  ) {
     return false;
   }
   try {
@@ -410,12 +413,12 @@ export function createSessionsHistoryTool(opts?: {
         });
       }
 
-      const directParentSessionRef = isDirectParentSessionTranscriptRef({
+      const directParentSessionTarget = isDirectParentSessionTarget({
         ref: transcriptRef,
         requesterSessionKey: effectiveRequesterKey,
         resolvedSessionKey: resolvedKey,
       });
-      if (!directParentSessionRef) {
+      if (!directParentSessionTarget) {
         const a2aPolicy = createAgentToAgentPolicy(cfg);
         const visibility = resolveEffectiveSessionToolsVisibility({
           cfg,

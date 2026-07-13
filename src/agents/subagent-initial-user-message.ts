@@ -10,6 +10,8 @@ export function buildSubagentInitialUserMessage(params: {
   maxSpawnDepth: number;
   /** When true, this subagent uses a persistent session for follow-up messages. */
   persistentSession: boolean;
+  /** Persisted requester lineage, exposed as a pointer rather than copied transcript content. */
+  parentSessionKey?: string;
   task?: string;
 }): string {
   const lines = [
@@ -18,6 +20,12 @@ export function buildSubagentInitialUserMessage(params: {
   if (params.persistentSession) {
     lines.push(
       "[Subagent Context] This subagent session is persistent and remains available for thread follow-up messages.",
+    );
+  }
+  const parentSessionKey = params.parentSessionKey?.trim();
+  if (parentSessionKey) {
+    lines.push(
+      `[Subagent Context] Parent transcript ref: openclaw-transcript://${encodeURIComponent(parentSessionKey)}#session`,
     );
   }
   const taskBody = params.task?.trim();

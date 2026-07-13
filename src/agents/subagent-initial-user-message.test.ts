@@ -31,6 +31,19 @@ describe("buildSubagentInitialUserMessage", () => {
     expect(msg).toContain("persistent and remains available");
   });
 
+  it("exposes the persisted parent transcript pointer without copying transcript content", () => {
+    const msg = buildSubagentInitialUserMessage({
+      childDepth: 1,
+      maxSpawnDepth: 2,
+      persistentSession: false,
+      parentSessionKey: "agent:main:webchat:operator",
+      task: "inspect parent context when needed",
+    });
+
+    expect(msg).toContain("openclaw-transcript://agent%3Amain%3Awebchat%3Aoperator#session");
+    expect(msg).not.toContain("parent transcript content");
+  });
+
   it("keeps the delegated task single-sourced in first user text", () => {
     const task = "UNIQUE_SUBAGENT_TASK_TOKEN\n  preserve indentation";
     const system = buildSubagentSystemPrompt({

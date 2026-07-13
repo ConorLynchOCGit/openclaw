@@ -49,6 +49,7 @@ import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readNonNegativeIntegerParam, readStringParam } from "./common.js";
 import {
   createSessionVisibilityGuard,
+  createSessionVisibilityRowChecker,
   createAgentToAgentPolicy,
   resolveEffectiveSessionToolsVisibility,
   resolveSessionReference,
@@ -490,13 +491,27 @@ export function createSessionsSendTool(opts?: {
           sessionKey: unresolvedDisplayKey,
         });
       }
-      const visibilityGuard = await createSessionVisibilityGuard({
-        action: "send",
-        requesterSessionKey: effectiveRequesterKey,
-        visibility: sessionVisibility,
-        a2aPolicy,
-      });
-      const access = visibilityGuard.check(resolvedKey);
+      const targetSessionEntry = loadSessionEntryByKey(resolvedKey);
+      const access = targetSessionEntry
+        ? createSessionVisibilityRowChecker({
+            action: "send",
+            requesterSessionKey: effectiveRequesterKey,
+            visibility: sessionVisibility,
+            a2aPolicy,
+          }).check({
+            key: resolvedKey,
+            agentId: resolveAgentIdFromSessionKey(resolvedKey),
+            spawnedBy: targetSessionEntry.spawnedBy,
+            parentSessionKey: targetSessionEntry.parentSessionKey,
+          })
+        : (
+            await createSessionVisibilityGuard({
+              action: "send",
+              requesterSessionKey: effectiveRequesterKey,
+              visibility: sessionVisibility,
+              a2aPolicy,
+            })
+          ).check(resolvedKey);
       if (!access.allowed) {
         return jsonResult({
           runId: crypto.randomUUID(),
@@ -586,7 +601,6 @@ export function createSessionsSendTool(opts?: {
       // unrelated sender that can see the same target (e.g. under
       // `tools.sessions.visibility=all`) must still go through the normal A2A
       // path so it actually receives a follow-up delivery.
-      const targetSessionEntry = loadSessionEntryByKey(resolvedKey);
       const targetAcpMeta = readAcpSessionMeta({ sessionKey: resolvedKey });
       const targetSessionEntryWithAcp =
         targetAcpMeta && targetSessionEntry

@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createSessionsHistoryTool } from "./tools/sessions-history-tool.js";
+import { createSessionsSendTool } from "./tools/sessions-send-tool.js";
 
 const callGatewayMock = vi.fn();
 vi.mock("../gateway/call.js", () => ({
@@ -117,7 +118,7 @@ describe("sessions tools visibility", () => {
     expect((denied.details as { status?: string }).status).toBe("forbidden");
   });
 
-  it("allows a direct child to read an exact parent session ref without broad history visibility", async () => {
+  it("allows a direct child to read its persisted parent without broad history visibility", async () => {
     const previousStateDir = process.env.OPENCLAW_STATE_DIR;
     const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-parent-session-ref-"));
     process.env.OPENCLAW_STATE_DIR = stateDir;
@@ -157,16 +158,86 @@ describe("sessions tools visibility", () => {
       const allowed = await tool.execute("call-parent-ref", { ref: parentRef });
       expect((allowed.details as { sessionKey?: string }).sessionKey).toBe(parentSessionKey);
 
-      const rawKeyDenied = await tool.execute("call-parent-key", {
+      const rawKeyAllowed = await tool.execute("call-parent-key", {
         sessionKey: parentSessionKey,
       });
-      expect((rawKeyDenied.details as { status?: string }).status).toBe("forbidden");
+      expect((rawKeyAllowed.details as { sessionKey?: string }).sessionKey).toBe(parentSessionKey);
+
+      const unrelatedRawDenied = await tool.execute("call-unrelated-key", {
+        sessionKey: unrelatedSessionKey,
+      });
+      expect((unrelatedRawDenied.details as { status?: string }).status).toBe("forbidden");
 
       const unrelatedRef = `openclaw-transcript://${encodeURIComponent(
         unrelatedSessionKey,
       )}#session`;
       const unrelatedDenied = await tool.execute("call-unrelated-ref", { ref: unrelatedRef });
       expect((unrelatedDenied.details as { status?: string }).status).toBe("forbidden");
+    } finally {
+      if (previousStateDir === undefined) {
+        delete process.env.OPENCLAW_STATE_DIR;
+      } else {
+        process.env.OPENCLAW_STATE_DIR = previousStateDir;
+      }
+      fs.rmSync(stateDir, { recursive: true, force: true });
+    }
+  });
+
+  it("allows a direct parent to continue a persisted child when spawned-session listing is stale", async () => {
+    const previousStateDir = process.env.OPENCLAW_STATE_DIR;
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-parent-child-send-"));
+    process.env.OPENCLAW_STATE_DIR = stateDir;
+    const parentSessionKey = "agent:main:main";
+    const childSessionKey = "agent:business-ops:subagent:child-before-restart";
+    const sessionsDir = path.join(stateDir, "agents", "business-ops", "sessions");
+    fs.mkdirSync(sessionsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(sessionsDir, "sessions.json"),
+      `${JSON.stringify({
+        [childSessionKey]: {
+          sessionId: "persisted-child-session-id",
+          updatedAt: Date.now(),
+          parentSessionKey,
+          status: "done",
+        },
+      })}\n`,
+      "utf8",
+    );
+
+    try {
+      mockConfig = {
+        session: { mainKey: "main", scope: "per-sender" },
+        tools: { agentToAgent: { enabled: false } },
+      };
+      mockGatewayWithHistory((req) => {
+        if (req.method === "sessions.resolve") {
+          return { key: req.params?.key };
+        }
+        if (req.method === "sessions.list") {
+          return { sessions: [] };
+        }
+        if (req.method === "agent") {
+          return { runId: "continued-child-run" };
+        }
+        return undefined;
+      });
+      const tool = createSessionsSendTool({
+        agentSessionKey: parentSessionKey,
+        config: mockConfig as never,
+        callGateway: (opts: unknown) => callGatewayMock(opts),
+      });
+
+      const result = await tool.execute("call-persisted-child", {
+        sessionKey: childSessionKey,
+        message: "continue",
+        timeoutSeconds: 0,
+      });
+
+      expect(result.details).toMatchObject({
+        status: "accepted",
+        sessionKey: childSessionKey,
+        runId: "continued-child-run",
+      });
     } finally {
       if (previousStateDir === undefined) {
         delete process.env.OPENCLAW_STATE_DIR;
