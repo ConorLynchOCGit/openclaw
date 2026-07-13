@@ -2791,7 +2791,8 @@ export function buildGatewaySessionRow(params: {
     childSessions,
     codexNativeChildRuns,
     codexTeamUsage,
-    laneVerdict: resolveModelAuthoredTaskVerdict(finalAssistantText),
+    laneVerdict:
+      rowStatus === "running" ? undefined : resolveModelAuthoredTaskVerdict(finalAssistantText),
     codexExecutionEvidence,
     responseUsage: entry?.responseUsage,
     modelProvider: rowModelProvider,

@@ -1,6 +1,6 @@
 // Workboard tests cover dispatcher plugin behavior.
 import { describe, expect, it, vi } from "vitest";
-import { dispatchAndStartWorkboardCards } from "./dispatcher.js";
+import { dispatchAndStartWorkboardCards, type WorkboardSubagentRuntime } from "./dispatcher.js";
 import { WorkboardStore, type PersistedWorkboardCard, type WorkboardKeyedStore } from "./store.js";
 
 function createMemoryStore<T = PersistedWorkboardCard>(): WorkboardKeyedStore<T> {
@@ -43,7 +43,7 @@ describe("dispatchAndStartWorkboardCards", () => {
       agentId: "codex-side",
     });
     const runIds = ["run-first", "run-other"];
-    const run = vi.fn(async (params: { sessionKey: string }) => {
+    const run = vi.fn(async (params: Parameters<WorkboardSubagentRuntime["run"]>[0]) => {
       const runId = runIds.shift() ?? "run-extra";
       return { runId, sessionKey: params.sessionKey, taskId: `task-${runId}` };
     });

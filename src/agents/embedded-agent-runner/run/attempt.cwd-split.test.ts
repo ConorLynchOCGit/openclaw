@@ -43,6 +43,7 @@ describe("runEmbeddedAttempt cwd/workspace split", () => {
       attemptOverrides: {
         cwd: taskRepo,
         disableTools: false,
+        transcriptPrompt: "Exact inbound operator text.",
       },
     });
 
@@ -53,11 +54,17 @@ describe("runEmbeddedAttempt cwd/workspace split", () => {
     expect(bootstrapCall?.agentId).toBe("main");
 
     const toolsCall = hoisted.createOpenClawCodingToolsMock.mock.calls[0]?.[0] as
-      | { cwd?: string; workspaceDir?: string; spawnWorkspaceDir?: string }
+      | {
+          cwd?: string;
+          workspaceDir?: string;
+          spawnWorkspaceDir?: string;
+          currentInboundMessage?: string;
+        }
       | undefined;
     expect(toolsCall?.cwd).toBe(taskRepo);
     expect(toolsCall?.workspaceDir).toBe(bootstrapCall?.workspaceDir);
     expect(toolsCall?.spawnWorkspaceDir).toBe(bootstrapCall?.workspaceDir);
+    expect(toolsCall?.currentInboundMessage).toBe("Exact inbound operator text.");
 
     const resourceLoaderInit = hoisted.defaultResourceLoaderInitMock.mock.calls[0]?.[0] as
       | { cwd?: string }

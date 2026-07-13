@@ -3314,7 +3314,7 @@ describe("gateway agent handler", () => {
         },
       );
 
-      const accepted = mockCallArg<Record<string, unknown>>(respond, 0, 1);
+      const accepted = mockCallArg(respond, 0, 1);
       expect(accepted).toMatchObject({
         runId,
         sessionKey: childSessionKey,

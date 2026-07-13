@@ -63,7 +63,13 @@ const SessionsSendToolSchema = Type.Object({
   sessionKey: Type.Optional(Type.String()),
   label: Type.Optional(Type.String({ minLength: 1, maxLength: SESSION_LABEL_MAX_LENGTH })),
   agentId: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
-  message: Type.String(),
+  message: Type.Optional(Type.String()),
+  forwardCurrentMessage: Type.Optional(
+    Type.Boolean({
+      description:
+        "Forward the current inbound operator message byte-for-byte. Use for an existing owner episode instead of supplying message.",
+    }),
+  ),
   timeoutSeconds: Type.Optional(Type.Integer({ minimum: 0 })),
 });
 
@@ -313,6 +319,7 @@ async function startAgentRun(params: {
 export function createSessionsSendTool(opts?: {
   agentSessionKey?: string;
   agentChannel?: GatewayMessageChannel;
+  currentInboundMessage?: string;
   sandboxed?: boolean;
   config?: OpenClawConfig;
   callGateway?: GatewayCaller;
@@ -327,7 +334,28 @@ export function createSessionsSendTool(opts?: {
     execute: async (_toolCallId, args) => {
       const params = normalizeSessionsSendArguments(args);
       const gatewayCall = opts?.callGateway ?? callGateway;
-      const message = readStringParam(params, "message", { required: true });
+      const suppliedMessage = readStringParam(params, "message");
+      const forwardCurrentMessage = params.forwardCurrentMessage === true;
+      if (forwardCurrentMessage && suppliedMessage) {
+        return jsonResult({
+          status: "error",
+          error: "Use either message or forwardCurrentMessage, not both",
+        });
+      }
+      const currentInboundMessage = opts?.currentInboundMessage;
+      if (forwardCurrentMessage && !currentInboundMessage?.trim()) {
+        return jsonResult({
+          status: "error",
+          error: "Current inbound operator message is unavailable for forwarding",
+        });
+      }
+      if (!forwardCurrentMessage && !suppliedMessage) {
+        return jsonResult({
+          status: "error",
+          error: "Either message or forwardCurrentMessage is required",
+        });
+      }
+      const message = forwardCurrentMessage ? currentInboundMessage! : suppliedMessage!;
       const timeoutSeconds = readNonNegativeIntegerParam(params, "timeoutSeconds") ?? 30;
       const { cfg, mainKey, alias, effectiveRequesterKey, restrictToSpawned } =
         resolveSessionToolContext(opts);

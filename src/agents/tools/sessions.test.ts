@@ -199,10 +199,11 @@ async function executeMainSessionsList() {
   return createMainSessionsListTool().execute("call1", {});
 }
 
-function createMainSessionsSendTool() {
+function createMainSessionsSendTool(currentInboundMessage?: string) {
   return createSessionsSendTool({
     agentSessionKey: MAIN_AGENT_SESSION_KEY,
     agentChannel: MAIN_AGENT_CHANNEL,
+    currentInboundMessage,
   });
 }
 
@@ -782,6 +783,64 @@ describe("sessions_send gating", () => {
     const details = requireDetails(result);
     expect(details.status).toBe("error");
     expect(details.error).toBe("Either sessionKey or label is required");
+    expect(callGatewayMock).not.toHaveBeenCalled();
+  });
+
+  it("forwards the current inbound operator message without model-authored wrapping", async () => {
+    const currentInboundMessage = "  Exact operator text.\nPreserve this spacing.  ";
+    const tool = createMainSessionsSendTool(currentInboundMessage);
+    callGatewayMock.mockImplementation(async (opts: unknown) => {
+      const request = opts as { method?: string };
+      if (request.method === "sessions.list") {
+        return {
+          path: "/tmp/sessions.json",
+          sessions: [{ key: MAIN_AGENT_SESSION_KEY, kind: "direct" }],
+        };
+      }
+      if (request.method === "agent") {
+        return { runId: "run-forward-current", acceptedAt: 123 };
+      }
+      return {};
+    });
+
+    const result = await tool.execute("call-forward-current", {
+      sessionKey: MAIN_AGENT_SESSION_KEY,
+      forwardCurrentMessage: true,
+      timeoutSeconds: 0,
+    });
+
+    expect(requireDetails(result).status).toBe("accepted");
+    const agentCall = callGatewayMock.mock.calls
+      .map(([request]) => request as { method?: string; params?: { message?: string } })
+      .find((request) => request.method === "agent");
+    expect(agentCall?.params?.message?.endsWith(currentInboundMessage)).toBe(true);
+    expect(agentCall?.params?.message).not.toContain("Operator answer for");
+  });
+
+  it("rejects ambiguous or unavailable current-message forwarding", async () => {
+    const tool = createMainSessionsSendTool();
+
+    const unavailable = await tool.execute("call-forward-unavailable", {
+      sessionKey: MAIN_AGENT_SESSION_KEY,
+      forwardCurrentMessage: true,
+      timeoutSeconds: 0,
+    });
+    expect(requireDetails(unavailable)).toMatchObject({
+      status: "error",
+      error: "Current inbound operator message is unavailable for forwarding",
+    });
+
+    const ambiguousTool = createMainSessionsSendTool("exact");
+    const ambiguous = await ambiguousTool.execute("call-forward-ambiguous", {
+      sessionKey: MAIN_AGENT_SESSION_KEY,
+      message: "rewritten",
+      forwardCurrentMessage: true,
+      timeoutSeconds: 0,
+    });
+    expect(requireDetails(ambiguous)).toMatchObject({
+      status: "error",
+      error: "Use either message or forwardCurrentMessage, not both",
+    });
     expect(callGatewayMock).not.toHaveBeenCalled();
   });
 

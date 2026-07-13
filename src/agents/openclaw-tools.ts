@@ -124,6 +124,8 @@ export function createOpenClawTools(
     currentMessageId?: string | number;
     /** True when the current inbound turn carried audio media. */
     currentInboundAudio?: boolean;
+    /** Exact user-visible text for native owner-session continuation forwarding. */
+    currentInboundMessage?: string;
     /** Reply-to mode for auto-threading. */
     replyToMode?: "off" | "first" | "all" | "batched";
     /** Mutable ref to track if a reply was sent (for "first" mode). */
@@ -520,6 +522,7 @@ export function createOpenClawTools(
           createSessionsSendTool({
             agentSessionKey: options?.agentSessionKey,
             agentChannel: options?.agentChannel,
+            currentInboundMessage: options?.currentInboundMessage,
             sandboxed: options?.sandboxed,
             config: resolvedConfig,
             callGateway: openClawToolsDeps.callGateway,

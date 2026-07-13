@@ -125,6 +125,8 @@ describe("write tool", () => {
     );
 
     await expect(fs.readFile(filePath, "utf-8")).resolves.toBe("finished\n");
-    expect(result.details?.sha256).toBe(createHash("sha256").update("finished\n").digest("hex"));
+    expect(result.details).toMatchObject({
+      sha256: createHash("sha256").update("finished\n").digest("hex"),
+    });
   });
 });

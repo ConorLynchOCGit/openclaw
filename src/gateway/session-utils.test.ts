@@ -2146,6 +2146,62 @@ describe("gateway session utils", () => {
     }
   });
 
+  test("running session rows do not expose a prior settled lane verdict", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "session-utils-running-verdict-"));
+    try {
+      const sessionId = "session-running-verdict";
+      const sessionFile = path.join(dir, `${sessionId}.jsonl`);
+      const trajectoryFile = path.join(dir, `${sessionId}.trajectory.jsonl`);
+      fs.writeFileSync(
+        sessionFile,
+        [
+          JSON.stringify({ type: "session", version: 1, id: sessionId }),
+          JSON.stringify({
+            message: { role: "assistant", content: "Verdict: complete\nEarlier turn settled." },
+          }),
+          JSON.stringify({ message: { role: "user", content: "Continue the episode." } }),
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+      fs.writeFileSync(
+        trajectoryFile,
+        [
+          JSON.stringify({
+            traceSchema: "openclaw-trajectory",
+            sessionId,
+            type: "agent.tool",
+            ts: "2026-07-01T00:01:20.000Z",
+            seq: 8,
+            sourceSeq: 20,
+            data: { phase: "start", name: "sessions_send", title: "Session Send" },
+          }),
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+
+      const row = buildGatewaySessionRow({
+        cfg: createModelDefaultsConfig({ primary: "openai/gpt-5.5" }),
+        storePath: path.join(dir, "sessions.json"),
+        store: {},
+        key: "agent:main:main",
+        entry: {
+          sessionId,
+          sessionFile,
+          updatedAt: Date.UTC(2026, 6, 1, 0, 1, 0),
+        },
+        includeLastMessage: true,
+      });
+
+      expect(row.status).toBe("running");
+      expect(row.finalAssistantText).toBe("Verdict: complete\nEarlier turn settled.");
+      expect(row.laneVerdict).toBeUndefined();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("session rows prefer final assistant transcript truth over stale failed status metadata", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "session-utils-final-status-"));
     try {
