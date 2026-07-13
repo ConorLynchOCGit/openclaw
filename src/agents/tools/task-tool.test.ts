@@ -341,7 +341,7 @@ describe("task tool", () => {
     expect(content.text).toContain(packet);
   });
 
-  it("returns receipt-only task output to Main even when the delegated child result is small", async () => {
+  it("returns a bounded child result inline to Main under the generic result-size rule", async () => {
     const shortPlanningResult = "Brief Planning artifact that Main must not rewrite.";
     hoisted.readLatestAssistantReplyMock.mockResolvedValue(shortPlanningResult);
 
@@ -360,37 +360,29 @@ describe("task tool", () => {
       contentDigest: digestText(shortPlanningResult),
       contentChars: shortPlanningResult.length,
       resultChars: shortPlanningResult.length,
-      resultInline: false,
-      resultMode: "pointer",
+      resultInline: true,
+      resultMode: "inline",
       resultSource: "transcript",
-      previewOnly: true,
+      previewOnly: false,
       previewChars: 0,
-      displayTruncated: true,
+      displayTruncated: false,
+      parentInlineLimitChars: 1_800,
     });
     const content = result.content[0];
     expect(content?.type).toBe("text");
     if (!content || content.type !== "text") {
       throw new Error("Expected text tool result");
     }
-    expect(content.text).toContain("<task_receipt");
-    expect(content.text).toContain(
-      'ref="openclaw-transcript://agent%3Acodebase-researcher%3Asubagent%3Achild#assistant:last"',
-    );
-    expect(content.text).toContain(`chars="${shortPlanningResult.length}"`);
-    expect(content.text).toContain(`digest="${digestText(shortPlanningResult)}"`);
-    expect(content.text).not.toContain('agentId="planning"');
-    expect(content.text).not.toContain('status="completed"');
-    expect(content.text).toContain('source="transcript"');
-    expect(content.text).toContain('transportStatus="completed"');
-    expect(content.text).toContain("<inspect_command>");
-    expect(content.text).not.toContain("<task_receipt_lead");
-    expect(content.text).not.toContain("<task_result>");
+    expect(content.text).toContain("<task_result>");
+    expect(content.text).toContain(`contentChars="${shortPlanningResult.length}"`);
+    expect(content.text).toContain(`contentDigest="${digestText(shortPlanningResult)}"`);
+    expect(content.text).toContain('agentId="planning"');
     expect(content.text).not.toContain("<task_result_preview");
-    expect(content.text).not.toContain(shortPlanningResult);
+    expect(content.text).toContain(shortPlanningResult);
   });
 
-  it("infers Main receipt-only behavior from the parent session key", async () => {
-    const shortPlanningResult = "Small artifact that should still stay in Planning.";
+  it("infers Main's bounded inline limit from the parent session key", async () => {
+    const shortPlanningResult = "Small child-owned result returned without requester override.";
     hoisted.readLatestAssistantReplyMock.mockResolvedValue(shortPlanningResult);
 
     const result = await createTaskTool({
@@ -406,24 +398,25 @@ describe("task tool", () => {
       throw new Error("Expected text tool result");
     }
     expect(result.details).toMatchObject({
-      resultInline: false,
-      resultMode: "pointer",
+      resultInline: true,
+      resultMode: "inline",
       resultSource: "transcript",
-      previewOnly: true,
+      previewOnly: false,
+      parentInlineLimitChars: 1_800,
     });
-    expect(content.text).toContain("<task_receipt");
-    expect(content.text).not.toContain(shortPlanningResult);
+    expect(content.text).toContain("<task_result>");
+    expect(content.text).toContain(shortPlanningResult);
   });
 
-  it("carries only an exact model-authored verdict line in Main's receipt", async () => {
-    const childResult = "Verdict: partial\n\nSubstantive child-owned artifact prose stays out.";
+  it("carries only an exact model-authored verdict line in a pointer result", async () => {
+    const childResult = `Verdict: partial\n\n${"Substantive child-owned artifact prose stays out.\n".repeat(50)}`;
     hoisted.readLatestAssistantReplyMock.mockResolvedValue(childResult);
 
     const result = await createTaskTool({
       agentSessionKey: "agent:main:operator",
       requesterAgentIdOverride: "main",
     }).execute("call-1", {
-      agentId: "business-ops",
+      agentId: "reviewer",
       task: "Produce a truthful domain closeout.",
     });
 
@@ -432,16 +425,78 @@ describe("task tool", () => {
       resultMode: "pointer",
       receiptLeadLine: "Verdict: partial",
       inspectCommand:
-        "openclaw sessions show agent:codebase-researcher:subagent:child --agent business-ops",
+        "openclaw sessions show agent:codebase-researcher:subagent:child --agent reviewer",
     });
     const content = result.content[0];
     expect(content?.type).toBe("text");
     if (!content || content.type !== "text") {
       throw new Error("Expected text tool result");
     }
-    expect(content.text).toContain('<task_receipt_lead modelAuthored="true">');
+    expect(content.text).toContain('<task_result_lead modelAuthored="true">');
     expect(content.text).toContain("Verdict: partial");
     expect(content.text).not.toContain("Substantive child-owned artifact prose stays out.");
+  });
+
+  it("returns a bounded Business Ops dialogue turn inline to Main", async () => {
+    const childResult = [
+      "Verdict: partial",
+      "",
+      "Episode: business-ops/companies/example/collaborative-refinement.md",
+      "Question: Which audience must trust this brand first?",
+      "Boundary: candidate-only; no canonical mutation.",
+    ].join("\n");
+    hoisted.readLatestAssistantReplyMock.mockResolvedValue(childResult);
+
+    const result = await createTaskTool({
+      agentSessionKey: "agent:main:operator",
+      requesterAgentIdOverride: "main",
+    }).execute("call-1", {
+      agentId: "business-ops",
+      task: "Continue the operator's collaborative refinement episode.",
+    });
+
+    expect(result.details).toMatchObject({
+      resultInline: true,
+      resultMode: "inline",
+      previewOnly: false,
+      parentInlineLimitChars: 1_800,
+    });
+    const content = result.content[0];
+    expect(content?.type).toBe("text");
+    if (!content || content.type !== "text") {
+      throw new Error("Expected text tool result");
+    }
+    expect(content.text).toContain("<task_result>");
+    expect(content.text).toContain(childResult);
+    expect(content.text).not.toContain("<task_receipt");
+  });
+
+  it("keeps an oversized Business Ops result behind native task pointers", async () => {
+    const childResult = `Verdict: partial\n\n${"oversized dialogue payload\n".repeat(100)}`;
+    hoisted.readLatestAssistantReplyMock.mockResolvedValue(childResult);
+
+    const result = await createTaskTool({
+      agentSessionKey: "agent:main:operator",
+      requesterAgentIdOverride: "main",
+    }).execute("call-1", {
+      agentId: "business-ops",
+      task: "Continue the operator's collaborative refinement episode.",
+    });
+
+    expect(result.details).toMatchObject({
+      resultInline: false,
+      resultMode: "pointer",
+      previewOnly: true,
+      previewChars: 0,
+      parentInlineLimitChars: 1_800,
+    });
+    const content = result.content[0];
+    expect(content?.type).toBe("text");
+    if (!content || content.type !== "text") {
+      throw new Error("Expected text tool result");
+    }
+    expect(content.text).toContain('<task_result_ref kind="transcript_final"');
+    expect(content.text).not.toContain("oversized dialogue payload");
   });
 
   it("returns native child transcript pointers instead of large child finals as parent context", async () => {

@@ -40,7 +40,6 @@ const TASK_WAIT_POLL_MS = 60_000;
 const TASK_RESULT_PARENT_INLINE_MAX_CHARS = 1_800;
 const PLANNING_REVIEW_TASK_RESULT_INLINE_MAX_CHARS = 12_000;
 const TASK_RESULT_PARENT_PREVIEW_MAX_CHARS = 0;
-const RECEIPT_ONLY_PARENT_AGENT_IDS = new Set(["main"]);
 const CODEX_CODING_AGENT_IDS = new Set(["coding", "execution-coding"]);
 const DEFAULT_LIGHT_CONTEXT_AGENT_IDS = new Set([
   "codebase-researcher",
@@ -106,7 +105,6 @@ function formatTaskResult(params: {
   contentChars: number;
   contentTruncated: boolean;
   inlineResult: boolean;
-  receiptOnly: boolean;
   resultRef: string;
   transcriptFinalRef: string;
   receiptLeadLine?: string;
@@ -119,25 +117,6 @@ function formatTaskResult(params: {
   const childSessionIdAttr = params.childSessionId
     ? ` childSessionId="${escapeXmlAttr(params.childSessionId)}"`
     : "";
-  if (params.receiptOnly) {
-    return [
-      `<task_receipt ref="${escapeXmlAttr(
-        params.transcriptFinalRef,
-      )}" source="transcript" transportStatus="completed" chars="${params.contentChars}" digest="${escapeXmlAttr(params.contentDigest)}">`,
-      ...(params.receiptLeadLine
-        ? [
-            '  <task_receipt_lead modelAuthored="true">',
-            escapeXmlText(params.receiptLeadLine),
-            "  </task_receipt_lead>",
-          ]
-        : []),
-      "  <inspect_command>",
-      escapeXmlText(params.inspectCommand),
-      "  </inspect_command>",
-      ...formatTaskRecoveryHistory(params.recoveryHistory),
-      "</task_receipt>",
-    ].join("\n");
-  }
   const openTag = `<task id="${escapeXmlAttr(params.childSessionKey)}" runId="${escapeXmlAttr(
     params.runId,
   )}" agentId="${escapeXmlAttr(
@@ -159,6 +138,16 @@ function formatTaskResult(params: {
       "  <task_result_status>",
       "child task completed; full result remains in the child session transcript",
       "  </task_result_status>",
+      ...(params.receiptLeadLine
+        ? [
+            '  <task_result_lead modelAuthored="true">',
+            escapeXmlText(params.receiptLeadLine),
+            "  </task_result_lead>",
+          ]
+        : []),
+      "  <inspect_command>",
+      escapeXmlText(params.inspectCommand),
+      "  </inspect_command>",
       ...(params.previewText
         ? [
             '  <task_result_preview previewOnly="true">',
@@ -206,11 +195,6 @@ function resolveRequesterAgentId(
   }
   const fromSessionKey = /^agent:([^:]+)/.exec(opts?.agentSessionKey ?? "")?.[1]?.trim();
   return fromSessionKey || undefined;
-}
-
-function shouldReturnReceiptOnlyToParent(params: { requesterAgentId?: string }) {
-  const requesterAgentId = params.requesterAgentId?.trim().toLowerCase();
-  return requesterAgentId !== undefined && RECEIPT_ONLY_PARENT_AGENT_IDS.has(requesterAgentId);
 }
 
 function isCodexCodingAgentId(agentId: string): boolean {
@@ -620,9 +604,7 @@ export function createTaskTool(
       const contentDigest = computeChildResultContentDigest(replyText);
       const contentTruncated = includesChildResultTruncationMarker(replyText);
       const requesterAgentId = resolveRequesterAgentId(opts);
-      const receiptOnly = shouldReturnReceiptOnlyToParent({ requesterAgentId });
-      const inlineResult =
-        !receiptOnly && shouldInlineTaskResultForParent({ replyText, requesterAgentId });
+      const inlineResult = shouldInlineTaskResultForParent({ replyText, requesterAgentId });
       const resultRef = `openclaw-transcript://${encodeURIComponent(
         spawn.childSessionKey,
       )}#session`;
@@ -645,7 +627,6 @@ export function createTaskTool(
         contentChars: replyText.length,
         contentTruncated,
         inlineResult,
-        receiptOnly,
         resultRef,
         transcriptFinalRef,
         receiptLeadLine,
