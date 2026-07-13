@@ -81,6 +81,7 @@ import {
   CODEX_NATIVE_SUBAGENT_RUN_ID_PREFIX,
   CODEX_NATIVE_SUBAGENT_TASK_KIND,
 } from "../tasks/codex-native-subagent-task.js";
+import { resolveModelAuthoredTaskVerdict } from "../tasks/task-completion-contract.js";
 import { listTasksForRelatedSessionKey } from "../tasks/task-registry.js";
 import type { TaskEventMetadata, TaskRecord } from "../tasks/task-registry.types.js";
 import { isRecord } from "../utils.js";
@@ -380,35 +381,48 @@ function buildCodexNativeChildUsage(metadata: TaskEventMetadata | undefined): {
 
 function buildCodexTeamUsage(params: {
   state: "provisional" | "settled";
-  parentInputTokens?: number;
-  parentOutputTokens?: number;
-  parentTotalTokens?: number;
+  parent?: SessionEntry["codexThreadUsage"];
   children?: GatewaySessionRow["codexNativeChildRuns"];
 }): GatewaySessionRow["codexTeamUsage"] {
   const childUsage = params.children?.map((child) => child.usage).filter(Boolean) ?? [];
-  if (
-    params.parentInputTokens === undefined &&
-    params.parentOutputTokens === undefined &&
-    params.parentTotalTokens === undefined &&
-    childUsage.length === 0
-  ) {
-    return undefined;
-  }
-  const sum = (values: Array<number | undefined>): number | undefined => {
-    const present = values.filter((value): value is number => value !== undefined);
-    return present.length > 0 ? present.reduce((total, value) => total + value, 0) : undefined;
+  const sumComplete = (parent: number | undefined, children: Array<number | undefined>) => {
+    if (parent === undefined || children.some((value) => value === undefined)) {
+      return undefined;
+    }
+    let total = parent;
+    for (const value of children) {
+      total += value ?? 0;
+    }
+    return total;
   };
+  const complete =
+    params.parent?.totalTokens !== undefined &&
+    childUsage.length === (params.children?.length ?? 0) &&
+    childUsage.every((usage) => usage?.totalTokens !== undefined);
   return {
-    state: params.state,
+    basis: "cumulative",
+    state: complete ? params.state : "partial",
     childCount: params.children?.length ?? 0,
-    inputTokens: sum([params.parentInputTokens, ...childUsage.map((usage) => usage?.inputTokens)]),
-    outputTokens: sum([
-      params.parentOutputTokens,
-      ...childUsage.map((usage) => usage?.outputTokens),
-    ]),
-    cachedInputTokens: sum(childUsage.map((usage) => usage?.cachedInputTokens)),
-    reasoningOutputTokens: sum(childUsage.map((usage) => usage?.reasoningOutputTokens)),
-    totalTokens: sum([params.parentTotalTokens, ...childUsage.map((usage) => usage?.totalTokens)]),
+    inputTokens: sumComplete(
+      params.parent?.inputTokens,
+      childUsage.map((usage) => usage?.inputTokens),
+    ),
+    outputTokens: sumComplete(
+      params.parent?.outputTokens,
+      childUsage.map((usage) => usage?.outputTokens),
+    ),
+    cachedInputTokens: sumComplete(
+      params.parent?.cachedInputTokens,
+      childUsage.map((usage) => usage?.cachedInputTokens),
+    ),
+    reasoningOutputTokens: sumComplete(
+      params.parent?.reasoningOutputTokens,
+      childUsage.map((usage) => usage?.reasoningOutputTokens),
+    ),
+    totalTokens: sumComplete(
+      params.parent?.totalTokens,
+      childUsage.map((usage) => usage?.totalTokens),
+    ),
   };
 }
 
@@ -2551,9 +2565,10 @@ export function buildGatewaySessionRow(params: {
     agentRuntime.id === "codex"
       ? buildCodexTeamUsage({
           state: rowStatus === "running" ? "provisional" : "settled",
-          parentInputTokens: resolveNonNegativeNumber(entry?.inputTokens),
-          parentOutputTokens: resolveNonNegativeNumber(entry?.outputTokens),
-          parentTotalTokens: resolveNonNegativeNumber(totalTokens),
+          parent:
+            entry && entry.codexThreadUsage?.sessionId === entry.sessionId
+              ? entry.codexThreadUsage
+              : undefined,
           children: codexNativeChildRuns,
         })
       : undefined;
@@ -2739,6 +2754,7 @@ export function buildGatewaySessionRow(params: {
     childSessions,
     codexNativeChildRuns,
     codexTeamUsage,
+    laneVerdict: resolveModelAuthoredTaskVerdict(finalAssistantText),
     codexExecutionEvidence,
     responseUsage: entry?.responseUsage,
     modelProvider: rowModelProvider,

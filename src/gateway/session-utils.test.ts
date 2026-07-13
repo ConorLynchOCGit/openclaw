@@ -279,6 +279,15 @@ describe("gateway session utils", () => {
         outputTokens: 5,
         totalTokens: 15,
         totalTokensFresh: true,
+        codexThreadUsage: {
+          sessionId: "session-1",
+          threadId: "parent-thread",
+          inputTokens: 700,
+          outputTokens: 200,
+          cachedInputTokens: 100,
+          reasoningOutputTokens: 50,
+          totalTokens: 1_000,
+        },
       } satisfies SessionEntry,
     };
     createTaskRecord({
@@ -306,11 +315,11 @@ describe("gateway session utils", () => {
         childTaskName: "source-seam-inventory",
         childModel: "gpt-5.6-terra",
         childReasoningEffort: "medium",
-        childInputTokens: 120,
-        childOutputTokens: 30,
-        childCachedInputTokens: 20,
-        childReasoningOutputTokens: 10,
-        childTotalTokens: 150,
+        childInputTokens: 300,
+        childOutputTokens: 100,
+        childCachedInputTokens: 50,
+        childReasoningOutputTokens: 25,
+        childTotalTokens: 500,
         spawnReason: "inspect source seams",
       },
     });
@@ -340,22 +349,64 @@ describe("gateway session utils", () => {
         status: "succeeded",
         terminalSummary: "Codex native subagent finished: inspected source seams.",
         usage: {
-          inputTokens: 120,
-          outputTokens: 30,
-          cachedInputTokens: 20,
-          reasoningOutputTokens: 10,
-          totalTokens: 150,
+          inputTokens: 300,
+          outputTokens: 100,
+          cachedInputTokens: 50,
+          reasoningOutputTokens: 25,
+          totalTokens: 500,
         },
       }),
     ]);
     expect(row.codexTeamUsage).toEqual({
+      basis: "cumulative",
       state: "settled",
       childCount: 1,
-      inputTokens: 130,
-      outputTokens: 35,
-      cachedInputTokens: 20,
-      reasoningOutputTokens: 10,
-      totalTokens: 165,
+      inputTokens: 1_000,
+      outputTokens: 300,
+      cachedInputTokens: 150,
+      reasoningOutputTokens: 75,
+      totalTokens: 1_500,
+    });
+  });
+
+  test("session detail reports partial cumulative Codex usage without parent authority", () => {
+    const cfg = {
+      agents: {
+        defaults: {
+          model: { primary: "openai/gpt-5.6-sol" },
+          models: { "openai/gpt-5.6-sol": { agentRuntime: { id: "codex" } } },
+        },
+        list: [{ id: "coding", default: true }],
+      },
+    } as OpenClawConfig;
+    const sessionKey = "agent:coding:session-partial-cumulative";
+    const entry = {
+      sessionId: "session-partial-cumulative",
+      updatedAt: 2_000,
+      status: "running",
+      inputTokens: 120,
+      outputTokens: 30,
+      totalTokens: 150,
+      totalTokensFresh: true,
+    } satisfies SessionEntry;
+
+    const row = buildGatewaySessionRow({
+      cfg,
+      storePath: "",
+      store: { [sessionKey]: entry },
+      key: sessionKey,
+      entry,
+    });
+
+    expect(row.codexTeamUsage).toEqual({
+      basis: "cumulative",
+      state: "partial",
+      childCount: 0,
+      inputTokens: undefined,
+      outputTokens: undefined,
+      cachedInputTokens: undefined,
+      reasoningOutputTokens: undefined,
+      totalTokens: undefined,
     });
   });
 

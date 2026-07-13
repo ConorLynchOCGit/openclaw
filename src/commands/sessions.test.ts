@@ -811,6 +811,65 @@ describe("sessionsCommand", () => {
     );
   });
 
+  it("renders Codex cumulative usage, tool planes, and model-authored lane verdict", async () => {
+    setMockSessionsConfig(() => ({
+      agents: {
+        defaults: {
+          model: { primary: "openai/gpt-5.6-sol" },
+          models: { "openai/gpt-5.6-sol": { agentRuntime: { id: "codex" } } },
+        },
+        list: [{ id: "coding", default: true }],
+      },
+    }));
+    const sessionId = "77777777-7777-4777-8777-777777777777";
+    const sessionKey = "agent:coding:cumulative-readback";
+    const store = writeStore(
+      {
+        [sessionKey]: {
+          sessionId,
+          updatedAt: Date.now(),
+          status: "done",
+          modelProvider: "openai",
+          model: "gpt-5.6-sol",
+          inputTokens: 10,
+          outputTokens: 5,
+          totalTokens: 15,
+          codexThreadUsage: {
+            sessionId,
+            threadId: "codex-parent-thread",
+            totalTokens: 1_000,
+          },
+        },
+      },
+      "sessions-show-codex-cumulative",
+    );
+    const transcript = path.join(path.dirname(store), `${sessionId}.jsonl`);
+    fs.writeFileSync(
+      transcript,
+      JSON.stringify({
+        message: {
+          role: "assistant",
+          content: "Verdict: complete\nImplementation and validation are complete.",
+        },
+      }),
+    );
+
+    const { runtime, logs } = makeRuntime();
+    try {
+      await sessionsShowCommand({ store, sessionKey, agent: "coding" }, runtime);
+    } finally {
+      fs.rmSync(store, { force: true });
+      fs.rmSync(transcript, { force: true });
+    }
+
+    const output = logs.join("\n");
+    expect(output).toContain("laneVerdict: complete");
+    expect(output).toContain("toolPlanes: openclaw=0; codex=inactive");
+    expect(output).toContain(
+      "codexTeamUsage: basis=cumulative state=settled children=0 total=1000",
+    );
+  });
+
   it("exposes active trajectory progress when session status projection is missing", async () => {
     const sessionId = "55555555-5555-4555-8555-555555555555";
     const sessionKey = "agent:codebase-researcher:subagent:missing-status";

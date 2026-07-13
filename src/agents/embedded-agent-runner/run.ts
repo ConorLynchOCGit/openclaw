@@ -1272,6 +1272,7 @@ export async function runEmbeddedAgent(
         (params.bootstrapPromptWarningSignature ? [params.bootstrapPromptWarningSignature] : []);
       const usageAccumulator = createUsageAccumulator();
       let lastRunPromptUsage: ReturnType<typeof normalizeUsage> | undefined;
+      let latestCodexThreadUsage: EmbeddedAgentMeta["codexThreadUsage"];
       let autoCompactionCount = 0;
       let lastCompactionTokensAfter: number | undefined;
       let lastContextBudgetStatus: EmbeddedAgentMeta["contextBudgetStatus"];
@@ -1596,6 +1597,7 @@ export async function runEmbeddedAgent(
                 usageAccumulator,
                 lastRunPromptUsage,
                 lastTurnTotal,
+                codexThreadUsage: latestCodexThreadUsage,
               }),
               replayInvalid: accumulatedReplayState.replayInvalid ? true : undefined,
               livenessState: "blocked",
@@ -1880,6 +1882,7 @@ export async function runEmbeddedAgent(
               : bootstrapPromptWarningSignaturesSeen);
           const lastAssistantUsage = normalizeUsage(sessionLastAssistant?.usage as UsageLike);
           const attemptUsage = attempt.attemptUsage ?? lastAssistantUsage;
+          latestCodexThreadUsage = attempt.codexThreadUsage ?? latestCodexThreadUsage;
           mergeUsageIntoAccumulator(usageAccumulator, attemptUsage);
           // Keep prompt size from the latest model call so session totalTokens
           // reflects current context usage, not accumulated tool-loop usage.
@@ -1930,6 +1933,7 @@ export async function runEmbeddedAgent(
                 usageAccumulator,
                 lastRunPromptUsage,
                 lastTurnTotal,
+                codexThreadUsage: latestCodexThreadUsage,
               }),
               replayInvalid: accumulatedReplayState.replayInvalid ? true : undefined,
               livenessState: "blocked",
@@ -2516,6 +2520,7 @@ export async function runEmbeddedAgent(
                     lastRunPromptUsage,
                     lastAssistant: sessionLastAssistant,
                     lastTurnTotal,
+                    codexThreadUsage: latestCodexThreadUsage,
                   }),
                   compactionCount: autoCompactionCount,
                   ...(typeof lastCompactionTokensAfter === "number"
@@ -2554,6 +2559,7 @@ export async function runEmbeddedAgent(
                   lastRunPromptUsage,
                   lastAssistant: sessionLastAssistant,
                   lastTurnTotal,
+                  codexThreadUsage: latestCodexThreadUsage,
                 }),
                 systemPromptReport: attempt.systemPromptReport,
                 finalAssistantVisibleText: errorText,
@@ -2666,6 +2672,7 @@ export async function runEmbeddedAgent(
                     lastRunPromptUsage,
                     lastAssistant: sessionLastAssistant,
                     lastTurnTotal,
+                    codexThreadUsage: latestCodexThreadUsage,
                   }),
                   systemPromptReport: attempt.systemPromptReport,
                   finalPromptText: attempt.finalPromptText,
@@ -2707,6 +2714,7 @@ export async function runEmbeddedAgent(
                     lastRunPromptUsage,
                     lastAssistant: sessionLastAssistant,
                     lastTurnTotal,
+                    codexThreadUsage: latestCodexThreadUsage,
                   }),
                   systemPromptReport: attempt.systemPromptReport,
                   finalPromptText: attempt.finalPromptText,
@@ -3093,6 +3101,7 @@ export async function runEmbeddedAgent(
             actualToolNames: attempt.actualToolNames,
             usage: usageMeta.usage,
             lastCallUsage: usageMeta.lastCallUsage,
+            codexThreadUsage: latestCodexThreadUsage,
             promptTokens: usageMeta.promptTokens,
             ...(lastContextBudgetStatus ? { contextBudgetStatus: lastContextBudgetStatus } : {}),
             compactionCount: autoCompactionCount > 0 ? autoCompactionCount : undefined,

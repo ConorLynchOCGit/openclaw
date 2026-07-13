@@ -19,6 +19,7 @@ import {
 } from "../../config/sessions.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
+import { resolveModelAuthoredTaskVerdict } from "../../tasks/task-completion-contract.js";
 import type { GatewayMessageChannel } from "../../utils/message-channel.js";
 import {
   computeChildResultContentDigest,
@@ -39,7 +40,6 @@ const TASK_WAIT_POLL_MS = 60_000;
 const TASK_RESULT_PARENT_INLINE_MAX_CHARS = 1_800;
 const PLANNING_REVIEW_TASK_RESULT_INLINE_MAX_CHARS = 12_000;
 const TASK_RESULT_PARENT_PREVIEW_MAX_CHARS = 0;
-const TASK_RESULT_RECEIPT_LEAD_MAX_CHARS = 160;
 const RECEIPT_ONLY_PARENT_AGENT_IDS = new Set(["main"]);
 const CODEX_CODING_AGENT_IDS = new Set(["coding", "execution-coding"]);
 const DEFAULT_LIGHT_CONTEXT_AGENT_IDS = new Set([
@@ -316,17 +316,6 @@ function buildTaskResultPreview(replyText: string, inlineResult: boolean): strin
     return undefined;
   }
   return trimmed.slice(0, TASK_RESULT_PARENT_PREVIEW_MAX_CHARS);
-}
-
-function buildTaskReceiptLeadLine(replyText: string): string | undefined {
-  const firstLine = replyText
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .find(Boolean);
-  if (!firstLine || firstLine.length > TASK_RESULT_RECEIPT_LEAD_MAX_CHARS) {
-    return undefined;
-  }
-  return /^(?:Verdict): (?:complete|partial|blocked)$/u.test(firstLine) ? firstLine : undefined;
 }
 
 async function waitForForegroundTaskResult(params: {
@@ -641,7 +630,8 @@ export function createTaskTool(
         childSessionKey: spawn.childSessionKey,
         cfg: opts?.config,
       });
-      const receiptLeadLine = buildTaskReceiptLeadLine(replyText);
+      const modelAuthoredVerdict = resolveModelAuthoredTaskVerdict(replyText);
+      const receiptLeadLine = modelAuthoredVerdict ? `Verdict: ${modelAuthoredVerdict}` : undefined;
       const inspectCommand = `openclaw sessions show ${spawn.childSessionKey} --agent ${agentId}`;
       const previewText = buildTaskResultPreview(replyText, inlineResult);
       const text = formatTaskResult({

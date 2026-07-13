@@ -4,6 +4,7 @@
 import type { HeartbeatToolResponse } from "../../auto-reply/heartbeat-tool-response.js";
 import type {
   CliSessionBinding,
+  SessionCodexThreadUsage,
   SessionContextBudgetStatus,
   SessionSystemPromptReport,
 } from "../../config/sessions/types.js";
@@ -63,6 +64,8 @@ export type EmbeddedAgentMeta = {
     reasoningTokens?: number;
     total?: number;
   };
+  /** Cumulative usage for the native Codex thread, separate from current run usage. */
+  codexThreadUsage?: SessionCodexThreadUsage;
   contextBudgetStatus?: SessionContextBudgetStatus;
 };
 

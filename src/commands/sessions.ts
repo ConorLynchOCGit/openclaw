@@ -26,6 +26,7 @@ import {
   resolveGatewaySessionStoreTargetWithStore,
 } from "../gateway/session-utils.js";
 import type {
+  GatewaySessionRow,
   SessionReadbackProvenance,
   SessionRunStatus,
 } from "../gateway/session-utils.types.js";
@@ -588,10 +589,51 @@ export async function sessionsShowCommand(
     `endedAt: ${row.endedAt ? new Date(row.endedAt).toISOString() : "n/a"}`,
     `activeProgress: ${formatSessionActiveProgress(selectedActiveProgress ?? undefined)}`,
     `childSessions: ${(row.childSessions ?? []).length}`,
+    `laneVerdict: ${row.laneVerdict ?? "n/a"}`,
+    `toolPlanes: openclaw=${row.promptContext?.openclawDynamicTools?.count ?? 0}; codex=${
+      row.promptContext?.codexNativeWorkbench?.active === true
+        ? (row.promptContext.codexNativeWorkbench.mode ?? "active")
+        : "inactive"
+    }`,
+    `codexMcpServers: ${row.promptContext?.codexMcpServers?.names.join(", ") || "none"}`,
+    `codexCustomAgents: ${row.promptContext?.codexCustomAgents?.names.join(", ") || "none"}`,
+    `codexTeamUsage: ${formatCodexTeamUsage(row.codexTeamUsage)}`,
   ];
   for (const line of lines) {
     runtime.log(line);
   }
+  for (const child of row.codexNativeChildRuns ?? []) {
+    runtime.log(formatCodexNativeChildRun(child));
+  }
+}
+
+function formatCodexTeamUsage(usage: GatewaySessionRow["codexTeamUsage"]): string {
+  if (!usage) {
+    return "n/a";
+  }
+  return [
+    `basis=${usage.basis}`,
+    `state=${usage.state}`,
+    `children=${usage.childCount}`,
+    `total=${usage.totalTokens ?? "unavailable"}`,
+  ].join(" ");
+}
+
+function formatCodexNativeChildRun(
+  child: NonNullable<GatewaySessionRow["codexNativeChildRuns"]>[number],
+): string {
+  const objective = child.objective?.replace(/\s+/gu, " ").trim().slice(0, 160) || "n/a";
+  const contribution =
+    (child.terminalSummary ?? child.progressSummary)?.replace(/\s+/gu, " ").trim().slice(0, 160) ??
+    "n/a";
+  return [
+    "codexChild:",
+    `role=${child.role ?? "n/a"}`,
+    `status=${child.terminalOutcome ?? child.status ?? "n/a"}`,
+    `objective=${JSON.stringify(objective)}`,
+    `contribution=${JSON.stringify(contribution)}`,
+    `ref=${child.finalRef ?? child.childThreadId ?? "n/a"}`,
+  ].join(" ");
 }
 
 /** Lists sessions across selected stores with optional JSON output. */

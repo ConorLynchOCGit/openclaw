@@ -105,6 +105,8 @@ const CURRENT_TOKEN_USAGE_KEYS = [
   "last_token_usage",
 ] as const;
 
+const CUMULATIVE_TOKEN_USAGE_KEYS = ["total", "cumulative", "totalUsage", "total_usage"] as const;
+
 const CODEX_PROMPT_TOTAL_INPUT_KEYS = [
   "inputTokens",
   "input_tokens",
@@ -201,6 +203,7 @@ export class CodexAppServerEventProjector {
   private synthesizedMissingToolResultError: string | null = null;
   private aborted = false;
   private tokenUsage: ReturnType<typeof normalizeUsage>;
+  private codexThreadUsage: EmbeddedRunAttemptResult["codexThreadUsage"];
   private guardianReviewCount = 0;
   private completedCompactionCount = 0;
   private latestRateLimits: JsonValue | undefined;
@@ -403,6 +406,7 @@ export class CodexAppServerEventProjector {
       successfulCronAdds: toolTelemetry.successfulCronAdds,
       cloudCodeAssistFormatError: false,
       attemptUsage: this.tokenUsage,
+      ...(this.codexThreadUsage ? { codexThreadUsage: this.codexThreadUsage } : {}),
       replayMetadata: {
         hadPotentialSideEffects,
         replaySafe: !hadPotentialSideEffects,
@@ -716,6 +720,19 @@ export class CodexAppServerEventProjector {
 
   private handleTokenUsage(params: JsonObject): void {
     const tokenUsage = isJsonObject(params.tokenUsage) ? params.tokenUsage : undefined;
+    const cumulative =
+      (tokenUsage ? readFirstJsonObject(tokenUsage, CUMULATIVE_TOKEN_USAGE_KEYS) : undefined) ??
+      readFirstJsonObject(params, CUMULATIVE_TOKEN_USAGE_KEYS);
+    if (cumulative) {
+      const usage = normalizeCodexCumulativeTokenUsage({
+        record: cumulative,
+        sessionId: this.params.sessionId,
+        threadId: this.threadId,
+      });
+      if (usage) {
+        this.codexThreadUsage = usage;
+      }
+    }
     const current =
       (tokenUsage ? readFirstJsonObject(tokenUsage, CURRENT_TOKEN_USAGE_KEYS) : undefined) ??
       readFirstJsonObject(params, CURRENT_TOKEN_USAGE_KEYS);
@@ -2177,8 +2194,55 @@ function normalizeCodexTokenUsage(record: JsonObject): ReturnType<typeof normali
       "cacheCreationInputTokens",
       "cache_creation_input_tokens",
     ]),
+    reasoningTokens: readNumberAlias(record, [
+      "reasoningOutputTokens",
+      "reasoning_output_tokens",
+      "reasoningTokens",
+      "reasoning_tokens",
+    ]),
     total: readNumberAlias(record, ["totalTokens", "total_tokens", "total"]),
   });
+}
+
+function normalizeCodexCumulativeTokenUsage(params: {
+  record: JsonObject;
+  sessionId: string;
+  threadId: string;
+}): NonNullable<EmbeddedRunAttemptResult["codexThreadUsage"]> | undefined {
+  const readToken = (keys: readonly string[]): number | undefined => {
+    const value = readNumberAlias(params.record, keys);
+    return value !== undefined && Number.isFinite(value) && value >= 0
+      ? Math.floor(value)
+      : undefined;
+  };
+  const usage = {
+    sessionId: params.sessionId,
+    threadId: params.threadId,
+    inputTokens: readToken(CODEX_PROMPT_TOTAL_INPUT_KEYS),
+    outputTokens: readToken(["outputTokens", "output_tokens", "output"]),
+    cachedInputTokens: readToken([
+      "cachedInputTokens",
+      "cached_input_tokens",
+      "cacheRead",
+      "cache_read",
+    ]),
+    reasoningOutputTokens: readToken([
+      "reasoningOutputTokens",
+      "reasoning_output_tokens",
+      "reasoningTokens",
+      "reasoning_tokens",
+    ]),
+    totalTokens: readToken(["totalTokens", "total_tokens", "total"]),
+  };
+  return [
+    usage.inputTokens,
+    usage.outputTokens,
+    usage.cachedInputTokens,
+    usage.reasoningOutputTokens,
+    usage.totalTokens,
+  ].some((value) => value !== undefined)
+    ? usage
+    : undefined;
 }
 
 function splitPlanText(text: string): string[] {

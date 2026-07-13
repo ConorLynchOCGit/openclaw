@@ -109,6 +109,7 @@ export async function updateSessionStoreAfterAgentRun(params: {
   const activeSessionFile = normalizeOptionalString(result.meta.agentMeta?.sessionFile);
   const runtimeContextTokens = resolvePositiveInteger(result.meta.agentMeta?.contextTokens);
   const contextBudgetStatus = result.meta.agentMeta?.contextBudgetStatus;
+  const codexThreadUsage = result.meta.agentMeta?.codexThreadUsage;
   const contextTokens =
     runtimeContextTokens !== undefined
       ? runtimeContextTokens
@@ -141,6 +142,16 @@ export async function updateSessionStoreAfterAgentRun(params: {
           contextTokens,
         }),
   };
+  if (entry.sessionId !== sessionId) {
+    next.codexThreadUsage = undefined;
+  }
+  if (
+    !preserveUserFacingRunState &&
+    codexThreadUsage?.sessionId === sessionId &&
+    codexThreadUsage.threadId.trim()
+  ) {
+    next.codexThreadUsage = codexThreadUsage;
+  }
   if (entry.sessionId !== sessionId) {
     next.sessionFile =
       activeSessionFile ??

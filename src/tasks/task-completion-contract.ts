@@ -7,6 +7,20 @@ export type RequiredCompletionTerminalResult = {
   terminalSummary?: string;
 };
 
+export type ModelAuthoredTaskVerdict = "complete" | "partial" | "blocked";
+
+/** Reads the optional model-authored first-line verdict used by task receipts and readback. */
+export function resolveModelAuthoredTaskVerdict(
+  value: string | null | undefined,
+): ModelAuthoredTaskVerdict | undefined {
+  const firstLine = value
+    ?.split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find(Boolean);
+  const match = firstLine?.match(/^Verdict: (complete|partial|blocked)$/u);
+  return match?.[1] as ModelAuthoredTaskVerdict | undefined;
+}
+
 const PROGRESS_ONLY_PATTERN =
   /^(?:i(?:'|\u2019)ll|i will|i(?:'|\u2019)m|i am|i(?:'|\u2019)m going to|i am going to|let me|i need to)\s+(?:now\s+)?(?:analyz(?:e|ing)|apply|check(?:ing)?|continue|debug(?:ging)?|follow(?:ing)?\s+up|inspect(?:ing)?|investigat(?:e|ing)|look(?:ing)?(?:\s+into)?|map(?:ping)?|open(?:ing)?|read(?:ing)?|report(?:ing)?(?:\s+back)?|review(?:ing)?|run(?:ning)?|start(?:ing)?|test(?:ing)?|trace|trac(?:e|ing)|try(?:ing)?|update|verify(?:ing)?|work(?:ing)?)/i;
 

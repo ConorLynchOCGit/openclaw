@@ -212,6 +212,17 @@ export type SessionCodexNativeChild = {
   endedAt?: number;
 };
 
+/** Cumulative token usage reported by the native Codex app-server thread. */
+export type SessionCodexThreadUsage = {
+  sessionId: string;
+  threadId: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedInputTokens?: number;
+  reasoningOutputTokens?: number;
+  totalTokens?: number;
+};
+
 export type SessionEntry = {
   /**
    * Last delivered heartbeat payload (used to suppress duplicate heartbeat notifications).
@@ -344,6 +355,8 @@ export type SessionEntry = {
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
+  /** Native Codex cumulative thread usage; distinct from current run/context usage above. */
+  codexThreadUsage?: SessionCodexThreadUsage;
   /** Durable marker that final user reply delivery still needs a retry/resume pass. */
   pendingFinalDelivery?: boolean;
   pendingFinalDeliveryCreatedAt?: number;

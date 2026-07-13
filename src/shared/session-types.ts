@@ -112,7 +112,8 @@ export type GatewaySessionCodexNativeChildRun = {
 };
 
 export type GatewaySessionCodexTeamUsage = {
-  state: "provisional" | "settled";
+  basis: "cumulative";
+  state: "provisional" | "settled" | "partial";
   childCount: number;
   inputTokens?: number;
   outputTokens?: number;
@@ -120,6 +121,8 @@ export type GatewaySessionCodexTeamUsage = {
   reasoningOutputTokens?: number;
   totalTokens?: number;
 };
+
+export type GatewaySessionLaneVerdict = "complete" | "partial" | "blocked";
 
 export type GatewaySessionCodexToolMix = {
   shell: number;
@@ -304,6 +307,7 @@ export type GatewaySessionRow = {
   childSessions?: string[];
   codexNativeChildRuns?: GatewaySessionCodexNativeChildRun[];
   codexTeamUsage?: GatewaySessionCodexTeamUsage;
+  laneVerdict?: GatewaySessionLaneVerdict;
   codexExecutionEvidence?: GatewaySessionCodexExecutionEvidence;
   responseUsage?: "on" | "off" | "tokens" | "full";
   modelProvider?: string;

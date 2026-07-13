@@ -4,6 +4,7 @@
 import type { HeartbeatToolResponse } from "../../../auto-reply/heartbeat-tool-response.js";
 import type { ThinkLevel } from "../../../auto-reply/thinking.js";
 import type {
+  SessionCodexThreadUsage,
   SessionContextBudgetStatus,
   SessionSystemPromptReport,
 } from "../../../config/sessions/types.js";
@@ -189,6 +190,8 @@ export type EmbeddedRunAttemptResult = {
   successfulCronAdds?: number;
   cloudCodeAssistFormatError: boolean;
   attemptUsage?: NormalizedUsage;
+  /** Cumulative usage for the native Codex thread, when app-server reports it. */
+  codexThreadUsage?: SessionCodexThreadUsage;
   promptCache?: ContextEnginePromptCacheInfo;
   contextBudgetStatus?: SessionContextBudgetStatus;
   compactionCount?: number;

@@ -310,6 +310,14 @@ describe("CodexAppServerEventProjector", () => {
     expect(result.messagesSnapshot.map((message) => message.role)).toEqual(["user", "assistant"]);
     expect(result.lastAssistant?.content).toEqual([{ type: "text", text: "hello" }]);
     expectUsageFields(result.attemptUsage, { input: 3, output: 7, cacheRead: 2, total: 12 });
+    expect(result.codexThreadUsage).toEqual({
+      sessionId: "session-1",
+      threadId: THREAD_ID,
+      inputTokens: 700_000,
+      outputTokens: 100_000,
+      cachedInputTokens: 100_000,
+      totalTokens: 900_000,
+    });
     expectUsageFields(result.lastAssistant?.usage, {
       input: 3,
       output: 7,

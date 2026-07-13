@@ -170,6 +170,60 @@ async function withTempSessionStore<T>(
 }
 
 describe("updateSessionStoreAfterAgentRun", () => {
+  it("persists native Codex cumulative usage separately from current run usage", async () => {
+    await withTempSessionStore(async ({ storePath }) => {
+      const cfg = {} as OpenClawConfig;
+      const sessionKey = "agent:coding:codex-cumulative";
+      const sessionId = "codex-cumulative-session";
+      const sessionStore: Record<string, SessionEntry> = {
+        [sessionKey]: { sessionId, updatedAt: 1 },
+      };
+      await fs.writeFile(storePath, JSON.stringify(sessionStore, null, 2));
+      const result: EmbeddedAgentRunResult = {
+        meta: {
+          durationMs: 1,
+          agentMeta: {
+            sessionId,
+            provider: "openai",
+            model: "gpt-5.6-sol",
+            usage: { input: 10, output: 5, total: 15 },
+            codexThreadUsage: {
+              sessionId,
+              threadId: "codex-parent-thread",
+              inputTokens: 700,
+              outputTokens: 200,
+              cachedInputTokens: 100,
+              reasoningOutputTokens: 50,
+              totalTokens: 1_000,
+            },
+          },
+        },
+      };
+
+      await updateSessionStoreAfterAgentRun({
+        cfg,
+        sessionId,
+        sessionKey,
+        storePath,
+        sessionStore,
+        defaultProvider: "openai",
+        defaultModel: "gpt-5.6-sol",
+        result,
+      });
+
+      expect(sessionStore[sessionKey]).toMatchObject({
+        inputTokens: 10,
+        outputTokens: 5,
+        totalTokens: 10,
+        codexThreadUsage: {
+          sessionId,
+          threadId: "codex-parent-thread",
+          totalTokens: 1_000,
+        },
+      });
+    });
+  });
+
   it("passes resolved maintenance config to the gateway turn store write", async () => {
     sessionStoreMocks.updateSessionStore.mockClear();
     await withTempSessionStore(async ({ storePath }) => {
