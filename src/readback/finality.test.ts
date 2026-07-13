@@ -2,6 +2,38 @@ import { describe, expect, it } from "vitest";
 import { buildSessionReadbackProjection, buildTaskReadbackProjection } from "./finality.js";
 
 describe("readback finality", () => {
+  it("lets a current running turn outrank final text from an earlier turn", () => {
+    const projection = buildSessionReadbackProjection({
+      key: "agent:main:main",
+      sessionId: "session-1",
+      agentId: "main",
+      status: "running",
+      finalAssistantText: "Previous turn final.",
+    });
+
+    expect(projection.finality).toMatchObject({
+      status: "running",
+      finalAssistantTextPresent: true,
+      finalAssistantTextChars: "Previous turn final.".length,
+      mismatch: null,
+    });
+  });
+
+  it("lets an explicit settled active-run flag override a stale running store status", () => {
+    const projection = buildSessionReadbackProjection({
+      key: "agent:main:main",
+      sessionId: "session-1",
+      agentId: "main",
+      status: "running",
+      hasActiveRun: false,
+      finalAssistantText: "Current turn final.",
+    });
+
+    expect(projection.finality.status).toBe("done");
+    expect(projection.finality.finalAssistantTextPresent).toBe(true);
+    expect(projection.finality.mismatch).toMatchObject({ kind: "status_conflict" });
+  });
+
   it("lets transcript finality outrank contradictory session compatibility status", () => {
     const projection = buildSessionReadbackProjection({
       key: "agent:planning:proof",

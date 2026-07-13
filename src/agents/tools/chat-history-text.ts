@@ -7,13 +7,57 @@ import { extractAssistantTextForPhase } from "../../shared/chat-message-content.
 import { sanitizeAssistantVisibleTextWithProfile } from "../../shared/text/assistant-visible-text.js";
 import { sanitizeUserFacingText } from "../embedded-agent-helpers/sanitize-user-facing-text.js";
 
+const INTERNAL_HISTORY_CONTENT_TYPES = new Set([
+  "functionCall",
+  "function_call",
+  "reasoning",
+  "redacted_thinking",
+  "thinking",
+  "toolCall",
+  "toolResult",
+  "tool_call",
+  "tool_result",
+  "tool_use",
+]);
+
 export function stripToolMessages(messages: unknown[]): unknown[] {
-  return messages.filter((msg) => {
+  return messages.flatMap((msg) => {
     if (!msg || typeof msg !== "object") {
-      return true;
+      return [msg];
     }
-    const role = (msg as { role?: unknown }).role;
-    return role !== "toolResult" && role !== "tool";
+    const entry = { ...(msg as Record<string, unknown>) };
+    const role = entry.role;
+    if (role === "toolResult" || role === "tool") {
+      return [];
+    }
+
+    if (Array.isArray(entry.content)) {
+      entry.content = entry.content.filter((block) => {
+        if (!block || typeof block !== "object") {
+          return true;
+        }
+        return !INTERNAL_HISTORY_CONTENT_TYPES.has(
+          String((block as { type?: unknown }).type ?? ""),
+        );
+      });
+    }
+    for (const field of [
+      "functionCall",
+      "function_call",
+      "partialJson",
+      "reasoning",
+      "thinking",
+      "toolCalls",
+      "tool_calls",
+    ]) {
+      delete entry[field];
+    }
+
+    const hasContent =
+      (typeof entry.content === "string" && entry.content.length > 0) ||
+      (Array.isArray(entry.content) && entry.content.length > 0) ||
+      (typeof entry.text === "string" && entry.text.length > 0);
+    return hasContent ? [entry] : [];
   });
 }
 

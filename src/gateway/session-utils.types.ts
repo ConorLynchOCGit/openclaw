@@ -13,6 +13,7 @@ export type {
   GatewaySessionCodexExecutionEvidence,
   GatewaySessionCodexNativeChildRun,
   GatewaySessionCodexTeamUsage,
+  GatewaySessionUsage,
   GatewaySessionRow,
   ReadbackFieldProvenance,
   SessionCompactionCheckpointPreview,

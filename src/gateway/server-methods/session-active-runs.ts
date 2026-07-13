@@ -14,6 +14,17 @@ type TrackedActiveSessionRun = {
   agentId?: string;
 };
 
+/** Projects live gateway run truth over a potentially stale persisted status. */
+export function projectTrackedActiveSessionRunState<
+  T extends { status?: string; hasActiveRun?: boolean },
+>(row: T, hasActiveRun: boolean): T & { hasActiveRun: boolean } {
+  return {
+    ...row,
+    hasActiveRun,
+    ...(hasActiveRun ? { status: "running" } : {}),
+  };
+}
+
 function collectTrackedActiveSessionRuns(
   context: Partial<Pick<GatewayRequestContext, "chatAbortControllers">>,
 ): TrackedActiveSessionRun[] {

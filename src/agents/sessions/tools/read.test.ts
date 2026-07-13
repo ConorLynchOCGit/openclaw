@@ -1,6 +1,7 @@
 // Read tool tests cover bounded file reads, continuation hints, and shell-safe
 // fallback commands in agent sessions.
 import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -99,6 +100,37 @@ describe("read tool", () => {
     );
 
     expect(textContent(result)).toBe("alpha\n\n[2 more lines in file. Use offset=2 to continue.]");
+  });
+
+  it("returns an exact whole-file digest only when requested", async () => {
+    const source = "alpha\nbeta\n";
+    const expectedDigest = createHash("sha256").update(source).digest("hex");
+    const tool = createReadToolDefinition("/workspace", {
+      operations: {
+        access: async () => {},
+        detectImageMimeType: async () => null,
+        readFile: async () => Buffer.from(source),
+      },
+    });
+
+    const ordinary = await tool.execute(
+      "call-ordinary",
+      { path: "notes.txt" },
+      undefined,
+      undefined,
+      {} as never,
+    );
+    const withDigest = await tool.execute(
+      "call-digest",
+      { path: "notes.txt", includeDigest: true },
+      undefined,
+      undefined,
+      {} as never,
+    );
+
+    expect(textContent(ordinary)).not.toContain("File SHA-256");
+    expect(textContent(withDigest)).toContain(`[File SHA-256: ${expectedDigest}]`);
+    expect(withDigest.details?.text?.sha256).toBe(expectedDigest);
   });
 
   it("reads SKILL.md instruction files past ordinary caps without requiring a hidden marker", async () => {

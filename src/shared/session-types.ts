@@ -122,6 +122,23 @@ export type GatewaySessionCodexTeamUsage = {
   totalTokens?: number;
 };
 
+/** Honest readback of the two token bases retained for an OpenClaw session run. */
+export type GatewaySessionUsage = {
+  state: "provisional" | "settled" | "unavailable";
+  run?: {
+    basis: "run-cumulative";
+    inputTokens?: number;
+    outputTokens?: number;
+    estimatedCostUsd?: number;
+  };
+  context?: {
+    basis: "latest-context";
+    promptTokens?: number;
+    windowTokens?: number;
+    fresh: boolean;
+  };
+};
+
 export type GatewaySessionLaneVerdict = "complete" | "partial" | "blocked";
 
 export type GatewaySessionCodexToolMix = {
@@ -293,6 +310,7 @@ export type GatewaySessionRow = {
   totalTokens?: number;
   totalTokensFresh?: boolean;
   usageCostState?: "provisional" | "settled" | "unavailable";
+  usage?: GatewaySessionUsage;
   goal?: SessionGoal;
   estimatedCostUsd?: number;
   status?: SessionRunStatus;

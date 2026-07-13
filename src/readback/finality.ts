@@ -31,7 +31,7 @@ export type ReadbackProjection = {
 
 type SessionReadbackLike = Pick<
   GatewaySessionRow,
-  "key" | "status" | "sessionId" | "finalAssistantText" | "readbackProvenance"
+  "key" | "status" | "hasActiveRun" | "sessionId" | "finalAssistantText" | "readbackProvenance"
 > & {
   agentId?: string | null;
 };
@@ -104,6 +104,11 @@ export function buildSessionReadbackProjection(session: SessionReadbackLike): Re
     typeof session.finalAssistantText === "string" && session.finalAssistantText.length > 0
       ? session.finalAssistantText
       : null;
+  // Direct sessions are multi-turn. A final assistant message can belong to the
+  // previous turn while the same session already has a new active run.
+  const hasActiveRun =
+    session.hasActiveRun === true ||
+    (session.hasActiveRun === undefined && session.status === "running");
   return {
     readbackSubject: {
       scope: "session",
@@ -112,7 +117,11 @@ export function buildSessionReadbackProjection(session: SessionReadbackLike): Re
       agentId: session.agentId ?? null,
     },
     finality: {
-      status: finalAssistantText ? "done" : (session.status ?? "unknown"),
+      status: hasActiveRun
+        ? "running"
+        : finalAssistantText
+          ? "done"
+          : (session.status ?? "unknown"),
       finalAssistantTextPresent: finalAssistantText !== null,
       finalAssistantTextChars: finalAssistantText?.length ?? null,
       finalAssistantTextDigest: finalAssistantText ? digestText(finalAssistantText) : null,
@@ -120,10 +129,12 @@ export function buildSessionReadbackProjection(session: SessionReadbackLike): Re
         ? finalityPointer({ sessionKey: session.key, agentId: session.agentId })
         : null,
       provenance: session.readbackProvenance ?? null,
-      mismatch: statusConflictMismatch(session.readbackProvenance, {
-        compatibilityStatus: session.status ?? null,
-        finalAssistantTextPresent: finalAssistantText !== null,
-      }),
+      mismatch: hasActiveRun
+        ? null
+        : statusConflictMismatch(session.readbackProvenance, {
+            compatibilityStatus: session.status ?? null,
+            finalAssistantTextPresent: finalAssistantText !== null,
+          }),
     },
   };
 }

@@ -2555,12 +2555,45 @@ export function buildGatewaySessionRow(params: {
       },
     };
   }
-  const usageCostState =
+  const usageCostState: NonNullable<GatewaySessionRow["usageCostState"]> =
     rowStatus === "running"
       ? "provisional"
       : rowStatus && hasUsageOrCost
         ? "settled"
         : "unavailable";
+  const runUsagePresent =
+    entry?.inputTokens !== undefined ||
+    entry?.outputTokens !== undefined ||
+    estimatedCostUsd !== undefined;
+  const contextUsagePresent = totalTokens !== undefined;
+  const usage: GatewaySessionRow["usage"] =
+    runUsagePresent || contextUsagePresent
+      ? {
+          state: usageCostState,
+          ...(runUsagePresent
+            ? {
+                run: {
+                  basis: "run-cumulative" as const,
+                  ...(entry?.inputTokens !== undefined ? { inputTokens: entry.inputTokens } : {}),
+                  ...(entry?.outputTokens !== undefined
+                    ? { outputTokens: entry.outputTokens }
+                    : {}),
+                  ...(estimatedCostUsd !== undefined ? { estimatedCostUsd } : {}),
+                },
+              }
+            : {}),
+          ...(contextUsagePresent
+            ? {
+                context: {
+                  basis: "latest-context" as const,
+                  promptTokens: totalTokens,
+                  ...(contextTokens !== undefined ? { windowTokens: contextTokens } : {}),
+                  fresh: totalTokensFresh === true,
+                },
+              }
+            : {}),
+        }
+      : undefined;
   const codexTeamUsage =
     agentRuntime.id === "codex"
       ? buildCodexTeamUsage({
@@ -2744,6 +2777,7 @@ export function buildGatewaySessionRow(params: {
     totalTokens,
     totalTokensFresh,
     usageCostState,
+    usage,
     goal,
     estimatedCostUsd,
     status: rowStatus,

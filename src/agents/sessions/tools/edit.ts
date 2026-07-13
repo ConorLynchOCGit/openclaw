@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 /**
  * Built-in edit session tool.
  *
@@ -415,6 +416,7 @@ export function createEditToolDefinition(
             path,
           );
           const finalContent = bom + restoreLineEndings(newContent, originalEnding);
+          const sha256 = createHash("sha256").update(finalContent).digest("hex");
           await ops.writeFile(absolutePath, finalContent);
           if (signal?.aborted) {
             throw new Error("Operation aborted");
@@ -426,13 +428,14 @@ export function createEditToolDefinition(
             content: [
               {
                 type: "text",
-                text: `Successfully replaced ${edits.length} block(s) in ${path}.`,
+                text: `Successfully replaced ${edits.length} block(s) in ${path}.\nSHA-256: ${sha256}`,
               },
             ],
             details: {
               diff: diffResult.diff,
               patch,
               firstChangedLine: diffResult.firstChangedLine,
+              sha256,
             },
           };
         } catch (error: unknown) {
@@ -442,14 +445,15 @@ export function createEditToolDefinition(
             .then((current) => current.toString("utf-8"))
             .catch(() => rawContent);
           if (didEditLikelyApply({ originalContent: rawContent, currentContent, edits })) {
+            const sha256 = createHash("sha256").update(currentContent).digest("hex");
             return {
               content: [
                 {
                   type: "text",
-                  text: `Successfully replaced ${edits.length} block(s) in ${path}.`,
+                  text: `Successfully replaced ${edits.length} block(s) in ${path}.\nSHA-256: ${sha256}`,
                 },
               ],
-              details: { diff: "", patch: "" },
+              details: { diff: "", patch: "", sha256 },
             };
           }
           if (normalizedError.message.includes(EDIT_MISMATCH_MESSAGE)) {

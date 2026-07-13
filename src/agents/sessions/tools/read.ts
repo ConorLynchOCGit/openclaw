@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 /**
  * Built-in read session tool.
  *
@@ -42,6 +43,12 @@ const readSchema = Type.Object({
     Type.Number({ description: "Line number to start reading from (1-indexed)" }),
   ),
   limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),
+  includeDigest: Type.Optional(
+    Type.Boolean({
+      description:
+        "Include the SHA-256 of the complete file for exact identity, provenance, or stale-write checks.",
+    }),
+  ),
 });
 export type { ReadToolDetails, ReadToolInput } from "./tool-contracts.js";
 
@@ -270,11 +277,13 @@ export function createReadToolDefinition(
         path,
         offset,
         limit,
+        includeDigest,
         __openclawInstructionFileRead,
       }: {
         path: string;
         offset?: number;
         limit?: number;
+        includeDigest?: boolean;
         __openclawInstructionFileRead?: boolean;
       },
       signal?: AbortSignal,
@@ -309,12 +318,15 @@ export function createReadToolDefinition(
             const mimeType = ops.detectImageMimeType
               ? await ops.detectImageMimeType(absolutePath)
               : undefined;
+            const buffer = await ops.readFile(absolutePath);
             let content: (TextContent | ImageContent)[];
             let details: ReadToolDetails | undefined;
+            const fileDigest = includeDigest
+              ? createHash("sha256").update(buffer).digest("hex")
+              : undefined;
             const nonVisionImageNote = getNonVisionImageNote(ctx?.model);
             if (mimeType) {
               // Read image as binary.
-              const buffer = await ops.readFile(absolutePath);
               const base64 = buffer.toString("base64");
               if (autoResizeImages) {
                 // Resize image if needed before sending it back to the model.
@@ -323,6 +335,9 @@ export function createReadToolDefinition(
                   let textNote = `Read image file [${mimeType}]\n[Image omitted: could not be resized below the inline image size limit.]`;
                   if (nonVisionImageNote) {
                     textNote += `\n${nonVisionImageNote}`;
+                  }
+                  if (fileDigest) {
+                    textNote += `\n[File SHA-256: ${fileDigest}]`;
                   }
                   content = [{ type: "text", text: textNote }];
                 } else {
@@ -334,6 +349,9 @@ export function createReadToolDefinition(
                   if (nonVisionImageNote) {
                     textNote += `\n${nonVisionImageNote}`;
                   }
+                  if (fileDigest) {
+                    textNote += `\n[File SHA-256: ${fileDigest}]`;
+                  }
                   content = [
                     { type: "text", text: textNote },
                     { type: "image", data: resized.data, mimeType: resized.mimeType },
@@ -344,6 +362,9 @@ export function createReadToolDefinition(
                 if (nonVisionImageNote) {
                   textNote += `\n${nonVisionImageNote}`;
                 }
+                if (fileDigest) {
+                  textNote += `\n[File SHA-256: ${fileDigest}]`;
+                }
                 content = [
                   { type: "text", text: textNote },
                   { type: "image", data: base64, mimeType },
@@ -351,7 +372,6 @@ export function createReadToolDefinition(
               }
             } else {
               // Read text content.
-              const buffer = await ops.readFile(absolutePath);
               const textContent = buffer.toString("utf-8");
               const totalFileBytes = Buffer.byteLength(textContent, "utf-8");
               const allLines = textContent.split("\n");
@@ -421,12 +441,15 @@ export function createReadToolDefinition(
                 // No truncation and no remaining user-limited content.
                 outputText = truncation.content;
               }
+              if (fileDigest && !instructionFileRead) {
+                outputText += `\n\n[File SHA-256: ${fileDigest}]`;
+              }
               const endLine =
                 truncation.outputLines > 0
                   ? startLineDisplay + truncation.outputLines - 1
                   : startLineDisplay - 1;
               details = {
-                ...(details ?? {}),
+                ...details,
                 text: {
                   readStatus: nextOffset === undefined ? "full" : "partial",
                   startLine: startLineDisplay,
@@ -435,6 +458,7 @@ export function createReadToolDefinition(
                   totalLines: totalFileLines,
                   bytesRead: truncation.outputBytes,
                   totalBytes: totalFileBytes,
+                  ...(fileDigest ? { sha256: fileDigest } : {}),
                   ...(nextOffset !== undefined ? { nextOffset } : {}),
                   ...(instructionFileRead ? { instructionFile: true } : {}),
                 },

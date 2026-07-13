@@ -469,7 +469,7 @@ describe("gateway session utils", () => {
   });
 
   test("session detail labels live usage as provisional and terminal usage as settled", () => {
-    const cfg = { agents: { list: [{ id: "coding", default: true }] } } as OpenClawConfig;
+    const cfg = { agents: { list: [{ id: "main", default: true }] } } as OpenClawConfig;
     const runningEntry = {
       sessionId: "session-running-usage",
       updatedAt: 2_000,
@@ -489,27 +489,48 @@ describe("gateway session utils", () => {
       estimatedCostUsd: 0.02,
     } satisfies SessionEntry;
     const store = {
-      "agent:coding:running-usage": runningEntry,
-      "agent:coding:terminal-usage": terminalEntry,
+      "agent:main:running-usage": runningEntry,
+      "agent:main:terminal-usage": terminalEntry,
     };
 
     const running = buildGatewaySessionRow({
       cfg,
       storePath: "",
       store,
-      key: "agent:coding:running-usage",
+      key: "agent:main:running-usage",
       entry: runningEntry,
     });
     const terminal = buildGatewaySessionRow({
       cfg,
       storePath: "",
       store,
-      key: "agent:coding:terminal-usage",
+      key: "agent:main:terminal-usage",
       entry: terminalEntry,
     });
 
     expect(running.usageCostState).toBe("provisional");
     expect(terminal.usageCostState).toBe("settled");
+    expect(running.usage).toEqual({
+      state: "provisional",
+      run: {
+        basis: "run-cumulative",
+        inputTokens: 120,
+        outputTokens: 30,
+      },
+    });
+    expect(terminal.usage).toEqual({
+      state: "settled",
+      run: {
+        basis: "run-cumulative",
+        inputTokens: 200,
+        outputTokens: 50,
+      },
+      context: {
+        basis: "latest-context",
+        promptTokens: 250,
+        fresh: true,
+      },
+    });
   });
 
   test("Codex sessions do not fabricate dollar cost from local model pricing", () => {

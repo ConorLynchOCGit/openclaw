@@ -2,7 +2,10 @@
 import { resolveDefaultAgentId } from "../../agents/agent-scope.js";
 import { buildGatewaySessionDetailProjection } from "../session-detail.js";
 import { loadGatewaySessionRow } from "../session-utils.js";
-import { hasTrackedActiveSessionRun } from "./session-active-runs.js";
+import {
+  hasTrackedActiveSessionRun,
+  projectTrackedActiveSessionRunState,
+} from "./session-active-runs.js";
 import type { GatewayRequestContext } from "./types.js";
 
 export type SessionChangedPayload = {
@@ -26,7 +29,7 @@ export function emitSessionsChanged(
   if (connIds.size === 0) {
     return;
   }
-  const sessionRow = payload.sessionKey
+  const storedSessionRow = payload.sessionKey
     ? loadGatewaySessionRow(
         payload.sessionKey,
         payload.sessionKey === "global" && payload.agentId
@@ -34,8 +37,20 @@ export function emitSessionsChanged(
           : undefined,
       )
     : null;
-  const omitUnscopedGlobalGoal = payload.sessionKey === "global" && !payload.agentId;
   const defaultAgentId = resolveDefaultAgentId(context.getRuntimeConfig());
+  const sessionRow = storedSessionRow
+    ? projectTrackedActiveSessionRunState(
+        storedSessionRow,
+        hasTrackedActiveSessionRun({
+          context,
+          requestedKey: payload.sessionKey ?? storedSessionRow.key,
+          canonicalKey: storedSessionRow.key,
+          agentId: storedSessionRow.key === "global" ? payload.agentId : undefined,
+          defaultAgentId,
+        }),
+      )
+    : null;
+  const omitUnscopedGlobalGoal = payload.sessionKey === "global" && !payload.agentId;
   const readbackProjection = sessionRow
     ? buildGatewaySessionDetailProjection({
         row: sessionRow,
@@ -103,13 +118,7 @@ export function emitSessionsChanged(
             modelProvider: sessionRow.modelProvider,
             model: sessionRow.model,
             status: sessionRow.status,
-            hasActiveRun: hasTrackedActiveSessionRun({
-              context,
-              requestedKey: payload.sessionKey ?? sessionRow.key,
-              canonicalKey: sessionRow.key,
-              agentId: sessionRow.key === "global" ? payload.agentId : undefined,
-              defaultAgentId,
-            }),
+            hasActiveRun: sessionRow.hasActiveRun,
             startedAt: sessionRow.startedAt,
             endedAt: sessionRow.endedAt,
             runtimeMs: sessionRow.runtimeMs,

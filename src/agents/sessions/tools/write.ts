@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 /**
  * Built-in write session tool.
  *
@@ -31,7 +32,8 @@ const writeSchema = Type.Object({
   path: Type.String({ description: "Path to the file to write (relative or absolute)" }),
   content: Type.String({ description: "Content to write to the file" }),
 });
-export type { WriteToolInput } from "./tool-contracts.js";
+import type { WriteToolDetails } from "./tool-contracts.js";
+export type { WriteToolDetails, WriteToolInput } from "./tool-contracts.js";
 
 /**
  * Pluggable operations for the write tool.
@@ -355,21 +357,22 @@ async function recoverSuccessfulWrite(params: {
   if (currentContent !== params.content || !changed) {
     return null;
   }
+  const sha256 = createHash("sha256").update(params.content).digest("hex");
   return {
     content: [
       {
         type: "text" as const,
-        text: `Successfully wrote ${params.content.length} bytes to ${params.path}`,
+        text: `Successfully wrote ${params.content.length} bytes to ${params.path}\nSHA-256: ${sha256}`,
       },
     ],
-    details: undefined,
+    details: { sha256 },
   };
 }
 
 export function createWriteToolDefinition(
   cwd: string,
   options?: WriteToolOptions,
-): ToolDefinition<typeof writeSchema, undefined> {
+): ToolDefinition<typeof writeSchema, WriteToolDetails> {
   const ops = options?.operations ?? defaultWriteOperations;
   return {
     name: "write",
@@ -405,14 +408,15 @@ export function createWriteToolDefinition(
           if (signal?.aborted) {
             throw new Error("Operation aborted");
           }
+          const sha256 = createHash("sha256").update(content).digest("hex");
           return {
             content: [
               {
                 type: "text" as const,
-                text: `Successfully wrote ${content.length} bytes to ${path}`,
+                text: `Successfully wrote ${content.length} bytes to ${path}\nSHA-256: ${sha256}`,
               },
             ],
-            details: undefined,
+            details: { sha256 },
           };
         } catch (error: unknown) {
           const recovered = await recoverSuccessfulWrite({

@@ -3,6 +3,35 @@ import { buildGatewaySessionDetailProjection } from "./session-detail.js";
 import type { GatewaySessionRow } from "./session-utils.types.js";
 
 describe("buildGatewaySessionDetailProjection", () => {
+  it("keeps a multi-turn session running when an earlier final is still present", () => {
+    const row = {
+      key: "agent:main:main",
+      agentId: "main",
+      kind: "direct",
+      updatedAt: Date.parse("2026-07-13T17:17:00.000Z"),
+      sessionId: "main-session-id",
+      status: "running",
+      hasActiveRun: true,
+      finalAssistantText: "Previous turn final.",
+      activeProgress: null,
+    } satisfies GatewaySessionRow;
+
+    const result = buildGatewaySessionDetailProjection({
+      row,
+      requestedSessionKey: row.key,
+      agentId: "main",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.detail.status).toBe("running");
+    expect(result.detail.finality.status).toBe("running");
+    expect(result.detail.session.status).toBe("running");
+    expect(result.detail.finalAssistantText).toBe("Previous turn final.");
+  });
+
   it("projects enriched Codex session evidence at top level while preserving the legacy nested session", () => {
     const row = {
       key: "agent:coding:subagent:proof",

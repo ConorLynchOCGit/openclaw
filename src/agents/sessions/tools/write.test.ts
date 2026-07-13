@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 // Write tool tests cover session path resolution and post-write recovery when
 // remote or sandbox operations fail after persisting content.
 import fs from "node:fs/promises";
@@ -71,7 +72,10 @@ describe("write tool", () => {
 
     expect(result.content[0]).toEqual({
       type: "text",
-      text: `Successfully wrote ${"finished\n".length} bytes to ${filePath}`,
+      text: `Successfully wrote ${"finished\n".length} bytes to ${filePath}\nSHA-256: ${createHash("sha256").update("finished\n").digest("hex")}`,
+    });
+    expect(result.details).toEqual({
+      sha256: createHash("sha256").update("finished\n").digest("hex"),
     });
   });
 
@@ -114,12 +118,13 @@ describe("write tool", () => {
     const filePath = await createTempPath("notes.md");
     const tool = createWriteTool(tmpDir);
 
-    await tool.execute(
+    const result = await tool.execute(
       "call-1",
       { path: pathToFileURL(filePath).href, content: "finished\n" },
       undefined,
     );
 
     await expect(fs.readFile(filePath, "utf-8")).resolves.toBe("finished\n");
+    expect(result.details?.sha256).toBe(createHash("sha256").update("finished\n").digest("hex"));
   });
 });

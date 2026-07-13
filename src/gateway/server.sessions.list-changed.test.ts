@@ -133,6 +133,7 @@ async function invokeSessionDetail(method: "sessions.describe" | "sessions.show"
 async function invokeSessionDetailParams(
   method: "sessions.describe" | "sessions.show",
   params: Record<string, unknown>,
+  context: Record<string, unknown> = {},
 ) {
   const respond = vi.fn();
   const sessionsHandlers = await getSessionsHandlers();
@@ -151,6 +152,7 @@ async function invokeSessionDetailParams(
     context: {
       getRuntimeConfig,
       loadGatewayModelCatalog: async () => [],
+      ...context,
     } as never,
   });
   return expectRespondPayload(respond);
@@ -276,6 +278,39 @@ test("sessions.show accepts sessionKey alias and returns enriched session detail
   });
 });
 
+test("sessions.show projects a tracked active run over an earlier assistant final", async () => {
+  const { dir } = await createSessionStoreDir();
+  await writeSessionStore({
+    entries: {
+      main: sessionStoreEntry("sess-main", { status: "done", updatedAt: 1234 }),
+    },
+  });
+  await fs.writeFile(
+    path.join(dir, "sess-main.jsonl"),
+    `${JSON.stringify({ message: { role: "assistant", content: "Earlier final packet." } })}\n`,
+    "utf-8",
+  );
+
+  const showPayload = await invokeSessionDetailParams(
+    "sessions.show",
+    { key: "main" },
+    {
+      chatAbortControllers: new Map([
+        ["run-1", { sessionKey: "agent:main:main", agentId: "main" }],
+      ]),
+    },
+  );
+  const showFinality = requireRecord(showPayload.finality, "show finality");
+
+  expect(showPayload.status).toBe("running");
+  expect(showPayload.hasActiveRun).toBe(true);
+  expect(showPayload.finalAssistantText).toBe("Earlier final packet.");
+  expect(showFinality).toMatchObject({
+    status: "running",
+    finalAssistantTextPresent: true,
+  });
+});
+
 function expectMainPatchBroadcast(
   result: Awaited<ReturnType<typeof invokeSessionsPatch>>,
   expected: Record<string, unknown>,
@@ -312,7 +347,7 @@ async function expectListedSessionActiveRun(
   run: Record<string, unknown>,
   expected: boolean,
 ) {
-  await writeMainSessionStore();
+  await writeMainSessionStore({ status: "done" });
 
   const { respond } = await invokeSessionsList({
     requestId,
@@ -324,6 +359,7 @@ async function expectListedSessionActiveRun(
   const payload = expectRespondPayload(respond);
   const session = findSession(payload, "agent:main:main");
   expect(session.hasActiveRun).toBe(expected);
+  expect(session.status).toBe(expected ? "running" : "done");
 }
 
 test("sessions.list keeps bulk rows lightweight and uses persisted model fields", async () => {
@@ -601,7 +637,7 @@ test("sessions.list does not block on slow model catalog discovery", async () =>
   }
 });
 
-test("sessions.changed mutation events include live usage metadata", async () => {
+test("sessions.changed mutation events include live usage without fabricated Codex cost", async () => {
   const { dir } = await createSessionStoreDir();
   await fs.writeFile(
     path.join(dir, "sess-main.jsonl"),
@@ -647,7 +683,7 @@ test("sessions.changed mutation events include live usage metadata", async () =>
     totalTokens: 6_643,
     totalTokensFresh: true,
     contextTokens: 123_456,
-    estimatedCostUsd: 0,
+    estimatedCostUsd: undefined,
     modelProvider: "openai",
     model: "gpt-5.3-codex-spark",
   });

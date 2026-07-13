@@ -124,7 +124,10 @@ import { resolveSessionKeyFromResolveParams } from "../sessions-resolve.js";
 import { setGatewayDedupeEntry } from "./agent-wait-dedupe.js";
 import { chatHandlers } from "./chat.js";
 import { loadOptionalServerMethodModelCatalog } from "./optional-model-catalog.js";
-import { hasTrackedActiveSessionRun } from "./session-active-runs.js";
+import {
+  hasTrackedActiveSessionRun,
+  projectTrackedActiveSessionRunState,
+} from "./session-active-runs.js";
 import { emitSessionsChanged } from "./session-change-event.js";
 import type {
   GatewayClient,
@@ -944,19 +947,33 @@ function respondWithSessionDetail(params: {
   if (!key) {
     return;
   }
-  const row = loadGatewaySessionRow(key, {
+  const storedRow = loadGatewaySessionRow(key, {
     includeDerivedTitles: p.includeDerivedTitles ?? true,
     includeLastMessage: true,
     transcriptUsageMaxBytes: 64 * 1024,
   });
-  if (!row) {
+  if (!storedRow) {
     params.respond(true, { session: null }, undefined);
     return;
   }
+  const defaultAgentId = resolveDefaultAgentId(params.context.getRuntimeConfig());
+  const row = projectTrackedActiveSessionRunState(
+    storedRow,
+    hasTrackedActiveSessionRun({
+      context: params.context,
+      requestedKey: key,
+      canonicalKey: storedRow.key,
+      agentId:
+        storedRow.key === "global"
+          ? (storedRow.agentId ?? parseAgentSessionKey(storedRow.key)?.agentId)
+          : undefined,
+      defaultAgentId,
+    }),
+  );
   const detail = buildGatewaySessionDetailProjection({
     row,
     requestedSessionKey: key,
-    agentId: row.agentId ?? parseAgentSessionKey(row.key)?.agentId ?? "main",
+    agentId: row.agentId ?? parseAgentSessionKey(row.key)?.agentId ?? defaultAgentId,
   });
   if (!detail.ok) {
     params.respond(
@@ -1031,17 +1048,16 @@ export const sessionsHandlers: GatewayRequestHandlers = {
         const sessions = measureDiagnosticsTimelineSpanSync(
           "gateway.sessions.list.active_run_flags",
           () => {
-            return result.sessions.map((session) =>
-              Object.assign({}, session, {
-                hasActiveRun: hasTrackedActiveSessionRun({
-                  context,
-                  requestedKey: session.key,
-                  canonicalKey: session.key,
-                  ...(session.key === "global" && p.agentId ? { agentId: p.agentId } : {}),
-                  defaultAgentId: resolveDefaultAgentId(cfg),
-                }),
-              }),
-            );
+            return result.sessions.map((session) => {
+              const hasActiveRun = hasTrackedActiveSessionRun({
+                context,
+                requestedKey: session.key,
+                canonicalKey: session.key,
+                ...(session.key === "global" && p.agentId ? { agentId: p.agentId } : {}),
+                defaultAgentId: resolveDefaultAgentId(cfg),
+              });
+              return projectTrackedActiveSessionRunState(session, hasActiveRun);
+            });
           },
           {
             config: cfg,

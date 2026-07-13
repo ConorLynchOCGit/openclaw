@@ -866,6 +866,9 @@ describe("sessionsCommand", () => {
     expect(output).toContain("laneVerdict: complete");
     expect(output).toContain("toolPlanes: openclaw=0; codex=inactive");
     expect(output).toContain(
+      "usage: state=settled runBasis=run-cumulative input=10 output=5 contextBasis=latest-context prompt=15 window=unavailable fresh=true",
+    );
+    expect(output).toContain(
       "codexTeamUsage: basis=cumulative state=settled children=0 total=1000",
     );
   });

@@ -597,6 +597,7 @@ export async function sessionsShowCommand(
     }`,
     `codexMcpServers: ${row.promptContext?.codexMcpServers?.names.join(", ") || "none"}`,
     `codexCustomAgents: ${row.promptContext?.codexCustomAgents?.names.join(", ") || "none"}`,
+    `usage: ${formatSessionUsage(row.usage)}`,
     `codexTeamUsage: ${formatCodexTeamUsage(row.codexTeamUsage)}`,
   ];
   for (const line of lines) {
@@ -605,6 +606,22 @@ export async function sessionsShowCommand(
   for (const child of row.codexNativeChildRuns ?? []) {
     runtime.log(formatCodexNativeChildRun(child));
   }
+}
+
+function formatSessionUsage(usage: GatewaySessionRow["usage"]): string {
+  if (!usage) {
+    return "n/a";
+  }
+  return [
+    `state=${usage.state}`,
+    `runBasis=${usage.run?.basis ?? "n/a"}`,
+    `input=${usage.run?.inputTokens ?? "unavailable"}`,
+    `output=${usage.run?.outputTokens ?? "unavailable"}`,
+    `contextBasis=${usage.context?.basis ?? "n/a"}`,
+    `prompt=${usage.context?.promptTokens ?? "unavailable"}`,
+    `window=${usage.context?.windowTokens ?? "unavailable"}`,
+    `fresh=${usage.context?.fresh ?? false}`,
+  ].join(" ");
 }
 
 function formatCodexTeamUsage(usage: GatewaySessionRow["codexTeamUsage"]): string {

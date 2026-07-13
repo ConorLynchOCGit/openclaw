@@ -95,6 +95,48 @@ describe("sessions_history redaction", () => {
     expect((result.details as { contentRedacted?: unknown }).contentRedacted).toBe(true);
   });
 
+  it("returns conversation text without assistant tool and thinking payloads by default", async () => {
+    const hiddenPayload = `HIDDEN_TOOL_PAYLOAD_${"x".repeat(20_000)}`;
+    const tool = createSessionsHistoryTool({
+      config: {},
+      callGateway: async <T = Record<string, unknown>>(request: CallGatewayRequest): Promise<T> => {
+        if (request.method === "chat.history") {
+          return {
+            messages: [
+              { role: "user", content: "Preserve this operator answer." },
+              {
+                role: "assistant",
+                content: [
+                  { type: "thinking", thinking: hiddenPayload },
+                  { type: "toolCall", name: "sessions_send", partialJson: hiddenPayload },
+                  { type: "text", text: "Preserve this assistant answer." },
+                ],
+              },
+              { role: "toolResult", content: [{ type: "text", text: hiddenPayload }] },
+              {
+                role: "assistant",
+                content: [{ type: "toolCall", name: "read", partialJson: hiddenPayload }],
+              },
+            ],
+          } as T;
+        }
+        return {} as T;
+      },
+    });
+
+    const result = await tool.execute("call-history", { sessionKey: "main" });
+    const details = result.details as { messages?: unknown[]; bytes?: number };
+    const serialized = JSON.stringify(details.messages);
+
+    expect(serialized).toContain("Preserve this operator answer.");
+    expect(serialized).toContain("Preserve this assistant answer.");
+    expect(serialized).not.toContain("HIDDEN_TOOL_PAYLOAD");
+    expect(serialized).not.toContain("sessions_send");
+    expect(serialized).not.toContain("toolCall");
+    expect(details.messages).toHaveLength(2);
+    expect(details.bytes).toBeLessThan(2_000);
+  });
+
   it.each([0, 1.5])("rejects invalid limit value %s", async (limit) => {
     const tool = createHistoryToolWithMessage("hello");
 

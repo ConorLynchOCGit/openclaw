@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 // Edit tool tests cover exact-match diagnostics, post-write recovery, newline
 // preservation, and preview rendering for custom operations.
 import fs from "node:fs/promises";
@@ -75,7 +76,7 @@ describe("edit tool", () => {
 
     expect(result.content[0]).toEqual({
       type: "text",
-      text: `Successfully replaced 1 block(s) in ${filePath}.`,
+      text: `Successfully replaced 1 block(s) in ${filePath}.\nSHA-256: ${createHash("sha256").update('const value = "foobar";\r\n').digest("hex")}`,
     });
     await expect(fs.readFile(filePath, "utf-8")).resolves.toBe('const value = "foobar";\r\n');
   });
@@ -133,7 +134,7 @@ describe("edit tool", () => {
 
     expect(result.content[0]).toEqual({
       type: "text",
-      text: `Successfully replaced 2 block(s) in ${filePath}.`,
+      text: `Successfully replaced 2 block(s) in ${filePath}.\nSHA-256: ${createHash("sha256").update("ALPHA beta gamma DELTA\n").digest("hex")}`,
     });
   });
 

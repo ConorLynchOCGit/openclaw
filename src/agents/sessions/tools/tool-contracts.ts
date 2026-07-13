@@ -28,6 +28,8 @@ export interface EditToolDetails {
   patch: string;
   /** Line number of the first change in the new file (for editor navigation) */
   firstChangedLine?: number;
+  /** SHA-256 of the complete file after the edit. */
+  sha256?: string;
 }
 
 export interface FindToolInput {
@@ -71,6 +73,8 @@ export interface ReadToolInput {
   path: string;
   offset?: number;
   limit?: number;
+  /** Include the exact whole-file SHA-256 when identity or stale-write checks require it. */
+  includeDigest?: boolean;
   /**
    * Internal runtime marker for OpenClaw-visible instruction files such as
    * activated SKILL.md reads. This is not part of the model-facing schema.
@@ -86,6 +90,7 @@ export interface ReadTextWindowDetails {
   totalLines: number;
   bytesRead: number;
   totalBytes: number;
+  sha256?: string;
   nextOffset?: number;
   instructionFile?: boolean;
 }
@@ -98,4 +103,9 @@ export interface ReadToolDetails {
 export interface WriteToolInput {
   path: string;
   content: string;
+}
+
+export interface WriteToolDetails {
+  /** SHA-256 of the complete file after the write. */
+  sha256: string;
 }

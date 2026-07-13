@@ -1186,6 +1186,43 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
     });
   });
 
+  it("projects a tracked active run over stale terminal session metadata", async () => {
+    createTranscriptFixture("openclaw-chat-history-active-run-status-");
+    mockState.sessionEntry = {
+      status: "done",
+      endedAt: Date.now() - 1_000,
+      updatedAt: Date.now() - 1_000,
+    };
+    const respond = vi.fn();
+    const context = createChatContext();
+    context.chatAbortControllers.set("run-active", {
+      controller: new AbortController(),
+      sessionId: mockState.sessionId,
+      sessionKey: "main",
+      agentId: "main",
+      startedAtMs: Date.now(),
+      expiresAtMs: Date.now() + 10_000,
+    });
+
+    await chatHandlers["chat.history"]({
+      params: { sessionKey: "main" },
+      respond: respond as never,
+      req: {} as never,
+      client: null,
+      isWebchatConnect: () => false,
+      context: context as GatewayRequestContext,
+    });
+
+    const [ok, payload] = respond.mock.calls[0] ?? [];
+    expect(ok).toBe(true);
+    expect(payload).toMatchObject({
+      sessionInfo: {
+        hasActiveRun: true,
+        status: "running",
+      },
+    });
+  });
+
   it("does not register tool-event recipients without tool-events capability", async () => {
     createTranscriptFixture("openclaw-chat-send-tool-events-off-");
     mockState.finalText = "ok";

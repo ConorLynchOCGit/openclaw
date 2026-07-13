@@ -172,7 +172,10 @@ import {
   loadOptionalServerMethodModelCatalog,
   startOptionalServerMethodModelCatalogLoad,
 } from "./optional-model-catalog.js";
-import { hasTrackedActiveSessionRun } from "./session-active-runs.js";
+import {
+  hasTrackedActiveSessionRun,
+  projectTrackedActiveSessionRunState,
+} from "./session-active-runs.js";
 import { emitSessionsChanged } from "./session-change-event.js";
 import type {
   GatewayClient,
@@ -2625,7 +2628,7 @@ async function handleChatHistoryRequest({
         modelCatalog,
       })
     : undefined;
-  const sessionInfo = buildGatewaySessionInfo({
+  const storedSessionInfo = buildGatewaySessionInfo({
     cfg,
     storePath,
     store,
@@ -2636,13 +2639,16 @@ async function handleChatHistoryRequest({
   });
   const activeRunAgentId =
     canonicalKey === "global" ? (selectedAgent.agentId ?? defaultAgentId) : selectedAgent.agentId;
-  sessionInfo.hasActiveRun = hasTrackedActiveSessionRun({
-    context,
-    requestedKey: sessionKey,
-    canonicalKey,
-    ...(activeRunAgentId ? { agentId: activeRunAgentId } : {}),
-    defaultAgentId,
-  });
+  const sessionInfo = projectTrackedActiveSessionRunState(
+    storedSessionInfo,
+    hasTrackedActiveSessionRun({
+      context,
+      requestedKey: sessionKey,
+      canonicalKey,
+      ...(activeRunAgentId ? { agentId: activeRunAgentId } : {}),
+      defaultAgentId,
+    }),
+  );
   const defaults = getSessionDefaults(cfg, modelCatalog, { allowPluginNormalization: false });
   const thinkingLevel = sessionInfo.thinkingLevel ?? sessionInfo.thinkingDefault;
   const verboseLevel = entry?.verboseLevel ?? cfg.agents?.defaults?.verboseDefault;
