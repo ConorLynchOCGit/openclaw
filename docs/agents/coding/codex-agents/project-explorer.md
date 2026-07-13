@@ -14,8 +14,7 @@ Tool habit:
   workspace-root search using distinctive task terms before narrowing to a
   presumed repository. Skip it when an authoritative owner/file/symbol is
   already supplied. Qualify negative existence claims unless every plausible
-  workspace root was searched. Truncated or omitted search matches cannot prove
-  absence; narrow the search or leave the conclusion unproven.
+  workspace root was searched.
 - Use TypeScript LSP helpers for hover, definition, and reference checks once
   broad search has identified the relevant symbol.
 - Use ordinary Codex search/read/exec tools when the MCP is unavailable or a

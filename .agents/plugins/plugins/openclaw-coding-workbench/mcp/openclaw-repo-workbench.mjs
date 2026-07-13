@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,7 +17,6 @@ const MAX_BATCH_ITEMS = 20;
 const DEFAULT_SEARCH_MATCHES = 20;
 const MAX_SEARCH_MATCHES = 60;
 const MAX_SEARCH_COMMAND_BYTES = 12_000;
-const MAX_SEARCH_CANDIDATE_BYTES = 64_000;
 const MAX_SEARCH_RESPONSE_BYTES = 16_000;
 const DEFAULT_READ_BYTES = 10_000;
 const MAX_READ_BYTES = 12_000;
@@ -29,35 +28,16 @@ const DEFAULT_LSP_MAX_LOADED_FILES = 24;
 const PositiveIntSchema = z.number().int().min(1);
 const DEFAULT_EXCLUDE_GLOBS = [
   ".git/**",
-  "**/.git/**",
   ".openclaw/**",
-  "**/.openclaw/**",
-  ".artifacts/**",
-  "**/.artifacts/**",
-  ".pnpm-store/**",
-  "**/.pnpm-store/**",
-  ".generated/**",
-  "**/.generated/**",
   "artifacts/**",
-  "**/artifacts/**",
   "state/**",
-  "**/state/**",
   "transcripts/**",
-  "**/transcripts/**",
   "sessions/**",
-  "**/sessions/**",
   "logs/**",
-  "**/logs/**",
   "node_modules/**",
-  "**/node_modules/**",
   "dist/**",
-  "**/dist/**",
-  "dist-runtime/**",
-  "**/dist-runtime/**",
   "build/**",
-  "**/build/**",
   "coverage/**",
-  "**/coverage/**",
   ".turbo/**",
   ".next/**",
   "*.log",
@@ -208,7 +188,7 @@ server.registerTool(
   {
     title: "Search Many",
     description:
-      'Preferred broad-discovery tool: run multiple independent bounded ripgrep searches concurrently under the active workspace root. Directory searches return file-diverse discovery anchors; narrow path to a file for dense same-file matches. When ownership or location is unresolved, include one distinctive query with path "." before narrowing to presumed repos. Returns one compact item representation with 1-based line/character anchors, caps the complete response at 16 KB, and marks omitted hits so the caller can narrow the path or pattern.',
+      'Preferred broad-discovery tool: run multiple independent bounded ripgrep searches concurrently under the active workspace root. When ownership or location is unresolved, include one distinctive query with path "." before narrowing to presumed repos. Returns one compact item representation with 1-based line/character anchors, caps the complete response at 16 KB, and marks omitted hits so the caller can narrow the path or pattern.',
     annotations: READ_ONLY_TOOL_ANNOTATIONS,
     outputSchema: SearchManyOutputSchema,
     inputSchema: z.object({
@@ -310,9 +290,7 @@ if (isMainModule()) {
 export async function repoSearchMany(input, options = {}) {
   const root = resolveRepoRoot(options.cwd ?? process.cwd(), options.env ?? process.env);
   const queries = input.queries.slice(0, MAX_BATCH_ITEMS);
-  const results = await Promise.all(
-    queries.map((query) => runSearchQuery(root, query, options.env ?? process.env)),
-  );
+  const results = await Promise.all(queries.map((query) => runSearchQuery(root, query)));
   return fitSearchManyResponse(root, queries.length, results);
 }
 
@@ -785,7 +763,7 @@ function expandGitRequestRoots(root, gitRoots, request) {
   return gitRoots;
 }
 
-async function runSearchQuery(root, query, env) {
+async function runSearchQuery(root, query) {
   try {
     const searchRoot = safeResolve(root, query.path ?? ".");
     const maxMatches = clampPositiveInt(
@@ -794,52 +772,6 @@ async function runSearchQuery(root, query, env) {
       MAX_SEARCH_MATCHES,
     );
     const contextLines = Math.min(query.contextLines ?? 0, MAX_SEARCH_CONTEXT_LINES);
-    const searchRootIsFile = statSync(searchRoot).isFile();
-    let candidateFiles = [searchRoot];
-    let candidateFilesTruncated = false;
-    let omittedCandidateFiles = 0;
-    if (!searchRootIsFile) {
-      const candidateArgs = ["--files-with-matches", "--color", "never"];
-      appendSearchOptions(candidateArgs, query, { includeContext: false });
-      candidateArgs.push("--", query.pattern, searchRoot);
-      const candidateOutput = await runBoundedCommand(
-        "rg",
-        candidateArgs,
-        root,
-        MAX_SEARCH_CANDIDATE_BYTES,
-      );
-      if (candidateOutput.exitCode === 1) {
-        return {
-          pattern: query.pattern,
-          path: relative(root, searchRoot),
-          status: "no_match",
-          items: [],
-          effectiveMaxMatches: maxMatches,
-          effectiveContextLines: contextLines,
-          fileDiverse: true,
-        };
-      }
-      if (candidateOutput.exitCode !== 0) {
-        return {
-          pattern: query.pattern,
-          path: relative(root, searchRoot),
-          status: "error",
-          items: [],
-          effectiveMaxMatches: maxMatches,
-          effectiveContextLines: contextLines,
-          fileDiverse: true,
-          ...(candidateOutput.stderr ? { stderr: candidateOutput.stderr } : {}),
-        };
-      }
-      const allCandidateFiles = candidateOutput.stdout
-        .split(/\r?\n/u)
-        .filter(Boolean)
-        .map((filePath) => (path.isAbsolute(filePath) ? filePath : path.resolve(root, filePath)));
-      candidateFiles = selectDiverseSearchFiles(root, allCandidateFiles, maxMatches, env);
-      candidateFilesTruncated = candidateOutput.truncated;
-      omittedCandidateFiles = Math.max(0, allCandidateFiles.length - candidateFiles.length);
-    }
-    const perFileMatchCap = searchRootIsFile ? maxMatches : 1;
     const args = [
       "--line-number",
       "--column",
@@ -848,27 +780,36 @@ async function runSearchQuery(root, query, env) {
       "--color",
       "never",
       "--max-count",
-      String(perFileMatchCap),
+      String(maxMatches),
     ];
-    appendSearchOptions(args, query, { includeContext: true });
-    args.push("--", query.pattern, ...candidateFiles);
+    if (query.literal) {
+      args.push("-F");
+    }
+    if (query.caseSensitive === false) {
+      args.push("-i");
+    }
+    if (contextLines > 0) {
+      args.push("-C", String(contextLines));
+    }
+    if (query.glob) {
+      args.push("--glob", query.glob);
+    }
+    for (const excludeGlob of DEFAULT_EXCLUDE_GLOBS) {
+      args.push("--glob", `!${excludeGlob}`);
+    }
+    args.push("--", query.pattern, searchRoot);
     const output = await runBoundedCommand("rg", args, root, MAX_SEARCH_COMMAND_BYTES);
-    const lines = output.stdout.split(/\r?\n/u).filter(Boolean);
-    const items = parseRipgrepItems(root, lines).slice(0, maxMatches);
+    const lines = output.stdout.split(/\r?\n/u).filter(Boolean).slice(0, maxMatches);
+    const items = parseRipgrepItems(root, lines);
     return {
       pattern: query.pattern,
       path: relative(root, searchRoot),
       limits: {
         maxMatches,
-        perFileMatchCap,
         outputBytes: MAX_SEARCH_COMMAND_BYTES,
       },
       effectiveMaxMatches: maxMatches,
       effectiveContextLines: contextLines,
-      fileDiverse: !searchRootIsFile,
-      candidateFileCount: candidateFiles.length,
-      ...(candidateFilesTruncated ? { candidateFilesTruncated: true } : {}),
-      ...(omittedCandidateFiles > 0 ? { omittedCandidateFiles } : {}),
       ...(query.contextLines && query.contextLines > contextLines
         ? { requestedContextLines: query.contextLines, contextLinesClamped: true }
         : {}),
@@ -877,108 +818,12 @@ async function runSearchQuery(root, query, env) {
         : {}),
       status: output.exitCode === 0 ? "matched" : output.exitCode === 1 ? "no_match" : "error",
       items,
-      truncated:
-        output.truncated ||
-        candidateFilesTruncated ||
-        omittedCandidateFiles > 0 ||
-        lines.length >= maxMatches,
-      ...(candidateFilesTruncated || omittedCandidateFiles > 0
-        ? { nextAction: "narrow_pattern_or_path" }
-        : {}),
+      truncated: output.truncated || lines.length >= maxMatches,
       ...(output.stderr ? { stderr: output.stderr } : {}),
     };
   } catch (error) {
     return { pattern: query.pattern, status: "error", error: formatError(error) };
   }
-}
-
-function appendSearchOptions(args, query, options) {
-  args.push("--hidden", "--no-ignore-vcs");
-  if (query.literal) {
-    args.push("-F");
-  }
-  if (query.caseSensitive === false) {
-    args.push("-i");
-  }
-  if (options.includeContext && query.contextLines > 0) {
-    args.push("-C", String(Math.min(query.contextLines, MAX_SEARCH_CONTEXT_LINES)));
-  }
-  if (query.glob) {
-    args.push("--glob", query.glob);
-  }
-  for (const excludeGlob of DEFAULT_EXCLUDE_GLOBS) {
-    args.push("--glob", `!${excludeGlob}`);
-  }
-}
-
-function searchOwnershipPartition(ownerRoot, filePath) {
-  const parts = toPosix(relative(ownerRoot, filePath)).split("/");
-  if (parts.length === 1) {
-    return "<repo-files>";
-  }
-  return parts[0];
-}
-
-function orderDiverseFilesWithinRoot(ownerRoot, files) {
-  const groups = new Map();
-  for (const filePath of files) {
-    const group = searchOwnershipPartition(ownerRoot, filePath);
-    const groupFiles = groups.get(group) ?? [];
-    groupFiles.push(filePath);
-    groups.set(group, groupFiles);
-  }
-  const ordered = [];
-  while (true) {
-    let added = false;
-    for (const groupFiles of groups.values()) {
-      const next = groupFiles.shift();
-      if (!next) {
-        continue;
-      }
-      ordered.push(next);
-      added = true;
-    }
-    if (!added) {
-      break;
-    }
-  }
-  return ordered;
-}
-
-function selectDiverseSearchFiles(root, files, maxFiles, env) {
-  const gitRoots = resolveGitRoots(root, env).toSorted((left, right) => right.length - left.length);
-  const filesByGitRoot = new Map(gitRoots.map((gitRoot) => [gitRoot, []]));
-  for (const filePath of files) {
-    const ownerRoot =
-      gitRoots.find(
-        (gitRoot) => filePath === gitRoot || filePath.startsWith(`${gitRoot}${path.sep}`),
-      ) ?? root;
-    const ownerFiles = filesByGitRoot.get(ownerRoot) ?? [];
-    ownerFiles.push(filePath);
-    filesByGitRoot.set(ownerRoot, ownerFiles);
-  }
-  const rootQueues = [...filesByGitRoot.entries()]
-    .map(([ownerRoot, ownerFiles]) => orderDiverseFilesWithinRoot(ownerRoot, ownerFiles))
-    .filter((queue) => queue.length > 0);
-  const selected = [];
-  while (selected.length < maxFiles) {
-    let added = false;
-    for (const queue of rootQueues) {
-      const next = queue.shift();
-      if (!next) {
-        continue;
-      }
-      selected.push(next);
-      added = true;
-      if (selected.length >= maxFiles) {
-        break;
-      }
-    }
-    if (!added) {
-      break;
-    }
-  }
-  return selected;
 }
 
 function fitSearchManyResponse(root, requestedQueries, rawResults) {

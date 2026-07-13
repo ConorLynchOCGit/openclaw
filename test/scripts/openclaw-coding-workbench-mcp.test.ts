@@ -211,7 +211,6 @@ async function makeWorkspaceWithNestedSource(): Promise<string> {
   );
   await fs.mkdir(path.join(workspace, "artifacts"), { recursive: true });
   await fs.writeFile(path.join(workspace, "artifacts", "trace.jsonl"), "{}\n", "utf8");
-  await fs.writeFile(path.join(workspace, ".gitignore"), "src/\n", "utf8");
   const source = path.join(workspace, "src", "openclaw");
   await fs.mkdir(path.join(source, "src", "agents"), { recursive: true });
   await fs.writeFile(path.join(source, "package.json"), '{"name":"openclaw"}\n', "utf8");
@@ -503,33 +502,6 @@ describe("openclaw-coding-workbench MCP helpers", () => {
     );
   });
 
-  it("returns file-diverse directory discovery and dense narrowed-file matches", async () => {
-    const repo = await makeRepo();
-    const workbench = await loadWorkbench();
-    await fs.writeFile(
-      path.join(repo, "src", "dense.ts"),
-      Array.from({ length: 20 }, (_, index) => `export const owner = ${index};`).join("\n"),
-      "utf8",
-    );
-    await fs.writeFile(path.join(repo, "src", "second.ts"), "export const owner = 21;\n", "utf8");
-    await fs.writeFile(path.join(repo, "src", "third.ts"), "export const owner = 22;\n", "utf8");
-
-    const directorySearch = await workbench.repoSearchMany(
-      { queries: [{ pattern: "owner", path: "src", maxMatches: 6 }] },
-      optionsFor(repo),
-    );
-    const directoryPaths = directorySearch.results[0]?.items?.map((item) => item.path);
-    expect(new Set(directoryPaths).size).toBeGreaterThanOrEqual(2);
-    expect(directoryPaths?.filter((item) => item === "src/dense.ts")).toHaveLength(1);
-
-    const fileSearch = await workbench.repoSearchMany(
-      { queries: [{ pattern: "owner", path: "src/dense.ts", maxMatches: 6 }] },
-      optionsFor(repo),
-    );
-    expect(fileSearch.results[0]?.items).toHaveLength(6);
-    expect(fileSearch.results[0]?.items?.every((item) => item.path === "src/dense.ts")).toBe(true);
-  });
-
   it("reports bounded git status without mutating the repository", async () => {
     const repo = await makeRepo();
     await fs.writeFile(path.join(repo, "src", "beta.ts"), "export const beta = 2;\n", "utf8");
@@ -574,16 +546,6 @@ describe("openclaw-coding-workbench MCP helpers", () => {
     );
     expect(search.results[1].status).toBe("matched");
     expect(search.results[1].items).toContainEqual(
-      expect.objectContaining({ path: "src/openclaw/src/agents/task-tool.ts" }),
-    );
-
-    const ownershipSearch = await workbench.repoSearchMany(
-      {
-        queries: [{ pattern: "task", path: ".", maxMatches: 20 }],
-      },
-      workspaceOptionsFor(workspace),
-    );
-    expect(ownershipSearch.results[0].items).toContainEqual(
       expect.objectContaining({ path: "src/openclaw/src/agents/task-tool.ts" }),
     );
   });
