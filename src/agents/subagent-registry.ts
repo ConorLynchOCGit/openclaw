@@ -1243,6 +1243,51 @@ export function replaceSubagentRunAfterSteer(params: {
   return subagentRunManager.replaceSubagentRunAfterSteer(params);
 }
 
+/**
+ * Re-arms an existing parent-owned child session for a new continuation run.
+ *
+ * `sessions_send` can wait synchronously for a short child continuation. When
+ * that wait expires, this keeps eventual completion on the existing subagent
+ * lifecycle path instead of creating a second announce runner.
+ */
+export function trackSubagentContinuationRun(params: {
+  childSessionKey: string;
+  nextRunId: string;
+  requesterSessionKey: string;
+}): boolean {
+  const childSessionKey = params.childSessionKey.trim();
+  const nextRunId = params.nextRunId.trim();
+  const requesterSessionKey = params.requesterSessionKey.trim();
+  if (!childSessionKey || !nextRunId || !requesterSessionKey) {
+    return false;
+  }
+
+  const source = getSubagentRunByChildSessionKeyFromRuns(
+    getSubagentRunsSnapshotForRead(subagentRuns),
+    childSessionKey,
+  );
+  if (!source) {
+    return false;
+  }
+  const controllerSessionKey = source.controllerSessionKey ?? source.requesterSessionKey;
+  if (
+    source.requesterSessionKey !== requesterSessionKey &&
+    controllerSessionKey !== requesterSessionKey
+  ) {
+    return false;
+  }
+  if (source.runId === nextRunId) {
+    return true;
+  }
+
+  return subagentRunManager.replaceSubagentRun({
+    previousRunId: source.runId,
+    nextRunId,
+    fallback: source,
+    runTimeoutSeconds: source.runTimeoutSeconds ?? 0,
+  });
+}
+
 export function registerSubagentRun(params: RegisterSubagentRunParams) {
   subagentRunManager.registerSubagentRun(params);
 }

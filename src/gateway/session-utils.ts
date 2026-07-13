@@ -977,7 +977,7 @@ function readActiveDescendantTrajectoryProgress(params: {
     }
     const childAgentId =
       normalizeAgentId(parseAgentSessionKey(childKey)?.agentId ?? params.agentId) ?? params.agentId;
-    if (entry.sessionId) {
+    if (entry.status === "running" && !entry.endedAt && entry.sessionId) {
       const progress = readLatestTrajectoryProgressProjection(
         entry.sessionId,
         params.storePath,
@@ -1007,6 +1007,36 @@ function readActiveDescendantTrajectoryProgress(params: {
   }
 
   return best;
+}
+
+function hasActiveDescendantSession(params: {
+  store: Record<string, SessionEntry>;
+  parentKey: string;
+  childSessions: readonly string[] | undefined;
+  now: number;
+}): boolean {
+  const queued = [...(params.childSessions ?? [])];
+  const seen = new Set<string>([params.parentKey]);
+  for (const childKey of queued) {
+    if (!childKey || seen.has(childKey)) {
+      continue;
+    }
+    seen.add(childKey);
+    const entry = params.store[childKey];
+    if (!entry) {
+      continue;
+    }
+    if (entry.status === "running" && !entry.endedAt) {
+      return true;
+    }
+    const grandchildren = resolveChildSessionKeys(childKey, params.store, params.now);
+    for (const grandchildKey of grandchildren ?? []) {
+      if (!seen.has(grandchildKey)) {
+        queued.push(grandchildKey);
+      }
+    }
+  }
+  return false;
 }
 
 function buildSingleRowStoreChildSessionsByKey(params: {
@@ -2446,10 +2476,10 @@ export function buildGatewaySessionRow(params: {
       },
     };
   }
-  const shouldReadActiveTrajectoryProgress =
+  const shouldReadOwnActiveTrajectoryProgress =
     entry?.sessionId && (rowStatus === "running" || (!rowStatus && !entry.endedAt));
   let trajectoryActiveProgress: ReadbackProgressProjection | undefined;
-  if (shouldReadActiveTrajectoryProgress && entry?.sessionId) {
+  if (shouldReadOwnActiveTrajectoryProgress && entry?.sessionId) {
     trajectoryActiveProgress = readLatestTrajectoryProgressProjection(
       entry.sessionId,
       storePath,
@@ -2457,8 +2487,14 @@ export function buildGatewaySessionRow(params: {
       sessionAgentId,
     );
   }
+  const hasActiveSubagentRun = hasActiveDescendantSession({
+    store,
+    parentKey: key,
+    childSessions,
+    now,
+  });
   let descendantActiveProgress: ReadbackProgressProjection | undefined;
-  if (shouldReadActiveTrajectoryProgress && childSessions && childSessions.length > 0) {
+  if (hasActiveSubagentRun && childSessions && childSessions.length > 0) {
     descendantActiveProgress = readActiveDescendantTrajectoryProgress({
       store,
       storePath,
@@ -2485,7 +2521,7 @@ export function buildGatewaySessionRow(params: {
     };
   }
   if (
-    shouldReadActiveTrajectoryProgress &&
+    shouldReadOwnActiveTrajectoryProgress &&
     rowStatus === "running" &&
     !readbackProvenance?.activeProgress
   ) {
@@ -2784,6 +2820,7 @@ export function buildGatewaySessionRow(params: {
     goal,
     estimatedCostUsd,
     status: rowStatus,
+    ...(hasActiveSubagentRun ? { hasActiveSubagentRun: true } : {}),
     startedAt: entry?.startedAt,
     endedAt: entry?.endedAt,
     runtimeMs: entry?.runtimeMs,

@@ -1267,6 +1267,33 @@ describe("chat loading skeleton", () => {
     expect(container.querySelector(".agent-chat__run-status--done")).toBeNull();
   });
 
+  it("shows non-abortable progress while a child continues after the parent turn", () => {
+    const container = renderChatView({
+      sessions: {
+        ts: 0,
+        path: "",
+        count: 1,
+        defaults: { modelProvider: null, model: null, contextTokens: 200_000 },
+        sessions: [
+          {
+            key: "main",
+            kind: "direct",
+            updatedAt: 1,
+            status: "done",
+            hasActiveRun: false,
+            hasActiveSubagentRun: true,
+          },
+        ],
+      },
+      canAbort: false,
+    });
+
+    expect(container.querySelector(".agent-chat__run-status--in-progress")?.textContent).toContain(
+      "In progress",
+    );
+    expect(container.querySelector(".chat-send-btn--stop")).toBeNull();
+  });
+
   it("keeps terminal status for the submitted run while its acknowledgement is pending", () => {
     const occurredAt = Date.now();
     const container = renderChatView({

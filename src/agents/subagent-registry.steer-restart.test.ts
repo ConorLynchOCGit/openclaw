@@ -312,6 +312,55 @@ describe("subagent registry steer restarts", () => {
     mod.resetSubagentRegistryForTests({ persist: false });
   });
 
+  it("re-arms an owned child session for an eventual continuation completion", () => {
+    registerCompletionModeRun(
+      "run-original",
+      "agent:business-ops:subagent:continuation",
+      "refine the candidate",
+      { spawnMode: "session" },
+    );
+
+    expect(
+      mod.trackSubagentContinuationRun({
+        childSessionKey: "agent:business-ops:subagent:continuation",
+        nextRunId: "run-continuation",
+        requesterSessionKey: MAIN_REQUESTER_SESSION_KEY,
+      }),
+    ).toBe(true);
+
+    const runs = listMainRuns();
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({
+      runId: "run-continuation",
+      childSessionKey: "agent:business-ops:subagent:continuation",
+      requesterSessionKey: MAIN_REQUESTER_SESSION_KEY,
+      task: "refine the candidate",
+      spawnMode: "session",
+      expectsCompletionMessage: true,
+      execution: { status: "running" },
+      delivery: { status: "pending" },
+    });
+    expect(runs[0].endedAt).toBeUndefined();
+  });
+
+  it("refuses to re-arm a child continuation for a different requester", () => {
+    registerCompletionModeRun(
+      "run-original",
+      "agent:business-ops:subagent:continuation",
+      "refine the candidate",
+      { spawnMode: "session" },
+    );
+
+    expect(
+      mod.trackSubagentContinuationRun({
+        childSessionKey: "agent:business-ops:subagent:continuation",
+        nextRunId: "run-continuation",
+        requesterSessionKey: "agent:other:main",
+      }),
+    ).toBe(false);
+    expect(listMainRuns()[0]?.runId).toBe("run-original");
+  });
+
   it("suppresses announce for interrupted runs and only announces the replacement run", async () => {
     {
       registerRun({

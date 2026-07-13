@@ -138,6 +138,11 @@ function createOpenClawTools(options?: {
   agentChannel?: string;
   sandboxed?: boolean;
   config?: OpenClawConfig;
+  trackSubagentContinuationRun?: (params: {
+    childSessionKey: string;
+    nextRunId: string;
+    requesterSessionKey: string;
+  }) => boolean;
 }) {
   // Sessions tests exercise the three related tools as a small local bundle.
   const config = options?.config ?? TEST_CONFIG;
@@ -161,6 +166,7 @@ function createOpenClawTools(options?: {
       sandboxed: options?.sandboxed,
       config,
       callGateway: gatewayCall,
+      trackSubagentContinuationRun: options?.trackSubagentContinuationRun,
     }),
   ];
 }
@@ -304,7 +310,7 @@ describe("sessions tools", () => {
     expect(schemaProp("sessions_send", "timeoutSeconds").type).toBe("integer");
     const sendRequired =
       (byName("sessions_send").parameters as { required?: string[] }).required ?? [];
-    expect(sendRequired).toContain("message");
+    expect(sendRequired).not.toContain("message");
   });
 
   it.each([
@@ -643,6 +649,8 @@ describe("sessions tools", () => {
           totalTokens: undefined,
           estimatedCostUsd: undefined,
           status: undefined,
+          activeProgress: null,
+          readbackProvenance: undefined,
           startedAt: undefined,
           endedAt: undefined,
           runtimeMs: undefined,
@@ -1847,6 +1855,61 @@ describe("sessions tools", () => {
     );
     expect(replyPromptAgentCalls).toStrictEqual([]);
     expect(calls.some((call) => call.method === "send")).toBe(false);
+  });
+
+  it("sessions_send tracks parent-owned child continuations that outlive the inline wait", async () => {
+    const calls: Array<{ method?: string; params?: unknown }> = [];
+    const requesterKey = "agent:main:discord:direct:parent";
+    const targetKey = "agent:main:subagent:child-long";
+    const trackContinuation = vi.fn(() => true);
+    loadSessionEntryByKeyMock.mockImplementation((sessionKey: string) =>
+      sessionKey === targetKey
+        ? {
+            sessionId: "child-long-session",
+            updatedAt: 1,
+            spawnedBy: requesterKey,
+          }
+        : undefined,
+    );
+    callGatewayMock.mockImplementation(async (opts: unknown) => {
+      const request = opts as { method?: string; params?: unknown };
+      calls.push(request);
+      if (request.method === "agent") {
+        return { runId: "run-child-long", status: "accepted", acceptedAt: 2000 };
+      }
+      if (request.method === "agent.wait") {
+        return { runId: "run-child-long", status: "timeout", livenessState: "working" };
+      }
+      if (request.method === "chat.history") {
+        return { messages: [] };
+      }
+      return {};
+    });
+
+    const tool = createOpenClawTools({
+      agentSessionKey: requesterKey,
+      agentChannel: "discord",
+      trackSubagentContinuationRun: trackContinuation,
+    }).find((candidate) => candidate.name === "sessions_send");
+    if (!tool) {
+      throw new Error("missing sessions_send tool");
+    }
+
+    const result = await tool.execute("call-parent-owned-long-continuation", {
+      sessionKey: targetKey,
+      message: "continue",
+      timeoutSeconds: 1,
+    });
+
+    const details = sessionsSendDetails(result.details);
+    expect(details.status).toBe("accepted");
+    expect(details.delivery).toEqual({ status: "pending", mode: "announce" });
+    expect(trackContinuation).toHaveBeenCalledWith({
+      childSessionKey: targetKey,
+      nextRunId: "run-child-long",
+      requesterSessionKey: requesterKey,
+    });
+    expect(countMatching(calls, (call) => call.method === "agent")).toBe(1);
   });
 
   it("sessions_send preserves threadId when announce target is hydrated via sessions.list", async () => {

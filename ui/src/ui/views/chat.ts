@@ -1587,13 +1587,14 @@ export function renderChat(props: ChatProps) {
   const showSubmittedProgressUi = props.queue.some((item) =>
     isCurrentSessionSubmittedProgress(item, props.sessionKey, props.runStatus),
   );
+  const activeSession = props.sessions?.sessions?.find((row) => row.key === props.sessionKey);
+  const showDescendantProgressUi = activeSession?.hasActiveSubagentRun === true;
   const composerRunStatus =
-    showAbortableUi || showSubmittedProgressUi
+    showAbortableUi || showSubmittedProgressUi || showDescendantProgressUi
       ? { phase: "in-progress" as const }
       : props.runStatus;
   const compactBusy =
     props.compactionStatus?.phase === "active" || props.compactionStatus?.phase === "retrying";
-  const activeSession = props.sessions?.sessions?.find((row) => row.key === props.sessionKey);
   const reasoningLevel = activeSession?.reasoningLevel ?? "off";
   const showReasoning = props.showThinking && reasoningLevel !== "off";
   const assistantIdentity = {

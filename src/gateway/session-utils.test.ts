@@ -1822,6 +1822,77 @@ describe("gateway session utils", () => {
     }
   });
 
+  test("session rows keep descendant work visible after the parent turn settles", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "session-utils-settled-parent-child-"));
+    try {
+      const now = Date.UTC(2026, 6, 1, 0, 2, 0);
+      const parentKey = "agent:main:main";
+      const childKey = "agent:business-ops:subagent:active-continuation";
+      const parentSessionId = "session-parent-settled";
+      const childSessionId = "session-child-continuation";
+      const parentSessionFile = path.join(dir, `${parentSessionId}.jsonl`);
+      const childSessionFile = path.join(dir, `${childSessionId}.jsonl`);
+      fs.writeFileSync(parentSessionFile, "", "utf8");
+      fs.writeFileSync(childSessionFile, "", "utf8");
+      fs.writeFileSync(
+        path.join(dir, `${childSessionId}.trajectory.jsonl`),
+        `${JSON.stringify({
+          traceSchema: "openclaw-trajectory",
+          sessionId: childSessionId,
+          type: "agent.tool",
+          ts: "2026-07-01T00:01:30.000Z",
+          seq: 6,
+          sourceSeq: 22,
+          data: { phase: "start", name: "read", toolCallId: "call-child-read" },
+        })}\n`,
+        "utf8",
+      );
+      const store: Record<string, SessionEntry> = {
+        [parentKey]: {
+          sessionId: parentSessionId,
+          sessionFile: parentSessionFile,
+          status: "done",
+          updatedAt: now - 30_000,
+          startedAt: now - 120_000,
+          endedAt: now - 30_000,
+        },
+        [childKey]: {
+          sessionId: childSessionId,
+          sessionFile: childSessionFile,
+          status: "running",
+          parentSessionKey: parentKey,
+          spawnedBy: parentKey,
+          updatedAt: now - 5_000,
+          startedAt: now - 20_000,
+        },
+      };
+
+      const row = buildGatewaySessionRow({
+        cfg: createModelDefaultsConfig({ primary: "openai/gpt-5.5" }),
+        storePath: path.join(dir, "sessions.json"),
+        store,
+        key: parentKey,
+        entry: store[parentKey],
+        now,
+      });
+
+      expect(row.status).toBe("done");
+      expect(row.hasActiveSubagentRun).toBe(true);
+      expect(row.activeProgress).toMatchObject({
+        source: "trajectory",
+        ref: `session:${childSessionId}`,
+        activeLabel: "read",
+        pointer: {
+          kind: "session",
+          ref: childKey,
+          label: "active child session",
+        },
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("session rows project grandchild descendant activity without mutating parent updatedAt", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "session-utils-grandchild-progress-"));
     try {

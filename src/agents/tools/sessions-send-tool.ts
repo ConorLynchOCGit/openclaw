@@ -42,6 +42,7 @@ import {
   waitForAgentRunAndReadUpdatedAssistantReply,
 } from "../run-wait.js";
 import { loadSessionEntryByKey } from "../subagent-announce-delivery.js";
+import { trackSubagentContinuationRun } from "../subagent-registry.js";
 import {
   describeSessionsSendTool,
   SESSIONS_SEND_TOOL_DISPLAY_SUMMARY,
@@ -197,7 +198,12 @@ function isRequesterParentOfNativeSubagentSession(params: {
 }
 
 function isTerminalAgentWaitTimeout(result: AgentWaitResult): boolean {
-  return result.endedAt !== undefined || Boolean(result.stopReason || result.livenessState);
+  const makingProgress = result.livenessState === "working" || result.livenessState === "paused";
+  return (
+    result.endedAt !== undefined ||
+    Boolean(result.stopReason) ||
+    Boolean(result.livenessState && !makingProgress)
+  );
 }
 
 function isPendingErrorAgentWaitTimeout(result: AgentWaitResult): boolean {
@@ -318,6 +324,7 @@ export function createSessionsSendTool(opts?: {
   sandboxed?: boolean;
   config?: OpenClawConfig;
   callGateway?: GatewayCaller;
+  trackSubagentContinuationRun?: typeof trackSubagentContinuationRun;
 }): AnyAgentTool {
   return {
     label: "Session Send",
@@ -659,8 +666,9 @@ export function createSessionsSendTool(opts?: {
         waitRunId?: string,
         flowTargetSessionKey = resolvedKey,
         flowDisplayKey = displayKey,
+        force = false,
       ) => {
-        if (skipA2AFlow) {
+        if (skipA2AFlow && !force) {
           return;
         }
         void runSessionsSendA2AFlow({
@@ -722,6 +730,27 @@ export function createSessionsSendTool(opts?: {
       });
 
       if (result.status === "timeout") {
+        const terminalTimeout = isTerminalAgentWaitTimeout(result);
+        let deferredDelivery = delivery;
+        if (!terminalTimeout && skipNativeParentA2AFlow) {
+          let tracked: boolean;
+          try {
+            tracked = (opts?.trackSubagentContinuationRun ?? trackSubagentContinuationRun)({
+              childSessionKey: resolvedKey,
+              nextRunId: runId,
+              requesterSessionKey: effectiveRequesterKey,
+            });
+          } catch {
+            tracked = false;
+          }
+          deferredDelivery = { status: "pending", mode: "announce" } as const;
+          if (!tracked) {
+            // A missing/stale registry entry must not strand the reply. Fall
+            // back to the existing bounded A2A completion path only when the
+            // native parent-owned lifecycle cannot be re-armed.
+            startA2AFlow(undefined, runId, resolvedKey, displayKey, true);
+          }
+        }
         if (isPendingErrorAgentWaitTimeout(result)) {
           startA2AFlow(undefined, runId);
           return jsonResult({
@@ -729,16 +758,16 @@ export function createSessionsSendTool(opts?: {
             status: "timeout",
             error: result.error,
             sessionKey: displayKey,
-            delivery,
+            delivery: deferredDelivery,
           });
         }
-        if (!isTerminalAgentWaitTimeout(result)) {
+        if (!terminalTimeout) {
           startA2AFlow(undefined, runId);
           return jsonResult({
             runId,
             status: "accepted",
             sessionKey: displayKey,
-            delivery,
+            delivery: deferredDelivery,
           });
         }
         return jsonResult({

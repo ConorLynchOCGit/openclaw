@@ -533,7 +533,7 @@ export function createSubagentRunManager(params: {
     return true;
   };
 
-  const replaceSubagentRunAfterSteer = (replaceParams: {
+  const replaceSubagentRun = (replaceParams: {
     previousRunId: string;
     nextRunId: string;
     fallback?: SubagentRunRecord;
@@ -633,6 +633,8 @@ export function createSubagentRunManager(params: {
     void waitForSubagentCompletion(nextRunId, waitTimeoutMs, next);
     return true;
   };
+
+  const replaceSubagentRunAfterSteer = replaceSubagentRun;
 
   const registerSubagentRun = (registerParams: RegisterSubagentRunParams) => {
     const runId = registerParams.runId.trim();
@@ -867,6 +869,7 @@ export function createSubagentRunManager(params: {
     markSubagentRunForSteerRestart,
     markSubagentRunTerminated,
     registerSubagentRun,
+    replaceSubagentRun,
     releaseSubagentRun,
     replaceSubagentRunAfterSteer,
     waitForSubagentCompletion,
