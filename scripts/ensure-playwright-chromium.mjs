@@ -1,14 +1,7 @@
 #!/usr/bin/env node
 // Ensures Playwright Chromium is installed or a usable system browser is available.
 import { spawnSync as spawnSyncImpl } from "node:child_process";
-import {
-  existsSync as existsSyncImpl,
-  mkdirSync,
-  mkdtempSync,
-  realpathSync,
-  rmSync,
-  statSync,
-} from "node:fs";
+import { existsSync as existsSyncImpl, mkdtempSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,18 +46,13 @@ export function canRunChromiumExecutable(executablePath, spawnSync = spawnSyncIm
   }
   const probeRoot = mkdtempSync(join(tmpdir(), "openclaw-chromium-probe-"));
   const screenshotPath = join(probeRoot, "probe.png");
-  const configHome = join(probeRoot, "config");
-  const cacheHome = join(probeRoot, "cache");
-  const profileDir = join(probeRoot, "profile");
-  mkdirSync(configHome, { recursive: true });
-  mkdirSync(cacheHome, { recursive: true });
-  mkdirSync(profileDir, { recursive: true });
   try {
     const result = spawnSync(
-      executablePath,
-      buildChromiumLaunchProbeArgs({ profileDir, screenshotPath }),
+      process.execPath,
+      buildChromiumLaunchProbeArgs({ executablePath, screenshotPath }),
       {
-        env: { ...process.env, XDG_CONFIG_HOME: configHome, XDG_CACHE_HOME: cacheHome },
+        cwd: repoRoot,
+        env: process.env,
         stdio: "ignore",
         timeout: 15_000,
       },
@@ -78,15 +66,22 @@ export function canRunChromiumExecutable(executablePath, spawnSync = spawnSyncIm
   }
 }
 
-export function buildChromiumLaunchProbeArgs({ profileDir, screenshotPath }) {
+export function buildChromiumLaunchProbeArgs({ executablePath, screenshotPath }) {
   return [
-    "--headless=new",
-    "--no-sandbox",
-    "--disable-dev-shm-usage",
-    `--user-data-dir=${profileDir}`,
-    `--screenshot=${screenshotPath}`,
-    "--window-size=320,200",
-    "data:text/html,<title>OpenClaw browser probe</title><main>ready</main>",
+    "--input-type=module",
+    "-e",
+    `import { chromium } from "playwright";
+const [executablePath, screenshotPath] = process.argv.slice(1);
+const browser = await chromium.launch({ executablePath, headless: true });
+try {
+  const page = await browser.newPage({ viewport: { height: 200, width: 320 } });
+  await page.setContent("<title>OpenClaw browser probe</title><main>ready</main>");
+  await page.screenshot({ path: screenshotPath });
+} finally {
+  await browser.close();
+}`,
+    executablePath,
+    screenshotPath,
   ];
 }
 

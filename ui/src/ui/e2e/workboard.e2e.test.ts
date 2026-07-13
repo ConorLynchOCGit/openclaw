@@ -1,5 +1,5 @@
 // Control UI tests cover workboard behavior.
-import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -31,14 +31,28 @@ let server: ControlUiE2eServer;
 
 type RecordedPage = {
   context: BrowserContext;
+  diagnostics: PageDiagnostics;
   page: Page;
   rawVideoDir: string;
 };
 
 type ProofArtifacts = {
+  accessibility: string[];
+  diagnostics: string[];
   screenshots: string[];
+  traces: string[];
   videos: string[];
 };
+
+type PageDiagnostics = {
+  consoleErrors: string[];
+  pageErrors: string[];
+  requestFailures: string[];
+};
+
+function emptyProofArtifacts(): ProofArtifacts {
+  return { accessibility: [], diagnostics: [], screenshots: [], traces: [], videos: [] };
+}
 
 function requireRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -152,6 +166,31 @@ function readOnlyConnectResponse() {
   };
 }
 
+function writableConnectResponseWithUpdate() {
+  const response = readOnlyConnectResponse();
+  return {
+    ...response,
+    auth: {
+      ...response.auth,
+      scopes: [
+        "operator.admin",
+        "operator.read",
+        "operator.write",
+        "operator.approvals",
+        "operator.pairing",
+      ],
+    },
+    snapshot: {
+      ...response.snapshot,
+      updateAvailable: {
+        channel: "latest",
+        currentVersion: "2026.7.11",
+        latestVersion: "2026.7.12",
+      },
+    },
+  };
+}
+
 function card(
   overrides: Partial<WorkboardCard> & Pick<WorkboardCard, "id" | "title">,
 ): WorkboardCard {
@@ -203,9 +242,26 @@ async function newRecordedPage(label: string): Promise<RecordedPage> {
     serviceWorkers: "block",
     viewport,
   });
+  await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
   const page = await context.newPage();
+  const diagnostics: PageDiagnostics = {
+    consoleErrors: [],
+    pageErrors: [],
+    requestFailures: [],
+  };
+  page.on("console", (message) => {
+    if (message.type() === "error") {
+      diagnostics.consoleErrors.push(message.text());
+    }
+  });
+  page.on("pageerror", (error) => diagnostics.pageErrors.push(String(error)));
+  page.on("requestfailed", (request) => {
+    diagnostics.requestFailures.push(
+      `${request.method()} ${request.url()}: ${request.failure()?.errorText ?? "unknown failure"}`,
+    );
+  });
   page.setDefaultTimeout(10_000);
-  return { context, page, rawVideoDir };
+  return { context, diagnostics, page, rawVideoDir };
 }
 
 async function captureScreenshot(
@@ -218,13 +274,61 @@ async function captureScreenshot(
   artifacts.screenshots.push(screenshotPath);
 }
 
+async function captureAccessibility(
+  page: Page,
+  artifacts: ProofArtifacts,
+  name: string,
+): Promise<void> {
+  const session = await page.context().newCDPSession(page);
+  try {
+    const snapshot = await session.send("Accessibility.getFullAXTree");
+    const nodes = snapshot.nodes.map((node) => ({
+      ignored: node.ignored,
+      name: node.name?.value ?? "",
+      role: node.role?.value ?? "",
+    }));
+    const unnamedInteractive = nodes.filter(
+      (node) =>
+        !node.ignored &&
+        ["button", "checkbox", "combobox", "link", "searchbox", "textbox"].includes(node.role) &&
+        !node.name,
+    );
+    expect(unnamedInteractive).toEqual([]);
+    const outputPath = path.join(artifactDir, `${name}-accessibility.json`);
+    await writeFile(
+      outputPath,
+      `${JSON.stringify({ nodes, unnamedInteractive }, null, 2)}\n`,
+      "utf-8",
+    );
+    artifacts.accessibility.push(outputPath);
+  } finally {
+    await session.detach();
+  }
+}
+
 async function closeRecordedPage(
   recorded: RecordedPage,
   artifacts: ProofArtifacts,
   label: string,
+  failed = false,
 ): Promise<void> {
   const video = recorded.page.video();
   try {
+    const diagnosticsPath = path.join(artifactDir, `${label}-diagnostics.json`);
+    await writeFile(diagnosticsPath, `${JSON.stringify(recorded.diagnostics, null, 2)}\n`, "utf-8");
+    artifacts.diagnostics.push(diagnosticsPath);
+    if (failed) {
+      const tracePath = path.join(artifactDir, `${label}-failure-trace.zip`);
+      await recorded.context.tracing.stop({ path: tracePath });
+      artifacts.traces.push(tracePath);
+    } else {
+      await recorded.context.tracing.stop();
+      expect(recorded.diagnostics).toEqual({
+        consoleErrors: [],
+        pageErrors: [],
+        requestFailures: [],
+      });
+    }
     await recorded.context.close();
     if (!video) {
       return;
@@ -256,7 +360,7 @@ describeControlUiE2e("Control UI Workboard mocked Gateway E2E", () => {
 
   it("persists Workboard create, edit, running move, lifecycle sync, reload, and read-only state", async () => {
     await rm(artifactDir, { force: true, recursive: true });
-    const artifacts: ProofArtifacts = { screenshots: [], videos: [] };
+    const artifacts = emptyProofArtifacts();
     const createdCard = card({
       id: "card-1",
       labels: ["ui", "proof"],
@@ -303,6 +407,7 @@ describeControlUiE2e("Control UI Workboard mocked Gateway E2E", () => {
       },
     });
 
+    let writableFailed = false;
     try {
       const response = await writable.page.goto(`${server.baseUrl}workboard`);
       expect(response?.status()).toBe(200);
@@ -442,8 +547,12 @@ describeControlUiE2e("Control UI Workboard mocked Gateway E2E", () => {
         state: "visible",
       });
       await captureScreenshot(writable.page, artifacts, "07-reloaded-review");
+      await captureAccessibility(writable.page, artifacts, "07-reloaded-review");
+    } catch (error) {
+      writableFailed = true;
+      throw error;
     } finally {
-      await closeRecordedPage(writable, artifacts, "workboard-writable");
+      await closeRecordedPage(writable, artifacts, "workboard-writable", writableFailed);
     }
 
     const readOnly = await newRecordedPage("workboard-read-only");
@@ -459,6 +568,7 @@ describeControlUiE2e("Control UI Workboard mocked Gateway E2E", () => {
       },
     });
 
+    let readOnlyFailed = false;
     try {
       const response = await readOnly.page.goto(`${server.baseUrl}workboard`);
       expect(response?.status()).toBe(200);
@@ -483,8 +593,12 @@ describeControlUiE2e("Control UI Workboard mocked Gateway E2E", () => {
       expect(await readOnlyGateway.getRequests("workboard.cards.update")).toHaveLength(0);
       expect(await readOnlyGateway.getRequests("workboard.cards.move")).toHaveLength(0);
       expect(await readOnlyGateway.getRequests("workboard.cards.create")).toHaveLength(0);
+      await captureAccessibility(readOnly.page, artifacts, "08-read-only-board");
+    } catch (error) {
+      readOnlyFailed = true;
+      throw error;
     } finally {
-      await closeRecordedPage(readOnly, artifacts, "workboard-read-only");
+      await closeRecordedPage(readOnly, artifacts, "workboard-read-only", readOnlyFailed);
     }
 
     await writeFile(
@@ -495,7 +609,7 @@ describeControlUiE2e("Control UI Workboard mocked Gateway E2E", () => {
   });
 
   it("previews and explicitly approves one Business Ops commitment on desktop and mobile", async () => {
-    const artifacts: ProofArtifacts = { screenshots: [], videos: [] };
+    const artifacts = emptyProofArtifacts();
     const promotedCard = card({
       id: "card-business-ops",
       title: "Review American Atomics proof-before-promotion revision packet",
@@ -529,16 +643,23 @@ describeControlUiE2e("Control UI Workboard mocked Gateway E2E", () => {
     const recorded = await newRecordedPage("workboard-business-ops-promotion");
     const gateway = await installMockGateway(recorded.page, {
       methodResponses: {
+        connect: writableConnectResponseWithUpdate(),
         "config.get": workboardConfigSnapshot(),
         "sessions.list": sessionsListResponse([sessionRow()]),
         "tasks.list": { nextCursor: null, tasks: [] },
         "workboard.cards.list": cardsListResponse([]),
       },
     });
+    let recordedFailed = false;
     try {
       const response = await recorded.page.goto(`${server.baseUrl}workboard`);
       expect(response?.status()).toBe(200);
       await statusColumn(recorded.page, "Todo").waitFor({ state: "visible" });
+      const updateBanner = recorded.page.locator(".update-banner");
+      await updateBanner.waitFor({ state: "visible" });
+      expect(await updateBanner.evaluate((element) => getComputedStyle(element).position)).toBe(
+        "relative",
+      );
       await recorded.page.getByRole("button", { name: "Promote candidate" }).click();
       const dialog = recorded.page.getByRole("dialog", { name: "Business Ops promotion" });
       await dialog.getByLabel("Candidate ID").fill("AA-CYCLE-001");
@@ -628,17 +749,64 @@ describeControlUiE2e("Control UI Workboard mocked Gateway E2E", () => {
         )
         .waitFor({ state: "visible" });
       await captureScreenshot(recorded.page, artifacts, "11-business-ops-promotion-approved");
+      await captureAccessibility(recorded.page, artifacts, "11-business-ops-promotion-approved");
 
       await recorded.page.setViewportSize({ width: 390, height: 844 });
       await details.waitFor({ state: "visible" });
       await captureScreenshot(recorded.page, artifacts, "12-business-ops-promotion-mobile");
+      await details.locator('button[title="Cancel"]').click();
+      await details.waitFor({ state: "hidden" });
+      const board = recorded.page.locator(".workboard-board");
+      const laneNavigation = recorded.page.getByRole("navigation", { name: "Workboard lanes" });
+      await laneNavigation.getByRole("button", { name: /Review/u }).click();
+      await expect.poll(() => board.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+      await expect
+        .poll(() => recorded.page.evaluate(() => document.activeElement?.id ?? ""))
+        .toBe("workboard-column-review");
+      await recorded.page
+        .locator(".workboard-toolbar__actions .btn")
+        .last()
+        .scrollIntoViewIfNeeded();
+      const lowerActionBox = await recorded.page
+        .locator(".workboard-toolbar__actions .btn")
+        .last()
+        .boundingBox();
+      expect(lowerActionBox).not.toBeNull();
+      expect((lowerActionBox?.y ?? 0) + (lowerActionBox?.height ?? 0)).toBeLessThanOrEqual(844);
+      await captureScreenshot(recorded.page, artifacts, "13-business-ops-mobile-board");
+      await captureAccessibility(recorded.page, artifacts, "13-business-ops-mobile-board");
+    } catch (error) {
+      recordedFailed = true;
+      throw error;
     } finally {
-      await closeRecordedPage(recorded, artifacts, "workboard-business-ops-promotion");
+      await closeRecordedPage(
+        recorded,
+        artifacts,
+        "workboard-business-ops-promotion",
+        recordedFailed,
+      );
     }
     await writeFile(
       path.join(artifactDir, "manifest-business-ops-promotion.json"),
       `${JSON.stringify(artifacts, null, 2)}\n`,
       "utf-8",
     );
+  });
+
+  it("retains a Playwright trace when an acceptance step fails", async () => {
+    const artifacts = emptyProofArtifacts();
+    const recorded = await newRecordedPage("workboard-intentional-failure");
+    let failed = false;
+    try {
+      await recorded.page.goto(`${server.baseUrl}workboard`);
+      throw new Error("intentional trace-retention proof");
+    } catch (error) {
+      expect(String(error)).toContain("intentional trace-retention proof");
+      failed = true;
+    } finally {
+      await closeRecordedPage(recorded, artifacts, "workboard-intentional-failure", failed);
+    }
+    expect(artifacts.traces).toHaveLength(1);
+    expect((await stat(artifacts.traces[0])).size).toBeGreaterThan(0);
   });
 });

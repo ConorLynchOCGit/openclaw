@@ -378,6 +378,7 @@ export type WorkboardUiState = {
   agentFilter: string;
   showArchived: boolean;
   layout: "comfortable" | "compact";
+  boardScrollLeft: number;
   draftOpen: boolean;
   editingCardId: string | null;
   draftTitle: string;
@@ -443,6 +444,7 @@ function createDefaultState(): WorkboardUiState {
     agentFilter: "all",
     showArchived: false,
     layout: "compact",
+    boardScrollLeft: 0,
     draftOpen: false,
     editingCardId: null,
     draftTitle: "",

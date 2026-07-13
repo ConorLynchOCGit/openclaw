@@ -184,17 +184,9 @@ RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,shar
 
 RUN chown node:node /app
 
-COPY --from=runtime-assets --chown=node:node /app/dist ./dist
 COPY --from=runtime-assets --chown=node:node /app/node_modules ./node_modules
 COPY --from=runtime-assets --chown=node:node /app/package.json .
 COPY --from=runtime-assets --chown=node:node /app/pnpm-workspace.yaml .
-COPY --from=runtime-assets --chown=node:node /app/patches ./patches
-COPY --from=runtime-assets --chown=node:node /app/openclaw.mjs .
-COPY --from=runtime-assets --chown=node:node /app/src/agents/templates ./src/agents/templates
-COPY --from=runtime-assets --chown=node:node /app/${OPENCLAW_BUNDLED_PLUGIN_DIR} ./${OPENCLAW_BUNDLED_PLUGIN_DIR}
-COPY --from=runtime-assets --chown=node:node /app/skills ./skills
-COPY --from=runtime-assets --chown=node:node /app/docs ./docs
-COPY --from=runtime-assets --chown=node:node /app/qa ./qa
 
 # Keep pnpm available in the runtime image for container-local workflows.
 # Use a shared Corepack home so the non-root `node` user does not need a
@@ -293,6 +285,17 @@ RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,shar
       DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         docker-ce-cli docker-compose-plugin; \
     fi
+
+# Source-derived runtime assets are copied after the browser and optional tool
+# layers so ordinary application changes reuse those expensive installations.
+COPY --from=runtime-assets --chown=node:node /app/dist ./dist
+COPY --from=runtime-assets --chown=node:node /app/patches ./patches
+COPY --from=runtime-assets --chown=node:node /app/openclaw.mjs .
+COPY --from=runtime-assets --chown=node:node /app/src/agents/templates ./src/agents/templates
+COPY --from=runtime-assets --chown=node:node /app/${OPENCLAW_BUNDLED_PLUGIN_DIR} ./${OPENCLAW_BUNDLED_PLUGIN_DIR}
+COPY --from=runtime-assets --chown=node:node /app/skills ./skills
+COPY --from=runtime-assets --chown=node:node /app/docs ./docs
+COPY --from=runtime-assets --chown=node:node /app/qa ./qa
 
 # Expose the CLI binary without requiring npm global writes as non-root.
 RUN ln -sf /app/openclaw.mjs /usr/local/bin/openclaw \

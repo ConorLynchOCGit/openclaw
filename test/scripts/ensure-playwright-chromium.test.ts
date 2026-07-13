@@ -8,19 +8,19 @@ import {
 } from "../../scripts/ensure-playwright-chromium.mjs";
 
 describe("ensurePlaywrightChromium", () => {
-  it("builds a real headless page-render and screenshot launch probe", () => {
+  it("builds a Playwright-owned page-render and screenshot launch probe", () => {
     expect(
       buildChromiumLaunchProbeArgs({
-        profileDir: "/tmp/profile",
+        executablePath: "/cache/chromium/chrome",
         screenshotPath: "/tmp/probe.png",
       }),
     ).toEqual(
       expect.arrayContaining([
-        "--headless=new",
-        "--no-sandbox",
-        "--user-data-dir=/tmp/profile",
-        "--screenshot=/tmp/probe.png",
-        expect.stringContaining("data:text/html"),
+        "--input-type=module",
+        "-e",
+        expect.stringContaining("chromium.launch"),
+        "/cache/chromium/chrome",
+        "/tmp/probe.png",
       ]),
     );
   });

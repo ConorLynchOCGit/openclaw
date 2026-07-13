@@ -2193,6 +2193,9 @@ function renderColumn(props: WorkboardProps, status: WorkboardStatus, cards: Wor
   const writable = canMutate(props);
   return html`
     <section
+      id=${`workboard-column-${status}`}
+      data-workboard-status=${status}
+      tabindex="-1"
       class="workboard-column workboard-column--${status} ${state.draggedCardId
         ? "workboard-column--drop"
         : ""}"
@@ -2231,6 +2234,28 @@ function renderColumn(props: WorkboardProps, status: WorkboardStatus, cards: Wor
       </div>
     </section>
   `;
+}
+
+function restoreWorkboardScroll(element: Element | undefined, state: WorkboardUiState) {
+  if (!(element instanceof HTMLElement)) {
+    return;
+  }
+  if (Math.abs(element.scrollLeft - state.boardScrollLeft) > 1) {
+    element.scrollLeft = state.boardScrollLeft;
+  }
+}
+
+function focusWorkboardLane(event: MouseEvent, status: WorkboardStatus, state: WorkboardUiState) {
+  const main = (event.currentTarget as HTMLElement).closest(".workboard-main");
+  const board = main?.querySelector<HTMLElement>(".workboard-board");
+  const column = board?.querySelector<HTMLElement>(`[data-workboard-status="${status}"]`);
+  if (!board || !column) {
+    return;
+  }
+  const targetLeft = Math.max(0, column.offsetLeft - board.offsetLeft);
+  state.boardScrollLeft = targetLeft;
+  board.scrollTo({ behavior: "smooth", left: targetLeft });
+  column.focus({ preventScroll: true });
 }
 
 export function renderWorkboard(props: WorkboardProps) {
@@ -2442,7 +2467,28 @@ export function renderWorkboard(props: WorkboardProps) {
         </div>
         ${state.error ? html`<div class="callout danger">${state.error}</div>` : nothing}
         ${renderDispatchSummary(state)}
-        <div class="workboard-board workboard-board--${state.layout}">
+        <nav class="workboard-lane-nav" aria-label="Workboard lanes">
+          ${state.statuses.map((status) => {
+            const cards = byStatus.get(status) ?? [];
+            return html`
+              <button
+                class="btn workboard-lane-nav__button"
+                type="button"
+                aria-controls=${`workboard-column-${status}`}
+                @click=${(event: MouseEvent) => focusWorkboardLane(event, status, state)}
+              >
+                <span>${formatStatusLabel(status)}</span><strong>${cards.length}</strong>
+              </button>
+            `;
+          })}
+        </nav>
+        <div
+          class="workboard-board workboard-board--${state.layout}"
+          ${ref((element) => restoreWorkboardScroll(element, state))}
+          @scroll=${(event: Event) => {
+            state.boardScrollLeft = (event.currentTarget as HTMLElement).scrollLeft;
+          }}
+        >
           ${state.statuses.map((status) => renderColumn(props, status, byStatus.get(status) ?? []))}
         </div>
       </div>

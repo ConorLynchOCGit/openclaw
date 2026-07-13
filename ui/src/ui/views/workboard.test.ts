@@ -81,6 +81,61 @@ describe("renderWorkboard", () => {
     expect(container.querySelector(".workboard-card__priority")?.textContent).toContain("high");
   });
 
+  it("makes every lane directly discoverable and restores horizontal board position", async () => {
+    const host = {};
+    const state = getWorkboardState(host);
+    state.loaded = true;
+    const container = document.createElement("div");
+    document.body.append(container);
+    const props = {
+      host,
+      client: null,
+      connected: true,
+      pluginEnabled: true,
+      agentsList: null,
+      sessions: [],
+      onOpenSession: () => undefined,
+      onRequestUpdate: () => renderInto(container, props),
+    } satisfies WorkboardRenderProps;
+
+    try {
+      renderInto(container, props);
+      await nextFrame();
+      const navigation = container.querySelector<HTMLElement>(".workboard-lane-nav");
+      const board = container.querySelector<HTMLElement>(".workboard-board");
+      const review = container.querySelector<HTMLElement>("#workboard-column-review");
+      expect(navigation?.getAttribute("aria-label")).toBe("Workboard lanes");
+      expect(navigation?.querySelectorAll("button")).toHaveLength(9);
+      expect(board).toBeInstanceOf(HTMLElement);
+      expect(review).toBeInstanceOf(HTMLElement);
+
+      Object.defineProperty(review, "offsetLeft", { configurable: true, value: 880 });
+      Object.defineProperty(board, "offsetLeft", { configurable: true, value: 20 });
+      const scrollTo = vi.fn();
+      board!.scrollTo = scrollTo;
+      const reviewButton = [...navigation!.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent?.includes("Review"),
+      );
+      reviewButton?.click();
+      expect(scrollTo).toHaveBeenCalledWith({
+        behavior: "smooth",
+        left: 860,
+      });
+      expect(document.activeElement).toBe(review);
+
+      board!.scrollLeft = 640;
+      board!.dispatchEvent(new Event("scroll"));
+      expect(state.boardScrollLeft).toBe(640);
+      render(nothing, container);
+      renderInto(container, props);
+      await nextFrame();
+      expect(container.querySelector<HTMLElement>(".workboard-board")?.scrollLeft).toBe(640);
+    } finally {
+      render(nothing, container);
+      container.remove();
+    }
+  });
+
   it("opens the dedicated Business Ops promotion preview dialog", async () => {
     const host = {};
     const state = getWorkboardState(host);

@@ -1,6 +1,6 @@
 // Control UI test helper supports control ui e2e setup.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -128,26 +128,28 @@ export function canRunPlaywrightChromium(chromiumExecutablePath: string): boolea
   }
   const probeRoot = mkdtempSync(path.join(tmpdir(), "openclaw-chromium-probe-"));
   const screenshotPath = path.join(probeRoot, "probe.png");
-  const configHome = path.join(probeRoot, "config");
-  const cacheHome = path.join(probeRoot, "cache");
-  const profileDir = path.join(probeRoot, "profile");
-  mkdirSync(configHome, { recursive: true });
-  mkdirSync(cacheHome, { recursive: true });
-  mkdirSync(profileDir, { recursive: true });
   try {
     const result = spawnSync(
-      chromiumExecutablePath,
+      process.execPath,
       [
-        "--headless=new",
-        "--no-sandbox",
-        "--disable-dev-shm-usage",
-        `--user-data-dir=${profileDir}`,
-        `--screenshot=${screenshotPath}`,
-        "--window-size=320,200",
-        "data:text/html,<title>OpenClaw browser probe</title><main>ready</main>",
+        "--input-type=module",
+        "-e",
+        `import { chromium } from "playwright";
+const [executablePath, screenshotPath] = process.argv.slice(1);
+const browser = await chromium.launch({ executablePath, headless: true });
+try {
+  const page = await browser.newPage({ viewport: { height: 200, width: 320 } });
+  await page.setContent("<title>OpenClaw browser probe</title><main>ready</main>");
+  await page.screenshot({ path: screenshotPath });
+} finally {
+  await browser.close();
+}`,
+        chromiumExecutablePath,
+        screenshotPath,
       ],
       {
-        env: { ...process.env, XDG_CONFIG_HOME: configHome, XDG_CACHE_HOME: cacheHome },
+        cwd: resolveRepoRoot(),
+        env: process.env,
         stdio: "ignore",
         timeout: 15_000,
       },
