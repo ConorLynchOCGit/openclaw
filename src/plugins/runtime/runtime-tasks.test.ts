@@ -115,14 +115,14 @@ describe("runtime tasks", () => {
     expect(flowTask.runId).toBe("runtime-task-run");
     expect(flowTask.activeProgress).toMatchObject({
       source: "task-receipt",
-      currentPhase: "running",
+      currentPhase: "waiting_on_child",
       activeLabel: "Inbox triage",
       sourceEventType: "task.running",
-      note: "Inspecting",
+      note: `Parent is waiting on child task ${child.task.taskId}.`,
       pointer: {
-        kind: "task",
-        ref: child.task.taskId,
-        label: "task run receipt",
+        kind: "session",
+        ref: "agent:main:subagent:child",
+        label: "child session",
       },
       derivedBy: "resolveTaskReadbackProgressProjection",
       bounded: true,
@@ -140,10 +140,10 @@ describe("runtime tasks", () => {
     expect(taskRun).not.toHaveProperty("progressSummary");
     expect(taskRun.activeProgress).toMatchObject({
       source: "task-receipt",
-      currentPhase: "running",
+      currentPhase: "waiting_on_child",
       activeLabel: "Inbox triage",
       sourceEventType: "task.running",
-      note: "Inspecting",
+      note: `Parent is waiting on child task ${child.task.taskId}.`,
     });
     expect(taskRuns.findLatest()?.id).toBe(child.task.taskId);
     expect(taskRuns.resolve("runtime-task-run")?.id).toBe(child.task.taskId);
