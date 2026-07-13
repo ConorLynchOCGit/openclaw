@@ -14,7 +14,10 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_OUTPUT_BYTES = 64_000;
 const MAX_BATCH_ITEMS = 20;
-const MAX_READ_BYTES = 80_000;
+const DEFAULT_READ_BYTES = 10_000;
+const MAX_READ_BYTES = 12_000;
+const MAX_READ_TEXT_BYTES = 32_000;
+const MAX_READ_RESPONSE_BYTES = 48_000;
 const MAX_RESULTS = 200;
 const MAX_SEARCH_CONTEXT_LINES = 5;
 const DEFAULT_LSP_MAX_LOADED_FILES = 24;
@@ -83,7 +86,7 @@ const SearchQuerySchema = z.object({
 });
 
 const ReadRequestSchema = z.object({
-  path: z.string().min(1),
+  path: z.string().min(1).max(512),
   startLine: z.number().int().min(1).optional(),
   endLine: z.number().int().min(1).optional(),
   maxBytes: PositiveIntSchema.optional().describe(
@@ -126,6 +129,35 @@ const LspLocationSchema = z.object({
   ),
 });
 
+const LooseResultSchema = z.object({}).passthrough();
+const BatchOutputSchema = z
+  .object({
+    schemaVersion: z.string(),
+    root: z.string(),
+    results: z.array(LooseResultSchema),
+  })
+  .passthrough();
+const ReadManyOutputSchema = z.object({
+  schemaVersion: z.literal("openclaw.repo_workbench.read_many.v2"),
+  root: z.string(),
+  limits: z.object({
+    defaultFileBytes: z.number().int(),
+    maxFileBytes: z.number().int(),
+    maxTextBytes: z.number().int(),
+    maxResponseBytes: z.number().int(),
+  }),
+  results: z.array(LooseResultSchema),
+  omitted: z.array(LooseResultSchema),
+  coverage: z.object({
+    requested: z.number().int(),
+    returned: z.number().int(),
+    truncated: z.number().int(),
+    errors: z.number().int(),
+    omitted: z.number().int(),
+  }),
+});
+const LspOutputSchema = z.object({ status: z.string() }).passthrough();
+
 server.registerTool(
   "repo_search_many",
   {
@@ -133,11 +165,12 @@ server.registerTool(
     description:
       "Preferred broad-discovery tool: run multiple independent bounded ripgrep searches concurrently under the active workspace root. Match items include 1-based line and character coordinates that can be passed directly to the TypeScript LSP tools.",
     annotations: READ_ONLY_TOOL_ANNOTATIONS,
+    outputSchema: BatchOutputSchema,
     inputSchema: z.object({
       queries: z.array(SearchQuerySchema).min(1).max(MAX_BATCH_ITEMS),
     }),
   },
-  async (input) => result(await repoSearchMany(input)),
+  async (input) => mcpResult(await repoSearchMany(input)),
 );
 
 server.registerTool(
@@ -145,13 +178,14 @@ server.registerTool(
   {
     title: "Read Many",
     description:
-      "Preferred multi-file read tool: read multiple bounded files or line ranges concurrently under the active workspace root.",
+      "Preferred multi-file read tool: read bounded line ranges under the active workspace root. Results use one line-numbered text field, clamp each file to 12 KB, cap the complete response at 48 KB, name omitted files, and return nextStartLine for exact continuation.",
     annotations: READ_ONLY_TOOL_ANNOTATIONS,
+    outputSchema: ReadManyOutputSchema,
     inputSchema: z.object({
       files: z.array(ReadRequestSchema).min(1).max(MAX_BATCH_ITEMS),
     }),
   },
-  async (input) => result(await repoReadMany(input)),
+  async (input) => mcpResult(await repoReadMany(input)),
 );
 
 server.registerTool(
@@ -161,11 +195,12 @@ server.registerTool(
     description:
       "Preferred broad file-discovery tool: resolve multiple bounded globs concurrently under the active workspace root.",
     annotations: READ_ONLY_TOOL_ANNOTATIONS,
+    outputSchema: BatchOutputSchema,
     inputSchema: z.object({
       globs: z.array(GlobRequestSchema).min(1).max(MAX_BATCH_ITEMS),
     }),
   },
-  async (input) => result(await repoGlobMany(input)),
+  async (input) => mcpResult(await repoGlobMany(input)),
 );
 
 server.registerTool(
@@ -175,11 +210,12 @@ server.registerTool(
     description:
       "Preferred diff/status discovery tool: inspect the workspace and nested source git roots with bounded read-only requests.",
     annotations: READ_ONLY_TOOL_ANNOTATIONS,
+    outputSchema: BatchOutputSchema,
     inputSchema: z.object({
       requests: z.array(GitRequestSchema).min(1).max(MAX_BATCH_ITEMS),
     }),
   },
-  async (input) => result(await gitInspectMany(input)),
+  async (input) => mcpResult(await gitInspectMany(input)),
 );
 
 server.registerTool(
@@ -189,9 +225,10 @@ server.registerTool(
     description:
       "Return bounded TypeScript language-service hover details for a workspace file position.",
     annotations: READ_ONLY_TOOL_ANNOTATIONS,
+    outputSchema: LspOutputSchema,
     inputSchema: LspLocationSchema,
   },
-  async (input) => result(await lspHoverTypescript(input)),
+  async (input) => mcpResult(await lspHoverTypescript(input)),
 );
 
 server.registerTool(
@@ -201,9 +238,10 @@ server.registerTool(
     description:
       "Return bounded cross-file TypeScript language-service definition locations for a workspace file position.",
     annotations: READ_ONLY_TOOL_ANNOTATIONS,
+    outputSchema: LspOutputSchema,
     inputSchema: LspLocationSchema,
   },
-  async (input) => result(await lspDefinitionTypescript(input)),
+  async (input) => mcpResult(await lspDefinitionTypescript(input)),
 );
 
 server.registerTool(
@@ -213,9 +251,10 @@ server.registerTool(
     description:
       "Return bounded TypeScript language-service references for a workspace file position.",
     annotations: READ_ONLY_TOOL_ANNOTATIONS,
+    outputSchema: LspOutputSchema,
     inputSchema: LspLocationSchema,
   },
-  async (input) => result(await lspReferencesTypescript(input)),
+  async (input) => mcpResult(await lspReferencesTypescript(input)),
 );
 
 if (isMainModule()) {
@@ -233,8 +272,8 @@ export async function repoSearchMany(input, options = {}) {
 export async function repoReadMany(input, options = {}) {
   const root = resolveRepoRoot(options.cwd ?? process.cwd(), options.env ?? process.env);
   const files = input.files.slice(0, MAX_BATCH_ITEMS);
-  const results = await Promise.all(files.map((request) => readFileRequest(root, request)));
-  return { schemaVersion: "openclaw.repo_workbench.read_many.v1", root, results };
+  const rawResults = await Promise.all(files.map((request) => readFileRequest(root, request)));
+  return fitReadManyResponse(root, files, rawResults);
 }
 
 export async function repoGlobMany(input, options = {}) {
@@ -769,41 +808,174 @@ async function readFileRequest(root, request) {
     }
     const content = await fs.readFile(file, "utf8");
     const lines = content.split(/\r?\n/u);
-    const startLine = request.startLine ?? 1;
-    const endLine = request.endLine ?? lines.length;
-    if (endLine < startLine) {
+    const requestedStartLine = request.startLine ?? 1;
+    const requestedEndLine = request.endLine ?? lines.length;
+    if (requestedEndLine < requestedStartLine) {
       throw new Error("endLine must be greater than or equal to startLine");
     }
-    const selected = lines.slice(startLine - 1, endLine).join("\n");
-    const maxBytes = clampPositiveInt(request.maxBytes, 24_000, MAX_READ_BYTES);
-    const capped = capString(selected, maxBytes);
+    if (requestedStartLine > lines.length) {
+      throw new Error(`startLine ${requestedStartLine} exceeds total lines ${lines.length}`);
+    }
+    const effectiveEndLine = Math.min(requestedEndLine, lines.length);
+    const selectedLines = lines.slice(requestedStartLine - 1, effectiveEndLine);
+    const selected = selectedLines.join("\n");
+    const maxBytes = clampPositiveInt(request.maxBytes, DEFAULT_READ_BYTES, MAX_READ_BYTES);
+    const numbered = takeNumberedLines(selectedLines, requestedStartLine, maxBytes);
+    if (numbered.returnedEndLine < requestedStartLine) {
+      throw new Error(
+        `line ${requestedStartLine} exceeds the ${maxBytes}-byte per-file read budget; use a focused shell read for this exceptional file`,
+      );
+    }
     const selectedByteLength = Buffer.byteLength(selected, "utf8");
-    const lineNumberedContent = lines
-      .slice(startLine - 1, Math.min(endLine, lines.length))
-      .map((line, index) => `${startLine + index}: ${line}`)
-      .join("\n");
-    const cappedLineNumbered = capString(lineNumberedContent, maxBytes);
+    const truncated = numbered.returnedEndLine < effectiveEndLine;
     return {
-      request,
       path: relative(root, file),
       status: "ok",
-      startLine,
-      endLine: Math.min(endLine, lines.length),
+      requestedStartLine,
+      requestedEndLine,
+      returnedStartLine: requestedStartLine,
+      returnedEndLine: numbered.returnedEndLine,
       totalLines: lines.length,
-      byteLength: selectedByteLength,
-      contentByteLength: Buffer.byteLength(capped.value, "utf8"),
+      sourceBytes: selectedByteLength,
+      returnedBytes: numbered.returnedBytes,
       sha256: sha256(selected),
       effectiveMaxBytes: maxBytes,
       ...(request.maxBytes && request.maxBytes > maxBytes
         ? { requestedMaxBytes: request.maxBytes, maxBytesClamped: true }
         : {}),
-      content: capped.value,
-      lineNumberedContent: cappedLineNumbered.value,
-      truncated: capped.truncated,
+      text: numbered.text,
+      truncated,
+      ...(truncated ? { nextStartLine: numbered.returnedEndLine + 1 } : {}),
     };
   } catch (error) {
     return { path: request.path, status: "error", error: formatError(error) };
   }
+}
+
+function takeNumberedLines(lines, startLine, maxBytes) {
+  const selected = [];
+  let returnedBytes = 0;
+  let returnedEndLine = startLine - 1;
+  for (const [index, line] of lines.entries()) {
+    const numberedLine = `${startLine + index}: ${line}`;
+    const separatorBytes = selected.length > 0 ? 1 : 0;
+    const lineBytes = Buffer.byteLength(numberedLine, "utf8");
+    if (returnedBytes + separatorBytes + lineBytes > maxBytes) {
+      break;
+    }
+    selected.push(numberedLine);
+    returnedBytes += separatorBytes + lineBytes;
+    returnedEndLine = startLine + index;
+  }
+  return { text: selected.join("\n"), returnedBytes, returnedEndLine };
+}
+
+function fitReadManyResponse(root, requests, rawResults) {
+  const results = [];
+  const omitted = [];
+  const resultRequests = new Map();
+  let remainingTextBytes = MAX_READ_TEXT_BYTES;
+
+  for (const [index, rawResult] of rawResults.entries()) {
+    const request = requests[index];
+    if (rawResult.status !== "ok") {
+      results.push(rawResult);
+      resultRequests.set(rawResult, request);
+      continue;
+    }
+    if (remainingTextBytes <= 0) {
+      omitted.push(omittedRead(request, rawResult, "aggregate_text_budget"));
+      continue;
+    }
+    const fitted = fitReadResultText(rawResult, remainingTextBytes);
+    if (!fitted) {
+      omitted.push(omittedRead(request, rawResult, "aggregate_text_budget"));
+      continue;
+    }
+    results.push(fitted);
+    resultRequests.set(fitted, request);
+    remainingTextBytes -= fitted.returnedBytes;
+  }
+
+  let response = buildReadManyResponse(root, requests.length, results, omitted);
+  while (serializedBytes(response) > MAX_READ_RESPONSE_BYTES && results.length > 0) {
+    const removed = results.pop();
+    omitted.unshift(
+      omittedRead(
+        resultRequests.get(removed) ?? { path: removed.path },
+        removed,
+        "aggregate_response_budget",
+      ),
+    );
+    response = buildReadManyResponse(root, requests.length, results, omitted);
+  }
+  return response;
+}
+
+function fitReadResultText(result, maxBytes) {
+  if (result.returnedBytes <= maxBytes) {
+    return result;
+  }
+  const lines = result.text.split("\n");
+  const selected = [];
+  let returnedBytes = 0;
+  for (const line of lines) {
+    const separatorBytes = selected.length > 0 ? 1 : 0;
+    const lineBytes = Buffer.byteLength(line, "utf8");
+    if (returnedBytes + separatorBytes + lineBytes > maxBytes) {
+      break;
+    }
+    selected.push(line);
+    returnedBytes += separatorBytes + lineBytes;
+  }
+  if (selected.length === 0) {
+    return undefined;
+  }
+  const returnedEndLine = result.returnedStartLine + selected.length - 1;
+  return {
+    ...result,
+    returnedEndLine,
+    returnedBytes,
+    text: selected.join("\n"),
+    truncated: true,
+    nextStartLine: returnedEndLine + 1,
+  };
+}
+
+function omittedRead(request, result, reason) {
+  return {
+    path: result.path ?? request.path,
+    requestedStartLine: request.startLine ?? 1,
+    ...(request.endLine ? { requestedEndLine: request.endLine } : {}),
+    nextStartLine: result.nextStartLine ?? result.returnedStartLine ?? request.startLine ?? 1,
+    reason,
+  };
+}
+
+function buildReadManyResponse(root, requested, results, omitted) {
+  return {
+    schemaVersion: "openclaw.repo_workbench.read_many.v2",
+    root,
+    limits: {
+      defaultFileBytes: DEFAULT_READ_BYTES,
+      maxFileBytes: MAX_READ_BYTES,
+      maxTextBytes: MAX_READ_TEXT_BYTES,
+      maxResponseBytes: MAX_READ_RESPONSE_BYTES,
+    },
+    results,
+    omitted,
+    coverage: {
+      requested,
+      returned: results.filter((item) => item.status === "ok").length,
+      truncated: results.filter((item) => item.status === "ok" && item.truncated).length,
+      errors: results.filter((item) => item.status === "error").length,
+      omitted: omitted.length,
+    },
+  };
+}
+
+function serializedBytes(value) {
+  return Buffer.byteLength(JSON.stringify(value), "utf8");
 }
 
 async function runGlobRequest(root, request) {
@@ -1075,9 +1247,8 @@ function capString(value, maxBytes) {
   return { value: buffer.subarray(0, maxBytes).toString("utf8"), truncated: true };
 }
 
-function result(value) {
+export function mcpResult(value) {
   return {
-    content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
     structuredContent: value,
   };
 }

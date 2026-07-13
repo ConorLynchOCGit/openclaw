@@ -5,12 +5,15 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { afterEach, describe, expect, it } from "vitest";
 
 const execFileAsync = promisify(execFile);
-const workbenchModuleUrl = pathToFileURL(
-  path.resolve(".agents/plugins/plugins/openclaw-coding-workbench/mcp/openclaw-repo-workbench.mjs"),
-).href;
+const workbenchModulePath = path.resolve(
+  ".agents/plugins/plugins/openclaw-coding-workbench/mcp/openclaw-repo-workbench.mjs",
+);
+const workbenchModuleUrl = pathToFileURL(workbenchModulePath).href;
 
 type WorkbenchModule = {
   repoSearchMany(
@@ -40,16 +43,41 @@ type WorkbenchModule = {
     input: unknown,
     options?: unknown,
   ): Promise<{
+    limits: {
+      maxResponseBytes: number;
+    };
     results: Array<{
       status: string;
-      content?: string;
+      path?: string;
+      text?: string;
       error?: string;
       totalLines?: number;
+      returnedStartLine?: number;
+      returnedEndLine?: number;
+      returnedBytes?: number;
+      truncated?: boolean;
+      nextStartLine?: number;
       effectiveMaxBytes?: number;
       requestedMaxBytes?: number;
       maxBytesClamped?: boolean;
     }>;
+    omitted: Array<{
+      path: string;
+      nextStartLine: number;
+      reason: string;
+    }>;
+    coverage: {
+      requested: number;
+      returned: number;
+      truncated: number;
+      errors: number;
+      omitted: number;
+    };
   }>;
+  mcpResult(value: unknown): {
+    structuredContent: unknown;
+    content?: unknown;
+  };
   repoGlobMany(
     input: unknown,
     options?: unknown,
@@ -227,7 +255,9 @@ describe("openclaw-coding-workbench MCP helpers", () => {
 
     expect(result.results[0]).toMatchObject({
       status: "ok",
-      content: "export const alpha = 1;",
+      text: "1: export const alpha = 1;",
+      returnedStartLine: 1,
+      returnedEndLine: 1,
       totalLines: 3,
     });
     expect(result.results[1]).toMatchObject({
@@ -272,7 +302,7 @@ describe("openclaw-coding-workbench MCP helpers", () => {
     expect(read.results[0]).toMatchObject({
       status: "ok",
       requestedMaxBytes: 200_000,
-      effectiveMaxBytes: 80_000,
+      effectiveMaxBytes: 12_000,
       maxBytesClamped: true,
     });
     expect(search.results[0]).toMatchObject({
@@ -302,6 +332,118 @@ describe("openclaw-coding-workbench MCP helpers", () => {
       effectiveMaxResults: 200,
       maxResultsClamped: true,
     });
+  });
+
+  it("caps aggregate read output, names omissions, and resumes exact line ranges", async () => {
+    const repo = await makeRepo();
+    const workbench = await loadWorkbench();
+    const files = [];
+    const legacyBodies = [];
+    for (let fileIndex = 0; fileIndex < 20; fileIndex += 1) {
+      const relativePath = `src/bulk-${fileIndex}.md`;
+      const body = Array.from(
+        { length: 100 },
+        (_, lineIndex) => `file ${fileIndex} line ${lineIndex + 1} ${"x".repeat(88)}`,
+      ).join("\n");
+      await fs.writeFile(path.join(repo, relativePath), `${body}\n`, "utf8");
+      files.push({ path: relativePath, maxBytes: 200_000 });
+      legacyBodies.push(body);
+    }
+
+    const read = await workbench.repoReadMany({ files }, optionsFor(repo));
+    const serialized = JSON.stringify(read);
+
+    expect(Buffer.byteLength(serialized, "utf8")).toBeLessThanOrEqual(read.limits.maxResponseBytes);
+    expect(read.coverage.requested).toBe(20);
+    expect(read.coverage.returned + read.coverage.errors + read.coverage.omitted).toBe(20);
+    expect(read.coverage.truncated).toBeGreaterThan(0);
+    expect(read.omitted.length).toBeGreaterThan(0);
+    expect(read.omitted.every((item) => item.reason.includes("aggregate"))).toBe(true);
+    expect(serialized).not.toContain('"content"');
+    expect(serialized).not.toContain('"lineNumberedContent"');
+    expect(serialized).not.toContain('"request"');
+
+    const truncated = read.results.find(
+      (item) => item.status === "ok" && item.truncated && item.nextStartLine,
+    );
+    expect(truncated).toBeDefined();
+    const continuation = await workbench.repoReadMany(
+      {
+        files: [{ path: truncated?.path, startLine: truncated?.nextStartLine }],
+      },
+      optionsFor(repo),
+    );
+    expect(continuation.results[0]?.text).toMatch(
+      new RegExp(`^${truncated?.nextStartLine}: `, "u"),
+    );
+
+    const toolResult = workbench.mcpResult(read);
+    expect(toolResult).toEqual({ structuredContent: read });
+    expect(toolResult.content).toBeUndefined();
+
+    const legacyValue = {
+      schemaVersion: "openclaw.repo_workbench.read_many.v1",
+      root: repo,
+      results: legacyBodies.map((content, index) => ({
+        request: files[index],
+        path: files[index]?.path,
+        status: "ok",
+        content,
+        lineNumberedContent: content
+          .split("\n")
+          .map((line, lineIndex) => `${lineIndex + 1}: ${line}`)
+          .join("\n"),
+      })),
+    };
+    const legacyModelVisibleBytes = Buffer.byteLength(
+      JSON.stringify({
+        content: [{ type: "text", text: JSON.stringify(legacyValue, null, 2) }],
+        structuredContent: legacyValue,
+      }),
+      "utf8",
+    );
+    const currentModelVisibleBytes = Buffer.byteLength(JSON.stringify(toolResult), "utf8");
+    expect(currentModelVisibleBytes).toBeLessThanOrEqual(legacyModelVisibleBytes * 0.3);
+  });
+
+  it("publishes an output schema and structured-only result over MCP", async () => {
+    const repo = await makeRepo();
+    const client = new Client({ name: "workbench-test", version: "1.0.0" });
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [workbenchModulePath],
+      cwd: repo,
+      env: {
+        PATH: process.env.PATH ?? "",
+        HOME: process.env.HOME ?? os.homedir(),
+        OPENCLAW_REPO_WORKBENCH_ROOT: repo,
+      },
+    });
+    try {
+      await client.connect(transport);
+      const listed = await client.listTools();
+      const readTool = listed.tools.find((tool) => tool.name === "repo_read_many");
+      expect(readTool?.outputSchema).toMatchObject({
+        type: "object",
+        properties: expect.objectContaining({
+          results: expect.any(Object),
+          omitted: expect.any(Object),
+          coverage: expect.any(Object),
+        }),
+      });
+
+      const called = await client.callTool({
+        name: "repo_read_many",
+        arguments: { files: [{ path: "src/alpha.ts", startLine: 1, endLine: 1 }] },
+      });
+      expect(called.structuredContent).toMatchObject({
+        schemaVersion: "openclaw.repo_workbench.read_many.v2",
+        results: [expect.objectContaining({ text: "1: export const alpha = 1;" })],
+      });
+      expect(called.content).toEqual([]);
+    } finally {
+      await client.close();
+    }
   });
 
   it("searches and globs in bounded batches", async () => {

@@ -16,6 +16,9 @@ bounded result collection, and the native v2 messaging tools when a running
 child needs a correction or follow-up. Choose a team only when delegation would
 materially improve speed, evidence quality, implementation confidence, or
 independent review.
+For a material re-review, start a fresh matching purpose reviewer with the prior
+verdict, changed hunks, finding dispositions, governing refs, and unresolved
+question. Do not replay a context-heavy reviewer thread merely to judge a delta.
 """
 subagent_usage_hint_text = """
 You are a purpose agent in a Codex v2 task tree. Complete the bounded assigned
@@ -23,6 +26,12 @@ task, return compact decision-grade evidence to the parent, and avoid spawning
 descendants unless a newly exposed independent uncertainty materially benefits
 from another canonical purpose role. All agents share the workspace and global
 concurrency budget.
+Do not perform tool discovery or call GBrain to activate filesystem-owned Codex
+skills. For repository inspection, search first, read only relevant bounded
+ranges through the Workbench MCP, use at most one compact parallel discovery
+batch before synthesis, and name any shell fallback reason. Stop when the one
+assigned decision is supported. Return exact refs and a compact result pack, not
+raw tool output or a broader project inventory.
 """
 multi_agent_mode_hint_text = """
 Use subagents proactively when task shape merits independent exploration,
