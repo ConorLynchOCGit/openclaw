@@ -401,6 +401,203 @@ describe("createTaskFlowWebhookRequestHandler", () => {
     expect(target.taskFlow.getTaskSummary(flow.flowId)?.total).toBe(1);
   });
 
+  it("preserves a collaborative refinement episode across the generic route", async () => {
+    const { handler, target, secret } = createHandler();
+    const candidateRecord = {
+      ref: "business-ops/onboarding/examples/synthetic-company-candidate.md",
+      digest: "a".repeat(64),
+    };
+    const proposal = {
+      id: "proposal-synthetic-001",
+      ref: "business-ops/onboarding/examples/proposals/synthetic-001.md",
+      digest: "b".repeat(64),
+    };
+    const initialState = {
+      schemaVersion: "openclaw.business-ops.collaborative-refinement.flow-state.v1",
+      episodeId: "episode-synthetic-001",
+      subject: { kind: "company", slug: "synthetic-orbit-works", scope: "company" },
+      candidateRecord,
+      canonicalRefs: [{ ref: "synthetic-company-canonical.md", digest: "c".repeat(64) }],
+      openQuestionIds: ["source-authority", "audience-priority"],
+      selectedQuestionId: "source-authority",
+      proposal,
+      affectedSurfaces: ["synthetic-campaign-brief"],
+      evidenceSummary: {
+        operator_assertion: [],
+        verified_fact: [],
+        public_source_evidence: [],
+        observation: [],
+        inference: [],
+        invented_candidate: [],
+        rejected_option: [],
+        approved_canonical_decision: [],
+        unresolved: ["source-authority"],
+      },
+      approvalSummary: {
+        status: "not_requested",
+        ownerIds: [],
+        legalOwnerId: null,
+        securitiesOwnerId: null,
+        technicalOwnerId: null,
+        rightsOwnerId: null,
+        privacyOwnerId: null,
+        publicationOwnerId: null,
+      },
+      decision: {
+        id: null,
+        outcome: null,
+        rationale: null,
+        proposalRef: proposal.ref,
+        proposalDigest: proposal.digest,
+      },
+      proposalResult: { status: null, reason: null, currentTargetDigest: null },
+      lastDecisionId: null,
+      state: "collecting",
+      resumeHint: "candidate-record-and-selected-question",
+    };
+
+    const createdRes = await dispatchJsonRequest({
+      handler,
+      path: target.path,
+      secret,
+      body: {
+        action: "create_flow",
+        goal: "Refine the synthetic company candidate",
+        stateJson: initialState,
+      },
+    });
+    expect(createdRes.statusCode).toBe(200);
+    const created = parseJsonBody(createdRes).result.flow;
+    expect(created.stateJson).toStrictEqual(initialState);
+
+    const taskRes = await dispatchJsonRequest({
+      handler,
+      path: target.path,
+      secret,
+      body: {
+        action: "run_task",
+        flowId: created.flowId,
+        runtime: "acp",
+        childSessionKey: "agent:business-ops:subagent:refinement-synthetic-001",
+        task: "Continue from the exact candidate and selected-question pointers",
+      },
+    });
+    expect(taskRes.statusCode).toBe(200);
+    expect(parseJsonBody(taskRes).result.task.childSessionKey).toBe(
+      "agent:business-ops:subagent:refinement-synthetic-001",
+    );
+
+    const waitingRes = await dispatchJsonRequest({
+      handler,
+      path: target.path,
+      secret,
+      body: {
+        action: "set_waiting",
+        flowId: created.flowId,
+        expectedRevision: created.revision,
+        waitJson: {
+          kind: "material_approval",
+          proposal,
+          allowedOutcomes: ["approve", "reject", "revise", "defer"],
+        },
+      },
+    });
+    expect(waitingRes.statusCode).toBe(200);
+    const waiting = parseJsonBody(waitingRes).result.flow;
+    expect(waiting.waitJson.proposal).toStrictEqual(proposal);
+
+    const revisedState = {
+      ...initialState,
+      selectedQuestionId: "audience-priority",
+      evidenceSummary: {
+        operator_assertion: ["source-authority"],
+        verified_fact: [],
+        public_source_evidence: [],
+        observation: [],
+        inference: [],
+        invented_candidate: [],
+        rejected_option: [],
+        approved_canonical_decision: [],
+        unresolved: ["audience-priority"],
+      },
+      approvalSummary: { ...initialState.approvalSummary, status: "revision_requested" },
+      lastDecisionId: "decision-synthetic-revise-001",
+      state: "revision_requested",
+      resumeHint: "candidate-record-and-revised-proposal",
+      decision: {
+        id: "decision-synthetic-revise-001",
+        outcome: "revise",
+        rationale: "Source authority is an assertion pending verification.",
+        proposalRef: proposal.ref,
+        proposalDigest: proposal.digest,
+      },
+      proposalResult: {
+        status: "revision_needed",
+        reason: "target_digest_changed",
+        currentTargetDigest: "d".repeat(64),
+      },
+    };
+    const resumedRes = await dispatchJsonRequest({
+      handler,
+      path: target.path,
+      secret,
+      body: {
+        action: "resume_flow",
+        flowId: created.flowId,
+        expectedRevision: waiting.revision,
+        stateJson: revisedState,
+      },
+    });
+    expect(resumedRes.statusCode).toBe(200);
+    const resumed = parseJsonBody(resumedRes).result.flow;
+    expect(resumed.stateJson).toStrictEqual(revisedState);
+    expect(resumed.stateJson.proposal).toStrictEqual(proposal);
+    expect(resumed.stateJson.proposalResult.status).toBe("revision_needed");
+
+    const staleRes = await dispatchJsonRequest({
+      handler,
+      path: target.path,
+      secret,
+      body: {
+        action: "resume_flow",
+        flowId: created.flowId,
+        expectedRevision: waiting.revision,
+        stateJson: initialState,
+      },
+    });
+    expect(staleRes.statusCode).toBe(409);
+    expect(parseJsonBody(staleRes).code).toBe("revision_conflict");
+
+    const finishedState = {
+      ...revisedState,
+      approvalSummary: { ...initialState.approvalSummary, status: "deferred" },
+      lastDecisionId: "decision-synthetic-defer-002",
+      state: "deferred",
+      decision: {
+        id: "decision-synthetic-defer-002",
+        outcome: "defer",
+        rationale: "The target digest must be refreshed before approval.",
+        proposalRef: proposal.ref,
+        proposalDigest: proposal.digest,
+      },
+    };
+    const finishedRes = await dispatchJsonRequest({
+      handler,
+      path: target.path,
+      secret,
+      body: {
+        action: "finish_flow",
+        flowId: created.flowId,
+        expectedRevision: resumed.revision,
+        stateJson: finishedState,
+      },
+    });
+    expect(finishedRes.statusCode).toBe(200);
+    const finished = parseJsonBody(finishedRes).result.flow;
+    expect(finished.stateJson).toStrictEqual(finishedState);
+    expect(finished.status).toBe("succeeded");
+  });
+
   it("returns 409 when cancellation targets a terminal flow", async () => {
     const { handler, target, secret } = createHandler();
     const flow = createManagedFlow(target, {
