@@ -442,6 +442,7 @@ export function runAgentAttempt(params: {
   workspaceDir: string;
   cwd?: string;
   body: string;
+  transcriptBody?: string;
   isFallbackRetry: boolean;
   resolvedThinkLevel: ThinkLevel;
   fastMode?: boolean;
@@ -756,6 +757,7 @@ export function runAgentAttempt(params: {
     launchExecutionPlan: params.opts.launchExecutionPlan,
     skillsSnapshot: params.skillsSnapshot,
     prompt: effectivePrompt,
+    transcriptPrompt: params.transcriptBody,
     images: params.isFallbackRetry ? undefined : params.opts.images,
     imageOrder: params.isFallbackRetry ? undefined : params.opts.imageOrder,
     clientTools: params.opts.clientTools,

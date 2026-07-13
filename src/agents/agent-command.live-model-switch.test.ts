@@ -1210,6 +1210,21 @@ describe("agentCommand – LiveSessionModelSwitchError retry", () => {
     });
   });
 
+  it("passes the canonical ingress transcript body into agent attempts", async () => {
+    setupSingleAttemptFallback();
+    state.runAgentAttemptMock.mockResolvedValue(makeSuccessResult("openai", "gpt-5.4"));
+
+    await agentCommandFromIngress({
+      message: "Exact inbound operator text.",
+      to: "+1234567890",
+      allowModelOverride: false,
+    });
+
+    expectRecordFields(mockCallArg(state.runAgentAttemptMock), {
+      transcriptBody: "Exact inbound operator text.",
+    });
+  });
+
   it("skips the initial session touch after gateway ingress already persisted activity", async () => {
     setupSingleAttemptFallback();
     state.runAgentAttemptMock.mockResolvedValue(makeSuccessResult("openai", "gpt-5.4"));
