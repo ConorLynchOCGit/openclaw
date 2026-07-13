@@ -48,7 +48,7 @@ RUN --mount=type=bind,source=packages,target=/tmp/packages,readonly \
 
 # ── Stage 2: Build ──────────────────────────────────────────────
 FROM ${OPENCLAW_BUN_IMAGE} AS bun-binary
-FROM ${OPENCLAW_NODE_BOOKWORM_IMAGE} AS build
+FROM ${OPENCLAW_NODE_BOOKWORM_IMAGE} AS build-deps
 ARG OPENCLAW_BUNDLED_PLUGIN_DIR
 ARG OPENCLAW_EXTENSIONS
 ARG OPENCLAW_REQUIRED_BUNDLED_PLUGINS
@@ -98,6 +98,17 @@ RUN set -eux; \
     done; \
     find /app/node_modules -name "matrix-sdk-crypto*.node" 2>/dev/null | grep -q . || \
       (echo "ERROR: matrix-sdk-crypto native addon missing after retries" >&2 && exit 1)
+
+# Materialize one dependency-only Playwright CLI tree for the runtime browser
+# layer. The final image consumes it through a BuildKit bind mount, so ordinary
+# source changes cannot invalidate Chromium installation or add a duplicate CLI
+# package to the image.
+RUN playwright_core_dir="$(node -p "require('path').dirname(require.resolve('playwright-core/package.json'))")" && \
+    mkdir -p /opt/playwright-core && \
+    cp -aL "$playwright_core_dir/." /opt/playwright-core/
+
+FROM build-deps AS build
+ARG OPENCLAW_BUNDLED_PLUGIN_DIR
 
 COPY . .
 
@@ -184,9 +195,8 @@ RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,shar
 
 RUN chown node:node /app
 
-COPY --from=runtime-assets --chown=node:node /app/node_modules ./node_modules
-COPY --from=runtime-assets --chown=node:node /app/package.json .
-COPY --from=runtime-assets --chown=node:node /app/pnpm-workspace.yaml .
+COPY --from=build-deps --chown=node:node /app/package.json .
+COPY --from=build-deps --chown=node:node /app/pnpm-workspace.yaml .
 
 # Keep pnpm available in the runtime image for container-local workflows.
 # Use a shared Corepack home so the non-root `node` user does not need a
@@ -234,16 +244,19 @@ RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,shar
 # Optionally install Chromium and Xvfb for browser automation.
 # Build with: docker build --build-arg OPENCLAW_INSTALL_BROWSER=1 ...
 # Adds ~300MB but eliminates the 60-90s Playwright install on every container start.
-# Must run after node_modules COPY so playwright-core is available.
+# The dependency-only Playwright tree is bind-mounted from build-deps. Pruned
+# runtime node_modules and source-derived assets are copied afterward so they do
+# not participate in this cache key.
 ARG OPENCLAW_INSTALL_BROWSER=""
 ENV PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright
-RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,sharing=locked \
+RUN --mount=type=bind,from=build-deps,source=/opt/playwright-core,target=/opt/playwright-core,readonly \
+    --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,id=openclaw-bookworm-apt-lists,target=/var/lib/apt,sharing=locked \
     if [ -n "$OPENCLAW_INSTALL_BROWSER" ]; then \
       apt-get update && \
       DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb && \
       mkdir -p "$PLAYWRIGHT_BROWSERS_PATH" && \
-      node /app/node_modules/playwright-core/cli.js install --with-deps chromium && \
+      node /opt/playwright-core/cli.js install --with-deps chromium && \
       chown -R node:node "$PLAYWRIGHT_BROWSERS_PATH"; \
     fi
 
@@ -285,6 +298,10 @@ RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,shar
       DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         docker-ce-cli docker-compose-plugin; \
     fi
+
+# Runtime dependencies may depend on source-derived plugin pruning, so copy them
+# only after the expensive browser and optional system-tool layers.
+COPY --from=runtime-assets --chown=node:node /app/node_modules ./node_modules
 
 # Source-derived runtime assets are copied after the browser and optional tool
 # layers so ordinary application changes reuse those expensive installations.

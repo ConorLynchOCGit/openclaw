@@ -208,9 +208,23 @@ describe("test-install-sh-docker", () => {
 
     expect(dockerfile).toContain("ENV PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright");
     expect(dockerfile).toContain('mkdir -p "$PLAYWRIGHT_BROWSERS_PATH"');
+    expect(dockerfile).toContain("node /opt/playwright-core/cli.js install --with-deps chromium");
+    expect(dockerfile).toContain("FROM build-deps AS build");
     expect(dockerfile).toContain(
-      "node /app/node_modules/playwright-core/cli.js install --with-deps chromium",
+      "--mount=type=bind,from=build-deps,source=/opt/playwright-core,target=/opt/playwright-core,readonly",
     );
+    const browserInstall = dockerfile.indexOf(
+      "node /opt/playwright-core/cli.js install --with-deps chromium",
+    );
+    const runtimeDependencies = dockerfile.indexOf(
+      "COPY --from=runtime-assets --chown=node:node /app/node_modules ./node_modules",
+    );
+    const runtimeDist = dockerfile.indexOf(
+      "COPY --from=runtime-assets --chown=node:node /app/dist ./dist",
+    );
+    expect(browserInstall).toBeGreaterThan(-1);
+    expect(runtimeDependencies).toBeGreaterThan(browserInstall);
+    expect(runtimeDist).toBeGreaterThan(runtimeDependencies);
   });
 
   it("passes the baked browser build arg through Docker setup", () => {
