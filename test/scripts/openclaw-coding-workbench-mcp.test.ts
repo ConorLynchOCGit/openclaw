@@ -20,9 +20,17 @@ type WorkbenchModule = {
     input: unknown,
     options?: unknown,
   ): Promise<{
+    limits: {
+      maxResponseBytes: number;
+    };
+    coverage: {
+      requestedQueries: number;
+      matchedQueries: number;
+      returnedItems: number;
+      omittedItems: number;
+    };
     results: Array<{
       status: string;
-      matches?: string[];
       items?: Array<{
         path?: string;
         line?: number;
@@ -37,6 +45,9 @@ type WorkbenchModule = {
       effectiveContextLines?: number;
       requestedContextLines?: number;
       contextLinesClamped?: boolean;
+      responseTruncated?: boolean;
+      omittedItems?: number;
+      nextAction?: string;
     }>;
   }>;
   repoReadMany(
@@ -308,7 +319,7 @@ describe("openclaw-coding-workbench MCP helpers", () => {
     expect(search.results[0]).toMatchObject({
       status: "matched",
       requestedMaxMatches: 2_000,
-      effectiveMaxMatches: 200,
+      effectiveMaxMatches: 60,
       maxMatchesClamped: true,
       requestedContextLines: 8,
       effectiveContextLines: 5,
@@ -423,11 +434,19 @@ describe("openclaw-coding-workbench MCP helpers", () => {
       await client.connect(transport);
       const listed = await client.listTools();
       const readTool = listed.tools.find((tool) => tool.name === "repo_read_many");
+      const searchTool = listed.tools.find((tool) => tool.name === "repo_search_many");
       expect(readTool?.outputSchema).toMatchObject({
         type: "object",
         properties: expect.objectContaining({
           results: expect.any(Object),
           omitted: expect.any(Object),
+          coverage: expect.any(Object),
+        }),
+      });
+      expect(searchTool?.outputSchema).toMatchObject({
+        type: "object",
+        properties: expect.objectContaining({
+          results: expect.any(Object),
           coverage: expect.any(Object),
         }),
       });
@@ -465,8 +484,6 @@ describe("openclaw-coding-workbench MCP helpers", () => {
     );
 
     expect(search.results[0].status).toBe("matched");
-    expect(search.results[0].matches?.join("\n")).toContain("alpha.ts");
-    expect(search.results[0].matches?.join("\n")).not.toContain(":14:export const alpha");
     expect(search.results[0].items).toContainEqual(
       expect.objectContaining({
         path: "src/alpha.ts",
@@ -476,6 +493,8 @@ describe("openclaw-coding-workbench MCP helpers", () => {
       }),
     );
     expect(search.results[1].status).toBe("no_match");
+    expect(JSON.stringify(search)).not.toContain('"matches"');
+    expect(JSON.stringify(search)).not.toContain('"request"');
     expect(glob.results[0].status).toBe("ok");
     expect(glob.results[0].files).toHaveLength(3);
     expect(glob.results[0].files).toEqual(
@@ -522,9 +541,58 @@ describe("openclaw-coding-workbench MCP helpers", () => {
     );
 
     expect(search.results[0].status).toBe("matched");
-    expect(search.results[0].matches?.join("\n")).toContain("business-ops/brief.md");
+    expect(search.results[0].items).toContainEqual(
+      expect.objectContaining({ path: "business-ops/brief.md" }),
+    );
     expect(search.results[1].status).toBe("matched");
-    expect(search.results[1].matches?.join("\n")).toContain("src/openclaw/src/agents/task-tool.ts");
+    expect(search.results[1].items).toContainEqual(
+      expect.objectContaining({ path: "src/openclaw/src/agents/task-tool.ts" }),
+    );
+  });
+
+  it("caps aggregate search output without duplicating match bodies", async () => {
+    const repo = await makeRepo();
+    const workbench = await loadWorkbench();
+    for (let fileIndex = 0; fileIndex < 20; fileIndex += 1) {
+      await fs.writeFile(
+        path.join(repo, "src", `search-${fileIndex}.md`),
+        Array.from(
+          { length: 80 },
+          (_, lineIndex) => `decision-anchor ${fileIndex}-${lineIndex} ${"x".repeat(70)}`,
+        ).join("\n"),
+        "utf8",
+      );
+    }
+
+    const search = await workbench.repoSearchMany(
+      {
+        queries: Array.from({ length: 8 }, () => ({
+          pattern: "decision-anchor",
+          path: "src",
+          maxMatches: 2_000,
+          contextLines: 8,
+        })),
+      },
+      optionsFor(repo),
+    );
+    const serialized = JSON.stringify(search);
+
+    expect(Buffer.byteLength(serialized, "utf8")).toBeLessThanOrEqual(
+      search.limits.maxResponseBytes,
+    );
+    expect(search.coverage.requestedQueries).toBe(8);
+    expect(search.coverage.matchedQueries).toBe(8);
+    expect(search.coverage.omittedItems).toBeGreaterThan(0);
+    expect(search.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          responseTruncated: true,
+          nextAction: "narrow_pattern_or_path",
+        }),
+      ]),
+    );
+    expect(serialized).not.toContain('"matches"');
+    expect(serialized).not.toContain('"request"');
   });
 
   it("excludes runtime artifacts from read/search by default", async () => {

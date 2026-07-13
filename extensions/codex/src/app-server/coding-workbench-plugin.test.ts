@@ -51,9 +51,9 @@ describe("OpenClaw Codex repo workbench plugin", () => {
       ) => Promise<{
         results: Array<{
           status: string;
-          request?: unknown;
+          pattern?: string;
+          path?: string;
           limits?: unknown;
-          matches?: string[];
           items?: Array<{ path?: string; line?: number; text?: string }>;
         }>;
       }>;
@@ -63,10 +63,8 @@ describe("OpenClaw Codex repo workbench plugin", () => {
       ) => Promise<{
         results: Array<{
           status: string;
-          content?: string;
-          lineNumberedContent?: string;
-          byteLength?: number;
-          contentByteLength?: number;
+          text?: string;
+          returnedBytes?: number;
           sha256?: string;
         }>;
       }>;
@@ -109,21 +107,19 @@ describe("OpenClaw Codex repo workbench plugin", () => {
     );
 
     expect(search.results[0]?.status).toBe("matched");
-    expect(search.results[0]?.request).toMatchObject({
+    expect(search.results[0]).toMatchObject({
       pattern: "openclaw_repo_workbench",
       path: ".codex/config.toml",
     });
-    expect(search.results[0]?.limits).toMatchObject({ maxMatches: 80 });
+    expect(search.results[0]?.limits).toMatchObject({ maxMatches: 20 });
     expect(search.results[0]?.items?.[0]).toMatchObject({
       path: ".codex/config.toml",
       line: expect.any(Number),
       text: expect.any(String),
     });
     expect(read.results[0]?.status).toBe("ok");
-    expect(read.results[0]?.content).toContain("Execution Coding Codex Agents");
-    expect(read.results[0]?.lineNumberedContent).toContain("1: # Execution Coding Codex Agents");
-    expect(read.results[0]?.byteLength).toEqual(expect.any(Number));
-    expect(read.results[0]?.contentByteLength).toEqual(expect.any(Number));
+    expect(read.results[0]?.text).toContain("1: # Execution Coding Codex Agents");
+    expect(read.results[0]?.returnedBytes).toEqual(expect.any(Number));
     expect(read.results[0]?.sha256).toMatch(/^[a-f0-9]{64}$/u);
     expect(glob.results[0]?.files).toContain(".codex/agents/codex_reviewer.toml");
     expect(glob.results[0]?.fileCount).toBeGreaterThan(0);

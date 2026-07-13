@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import fs from "node:fs/promises";
@@ -14,10 +14,14 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_OUTPUT_BYTES = 64_000;
 const MAX_BATCH_ITEMS = 20;
+const DEFAULT_SEARCH_MATCHES = 20;
+const MAX_SEARCH_MATCHES = 60;
+const MAX_SEARCH_COMMAND_BYTES = 12_000;
+const MAX_SEARCH_RESPONSE_BYTES = 16_000;
 const DEFAULT_READ_BYTES = 10_000;
 const MAX_READ_BYTES = 12_000;
-const MAX_READ_TEXT_BYTES = 32_000;
-const MAX_READ_RESPONSE_BYTES = 48_000;
+const MAX_READ_TEXT_BYTES = 20_000;
+const MAX_READ_RESPONSE_BYTES = 32_000;
 const MAX_RESULTS = 200;
 const MAX_SEARCH_CONTEXT_LINES = 5;
 const DEFAULT_LSP_MAX_LOADED_FILES = 24;
@@ -81,7 +85,7 @@ const SearchQuerySchema = z.object({
       `Optional context-line count. Values above ${MAX_SEARCH_CONTEXT_LINES} are accepted and clamped.`,
     ),
   maxMatches: PositiveIntSchema.optional().describe(
-    `Optional match cap. Values above ${MAX_RESULTS} are accepted and clamped.`,
+    `Optional match cap. Values above ${MAX_SEARCH_MATCHES} are accepted and clamped. Narrow the pattern or path when truncated.`,
   ),
 });
 
@@ -137,6 +141,22 @@ const BatchOutputSchema = z
     results: z.array(LooseResultSchema),
   })
   .passthrough();
+const SearchManyOutputSchema = z.object({
+  schemaVersion: z.literal("openclaw.repo_workbench.search_many.v2"),
+  root: z.string(),
+  limits: z.object({
+    defaultMatchesPerQuery: z.number().int(),
+    maxMatchesPerQuery: z.number().int(),
+    maxResponseBytes: z.number().int(),
+  }),
+  results: z.array(LooseResultSchema),
+  coverage: z.object({
+    requestedQueries: z.number().int(),
+    matchedQueries: z.number().int(),
+    returnedItems: z.number().int(),
+    omittedItems: z.number().int(),
+  }),
+});
 const ReadManyOutputSchema = z.object({
   schemaVersion: z.literal("openclaw.repo_workbench.read_many.v2"),
   root: z.string(),
@@ -163,9 +183,9 @@ server.registerTool(
   {
     title: "Search Many",
     description:
-      "Preferred broad-discovery tool: run multiple independent bounded ripgrep searches concurrently under the active workspace root. Match items include 1-based line and character coordinates that can be passed directly to the TypeScript LSP tools.",
+      "Preferred broad-discovery tool: run multiple independent bounded ripgrep searches concurrently under the active workspace root. Returns one compact item representation with 1-based line/character anchors, caps the complete response at 16 KB, and marks omitted hits so the caller can narrow the path or pattern.",
     annotations: READ_ONLY_TOOL_ANNOTATIONS,
-    outputSchema: BatchOutputSchema,
+    outputSchema: SearchManyOutputSchema,
     inputSchema: z.object({
       queries: z.array(SearchQuerySchema).min(1).max(MAX_BATCH_ITEMS),
     }),
@@ -178,7 +198,7 @@ server.registerTool(
   {
     title: "Read Many",
     description:
-      "Preferred multi-file read tool: read bounded line ranges under the active workspace root. Results use one line-numbered text field, clamp each file to 12 KB, cap the complete response at 48 KB, name omitted files, and return nextStartLine for exact continuation.",
+      "Preferred multi-file read tool: read bounded line ranges under the active workspace root. Results use one line-numbered text field, clamp each file to 12 KB, cap the complete response at 32 KB, name omitted files, and return nextStartLine for exact continuation.",
     annotations: READ_ONLY_TOOL_ANNOTATIONS,
     outputSchema: ReadManyOutputSchema,
     inputSchema: z.object({
@@ -266,7 +286,7 @@ export async function repoSearchMany(input, options = {}) {
   const root = resolveRepoRoot(options.cwd ?? process.cwd(), options.env ?? process.env);
   const queries = input.queries.slice(0, MAX_BATCH_ITEMS);
   const results = await Promise.all(queries.map((query) => runSearchQuery(root, query)));
-  return { schemaVersion: "openclaw.repo_workbench.search_many.v1", root, results };
+  return fitSearchManyResponse(root, queries.length, results);
 }
 
 export async function repoReadMany(input, options = {}) {
@@ -741,7 +761,11 @@ function expandGitRequestRoots(root, gitRoots, request) {
 async function runSearchQuery(root, query) {
   try {
     const searchRoot = safeResolve(root, query.path ?? ".");
-    const maxMatches = clampPositiveInt(query.maxMatches, 80, MAX_RESULTS);
+    const maxMatches = clampPositiveInt(
+      query.maxMatches,
+      DEFAULT_SEARCH_MATCHES,
+      MAX_SEARCH_MATCHES,
+    );
     const contextLines = Math.min(query.contextLines ?? 0, MAX_SEARCH_CONTEXT_LINES);
     const args = [
       "--line-number",
@@ -769,16 +793,15 @@ async function runSearchQuery(root, query) {
       args.push("--glob", `!${excludeGlob}`);
     }
     args.push("--", query.pattern, searchRoot);
-    const output = await runCommand("rg", args, root, DEFAULT_OUTPUT_BYTES);
+    const output = await runBoundedCommand("rg", args, root, MAX_SEARCH_COMMAND_BYTES);
     const lines = output.stdout.split(/\r?\n/u).filter(Boolean).slice(0, maxMatches);
     const items = parseRipgrepItems(root, lines);
     return {
-      request: query,
       pattern: query.pattern,
       path: relative(root, searchRoot),
       limits: {
         maxMatches,
-        outputBytes: DEFAULT_OUTPUT_BYTES,
+        outputBytes: MAX_SEARCH_COMMAND_BYTES,
       },
       effectiveMaxMatches: maxMatches,
       effectiveContextLines: contextLines,
@@ -790,13 +813,69 @@ async function runSearchQuery(root, query) {
         : {}),
       status: output.exitCode === 0 ? "matched" : output.exitCode === 1 ? "no_match" : "error",
       items,
-      matches: lines.map(stripRipgrepMatchColumn),
       truncated: output.truncated || lines.length >= maxMatches,
       ...(output.stderr ? { stderr: output.stderr } : {}),
     };
   } catch (error) {
     return { pattern: query.pattern, status: "error", error: formatError(error) };
   }
+}
+
+function fitSearchManyResponse(root, requestedQueries, rawResults) {
+  const results = rawResults.map((result) => ({ ...result }));
+  const omittedByResult = new Map();
+  let response = buildSearchManyResponse(root, requestedQueries, results, omittedByResult);
+
+  while (serializedBytes(response) > MAX_SEARCH_RESPONSE_BYTES) {
+    const candidate = results
+      .filter((result) => Array.isArray(result.items) && result.items.length > 0)
+      .toSorted((left, right) => right.items.length - left.items.length)[0];
+    if (!candidate) {
+      break;
+    }
+    candidate.items.pop();
+    omittedByResult.set(candidate, (omittedByResult.get(candidate) ?? 0) + 1);
+    response = buildSearchManyResponse(root, requestedQueries, results, omittedByResult);
+  }
+
+  return response;
+}
+
+function buildSearchManyResponse(root, requestedQueries, results, omittedByResult) {
+  const normalizedResults = results.map((result) => {
+    const omittedItems = omittedByResult.get(result) ?? 0;
+    return omittedItems > 0
+      ? {
+          ...result,
+          truncated: true,
+          responseTruncated: true,
+          omittedItems,
+          nextAction: "narrow_pattern_or_path",
+        }
+      : result;
+  });
+  return {
+    schemaVersion: "openclaw.repo_workbench.search_many.v2",
+    root,
+    limits: {
+      defaultMatchesPerQuery: DEFAULT_SEARCH_MATCHES,
+      maxMatchesPerQuery: MAX_SEARCH_MATCHES,
+      maxResponseBytes: MAX_SEARCH_RESPONSE_BYTES,
+    },
+    results: normalizedResults,
+    coverage: {
+      requestedQueries,
+      matchedQueries: normalizedResults.filter((result) => result.status === "matched").length,
+      returnedItems: normalizedResults.reduce(
+        (total, result) => total + (Array.isArray(result.items) ? result.items.length : 0),
+        0,
+      ),
+      omittedItems: normalizedResults.reduce(
+        (total, result) => total + (result.omittedItems ?? 0),
+        0,
+      ),
+    },
+  };
 }
 
 async function readFileRequest(root, request) {
@@ -1104,6 +1183,73 @@ async function runCommand(command, args, cwd, maxBytes) {
   }
 }
 
+async function runBoundedCommand(command, args, cwd, maxBytes) {
+  return await new Promise((resolve) => {
+    const child = spawn(command, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const stdoutChunks = [];
+    const stderrChunks = [];
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let truncated = false;
+    let timedOut = false;
+    let settled = false;
+    const finish = (exitCode) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      let stdout = Buffer.concat(stdoutChunks).toString("utf8");
+      if (truncated) {
+        const lastNewline = stdout.lastIndexOf("\n");
+        stdout = lastNewline >= 0 ? stdout.slice(0, lastNewline + 1) : "";
+      }
+      resolve({
+        exitCode: timedOut ? 124 : truncated && stdout ? 0 : (exitCode ?? 2),
+        stdout,
+        stderr: Buffer.concat(stderrChunks).toString("utf8"),
+        truncated,
+      });
+    };
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+    }, DEFAULT_TIMEOUT_MS);
+
+    child.stdout.on("data", (chunk) => {
+      if (truncated) {
+        return;
+      }
+      const buffer = Buffer.from(chunk);
+      const remaining = maxBytes - stdoutBytes;
+      if (buffer.length > remaining) {
+        if (remaining > 0) {
+          stdoutChunks.push(buffer.subarray(0, remaining));
+          stdoutBytes += remaining;
+        }
+        truncated = true;
+        child.kill("SIGTERM");
+        return;
+      }
+      stdoutChunks.push(buffer);
+      stdoutBytes += buffer.length;
+    });
+    child.stderr.on("data", (chunk) => {
+      const buffer = Buffer.from(chunk);
+      const remaining = 8192 - stderrBytes;
+      if (remaining > 0) {
+        stderrChunks.push(buffer.subarray(0, remaining));
+        stderrBytes += Math.min(buffer.length, remaining);
+      }
+    });
+    child.on("error", (error) => {
+      stderrChunks.push(Buffer.from(formatError(error)));
+      finish(2);
+    });
+    child.on("close", (code) => finish(code));
+  });
+}
+
 function outputResult(exitCode, stdout, stderr, maxBytes) {
   const cappedStdout = capString(stdout, maxBytes);
   const cappedStderr = capString(stderr, 8192);
@@ -1143,11 +1289,6 @@ function parseRipgrepItems(root, lines) {
       context: true,
     };
   });
-}
-
-function stripRipgrepMatchColumn(line) {
-  const match = /^(.*?):(\d+):\d+:(.*)$/u.exec(line);
-  return match ? `${match[1]}:${match[2]}:${match[3]}` : line;
 }
 
 function sha256(value) {

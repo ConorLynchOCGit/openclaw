@@ -39,6 +39,23 @@ rather than consuming an unbounded evidence budget. If the parent explicitly
 asks you to inspect a
 skill file, read it with `repo_read_many` unless MCP is unavailable.
 
+Use a two-stage evidence budget by default. Stage one is one compact parallel
+discovery batch: no more than four narrow queries, normally 20 matches or fewer
+per query and zero or one context line. Stage two is one targeted
+`repo_read_many` call over only the decisive ranges, normally four files or
+fewer. Do not read whole files when search anchors identify the relevant range.
+Then synthesize and stop. A third evidence round is justified only when the
+first two expose a named contradiction, a missing authority ref, or evidence
+insufficient to answer the assigned decision; state that reason before the call.
+Do not continue merely to make the packet exhaustive.
+
+Do not enumerate `ALL_TOOLS` or inspect schemas for tools already named in this
+contract. If a direct named call fails because the installed schema differs,
+inspect that one tool definition once, retry it once, and report the mismatch.
+Keep the final Context Pack compact enough for direct parent consumption,
+normally 2,000-4,000 characters, while retaining the decision, exact refs,
+confidence limits, implementation implications, and inspect-next escape hatch.
+
 For a TypeScript symbol question, use the 1-based `line` and `character`
 returned by the matching `repo_search_many` item, then batch independent hover,
 definition, and references calls in one Code Mode `Promise.all`. Do not guess or
