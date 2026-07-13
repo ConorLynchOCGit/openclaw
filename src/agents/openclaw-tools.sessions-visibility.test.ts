@@ -1,4 +1,7 @@
 // Verifies sessions_history visibility defaults and sandbox clamps.
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createSessionsHistoryTool } from "./tools/sessions-history-tool.js";
 
@@ -18,9 +21,9 @@ vi.mock("../config/config.js", async () => {
     resolveGatewayPort: () => 18789,
   };
 });
-function getSessionsHistoryTool(options?: { sandboxed?: boolean }) {
+function getSessionsHistoryTool(options?: { sandboxed?: boolean; agentSessionKey?: string }) {
   return createSessionsHistoryTool({
-    agentSessionKey: "main",
+    agentSessionKey: options?.agentSessionKey ?? "main",
     sandboxed: options?.sandboxed,
     config: mockConfig as never,
     callGateway: (opts: unknown) => callGatewayMock(opts),
@@ -112,5 +115,65 @@ describe("sessions tools visibility", () => {
       sessionKey: "agent:other:main",
     });
     expect((denied.details as { status?: string }).status).toBe("forbidden");
+  });
+
+  it("allows a direct child to read an exact parent session ref without broad history visibility", async () => {
+    const previousStateDir = process.env.OPENCLAW_STATE_DIR;
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-parent-session-ref-"));
+    process.env.OPENCLAW_STATE_DIR = stateDir;
+    const childSessionKey = "agent:business-ops:subagent:child-1";
+    const parentSessionKey = "agent:main:main";
+    const unrelatedSessionKey = "agent:main:other";
+    const sessionsDir = path.join(stateDir, "agents", "business-ops", "sessions");
+    fs.mkdirSync(sessionsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(sessionsDir, "sessions.json"),
+      `${JSON.stringify({
+        [childSessionKey]: {
+          sessionId: "child-session-id",
+          updatedAt: Date.now(),
+          spawnedBy: parentSessionKey,
+        },
+      })}\n`,
+      "utf8",
+    );
+
+    try {
+      mockConfig = {
+        session: { mainKey: "main", scope: "per-sender" },
+        tools: { agentToAgent: { enabled: false } },
+      };
+      mockGatewayWithHistory((req) => {
+        if (req.method === "sessions.resolve") {
+          return { key: req.params?.key };
+        }
+        if (req.method === "sessions.list") {
+          return { sessions: [] };
+        }
+        return undefined;
+      });
+      const tool = getSessionsHistoryTool({ agentSessionKey: childSessionKey });
+      const parentRef = `openclaw-transcript://${encodeURIComponent(parentSessionKey)}#session`;
+      const allowed = await tool.execute("call-parent-ref", { ref: parentRef });
+      expect((allowed.details as { sessionKey?: string }).sessionKey).toBe(parentSessionKey);
+
+      const rawKeyDenied = await tool.execute("call-parent-key", {
+        sessionKey: parentSessionKey,
+      });
+      expect((rawKeyDenied.details as { status?: string }).status).toBe("forbidden");
+
+      const unrelatedRef = `openclaw-transcript://${encodeURIComponent(
+        unrelatedSessionKey,
+      )}#session`;
+      const unrelatedDenied = await tool.execute("call-unrelated-ref", { ref: unrelatedRef });
+      expect((unrelatedDenied.details as { status?: string }).status).toBe("forbidden");
+    } finally {
+      if (previousStateDir === undefined) {
+        delete process.env.OPENCLAW_STATE_DIR;
+      } else {
+        process.env.OPENCLAW_STATE_DIR = previousStateDir;
+      }
+      fs.rmSync(stateDir, { recursive: true, force: true });
+    }
   });
 });

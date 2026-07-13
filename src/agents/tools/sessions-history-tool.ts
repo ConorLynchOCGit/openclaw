@@ -53,6 +53,7 @@ type GatewayCaller = typeof callGateway;
 type OpenClawTranscriptRef = {
   raw: string;
   sessionKey: string;
+  scope: "message" | "session" | "other";
   messageId?: string;
 };
 
@@ -92,8 +93,34 @@ function parseOpenClawTranscriptRef(value: string): OpenClawTranscriptRef | unde
   return {
     raw: trimmed,
     sessionKey,
+    scope: messageId ? "message" : fragment === "session" ? "session" : "other",
     ...(messageId ? { messageId } : {}),
   };
+}
+
+function isDirectParentSessionTranscriptRef(params: {
+  ref: OpenClawTranscriptRef | undefined;
+  requesterSessionKey: string;
+  resolvedSessionKey: string;
+}): boolean {
+  if (params.ref?.scope !== "session" || !params.requesterSessionKey.trim()) {
+    return false;
+  }
+  try {
+    const requesterAgentId = resolveAgentIdFromSessionKey(params.requesterSessionKey);
+    const storePath = resolveDefaultSessionStorePath(requesterAgentId);
+    const store = loadSessionStore(storePath, { skipCache: true });
+    const requester = resolveSessionStoreEntry({
+      store,
+      sessionKey: params.requesterSessionKey,
+    }).existing;
+    return (
+      requester?.spawnedBy === params.resolvedSessionKey ||
+      requester?.parentSessionKey === params.resolvedSessionKey
+    );
+  } catch {
+    return false;
+  }
 }
 
 async function readTranscriptRefMessage(params: {
@@ -383,23 +410,30 @@ export function createSessionsHistoryTool(opts?: {
         });
       }
 
-      const a2aPolicy = createAgentToAgentPolicy(cfg);
-      const visibility = resolveEffectiveSessionToolsVisibility({
-        cfg,
-        sandboxed: opts?.sandboxed === true,
-      });
-      const visibilityGuard = await createSessionVisibilityGuard({
-        action: "history",
+      const directParentSessionRef = isDirectParentSessionTranscriptRef({
+        ref: transcriptRef,
         requesterSessionKey: effectiveRequesterKey,
-        visibility,
-        a2aPolicy,
+        resolvedSessionKey: resolvedKey,
       });
-      const access = visibilityGuard.check(resolvedKey);
-      if (!access.allowed) {
-        return jsonResult({
-          status: access.status,
-          error: access.error,
+      if (!directParentSessionRef) {
+        const a2aPolicy = createAgentToAgentPolicy(cfg);
+        const visibility = resolveEffectiveSessionToolsVisibility({
+          cfg,
+          sandboxed: opts?.sandboxed === true,
         });
+        const visibilityGuard = await createSessionVisibilityGuard({
+          action: "history",
+          requesterSessionKey: effectiveRequesterKey,
+          visibility,
+          a2aPolicy,
+        });
+        const access = visibilityGuard.check(resolvedKey);
+        if (!access.allowed) {
+          return jsonResult({
+            status: access.status,
+            error: access.error,
+          });
+        }
       }
 
       const limit = readPositiveIntegerParam(params, "limit");
