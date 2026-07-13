@@ -30,6 +30,7 @@ import {
   readSessionTitleFieldsFromTranscriptAsync,
   readSessionPreviewItemsFromTranscript,
   readLastAssistantTextFromTranscript,
+  readLastAssistantTextFromTranscriptWithProvenance,
   readLatestTrajectoryProgressProjection,
   resolveSessionTranscriptCandidates,
 } from "./session-utils.fs.js";
@@ -2278,6 +2279,34 @@ describe("oversized transcript line guards", () => {
     expect(readLastAssistantTextFromTranscript(sessionId, storePath, undefined, undefined)).toBe(
       oversizedFinal.trim(),
     );
+  });
+
+  test("readLastAssistantTextFromTranscript does not cross the latest user-turn boundary", () => {
+    const sessionId = "test-latest-user-boundary";
+    const transcriptPath = path.join(tmpDir, `${sessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({ type: "session", version: 3, id: sessionId }),
+      JSON.stringify({ message: { role: "user", content: "earlier request" } }),
+      JSON.stringify({ message: { role: "assistant", content: "earlier final" } }),
+      JSON.stringify({ message: { role: "user", content: "latest request" } }),
+      JSON.stringify({
+        message: {
+          role: "assistant",
+          content: [],
+          stopReason: "error",
+          errorCode: "server_is_overloaded",
+        },
+      }),
+    ];
+    fs.writeFileSync(transcriptPath, `${lines.join("\n")}\n`, "utf-8");
+
+    expect(
+      readLastAssistantTextFromTranscriptWithProvenance(sessionId, storePath, undefined, undefined),
+    ).toMatchObject({
+      text: "earlier final",
+      answersLatestUser: false,
+      provenance: { note: expect.stringContaining("predates latest user turn") },
+    });
   });
 
   test("readRecentSessionMessagesAsync keeps oversized active-tree leaves", async () => {

@@ -2425,6 +2425,7 @@ export function buildGatewaySessionRow(params: {
   let derivedTitle: string | undefined;
   let lastMessagePreview: string | undefined;
   let finalAssistantText: string | null | undefined;
+  let finalAssistantAnswersLatestUser = false;
   let readbackProvenance: GatewaySessionRow["readbackProvenance"] | undefined;
   const statusDerivedFromEndedAt = !entry?.status && entry?.endedAt ? "done" : undefined;
   const initialRowStatus = entry?.status ?? statusDerivedFromEndedAt;
@@ -2518,6 +2519,7 @@ export function buildGatewaySessionRow(params: {
         sessionAgentId,
       );
       finalAssistantText = finalAssistantRead.text;
+      finalAssistantAnswersLatestUser = finalAssistantRead.answersLatestUser;
       readbackProvenance = {
         ...readbackProvenance,
         finalAssistantText: finalAssistantRead.provenance,
@@ -2526,6 +2528,7 @@ export function buildGatewaySessionRow(params: {
   }
   if (
     finalAssistantText &&
+    finalAssistantAnswersLatestUser &&
     (!rowStatus || rowStatus === "failed" || rowStatus === "killed" || rowStatus === "timeout")
   ) {
     rowStatus = "done";
@@ -2588,7 +2591,7 @@ export function buildGatewaySessionRow(params: {
                   basis: "latest-context" as const,
                   promptTokens: totalTokens,
                   ...(contextTokens !== undefined ? { windowTokens: contextTokens } : {}),
-                  fresh: totalTokensFresh === true,
+                  fresh: totalTokensFresh,
                 },
               }
             : {}),

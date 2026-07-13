@@ -1892,6 +1892,7 @@ export function readLastAssistantTextFromTranscript(
 
 export type LastAssistantTextTranscriptRead = {
   text: string | null;
+  answersLatestUser: boolean;
   provenance: ReadbackFieldProvenance;
 };
 
@@ -1921,17 +1922,24 @@ export function readLastAssistantTextFromTranscriptWithProvenance(
   if (!filePath) {
     return {
       text: null,
+      answersLatestUser: false,
       provenance: finalAssistantTextProvenance(sessionId, "no transcript candidate found", false),
     };
   }
 
   const messages = transcriptRecordsToMessages(readSelectedTranscriptRecordsRaw(filePath));
+  let sawNewerUserTurn = false;
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i] as TranscriptPreviewMessage | undefined;
     if (!message) {
       continue;
     }
-    if (normalizeLowercaseStringOrEmpty(message?.role) !== "assistant") {
+    const role = normalizeLowercaseStringOrEmpty(message?.role);
+    if (role === "user") {
+      sawNewerUserTurn = true;
+      continue;
+    }
+    if (role !== "assistant") {
       continue;
     }
     const text = extractPreviewText(message);
@@ -1947,20 +1955,26 @@ export function readLastAssistantTextFromTranscriptWithProvenance(
       const bounded = trimmed.length > boundedChars;
       return {
         text: bounded ? truncatePreviewText(trimmed, boundedChars) : trimmed,
+        answersLatestUser: !sawNewerUserTurn,
         provenance: finalAssistantTextProvenance(
           sessionId,
-          bounded
-            ? `derived from full transcript scan then bounded by caller maxChars=${boundedChars}`
-            : "derived from full transcript scan; caller maxChars did not truncate",
+          `${
+            bounded
+              ? `derived from full transcript scan then bounded by caller maxChars=${boundedChars}`
+              : "derived from full transcript scan; caller maxChars did not truncate"
+          }${sawNewerUserTurn ? "; predates latest user turn" : ""}`,
           bounded,
         ),
       };
     }
     return {
       text: trimmed,
+      answersLatestUser: !sawNewerUserTurn,
       provenance: finalAssistantTextProvenance(
         sessionId,
-        "derived from full transcript scan; unbounded final assistant text",
+        `derived from full transcript scan; unbounded final assistant text${
+          sawNewerUserTurn ? "; predates latest user turn" : ""
+        }`,
         false,
       ),
     };
@@ -1968,6 +1982,7 @@ export function readLastAssistantTextFromTranscriptWithProvenance(
 
   return {
     text: null,
+    answersLatestUser: false,
     provenance: finalAssistantTextProvenance(
       sessionId,
       messages.length > 0

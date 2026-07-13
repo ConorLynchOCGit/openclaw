@@ -2188,6 +2188,55 @@ describe("gateway session utils", () => {
     }
   });
 
+  test("session rows do not reuse an earlier final after the latest user turn fails", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "session-utils-failed-latest-turn-"));
+    try {
+      const sessionId = "session-failed-latest-turn";
+      const sessionFile = path.join(dir, `${sessionId}.jsonl`);
+      fs.writeFileSync(
+        sessionFile,
+        [
+          JSON.stringify({ type: "session", version: 1, id: sessionId }),
+          JSON.stringify({ message: { role: "user", content: "Earlier request." } }),
+          JSON.stringify({ message: { role: "assistant", content: "Earlier closeout." } }),
+          JSON.stringify({ message: { role: "user", content: "Latest request." } }),
+          JSON.stringify({
+            message: {
+              role: "assistant",
+              content: [],
+              stopReason: "error",
+              errorCode: "server_is_overloaded",
+            },
+          }),
+          "",
+        ].join("\n"),
+        "utf8",
+      );
+
+      const row = buildGatewaySessionRow({
+        cfg: createModelDefaultsConfig({ primary: "openai/gpt-5.5" }),
+        storePath: path.join(dir, "sessions.json"),
+        store: {},
+        key: "agent:main:main",
+        entry: {
+          sessionId,
+          sessionFile,
+          status: "failed",
+          updatedAt: 1,
+        },
+        includeLastMessage: true,
+      });
+
+      expect(row.status).toBe("failed");
+      expect(row.finalAssistantText).toBe("Earlier closeout.");
+      expect(row.readbackProvenance?.finalAssistantText?.note).toContain(
+        "predates latest user turn",
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("session defaults use configured thinking default", () => {
     const defaults = getSessionDefaults({
       agents: {
