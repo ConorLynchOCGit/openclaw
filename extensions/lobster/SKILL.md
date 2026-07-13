@@ -55,6 +55,42 @@ If the workflow needs approval:
 }
 ```
 
+### Checkpoint managed TaskFlow state
+
+Use `checkpoint` when an agent-owned workflow needs durable compact
+continuation state but does not need to execute a Lobster pipeline. This is the
+single managed TaskFlow create/update surface; do not run a harmless discovery
+pipeline merely to obtain a flow ID.
+
+Create one waiting checkpoint:
+
+```json
+{
+  "action": "checkpoint",
+  "flowControllerId": "business-ops-refinement",
+  "flowGoal": "Collect the next operator decision",
+  "flowStateJson": "{\"questionId\":\"Q-001\"}",
+  "flowWaitingStep": "await_operator_Q-001"
+}
+```
+
+Advance that same checkpoint with optimistic revision control:
+
+```json
+{
+  "action": "checkpoint",
+  "flowId": "<flowId>",
+  "flowExpectedRevision": 1,
+  "flowStateJson": "{\"questionId\":\"Q-002\"}",
+  "flowWaitingStep": "await_operator_Q-002"
+}
+```
+
+The returned top-level `flow` is the settled authoritative record. Reuse its
+exact `flowId` and `revision`; a stale revision fails without creating a new
+flow. `run` remains the pipeline action and `resume` remains the approval-token
+action.
+
 Present the prompt to the user. If they approve:
 
 ```json

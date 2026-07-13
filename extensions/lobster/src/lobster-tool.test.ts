@@ -230,8 +230,111 @@ describe("lobster plugin tool", () => {
     expect(details.status).toBe("needs_approval");
     const flow = requireRecord(details.flow, "managed run flow details");
     expect(flow.flowId).toBe("flow-1");
+    expect(flow.revision).toBe(2);
     const mutation = requireRecord(details.mutation, "managed run mutation details");
     expect(mutation.applied).toBe(true);
+  });
+
+  it("creates a waiting managed TaskFlow checkpoint without running a pipeline", async () => {
+    const runner = { run: vi.fn() };
+    const createdFlow = {
+      flowId: "flow-checkpoint",
+      revision: 1,
+      syncMode: "managed" as const,
+      controllerId: "tests/checkpoint",
+      ownerKey: "agent:main:main",
+      status: "waiting" as const,
+      goal: "Collect one operator answer",
+      currentStep: "await_operator_answer",
+      stateJson: { questionId: "Q-001" },
+    };
+    const createManaged = vi.fn().mockReturnValue(createdFlow);
+    const taskFlow = createFakeTaskFlow({ createManaged });
+    const tool = createLobsterTool(fakeApi(), { runner, taskFlow });
+
+    const res = await tool.execute("call-managed-checkpoint-create", {
+      action: "checkpoint",
+      flowControllerId: "tests/checkpoint",
+      flowGoal: "Collect one operator answer",
+      flowStateJson: '{"questionId":"Q-001"}',
+      flowWaitingStep: "await_operator_answer",
+    });
+
+    expect(createManaged).toHaveBeenCalledWith({
+      controllerId: "tests/checkpoint",
+      goal: "Collect one operator answer",
+      status: "waiting",
+      currentStep: "await_operator_answer",
+      stateJson: { questionId: "Q-001" },
+    });
+    expect(runner.run).not.toHaveBeenCalled();
+    const details = requireRecord(res.details, "checkpoint create details");
+    expect(details.status).toBe("waiting");
+    expect(details.flow).toEqual(createdFlow);
+  });
+
+  it("revision-safely advances one waiting TaskFlow checkpoint", async () => {
+    const runner = { run: vi.fn() };
+    const taskFlow = createFakeTaskFlow();
+    const tool = createLobsterTool(fakeApi(), { runner, taskFlow });
+
+    const res = await tool.execute("call-managed-checkpoint-update", {
+      action: "checkpoint",
+      flowId: "flow-1",
+      flowExpectedRevision: 1,
+      flowStateJson: '{"questionId":"Q-002"}',
+      flowWaitingStep: "await_operator_Q-002",
+    });
+
+    expect(taskFlow.setWaiting).toHaveBeenCalledWith({
+      flowId: "flow-1",
+      expectedRevision: 1,
+      currentStep: "await_operator_Q-002",
+      stateJson: { questionId: "Q-002" },
+      waitJson: null,
+    });
+    expect(runner.run).not.toHaveBeenCalled();
+    const details = requireRecord(res.details, "checkpoint update details");
+    const flow = requireRecord(details.flow, "checkpoint update flow");
+    expect(details.status).toBe("waiting");
+    expect(flow.flowId).toBe("flow-1");
+    expect(flow.revision).toBe(2);
+  });
+
+  it("rejects ambiguous or stale managed TaskFlow checkpoint inputs", async () => {
+    const taskFlow = createFakeTaskFlow({
+      setWaiting: vi.fn().mockReturnValue({
+        applied: false,
+        code: "revision_conflict",
+      }),
+    });
+    const tool = createLobsterTool(fakeApi(), { runner: { run: vi.fn() }, taskFlow });
+
+    await expect(
+      tool.execute("call-checkpoint-missing-state", {
+        action: "checkpoint",
+        flowControllerId: "tests/checkpoint",
+        flowGoal: "Collect one operator answer",
+      }),
+    ).rejects.toThrow(/flowStateJson required/);
+    await expect(
+      tool.execute("call-checkpoint-mixed-identity", {
+        action: "checkpoint",
+        flowControllerId: "tests/checkpoint",
+        flowGoal: "Collect one operator answer",
+        flowId: "flow-1",
+        flowExpectedRevision: 1,
+        flowStateJson: "{}",
+      }),
+    ).rejects.toThrow(/does not accept flowControllerId or flowGoal/);
+    await expect(
+      tool.execute("call-checkpoint-stale", {
+        action: "checkpoint",
+        flowId: "flow-1",
+        flowExpectedRevision: 1,
+        flowStateJson: "{}",
+      }),
+    ).rejects.toThrow(/revision_conflict/);
   });
 
   it("rejects managed TaskFlow params when no bound taskFlow runtime is available", async () => {

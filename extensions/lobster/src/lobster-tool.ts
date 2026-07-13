@@ -55,12 +55,44 @@ type ManagedFlowResumeParams = {
   waitingStep?: string;
 };
 
+type ManagedFlowCheckpointParams =
+  | {
+      mode: "create";
+      controllerId: string;
+      goal: string;
+      stateJson: JsonLike;
+      currentStep?: string;
+      waitingStep?: string;
+    }
+  | {
+      mode: "update";
+      flowId: string;
+      expectedRevision: number;
+      stateJson: JsonLike;
+      currentStep?: string;
+      waitingStep?: string;
+    };
+
 type ManagedFlowSuccessResult = {
   ok: true;
   envelope: unknown;
   flow: unknown;
   mutation: unknown;
 };
+
+function resolveSettledManagedFlow(result: ManagedFlowSuccessResult): unknown {
+  if (
+    result.mutation &&
+    typeof result.mutation === "object" &&
+    !Array.isArray(result.mutation) &&
+    "applied" in result.mutation &&
+    result.mutation.applied === true &&
+    "flow" in result.mutation
+  ) {
+    return result.mutation.flow;
+  }
+  return result.flow;
+}
 
 function readOptionalTrimmedString(value: unknown, fieldName: string): string | undefined {
   if (value === undefined) {
@@ -184,6 +216,54 @@ function parseResumeFlowParams(params: Record<string, unknown>): ManagedFlowResu
   };
 }
 
+function parseCheckpointFlowParams(params: Record<string, unknown>): ManagedFlowCheckpointParams {
+  const controllerId = readOptionalTrimmedString(params.flowControllerId, "flowControllerId");
+  const goal = readOptionalTrimmedString(params.flowGoal, "flowGoal");
+  const flowId = readOptionalTrimmedString(params.flowId, "flowId");
+  const expectedRevision = readOptionalNumber(params.flowExpectedRevision, "flowExpectedRevision");
+  const currentStep = readOptionalTrimmedString(params.flowCurrentStep, "flowCurrentStep");
+  const waitingStep = readOptionalTrimmedString(params.flowWaitingStep, "flowWaitingStep");
+  const stateJson = parseOptionalFlowStateJson(params.flowStateJson);
+
+  if (stateJson === undefined) {
+    throw new Error("flowStateJson required for managed TaskFlow checkpoint mode");
+  }
+
+  const isUpdate = flowId !== undefined || expectedRevision !== undefined;
+  if (isUpdate) {
+    if (!flowId || expectedRevision === undefined) {
+      throw new Error(
+        "flowId and flowExpectedRevision are both required when updating a TaskFlow checkpoint",
+      );
+    }
+    if (controllerId !== undefined || goal !== undefined) {
+      throw new Error("TaskFlow checkpoint update does not accept flowControllerId or flowGoal");
+    }
+    return {
+      mode: "update",
+      flowId,
+      expectedRevision,
+      stateJson,
+      ...(currentStep ? { currentStep } : {}),
+      ...(waitingStep ? { waitingStep } : {}),
+    };
+  }
+
+  if (!controllerId || !goal) {
+    throw new Error(
+      "flowControllerId and flowGoal are required when creating a TaskFlow checkpoint",
+    );
+  }
+  return {
+    mode: "create",
+    controllerId,
+    goal,
+    stateJson,
+    ...(currentStep ? { currentStep } : {}),
+    ...(waitingStep ? { waitingStep } : {}),
+  };
+}
+
 function formatManagedFlowResult(result: ManagedFlowSuccessResult) {
   const envelope =
     result.envelope && typeof result.envelope === "object" && !Array.isArray(result.envelope)
@@ -191,7 +271,7 @@ function formatManagedFlowResult(result: ManagedFlowSuccessResult) {
       : { envelope: result.envelope };
   const details = {
     ...envelope,
-    flow: result.flow,
+    flow: resolveSettledManagedFlow(result),
     mutation: result.mutation,
   };
   return {
@@ -200,7 +280,22 @@ function formatManagedFlowResult(result: ManagedFlowSuccessResult) {
   };
 }
 
-function requireTaskFlowRuntime(taskFlow: BoundTaskFlow | undefined, action: "run" | "resume") {
+function formatManagedCheckpointResult(flow: unknown) {
+  const details = {
+    ok: true,
+    status: "waiting",
+    flow,
+  };
+  return {
+    content: [{ type: "text", text: JSON.stringify(details, null, 2) }],
+    details,
+  };
+}
+
+function requireTaskFlowRuntime(
+  taskFlow: BoundTaskFlow | undefined,
+  action: "run" | "resume" | "checkpoint",
+) {
   if (!taskFlow) {
     throw new Error(`Managed TaskFlow ${action} mode requires a bound taskFlow runtime`);
   }
@@ -220,10 +315,15 @@ export function createLobsterTool(api: OpenClawPluginApi, options?: LobsterToolO
     name: "lobster",
     label: "Lobster Workflow",
     description:
-      "Run Lobster pipelines as a local-first workflow runtime (typed JSON envelope + resumable approvals).",
+      "Run Lobster pipelines as a local-first workflow runtime, resume approvals, or atomically checkpoint the bound managed TaskFlow state.",
     parameters: Type.Object({
       // NOTE: Prefer string enums in tool schemas; some providers reject unions/anyOf.
-      action: Type.Unsafe<"run" | "resume">({ type: "string", enum: ["run", "resume"] }),
+      action: Type.Unsafe<"run" | "resume" | "checkpoint">({
+        type: "string",
+        enum: ["run", "resume", "checkpoint"],
+        description:
+          "run executes a Lobster pipeline; resume continues a Lobster approval; checkpoint creates or revision-safely updates managed TaskFlow continuation state without running a pipeline.",
+      }),
       pipeline: Type.Optional(Type.String()),
       argsJson: Type.Optional(Type.String()),
       token: Type.Optional(Type.String()),
@@ -239,9 +339,21 @@ export function createLobsterTool(api: OpenClawPluginApi, options?: LobsterToolO
       maxStdoutBytes: optionalPositiveIntegerSchema(),
       flowControllerId: Type.Optional(Type.String()),
       flowGoal: Type.Optional(Type.String()),
-      flowStateJson: Type.Optional(Type.String()),
-      flowId: Type.Optional(Type.String()),
-      flowExpectedRevision: optionalNonNegativeIntegerSchema(),
+      flowStateJson: Type.Optional(
+        Type.String({
+          description:
+            "JSON state for managed TaskFlow run or checkpoint. Required for checkpoint.",
+        }),
+      ),
+      flowId: Type.Optional(
+        Type.String({
+          description: "Existing managed TaskFlow id for checkpoint update or approval resume.",
+        }),
+      ),
+      flowExpectedRevision: optionalNonNegativeIntegerSchema({
+        description:
+          "Expected current revision for checkpoint update or approval resume; stale revisions fail without mutation.",
+      }),
       flowCurrentStep: Type.Optional(Type.String()),
       flowWaitingStep: Type.Optional(Type.String()),
     }),
@@ -250,8 +362,43 @@ export function createLobsterTool(api: OpenClawPluginApi, options?: LobsterToolO
       if (!action) {
         throw new Error("action required");
       }
-      if (action !== "run" && action !== "resume") {
+      if (action !== "run" && action !== "resume" && action !== "checkpoint") {
         throw new Error(`Unknown action: ${action}`);
+      }
+
+      const taskFlow = options?.taskFlow;
+      if (action === "checkpoint") {
+        for (const field of ["pipeline", "argsJson", "token", "approvalId", "approve"] as const) {
+          if (params[field] !== undefined) {
+            throw new Error(`checkpoint action does not accept ${field}`);
+          }
+        }
+        const flowParams = parseCheckpointFlowParams(params);
+        const runtime = requireTaskFlowRuntime(taskFlow, "checkpoint");
+        const checkpointStep =
+          flowParams.waitingStep ?? flowParams.currentStep ?? "await_operator_input";
+        if (flowParams.mode === "create") {
+          return formatManagedCheckpointResult(
+            runtime.createManaged({
+              controllerId: flowParams.controllerId,
+              goal: flowParams.goal,
+              status: "waiting",
+              currentStep: checkpointStep,
+              stateJson: flowParams.stateJson,
+            }),
+          );
+        }
+        const mutation = runtime.setWaiting({
+          flowId: flowParams.flowId,
+          expectedRevision: flowParams.expectedRevision,
+          currentStep: checkpointStep,
+          stateJson: flowParams.stateJson,
+          waitJson: null,
+        });
+        if (!mutation.applied) {
+          throw new Error(`TaskFlow checkpoint failed: ${mutation.code}`);
+        }
+        return formatManagedCheckpointResult(mutation.flow);
       }
 
       const cwd = resolveLobsterCwd(params.cwd);
@@ -274,7 +421,6 @@ export function createLobsterTool(api: OpenClawPluginApi, options?: LobsterToolO
         maxStdoutBytes,
       };
 
-      const taskFlow = options?.taskFlow;
       if (action === "run") {
         const flowParams = parseRunFlowParams(params);
         if (flowParams) {
