@@ -228,7 +228,11 @@ describe("workboard gateway methods", () => {
       opts: Parameters<OpenClawPluginApi["registerGatewayMethod"]>[2];
     };
     const methods = new Map<string, RegisteredMethod>();
-    const run = vi.fn().mockResolvedValue({ runId: "run-card" });
+    const run = vi.fn(async (params: { sessionKey: string }) => ({
+      runId: "run-card",
+      sessionKey: params.sessionKey,
+      taskId: "task-run-card",
+    }));
     const api = {
       runtime: {
         state: {

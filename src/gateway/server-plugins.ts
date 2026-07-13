@@ -592,7 +592,11 @@ export function createGatewaySubagentRuntime(): PluginRuntime["subagent"] {
       if (overrideRequested && !allowOverride) {
         throw new Error("provider/model override is not authorized for this plugin subagent run.");
       }
-      const payload = await dispatchGatewayMethod<{ runId?: string }>(
+      const payload = await dispatchGatewayMethod<{
+        runId?: string;
+        sessionKey?: string;
+        taskId?: string;
+      }>(
         "agent",
         {
           sessionKey: params.sessionKey,
@@ -620,7 +624,15 @@ export function createGatewaySubagentRuntime(): PluginRuntime["subagent"] {
       if (typeof runId !== "string" || !runId) {
         throw new Error("Gateway agent method returned an invalid runId.");
       }
-      return { runId };
+      return {
+        runId,
+        ...(typeof payload.sessionKey === "string" && payload.sessionKey.trim()
+          ? { sessionKey: payload.sessionKey.trim() }
+          : {}),
+        ...(typeof payload.taskId === "string" && payload.taskId.trim()
+          ? { taskId: payload.taskId.trim() }
+          : {}),
+      };
     },
     async waitForRun(params) {
       const payload = await dispatchGatewayMethod<{ status?: string; error?: string }>(

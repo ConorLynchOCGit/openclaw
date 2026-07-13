@@ -24,6 +24,7 @@ export type WorkboardStartedRun = {
   title: string;
   sessionKey: string;
   runId: string;
+  taskId: string;
 };
 
 export type WorkboardStartFailure = {
@@ -71,6 +72,7 @@ function buildExecution(params: {
   card: WorkboardCard;
   sessionKey: string;
   runId: string;
+  taskId: string;
   model: string;
   now: number;
 }): WorkboardExecution {
@@ -83,6 +85,7 @@ function buildExecution(params: {
     model: params.model,
     sessionKey: params.sessionKey,
     runId: params.runId,
+    taskId: params.taskId,
     startedAt: params.now,
     updatedAt: params.now,
   };
@@ -205,13 +208,23 @@ export async function dispatchAndStartWorkboardCards(params: {
         lightContext: true,
         deliver: false,
       });
+      if (!run.sessionKey || run.sessionKey !== sessionKey) {
+        throw new Error(
+          "Gateway task receipt did not preserve the requested Workboard sessionKey.",
+        );
+      }
+      if (!run.taskId) {
+        throw new Error("Gateway task receipt did not include a native taskId.");
+      }
       const updated = await params.store.update(card.id, {
-        sessionKey,
+        sessionKey: run.sessionKey,
         runId: run.runId,
+        taskId: run.taskId,
         execution: buildExecution({
           card: claimed.card,
-          sessionKey,
+          sessionKey: run.sessionKey,
           runId: run.runId,
+          taskId: run.taskId,
           model,
           now,
         }),
@@ -231,6 +244,7 @@ export async function dispatchAndStartWorkboardCards(params: {
         title: updated.title,
         sessionKey,
         runId: run.runId,
+        taskId: run.taskId,
       });
     } catch (error) {
       const message = formatErrorMessage(error);

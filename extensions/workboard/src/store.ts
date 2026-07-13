@@ -1464,6 +1464,7 @@ function normalizeExecution(value: unknown): WorkboardExecution | undefined {
   const updatedAt = normalizeTimestamp(record.updatedAt, startedAt);
   const sessionKey = normalizeOptionalString(record.sessionKey);
   const runId = normalizeOptionalString(record.runId);
+  const taskId = normalizeOptionalString(record.taskId);
   return {
     id,
     kind: "agent-session",
@@ -1475,19 +1476,27 @@ function normalizeExecution(value: unknown): WorkboardExecution | undefined {
     updatedAt,
     ...(sessionKey ? { sessionKey } : {}),
     ...(runId ? { runId } : {}),
+    ...(taskId ? { taskId } : {}),
   };
 }
 
-function syncExecutionSessionKey(
+function syncExecutionLinkage(
   execution: WorkboardExecution | undefined,
-  sessionKey: string | undefined,
+  linkage: { sessionKey?: string; runId?: string; taskId?: string },
 ): WorkboardExecution | undefined {
   if (!execution) {
     return undefined;
   }
+  if (
+    execution.sessionKey === linkage.sessionKey &&
+    execution.runId === linkage.runId &&
+    execution.taskId === linkage.taskId
+  ) {
+    return execution;
+  }
   return removeUndefinedExecutionFields({
     ...execution,
-    sessionKey,
+    ...linkage,
     updatedAt: Date.now(),
   });
 }
@@ -1500,7 +1509,20 @@ function removeUndefinedExecutionFields(execution: WorkboardExecution): Workboar
   if (next.runId === undefined) {
     delete next.runId;
   }
+  if (next.taskId === undefined) {
+    delete next.taskId;
+  }
   return next;
+}
+
+function assertMatchingExecutionLink(
+  name: "sessionKey" | "runId" | "taskId",
+  cardValue: string | undefined,
+  executionValue: string | undefined,
+): void {
+  if (cardValue && executionValue && cardValue !== executionValue) {
+    throw new Error(`execution ${name} does not match card ${name}.`);
+  }
 }
 
 function removeUndefinedAutomationFields(automation: WorkboardAutomation): WorkboardAutomation {
@@ -1722,6 +1744,7 @@ function syncExecutionAttemptMetadata(
     model: execution.model,
     ...(execution.sessionKey ? { sessionKey: execution.sessionKey } : {}),
     ...(execution.runId ? { runId: execution.runId } : {}),
+    ...(execution.taskId ? { taskId: execution.taskId } : {}),
     ...(attemptStatus !== "running" && { endedAt: execution.updatedAt || now }),
     ...(attemptStatus !== "succeeded" && existingAttempt?.error
       ? { error: existingAttempt.error }
@@ -2861,10 +2884,21 @@ export class WorkboardStore {
     const taskId = normalizeOptionalString(input.taskId);
     const sourceUrl = normalizeOptionalString(input.sourceUrl);
     const normalizedExecution = normalizeExecution(input.execution);
-    const execution =
+    let execution =
       normalizedExecution?.status === "running" && (heldBySchedule || heldByDependencies)
         ? undefined
         : normalizedExecution;
+    assertMatchingExecutionLink("sessionKey", sessionKey, execution?.sessionKey);
+    assertMatchingExecutionLink("runId", runId, execution?.runId);
+    assertMatchingExecutionLink("taskId", taskId, execution?.taskId);
+    const canonicalSessionKey = sessionKey ?? execution?.sessionKey;
+    const canonicalRunId = runId ?? execution?.runId;
+    const canonicalTaskId = taskId ?? execution?.taskId;
+    execution = syncExecutionLinkage(execution, {
+      sessionKey: canonicalSessionKey,
+      runId: canonicalRunId,
+      taskId: canonicalTaskId,
+    });
     const startedAt =
       input.startedAt === undefined
         ? status === "running"
@@ -2903,15 +2937,15 @@ export class WorkboardStore {
           kind: "created",
           at: now,
           toStatus: status,
-          ...(sessionKey ? { sessionKey } : {}),
-          ...(runId ? { runId } : {}),
+          ...(canonicalSessionKey ? { sessionKey: canonicalSessionKey } : {}),
+          ...(canonicalRunId ? { runId: canonicalRunId } : {}),
         },
       ],
       ...(notes ? { notes } : {}),
       ...(agentId ? { agentId } : {}),
-      ...(sessionKey ? { sessionKey } : {}),
-      ...(runId ? { runId } : {}),
-      ...(taskId ? { taskId } : {}),
+      ...(canonicalSessionKey ? { sessionKey: canonicalSessionKey } : {}),
+      ...(canonicalRunId ? { runId: canonicalRunId } : {}),
+      ...(canonicalTaskId ? { taskId: canonicalTaskId } : {}),
       ...(sourceUrl ? { sourceUrl } : {}),
       ...(execution ? { execution } : {}),
       ...(startedAt ? { startedAt } : {}),
@@ -3004,16 +3038,49 @@ export class WorkboardStore {
           ? (existing.completedAt ?? now)
           : undefined
         : normalizeTimestamp(effectivePatch.completedAt, 0) || undefined;
-    const sessionKey =
+    let sessionKey =
       effectivePatch.sessionKey === undefined
         ? existing.sessionKey
         : normalizeOptionalString(effectivePatch.sessionKey);
-    const execution =
-      effectivePatch.execution === undefined
-        ? effectivePatch.sessionKey === undefined
-          ? existing.execution
-          : syncExecutionSessionKey(existing.execution, sessionKey)
-        : normalizeExecution(effectivePatch.execution);
+    let runId =
+      effectivePatch.runId === undefined
+        ? existing.runId
+        : normalizeOptionalString(effectivePatch.runId);
+    let taskId =
+      effectivePatch.taskId === undefined
+        ? existing.taskId
+        : normalizeOptionalString(effectivePatch.taskId);
+    const executionWasPatched = effectivePatch.execution !== undefined;
+    let execution = executionWasPatched
+      ? normalizeExecution(effectivePatch.execution)
+      : existing.execution;
+    if (executionWasPatched && execution) {
+      const explicitSessionKey =
+        effectivePatch.sessionKey === undefined
+          ? undefined
+          : normalizeOptionalString(effectivePatch.sessionKey);
+      const explicitRunId =
+        effectivePatch.runId === undefined
+          ? undefined
+          : normalizeOptionalString(effectivePatch.runId);
+      const explicitTaskId =
+        effectivePatch.taskId === undefined
+          ? undefined
+          : normalizeOptionalString(effectivePatch.taskId);
+      assertMatchingExecutionLink("sessionKey", explicitSessionKey, execution.sessionKey);
+      assertMatchingExecutionLink("runId", explicitRunId, execution.runId);
+      assertMatchingExecutionLink("taskId", explicitTaskId, execution.taskId);
+      if (effectivePatch.sessionKey === undefined && execution.sessionKey) {
+        sessionKey = execution.sessionKey;
+      }
+      if (effectivePatch.runId === undefined && execution.runId) {
+        runId = execution.runId;
+      }
+      if (effectivePatch.taskId === undefined && execution.taskId) {
+        taskId = execution.taskId;
+      }
+    }
+    execution = syncExecutionLinkage(execution, { sessionKey, runId, taskId });
     let metadata = normalizeMetadata(effectivePatch.metadata, existing.metadata, {
       allowDependencyLinks: options.allowMetadataDependencyLinks !== false,
     });
@@ -3064,14 +3131,8 @@ export class WorkboardStore {
           ? existing.agentId
           : normalizeOptionalString(effectivePatch.agentId),
       sessionKey,
-      runId:
-        effectivePatch.runId === undefined
-          ? existing.runId
-          : normalizeOptionalString(effectivePatch.runId),
-      taskId:
-        effectivePatch.taskId === undefined
-          ? existing.taskId
-          : normalizeOptionalString(effectivePatch.taskId),
+      runId,
+      taskId,
       sourceUrl:
         effectivePatch.sourceUrl === undefined
           ? existing.sourceUrl
@@ -4018,6 +4079,12 @@ export class WorkboardStore {
     if (!existing) {
       throw new Error(`card not found: ${id}`);
     }
+    if (existing.status === "done") {
+      return existing;
+    }
+    if (existing.status === "blocked" || existing.execution?.status === "blocked") {
+      throw new Error("blocked card must be explicitly unblocked before completion.");
+    }
     assertCanMutateClaimedCard(existing, scope === null ? undefined : scope);
     const now = Date.now();
     const createdCardIds = normalizeStringList(input.createdCardIds, "created card ids", 120);
@@ -4056,7 +4123,7 @@ export class WorkboardStore {
       ...(cardRunId(existing) ? { runId: cardRunId(existing) } : {}),
     };
     const execution =
-      existing.execution?.status === "running"
+      existing.execution?.status === "running" || existing.execution?.status === "review"
         ? { ...existing.execution, status: "done" as const, updatedAt: now }
         : existing.execution;
     return await this.updateCard(

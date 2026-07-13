@@ -27,7 +27,7 @@ import type {
 } from "./types.js";
 
 const WORKBOARD_DB_RELATIVE_PATH = ["plugins", "workboard", "workboard.sqlite"] as const;
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 const WORKBOARD_SQLITE_BUSY_TIMEOUT_MS = 5000;
 const WORKBOARD_SQLITE_DIR_MODE = 0o700;
 const WORKBOARD_SQLITE_FILE_MODE = 0o600;
@@ -180,6 +180,7 @@ function ensureWorkboardSchema(db: DatabaseSync): void {
       execution_model TEXT,
       execution_session_key TEXT,
       execution_run_id TEXT,
+      execution_task_id TEXT,
       execution_started_at INTEGER,
       execution_updated_at INTEGER,
       automation_json TEXT,
@@ -227,6 +228,7 @@ function ensureWorkboardSchema(db: DatabaseSync): void {
       model TEXT,
       session_key TEXT,
       run_id TEXT,
+      task_id TEXT,
       error TEXT
     );
 
@@ -357,6 +359,8 @@ function ensureWorkboardSchema(db: DatabaseSync): void {
     "lifecycle_status_source_updated_at",
     "lifecycle_status_source_updated_at INTEGER",
   );
+  ensureColumn(db, "workboard_cards", "execution_task_id", "execution_task_id TEXT");
+  ensureColumn(db, "workboard_card_attempts", "task_id", "task_id TEXT");
   ensureColumn(
     db,
     "workboard_cards",
@@ -466,6 +470,9 @@ function readExecution(row: Row): WorkboardExecution | undefined {
     ...(stringValue(row, "execution_run_id")
       ? { runId: stringValue(row, "execution_run_id") }
       : {}),
+    ...(stringValue(row, "execution_task_id")
+      ? { taskId: stringValue(row, "execution_task_id") }
+      : {}),
     startedAt: requiredNumber(row, "execution_started_at"),
     updatedAt: requiredNumber(row, "execution_updated_at"),
   };
@@ -485,6 +492,7 @@ function readMetadata(db: DatabaseSync, row: Row): WorkboardMetadata | undefined
     const model = stringValue(child, "model");
     const sessionKey = stringValue(child, "session_key");
     const runId = stringValue(child, "run_id");
+    const taskId = stringValue(child, "task_id");
     const error = stringValue(child, "error");
     if (endedAt !== undefined) {
       entry.endedAt = endedAt;
@@ -503,6 +511,9 @@ function readMetadata(db: DatabaseSync, row: Row): WorkboardMetadata | undefined
     }
     if (runId) {
       entry.runId = runId;
+    }
+    if (taskId) {
+      entry.taskId = taskId;
     }
     if (error) {
       entry.error = error;
@@ -772,14 +783,14 @@ function insertCard(db: DatabaseSync, card: WorkboardCard): void {
         id, board_id, title, notes, status, priority, agent_id, session_key, run_id, task_id,
         source_url, position, created_at, updated_at, started_at, completed_at,
         execution_id, execution_kind, execution_engine, execution_mode, execution_status,
-        execution_model, execution_session_key, execution_run_id, execution_started_at,
+        execution_model, execution_session_key, execution_run_id, execution_task_id, execution_started_at,
         execution_updated_at, automation_json, business_ops_promotion_json, claim_json, template_id,
         archived_at, stale_json, lifecycle_status_source_updated_at, failure_count
       ) VALUES (
         @id, @board_id, @title, @notes, @status, @priority, @agent_id, @session_key, @run_id,
         @task_id, @source_url, @position, @created_at, @updated_at, @started_at, @completed_at,
         @execution_id, @execution_kind, @execution_engine, @execution_mode, @execution_status,
-        @execution_model, @execution_session_key, @execution_run_id, @execution_started_at,
+        @execution_model, @execution_session_key, @execution_run_id, @execution_task_id, @execution_started_at,
         @execution_updated_at, @automation_json, @business_ops_promotion_json, @claim_json,
         @template_id, @archived_at, @stale_json, @lifecycle_status_source_updated_at, @failure_count
       )
@@ -807,6 +818,7 @@ function insertCard(db: DatabaseSync, card: WorkboardCard): void {
         execution_model = excluded.execution_model,
         execution_session_key = excluded.execution_session_key,
         execution_run_id = excluded.execution_run_id,
+        execution_task_id = excluded.execution_task_id,
         execution_started_at = excluded.execution_started_at,
         execution_updated_at = excluded.execution_updated_at,
         automation_json = excluded.automation_json,
@@ -843,6 +855,7 @@ function insertCard(db: DatabaseSync, card: WorkboardCard): void {
     execution_model: bindNull(execution?.model),
     execution_session_key: bindNull(execution?.sessionKey),
     execution_run_id: bindNull(execution?.runId),
+    execution_task_id: bindNull(execution?.taskId),
     execution_started_at: bindNull(execution?.startedAt),
     execution_updated_at: bindNull(execution?.updatedAt),
     automation_json: jsonValue(metadata?.automation),
@@ -885,8 +898,8 @@ function insertCard(db: DatabaseSync, card: WorkboardCard): void {
     db.prepare(
       `
         INSERT INTO workboard_card_attempts
-          (id, card_id, ordinal, status, started_at, ended_at, engine, mode, model, session_key, run_id, error)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          (id, card_id, ordinal, status, started_at, ended_at, engine, mode, model, session_key, run_id, task_id, error)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
     ).run(
       entry.id,
@@ -900,6 +913,7 @@ function insertCard(db: DatabaseSync, card: WorkboardCard): void {
       bindNull(entry.model),
       bindNull(entry.sessionKey),
       bindNull(entry.runId),
+      bindNull(entry.taskId),
       bindNull(entry.error),
     );
   });

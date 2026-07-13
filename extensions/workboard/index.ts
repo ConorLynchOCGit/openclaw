@@ -2,6 +2,7 @@
 import { definePluginEntry } from "./api.js";
 import { registerWorkboardGatewayMethods } from "./runtime-api.js";
 import { registerWorkboardCommand } from "./src/command.js";
+import { registerWorkboardHeartbeatContribution } from "./src/heartbeat-contribution.js";
 import { WorkboardStore } from "./src/store.js";
 import { createWorkboardTools } from "./src/tools.js";
 
@@ -13,6 +14,7 @@ export default definePluginEntry({
     const store = WorkboardStore.openSqlite();
     registerWorkboardGatewayMethods({ api, store });
     registerWorkboardCommand({ api, store });
+    registerWorkboardHeartbeatContribution({ api, store });
     api.registerCli(
       async ({ program }) => {
         const { registerWorkboardCli } = await import("./src/cli.js");

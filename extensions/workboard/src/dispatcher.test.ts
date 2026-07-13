@@ -42,10 +42,11 @@ describe("dispatchAndStartWorkboardCards", () => {
       priority: "high",
       agentId: "codex-side",
     });
-    const run = vi
-      .fn()
-      .mockResolvedValueOnce({ runId: "run-first" })
-      .mockResolvedValueOnce({ runId: "run-other" });
+    const runIds = ["run-first", "run-other"];
+    const run = vi.fn(async (params: { sessionKey: string }) => {
+      const runId = runIds.shift() ?? "run-extra";
+      return { runId, sessionKey: params.sessionKey, taskId: `task-${runId}` };
+    });
 
     const result = await dispatchAndStartWorkboardCards({
       store,
@@ -69,9 +70,11 @@ describe("dispatchAndStartWorkboardCards", () => {
       status: "running",
       sessionKey: `agent:codex-main:subagent:workboard-default-${first.id}`,
       runId: "run-first",
-      execution: { status: "running", runId: "run-first" },
+      taskId: "task-run-first",
+      execution: { status: "running", runId: "run-first", taskId: "task-run-first" },
       metadata: {
         claim: { ownerId: "codex-main" },
+        attempts: [expect.objectContaining({ taskId: "task-run-first" })],
         workerLogs: [expect.objectContaining({ message: expect.stringContaining("run-first") })],
       },
     });
@@ -95,7 +98,11 @@ describe("dispatchAndStartWorkboardCards", () => {
       priority: "high",
       agentId: "codex-main",
     });
-    const run = vi.fn().mockResolvedValue({ runId: "run-next" });
+    const run = vi.fn(async (params: { sessionKey: string }) => ({
+      runId: "run-next",
+      sessionKey: params.sessionKey,
+      taskId: "task-run-next",
+    }));
 
     const result = await dispatchAndStartWorkboardCards({
       store,
@@ -126,7 +133,11 @@ describe("dispatchAndStartWorkboardCards", () => {
       priority: "urgent",
       boardId: "product",
     });
-    const run = vi.fn().mockResolvedValue({ runId: "run-ops" });
+    const run = vi.fn(async (params: { sessionKey: string }) => ({
+      runId: "run-ops",
+      sessionKey: params.sessionKey,
+      taskId: "task-run-ops",
+    }));
 
     const result = await dispatchAndStartWorkboardCards({
       store,
@@ -161,7 +172,11 @@ describe("dispatchAndStartWorkboardCards", () => {
       priority: "high",
       agentId: "codex-main",
     });
-    const run = vi.fn().mockResolvedValue({ runId: "run-next" });
+    const run = vi.fn(async (params: { sessionKey: string }) => ({
+      runId: "run-next",
+      sessionKey: params.sessionKey,
+      taskId: "task-run-next",
+    }));
 
     const result = await dispatchAndStartWorkboardCards({
       store,
@@ -204,5 +219,26 @@ describe("dispatchAndStartWorkboardCards", () => {
       },
     });
     expect((await store.get(card.id))?.metadata?.claim).toBeUndefined();
+  });
+
+  it("blocks a card when the gateway receipt lacks canonical task linkage", async () => {
+    const store = new WorkboardStore(createMemoryStore());
+    const card = await store.create({ title: "Incomplete receipt", status: "ready" });
+    const run = vi.fn(async (params: { sessionKey: string }) => ({
+      runId: "run-without-task",
+      sessionKey: params.sessionKey,
+    }));
+
+    const result = await dispatchAndStartWorkboardCards({
+      store,
+      subagent: { run },
+      options: { now: 10, maxStarts: 1 },
+    });
+
+    expect(result.started).toEqual([]);
+    expect(result.startFailures).toEqual([
+      expect.objectContaining({ cardId: card.id, error: expect.stringContaining("taskId") }),
+    ]);
+    await expect(store.get(card.id)).resolves.toMatchObject({ status: "blocked" });
   });
 });

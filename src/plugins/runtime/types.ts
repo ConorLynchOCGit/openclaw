@@ -21,6 +21,10 @@ export type SubagentRunParams = {
 
 export type SubagentRunResult = {
   runId: string;
+  /** Canonical child session accepted by the gateway. */
+  sessionKey?: string;
+  /** Native task record created for this run when task tracking is available. */
+  taskId?: string;
 };
 
 export type SubagentWaitParams = {

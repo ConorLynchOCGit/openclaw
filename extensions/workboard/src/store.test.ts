@@ -314,6 +314,7 @@ describe("WorkboardStore", () => {
           model: "gpt-5.5",
           sessionKey: "agent:main:test",
           runId: "run-1",
+          taskId: "task-1",
           startedAt: 1,
           updatedAt: 2,
         },
@@ -370,9 +371,12 @@ describe("WorkboardStore", () => {
       expect(await reopened.get(card.id)).toMatchObject({
         id: card.id,
         labels: ["sqlite", "doctor"],
+        taskId: "task-1",
+        execution: { taskId: "task-1" },
         metadata: {
           automation: { boardId: "planning" },
           lifecycleStatusSourceUpdatedAt: 1234,
+          attempts: [expect.objectContaining({ taskId: "task-1" })],
           comments: [expect.objectContaining({ body: "round trip" })],
           attachments: expect.arrayContaining([
             expect.objectContaining({ fileName: "proof.txt" }),
@@ -446,6 +450,8 @@ describe("WorkboardStore", () => {
         status: "running",
         model: "anthropic/claude-sonnet-4-6",
         sessionKey: "agent:main:dashboard:1",
+        runId: "run-1",
+        taskId: "task-1",
         startedAt: 10,
         updatedAt: 10,
       },
@@ -463,11 +469,13 @@ describe("WorkboardStore", () => {
       metadata: {
         attempts: [
           expect.objectContaining({
-            id: "agent:main:dashboard:1",
+            id: "run-1",
             status: "running",
             engine: "claude",
             mode: "manual",
             sessionKey: "agent:main:dashboard:1",
+            runId: "run-1",
+            taskId: "task-1",
             startedAt: 10,
           }),
         ],
@@ -839,6 +847,49 @@ describe("WorkboardStore", () => {
 
     const cleared = await store.update(card.id, { execution: null });
     expect(cleared.execution).toBeUndefined();
+  });
+
+  it("rejects conflicting card and execution receipt linkage", async () => {
+    const store = new WorkboardStore(createMemoryStore());
+    await expect(
+      store.create({
+        title: "Conflicting receipt",
+        sessionKey: "agent:main:one",
+        runId: "run-one",
+        taskId: "task-one",
+        execution: {
+          id: "exec-conflict",
+          kind: "agent-session",
+          engine: "codex",
+          mode: "autonomous",
+          status: "running",
+          model: "openai/gpt-5.6-sol",
+          sessionKey: "agent:main:two",
+          runId: "run-two",
+          taskId: "task-two",
+          startedAt: 1,
+          updatedAt: 1,
+        },
+      }),
+    ).rejects.toThrow(/sessionKey does not match/);
+
+    const card = await store.create({ title: "Coherent receipt" });
+    await expect(
+      store.update(card.id, {
+        sessionKey: "agent:main:one",
+        execution: {
+          id: "exec-conflict-update",
+          kind: "agent-session",
+          engine: "codex",
+          mode: "autonomous",
+          status: "running",
+          model: "openai/gpt-5.6-sol",
+          sessionKey: "agent:main:two",
+          startedAt: 1,
+          updatedAt: 1,
+        },
+      }),
+    ).rejects.toThrow(/sessionKey does not match/);
   });
 
   it("tracks execution attempts as card metadata", async () => {
@@ -1666,6 +1717,38 @@ describe("WorkboardStore", () => {
       },
     });
     expect(completed.metadata?.claim).toBeUndefined();
+    await expect(
+      store.complete(claimed.card.id, {
+        ownerId: "main",
+        token: "token-1",
+        summary: "Implemented and verified.",
+      }),
+    ).resolves.toEqual(completed);
+
+    const reviewCard = await store.create({
+      title: "Review then close",
+      status: "running",
+      execution: {
+        id: "exec-review",
+        kind: "agent-session",
+        engine: "codex",
+        mode: "autonomous",
+        status: "running",
+        model: "openai/gpt-5.5",
+        startedAt: 1_000,
+        updatedAt: 1_000,
+      },
+    });
+    const inReview = await store.update(reviewCard.id, {
+      status: "review",
+      execution: { ...reviewCard.execution!, status: "review", updatedAt: 2_000 },
+    });
+    const reviewCompleted = await store.complete(inReview.id, { summary: "Review accepted." });
+    expect(reviewCompleted).toMatchObject({
+      status: "done",
+      execution: { status: "done" },
+      metadata: { attempts: [expect.objectContaining({ status: "succeeded" })] },
+    });
 
     const blockedCard = await store.create({
       title: "Blocked work",
@@ -1702,6 +1785,9 @@ describe("WorkboardStore", () => {
     expect(blocked.metadata?.notifications).toEqual([
       expect.objectContaining({ kind: "failed", message: "Needs owner decision." }),
     ]);
+    await expect(store.complete(blocked.id, { summary: "Bypass block." })).rejects.toThrow(
+      /explicitly unblocked/,
+    );
 
     const recovered = await store.complete(
       (

@@ -53,9 +53,15 @@ beforeEach(() => {
   handleGatewayRequest.mockReset();
   handleGatewayRequest.mockImplementation(async (opts: HandleGatewayRequestOptions) => {
     switch (opts.req.method) {
-      case "agent":
-        opts.respond(true, { runId: "plugin-run-1" });
+      case "agent": {
+        const params = opts.req.params as { sessionKey?: string };
+        opts.respond(true, {
+          runId: "plugin-run-1",
+          sessionKey: params.sessionKey,
+          taskId: "task-plugin-run-1",
+        });
         return;
+      }
       case "agent.wait":
         opts.respond(true, { status: "ok" });
         return;
@@ -85,6 +91,10 @@ describe("createGatewaySubagentRuntime.run subagent_ended tracking (#59164)", ()
     });
 
     expect(result.runId).toBe("plugin-run-1");
+    expect(result).toMatchObject({
+      sessionKey: "agent:main:subagent:plugin-helper",
+      taskId: "task-plugin-run-1",
+    });
     const request = lastGatewayRequest();
     expect(request.req.method).toBe("agent");
     expect(

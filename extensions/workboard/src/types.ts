@@ -99,6 +99,7 @@ export type WorkboardExecution = {
   model: string;
   sessionKey?: string;
   runId?: string;
+  taskId?: string;
   startedAt: number;
   updatedAt: number;
 };
@@ -123,6 +124,7 @@ export type WorkboardRunAttempt = {
   model?: string;
   sessionKey?: string;
   runId?: string;
+  taskId?: string;
   error?: string;
 };
 

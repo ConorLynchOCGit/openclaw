@@ -3301,7 +3301,7 @@ describe("gateway agent handler", () => {
         },
       };
 
-      await invokeAgent(
+      const respond = await invokeAgent(
         {
           message: "background plugin subagent task",
           sessionKey: childSessionKey,
@@ -3313,6 +3313,14 @@ describe("gateway agent handler", () => {
           client: pluginClient,
         },
       );
+
+      const accepted = mockCallArg<Record<string, unknown>>(respond, 0, 1);
+      expect(accepted).toMatchObject({
+        runId,
+        sessionKey: childSessionKey,
+        taskId: expect.any(String),
+        status: "accepted",
+      });
 
       await waitForAssertion(() => {
         const tasks = listTaskRecords().filter((task) => task.runId === runId);

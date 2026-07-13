@@ -650,10 +650,10 @@ async function registerPluginSubagentRunFromGateway(params: {
   task: string;
   requesterOrigin?: DeliveryContext;
   pluginId?: string;
-}): Promise<void> {
+}): Promise<string | undefined> {
   const childSessionKey = params.childSessionKey.trim();
   if (!childSessionKey) {
-    return;
+    return undefined;
   }
   const ownerSessionKey = resolveAgentMainSessionKey({
     cfg: params.cfg,
@@ -673,6 +673,7 @@ async function registerPluginSubagentRunFromGateway(params: {
     expectsCompletionMessage: false,
     spawnMode: "run",
   });
+  return findTaskByRunId(params.runId)?.taskId;
 }
 
 function resolveFailedTrackedAgentTaskStatus(error: unknown): GatewayAgentTaskTerminalStatus {
@@ -2449,9 +2450,10 @@ export const agentHandlers: GatewayRequestHandlers = {
       const resolvedThreadId = explicitThreadId ?? deliveryPlan.resolvedThreadId;
       let dispatchTaskTrackingMode: Exclude<GatewayAgentTaskTrackingMode, "plugin_subagent"> =
         taskTrackingMode === "cli" ? "cli" : "none";
+      let trackedTaskId: string | undefined;
       if (taskTrackingMode === "plugin_subagent" && resolvedSessionKey) {
         try {
-          await registerPluginSubagentRunFromGateway({
+          trackedTaskId = await registerPluginSubagentRunFromGateway({
             cfg,
             runId,
             childSessionKey: resolvedSessionKey,
@@ -2477,6 +2479,7 @@ export const agentHandlers: GatewayRequestHandlers = {
       const accepted = {
         runId,
         sessionKey: resolvedSessionKey,
+        ...(trackedTaskId ? { taskId: trackedTaskId } : {}),
         ...(resolvedSessionKey === "global" ? { agentId: activeSessionAgentId } : {}),
         status: "accepted" as const,
         acceptedAt: Date.now(),

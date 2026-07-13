@@ -22,7 +22,13 @@ function createMemoryStore<T = PersistedWorkboardCard>(): WorkboardKeyedStore<T>
   };
 }
 
-function createApi(run = vi.fn().mockResolvedValue({ runId: "run-1" })): {
+function createApi(
+  run = vi.fn(async (params: { sessionKey: string }) => ({
+    runId: "run-1",
+    sessionKey: params.sessionKey,
+    taskId: "task-run-1",
+  })),
+): {
   runtime: { subagent: WorkboardSubagentRuntime };
 } {
   return {
