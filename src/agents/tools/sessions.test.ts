@@ -39,6 +39,17 @@ vi.mock("./sessions-send-tool.a2a.js", () => ({
   runSessionsSendA2AFlow: vi.fn(),
 }));
 
+const loadSessionEntryByKeyMock = vi.hoisted(() => vi.fn());
+vi.mock("../subagent-announce-delivery.js", async () => {
+  const actual = await vi.importActual<typeof import("../subagent-announce-delivery.js")>(
+    "../subagent-announce-delivery.js",
+  );
+  return {
+    ...actual,
+    loadSessionEntryByKey: loadSessionEntryByKeyMock,
+  };
+});
+
 let createSessionsListTool: typeof import("./sessions-list-tool.js").createSessionsListTool;
 let createSessionsSendTool: typeof import("./sessions-send-tool.js").createSessionsSendTool;
 let resolveAnnounceTarget: (typeof import("./sessions-announce-target.js"))["resolveAnnounceTarget"];
@@ -770,6 +781,7 @@ describe("sessions_list channel derivation", () => {
 describe("sessions_send gating", () => {
   beforeEach(() => {
     callGatewayMock.mockReset();
+    loadSessionEntryByKeyMock.mockReset();
   });
 
   it("returns an error when neither sessionKey nor label is provided", async () => {
@@ -786,8 +798,136 @@ describe("sessions_send gating", () => {
     expect(callGatewayMock).not.toHaveBeenCalled();
   });
 
-  it("forwards the current inbound operator message without model-authored wrapping", async () => {
-    const currentInboundMessage = "  Exact operator text.\nPreserve this spacing.  ";
+  it("enforces the current inbound message for a Main-owned cross-agent child", async () => {
+    const currentInboundMessage = "Hold this proposal unchanged and wait for my decisions.";
+    const suppliedWrapper =
+      "The operator said to hold. Please summarize the proposal and prepare another packet.";
+    const childSessionKey = "agent:business-ops:subagent:child";
+    loadConfigMock.mockReturnValue({
+      session: { scope: "per-sender", mainKey: "main" },
+      tools: {
+        agentToAgent: { enabled: true },
+        sessions: { visibility: "all" },
+      },
+    });
+    loadSessionEntryByKeyMock.mockReturnValue({
+      spawnedBy: MAIN_AGENT_SESSION_KEY,
+    });
+    const tool = createMainSessionsSendTool(currentInboundMessage);
+    callGatewayMock.mockImplementation(async (opts: unknown) => {
+      const request = opts as { method?: string };
+      if (request.method === "sessions.list") {
+        return {
+          path: "/tmp/sessions.json",
+          sessions: [{ key: childSessionKey, kind: "direct" }],
+        };
+      }
+      if (request.method === "agent") {
+        return { runId: "run-owned-child", acceptedAt: 123 };
+      }
+      return {};
+    });
+
+    const result = await tool.execute("call-owned-child", {
+      sessionKey: childSessionKey,
+      message: suppliedWrapper,
+      timeoutSeconds: 0,
+    });
+
+    expect(requireDetails(result).status).toBe("accepted");
+    const agentCall = callGatewayMock.mock.calls
+      .map(([request]) => request as { method?: string; params?: { message?: string } })
+      .find((request) => request.method === "agent");
+    expect(agentCall?.params?.message?.endsWith(currentInboundMessage)).toBe(true);
+    expect(agentCall?.params?.message).not.toContain(suppliedWrapper);
+  });
+
+  it("blocks a Main-owned child continuation when the current inbound message is unavailable", async () => {
+    const childSessionKey = "agent:business-ops:subagent:child";
+    loadConfigMock.mockReturnValue({
+      session: { scope: "per-sender", mainKey: "main" },
+      tools: {
+        agentToAgent: { enabled: true },
+        sessions: { visibility: "all" },
+      },
+    });
+    loadSessionEntryByKeyMock.mockReturnValue({
+      spawnedBy: MAIN_AGENT_SESSION_KEY,
+    });
+    const tool = createMainSessionsSendTool();
+    callGatewayMock.mockResolvedValue({
+      path: "/tmp/sessions.json",
+      sessions: [{ key: childSessionKey, kind: "direct" }],
+    });
+
+    const result = await tool.execute("call-owned-child-without-inbound", {
+      sessionKey: childSessionKey,
+      message: "A model-authored replacement must not be delivered.",
+      timeoutSeconds: 0,
+    });
+
+    expect(requireDetails(result)).toMatchObject({
+      status: "error",
+      error: "Current inbound operator message is unavailable for owner continuation",
+    });
+    expect(
+      callGatewayMock.mock.calls.some(
+        ([request]) => (request as { method?: string }).method === "agent",
+      ),
+    ).toBe(false);
+  });
+
+  it("preserves purpose-specific instructions from a non-Main parent to its child", async () => {
+    const planningSessionKey = "agent:planning:main";
+    const reviewerSessionKey = "agent:reviewer:subagent:child";
+    const currentInboundMessage = "Create a comprehensive implementation plan.";
+    const reviewInstruction = "Review candidate revision 2 against the supplied authority refs.";
+    loadConfigMock.mockReturnValue({
+      session: { scope: "per-sender", mainKey: "main" },
+      tools: {
+        agentToAgent: { enabled: true },
+        sessions: { visibility: "all" },
+      },
+    });
+    loadSessionEntryByKeyMock.mockReturnValue({
+      spawnedBy: planningSessionKey,
+    });
+    const tool = createSessionsSendTool({
+      agentSessionKey: planningSessionKey,
+      agentChannel: MAIN_AGENT_CHANNEL,
+      currentInboundMessage,
+    });
+    callGatewayMock.mockImplementation(async (opts: unknown) => {
+      const request = opts as { method?: string };
+      if (request.method === "sessions.list") {
+        return {
+          path: "/tmp/sessions.json",
+          sessions: [{ key: reviewerSessionKey, kind: "direct" }],
+        };
+      }
+      if (request.method === "agent") {
+        return { runId: "run-review-instruction", acceptedAt: 123 };
+      }
+      return {};
+    });
+
+    const result = await tool.execute("call-review-instruction", {
+      sessionKey: reviewerSessionKey,
+      message: reviewInstruction,
+      timeoutSeconds: 0,
+    });
+
+    expect(requireDetails(result).status).toBe("accepted");
+    const agentCall = callGatewayMock.mock.calls
+      .map(([request]) => request as { method?: string; params?: { message?: string } })
+      .find((request) => request.method === "agent");
+    expect(agentCall?.params?.message?.endsWith(reviewInstruction)).toBe(true);
+    expect(agentCall?.params?.message).not.toContain(currentInboundMessage);
+  });
+
+  it("keeps model-authored messages for targets that are not requester-owned children", async () => {
+    const currentInboundMessage = "Exact operator text that must remain local to this turn.";
+    const suppliedMessage = "Send this ordinary coordination note.";
     const tool = createMainSessionsSendTool(currentInboundMessage);
     callGatewayMock.mockImplementation(async (opts: unknown) => {
       const request = opts as { method?: string };
@@ -798,14 +938,14 @@ describe("sessions_send gating", () => {
         };
       }
       if (request.method === "agent") {
-        return { runId: "run-forward-current", acceptedAt: 123 };
+        return { runId: "run-model-authored", acceptedAt: 123 };
       }
       return {};
     });
 
-    const result = await tool.execute("call-forward-current", {
+    const result = await tool.execute("call-model-authored", {
       sessionKey: MAIN_AGENT_SESSION_KEY,
-      forwardCurrentMessage: true,
+      message: suppliedMessage,
       timeoutSeconds: 0,
     });
 
@@ -813,35 +953,8 @@ describe("sessions_send gating", () => {
     const agentCall = callGatewayMock.mock.calls
       .map(([request]) => request as { method?: string; params?: { message?: string } })
       .find((request) => request.method === "agent");
-    expect(agentCall?.params?.message?.endsWith(currentInboundMessage)).toBe(true);
-    expect(agentCall?.params?.message).not.toContain("Operator answer for");
-  });
-
-  it("rejects ambiguous or unavailable current-message forwarding", async () => {
-    const tool = createMainSessionsSendTool();
-
-    const unavailable = await tool.execute("call-forward-unavailable", {
-      sessionKey: MAIN_AGENT_SESSION_KEY,
-      forwardCurrentMessage: true,
-      timeoutSeconds: 0,
-    });
-    expect(requireDetails(unavailable)).toMatchObject({
-      status: "error",
-      error: "Current inbound operator message is unavailable for forwarding",
-    });
-
-    const ambiguousTool = createMainSessionsSendTool("exact");
-    const ambiguous = await ambiguousTool.execute("call-forward-ambiguous", {
-      sessionKey: MAIN_AGENT_SESSION_KEY,
-      message: "rewritten",
-      forwardCurrentMessage: true,
-      timeoutSeconds: 0,
-    });
-    expect(requireDetails(ambiguous)).toMatchObject({
-      status: "error",
-      error: "Use either message or forwardCurrentMessage, not both",
-    });
-    expect(callGatewayMock).not.toHaveBeenCalled();
+    expect(agentCall?.params?.message?.endsWith(suppliedMessage)).toBe(true);
+    expect(agentCall?.params?.message).not.toContain(currentInboundMessage);
   });
 
   it.each([1.5, -1, "1sec"])("rejects invalid timeoutSeconds value %s", async (timeoutSeconds) => {

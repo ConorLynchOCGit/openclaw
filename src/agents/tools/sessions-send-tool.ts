@@ -15,6 +15,7 @@ import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { callGateway } from "../../gateway/call.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import {
+  DEFAULT_AGENT_ID,
   isSubagentSessionKey,
   normalizeAgentId,
   resolveAgentIdFromSessionKey,
@@ -64,12 +65,6 @@ const SessionsSendToolSchema = Type.Object({
   label: Type.Optional(Type.String({ minLength: 1, maxLength: SESSION_LABEL_MAX_LENGTH })),
   agentId: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
   message: Type.Optional(Type.String()),
-  forwardCurrentMessage: Type.Optional(
-    Type.Boolean({
-      description:
-        "Forward the current inbound operator message byte-for-byte. Use for an existing owner episode instead of supplying message.",
-    }),
-  ),
   timeoutSeconds: Type.Optional(Type.Integer({ minimum: 0 })),
 });
 
@@ -335,27 +330,7 @@ export function createSessionsSendTool(opts?: {
       const params = normalizeSessionsSendArguments(args);
       const gatewayCall = opts?.callGateway ?? callGateway;
       const suppliedMessage = readStringParam(params, "message");
-      const forwardCurrentMessage = params.forwardCurrentMessage === true;
-      if (forwardCurrentMessage && suppliedMessage) {
-        return jsonResult({
-          status: "error",
-          error: "Use either message or forwardCurrentMessage, not both",
-        });
-      }
       const currentInboundMessage = opts?.currentInboundMessage;
-      if (forwardCurrentMessage && !currentInboundMessage?.trim()) {
-        return jsonResult({
-          status: "error",
-          error: "Current inbound operator message is unavailable for forwarding",
-        });
-      }
-      if (!forwardCurrentMessage && !suppliedMessage) {
-        return jsonResult({
-          status: "error",
-          error: "Either message or forwardCurrentMessage is required",
-        });
-      }
-      const message = forwardCurrentMessage ? currentInboundMessage! : suppliedMessage!;
       const timeoutSeconds = readNonNegativeIntegerParam(params, "timeoutSeconds") ?? 30;
       const { cfg, mainKey, alias, effectiveRequesterKey, restrictToSpawned } =
         resolveSessionToolContext(opts);
@@ -567,6 +542,31 @@ export function createSessionsSendTool(opts?: {
       const requesterSessionKey = opts?.agentSessionKey;
       const requesterChannel = opts?.agentChannel;
       const sameSessionA2A = requesterSessionKey === resolvedKey;
+      const targetAcpMeta = readAcpSessionMeta({ sessionKey: resolvedKey });
+      const requesterOwnsNativeChild = isRequesterParentOfNativeSubagentSession({
+        entry: targetSessionEntry,
+        acpMeta: targetAcpMeta,
+        requesterSessionKey: effectiveRequesterKey,
+        targetSessionKey: resolvedKey,
+      });
+      const requesterAgentId = resolveAgentIdFromSessionKey(effectiveRequesterKey ?? "");
+      const targetAgentId = resolveAgentIdFromSessionKey(resolvedKey);
+      const isMainOwnedDomainContinuation =
+        requesterAgentId === DEFAULT_AGENT_ID && targetAgentId !== requesterAgentId;
+      const requiresCurrentInbound = requesterOwnsNativeChild && isMainOwnedDomainContinuation;
+      if (requiresCurrentInbound && !currentInboundMessage?.trim()) {
+        return jsonResult({
+          status: "error",
+          error: "Current inbound operator message is unavailable for owner continuation",
+        });
+      }
+      if (!requiresCurrentInbound && !suppliedMessage) {
+        return jsonResult({
+          status: "error",
+          error: "message is required",
+        });
+      }
+      const message = requiresCurrentInbound ? currentInboundMessage! : suppliedMessage!;
 
       // Capture the pre-run assistant snapshot before starting the nested run.
       // Fast in-process test doubles and short-circuit agent paths can finish
@@ -629,7 +629,6 @@ export function createSessionsSendTool(opts?: {
       // unrelated sender that can see the same target (e.g. under
       // `tools.sessions.visibility=all`) must still go through the normal A2A
       // path so it actually receives a follow-up delivery.
-      const targetAcpMeta = readAcpSessionMeta({ sessionKey: resolvedKey });
       const targetSessionEntryWithAcp =
         targetAcpMeta && targetSessionEntry
           ? { ...targetSessionEntry, acp: targetAcpMeta }

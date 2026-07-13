@@ -35,7 +35,7 @@ export function describeSessionsHistoryTool(): string {
 export function describeSessionsSendTool(): string {
   return [
     "Send message to visible session by sessionKey/label, or configured agent by agentId; sessionKey wins when redundant label metadata is present.",
-    "When continuing an existing owner episode with the current operator turn, use forwardCurrentMessage=true and omit message; the runtime forwards the exact inbound operator text without model rewriting.",
+    "For a Main-owned existing cross-agent child, the runtime uses the exact current inbound operator text and ignores any rewritten message; generic session sends use message normally.",
     "Thread-scoped chats rejected; target parent channel session.",
     "Creates missing configured-agent main session; waits for reply when available.",
   ].join(" ");
