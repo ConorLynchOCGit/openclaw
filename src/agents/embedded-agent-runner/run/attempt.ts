@@ -4407,8 +4407,9 @@ export async function runEmbeddedAttempt(
           if (!skipPromptSubmission && preemptiveCompaction?.shouldCompact) {
             preflightRecovery =
               preemptiveCompaction.route === "compact_then_truncate"
-                ? { route: "compact_then_truncate", handled: false }
-                : { route: "compact_only", handled: false };
+                ? { route: "compact_then_truncate", source: "pre-prompt", handled: false }
+                : { route: "compact_only", source: "pre-prompt", handled: false };
+            skipPromptSubmission = true;
             log.warn(
               `[context-pressure-advisory] sessionKey=${params.sessionKey ?? params.sessionId} ` +
                 `provider=${params.provider}/${params.modelId} ` +
@@ -4419,7 +4420,7 @@ export async function runEmbeddedAttempt(
                 `toolResultReducibleChars=${preemptiveCompaction.toolResultReducibleChars} ` +
                 `reserveTokens=${reserveTokens} ` +
                 `effectiveReserveTokens=${preemptiveCompaction.effectiveReserveTokens} ` +
-                `advisory=true continuingToNativeProviderBoundary=true ` +
+                `providerCallSkipped=true routingToNativeCompaction=true ` +
                 `sessionFile=${params.sessionFile}`,
             );
           }

@@ -209,6 +209,41 @@ describe("overflow compaction in run loop", () => {
     expect(result.meta.error).toBeUndefined();
   });
 
+  it("compacts and retries when pre-prompt pressure skips the provider call", async () => {
+    mockedRunEmbeddedAttempt
+      .mockResolvedValueOnce(
+        makeAttemptResult({
+          promptError: null,
+          promptErrorSource: null,
+          preflightRecovery: {
+            route: "compact_only",
+            source: "pre-prompt",
+            handled: false,
+          },
+          assistantTexts: [],
+        }),
+      )
+      .mockResolvedValueOnce(makeAttemptResult({ promptError: null }));
+
+    mockedCompactDirect.mockResolvedValueOnce(
+      makeCompactionSuccess({
+        summary: "Compacted before provider submission",
+        firstKeptEntryId: "entry-5",
+        tokensBefore: 150000,
+      }),
+    );
+
+    const result = await runEmbeddedAgent(baseParams);
+
+    expect(mockedCompactDirect).toHaveBeenCalledTimes(1);
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(2);
+    const retryParams = requireMockCallArg(mockedRunEmbeddedAttempt, 1);
+    expect(retryParams.prompt).toBe(baseParams.prompt);
+    expect(retryParams.suppressNextUserMessagePersistence).toBe(false);
+    expectLogIncludes(mockedLog.warn, "source=prePromptPreflight");
+    expect(result.meta.error).toBeUndefined();
+  });
+
   it("retries after successful compaction on likely-overflow promptError variants", async () => {
     const overflowHintError = new Error("Context window exceeded: requested 12000 tokens");
 

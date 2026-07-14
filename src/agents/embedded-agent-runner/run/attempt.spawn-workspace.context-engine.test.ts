@@ -1881,7 +1881,7 @@ describe("runEmbeddedAttempt context engine sessionKey forwarding", () => {
     expect(JSON.stringify(promptMessages)).not.toContain("orphaned result");
   });
 
-  it("treats preassembly overflow authority as advisory before provider submission", async () => {
+  it("stops before provider submission when preassembly overflow requires compaction", async () => {
     const lockEvents = trackSessionWriteLocks();
     let sawPrompt = false;
     const hugeHistory = "large raw history ".repeat(2_000);
@@ -1911,10 +1911,13 @@ describe("runEmbeddedAttempt context engine sessionKey forwarding", () => {
       },
     });
 
-    expect(sawPrompt).toBe(true);
+    expect(sawPrompt).toBe(false);
     expect(result.promptErrorSource).toBeNull();
-    expect(result.preflightRecovery?.route).toBe("compact_only");
-    expect(result.preflightRecovery?.handled).toBe(false);
+    expect(result.preflightRecovery).toEqual({
+      route: "compact_only",
+      source: "pre-prompt",
+      handled: false,
+    });
     expect(hoisted.preemptiveCompactionCalls.at(-1)).toHaveProperty("unwindowedMessages");
     expectInitialLockReleasedBeforePostTurnWrite(lockEvents);
   });

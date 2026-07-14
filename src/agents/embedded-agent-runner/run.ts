@@ -2167,13 +2167,20 @@ export async function runEmbeddedAgent(
             }
           }
 
-          const midTurnPreflightCompactionRequired = preflightRecovery?.source === "mid-turn";
+          const preflightCompactionRequired =
+            preflightRecovery?.source === "pre-prompt" || preflightRecovery?.source === "mid-turn";
           const contextOverflowError = !aborted
             ? (() => {
-                if (midTurnPreflightCompactionRequired) {
+                if (preflightCompactionRequired) {
                   return {
-                    text: `Mid-turn context precheck requires ${preflightRecovery.route}.`,
-                    source: "midTurnPreflight" as const,
+                    text:
+                      preflightRecovery.source === "mid-turn"
+                        ? `Mid-turn context precheck requires ${preflightRecovery.route}.`
+                        : `Pre-prompt context precheck requires ${preflightRecovery.route}.`,
+                    source:
+                      preflightRecovery.source === "mid-turn"
+                        ? ("midTurnPreflight" as const)
+                        : ("prePromptPreflight" as const),
                   };
                 }
                 if (promptError) {
