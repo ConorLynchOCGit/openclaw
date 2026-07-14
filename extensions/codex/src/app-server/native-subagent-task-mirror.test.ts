@@ -8,6 +8,7 @@ import {
 
 function createRuntime() {
   return {
+    listTaskRecords: vi.fn(() => []),
     tryCreateRunningTaskRun: vi.fn((params) => ({ taskId: "task-native-subagent", ...params })),
     recordTaskRunProgressByRunId: vi.fn(() => []),
     finalizeTaskRunByRunId: vi.fn(() => []),
@@ -173,6 +174,7 @@ describe("CodexNativeSubagentTaskMirror", () => {
       method: "item/started",
       params: {
         threadId: "parent-thread",
+        turnId: "later-parent-turn",
         item: {
           type: "collabAgentToolCall",
           tool: "spawn_agent",
@@ -207,6 +209,7 @@ describe("CodexNativeSubagentTaskMirror", () => {
       method: "item/completed",
       params: {
         threadId: "parent-thread",
+        turnId: "parent-turn",
         item: {
           type: "collabAgentToolCall",
           tool: "wait",
@@ -486,6 +489,7 @@ describe("CodexNativeSubagentTaskMirror", () => {
       method: "rawResponseItem/completed",
       params: {
         threadId: "parent-thread",
+        turnId: "parent-turn",
         item: {
           type: "function_call",
           name: "spawn_agent",
@@ -503,6 +507,23 @@ describe("CodexNativeSubagentTaskMirror", () => {
       method: "rawResponseItem/completed",
       params: {
         threadId: "parent-thread",
+        turnId: "replayed-parent-turn",
+        item: {
+          type: "function_call",
+          name: "spawn_agent",
+          call_id: "call-spawn",
+          arguments: JSON.stringify({
+            agent_type: "test_engineer",
+            message: "A replay must not replace the first spawn intent.",
+          }),
+        },
+      },
+    });
+    mirror.handleNotification({
+      method: "rawResponseItem/completed",
+      params: {
+        threadId: "parent-thread",
+        turnId: "later-parent-turn",
         item: {
           type: "function_call_output",
           call_id: "call-spawn",
@@ -527,10 +548,199 @@ describe("CodexNativeSubagentTaskMirror", () => {
           childRole: "codex_reviewer",
           childAgentPath: "agents/codex_reviewer.toml",
           childNickname: "Leibniz",
+          parentTurnId: "parent-turn",
           spawnReason: "review parent-provided bounded evidence pack.",
         }),
       }),
     );
+  });
+
+  it("preserves exact spawn lineage across mirror recreation", () => {
+    let latestMetadata: Record<string, string | number | boolean | null> | undefined;
+    const runtime = {
+      listTaskRecords: vi.fn(() =>
+        latestMetadata
+          ? [
+              {
+                runId: "codex-thread:restart-child",
+                status: "running",
+                executionReceipt: { latestEvent: { metadata: latestMetadata } },
+              },
+            ]
+          : [],
+      ),
+      tryCreateRunningTaskRun: vi.fn((params) => {
+        latestMetadata = params.eventMetadata;
+        return { taskId: "task-native-subagent", ...params };
+      }),
+      recordTaskRunProgressByRunId: vi.fn(() => []),
+      finalizeTaskRunByRunId: vi.fn(() => []),
+    } as unknown as TaskLifecycleRuntime;
+    const params = {
+      parentThreadId: "parent-thread",
+      requesterSessionKey: "agent:coding:main",
+      agentId: "coding",
+      now: () => 41_125,
+    };
+    const firstMirror = new CodexNativeSubagentTaskMirror(params, runtime);
+
+    firstMirror.handleNotification({
+      method: "rawResponseItem/completed",
+      params: {
+        threadId: "parent-thread",
+        turnId: "exact-parent-turn",
+        item: {
+          type: "function_call",
+          name: "spawn_agent",
+          call_id: "restart-call",
+          arguments: JSON.stringify({
+            agent_type: "code_reviewer",
+            message: "Review one bounded restart decision.",
+          }),
+        },
+      },
+    });
+    firstMirror.handleNotification({
+      method: "rawResponseItem/completed",
+      params: {
+        threadId: "parent-thread",
+        turnId: "later-parent-turn",
+        item: {
+          type: "function_call_output",
+          call_id: "restart-call",
+          output: JSON.stringify({ agent_id: "restart-child" }),
+        },
+      },
+    });
+
+    const restartedMirror = new CodexNativeSubagentTaskMirror(params, runtime);
+    restartedMirror.handleNotification({
+      method: "thread/status/changed",
+      params: {
+        threadId: "restart-child",
+        status: { type: "idle" },
+      },
+    });
+
+    expect(runtime.finalizeTaskRunByRunId).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "codex-thread:restart-child",
+        eventMetadata: expect.objectContaining({
+          parentThreadId: "parent-thread",
+          parentTurnId: "exact-parent-turn",
+          childThreadId: "restart-child",
+          childRole: "code_reviewer",
+          spawnReason: "Review one bounded restart decision.",
+        }),
+      }),
+    );
+  });
+
+  it("does not infer lineage from call-id-less native spawn events", () => {
+    const runtime = createRuntime();
+    const mirror = new CodexNativeSubagentTaskMirror(
+      {
+        parentThreadId: "parent-thread",
+        requesterSessionKey: "agent:coding:main",
+        agentId: "coding",
+        now: () => 41_250,
+      },
+      runtime,
+    );
+
+    mirror.handleNotification({
+      method: "rawResponseItem/completed",
+      params: {
+        threadId: "parent-thread",
+        turnId: "parent-turn-without-call-id",
+        item: {
+          type: "function_call",
+          name: "spawn_agent",
+          arguments: JSON.stringify({
+            agent_type: "test_engineer",
+            message: "Validate one bounded acceptance decision.",
+          }),
+        },
+      },
+    });
+    mirror.handleNotification({
+      method: "rawResponseItem/completed",
+      params: {
+        threadId: "parent-thread",
+        item: {
+          type: "function_call_output",
+          output: JSON.stringify({ agent_id: "child-without-call-id" }),
+        },
+      },
+    });
+
+    expect(runtime.tryCreateRunningTaskRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "codex-thread:child-without-call-id",
+        eventMetadata: expect.objectContaining({
+          parentThreadId: "parent-thread",
+          childThreadId: "child-without-call-id",
+        }),
+      }),
+    );
+    const eventMetadata = vi.mocked(runtime.tryCreateRunningTaskRun).mock.calls[0]?.[0]
+      .eventMetadata;
+    expect(eventMetadata).not.toHaveProperty("parentTurnId");
+    expect(eventMetadata).not.toHaveProperty("childRole");
+  });
+
+  it("does not correlate an unmatched keyed output to an unrelated unkeyed intent", () => {
+    const runtime = createRuntime();
+    const mirror = new CodexNativeSubagentTaskMirror(
+      {
+        parentThreadId: "parent-thread",
+        requesterSessionKey: "agent:coding:main",
+        agentId: "coding",
+        now: () => 41_375,
+      },
+      runtime,
+    );
+
+    mirror.handleNotification({
+      method: "rawResponseItem/completed",
+      params: {
+        threadId: "parent-thread",
+        turnId: "queued-parent-turn",
+        item: {
+          type: "function_call",
+          name: "spawn_agent",
+          arguments: JSON.stringify({
+            agent_type: "project_explorer",
+            message: "Inspect one bounded ownership decision.",
+          }),
+        },
+      },
+    });
+    mirror.handleNotification({
+      method: "rawResponseItem/completed",
+      params: {
+        threadId: "parent-thread",
+        turnId: "unmatched-output-turn",
+        item: {
+          type: "function_call_output",
+          call_id: "unknown-call-id",
+          output: JSON.stringify({ agent_id: "unmatched-keyed-child" }),
+        },
+      },
+    });
+    const createCalls = vi.mocked(runtime.tryCreateRunningTaskRun).mock.calls;
+    expect(createCalls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        runId: "codex-thread:unmatched-keyed-child",
+        eventMetadata: expect.objectContaining({
+          parentThreadId: "parent-thread",
+          childThreadId: "unmatched-keyed-child",
+        }),
+      }),
+    );
+    expect(createCalls[0]?.[0].eventMetadata).not.toHaveProperty("parentTurnId");
+    expect(createCalls[0]?.[0].eventMetadata).not.toHaveProperty("childRole");
+    expect(createCalls).toHaveLength(1);
   });
 
   it("creates an identified task from Codex v2 dynamic spawn and subagent activity items", () => {
@@ -571,7 +781,7 @@ describe("CodexNativeSubagentTaskMirror", () => {
       method: "item/completed",
       params: {
         threadId: "parent-thread",
-        turnId: "parent-turn",
+        turnId: "later-parent-turn",
         item: {
           id: "call-v2-spawn",
           type: "subAgentActivity",
@@ -590,6 +800,7 @@ describe("CodexNativeSubagentTaskMirror", () => {
         task: "v2_workspace_probe",
         eventMetadata: expect.objectContaining({
           parentThreadId: "parent-thread",
+          parentTurnId: "parent-turn",
           childThreadId: "child-v2-thread",
           childRole: "project_explorer",
           childAgentPath: "agents/project_explorer.toml",
@@ -600,6 +811,21 @@ describe("CodexNativeSubagentTaskMirror", () => {
         }),
       }),
     );
+
+    mirror.handleNotification({
+      method: "item/completed",
+      params: {
+        threadId: "parent-thread",
+        turnId: "later-parent-turn",
+        item: {
+          id: "call-v2-spawn",
+          type: "subAgentActivity",
+          kind: "started",
+          agentThreadId: "child-v2-thread",
+          agentPath: "/root/v2_workspace_probe",
+        },
+      },
+    });
 
     mirror.handleNotification({
       method: "thread/tokenUsage/updated",

@@ -587,7 +587,7 @@ function renderCodexExecution(
         )}
         ${tree?.unassignedChildren?.length
           ? html`<div class="session-execution-round">
-              <strong>Children without a proven parent turn</strong>
+              <strong>Children without an exact parent turn</strong>
               <ul class="session-execution-children">
                 ${tree.unassignedChildren.map(renderCodexExecutionChild)}
               </ul>

@@ -956,7 +956,7 @@ describe("sessions view", () => {
     expect(text).toContain("Contribution: Confirmed the implementation evidence.");
     expect(text).toContain("fresh 40 · cached 60 · output 10");
     expect(text).toContain("codex-thread:thread-review");
-    expect(text).toContain("Children without a proven parent turn");
+    expect(text).toContain("Children without an exact parent turn");
     expect(text).toContain("Objective: Locate the existing UI seam");
     expect(text).toContain("Contribution: Mapped the existing Sessions view.");
     expect(text).toContain("fresh 10 · cached 10 · output 5");

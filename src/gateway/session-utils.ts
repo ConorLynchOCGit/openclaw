@@ -335,6 +335,9 @@ function buildCodexNativeChildRunsForSession(
       ...(readTaskMetadataString(metadata, "parentThreadId")
         ? { parentThreadId: readTaskMetadataString(metadata, "parentThreadId") }
         : {}),
+      ...(readTaskMetadataString(metadata, "parentTurnId")
+        ? { parentTurnId: readTaskMetadataString(metadata, "parentTurnId") }
+        : {}),
       ...(childThreadId && isTerminalTaskStatus(task.status)
         ? { finalRef: `${CODEX_NATIVE_SUBAGENT_RUN_ID_PREFIX}${childThreadId}` }
         : {}),
@@ -489,16 +492,10 @@ function buildCodexExecutionTree(params: {
   const unassignedChildren: GatewaySessionCodexNativeChildRun[] = [];
   for (const child of params.children ?? []) {
     const matching = rounds.filter((round) => round.threadId === child.parentThreadId);
-    const childStartedAt = child.startedAt;
     const round =
-      matching.length === 1
-        ? matching[0]
-        : childStartedAt !== undefined
-          ? matching.findLast(
-              (candidate) =>
-                candidate.startedAt !== undefined && candidate.startedAt <= childStartedAt,
-            )
-          : undefined;
+      child.parentTurnId !== undefined
+        ? matching.find((candidate) => candidate.turnId === child.parentTurnId)
+        : undefined;
     if (round) {
       round.children.push(child);
       continue;

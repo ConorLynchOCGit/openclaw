@@ -308,6 +308,7 @@ describe("gateway session utils", () => {
       eventMetadata: {
         codexNativeSubagent: true,
         parentThreadId: "parent-thread",
+        parentTurnId: "turn-1",
         childThreadId: "child-thread-1",
         childPhase: "child_completed",
         childRole: "worker",
@@ -338,6 +339,7 @@ describe("gateway session utils", () => {
         runId: "codex-thread:child-thread-1",
         childThreadId: "child-thread-1",
         parentThreadId: "parent-thread",
+        parentTurnId: "turn-1",
         finalRef: "codex-thread:child-thread-1",
         role: "worker",
         agentPath: "agents/project_explorer.toml",
@@ -523,6 +525,201 @@ describe("gateway session utils", () => {
         reasoningOutputTokens: undefined,
         totalTokens: 1_100,
       });
+    } finally {
+      fs.rmSync(tempDir, { force: true, recursive: true });
+    }
+  });
+
+  test("session detail assigns Codex children only to an exact parent turn across rounds", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-session-child-turns-"));
+    try {
+      const sessionId = "44444444-4444-4444-8444-444444444444";
+      const sessionKey = "agent:coding:session-child-turns";
+      const storePath = path.join(tempDir, "sessions.json");
+      fs.writeFileSync(path.join(tempDir, `${sessionId}.jsonl`), "", "utf8");
+      const base = {
+        traceSchema: "openclaw-trajectory",
+        schemaVersion: 1,
+        traceId: sessionId,
+        source: "runtime",
+        sessionId,
+        sessionKey,
+        runId: "run-child-turns",
+        workspaceDir: "/home/node/.openclaw/workspace",
+        provider: "openai",
+        modelId: "gpt-5.6-sol",
+        modelApi: "openai-chatgpt-responses",
+      };
+      const events = [
+        {
+          ...base,
+          type: "prompt.submitted",
+          ts: "2026-07-14T18:00:00.000Z",
+          seq: 1,
+          sourceSeq: 1,
+          data: { threadId: "parent-thread", turnId: "turn-1" },
+        },
+        {
+          ...base,
+          type: "model.completed",
+          ts: "2026-07-14T18:00:01.000Z",
+          seq: 2,
+          sourceSeq: 2,
+          data: { threadId: "parent-thread", turnId: "turn-1" },
+        },
+        {
+          ...base,
+          type: "prompt.submitted",
+          ts: "2026-07-14T18:01:00.000Z",
+          seq: 3,
+          sourceSeq: 3,
+          data: { threadId: "parent-thread", turnId: "turn-2" },
+        },
+        {
+          ...base,
+          type: "model.completed",
+          ts: "2026-07-14T18:01:01.000Z",
+          seq: 4,
+          sourceSeq: 4,
+          data: { threadId: "parent-thread", turnId: "turn-2" },
+        },
+      ];
+      fs.writeFileSync(
+        path.join(tempDir, `${sessionId}.trajectory.jsonl`),
+        `${events.map((event) => JSON.stringify(event)).join("\n")}\n`,
+        "utf8",
+      );
+      const createChild = (params: {
+        childThreadId: string;
+        parentTurnId?: string;
+        startedAt: number;
+      }) =>
+        createTaskRecord({
+          runtime: "subagent",
+          taskKind: "codex-native",
+          sourceId: `codex-thread:${params.childThreadId}`,
+          requesterSessionKey: sessionKey,
+          agentId: "coding",
+          runId: `codex-thread:${params.childThreadId}`,
+          label: "project_explorer",
+          task: "Inspect one bounded decision",
+          status: "succeeded",
+          deliveryStatus: "not_applicable",
+          notifyPolicy: "silent",
+          startedAt: params.startedAt,
+          lastEventAt: params.startedAt + 1,
+          eventMetadata: {
+            codexNativeSubagent: true,
+            parentThreadId: "parent-thread",
+            ...(params.parentTurnId ? { parentTurnId: params.parentTurnId } : {}),
+            childThreadId: params.childThreadId,
+            childPhase: "child_completed",
+          },
+        });
+      createChild({
+        childThreadId: "child-exact-turn-1",
+        parentTurnId: "turn-1",
+        startedAt: Date.parse("2026-07-14T18:01:30.000Z"),
+      });
+      createChild({
+        childThreadId: "child-ambiguous",
+        startedAt: Date.parse("2026-07-14T18:01:30.000Z"),
+      });
+
+      const entry = {
+        sessionId,
+        updatedAt: Date.parse("2026-07-14T18:02:00.000Z"),
+        status: "done",
+      } satisfies SessionEntry;
+      const row = buildGatewaySessionRow({
+        cfg: { agents: { list: [{ id: "coding", default: true }] } } as OpenClawConfig,
+        storePath,
+        store: { [sessionKey]: entry },
+        key: sessionKey,
+        entry,
+      });
+
+      expect(row.codexExecutionTree?.rounds).toHaveLength(2);
+      expect(row.codexExecutionTree?.rounds[0]?.children).toEqual([
+        expect.objectContaining({ childThreadId: "child-exact-turn-1", parentTurnId: "turn-1" }),
+      ]);
+      expect(row.codexExecutionTree?.rounds[1]?.children).toEqual([]);
+      expect(row.codexExecutionTree?.unassignedChildren).toEqual([
+        expect.objectContaining({ childThreadId: "child-ambiguous" }),
+      ]);
+    } finally {
+      fs.rmSync(tempDir, { force: true, recursive: true });
+    }
+  });
+
+  test("session detail leaves an untagged Codex child unassigned with one parent round", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-session-untagged-child-"));
+    try {
+      const sessionId = "55555555-5555-4555-8555-555555555555";
+      const sessionKey = "agent:coding:session-untagged-child";
+      const storePath = path.join(tempDir, "sessions.json");
+      fs.writeFileSync(path.join(tempDir, `${sessionId}.jsonl`), "", "utf8");
+      fs.writeFileSync(
+        path.join(tempDir, `${sessionId}.trajectory.jsonl`),
+        `${JSON.stringify({
+          traceSchema: "openclaw-trajectory",
+          schemaVersion: 1,
+          traceId: sessionId,
+          source: "runtime",
+          sessionId,
+          sessionKey,
+          runId: "run-untagged-child",
+          workspaceDir: "/home/node/.openclaw/workspace",
+          provider: "openai",
+          modelId: "gpt-5.6-sol",
+          modelApi: "openai-chatgpt-responses",
+          type: "prompt.submitted",
+          ts: "2026-07-14T18:00:00.000Z",
+          seq: 1,
+          sourceSeq: 1,
+          data: { threadId: "parent-thread", turnId: "only-turn" },
+        })}\n`,
+        "utf8",
+      );
+      createTaskRecord({
+        runtime: "subagent",
+        taskKind: "codex-native",
+        sourceId: "codex-thread:untagged-child",
+        requesterSessionKey: sessionKey,
+        agentId: "coding",
+        runId: "codex-thread:untagged-child",
+        label: "project_explorer",
+        task: "Inspect one bounded decision",
+        status: "succeeded",
+        deliveryStatus: "not_applicable",
+        notifyPolicy: "silent",
+        startedAt: Date.parse("2026-07-14T18:00:01.000Z"),
+        lastEventAt: Date.parse("2026-07-14T18:00:02.000Z"),
+        eventMetadata: {
+          codexNativeSubagent: true,
+          parentThreadId: "parent-thread",
+          childThreadId: "untagged-child",
+          childPhase: "child_completed",
+        },
+      });
+      const entry = {
+        sessionId,
+        updatedAt: Date.parse("2026-07-14T18:00:03.000Z"),
+        status: "done",
+      } satisfies SessionEntry;
+      const row = buildGatewaySessionRow({
+        cfg: { agents: { list: [{ id: "coding", default: true }] } } as OpenClawConfig,
+        storePath,
+        store: { [sessionKey]: entry },
+        key: sessionKey,
+        entry,
+      });
+
+      expect(row.codexExecutionTree?.rounds).toHaveLength(1);
+      expect(row.codexExecutionTree?.rounds[0]?.children).toEqual([]);
+      expect(row.codexExecutionTree?.unassignedChildren).toEqual([
+        expect.objectContaining({ childThreadId: "untagged-child" }),
+      ]);
     } finally {
       fs.rmSync(tempDir, { force: true, recursive: true });
     }

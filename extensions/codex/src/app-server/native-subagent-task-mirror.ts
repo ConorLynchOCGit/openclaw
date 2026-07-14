@@ -21,10 +21,17 @@ import { isJsonObject } from "./protocol.js";
 /** Minimal task-runtime surface needed to mirror native subagent lifecycle. */
 export type TaskLifecycleRuntime = Pick<
   AgentHarnessTaskRuntime,
-  "tryCreateRunningTaskRun" | "recordTaskRunProgressByRunId" | "finalizeTaskRunByRunId"
+  | "tryCreateRunningTaskRun"
+  | "recordTaskRunProgressByRunId"
+  | "finalizeTaskRunByRunId"
+  | "listTaskRecords"
 >;
 
 type NativeSubagentTaskEventMetadata = Record<string, string | number | boolean | null>;
+type PendingKeyedNativeSpawn = {
+  identity: NativeSubagentIdentity;
+  parentTurnId?: string;
+};
 
 /** Stable parent/session context used while mirroring native subagent tasks. */
 export type CodexNativeSubagentTaskMirrorParams = {
@@ -40,8 +47,8 @@ export class CodexNativeSubagentTaskMirror {
   private readonly failedMirrorThreadIds = new Set<string>();
   private readonly terminalRunIds = new Set<string>();
   private readonly identityByThreadId = new Map<string, NativeSubagentIdentity>();
-  private readonly pendingSpawnIdentitiesByCallId = new Map<string, NativeSubagentIdentity>();
-  private readonly pendingSpawnIdentityQueue: NativeSubagentIdentity[] = [];
+  private readonly parentTurnIdByThreadId = new Map<string, string>();
+  private readonly pendingSpawnsByCallId = new Map<string, PendingKeyedNativeSpawn>();
   private readonly latestCollabStatusDetailByThreadId = new Map<string, string>();
   private readonly latestCollabTerminalDetailByThreadId = new Map<string, string>();
   private readonly tokenUsageByThreadId = new Map<string, NativeSubagentTokenUsage>();
@@ -52,6 +59,7 @@ export class CodexNativeSubagentTaskMirror {
     private readonly runtime: TaskLifecycleRuntime,
   ) {
     this.now = params.now ?? Date.now;
+    this.hydratePersistedTaskState();
   }
 
   handleNotification(notification: CodexServerNotification): void {
@@ -99,13 +107,14 @@ export class CodexNativeSubagentTaskMirror {
     }
     const identity = resolveNativeSpawnFunctionIdentity(item);
     const callId = readFunctionCallId(item);
-    if (callId) {
-      if (!this.pendingSpawnIdentitiesByCallId.has(callId)) {
-        this.pendingSpawnIdentitiesByCallId.set(callId, identity);
-      }
+    if (!callId) {
       return;
     }
-    this.pendingSpawnIdentityQueue.push(identity);
+    const parentTurnId = trimOptional(readString(params, "turnId"));
+    const pending = { identity, ...(parentTurnId ? { parentTurnId } : {}) };
+    if (!this.pendingSpawnsByCallId.has(callId)) {
+      this.pendingSpawnsByCallId.set(callId, pending);
+    }
   }
 
   private handleSubAgentActivityItem(params: JsonObject): void {
@@ -126,21 +135,21 @@ export class CodexNativeSubagentTaskMirror {
       return;
     }
     const callId = readFunctionCallId(item);
-    const pendingIdentity = callId
-      ? this.pendingSpawnIdentitiesByCallId.get(callId)
-      : this.pendingSpawnIdentityQueue.shift();
+    const pending = callId ? this.pendingSpawnsByCallId.get(callId) : undefined;
     if (callId) {
-      this.pendingSpawnIdentitiesByCallId.delete(callId);
+      this.pendingSpawnsByCallId.delete(callId);
     }
+    const parentTurnId = pending?.parentTurnId ?? trimOptional(readString(params, "turnId"));
     const agentPath = trimOptional(readString(item, "agentPath"));
     const activityIdentity = agentPath
       ? { agentPath, spawnReason: taskNameFromAgentPath(agentPath) }
       : undefined;
-    const identity = mergeNativeSubagentIdentity(activityIdentity, pendingIdentity ?? {});
+    const identity = mergeNativeSubagentIdentity(activityIdentity, pending?.identity ?? {});
     this.createOrIdentifyTaskFromSpawn({
       threadId: childThreadId,
       identity,
       prompt: identity.spawnReason,
+      parentTurnId,
     });
   }
 
@@ -211,6 +220,7 @@ export class CodexNativeSubagentTaskMirror {
       this.mirroredThreadIds.delete(threadId);
       this.failedMirrorThreadIds.add(threadId);
       this.identityByThreadId.delete(threadId);
+      this.parentTurnIdByThreadId.delete(threadId);
       return;
     }
     this.failedMirrorThreadIds.delete(threadId);
@@ -353,9 +363,10 @@ export class CodexNativeSubagentTaskMirror {
     const receiverThreadIds = readStringArray(item.receiverThreadIds);
     const agentsStates = readAgentsStates(item.agentsStates);
     const spawnChildThreadIds = new Set([...receiverThreadIds, ...agentsStates.keys()]);
+    const parentTurnId = trimOptional(readString(params, "turnId"));
     if (isSpawnAgentTool) {
       for (const childThreadId of spawnChildThreadIds) {
-        this.createTaskFromCollabSpawnItem(childThreadId, item);
+        this.createTaskFromCollabSpawnItem(childThreadId, item, parentTurnId);
       }
     }
     const toolCallStatus = normalizeCollabToolCallStatus(readString(item, "status"));
@@ -403,8 +414,9 @@ export class CodexNativeSubagentTaskMirror {
       return;
     }
     const itemType = readString(item, "type");
+    const parentTurnId = trimOptional(readString(params, "turnId"));
     if (itemType === "function_call") {
-      this.rememberNativeSpawnFunctionCall(item);
+      this.rememberNativeSpawnFunctionCall(item, parentTurnId);
       return;
     }
     if (itemType === "function_call_output") {
@@ -412,7 +424,7 @@ export class CodexNativeSubagentTaskMirror {
     }
   }
 
-  private rememberNativeSpawnFunctionCall(item: JsonObject): void {
+  private rememberNativeSpawnFunctionCall(item: JsonObject, parentTurnId?: string): void {
     if (normalizeToolName(readString(item, "name")) !== "spawnagent") {
       return;
     }
@@ -421,10 +433,16 @@ export class CodexNativeSubagentTaskMirror {
       return;
     }
     const callId = readFunctionCallId(item);
-    if (callId) {
-      this.pendingSpawnIdentitiesByCallId.set(callId, identity);
+    if (!callId) {
+      return;
     }
-    this.pendingSpawnIdentityQueue.push(identity);
+    const pending = {
+      identity,
+      ...(parentTurnId ? { parentTurnId } : {}),
+    } satisfies PendingKeyedNativeSpawn;
+    if (!this.pendingSpawnsByCallId.has(callId)) {
+      this.pendingSpawnsByCallId.set(callId, pending);
+    }
   }
 
   private createTaskFromNativeSpawnFunctionOutput(item: JsonObject): void {
@@ -438,45 +456,51 @@ export class CodexNativeSubagentTaskMirror {
     if (!childThreadId) {
       return;
     }
-    const pendingIdentity =
-      (callId ? this.pendingSpawnIdentitiesByCallId.get(callId) : undefined) ??
-      this.pendingSpawnIdentityQueue.shift();
+    const pending = callId ? this.pendingSpawnsByCallId.get(callId) : undefined;
     if (callId) {
-      this.pendingSpawnIdentitiesByCallId.delete(callId);
+      this.pendingSpawnsByCallId.delete(callId);
     }
+    const parentTurnId = pending?.parentTurnId;
     const outputIdentity = {
       nickname: trimOptional(readString(output, "nickname")),
     };
-    const identity = mergeNativeSubagentIdentity(pendingIdentity, outputIdentity);
+    const identity = mergeNativeSubagentIdentity(pending?.identity, outputIdentity);
     this.createOrIdentifyTaskFromSpawn({
       threadId: childThreadId,
       identity,
       prompt: identity.spawnReason,
+      parentTurnId,
     });
   }
 
-  private createTaskFromCollabSpawnItem(threadId: string, item: JsonObject): void {
+  private createTaskFromCollabSpawnItem(
+    threadId: string,
+    item: JsonObject,
+    parentTurnId?: string,
+  ): void {
     const prompt = trimOptional(readString(item, "prompt"));
     const identity = {
       ...resolveCollabItemSubagentIdentity(item),
       ...(prompt ? { spawnReason: prompt } : {}),
     };
-    this.createOrIdentifyTaskFromSpawn({ threadId, identity, prompt });
+    this.createOrIdentifyTaskFromSpawn({ threadId, identity, prompt, parentTurnId });
   }
 
   private createOrIdentifyTaskFromSpawn(params: {
     threadId: string;
     identity: NativeSubagentIdentity;
     prompt?: string;
+    parentTurnId?: string;
   }): void {
     const normalizedThreadId = params.threadId.trim();
     if (!normalizedThreadId) {
       return;
     }
+    const parentTurnChanged = this.rememberParentTurnId(normalizedThreadId, params.parentTurnId);
     if (this.mirroredThreadIds.has(normalizedThreadId)) {
       const previousIdentity = this.identityByThreadId.get(normalizedThreadId);
       const mergedIdentity = mergeNativeSubagentIdentity(previousIdentity, params.identity);
-      if (!sameNativeSubagentIdentity(previousIdentity, mergedIdentity)) {
+      if (!sameNativeSubagentIdentity(previousIdentity, mergedIdentity) || parentTurnChanged) {
         this.identityByThreadId.set(normalizedThreadId, mergedIdentity);
         const progressSummary = nativeSubagentStartSummary("identified", mergedIdentity);
         this.runtime.recordTaskRunProgressByRunId({
@@ -522,6 +546,7 @@ export class CodexNativeSubagentTaskMirror {
       this.mirroredThreadIds.delete(normalizedThreadId);
       this.failedMirrorThreadIds.add(normalizedThreadId);
       this.identityByThreadId.delete(normalizedThreadId);
+      this.parentTurnIdByThreadId.delete(normalizedThreadId);
       return;
     }
     this.failedMirrorThreadIds.delete(normalizedThreadId);
@@ -638,6 +663,9 @@ export class CodexNativeSubagentTaskMirror {
     return {
       codexNativeSubagent: true,
       parentThreadId: this.params.parentThreadId,
+      ...(this.parentTurnIdByThreadId.get(params.threadId)
+        ? { parentTurnId: this.parentTurnIdByThreadId.get(params.threadId) as string }
+        : {}),
       childThreadId: params.threadId,
       childPhase: params.phase,
       ...(identity?.role ? { childRole: identity.role } : {}),
@@ -665,6 +693,47 @@ export class CodexNativeSubagentTaskMirror {
     };
   }
 
+  private hydratePersistedTaskState(): void {
+    for (const task of this.runtime.listTaskRecords()) {
+      const metadata = task.executionReceipt?.latestEvent?.metadata;
+      if (
+        metadata?.codexNativeSubagent !== true ||
+        readMetadataString(metadata, "parentThreadId") !== this.params.parentThreadId
+      ) {
+        continue;
+      }
+      const childThreadId =
+        readMetadataString(metadata, "childThreadId") ??
+        readCodexNativeSubagentThreadId(task.runId ?? task.sourceId);
+      if (!childThreadId) {
+        continue;
+      }
+      this.mirroredThreadIds.add(childThreadId);
+      this.rememberParentTurnId(childThreadId, readMetadataString(metadata, "parentTurnId"));
+      const identity = readPersistedNativeSubagentIdentity(metadata);
+      if (hasNativeSubagentIdentity(identity)) {
+        this.identityByThreadId.set(childThreadId, identity);
+      }
+      const tokenUsage = readPersistedNativeSubagentTokenUsage(metadata);
+      if (Object.values(tokenUsage).some((value) => value !== undefined)) {
+        this.tokenUsageByThreadId.set(childThreadId, tokenUsage);
+      }
+      if (task.status !== "queued" && task.status !== "running") {
+        this.terminalRunIds.add(codexNativeSubagentRunId(childThreadId));
+      }
+    }
+  }
+
+  private rememberParentTurnId(threadId: string, parentTurnId?: string): boolean {
+    const normalized = trimOptional(parentTurnId);
+    const existing = this.parentTurnIdByThreadId.get(threadId);
+    if (!normalized || existing !== undefined) {
+      return false;
+    }
+    this.parentTurnIdByThreadId.set(threadId, normalized);
+    return true;
+  }
+
   private rememberCollabStatusDetail(threadId: string, detail: string | undefined): void {
     if (detail) {
       this.latestCollabStatusDetailByThreadId.set(threadId, detail);
@@ -682,6 +751,14 @@ export class CodexNativeSubagentTaskMirror {
 /** Converts a Codex child thread id into the OpenClaw task-runtime run id. */
 export function codexNativeSubagentRunId(threadId: string): string {
   return `${CODEX_NATIVE_SUBAGENT_RUN_ID_PREFIX}${threadId.trim()}`;
+}
+
+function readCodexNativeSubagentThreadId(runId: string | undefined): string | undefined {
+  const normalized = trimOptional(runId);
+  if (!normalized?.startsWith(CODEX_NATIVE_SUBAGENT_RUN_ID_PREFIX)) {
+    return undefined;
+  }
+  return trimOptional(normalized.slice(CODEX_NATIVE_SUBAGENT_RUN_ID_PREFIX.length));
 }
 
 /** Reads a subagent thread-spawn source only when it belongs to the expected parent thread. */
@@ -764,6 +841,48 @@ type NativeSubagentTokenUsage = {
   reasoningOutputTokens?: number;
   totalTokens?: number;
 };
+
+function readMetadataString(
+  metadata: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined {
+  const value = metadata?.[key];
+  return typeof value === "string" ? trimOptional(value) : undefined;
+}
+
+function readMetadataNumber(
+  metadata: Record<string, unknown> | undefined,
+  key: string,
+): number | undefined {
+  const value = metadata?.[key];
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function readPersistedNativeSubagentIdentity(
+  metadata: Record<string, unknown> | undefined,
+): NativeSubagentIdentity {
+  return {
+    nickname: readMetadataString(metadata, "childNickname"),
+    role: readMetadataString(metadata, "childRole"),
+    agentPath: readMetadataString(metadata, "childAgentPath"),
+    spawnReason: readMetadataString(metadata, "spawnReason"),
+    taskName: readMetadataString(metadata, "childTaskName"),
+    model: readMetadataString(metadata, "childModel"),
+    reasoningEffort: readMetadataString(metadata, "childReasoningEffort"),
+  };
+}
+
+function readPersistedNativeSubagentTokenUsage(
+  metadata: Record<string, unknown> | undefined,
+): NativeSubagentTokenUsage {
+  return {
+    inputTokens: readMetadataNumber(metadata, "childInputTokens"),
+    outputTokens: readMetadataNumber(metadata, "childOutputTokens"),
+    cachedInputTokens: readMetadataNumber(metadata, "childCachedInputTokens"),
+    reasoningOutputTokens: readMetadataNumber(metadata, "childReasoningOutputTokens"),
+    totalTokens: readMetadataNumber(metadata, "childTotalTokens"),
+  };
+}
 
 function resolveThreadSubagentIdentity(
   thread: CodexThread,
