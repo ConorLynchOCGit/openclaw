@@ -1155,19 +1155,26 @@ describe("Codex app-server thread lifecycle timing", () => {
 });
 
 describe("resolveReasoningEffort (#71946)", () => {
+  type AcceptedEffortCase = {
+    modelId: string;
+    requested: NonNullable<EmbeddedRunAttemptParams["thinkLevel"]>;
+    expected: ReturnType<typeof resolveReasoningEffort>;
+  };
   const modernCodexModels = ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex-spark"] as const;
   const supportedModernEfforts = ["low", "medium", "high", "xhigh"] as const;
-  const acceptedEffortCases = [
-    ...modernCodexModels.map((modelId) => ({ modelId, requested: "minimal", expected: "low" })),
-    ...modernCodexModels.flatMap((modelId) =>
-      supportedModernEfforts.map((requested) => ({ modelId, requested, expected: requested })),
+  const acceptedEffortCases: AcceptedEffortCase[] = [
+    ...modernCodexModels.map(
+      (modelId): AcceptedEffortCase => ({ modelId, requested: "minimal", expected: "low" }),
     ),
-    ...["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"].map((modelId) => ({
-      modelId,
-      requested: "max",
-      expected: "max",
-    })),
-  ] as const;
+    ...modernCodexModels.flatMap((modelId) =>
+      supportedModernEfforts.map(
+        (requested): AcceptedEffortCase => ({ modelId, requested, expected: requested }),
+      ),
+    ),
+    ...(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] as const).map(
+      (modelId): AcceptedEffortCase => ({ modelId, requested: "max", expected: "max" }),
+    ),
+  ];
 
   it.each(acceptedEffortCases)(
     "resolves $requested for $modelId before the provider request",
