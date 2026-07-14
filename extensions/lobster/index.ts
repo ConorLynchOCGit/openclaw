@@ -33,7 +33,7 @@ export function registerLobsterPlugin(api: OpenClawPluginApi) {
           : undefined;
       return createLobsterTool(api, { taskFlow }) as AnyAgentTool;
     }) as OpenClawPluginToolFactory,
-    { optional: true },
+    { name: "lobster", optional: true },
   );
 
   api.registerTool(
@@ -54,7 +54,7 @@ export function registerLobsterPlugin(api: OpenClawPluginApi) {
         taskFlow: managedFlows.fromToolContext(ctx),
       }) as AnyAgentTool;
     }) as OpenClawPluginToolFactory,
-    { optional: true },
+    { name: "business_ops_present_proposal", optional: true },
   );
 }
 

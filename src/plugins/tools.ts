@@ -1131,6 +1131,7 @@ export function resolvePluginTools(params: {
     });
   }
   const blockedPlugins = new Set<string>();
+  const resolvedToolOwnerByNormalizedName = new Map<string, string>();
   const factoryTimingStartedAt = Date.now();
   const factoryTimings: PluginToolFactoryTiming[] = [];
   const capturedDescriptorsByPluginId = new Map<string, CachedPluginToolDescriptor[]>();
@@ -1147,7 +1148,8 @@ export function resolvePluginTools(params: {
       continue;
     }
     const pluginIdKey = normalizeToolName(entry.pluginId);
-    if (existingNormalized.has(pluginIdKey)) {
+    const existingPluginIdOwner = resolvedToolOwnerByNormalizedName.get(pluginIdKey);
+    if (existingNormalized.has(pluginIdKey) && existingPluginIdOwner !== entry.pluginId) {
       const message = `plugin id conflicts with core tool name (${entry.pluginId})`;
       if (!params.suppressNameConflicts) {
         context.logger.error(message);
@@ -1324,6 +1326,7 @@ export function resolvePluginTools(params: {
       normalizedNameSet.add(normalizedToolName);
       existing.add(tool.name);
       existingNormalized.add(normalizedToolName);
+      resolvedToolOwnerByNormalizedName.set(normalizedToolName, entry.pluginId);
       const optional = isPluginToolOptional({
         entry,
         manifestPlugin,

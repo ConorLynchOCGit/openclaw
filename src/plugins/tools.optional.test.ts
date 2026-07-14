@@ -1806,6 +1806,38 @@ describe("resolvePluginTools optional tools", () => {
     expectSingleDiagnosticMessage(registry.diagnostics, "plugin id conflicts with core tool name");
   });
 
+  it("keeps later registrations when the plugin's own first tool matches its id", () => {
+    const registry = setRegistry([
+      {
+        pluginId: "lobster",
+        optional: true,
+        source: "/tmp/lobster.js",
+        names: ["lobster"],
+        declaredNames: ["lobster", "business_ops_present_proposal"],
+        factory: () => makeTool("lobster"),
+      },
+      {
+        pluginId: "lobster",
+        optional: true,
+        source: "/tmp/lobster.js",
+        names: ["business_ops_present_proposal"],
+        declaredNames: ["lobster", "business_ops_present_proposal"],
+        factory: () => makeTool("business_ops_present_proposal"),
+      },
+    ]);
+
+    const tools = resolvePluginTools(
+      createResolveToolsParams({
+        toolAllowlist: ["lobster", "business_ops_present_proposal"],
+      }),
+    );
+
+    expectResolvedToolNames(tools, ["lobster", "business_ops_present_proposal"]);
+    expect(registry.diagnostics).not.toContainEqual(
+      expect.objectContaining({ message: expect.stringContaining("plugin id conflicts") }),
+    );
+  });
+
   it.each([
     {
       name: "skips conflicting tool names but keeps other tools",

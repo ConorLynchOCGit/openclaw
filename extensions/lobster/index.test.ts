@@ -131,6 +131,14 @@ describe("registerLobsterPlugin", () => {
     registerLobsterPlugin(api);
 
     expect(factories).toHaveLength(2);
+    expect(api.registerTool).toHaveBeenNthCalledWith(1, expect.any(Function), {
+      name: "lobster",
+      optional: true,
+    });
+    expect(api.registerTool).toHaveBeenNthCalledWith(2, expect.any(Function), {
+      name: "business_ops_present_proposal",
+      optional: true,
+    });
     expect(
       factories[1]?.({
         agentId: "business-ops",
