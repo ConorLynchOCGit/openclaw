@@ -24,6 +24,7 @@ import {
   resetTaskRegistryForTests,
 } from "../../tasks/task-registry.js";
 import { withTempDir } from "../../test-helpers/temp-dir.js";
+import type { CallGatewayOptions } from "../call.js";
 import { setGatewayDedupeEntry } from "./agent-wait-dedupe.js";
 import { agentHandlers } from "./agent.js";
 import { chatHandlers } from "./chat.js";
@@ -98,7 +99,21 @@ vi.mock("../session-utils.js", async () => {
   const actual = await vi.importActual<typeof import("../session-utils.js")>("../session-utils.js");
   return {
     ...actual,
-    loadSessionEntry: mocks.loadSessionEntry,
+    loadSessionEntry: (...args: unknown[]) => {
+      const loaded = (mocks.loadSessionEntry as (...mockArgs: unknown[]) => unknown)(...args);
+      if (!loaded || typeof loaded !== "object" || Array.isArray(loaded)) {
+        return loaded;
+      }
+      const record = loaded as Record<string, unknown>;
+      const cfg =
+        record.cfg && typeof record.cfg === "object" && !Array.isArray(record.cfg)
+          ? (record.cfg as Record<string, unknown>)
+          : {};
+      return {
+        ...record,
+        cfg: mocks.withOpenClawRuntimeDefaults(cfg),
+      };
+    },
     loadGatewaySessionRow: mocks.loadGatewaySessionRow,
   };
 });
@@ -1401,7 +1416,7 @@ describe("gateway agent handler", () => {
       provider: undefined,
       model: undefined,
       launchExecutionPlan: expect.objectContaining({
-        launchMode: "resume",
+        launchMode: "fresh",
         model: {
           provider: "anthropic",
           model: "claude-haiku-4-5",
@@ -1559,7 +1574,7 @@ describe("gateway agent handler", () => {
       provider: undefined,
       model: undefined,
       launchExecutionPlan: expect.objectContaining({
-        launchMode: "resume",
+        launchMode: "fresh",
         model: {
           provider: "anthropic",
           model: "claude-haiku-4-5",
@@ -3386,6 +3401,16 @@ describe("gateway agent handler", () => {
       process.env.OPENCLAW_STATE_DIR = root;
       resetTaskRegistryForTests();
       resetSubagentRegistryForTests({ persist: false });
+      subagentRegistryTesting.setDepsForTest({
+        callGateway: async <T = Record<string, unknown>>(request: CallGatewayOptions): Promise<T> =>
+          (request.method === "agent.wait"
+            ? {
+                status: "ok",
+                startedAt: Date.now() - 10,
+                endedAt: Date.now(),
+              }
+            : {}) as T,
+      });
       const runId = "plugin-subagent-memory-curator-route";
       const childSessionKey = "agent:memory-curator:subagent:gbrain-signal-route-proof";
       const cfg = {
@@ -3511,7 +3536,9 @@ describe("gateway agent handler", () => {
         "expected plugin subagent run",
       );
       expect(run.runId).toBe(runId);
-      expect(findTaskByRunId(runId)?.status).toBe("succeeded");
+      await waitForAssertion(() => {
+        expect(findTaskByRunId(runId)?.status).toBe("succeeded");
+      });
     });
   });
 
