@@ -65,6 +65,10 @@ function stringArray(params: JsonRecord, key: string, maxItems: number): string[
   });
 }
 
+function missingStringIndexes(items: string[], text: string): number[] {
+  return items.flatMap((item, index) => (text.includes(item) ? [] : [index]));
+}
+
 function isWithin(root: string, candidate: string): boolean {
   const rel = relative(root, candidate);
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
@@ -114,7 +118,7 @@ export function createBusinessOpsProposalTool(options: ProposalToolOptions) {
     name: "business_ops_present_proposal",
     label: "Business Ops proposal",
     description:
-      "Present one exact TaskFlow-bound Business Ops proposal for operator review. This validates current refs and digests but never records a decision or mutates an artifact.",
+      "Present one exact TaskFlow-bound Business Ops proposal for operator review. Proposal-content fields must be verbatim excerpts from the digest-bound artifacts. This validates current refs, digests, and excerpts but never records a decision or mutates an artifact.",
     parameters: Type.Object({
       flowId: Type.String({ minLength: 1, maxLength: 256 }),
       flowRevision: Type.Integer({ minimum: 0 }),
@@ -123,18 +127,43 @@ export function createBusinessOpsProposalTool(options: ProposalToolOptions) {
       proposalDigest: Type.String({ minLength: 64, maxLength: 64 }),
       targetRef: Type.String({ minLength: 1, maxLength: 2_048 }),
       targetDigest: Type.String({ minLength: 64, maxLength: 64 }),
-      anchor: Type.String({ minLength: 1, maxLength: 4_096 }),
-      currentPassage: Type.String({ minLength: 1, maxLength: MAX_PASSAGE_CHARS }),
-      proposedPassage: Type.String({ minLength: 1, maxLength: MAX_PASSAGE_CHARS }),
+      anchor: Type.String({
+        minLength: 1,
+        maxLength: 4_096,
+        description: "Exact verbatim anchor present in the digest-bound target artifact.",
+      }),
+      currentPassage: Type.String({
+        minLength: 1,
+        maxLength: MAX_PASSAGE_CHARS,
+        description: "Exact verbatim current passage present in the digest-bound target artifact.",
+      }),
+      proposedPassage: Type.String({
+        minLength: 1,
+        maxLength: MAX_PASSAGE_CHARS,
+        description:
+          "Exact verbatim proposed passage present in the digest-bound proposal artifact.",
+      }),
       evidenceBasis: Type.Array(Type.String({ minLength: 1, maxLength: 2_000 }), {
         maxItems: 24,
+        description:
+          "Exact verbatim evidence excerpts present in the digest-bound proposal artifact; do not add labels or paraphrase.",
       }),
       affectedSurfaces: Type.Array(Type.String({ minLength: 1, maxLength: 2_048 }), {
         maxItems: 24,
+        description:
+          "Exact verbatim affected-surface excerpts present in the digest-bound proposal artifact; do not add labels or paraphrase.",
       }),
-      reviewerVerdict: Type.Optional(Type.String({ maxLength: 2_000 })),
+      reviewerVerdict: Type.Optional(
+        Type.String({
+          maxLength: 2_000,
+          description:
+            "Exact verbatim reviewer-verdict excerpt present in the digest-bound proposal artifact.",
+        }),
+      ),
       unresolvedConsequences: Type.Array(Type.String({ minLength: 1, maxLength: 2_000 }), {
         maxItems: 24,
+        description:
+          "Exact verbatim unresolved-consequence excerpts present in the digest-bound proposal artifact; do not add labels or paraphrase.",
       }),
     }),
     async execute(_id: string, params: JsonRecord) {
@@ -185,6 +214,26 @@ export function createBusinessOpsProposalTool(options: ProposalToolOptions) {
         ),
       };
       const currentAndActionable = Object.values(checks).every(Boolean);
+      const failedChecks = Object.entries(checks)
+        .filter(([, passed]) => !passed)
+        .map(([name]) => name);
+      const missingProposalContentIndexes = {
+        evidenceBasis: missingStringIndexes(evidenceBasis, proposalArtifact.text),
+        affectedSurfaces: missingStringIndexes(affectedSurfaces, proposalArtifact.text),
+        reviewerVerdict: Boolean(
+          reviewerVerdict && !proposalArtifact.text.includes(reviewerVerdict),
+        ),
+        unresolvedConsequences: missingStringIndexes(unresolvedConsequences, proposalArtifact.text),
+      };
+      const identityChecksPassed = [
+        checks.flowExists,
+        checks.flowRevision,
+        checks.flowWaiting,
+        checks.proposalPointer,
+        checks.targetPointer,
+        checks.proposalDigest,
+        checks.targetDigest,
+      ].every(Boolean);
       const presentation = {
         schema: "openclaw.business-ops.proposal-presentation.v1",
         authority: "presentation_only",
@@ -204,6 +253,13 @@ export function createBusinessOpsProposalTool(options: ProposalToolOptions) {
         unresolvedConsequences,
         allowedOutcomes: currentAndActionable ? ["approve", "revise", "reject", "defer"] : [],
         checks,
+        failedChecks,
+        missingProposalContentIndexes,
+        recoveryHint: currentAndActionable
+          ? null
+          : identityChecksPassed
+            ? "Retry with exact verbatim excerpts already present in the digest-bound proposal and target artifacts; do not rewrite an artifact to satisfy presentation."
+            : "Reload the current TaskFlow revision and digest-bound artifacts before presenting again.",
         instruction:
           "A UI action sends an explicit operator message containing this proposal identity. Business Ops must re-read TaskFlow and target digests before any mutation.",
       };

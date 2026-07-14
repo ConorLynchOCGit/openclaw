@@ -75,6 +75,8 @@ describe("business_ops_present_proposal", () => {
       authority: "presentation_only",
       status: "current",
       allowedOutcomes: ["approve", "revise", "reject", "defer"],
+      failedChecks: [],
+      recoveryHint: null,
     });
     expect(JSON.parse(result.content[0]?.text ?? "{}")).toEqual(presentation);
   });
@@ -88,6 +90,9 @@ describe("business_ops_present_proposal", () => {
       status: "superseded_or_stale",
       allowedOutcomes: [],
       checks: { flowRevision: false },
+      failedChecks: ["flowRevision"],
+      recoveryHint:
+        "Reload the current TaskFlow revision and digest-bound artifacts before presenting again.",
     });
   });
 
@@ -102,7 +107,46 @@ describe("business_ops_present_proposal", () => {
       status: "superseded_or_stale",
       allowedOutcomes: [],
       checks: { proposedPassage: false },
+      failedChecks: ["proposedPassage"],
+      recoveryHint:
+        "Retry with exact verbatim excerpts already present in the digest-bound proposal and target artifacts; do not rewrite an artifact to satisfy presentation.",
     });
+  });
+
+  it("identifies paraphrased proposal metadata so the caller can retry from exact excerpts", async () => {
+    const { tool, params } = await fixture();
+    const result = await tool.execute("call-paraphrased-metadata", {
+      ...params,
+      evidenceBasis: ["Evidence E-1 says this is an operator assertion."],
+      affectedSurfaces: ["The affected surface is target.md."],
+      unresolvedConsequences: ["Publication approval still needs review."],
+    });
+
+    expect(result.details).toMatchObject({
+      status: "superseded_or_stale",
+      failedChecks: [
+        "proposalEvidence",
+        "proposalAffectedSurfaces",
+        "proposalUnresolvedConsequences",
+      ],
+      missingProposalContentIndexes: {
+        evidenceBasis: [0],
+        affectedSurfaces: [0],
+        reviewerVerdict: false,
+        unresolvedConsequences: [0],
+      },
+    });
+  });
+
+  it("describes proposal-content parameters as exact artifact excerpts", async () => {
+    const { tool } = await fixture();
+    const schema = tool.parameters as {
+      properties: Record<string, { description?: string }>;
+    };
+
+    expect(schema.properties.evidenceBasis?.description).toContain("Exact verbatim");
+    expect(schema.properties.affectedSurfaces?.description).toContain("Exact verbatim");
+    expect(schema.properties.unresolvedConsequences?.description).toContain("Exact verbatim");
   });
 
   it("rejects absolute and escaping artifact paths", async () => {
