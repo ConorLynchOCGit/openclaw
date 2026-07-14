@@ -568,7 +568,8 @@ export function createGrepToolDefinition(
                   settle(() => reject(new Error("Operation aborted")));
                   return;
                 }
-                if (!killedDueToLimit && code !== 0 && code !== 1) {
+                const searchIncomplete = !killedDueToLimit && code !== 0 && code !== 1;
+                if (searchIncomplete && matchCount === 0) {
                   const errorMsg = stderr.trim() || `ripgrep exited with code ${code}`;
                   settle(() => reject(new Error(errorMsg)));
                   return;
@@ -624,6 +625,12 @@ export function createGrepToolDefinition(
                     `Some lines truncated to ${GREP_MAX_LINE_LENGTH} chars. Use read tool to see full lines`,
                   );
                   details.linesTruncated = true;
+                }
+                if (searchIncomplete) {
+                  notices.push(
+                    "Search coverage incomplete; valid matches are shown, but some paths could not be inspected. Narrow the path or glob before making an absence claim",
+                  );
+                  details.searchIncomplete = true;
                 }
                 if (notices.length > 0) {
                   output += `\n\n[${notices.join(". ")}]`;

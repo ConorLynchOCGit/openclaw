@@ -109,6 +109,7 @@ function formatFindResult(
 
   const resultLimit = result.details?.resultLimitReached;
   const truncation = result.details?.truncation;
+  const searchIncomplete = result.details?.searchIncomplete;
   if (resultLimit || truncation?.truncated) {
     const warnings: string[] = [];
     if (resultLimit) {
@@ -119,6 +120,9 @@ function formatFindResult(
     }
     text += `\n${theme.fg("warning", `[Truncated: ${warnings.join(", ")}]`)}`;
   }
+  if (searchIncomplete) {
+    text += `\n${theme.fg("warning", "[Search coverage incomplete]")}`;
+  }
   return text;
 }
 
@@ -126,6 +130,7 @@ function buildFindResult(params: {
   relativized: string[];
   effectiveLimit: number;
   limitNotice: string;
+  searchIncomplete?: boolean;
 }): {
   content: Array<{ type: "text"; text: string }>;
   details: FindToolDetails | undefined;
@@ -143,6 +148,12 @@ function buildFindResult(params: {
   if (truncation.truncated) {
     notices.push(`${formatSize(DEFAULT_MAX_BYTES)} limit reached`);
     details.truncation = truncation;
+  }
+  if (params.searchIncomplete) {
+    notices.push(
+      "Search coverage incomplete; valid paths are shown, but some directories could not be inspected. Narrow the path before making an absence claim",
+    );
+    details.searchIncomplete = true;
   }
   if (notices.length > 0) {
     resultOutput += `\n\n[${notices.join(". ")}]`;
@@ -176,8 +187,9 @@ function localFindFallback(params: {
   pattern: string;
   searchPath: string;
   effectiveLimit: number;
-}): string[] {
+}): { results: string[]; searchIncomplete: boolean } {
   const results: string[] = [];
+  let searchIncomplete = false;
   const stack: string[] = [params.searchPath];
   while (stack.length > 0 && results.length < params.effectiveLimit) {
     const current = stack.pop();
@@ -188,6 +200,7 @@ function localFindFallback(params: {
     try {
       entries = readdirSync(current, { withFileTypes: true });
     } catch {
+      searchIncomplete = true;
       continue;
     }
     for (const entry of entries) {
@@ -211,6 +224,7 @@ function localFindFallback(params: {
             continue;
           }
         } catch {
+          searchIncomplete = true;
           continue;
         }
       }
@@ -221,7 +235,7 @@ function localFindFallback(params: {
     }
   }
   results.sort((a, b) => a.localeCompare(b));
-  return results;
+  return { results, searchIncomplete };
 }
 
 export function createFindToolDefinition(
@@ -337,7 +351,17 @@ export function createFindToolDefinition(
                 searchPath,
                 effectiveLimit,
               });
-              if (fallbackResults.length === 0) {
+              if (fallbackResults.results.length === 0) {
+                if (fallbackResults.searchIncomplete) {
+                  settle(() =>
+                    reject(
+                      new Error(
+                        "File discovery incomplete: one or more directories could not be read",
+                      ),
+                    ),
+                  );
+                  return;
+                }
                 settle(() =>
                   resolve({
                     content: [{ type: "text", text: "No files found matching pattern" }],
@@ -349,11 +373,12 @@ export function createFindToolDefinition(
               settle(() =>
                 resolve(
                   buildFindResult({
-                    relativized: fallbackResults.map((p) =>
+                    relativized: fallbackResults.results.map((p) =>
                       toPosixPath(path.relative(searchPath, p)),
                     ),
                     effectiveLimit,
                     limitNotice: `${effectiveLimit} results limit reached. Use limit=${effectiveLimit * 2} for more, or refine pattern`,
+                    searchIncomplete: fallbackResults.searchIncomplete,
                   }),
                 ),
               );
@@ -419,6 +444,7 @@ export function createFindToolDefinition(
                 return;
               }
               const output = lines.join("\n");
+              const searchIncomplete = code !== 0;
               if (code !== 0) {
                 const errorMsg = stderr.trim() || `fd exited with code ${code}`;
                 if (!output) {
@@ -461,6 +487,7 @@ export function createFindToolDefinition(
                     relativized,
                     effectiveLimit,
                     limitNotice: `${effectiveLimit} results limit reached. Use limit=${effectiveLimit * 2} for more, or refine pattern`,
+                    searchIncomplete,
                   }),
                 ),
               );

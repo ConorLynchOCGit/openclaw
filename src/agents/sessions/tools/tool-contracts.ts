@@ -41,6 +41,8 @@ export interface FindToolInput {
 export interface FindToolDetails {
   truncation?: TruncationResult;
   resultLimitReached?: number;
+  /** Returned paths are valid, but not every candidate directory was inspected. */
+  searchIncomplete?: boolean;
 }
 
 export interface GrepToolInput {
@@ -57,6 +59,8 @@ export interface GrepToolDetails {
   truncation?: TruncationResult;
   matchLimitReached?: number;
   linesTruncated?: boolean;
+  /** Matches are valid, but ripgrep could not inspect every candidate path. */
+  searchIncomplete?: boolean;
 }
 
 export interface LsToolInput {
