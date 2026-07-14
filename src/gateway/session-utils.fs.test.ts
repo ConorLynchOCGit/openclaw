@@ -2309,6 +2309,50 @@ describe("oversized transcript line guards", () => {
     });
   });
 
+  test("readLastAssistantTextFromTranscript skips silent control follow-ups", () => {
+    const sessionId = "test-silent-followup-final";
+    const transcriptPath = path.join(tmpDir, `${sessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({ type: "session", version: 3, id: sessionId }),
+      JSON.stringify({ message: { role: "user", content: "complete the work" } }),
+      JSON.stringify({ message: { role: "assistant", content: "Visible completion report." } }),
+      JSON.stringify({ message: { role: "user", content: "internal duplicate completion event" } }),
+      JSON.stringify({ message: { role: "assistant", content: "NO_REPLY" } }),
+    ];
+    fs.writeFileSync(transcriptPath, `${lines.join("\n")}\n`, "utf-8");
+
+    expect(
+      readLastAssistantTextFromTranscriptWithProvenance(sessionId, storePath, undefined, undefined),
+    ).toMatchObject({
+      text: "Visible completion report.",
+      answersLatestUser: false,
+      provenance: {
+        note: expect.stringMatching(
+          /skipped 1 newer suppressed control reply; predates latest user turn/,
+        ),
+      },
+    });
+  });
+
+  test("readLastAssistantTextFromTranscript reports an all-silent assistant history as empty", () => {
+    const sessionId = "test-only-silent-final";
+    const transcriptPath = path.join(tmpDir, `${sessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({ type: "session", version: 3, id: sessionId }),
+      JSON.stringify({ message: { role: "user", content: "internal completion event" } }),
+      JSON.stringify({ message: { role: "assistant", content: "NO_REPLY" } }),
+    ];
+    fs.writeFileSync(transcriptPath, `${lines.join("\n")}\n`, "utf-8");
+
+    expect(
+      readLastAssistantTextFromTranscriptWithProvenance(sessionId, storePath, undefined, undefined),
+    ).toMatchObject({
+      text: null,
+      answersLatestUser: false,
+      provenance: { note: expect.stringContaining("skipped 1 suppressed control reply") },
+    });
+  });
+
   test("readRecentSessionMessagesAsync keeps oversized active-tree leaves", async () => {
     const sessionId = "test-oversized-tree-tail";
     const transcriptPath = path.join(tmpDir, `${sessionId}.jsonl`);

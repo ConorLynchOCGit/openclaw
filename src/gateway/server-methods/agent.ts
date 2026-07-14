@@ -587,6 +587,7 @@ function emitSessionsChanged(
             deliveryContext: sessionRow.deliveryContext,
             parentSessionKey: sessionRow.parentSessionKey,
             childSessions: sessionRow.childSessions,
+            hasActiveSubagentRun: sessionRow.hasActiveSubagentRun === true,
             thinkingLevel: sessionRow.thinkingLevel,
             fastMode: sessionRow.fastMode,
             verboseLevel: sessionRow.verboseLevel,

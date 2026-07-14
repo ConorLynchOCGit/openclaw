@@ -840,3 +840,29 @@ test("sessions.changed mutation events include subagent ownership metadata", asy
   });
   expect(broadcastPayload).not.toHaveProperty("activeWork");
 });
+
+test("sessions.changed mutation events include active descendant state", async () => {
+  await createSessionStoreDir();
+  await writeSessionStore({
+    entries: {
+      main: sessionStoreEntry("sess-main", { status: "done" }),
+      "subagent:child": sessionStoreEntry("sess-child", {
+        status: "running",
+        spawnedBy: "agent:main:main",
+        parentSessionKey: "agent:main:main",
+        startedAt: Date.now() - 1_000,
+      }),
+    },
+  });
+
+  const { broadcastToConnIds } = await invokeSessionsPatch({
+    key: "main",
+    label: "Main",
+  });
+
+  expectChangedBroadcast(broadcastToConnIds, {
+    sessionKey: "agent:main:main",
+    reason: "patch",
+    hasActiveSubagentRun: true,
+  });
+});

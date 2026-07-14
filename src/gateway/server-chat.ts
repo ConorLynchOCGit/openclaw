@@ -424,6 +424,7 @@ export function createAgentEventHandler({
       deliveryContext: row?.deliveryContext,
       parentSessionKey: row?.parentSessionKey,
       childSessions: row?.childSessions,
+      hasActiveSubagentRun: row?.hasActiveSubagentRun === true,
       thinkingLevel: row?.thinkingLevel,
       fastMode: row?.fastMode,
       verboseLevel: row?.verboseLevel,

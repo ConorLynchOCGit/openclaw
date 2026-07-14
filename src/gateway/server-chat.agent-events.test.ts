@@ -2289,6 +2289,7 @@ describe("agent event handler", () => {
       readbackProvenance,
       parentSessionKey: "agent:main:main",
       childSessions: ["agent:researcher:subagent:child"],
+      hasActiveSubagentRun: true,
     });
 
     const { broadcastToConnIds, sessionEventSubscribers, handler } = createHarness({
@@ -2327,6 +2328,7 @@ describe("agent event handler", () => {
       readbackProvenance,
       parentSessionKey: "agent:main:main",
       childSessions: ["agent:researcher:subagent:child"],
+      hasActiveSubagentRun: true,
       status: "done",
       endedAt: 1_700,
     });
@@ -2338,6 +2340,7 @@ describe("agent event handler", () => {
       readbackProvenance,
       parentSessionKey: "agent:main:main",
       childSessions: ["agent:researcher:subagent:child"],
+      hasActiveSubagentRun: true,
       status: "done",
     });
   });

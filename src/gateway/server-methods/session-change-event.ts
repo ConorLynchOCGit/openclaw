@@ -119,6 +119,7 @@ export function emitSessionsChanged(
             model: sessionRow.model,
             status: sessionRow.status,
             hasActiveRun: sessionRow.hasActiveRun,
+            hasActiveSubagentRun: sessionRow.hasActiveSubagentRun === true,
             startedAt: sessionRow.startedAt,
             endedAt: sessionRow.endedAt,
             runtimeMs: sessionRow.runtimeMs,

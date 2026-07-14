@@ -17,6 +17,7 @@ import { estimateStringChars, estimateTokensFromChars } from "../utils/cjk-chars
 import { stripInlineDirectiveTagsForDisplay } from "../utils/directive-tags.js";
 import { extractToolCallNames, hasToolCall } from "../utils/transcript-tools.js";
 import { stripEnvelope } from "./chat-sanitize.js";
+import { isSuppressedControlReplyText } from "./control-reply-text.js";
 import { resolveSessionTranscriptCandidates } from "./session-transcript-files.fs.js";
 import {
   readSessionTranscriptIndex,
@@ -1929,6 +1930,7 @@ export function readLastAssistantTextFromTranscriptWithProvenance(
 
   const messages = transcriptRecordsToMessages(readSelectedTranscriptRecordsRaw(filePath));
   let sawNewerUserTurn = false;
+  let skippedSuppressedControlReplies = 0;
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i] as TranscriptPreviewMessage | undefined;
     if (!message) {
@@ -1950,6 +1952,16 @@ export function readLastAssistantTextFromTranscriptWithProvenance(
     if (!trimmed) {
       continue;
     }
+    if (isSuppressedControlReplyText(trimmed)) {
+      skippedSuppressedControlReplies += 1;
+      continue;
+    }
+    const suppressedReplyNote =
+      skippedSuppressedControlReplies > 0
+        ? `; skipped ${skippedSuppressedControlReplies} newer suppressed control repl${
+            skippedSuppressedControlReplies === 1 ? "y" : "ies"
+          }`
+        : "";
     if (typeof maxChars === "number" && Number.isFinite(maxChars) && maxChars > 0) {
       const boundedChars = Math.max(20, Math.floor(maxChars));
       const bounded = trimmed.length > boundedChars;
@@ -1962,7 +1974,7 @@ export function readLastAssistantTextFromTranscriptWithProvenance(
             bounded
               ? `derived from full transcript scan then bounded by caller maxChars=${boundedChars}`
               : "derived from full transcript scan; caller maxChars did not truncate"
-          }${sawNewerUserTurn ? "; predates latest user turn" : ""}`,
+          }${suppressedReplyNote}${sawNewerUserTurn ? "; predates latest user turn" : ""}`,
           bounded,
         ),
       };
@@ -1972,7 +1984,7 @@ export function readLastAssistantTextFromTranscriptWithProvenance(
       answersLatestUser: !sawNewerUserTurn,
       provenance: finalAssistantTextProvenance(
         sessionId,
-        `derived from full transcript scan; unbounded final assistant text${
+        `derived from full transcript scan; unbounded final assistant text${suppressedReplyNote}${
           sawNewerUserTurn ? "; predates latest user turn" : ""
         }`,
         false,
@@ -1986,7 +1998,13 @@ export function readLastAssistantTextFromTranscriptWithProvenance(
     provenance: finalAssistantTextProvenance(
       sessionId,
       messages.length > 0
-        ? "no visible assistant text in selected transcript records"
+        ? `no visible assistant text in selected transcript records${
+            skippedSuppressedControlReplies > 0
+              ? `; skipped ${skippedSuppressedControlReplies} suppressed control repl${
+                  skippedSuppressedControlReplies === 1 ? "y" : "ies"
+                }`
+              : ""
+          }`
         : "no selected transcript records found",
       false,
     ),

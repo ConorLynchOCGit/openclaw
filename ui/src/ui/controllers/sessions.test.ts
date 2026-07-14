@@ -1416,6 +1416,7 @@ describe("applySessionsChangedEvent", () => {
       readbackProvenance,
       parentSessionKey: "agent:planning:main",
       childSessions: ["agent:researcher:subagent:child"],
+      hasActiveSubagentRun: true,
       status: "done",
     });
 
@@ -1431,9 +1432,22 @@ describe("applySessionsChangedEvent", () => {
         readbackProvenance,
         parentSessionKey: "agent:planning:main",
         childSessions: ["agent:researcher:subagent:child"],
+        hasActiveSubagentRun: true,
         status: "done",
       }),
     );
+
+    const settled = applySessionsChangedEvent(state, {
+      sessionKey: "agent:main:main",
+      phase: "end",
+      ts: 3,
+      sessionId: "sess-main",
+      hasActiveSubagentRun: false,
+      status: "done",
+    });
+
+    expect(settled).toEqual({ applied: true, change: "updated" });
+    expect(state.sessionsResult?.sessions[0]?.hasActiveSubagentRun).toBe(false);
   });
 
   it("ignores selected-global session events for another agent", () => {

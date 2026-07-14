@@ -304,6 +304,7 @@ const SESSION_EVENT_ROW_FIELDS = [
   "finalAssistantText",
   "goal",
   "hasActiveRun",
+  "hasActiveSubagentRun",
   "inputTokens",
   "kind",
   "label",

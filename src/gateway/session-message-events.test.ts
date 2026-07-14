@@ -209,6 +209,7 @@ describe("session.message websocket events", () => {
         subagentRole: "orchestrator",
         subagentControlScope: "children",
         displayName: "Ops Child",
+        hasActiveSubagentRun: false,
         goal: {
           schemaVersion: 1,
           id: "goal-child",
@@ -221,6 +222,51 @@ describe("session.message websocket events", () => {
           tokensUsed: 42,
           continuationTurns: 0,
         },
+      });
+    });
+  });
+
+  test("projects active descendant state on lifecycle sessions.changed events", async () => {
+    const storePath = await createSessionStoreFile();
+    await writeSessionStore({
+      entries: {
+        parent: {
+          sessionId: "sess-parent-active-descendant",
+          status: "done",
+          updatedAt: Date.now() - 1_000,
+        },
+        child: {
+          sessionId: "sess-child-active-descendant",
+          status: "running",
+          parentSessionKey: "agent:main:parent",
+          spawnedBy: "agent:main:parent",
+          startedAt: Date.now() - 500,
+          updatedAt: Date.now(),
+        },
+      },
+      storePath,
+    });
+
+    await withOperatorSessionSubscriber(async (ws) => {
+      const changedEvent = onceMessage(
+        ws,
+        (message) =>
+          message.type === "event" &&
+          message.event === "sessions.changed" &&
+          (message.payload as { sessionKey?: string } | undefined)?.sessionKey ===
+            "agent:main:parent",
+      );
+
+      emitSessionLifecycleEvent({
+        sessionKey: "agent:main:parent",
+        reason: "descendant-started",
+      });
+
+      const event = await changedEvent;
+      expectRecordFields(event.payload, {
+        sessionKey: "agent:main:parent",
+        reason: "descendant-started",
+        hasActiveSubagentRun: true,
       });
     });
   });
