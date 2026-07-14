@@ -1626,7 +1626,62 @@ describe("readLatestTrajectoryProgressProjection", () => {
     ]);
     expect(rounds?.map((round) => round.contributionUsage?.freshInputTokens)).toEqual([80, 120]);
     expect(rounds?.map((round) => round.contributionUsage?.inputTokens)).toEqual([100, 150]);
+    expect(rounds?.map((round) => round.currentTurnUsage?.freshInputTokens)).toEqual([80, 120]);
+    expect(rounds?.map((round) => round.currentTurnUsage?.inputTokens)).toEqual([100, 150]);
     expect(rounds?.every((round) => round.settlement === "settled")).toBe(true);
+  });
+
+  test("derives a coherent current turn from cumulative usage across multiple model calls", async () => {
+    const sessionId = "trajectory-parent-multi-call-turn";
+    const sessionFile = path.join(tmpDir, `${sessionId}.jsonl`);
+    fs.writeFileSync(sessionFile, "", "utf-8");
+    const recorder = createTrajectoryRuntimeRecorder({
+      sessionId,
+      sessionKey: `agent:main:${sessionId}`,
+      sessionFile,
+      maxRuntimeFileBytes: 8_000,
+    });
+    if (!recorder) {
+      throw new Error("expected trajectory recorder");
+    }
+
+    recorder.recordEvent("prompt.submitted", { threadId: "parent", turnId: "round-1" });
+    recorder.recordEvent("thread.token_usage.updated", {
+      threadId: "parent",
+      turnId: "round-1",
+      cumulativeUsage: {
+        inputTokens: 100,
+        cachedInputTokens: 20,
+        outputTokens: 10,
+        totalTokens: 110,
+      },
+      currentTurnUsage: { input: 80, cacheRead: 20, output: 10, totalTokens: 110 },
+    });
+    recorder.recordEvent("thread.token_usage.updated", {
+      threadId: "parent",
+      turnId: "round-1",
+      cumulativeUsage: {
+        inputTokens: 300,
+        cachedInputTokens: 200,
+        outputTokens: 20,
+        totalTokens: 320,
+      },
+      // `last` is only the second model call. Field-wise maxima across this
+      // and the first call would report an impossible fresh/cache split.
+      currentTurnUsage: { input: 10, cacheRead: 140, output: 10, totalTokens: 160 },
+    });
+    await recorder.flush();
+
+    const [round] =
+      readCodexTrajectoryParentRounds(sessionId, storePath, sessionFile, "main") ?? [];
+    expect(round?.currentTurnUsage).toMatchObject({
+      inputTokens: 300,
+      freshInputTokens: 100,
+      cachedInputTokens: 200,
+      outputTokens: 20,
+      totalTokens: 320,
+    });
+    expect(round?.contributionUsage).toEqual(round?.currentTurnUsage);
   });
 
   test("uses mirrored native agent tool result events without task-row fallback", async () => {

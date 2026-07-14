@@ -418,6 +418,116 @@ describe("gateway session utils", () => {
     });
   });
 
+  test("session detail derives settled team usage from parent-round trajectory fallback", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-session-team-usage-"));
+    try {
+      const sessionId = "33333333-3333-4333-8333-333333333333";
+      const sessionKey = "agent:coding:session-team-usage";
+      const storePath = path.join(tempDir, "sessions.json");
+      fs.writeFileSync(path.join(tempDir, `${sessionId}.jsonl`), "", "utf8");
+      const base = {
+        traceSchema: "openclaw-trajectory",
+        schemaVersion: 1,
+        traceId: sessionId,
+        source: "runtime",
+        sessionId,
+        sessionKey,
+        runId: "run-team-usage",
+        workspaceDir: "/home/node/.openclaw/workspace",
+        provider: "openai",
+        modelId: "gpt-5.6-sol",
+        modelApi: "openai-chatgpt-responses",
+      };
+      const events = [
+        {
+          ...base,
+          type: "prompt.submitted",
+          ts: "2026-07-14T18:00:00.000Z",
+          seq: 1,
+          sourceSeq: 1,
+          data: { threadId: "parent-thread", turnId: "turn-1" },
+        },
+        {
+          ...base,
+          type: "thread.token_usage.updated",
+          ts: "2026-07-14T18:00:01.000Z",
+          seq: 2,
+          sourceSeq: 2,
+          data: {
+            threadId: "parent-thread",
+            turnId: "turn-1",
+            cumulativeUsage: {
+              inputTokens: 1_000,
+              cachedInputTokens: 800,
+              outputTokens: 100,
+              totalTokens: 1_100,
+            },
+            currentTurnUsage: {
+              input: 200,
+              cacheRead: 800,
+              output: 100,
+              totalTokens: 1_100,
+            },
+          },
+        },
+        {
+          ...base,
+          type: "model.completed",
+          ts: "2026-07-14T18:00:02.000Z",
+          seq: 3,
+          sourceSeq: 3,
+          data: {
+            threadId: "parent-thread",
+            turnId: "turn-1",
+            usage: { input: 200, cacheRead: 800, output: 100, totalTokens: 1_100 },
+          },
+        },
+      ];
+      fs.writeFileSync(
+        path.join(tempDir, `${sessionId}.trajectory.jsonl`),
+        `${events.map((event) => JSON.stringify(event)).join("\n")}\n`,
+        "utf8",
+      );
+
+      const cfg = {
+        agents: {
+          defaults: {
+            model: { primary: "openai/gpt-5.6-sol" },
+            models: { "openai/gpt-5.6-sol": { agentRuntime: { id: "codex" } } },
+          },
+          list: [{ id: "coding", default: true }],
+        },
+      } as OpenClawConfig;
+      const entry = {
+        sessionId,
+        updatedAt: Date.parse("2026-07-14T18:00:03.000Z"),
+        status: "done",
+      } satisfies SessionEntry;
+      const row = buildGatewaySessionRow({
+        cfg,
+        storePath,
+        store: { [sessionKey]: entry },
+        key: sessionKey,
+        entry,
+      });
+
+      expect(row.codexTeamUsage).toEqual({
+        basis: "cumulative",
+        state: "settled",
+        parentRoundCount: 1,
+        childCount: 0,
+        inputTokens: 1_000,
+        freshInputTokens: 200,
+        outputTokens: 100,
+        cachedInputTokens: 800,
+        reasoningOutputTokens: undefined,
+        totalTokens: 1_100,
+      });
+    } finally {
+      fs.rmSync(tempDir, { force: true, recursive: true });
+    }
+  });
+
   test("session detail derives Codex-native child labels from role metadata", () => {
     const cfg = { agents: { list: [{ id: "coding", default: true }] } } as OpenClawConfig;
     const sessionKey = "agent:coding:session-generic-child-label";

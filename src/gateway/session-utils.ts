@@ -392,7 +392,44 @@ function buildCodexTeamUsage(params: {
   const childUsage = params.children?.map((child) => child.usage).filter(Boolean) ?? [];
   const parentRoundCount = params.parentRounds?.length;
   const childCount = params.children?.length ?? 0;
-  if (!params.parent) {
+  const sumComplete = (values: Array<number | undefined>) => {
+    if (values.length === 0 || values.some((value) => value === undefined)) {
+      return undefined;
+    }
+    let total = 0;
+    for (const value of values) {
+      total += value ?? 0;
+    }
+    return total;
+  };
+  const parentUsage: GatewaySessionCodexUsage[] = params.parent
+    ? [
+        {
+          inputTokens: params.parent.inputTokens,
+          freshInputTokens:
+            params.parent.inputTokens === undefined
+              ? undefined
+              : Math.max(0, params.parent.inputTokens - (params.parent.cachedInputTokens ?? 0)),
+          outputTokens: params.parent.outputTokens,
+          cachedInputTokens: params.parent.cachedInputTokens,
+          reasoningOutputTokens: params.parent.reasoningOutputTokens,
+          totalTokens: params.parent.totalTokens,
+        },
+      ]
+    : (params.parentRounds
+        ?.map((round) => round.contributionUsage)
+        .filter((usage): usage is GatewaySessionCodexUsage => usage !== undefined) ?? []);
+  const parentComplete = params.parent
+    ? parentUsage[0]?.totalTokens !== undefined
+    : Boolean(
+        params.parentRounds?.length &&
+        parentUsage.length === params.parentRounds.length &&
+        params.parentRounds.every(
+          (round) =>
+            round.settlement === "settled" && round.contributionUsage?.totalTokens !== undefined,
+        ),
+      );
+  if (parentUsage.length === 0) {
     return {
       basis: "cumulative",
       state: "partial",
@@ -406,31 +443,8 @@ function buildCodexTeamUsage(params: {
       totalTokens: undefined,
     };
   }
-  const sumComplete = (values: Array<number | undefined>) => {
-    if (values.length === 0 || values.some((value) => value === undefined)) {
-      return undefined;
-    }
-    let total = 0;
-    for (const value of values) {
-      total += value ?? 0;
-    }
-    return total;
-  };
-  const parentUsage = [
-    {
-      inputTokens: params.parent.inputTokens,
-      freshInputTokens:
-        params.parent.inputTokens === undefined
-          ? undefined
-          : Math.max(0, params.parent.inputTokens - (params.parent.cachedInputTokens ?? 0)),
-      outputTokens: params.parent.outputTokens,
-      cachedInputTokens: params.parent.cachedInputTokens,
-      reasoningOutputTokens: params.parent.reasoningOutputTokens,
-      totalTokens: params.parent.totalTokens,
-    },
-  ];
   const complete =
-    parentUsage.every((usage) => usage?.totalTokens !== undefined) &&
+    parentComplete &&
     childUsage.length === (params.children?.length ?? 0) &&
     childUsage.every((usage) => usage?.totalTokens !== undefined);
   const usageValues = (key: keyof GatewaySessionCodexUsage): Array<number | undefined> => {

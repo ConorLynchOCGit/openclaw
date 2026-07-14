@@ -2737,7 +2737,14 @@ export function readCodexTrajectoryParentRounds(
   const previousByThread = new Map<string, GatewaySessionCodexUsage>();
   for (const round of sorted) {
     const previous = previousByThread.get(round.threadId);
-    round.contributionUsage = usageDelta(round.cumulativeUsage, previous) ?? round.currentTurnUsage;
+    const cumulativeTurnUsage = usageDelta(round.cumulativeUsage, previous);
+    // App-server's `last` usage is for one model call, not the whole Codex
+    // turn. A tool-using turn can contain many such calls, so independently
+    // maximizing those snapshots produces impossible fresh/cache totals. The
+    // native cumulative thread counters are authoritative; subtract the prior
+    // round to derive this turn and retain `last` only as a partial fallback.
+    round.currentTurnUsage = cumulativeTurnUsage ?? round.currentTurnUsage;
+    round.contributionUsage = cumulativeTurnUsage ?? round.currentTurnUsage;
     if (round.cumulativeUsage) {
       previousByThread.set(round.threadId, round.cumulativeUsage);
     }
