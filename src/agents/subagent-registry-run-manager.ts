@@ -538,6 +538,7 @@ export function createSubagentRunManager(params: {
     nextRunId: string;
     fallback?: SubagentRunRecord;
     runTimeoutSeconds?: number;
+    expectsCompletionMessage?: boolean;
     preserveFrozenResultFallback?: boolean;
     transcriptFile?: string;
   }) => {
@@ -579,6 +580,8 @@ export function createSubagentRunManager(params: {
           ? now + archiveAfterMs
           : undefined;
     const runTimeoutSeconds = replaceParams.runTimeoutSeconds ?? source.runTimeoutSeconds ?? 0;
+    const expectsCompletionMessage =
+      replaceParams.expectsCompletionMessage ?? source.expectsCompletionMessage;
     const waitTimeoutMs = params.resolveSubagentWaitTimeoutMs(cfg, runTimeoutSeconds);
     const preserveFrozenResultFallback = replaceParams.preserveFrozenResultFallback === true;
     const sessionStartedAt = getSubagentSessionStartedAt(source) ?? now;
@@ -599,6 +602,7 @@ export function createSubagentRunManager(params: {
       endedAt: undefined,
       endedReason: undefined,
       pauseReason: undefined,
+      expectsCompletionMessage,
       endedHookEmittedAt: undefined,
       browserCleanupDispatchedAt: undefined,
       wakeOnDescendantSettle: undefined,
@@ -609,7 +613,7 @@ export function createSubagentRunManager(params: {
         transcriptFile: replaceParams.transcriptFile,
       },
       completion: {
-        required: source.expectsCompletionMessage === true,
+        required: expectsCompletionMessage === true,
         fallbackResultText: preserveFrozenResultFallback ? sourceCompletion.resultText : undefined,
         fallbackCapturedAt: preserveFrozenResultFallback ? sourceCompletion.capturedAt : undefined,
       },
@@ -617,7 +621,7 @@ export function createSubagentRunManager(params: {
       cleanupHandled: false,
       suppressAnnounceReason: undefined,
       delivery: {
-        status: source.expectsCompletionMessage === false ? "not_required" : "pending",
+        status: expectsCompletionMessage === false ? "not_required" : "pending",
       },
       spawnMode,
       archiveAtMs,

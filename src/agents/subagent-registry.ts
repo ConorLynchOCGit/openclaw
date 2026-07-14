@@ -1276,15 +1276,15 @@ export function trackSubagentContinuationRun(params: {
   ) {
     return false;
   }
-  if (source.runId === nextRunId) {
-    return true;
-  }
-
   return subagentRunManager.replaceSubagentRun({
     previousRunId: source.runId,
     nextRunId,
     fallback: source,
     runTimeoutSeconds: source.runTimeoutSeconds ?? 0,
+    // Task-launched domain children are receipt-only at spawn time. Once a
+    // parent-owned sessions_send continuation outlives its inline wait, that
+    // continuation itself requires one eventual completion delivery.
+    expectsCompletionMessage: true,
   });
 }
 

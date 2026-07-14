@@ -343,6 +343,76 @@ describe("subagent registry steer restarts", () => {
     expect(runs[0].endedAt).toBeUndefined();
   });
 
+  it("upgrades a receipt-only task child when a continuation needs eventual delivery", async () => {
+    registerRun({
+      runId: "run-task-receipt",
+      childSessionKey: "agent:business-ops:subagent:receipt-continuation",
+      task: "continue after the parent wait",
+      spawnMode: "run",
+      expectsCompletionMessage: false,
+      requesterOrigin: {
+        channel: "discord",
+        to: "channel:123",
+        accountId: "work",
+      },
+    });
+
+    expect(
+      mod.trackSubagentContinuationRun({
+        childSessionKey: "agent:business-ops:subagent:receipt-continuation",
+        nextRunId: "run-task-continuation",
+        requesterSessionKey: MAIN_REQUESTER_SESSION_KEY,
+      }),
+    ).toBe(true);
+
+    const runs = listMainRuns();
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({
+      runId: "run-task-continuation",
+      expectsCompletionMessage: true,
+      completion: { required: true },
+      delivery: { status: "pending" },
+      execution: { status: "running" },
+    });
+
+    emitLifecycleEnd("run-task-continuation");
+    await waitForRegistrySideEffect(() => {
+      expect(announceSpy).toHaveBeenCalledTimes(1);
+    });
+    expect(requireFirstAnnounceCall()).toMatchObject({
+      childSessionKey: "agent:business-ops:subagent:receipt-continuation",
+      requesterSessionKey: MAIN_REQUESTER_SESSION_KEY,
+      expectsCompletionMessage: true,
+    });
+  });
+
+  it("upgrades delivery when the continuation already owns the registry run id", () => {
+    registerRun({
+      runId: "run-task-continuation-same-id",
+      childSessionKey: "agent:business-ops:subagent:same-id-continuation",
+      task: "continue after the parent wait",
+      spawnMode: "run",
+      expectsCompletionMessage: false,
+    });
+
+    expect(
+      mod.trackSubagentContinuationRun({
+        childSessionKey: "agent:business-ops:subagent:same-id-continuation",
+        nextRunId: "run-task-continuation-same-id",
+        requesterSessionKey: MAIN_REQUESTER_SESSION_KEY,
+      }),
+    ).toBe(true);
+
+    expect(listMainRuns()).toEqual([
+      expect.objectContaining({
+        runId: "run-task-continuation-same-id",
+        expectsCompletionMessage: true,
+        completion: expect.objectContaining({ required: true }),
+        delivery: expect.objectContaining({ status: "pending" }),
+      }),
+    ]);
+  });
+
   it("refuses to re-arm a child continuation for a different requester", () => {
     registerCompletionModeRun(
       "run-original",
