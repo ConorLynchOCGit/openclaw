@@ -45,6 +45,24 @@ describe("loadExtraBootstrapFiles", () => {
     ]);
   });
 
+  it("loads role-scoped root and mode contract files", async () => {
+    const workspaceDir = await createWorkspaceDir("role-contracts");
+    const contractDir = path.join(workspaceDir, "docs", "agents", "researcher");
+    await fs.mkdir(contractDir, { recursive: true });
+    await fs.writeFile(path.join(contractDir, "ROOTS.md"), "root map", "utf-8");
+    await fs.writeFile(path.join(contractDir, "MODES.md"), "research modes", "utf-8");
+
+    const files = await loadExtraBootstrapFiles(workspaceDir, [
+      "docs/agents/researcher/ROOTS.md",
+      "docs/agents/researcher/MODES.md",
+    ]);
+
+    expect(files.map((file) => [file.name, file.content])).toStrictEqual([
+      ["ROOTS.md", "root map"],
+      ["MODES.md", "research modes"],
+    ]);
+  });
+
   it("loads glob patterns with explicit current-directory prefixes", async () => {
     const workspaceDir = await createWorkspaceDir("glob-current-dir");
     const packageDir = path.join(workspaceDir, "packages", "core");

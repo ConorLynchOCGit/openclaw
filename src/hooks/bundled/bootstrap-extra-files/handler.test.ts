@@ -191,4 +191,57 @@ describe("bootstrap-extra-files hook", () => {
     expect(relativePaths).toContain(path.join("docs", "agents", "planning", "AGENTS.md"));
     expect(relativePaths).toContain(path.join("docs", "agents", "planning", "TOOLS.md"));
   });
+
+  it("retains configured root maps for subagent contract packs", async () => {
+    const tempDir = await makeTempWorkspace("openclaw-bootstrap-extra-contract-roots-");
+    const contractDir = path.join(tempDir, "docs", "agents", "codebase-researcher");
+    await fs.mkdir(contractDir, { recursive: true });
+    await fs.writeFile(path.join(contractDir, "AGENTS.md"), "researcher agents", "utf-8");
+    await fs.writeFile(path.join(contractDir, "TOOLS.md"), "researcher tools", "utf-8");
+    await fs.writeFile(path.join(contractDir, "ROOTS.md"), "researcher roots", "utf-8");
+
+    const cfg: OpenClawConfig = {
+      hooks: {
+        internal: {
+          entries: {
+            "bootstrap-extra-files": {
+              enabled: true,
+            },
+          },
+        },
+      },
+      agents: {
+        list: [
+          {
+            id: "codebase-researcher",
+            contractPack: "docs/agents/codebase-researcher",
+            runtimePromptFiles: ["AGENTS.md", "TOOLS.md", "ROOTS.md"],
+          },
+        ],
+      },
+    };
+    const context = await createBootstrapContext({
+      workspaceDir: tempDir,
+      cfg,
+      sessionKey: "agent:codebase-researcher:subagent:task-1",
+      rootFiles: [
+        { name: "AGENTS.md", content: "root agents" },
+        { name: "TOOLS.md", content: "root tools" },
+        { name: "SOUL.md", content: "root persona" },
+      ],
+    });
+    context.agentId = "codebase-researcher";
+
+    const event = createHookEvent(
+      "agent",
+      "bootstrap",
+      "agent:codebase-researcher:subagent:task-1",
+      context,
+    );
+    await handler(event);
+
+    const relativePaths = context.bootstrapFiles.map((file) => path.relative(tempDir, file.path));
+    expect(relativePaths).toContain(path.join("docs", "agents", "codebase-researcher", "ROOTS.md"));
+    expect(context.bootstrapFiles.map((file) => file.name)).not.toContain("SOUL.md");
+  });
 });

@@ -113,12 +113,20 @@ async function expectCompletedWithoutBootstrap(dir: string) {
 
 function expectSubagentAllowedBootstrapNames(files: WorkspaceBootstrapFile[]) {
   const names = files.map((file) => file.name);
-  expect(names).toStrictEqual(["AGENTS.md", "TOOLS.md"]);
+  expect(names).toStrictEqual(["AGENTS.md", "TOOLS.md", "ROOTS.md", "MODES.md"]);
 }
 
 function expectCronAllowedBootstrapNames(files: WorkspaceBootstrapFile[]) {
   const names = files.map((file) => file.name);
-  expect(names).toStrictEqual(["AGENTS.md", "SOUL.md", "TOOLS.md", "IDENTITY.md", "USER.md"]);
+  expect(names).toStrictEqual([
+    "AGENTS.md",
+    "SOUL.md",
+    "TOOLS.md",
+    "IDENTITY.md",
+    "USER.md",
+    "ROOTS.md",
+    "MODES.md",
+  ]);
 }
 
 describe("ensureAgentWorkspace", () => {
@@ -758,6 +766,8 @@ describe("filterBootstrapFilesForSession", () => {
     { name: "HEARTBEAT.md", path: "/w/HEARTBEAT.md", content: "", missing: false },
     { name: "BOOTSTRAP.md", path: "/w/BOOTSTRAP.md", content: "", missing: false },
     { name: "MEMORY.md", path: "/w/MEMORY.md", content: "", missing: false },
+    { name: "ROOTS.md", path: "/w/ROOTS.md", content: "", missing: false },
+    { name: "MODES.md", path: "/w/MODES.md", content: "", missing: false },
   ];
 
   it("returns all files for main session (no sessionKey)", () => {
