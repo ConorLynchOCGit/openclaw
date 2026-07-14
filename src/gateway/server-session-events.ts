@@ -95,6 +95,7 @@ function buildGatewaySessionSnapshot(params: {
     readbackProvenance: sessionRow.readbackProvenance,
     readbackSubject: readbackDetail?.readbackSubject ?? null,
     finality: readbackDetail?.finality ?? null,
+    finalDelivery: sessionRow.finalDelivery,
     deliveryContext: sessionRow.deliveryContext,
     parentSessionKey: params.parentSessionKey ?? sessionRow.parentSessionKey,
     childSessions: sessionRow.childSessions,

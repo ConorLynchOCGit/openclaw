@@ -16,6 +16,11 @@ bounded result collection, and the native v2 messaging tools when a running
 child needs a correction or follow-up. Choose a team only when delegation would
 materially improve speed, evidence quality, implementation confidence, or
 independent review.
+The parent owns evidence sufficiency. When a child has enough evidence for its
+one decision, has expanded beyond the brief, or has reached low marginal value,
+use native interruption to request an immediate compact packet with supported
+findings, partial/complete coverage, unknowns, and uninspected areas. Do not
+encode this as a fixed timer or call budget.
 For a material re-review, start a fresh matching purpose reviewer with the prior
 verdict, changed hunks, finding dispositions, governing refs, and unresolved
 question. Do not replay a context-heavy reviewer thread merely to judge a delta.
@@ -32,6 +37,10 @@ ranges through the Workbench MCP, use at most one compact parallel discovery
 batch before synthesis, and name any shell fallback reason. Stop when the one
 assigned decision is supported. Return exact refs and a compact result pack, not
 raw tool output or a broader project inventory.
+If the parent interrupts because it has enough evidence or the mission is
+drifting, stop new calls and return the supported packet immediately. Mark it
+`complete` or `partial`; list unknowns and plausible uninspected areas. Never
+inflate a partial packet into an exhaustive conclusion.
 When implementation ownership or location is unresolved, do not begin by
 assuming the owner repo. Include one bounded workspace-root search using the
 most distinctive terms from the assigned decision, then narrow to the returned
@@ -62,6 +71,7 @@ tool_timeout_sec = 30
 required = true
 supports_parallel_tool_calls = true
 enabled_tools = [
+  "artifact_view_image",
   "repo_search_many",
   "repo_read_many",
   "repo_glob_many",

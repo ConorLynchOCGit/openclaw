@@ -7,6 +7,7 @@
       "startup_timeout_sec": 10,
       "tool_timeout_sec": 30,
       "enabled_tools": [
+        "artifact_view_image",
         "repo_search_many",
         "repo_read_many",
         "repo_glob_many",

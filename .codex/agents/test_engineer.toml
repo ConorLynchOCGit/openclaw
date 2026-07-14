@@ -13,12 +13,21 @@ falling back to shell inspection. Use TypeScript LSP helpers when test choice
 depends on symbol references. Do not invent `validation_run_many`; run
 validation through ordinary Codex command execution only when the parent asks
 for validation or when your role assignment explicitly includes it.
+Classify each non-zero command before retry: expected-negative lookup,
+command/schema misuse, environment/tooling failure, product/test defect, or
+external/transient failure. Retry only when the classification yields a changed
+input or credible recovery. Report command mistakes separately from product
+defects so a failed probe does not become false product evidence.
 
 When operator UI behavior changes, use the repository's existing Playwright
 and Control UI paths for real browser interaction. Capture desktop and mobile
-screenshots for state claims, then inspect the actual images through Codex's
-native image-input/view surface. A passing command or screenshot pathname is
-not visual proof. Report layout, overlap, text fit, focus, keyboard,
+screenshots for state claims, then inspect representative images with the
+Codex-owned `artifact_view_image` Workbench tool. Inspect at least the desktop
+and mobile terminal states, plus any screenshot that records a failure or
+material intermediate state. A passing command or screenshot pathname is not
+visual proof. If `artifact_view_image` is unavailable or rejects the evidence,
+report visual acceptance as blocked rather than substituting DOM assertions.
+Report layout, overlap, text fit, focus, keyboard,
 accessibility, loading, empty, error, and responsive findings. Do not create a
 second browser runner or treat DOM assertions as a substitute for visual
 inspection.

@@ -327,6 +327,42 @@ describe("CodexAppServerEventProjector", () => {
     expect(result.replayMetadata.replaySafe).toBe(true);
   });
 
+  it("records normalized current-turn and cumulative native usage into the trajectory", async () => {
+    const trajectoryRecorder = {
+      filePath: "trajectory.jsonl",
+      recordEvent: vi.fn(),
+      flush: vi.fn(async () => undefined),
+    };
+    const projector = await createProjector(await createParams(), { trajectoryRecorder });
+    await projector.handleNotification(
+      forCurrentTurn("thread/tokenUsage/updated", {
+        tokenUsage: {
+          total: { inputTokens: 100, cachedInputTokens: 20, outputTokens: 10, totalTokens: 110 },
+          last: { inputTokens: 5, cachedInputTokens: 2, outputTokens: 3, totalTokens: 8 },
+        },
+      }),
+    );
+
+    expect(trajectoryRecorder.recordEvent).toHaveBeenCalledWith("thread.token_usage.updated", {
+      threadId: THREAD_ID,
+      turnId: TURN_ID,
+      cumulativeUsage: expect.objectContaining({
+        sessionId: "session-1",
+        threadId: THREAD_ID,
+        inputTokens: 100,
+        cachedInputTokens: 20,
+        outputTokens: 10,
+        totalTokens: 110,
+      }),
+      currentTurnUsage: expect.objectContaining({
+        input: 3,
+        cacheRead: 2,
+        output: 3,
+        total: 8,
+      }),
+    });
+  });
+
   it("streams final-answer assistant deltas into partial replies", async () => {
     const { onPartialReply, projector } = await createProjectorWithAssistantHooks();
 

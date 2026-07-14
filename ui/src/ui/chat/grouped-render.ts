@@ -19,6 +19,11 @@ import type {
 } from "../types/chat-types.ts";
 import { resolveLocalUserName } from "../user-identity.ts";
 export { resolveAssistantTextAvatar } from "../views/agents-utils.ts";
+import {
+  buildBusinessOpsProposalDecisionMessage,
+  parseBusinessOpsProposalPresentation,
+  renderBusinessOpsProposalCard,
+} from "./business-ops-proposal-card.ts";
 import { renderChatAvatar } from "./chat-avatar.ts";
 import { renderCopyAsMarkdownButton } from "./copy-as-markdown.ts";
 import { extractThinkingCached, formatReasoningMarkdown } from "./message-extract.ts";
@@ -417,6 +422,7 @@ export function renderMessageGroup(
     onToggleToolMessageExpanded?: (messageId: string, expanded?: boolean) => void;
     isToolExpanded?: (toolCardId: string) => boolean;
     onToggleToolExpanded?: (toolCardId: string) => void;
+    onBusinessOpsProposalDecision?: (message: string) => void;
     onRequestUpdate?: () => void;
     assistantName?: string;
     assistantAvatar?: string | null;
@@ -459,11 +465,19 @@ export function renderMessageGroup(
   // Aggregate usage/cost/model across all messages in the group
   const meta = extractGroupMeta(group, opts.contextWindow ?? null);
 
-  if (normalizedRole === "tool" && opts.showToolCalls === false) {
+  const groupHasBusinessOpsProposal = group.messages.some((item) =>
+    extractToolCardsCached(item.message, item.key).some(
+      (card) =>
+        card.name === "business_ops_present_proposal" &&
+        Boolean(parseBusinessOpsProposalPresentation(card.outputText)),
+    ),
+  );
+
+  if (normalizedRole === "tool" && opts.showToolCalls === false && !groupHasBusinessOpsProposal) {
     return nothing;
   }
 
-  if (normalizedRole === "tool" && group.messages.length > 1) {
+  if (normalizedRole === "tool" && group.messages.length > 1 && !groupHasBusinessOpsProposal) {
     const cards = group.messages.flatMap((item) => extractToolCardsCached(item.message, item.key));
     const toolCount = cards.length || group.messages.length;
     const toolLabels = [
@@ -547,6 +561,7 @@ export function renderMessageGroup(
                           onToggleToolMessageExpanded: opts.onToggleToolMessageExpanded,
                           isToolExpanded: opts.isToolExpanded,
                           onToggleToolExpanded: opts.onToggleToolExpanded,
+                          onBusinessOpsProposalDecision: opts.onBusinessOpsProposalDecision,
                           onRequestUpdate: opts.onRequestUpdate,
                           canvasPluginSurfaceUrl: opts.canvasPluginSurfaceUrl,
                           basePath: opts.basePath,
@@ -604,6 +619,7 @@ export function renderMessageGroup(
               onToggleToolMessageExpanded: opts.onToggleToolMessageExpanded,
               isToolExpanded: opts.isToolExpanded,
               onToggleToolExpanded: opts.onToggleToolExpanded,
+              onBusinessOpsProposalDecision: opts.onBusinessOpsProposalDecision,
               onRequestUpdate: opts.onRequestUpdate,
               canvasPluginSurfaceUrl: opts.canvasPluginSurfaceUrl,
               basePath: opts.basePath,
@@ -1619,6 +1635,7 @@ function renderGroupedMessage(
     onToggleToolMessageExpanded?: (messageId: string, expanded?: boolean) => void;
     isToolExpanded?: (toolCardId: string) => boolean;
     onToggleToolExpanded?: (toolCardId: string) => void;
+    onBusinessOpsProposalDecision?: (message: string) => void;
     onRequestUpdate?: () => void;
     canvasPluginSurfaceUrl?: string | null;
     basePath?: string;
@@ -1639,7 +1656,25 @@ function renderGroupedMessage(
     typeof m.toolCallId === "string" ||
     typeof m.tool_call_id === "string";
 
-  const toolCards = (opts.showToolCalls ?? true) ? extractToolCardsCached(message, messageKey) : [];
+  const allToolCards = extractToolCardsCached(message, messageKey);
+  const proposalPresentation = allToolCards
+    .filter((card) => card.name === "business_ops_present_proposal")
+    .map((card) => parseBusinessOpsProposalPresentation(card.outputText))
+    .find((value) => value !== null);
+  if (proposalPresentation) {
+    return html`<div class="chat-bubble chat-bubble--business-ops-proposal fade-in">
+      ${renderBusinessOpsProposalCard(
+        proposalPresentation,
+        opts.onBusinessOpsProposalDecision
+          ? (decision) =>
+              opts.onBusinessOpsProposalDecision?.(
+                buildBusinessOpsProposalDecisionMessage(decision),
+              )
+          : undefined,
+      )}
+    </div>`;
+  }
+  const toolCards = (opts.showToolCalls ?? true) ? allToolCards : [];
   const hasToolCards = toolCards.length > 0;
   const imageRenderOptions = {
     localMediaPreviewRoots: opts.localMediaPreviewRoots ?? [],

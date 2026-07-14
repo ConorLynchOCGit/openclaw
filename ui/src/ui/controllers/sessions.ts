@@ -647,6 +647,20 @@ async function fetchSessionCompactionCheckpoints(state: SessionsState, key: stri
   }
 }
 
+async function fetchSessionDetail(state: SessionsState, key: string) {
+  const detail = await state.client?.request<GatewaySessionRow>(
+    "sessions.show",
+    buildSelectedSessionRequestParams(state, key),
+  );
+  if (!detail || !state.sessionsResult) {
+    return;
+  }
+  const sessions = state.sessionsResult.sessions.map((row) =>
+    row.key === key ? { ...row, ...detail } : row,
+  );
+  state.sessionsResult = { ...state.sessionsResult, sessions };
+}
+
 async function withSessionsLoading(
   state: SessionsState,
   run: () => Promise<void>,
@@ -1182,12 +1196,22 @@ async function loadSessionsOnce(
         }
       }
       const expandedKey = state.sessionsExpandedCheckpointKey;
+      const expandedRow = expandedKey
+        ? state.sessionsResult.sessions.find((row) => row.key === expandedKey)
+        : undefined;
+      const expandedHasCheckpoints =
+        (expandedRow?.compactionCheckpointCount ?? 0) > 0 ||
+        expandedRow?.latestCompactionCheckpoint !== undefined;
       if (
         expandedKey &&
         nextKeys.has(expandedKey) &&
+        expandedHasCheckpoints &&
         (expandedNeedsRefetch || !state.sessionsCheckpointItemsByKey[expandedKey])
       ) {
         await fetchSessionCompactionCheckpoints(state, expandedKey);
+      }
+      if (expandedKey && nextKeys.has(expandedKey)) {
+        await fetchSessionDetail(state, expandedKey);
       }
     }
   })().catch((err: unknown) => {
@@ -1323,10 +1347,17 @@ export async function toggleSessionCompactionCheckpoints(state: SessionsState, k
     return;
   }
   state.sessionsExpandedCheckpointKey = trimmedKey;
-  if (state.sessionsCheckpointItemsByKey[trimmedKey]) {
-    return;
+  try {
+    await fetchSessionDetail(state, trimmedKey);
+  } catch (err) {
+    state.sessionsError = String(err);
   }
-  await fetchSessionCompactionCheckpoints(state, trimmedKey);
+  const row = state.sessionsResult?.sessions.find((session) => session.key === trimmedKey);
+  const hasCheckpoints =
+    (row?.compactionCheckpointCount ?? 0) > 0 || row?.latestCompactionCheckpoint !== undefined;
+  if ((row === undefined || hasCheckpoints) && !state.sessionsCheckpointItemsByKey[trimmedKey]) {
+    await fetchSessionCompactionCheckpoints(state, trimmedKey);
+  }
 }
 
 export async function branchSessionFromCheckpoint(

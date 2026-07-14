@@ -440,6 +440,7 @@ export type ChatEventPayload = {
   deltaText?: string;
   replace?: boolean;
   errorMessage?: string;
+  finalDelivery?: GatewaySessionRow["finalDelivery"];
 };
 
 function setChatError(state: ChatState, error: string | null) {
@@ -1285,6 +1286,8 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
       armLocalTerminalReconcile: hadActiveRunBeforeEvent && activeRunMatches,
     });
 
+  const finalDeliveryPending = () => payload.finalDelivery?.state === "pending";
+
   if (payload.state === "delta") {
     const next = resolveDeltaChatStreamText(state.chatStream, payload);
     if (
@@ -1301,7 +1304,18 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     } else {
       state.chatMessages = materializeVisibleAssistantStreamMessages(state.chatMessages, state);
     }
-    reconcileTerminalRun("done", "done");
+    if (finalDeliveryPending()) {
+      reconcileChatRunLifecycle(
+        state as unknown as Parameters<typeof reconcileChatRunLifecycle>[0],
+        {
+          sessionKey: state.sessionKey,
+          clearChatStream: true,
+          publishRunStatus: false,
+        },
+      );
+    } else {
+      reconcileTerminalRun("done", "done");
+    }
   } else if (payload.state === "aborted") {
     const normalizedMessage = normalizeAbortedAssistantMessage(payload.message);
     if (normalizedMessage && !shouldHideAssistantChatMessage(normalizedMessage)) {

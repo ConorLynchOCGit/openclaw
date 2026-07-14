@@ -421,6 +421,7 @@ export function createAgentEventHandler({
       readbackProvenance: row?.readbackProvenance,
       readbackSubject: readbackDetail?.readbackSubject ?? null,
       finality: readbackDetail?.finality ?? null,
+      finalDelivery: row?.finalDelivery,
       deliveryContext: row?.deliveryContext,
       parentSessionKey: row?.parentSessionKey,
       childSessions: row?.childSessions,
@@ -831,6 +832,10 @@ export function createAgentEventHandler({
     chatRunState.clearRun(clientRunId);
     const spawnedBy = resolveSpawnedBy(sessionKey);
     if (jobState === "done") {
+      const finalDelivery = loadGatewaySessionRowForSnapshot(
+        sessionKey,
+        opts?.agentId ? { agentId: opts.agentId } : {},
+      )?.finalDelivery;
       const payload = {
         runId: clientRunId,
         sessionKey,
@@ -838,6 +843,7 @@ export function createAgentEventHandler({
         ...(spawnedBy && { spawnedBy }),
         seq,
         state: "final" as const,
+        ...(finalDelivery ? { finalDelivery } : {}),
         ...(stopReason && { stopReason }),
         message:
           text && !shouldSuppressSilent

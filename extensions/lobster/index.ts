@@ -1,6 +1,7 @@
 // Lobster plugin entrypoint registers its OpenClaw integration.
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import type { AnyAgentTool, OpenClawPluginApi, OpenClawPluginToolFactory } from "./runtime-api.js";
+import { createBusinessOpsProposalTool } from "./src/business-ops-proposal-tool.js";
 import { createLobsterTool } from "./src/lobster-tool.js";
 import { buildManagedTaskFlowTurnContext } from "./src/lobster-turn-context.js";
 
@@ -11,8 +12,13 @@ export function registerLobsterPlugin(api: OpenClawPluginApi) {
     if (!sessionKey || !managedFlows) {
       return undefined;
     }
-    const flow = managedFlows.bindSession({ sessionKey }).findLatest();
-    const prependContext = buildManagedTaskFlowTurnContext(flow);
+    const taskFlow = managedFlows.bindSession({ sessionKey });
+    const activeFlow = taskFlow.findLatestActiveManaged();
+    const terminalFlow = activeFlow ? undefined : taskFlow.findLatestTerminalManaged();
+    const prependContext = buildManagedTaskFlowTurnContext(
+      activeFlow ?? terminalFlow,
+      terminalFlow ? taskFlow.buildCloseoutHandoff(terminalFlow.flowId) : undefined,
+    );
     return prependContext ? { prependContext } : undefined;
   });
 
@@ -26,6 +32,27 @@ export function registerLobsterPlugin(api: OpenClawPluginApi) {
           ? api.runtime.tasks.managedFlows.fromToolContext(ctx)
           : undefined;
       return createLobsterTool(api, { taskFlow }) as AnyAgentTool;
+    }) as OpenClawPluginToolFactory,
+    { optional: true },
+  );
+
+  api.registerTool(
+    ((ctx) => {
+      if (
+        ctx.agentId?.trim().toLowerCase() !== "business-ops" ||
+        !ctx.sessionKey ||
+        !ctx.workspaceDir
+      ) {
+        return null;
+      }
+      const managedFlows = api.runtime?.tasks.managedFlows;
+      if (!managedFlows) {
+        return null;
+      }
+      return createBusinessOpsProposalTool({
+        workspaceDir: ctx.workspaceDir,
+        taskFlow: managedFlows.fromToolContext(ctx),
+      }) as AnyAgentTool;
     }) as OpenClawPluginToolFactory,
     { optional: true },
   );

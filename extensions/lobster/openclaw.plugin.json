@@ -6,10 +6,13 @@
   "name": "Lobster",
   "description": "Lobster workflow tool plugin for typed pipelines and resumable approvals.",
   "contracts": {
-    "tools": ["lobster"]
+    "tools": ["lobster", "business_ops_present_proposal"]
   },
   "toolMetadata": {
     "lobster": {
+      "optional": true
+    },
+    "business_ops_present_proposal": {
       "optional": true
     }
   },

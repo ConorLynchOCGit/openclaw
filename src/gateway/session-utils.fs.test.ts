@@ -32,6 +32,7 @@ import {
   readLastAssistantTextFromTranscript,
   readLastAssistantTextFromTranscriptWithProvenance,
   readLatestTrajectoryProgressProjection,
+  readCodexTrajectoryParentRounds,
   resolveSessionTranscriptCandidates,
 } from "./session-utils.fs.js";
 
@@ -1559,6 +1560,73 @@ describe("readLatestTrajectoryProgressProjection", () => {
       toolName: "read",
       activeLabel: "read",
     });
+  });
+
+  test("derives multi-round parent contributions from repeated and out-of-order cumulative updates", async () => {
+    const sessionId = "trajectory-parent-rounds";
+    const sessionFile = path.join(tmpDir, `${sessionId}.jsonl`);
+    fs.writeFileSync(sessionFile, "", "utf-8");
+    const recorder = createTrajectoryRuntimeRecorder({
+      sessionId,
+      sessionKey: `agent:main:${sessionId}`,
+      sessionFile,
+      maxRuntimeFileBytes: 8_000,
+    });
+    if (!recorder) {
+      throw new Error("expected trajectory recorder");
+    }
+
+    recorder.recordEvent("prompt.submitted", { threadId: "parent", turnId: "round-1" });
+    recorder.recordEvent("thread.token_usage.updated", {
+      threadId: "parent",
+      turnId: "round-1",
+      cumulativeUsage: {
+        inputTokens: 100,
+        cachedInputTokens: 20,
+        outputTokens: 10,
+        totalTokens: 110,
+      },
+      currentTurnUsage: { input: 80, cacheRead: 20, output: 10, totalTokens: 110 },
+    });
+    // Duplicate and delayed lower snapshots must not add another contribution.
+    recorder.recordEvent("thread.token_usage.updated", {
+      threadId: "parent",
+      turnId: "round-1",
+      cumulativeUsage: { inputTokens: 90, cachedInputTokens: 20, outputTokens: 8, totalTokens: 98 },
+    });
+    recorder.recordEvent("model.completed", {
+      threadId: "parent",
+      turnId: "round-1",
+      usage: { input: 80, cacheRead: 20, output: 10, totalTokens: 110 },
+    });
+    recorder.recordEvent("prompt.submitted", { threadId: "parent", turnId: "round-2" });
+    recorder.recordEvent("thread.token_usage.updated", {
+      threadId: "parent",
+      turnId: "round-2",
+      cumulativeUsage: {
+        inputTokens: 250,
+        cachedInputTokens: 50,
+        outputTokens: 30,
+        totalTokens: 280,
+      },
+      currentTurnUsage: { input: 120, cacheRead: 30, output: 20, totalTokens: 170 },
+    });
+    recorder.recordEvent("model.completed", {
+      threadId: "parent",
+      turnId: "round-2",
+      usage: { input: 120, cacheRead: 30, output: 20, totalTokens: 170 },
+    });
+    await recorder.flush();
+
+    const rounds = readCodexTrajectoryParentRounds(sessionId, storePath, sessionFile, "main");
+    expect(rounds).toHaveLength(2);
+    expect(rounds?.map((round) => [round.turnId, round.contributionUsage?.totalTokens])).toEqual([
+      ["round-1", 110],
+      ["round-2", 170],
+    ]);
+    expect(rounds?.map((round) => round.contributionUsage?.freshInputTokens)).toEqual([80, 120]);
+    expect(rounds?.map((round) => round.contributionUsage?.inputTokens)).toEqual([100, 150]);
+    expect(rounds?.every((round) => round.settlement === "settled")).toBe(true);
   });
 
   test("uses mirrored native agent tool result events without task-row fallback", async () => {

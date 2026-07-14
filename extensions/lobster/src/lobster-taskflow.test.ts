@@ -193,6 +193,7 @@ describe("resumeManagedLobsterFlow", () => {
       await resumeManagedLobsterFlow(createResumeFlowParams(taskFlow, runner)),
     );
     expect(result.error.message).toMatch(/revision_conflict/);
+    expect(taskFlow.createManaged).not.toHaveBeenCalled();
     expect(runner.run).not.toHaveBeenCalled();
   });
 

@@ -441,6 +441,30 @@ describe("handleChatEvent", () => {
     expect(state.chatStreamStartedAt).toBe(null);
   });
 
+  it("does not publish Done until a pending final delivery settles", () => {
+    const state = createState({
+      sessionKey: "main",
+      chatRunId: "run-1",
+      chatStream: "Live reply",
+      chatStreamStartedAt: 100,
+    }) as ChatState & { chatRunStatus?: unknown };
+    const payload: ChatEventPayload = {
+      runId: "run-1",
+      sessionKey: "main",
+      state: "final",
+      finalDelivery: { state: "pending" },
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "Live reply" }],
+      },
+    };
+
+    expect(handleChatEvent(state, payload)).toBe("final");
+    expect(state.chatRunId).toBe("run-1");
+    expect(state.chatStream).toBeNull();
+    expect(state.chatRunStatus).toBeUndefined();
+  });
+
   it("does not duplicate streamed text when final payload has no role", () => {
     const state = createState({
       sessionKey: "main",

@@ -25,6 +25,8 @@ import {
 } from "./session-transcript-index.fs.js";
 import type {
   GatewaySessionCodexExecutionEvidence,
+  GatewaySessionCodexParentRound,
+  GatewaySessionCodexUsage,
   GatewaySessionRow,
   ReadbackProgressProjection,
   ReadbackFieldProvenance,
@@ -2534,6 +2536,223 @@ type ParsedTrajectoryProgressEvent = {
   eventType: string;
   data: Record<string, unknown> | undefined;
 };
+
+type CodexTrajectoryRound = GatewaySessionCodexParentRound & { order: number };
+
+function trajectoryTimestampMs(event: Record<string, unknown>): number | undefined {
+  const value = typeof event.ts === "string" ? Date.parse(event.ts) : Number.NaN;
+  return Number.isFinite(value) ? value : undefined;
+}
+
+function trajectoryString(
+  data: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined {
+  const value = data?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function trajectoryUsage(
+  value: unknown,
+  options: { inputIsFresh?: boolean } = {},
+): GatewaySessionCodexUsage | undefined {
+  const record = activeProgressRecord(value);
+  if (!record) {
+    return undefined;
+  }
+  const number = (keys: readonly string[]) => {
+    for (const key of keys) {
+      const candidate = record[key];
+      if (typeof candidate === "number" && Number.isFinite(candidate) && candidate >= 0) {
+        return Math.floor(candidate);
+      }
+    }
+    return undefined;
+  };
+  const cachedInputTokens = number(["cachedInputTokens", "cacheRead", "cache_read"]);
+  const inputTokens = number(["inputTokens", "input"]);
+  const totalInputTokens =
+    inputTokens === undefined
+      ? undefined
+      : options.inputIsFresh
+        ? inputTokens + (cachedInputTokens ?? 0)
+        : inputTokens;
+  const freshInputTokens =
+    inputTokens === undefined
+      ? undefined
+      : options.inputIsFresh
+        ? inputTokens
+        : Math.max(0, inputTokens - (cachedInputTokens ?? 0));
+  const usage = {
+    inputTokens: totalInputTokens,
+    freshInputTokens,
+    cachedInputTokens,
+    outputTokens: number(["outputTokens", "output"]),
+    reasoningOutputTokens: number(["reasoningOutputTokens", "reasoningTokens"]),
+    totalTokens: number(["totalTokens", "total"]),
+  };
+  return Object.values(usage).some((token) => token !== undefined) ? usage : undefined;
+}
+
+function maximumUsage(
+  current: GatewaySessionCodexUsage | undefined,
+  incoming: GatewaySessionCodexUsage | undefined,
+): GatewaySessionCodexUsage | undefined {
+  if (!incoming) {
+    return current;
+  }
+  const result: GatewaySessionCodexUsage = {};
+  for (const key of Object.keys(incoming) as Array<keyof GatewaySessionCodexUsage>) {
+    const value = incoming[key];
+    const previous = current?.[key];
+    if (value !== undefined || previous !== undefined) {
+      result[key] = Math.max(value ?? 0, previous ?? 0);
+    }
+  }
+  for (const key of Object.keys(current ?? {}) as Array<keyof GatewaySessionCodexUsage>) {
+    if (result[key] === undefined && current?.[key] !== undefined) {
+      result[key] = current[key];
+    }
+  }
+  return result;
+}
+
+function usageDelta(
+  current: GatewaySessionCodexUsage | undefined,
+  previous: GatewaySessionCodexUsage | undefined,
+): GatewaySessionCodexUsage | undefined {
+  if (!current) {
+    return undefined;
+  }
+  const delta: GatewaySessionCodexUsage = {};
+  for (const key of Object.keys(current) as Array<keyof GatewaySessionCodexUsage>) {
+    const value = current[key];
+    if (value !== undefined) {
+      delta[key] = Math.max(0, value - (previous?.[key] ?? 0));
+    }
+  }
+  return Object.keys(delta).length > 0 ? delta : undefined;
+}
+
+/**
+ * Reconstructs bounded Codex parent rounds from trajectory events. Native usage
+ * notifications are cumulative per thread, so repeated and out-of-order
+ * snapshots are collapsed by maximum and only round deltas are contributory.
+ */
+export function readCodexTrajectoryParentRounds(
+  sessionId: string,
+  storePath: string | undefined,
+  sessionFile: string | undefined,
+  agentId: string | undefined,
+): GatewaySessionCodexParentRound[] | undefined {
+  const filePath = resolveSessionTrajectoryRuntimeFileSync({
+    sessionId,
+    storePath,
+    sessionFile,
+    agentId,
+  });
+  if (!filePath) {
+    return undefined;
+  }
+  const events = parseTrajectoryProgressEvents(
+    readRecentTrajectoryLines(filePath, TRAJECTORY_PROGRESS_READ_BYTES),
+    sessionId,
+  );
+  const rounds = new Map<string, CodexTrajectoryRound>();
+  for (let index = 0; index < events.length; index += 1) {
+    const event = events[index];
+    if (!event) {
+      continue;
+    }
+    const threadId = trajectoryString(event.data, "threadId");
+    const turnId = trajectoryString(event.data, "turnId");
+    if (!threadId || !turnId) {
+      continue;
+    }
+    if (
+      event.eventType !== "prompt.submitted" &&
+      event.eventType !== "thread.token_usage.updated" &&
+      event.eventType !== "model.completed" &&
+      event.eventType !== "session.ended"
+    ) {
+      continue;
+    }
+    const key = `${threadId}\0${turnId}`;
+    const at = trajectoryTimestampMs(event.event);
+    const existing = rounds.get(key);
+    const round: CodexTrajectoryRound = existing ?? {
+      threadId,
+      turnId,
+      provider: trajectoryString(event.event, "provider"),
+      model: trajectoryString(event.event, "modelId"),
+      coverage: "none",
+      settlement: "pending",
+      children: [],
+      order: index,
+    };
+    if (at !== undefined) {
+      round.startedAt = round.startedAt === undefined ? at : Math.min(round.startedAt, at);
+      if (event.eventType === "model.completed" || event.eventType === "session.ended") {
+        round.endedAt = Math.max(round.endedAt ?? 0, at);
+      }
+    }
+    round.provider ??= trajectoryString(event.event, "provider");
+    round.model ??= trajectoryString(event.event, "modelId");
+    if (event.eventType === "thread.token_usage.updated") {
+      round.currentTurnUsage = maximumUsage(
+        round.currentTurnUsage,
+        trajectoryUsage(event.data?.currentTurnUsage, { inputIsFresh: true }),
+      );
+      round.cumulativeUsage = maximumUsage(
+        round.cumulativeUsage,
+        trajectoryUsage(event.data?.cumulativeUsage),
+      );
+    }
+    if (event.eventType === "model.completed") {
+      round.currentTurnUsage = maximumUsage(
+        round.currentTurnUsage,
+        trajectoryUsage(event.data?.usage, { inputIsFresh: true }),
+      );
+      round.finalRef = `trajectory:${sessionId}:${threadId}:${turnId}`;
+      round.coverage = "complete";
+    }
+    if (event.eventType === "session.ended") {
+      const status = trajectoryString(event.data, "status");
+      const timedOut = event.data?.timedOut === true;
+      round.failureClass = timedOut
+        ? "timeout"
+        : status === "interrupted"
+          ? "interrupted"
+          : status === "error"
+            ? "failed"
+            : undefined;
+      round.coverage = round.coverage === "complete" ? "complete" : "partial";
+    }
+    rounds.set(key, round);
+  }
+  // Map insertion order follows the retained trajectory window. Sorting by a
+  // mixture of epoch timestamps and small event indexes can move timestamp-less
+  // rounds ahead of their actual predecessors.
+  const sorted = [...rounds.values()].toSorted((left, right) => left.order - right.order);
+  const previousByThread = new Map<string, GatewaySessionCodexUsage>();
+  for (const round of sorted) {
+    const previous = previousByThread.get(round.threadId);
+    round.contributionUsage = usageDelta(round.cumulativeUsage, previous) ?? round.currentTurnUsage;
+    if (round.cumulativeUsage) {
+      previousByThread.set(round.threadId, round.cumulativeUsage);
+    }
+    if (round.startedAt !== undefined && round.endedAt !== undefined) {
+      round.durationMs = Math.max(0, round.endedAt - round.startedAt);
+    }
+    round.settlement =
+      round.coverage === "complete" && round.cumulativeUsage
+        ? "settled"
+        : round.currentTurnUsage || round.cumulativeUsage
+          ? "partial"
+          : "pending";
+  }
+  return sorted.length > 0 ? sorted.map(({ order: _order, ...round }) => round) : undefined;
+}
 
 function parseTrajectoryProgressEvents(
   lines: string[],

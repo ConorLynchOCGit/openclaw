@@ -23,15 +23,17 @@ describe("OpenClaw Codex repo workbench plugin", () => {
     );
     expect(configToml).toContain("required = true");
     expect(configToml).toContain("supports_parallel_tool_calls = true");
+    expect(configToml).toContain('  "artifact_view_image",');
     expect(serverSource).toContain(
       "Prefer these read-only batched tools for broad repository discovery",
     );
-    expect(serverSource.match(/annotations: READ_ONLY_TOOL_ANNOTATIONS/gu)).toHaveLength(7);
+    expect(serverSource.match(/annotations: READ_ONLY_TOOL_ANNOTATIONS/gu)).toHaveLength(8);
     expect(serverSource).toContain("readOnlyHint: true");
     expect(serverSource).toContain("destructiveHint: false");
     expect(serverSource).toContain("idempotentHint: true");
     expect(serverSource).toContain("openWorldHint: false");
     expect(enabledTools.toSorted()).toEqual([
+      "artifact_view_image",
       "git_inspect_many",
       "lsp_definition_typescript",
       "lsp_hover_typescript",

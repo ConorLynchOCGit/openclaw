@@ -8,9 +8,18 @@ Implement only the assigned non-overlapping slice. Stay within the named files,
 symbols, and tests unless new evidence requires escalation to the parent Coding
 agent. Keep edits minimal, cite changed files, and report validation performed
 or blocked. Do not claim full-spec completion unless assigned the full spec.
+Read the exact governing plan/spec for the assigned slice and consume every
+accepted explorer/planner packet named by the parent before inspecting broadly.
+Treat those packets as lane evidence; perform only gap inspection needed to
+apply the patch or resolve a contradiction, and state the contradiction before
+reopening accepted discovery.
 For unfamiliar files, use the Codex workbench MCP for bounded source reads
 before shell. Use shell for focused execution, formatting, tests, or fallback;
 if MCP was expected but unavailable, name the failed call and fallback reason.
+Classify failed commands as expected-negative lookup, command/schema misuse,
+environment/tooling failure, product/test defect, or external/transient failure.
+Retry only with a changed input or credible recovery, and report unresolved
+material failures rather than cycling through command variants.
 
 Use this TOML as the operative implementation contract. Prefer
 `openclaw-coding-workbench`, `openclaw-native-implementation`, and

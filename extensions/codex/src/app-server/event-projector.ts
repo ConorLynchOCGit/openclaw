@@ -736,13 +736,21 @@ export class CodexAppServerEventProjector {
     const current =
       (tokenUsage ? readFirstJsonObject(tokenUsage, CURRENT_TOKEN_USAGE_KEYS) : undefined) ??
       readFirstJsonObject(params, CURRENT_TOKEN_USAGE_KEYS);
-    if (!current) {
-      return;
+    if (current) {
+      const usage = normalizeCodexTokenUsage(current);
+      if (usage) {
+        this.tokenUsage = usage;
+      }
     }
-    const usage = normalizeCodexTokenUsage(current);
-    if (usage) {
-      this.tokenUsage = usage;
-    }
+    // App-server usage updates are cumulative for the native thread while the
+    // attempt usage is only this turn. Preserve both bases in the trajectory;
+    // the gateway derives per-round contributions from cumulative snapshots.
+    this.options.trajectoryRecorder?.recordEvent("thread.token_usage.updated", {
+      threadId: this.threadId,
+      turnId: this.turnId,
+      ...(this.codexThreadUsage ? { cumulativeUsage: this.codexThreadUsage } : {}),
+      ...(this.tokenUsage ? { currentTurnUsage: this.tokenUsage } : {}),
+    });
   }
 
   private handleGuardianReviewNotification(method: string, params: JsonObject): void {

@@ -114,12 +114,55 @@ export type GatewaySessionCodexNativeChildRun = {
 export type GatewaySessionCodexTeamUsage = {
   basis: "cumulative";
   state: "provisional" | "settled" | "partial";
+  parentRoundCount?: number;
   childCount: number;
+  /** Total prompt input, including cache reads, when every contributor reports it. */
   inputTokens?: number;
+  /** Prompt input that was not served from cache. */
+  freshInputTokens?: number;
   outputTokens?: number;
   cachedInputTokens?: number;
   reasoningOutputTokens?: number;
   totalTokens?: number;
+};
+
+export type GatewaySessionCodexUsage = {
+  /** Total prompt input, including cache reads. */
+  inputTokens?: number;
+  freshInputTokens?: number;
+  cachedInputTokens?: number;
+  outputTokens?: number;
+  reasoningOutputTokens?: number;
+  totalTokens?: number;
+};
+
+/** A bounded parent turn reconstructed from native Codex trajectory evidence. */
+export type GatewaySessionCodexParentRound = {
+  threadId: string;
+  turnId: string;
+  provider?: string;
+  model?: string;
+  reasoningEffort?: string;
+  startedAt?: number;
+  endedAt?: number;
+  durationMs?: number;
+  currentTurnUsage?: GatewaySessionCodexUsage;
+  cumulativeUsage?: GatewaySessionCodexUsage;
+  contributionUsage?: GatewaySessionCodexUsage;
+  finalRef?: string;
+  failureClass?: "failed" | "interrupted" | "timeout";
+  coverage: "none" | "partial" | "complete";
+  settlement: "pending" | "partial" | "settled";
+  children: GatewaySessionCodexNativeChildRun[];
+};
+
+/** Detail-only parent-round/child execution tree. Never used for list ranking. */
+export type GatewaySessionCodexExecutionTree = {
+  source: "trajectory";
+  rounds: GatewaySessionCodexParentRound[];
+  /** Children whose exact parent turn cannot be proved from retained native events. */
+  unassignedChildren?: GatewaySessionCodexNativeChildRun[];
+  settlement: "pending" | "partial" | "settled";
 };
 
 /** Honest readback of the two token bases retained for an OpenClaw session run. */
@@ -325,6 +368,16 @@ export type GatewaySessionRow = {
   childSessions?: string[];
   codexNativeChildRuns?: GatewaySessionCodexNativeChildRun[];
   codexTeamUsage?: GatewaySessionCodexTeamUsage;
+  /** Lightweight marker so list rows can open detail without carrying the tree. */
+  hasCodexExecution?: boolean;
+  codexExecutionTree?: GatewaySessionCodexExecutionTree;
+  finalDelivery?: {
+    state: "pending" | "settled" | "not_requested";
+    createdAt?: number;
+    lastAttemptAt?: number;
+    attemptCount?: number;
+    lastError?: string | null;
+  };
   laneVerdict?: GatewaySessionLaneVerdict;
   codexExecutionEvidence?: GatewaySessionCodexExecutionEvidence;
   responseUsage?: "on" | "off" | "tokens" | "full";

@@ -39,6 +39,10 @@ When running mocked Control UI/dashboard validation for a user-facing feature, p
 - Drive Chromium with Playwright against the local mock URL and capture a video plus screenshots for each meaningful state: initial view, interaction input, result state, and final/paginated/selected state.
 - Use `browser.newContext({ recordVideo: { dir, size }, viewport })`, `page.screenshot({ path })`, and close the context before reporting the video path.
 - Put artifacts under `.artifacts/control-ui-e2e/<short-feature-name>/` or another clearly named local temp directory, and report the absolute paths in the final answer.
+- Inspect the representative desktop, mobile, and failure screenshots with the
+  Codex-owned `artifact_view_image` Workbench tool. Capturing a file does not
+  prove its visual contents, and an unavailable/rejected image tool blocks a
+  visual acceptance claim rather than authorizing a DOM-only substitute.
 - Treat recording as validation, not only demo capture. If the recorder fails or shows surprising behavior, stop, fix the behavior, add or update a regression test, then rerecord.
 - If visual proof is blocked, state the exact blocker and still report the textual E2E evidence.
 

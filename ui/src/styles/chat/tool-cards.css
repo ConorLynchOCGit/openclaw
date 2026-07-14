@@ -267,6 +267,129 @@
   margin-top: 6px;
 }
 
+.business-ops-proposal {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.business-ops-proposal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.business-ops-proposal__eyebrow,
+.business-ops-proposal__meta dt,
+.business-ops-proposal__section h4,
+.business-ops-proposal__passages h4,
+.business-ops-proposal__feedback > span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.business-ops-proposal__status {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  flex: 0 0 auto;
+  font-size: 12px;
+  padding: 3px 7px;
+}
+
+.business-ops-proposal__status.is-current {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.business-ops-proposal__status.is-stale {
+  color: var(--text-muted);
+}
+
+.business-ops-proposal__meta {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.business-ops-proposal__meta > div {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 72px minmax(0, 1fr);
+}
+
+.business-ops-proposal__meta dt,
+.business-ops-proposal__meta dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.business-ops-proposal__meta dd {
+  overflow-wrap: anywhere;
+}
+
+.business-ops-proposal__passages {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.business-ops-proposal__passages h4,
+.business-ops-proposal__section h4 {
+  margin: 0 0 5px;
+}
+
+.business-ops-proposal__passage {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  max-height: 260px;
+  overflow: auto;
+  padding: 10px;
+  white-space: pre-wrap;
+}
+
+.business-ops-proposal__section p,
+.business-ops-proposal__section ul {
+  margin: 0;
+}
+
+.business-ops-proposal__section ul {
+  padding-left: 18px;
+}
+
+.business-ops-proposal__feedback {
+  display: grid;
+  gap: 6px;
+}
+
+.business-ops-proposal__feedback textarea {
+  box-sizing: border-box;
+  min-height: 76px;
+  resize: vertical;
+  width: 100%;
+}
+
+.business-ops-proposal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.business-ops-proposal__stale-note {
+  color: var(--text-muted);
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .business-ops-proposal__passages {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* Collapsed preview - fixed height with truncation */
 .chat-tools-inline {
   display: grid;

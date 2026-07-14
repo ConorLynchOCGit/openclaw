@@ -210,6 +210,24 @@ describe("reconcileChatRunFromCurrentSessionRow stale-active suppression (#87875
     expect(host.chatStream).toBeNull();
   });
 
+  it("keeps chat activity active until pending final delivery settles", () => {
+    const host = makeHost({ chatRunId: "r1", chatStream: "final text" });
+    const reconciled = reconcileChatRunFromSessionRow(
+      host,
+      {
+        key: "s1",
+        kind: "direct",
+        updatedAt: 1,
+        hasActiveRun: false,
+        status: "done",
+        finalDelivery: { state: "pending" },
+      },
+      { publishRunStatus: false },
+    );
+    expect(reconciled).toBe(false);
+    expect(host.chatRunId).toBe("r1");
+  });
+
   it("arms suppression on a completed turn, then suppresses the racing refresh", () => {
     const host = makeHost({
       chatRunId: "r1",

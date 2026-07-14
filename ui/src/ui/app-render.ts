@@ -3560,6 +3560,10 @@ export function renderApp(state: AppViewState) {
                   attachments: state.chatAttachments,
                   onAttachmentsChange: (next) => (state.chatAttachments = next),
                   onSend: () => void state.handleSendChat(),
+                  onBusinessOpsProposalDecision:
+                    chatAgentId === "business-ops" && state.connected
+                      ? (message) => void state.handleSendChat(message, { restoreDraft: true })
+                      : undefined,
                   onCompact: () => void state.handleSendChat("/compact", { restoreDraft: true }),
                   onOpenSessionCheckpoints: () => {
                     state.sessionsExpandedCheckpointKey = state.sessionKey;

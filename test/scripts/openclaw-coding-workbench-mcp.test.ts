@@ -14,6 +14,9 @@ const workbenchModulePath = path.resolve(
   ".agents/plugins/plugins/openclaw-coding-workbench/mcp/openclaw-repo-workbench.mjs",
 );
 const workbenchModuleUrl = pathToFileURL(workbenchModulePath).href;
+const imageFixturePath = path.resolve(
+  "test/scripts/fixtures/openclaw-coding-workbench-one-pixel.png.base64",
+);
 
 type WorkbenchModule = {
   repoSearchMany(
@@ -154,6 +157,21 @@ type WorkbenchModule = {
     references?: Array<{ path?: string; line?: number; character?: number }>;
     error?: string;
   }>;
+  artifactViewImage(
+    input: unknown,
+    options?: unknown,
+  ): Promise<{
+    structuredContent: {
+      status: string;
+      path: string;
+      mediaType?: string;
+      dimensions?: { width: number; height: number };
+      sha256?: string;
+      bytes?: number;
+      error?: string;
+    };
+    content: Array<{ type: string; data?: string; mimeType?: string }>;
+  }>;
 };
 
 let tempDirs: string[] = [];
@@ -228,6 +246,11 @@ async function makeWorkspaceWithNestedSource(): Promise<string> {
   await execFileAsync("git", ["init"], { cwd: source });
   await execFileAsync("git", ["add", "."], { cwd: source });
   return workspace;
+}
+
+async function writeImageFixture(destination: string) {
+  const encoded = await fs.readFile(imageFixturePath, "utf8");
+  await fs.writeFile(destination, Buffer.from(encoded.trim(), "base64"));
 }
 
 function optionsFor(repo: string) {
@@ -462,6 +485,7 @@ describe("openclaw-coding-workbench MCP helpers", () => {
       const listed = await client.listTools();
       const readTool = listed.tools.find((tool) => tool.name === "repo_read_many");
       const searchTool = listed.tools.find((tool) => tool.name === "repo_search_many");
+      const imageTool = listed.tools.find((tool) => tool.name === "artifact_view_image");
       expect(readTool?.outputSchema).toMatchObject({
         type: "object",
         properties: expect.objectContaining({
@@ -497,6 +521,15 @@ describe("openclaw-coding-workbench MCP helpers", () => {
           coverage: expect.any(Object),
         }),
       });
+      expect(imageTool?.outputSchema).toMatchObject({
+        type: "object",
+        properties: expect.objectContaining({
+          mediaType: expect.any(Object),
+          dimensions: expect.any(Object),
+          sha256: expect.any(Object),
+          bytes: expect.any(Object),
+        }),
+      });
 
       const called = await client.callTool({
         name: "repo_read_many",
@@ -510,6 +543,103 @@ describe("openclaw-coding-workbench MCP helpers", () => {
     } finally {
       await client.close();
     }
+  });
+
+  it("returns a bounded workspace artifact as one native image block without duplicating bytes", async () => {
+    const repo = await makeRepo();
+    const imagePath = path.join(repo, "artifacts", "evidence.png");
+    await fs.mkdir(path.dirname(imagePath), { recursive: true });
+    await writeImageFixture(imagePath);
+    const workbench = await loadWorkbench();
+
+    const result = await workbench.artifactViewImage(
+      { path: "artifacts/evidence.png" },
+      optionsFor(repo),
+    );
+    const metadata = result.structuredContent;
+    const serializedMetadata = JSON.stringify(metadata);
+
+    expect(metadata).toMatchObject({
+      status: "ok",
+      path: "artifacts/evidence.png",
+      mediaType: "image/png",
+      dimensions: { width: 1, height: 1 },
+      sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+      bytes: 68,
+    });
+    expect(result.content).toHaveLength(1);
+    expect(result.content[0]).toMatchObject({ type: "image", mimeType: "image/png" });
+    expect(serializedMetadata).not.toContain(result.content[0]?.data ?? "__missing__");
+    expect(serializedMetadata).not.toContain("base64");
+
+    const client = new Client({ name: "workbench-image-test", version: "1.0.0" });
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [workbenchModulePath],
+      cwd: repo,
+      env: {
+        PATH: process.env.PATH ?? "",
+        HOME: process.env.HOME ?? os.homedir(),
+        OPENCLAW_REPO_WORKBENCH_ROOT: repo,
+      },
+    });
+    try {
+      await client.connect(transport);
+      const called = await client.callTool({
+        name: "artifact_view_image",
+        arguments: { path: "artifacts/evidence.png" },
+      });
+      expect(called.structuredContent).toEqual(metadata);
+      expect(called.content).toEqual([
+        expect.objectContaining({
+          type: "image",
+          mimeType: "image/png",
+          data: result.content[0]?.data,
+        }),
+      ]);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("rejects image path escapes, unsupported formats, and files over the image budget", async () => {
+    const repo = await makeRepo();
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-workbench-image-outside-"));
+    tempDirs.push(outside);
+    await writeImageFixture(path.join(outside, "outside.png"));
+    await fs.symlink(path.join(outside, "outside.png"), path.join(repo, "src", "outside.png"));
+    await fs.writeFile(path.join(repo, "src", "not-image.svg"), "<svg />\n", "utf8");
+    await fs.writeFile(
+      path.join(repo, "src", "too-large.png"),
+      Buffer.alloc(5 * 1024 * 1024 + 1, 0),
+    );
+    const workbench = await loadWorkbench();
+
+    const relativeEscape = await workbench.artifactViewImage(
+      { path: "../outside.png" },
+      optionsFor(repo),
+    );
+    const escaped = await workbench.artifactViewImage(
+      { path: "src/outside.png" },
+      optionsFor(repo),
+    );
+    const unsupported = await workbench.artifactViewImage(
+      { path: "src/not-image.svg" },
+      optionsFor(repo),
+    );
+    const tooLarge = await workbench.artifactViewImage(
+      { path: "src/too-large.png" },
+      optionsFor(repo),
+    );
+
+    for (const result of [relativeEscape, escaped, unsupported, tooLarge]) {
+      expect(result.structuredContent.status).toBe("error");
+      expect(result.content).toEqual([]);
+    }
+    expect(relativeEscape.structuredContent.error).toContain("path escapes repository root");
+    expect(escaped.structuredContent.error).toContain("escapes repository root through symlink");
+    expect(unsupported.structuredContent.error).toContain("unsupported or invalid raster image");
+    expect(tooLarge.structuredContent.error).toContain("image exceeds");
   });
 
   it("searches and globs in bounded batches", async () => {

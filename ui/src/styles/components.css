@@ -3208,6 +3208,59 @@
   font-size: 12px;
 }
 
+.session-execution-tree {
+  display: grid;
+  gap: 8px;
+}
+
+.session-execution-round {
+  min-width: 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+}
+
+.session-execution-round:first-child {
+  border-top: 0;
+}
+
+.session-execution-round summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 0;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.session-execution-round summary .mono {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-execution-round__meta,
+.session-execution-children li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 0 0 9px 18px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.session-execution-children {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.session-execution-children li {
+  border-left: 2px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+
 .session-checkpoint-list {
   display: grid;
   gap: 10px;

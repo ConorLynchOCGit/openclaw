@@ -1108,6 +1108,14 @@ describe("loadSessions", () => {
           ],
         };
       }
+      if (method === "sessions.show") {
+        return {
+          key: "agent:main:main",
+          kind: "direct",
+          updatedAt: 1,
+          sessionId: "session-1",
+        };
+      }
       throw new Error(`unexpected method: ${method}`);
     });
     const state = createState(request, {
@@ -1153,6 +1161,9 @@ describe("loadSessions", () => {
     expect(request).toHaveBeenNthCalledWith(2, "sessions.compaction.list", {
       key: "agent:main:main",
     });
+    expect(request).toHaveBeenNthCalledWith(3, "sessions.show", {
+      key: "agent:main:main",
+    });
     expect(
       state.sessionsCheckpointItemsByKey["agent:main:main"]?.map((item) => item.checkpointId),
     ).toEqual(["checkpoint-new"]);
@@ -1160,6 +1171,9 @@ describe("loadSessions", () => {
 
   it("requests selected global checkpoints with the selected agent", async () => {
     const request = vi.fn(async (method: string) => {
+      if (method === "sessions.show") {
+        return { key: "global", kind: "global", updatedAt: 1, sessionId: "session-global" };
+      }
       if (method === "sessions.compaction.list") {
         return { ok: true, key: "global", checkpoints: [] };
       }
@@ -1172,6 +1186,10 @@ describe("loadSessions", () => {
 
     await toggleSessionCompactionCheckpoints(state, "global");
 
+    expect(request).toHaveBeenCalledWith("sessions.show", {
+      key: "global",
+      agentId: "work",
+    });
     expect(request).toHaveBeenCalledWith("sessions.compaction.list", {
       key: "global",
       agentId: "work",

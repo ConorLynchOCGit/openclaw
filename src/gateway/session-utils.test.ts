@@ -362,10 +362,17 @@ describe("gateway session utils", () => {
       state: "settled",
       childCount: 1,
       inputTokens: 1_000,
+      freshInputTokens: 850,
       outputTokens: 300,
       cachedInputTokens: 150,
       reasoningOutputTokens: 75,
       totalTokens: 1_500,
+    });
+    expect(row.codexExecutionTree).toMatchObject({
+      source: "trajectory",
+      settlement: "partial",
+      rounds: [],
+      unassignedChildren: [expect.objectContaining({ childThreadId: "child-thread-1" })],
     });
   });
 
@@ -403,6 +410,7 @@ describe("gateway session utils", () => {
       state: "partial",
       childCount: 0,
       inputTokens: undefined,
+      freshInputTokens: undefined,
       outputTokens: undefined,
       cachedInputTokens: undefined,
       reasoningOutputTokens: undefined,

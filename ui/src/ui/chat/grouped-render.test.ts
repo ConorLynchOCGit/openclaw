@@ -273,6 +273,52 @@ function createMessageGroup(message: unknown, role: string): MessageGroup {
   };
 }
 
+function createBusinessOpsProposalPresentation(status: "current" | "superseded_or_stale") {
+  return {
+    schema: "openclaw.business-ops.proposal-presentation.v1",
+    authority: "presentation_only",
+    status,
+    flow: { id: "flow-1", revision: 7 },
+    proposal: { id: "P-1", ref: "proposal.md", digest: "a".repeat(64) },
+    target: {
+      ref: "target.md",
+      digest: "b".repeat(64),
+      anchor: "## Positioning",
+      currentPassage: "Old passage.",
+      proposedPassage: "New passage.",
+    },
+    evidenceBasis: ["E-1"],
+    affectedSurfaces: ["target.md"],
+    reviewerVerdict: "pass",
+    unresolvedConsequences: ["Publication remains blocked."],
+    allowedOutcomes: ["approve", "revise", "reject", "defer"],
+  };
+}
+
+function createBusinessOpsProposalToolGroup(
+  status: "current" | "superseded_or_stale",
+): MessageGroup {
+  return {
+    kind: "group",
+    key: `proposal-${status}`,
+    role: "tool",
+    messages: [
+      {
+        key: `proposal-${status}-message`,
+        message: {
+          role: "toolResult",
+          toolCallId: `proposal-${status}-call`,
+          toolName: "business_ops_present_proposal",
+          content: JSON.stringify(createBusinessOpsProposalPresentation(status)),
+          timestamp: 1000,
+        },
+      },
+    ],
+    timestamp: 1000,
+    isStreaming: false,
+  };
+}
+
 function createAssistantCanvasBlock(params: {
   suffix: string;
   title?: string;
@@ -1085,6 +1131,78 @@ describe("grouped chat rendering", () => {
     renderMessageGroups(container, [group], { showToolCalls: false });
 
     expect(container.querySelector(".chat-activity-group")).toBeNull();
+  });
+
+  it("keeps a current Business Ops proposal visible when generic tool calls are disabled", () => {
+    const container = document.createElement("div");
+
+    renderMessageGroups(container, [createBusinessOpsProposalToolGroup("current")], {
+      showToolCalls: false,
+      onBusinessOpsProposalDecision: vi.fn(),
+    });
+
+    expect(container.querySelector(".chat-activity-group")).toBeNull();
+    expect(container.querySelector(".business-ops-proposal")).toBeInstanceOf(HTMLElement);
+    expect(container.querySelector(".business-ops-proposal__status")?.textContent?.trim()).toBe(
+      "Current",
+    );
+    expect(container.querySelector(".business-ops-proposal__passages")?.textContent).toContain(
+      "New passage.",
+    );
+  });
+
+  it("sends passage feedback as an exact proposal-and-target-bound decision message", () => {
+    const container = document.createElement("div");
+    const onBusinessOpsProposalDecision = vi.fn();
+    renderMessageGroups(container, [createBusinessOpsProposalToolGroup("current")], {
+      showToolCalls: false,
+      onBusinessOpsProposalDecision,
+    });
+
+    const feedback = expectElement(
+      container,
+      "textarea[name='passage-feedback']",
+      HTMLTextAreaElement,
+    );
+    feedback.value = "Make the second sentence more specific.";
+    const revise = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+      (button) => button.textContent?.trim() === "Revise",
+    );
+    expect(revise).toBeInstanceOf(HTMLButtonElement);
+    revise!.click();
+
+    expect(onBusinessOpsProposalDecision).toHaveBeenCalledWith(
+      [
+        "Business Ops proposal decision: revise",
+        "TaskFlow: flow-1@7",
+        "Proposal: P-1",
+        "Proposal ref: proposal.md",
+        `Proposal digest: ${"a".repeat(64)}`,
+        "Target: target.md",
+        `Target baseline digest: ${"b".repeat(64)}`,
+        "Passage feedback:",
+        "Make the second sentence more specific.",
+      ].join("\n"),
+    );
+  });
+
+  it("renders a superseded Business Ops proposal as inspectable but non-actionable", () => {
+    const container = document.createElement("div");
+    const onBusinessOpsProposalDecision = vi.fn();
+    renderMessageGroups(container, [createBusinessOpsProposalToolGroup("superseded_or_stale")], {
+      showToolCalls: false,
+      onBusinessOpsProposalDecision,
+    });
+
+    expect(container.querySelector(".business-ops-proposal__status")?.textContent?.trim()).toBe(
+      "Superseded or stale",
+    );
+    expect(container.querySelector(".business-ops-proposal__stale-note")).toBeInstanceOf(
+      HTMLElement,
+    );
+    expect(container.querySelector("textarea[name='passage-feedback']")).toBeNull();
+    expect(container.querySelector(".business-ops-proposal__actions")).toBeNull();
+    expect(onBusinessOpsProposalDecision).not.toHaveBeenCalled();
   });
 
   it("keeps inline tool cards collapsed by default and renders expanded state", () => {

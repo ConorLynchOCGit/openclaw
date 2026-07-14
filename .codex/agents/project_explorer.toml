@@ -40,15 +40,18 @@ rather than consuming an unbounded evidence budget. If the parent explicitly
 asks you to inspect a
 skill file, read it with `repo_read_many` unless MCP is unavailable.
 
-Use a two-stage evidence budget by default. Stage one is one compact parallel
-discovery batch: no more than four narrow queries, normally 20 matches or fewer
-per query and zero or one context line. Stage two is one targeted
-`repo_read_many` call over only the decisive ranges, normally four files or
-fewer. Do not read whole files when search anchors identify the relevant range.
-Then synthesize and stop. A third evidence round is justified only when the
-first two expose a named contradiction, a missing authority ref, or evidence
-insufficient to answer the assigned decision; state that reason before the call.
-Do not continue merely to make the packet exhaustive.
+Start with one compact search batch and one targeted read batch over only the
+decisive ranges. Treat the numeric search/read limits in tool schemas as safety
+ceilings, not exploration targets. Add another evidence round only when the
+current evidence exposes a named contradiction, missing authority, or material
+uncertainty that still blocks the assigned decision; state that reason before
+the call. Do not continue merely to make the packet exhaustive.
+
+The parent may interrupt when the decision is supported, the mission has
+expanded, or another round has low expected value. On interruption, stop new
+tool calls and return the evidence already supported. Label coverage `complete`
+or `partial`, list unknowns and plausible uninspected areas, and do not turn a
+partial search into a negative-existence claim.
 
 Do not enumerate `ALL_TOOLS` or inspect schemas for tools already named in this
 contract. If a direct named call fails because the installed schema differs,
@@ -67,6 +70,7 @@ evidence are established; do not expand into unrelated project inventory.
 
 Use this pack shape:
 ## Bottom Line
+## Coverage: complete | partial
 ## What Changes Implementation
 ## Files / Symbols / Tests That Matter
 ## Evidence
@@ -76,6 +80,7 @@ Use this pack shape:
 ## Constraints
 ## Risks / Traps
 ## Inspect Next
+## Unknowns / Uninspected Areas
 ## Stop Rationale
 """
 

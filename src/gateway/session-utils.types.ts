@@ -11,8 +11,11 @@ import type {
 export type {
   GatewayAgentRow,
   GatewaySessionCodexExecutionEvidence,
+  GatewaySessionCodexExecutionTree,
   GatewaySessionCodexNativeChildRun,
+  GatewaySessionCodexParentRound,
   GatewaySessionCodexTeamUsage,
+  GatewaySessionCodexUsage,
   GatewaySessionUsage,
   GatewaySessionRow,
   ReadbackFieldProvenance,

@@ -264,6 +264,15 @@ function parseCheckpointFlowParams(params: Record<string, unknown>): ManagedFlow
   };
 }
 
+function isLinkedCorrectionState(value: JsonLike): boolean {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    value.continuitySchema === "openclaw.taskflow.correction.v1",
+  );
+}
+
 function formatManagedFlowResult(result: ManagedFlowSuccessResult) {
   const envelope =
     result.envelope && typeof result.envelope === "object" && !Array.isArray(result.envelope)
@@ -378,6 +387,12 @@ export function createLobsterTool(api: OpenClawPluginApi, options?: LobsterToolO
         const checkpointStep =
           flowParams.waitingStep ?? flowParams.currentStep ?? "await_operator_input";
         if (flowParams.mode === "create") {
+          if (isLinkedCorrectionState(flowParams.stateJson)) {
+            const handoff = runtime.validateCloseoutHandoff({ stateJson: flowParams.stateJson });
+            if (!handoff.valid) {
+              throw new Error(`TaskFlow correction handoff failed: ${handoff.code}`);
+            }
+          }
           return formatManagedCheckpointResult(
             runtime.createManaged({
               controllerId: flowParams.controllerId,

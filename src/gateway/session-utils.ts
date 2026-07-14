@@ -96,6 +96,7 @@ import {
 import {
   readLastAssistantTextFromTranscriptWithProvenance,
   readCodexExecutionEvidenceProjection,
+  readCodexTrajectoryParentRounds,
   readCodexNativeSurfaceProjection,
   readLatestTrajectoryProgressProjection,
   readRecentSessionUsageFromTranscript,
@@ -104,7 +105,9 @@ import {
 } from "./session-utils.fs.js";
 import type {
   GatewayAgentRow,
+  GatewaySessionCodexExecutionTree,
   GatewaySessionCodexNativeChildRun,
+  GatewaySessionCodexUsage,
   GatewaySessionRow,
   GatewaySessionsDefaults,
   SessionRunStatus,
@@ -120,6 +123,7 @@ export {
   readLastAssistantTextFromTranscript,
   readLatestTrajectoryProgressProjection,
   readCodexExecutionEvidenceProjection,
+  readCodexTrajectoryParentRounds,
   readCodexNativeSurfaceProjection,
   readLatestSessionUsageFromTranscriptAsync,
   readLatestRecentSessionUsageFromTranscriptAsync,
@@ -382,47 +386,153 @@ function buildCodexNativeChildUsage(metadata: TaskEventMetadata | undefined): {
 function buildCodexTeamUsage(params: {
   state: "provisional" | "settled";
   parent?: SessionEntry["codexThreadUsage"];
+  parentRounds?: GatewaySessionCodexExecutionTree["rounds"];
   children?: GatewaySessionRow["codexNativeChildRuns"];
 }): GatewaySessionRow["codexTeamUsage"] {
   const childUsage = params.children?.map((child) => child.usage).filter(Boolean) ?? [];
-  const sumComplete = (parent: number | undefined, children: Array<number | undefined>) => {
-    if (parent === undefined || children.some((value) => value === undefined)) {
+  const parentRoundCount = params.parentRounds?.length;
+  const childCount = params.children?.length ?? 0;
+  if (!params.parent) {
+    return {
+      basis: "cumulative",
+      state: "partial",
+      ...(parentRoundCount ? { parentRoundCount } : {}),
+      childCount,
+      inputTokens: undefined,
+      freshInputTokens: undefined,
+      outputTokens: undefined,
+      cachedInputTokens: undefined,
+      reasoningOutputTokens: undefined,
+      totalTokens: undefined,
+    };
+  }
+  const sumComplete = (values: Array<number | undefined>) => {
+    if (values.length === 0 || values.some((value) => value === undefined)) {
       return undefined;
     }
-    let total = parent;
-    for (const value of children) {
+    let total = 0;
+    for (const value of values) {
       total += value ?? 0;
     }
     return total;
   };
+  const parentUsage = [
+    {
+      inputTokens: params.parent.inputTokens,
+      freshInputTokens:
+        params.parent.inputTokens === undefined
+          ? undefined
+          : Math.max(0, params.parent.inputTokens - (params.parent.cachedInputTokens ?? 0)),
+      outputTokens: params.parent.outputTokens,
+      cachedInputTokens: params.parent.cachedInputTokens,
+      reasoningOutputTokens: params.parent.reasoningOutputTokens,
+      totalTokens: params.parent.totalTokens,
+    },
+  ];
   const complete =
-    params.parent?.totalTokens !== undefined &&
+    parentUsage.every((usage) => usage?.totalTokens !== undefined) &&
     childUsage.length === (params.children?.length ?? 0) &&
     childUsage.every((usage) => usage?.totalTokens !== undefined);
+  const usageValues = (key: keyof GatewaySessionCodexUsage): Array<number | undefined> => {
+    const parentValues = parentUsage.map((usage) => usage?.[key]);
+    const childValues = childUsage.map((usage) =>
+      key === "inputTokens"
+        ? usage?.inputTokens
+        : key === "freshInputTokens"
+          ? usage?.inputTokens === undefined
+            ? undefined
+            : Math.max(0, usage.inputTokens - (usage.cachedInputTokens ?? 0))
+          : key === "cachedInputTokens"
+            ? usage?.cachedInputTokens
+            : key === "outputTokens"
+              ? usage?.outputTokens
+              : key === "reasoningOutputTokens"
+                ? usage?.reasoningOutputTokens
+                : usage?.totalTokens,
+    );
+    return [...parentValues, ...childValues];
+  };
   return {
     basis: "cumulative",
     state: complete ? params.state : "partial",
-    childCount: params.children?.length ?? 0,
-    inputTokens: sumComplete(
-      params.parent?.inputTokens,
-      childUsage.map((usage) => usage?.inputTokens),
-    ),
-    outputTokens: sumComplete(
-      params.parent?.outputTokens,
-      childUsage.map((usage) => usage?.outputTokens),
-    ),
-    cachedInputTokens: sumComplete(
-      params.parent?.cachedInputTokens,
-      childUsage.map((usage) => usage?.cachedInputTokens),
-    ),
-    reasoningOutputTokens: sumComplete(
-      params.parent?.reasoningOutputTokens,
-      childUsage.map((usage) => usage?.reasoningOutputTokens),
-    ),
-    totalTokens: sumComplete(
-      params.parent?.totalTokens,
-      childUsage.map((usage) => usage?.totalTokens),
-    ),
+    ...(parentRoundCount ? { parentRoundCount } : {}),
+    childCount,
+    inputTokens: sumComplete(usageValues("inputTokens")),
+    freshInputTokens: sumComplete(usageValues("freshInputTokens")),
+    outputTokens: sumComplete(usageValues("outputTokens")),
+    cachedInputTokens: sumComplete(usageValues("cachedInputTokens")),
+    reasoningOutputTokens: sumComplete(usageValues("reasoningOutputTokens")),
+    totalTokens: sumComplete(usageValues("totalTokens")),
+  };
+}
+
+function buildCodexExecutionTree(params: {
+  rounds?: GatewaySessionCodexExecutionTree["rounds"];
+  children?: GatewaySessionRow["codexNativeChildRuns"];
+  reasoningEffort?: string;
+}): GatewaySessionCodexExecutionTree | undefined {
+  const rounds = params.rounds?.map((round) => ({ ...round, children: [...round.children] })) ?? [];
+  const unassignedChildren: GatewaySessionCodexNativeChildRun[] = [];
+  for (const child of params.children ?? []) {
+    const matching = rounds.filter((round) => round.threadId === child.parentThreadId);
+    const childStartedAt = child.startedAt;
+    const round =
+      matching.length === 1
+        ? matching[0]
+        : childStartedAt !== undefined
+          ? matching.findLast(
+              (candidate) =>
+                candidate.startedAt !== undefined && candidate.startedAt <= childStartedAt,
+            )
+          : undefined;
+    if (round) {
+      round.children.push(child);
+      continue;
+    }
+    unassignedChildren.push(child);
+  }
+  if (rounds.length === 0 && unassignedChildren.length === 0) {
+    return undefined;
+  }
+  for (const round of rounds) {
+    round.reasoningEffort ??= params.reasoningEffort;
+    if (round.children.length > 0 && round.coverage === "none") {
+      round.coverage = "partial";
+    }
+    if (round.children.some((child) => child.status === "failed" || child.status === "cancelled")) {
+      round.failureClass ??= "failed";
+    }
+    if (
+      round.settlement === "pending" &&
+      round.children.some((child) => child.usage?.totalTokens !== undefined)
+    ) {
+      round.settlement = "partial";
+    }
+    if (
+      round.settlement === "settled" &&
+      round.children.some((child) => child.usage?.totalTokens === undefined)
+    ) {
+      round.settlement = "partial";
+    }
+  }
+  const childSettlement = unassignedChildren.every(
+    (child) => child.usage?.totalTokens !== undefined,
+  )
+    ? "partial"
+    : "pending";
+  const settlement =
+    rounds.length > 0 &&
+    rounds.every((round) => round.settlement === "settled") &&
+    unassignedChildren.length === 0
+      ? "settled"
+      : rounds.some((round) => round.settlement === "pending") || childSettlement === "pending"
+        ? "pending"
+        : "partial";
+  return {
+    source: "trajectory",
+    rounds,
+    ...(unassignedChildren.length > 0 ? { unassignedChildren } : {}),
+    settlement,
   };
 }
 
@@ -2633,6 +2743,23 @@ export function buildGatewaySessionRow(params: {
             : {}),
         }
       : undefined;
+  const codexParentRounds =
+    !lightweight && entry?.sessionId && agentRuntime.id === "codex"
+      ? readCodexTrajectoryParentRounds(
+          entry.sessionId,
+          storePath,
+          entry.sessionFile,
+          sessionAgentId,
+        )
+      : undefined;
+  const codexExecutionTree =
+    agentRuntime.id === "codex"
+      ? buildCodexExecutionTree({
+          rounds: codexParentRounds,
+          children: codexNativeChildRuns,
+          reasoningEffort: entry?.reasoningLevel,
+        })
+      : undefined;
   const codexTeamUsage =
     agentRuntime.id === "codex"
       ? buildCodexTeamUsage({
@@ -2641,6 +2768,7 @@ export function buildGatewaySessionRow(params: {
             entry && entry.codexThreadUsage?.sessionId === entry.sessionId
               ? entry.codexThreadUsage
               : undefined,
+          parentRounds: codexExecutionTree?.rounds,
           children: codexNativeChildRuns,
         })
       : undefined;
@@ -2828,6 +2956,28 @@ export function buildGatewaySessionRow(params: {
     childSessions,
     codexNativeChildRuns,
     codexTeamUsage,
+    ...(agentRuntime.id === "codex" && (entry?.sessionId || codexNativeChildRuns?.length)
+      ? { hasCodexExecution: true }
+      : {}),
+    codexExecutionTree,
+    finalDelivery:
+      entry?.pendingFinalDelivery || entry?.pendingFinalDeliveryText
+        ? {
+            state: "pending",
+            ...(entry.pendingFinalDeliveryCreatedAt !== undefined
+              ? { createdAt: entry.pendingFinalDeliveryCreatedAt }
+              : {}),
+            ...(entry.pendingFinalDeliveryLastAttemptAt !== undefined
+              ? { lastAttemptAt: entry.pendingFinalDeliveryLastAttemptAt }
+              : {}),
+            ...(entry.pendingFinalDeliveryAttemptCount !== undefined
+              ? { attemptCount: entry.pendingFinalDeliveryAttemptCount }
+              : {}),
+            ...(entry.pendingFinalDeliveryLastError !== undefined
+              ? { lastError: entry.pendingFinalDeliveryLastError }
+              : {}),
+          }
+        : { state: "not_requested" },
     laneVerdict:
       rowStatus === "running" ? undefined : resolveModelAuthoredTaskVerdict(finalAssistantText),
     codexExecutionEvidence,

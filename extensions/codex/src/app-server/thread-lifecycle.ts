@@ -1668,30 +1668,24 @@ export function resolveCodexAppServerModelProvider(params: {
 }
 
 // Modern Codex models use the low/medium/high/xhigh effort enum and reject
-// "minimal". GPT-5.6 additionally accepts "max". The CLI
-// defaults thinkLevel to "minimal", so without translation EVERY agent turn
-// on those models pays a wasted first request + retry-with-low fallback in
-// embedded-agent-runner. Map "minimal" -> "low" upfront for modern models so the
-// first request is accepted. Older Codex models still accept "minimal"
-// directly. (#71946)
-// Exported for unit-test coverage of the model-aware translation path.
+// "minimal". GPT-5.6 additionally accepts "max". Translate the inherited
+// minimal default before the request, but reject unsupported explicit/profile
+// values here instead of silently omitting them at the provider boundary.
 export function resolveReasoningEffort(
   thinkLevel: EmbeddedRunAttemptParams["thinkLevel"],
   modelId: string,
 ): "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null {
-  if (thinkLevel === "minimal") {
-    return isModernCodexModel(modelId) ? "low" : "minimal";
+  if (thinkLevel === "off" || thinkLevel === "adaptive") {
+    return null;
   }
-  if (
-    thinkLevel === "low" ||
-    thinkLevel === "medium" ||
-    thinkLevel === "high" ||
-    thinkLevel === "xhigh"
-  ) {
-    return thinkLevel;
+
+  const effort = thinkLevel === "minimal" && isModernCodexModel(modelId) ? "low" : thinkLevel;
+  if (effort === "max" && !supportsMaxCodexModel(modelId)) {
+    throw new Error(
+      `Codex model ${JSON.stringify(modelId)} does not support reasoning effort "max". ` +
+        "Use gpt-5.6-sol, gpt-5.6-terra, or gpt-5.6-luna, or select a supported effort.",
+    );
   }
-  if (thinkLevel === "max" && supportsMaxCodexModel(modelId)) {
-    return "max";
-  }
-  return null;
+
+  return effort;
 }

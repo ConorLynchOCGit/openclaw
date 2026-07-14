@@ -227,6 +227,10 @@ function currentSessionRow(host: RunLifecycleHost) {
   return host.sessionsResult?.sessions.find((row) => row.key === host.sessionKey);
 }
 
+function hasPendingFinalDelivery(row: GatewaySessionRow | undefined): boolean {
+  return row?.finalDelivery?.state === "pending";
+}
+
 // After a terminal chat event clears local run state, a racing sessions.list
 // refresh can still carry a stale "active" row for the session we just
 // finished, which would drive the composer back to in-progress. Re-apply
@@ -272,6 +276,9 @@ export function reconcileChatRunFromCurrentSessionRow(
   }
   const row = currentSessionRow(host);
   if (!row) {
+    return false;
+  }
+  if (hasPendingFinalDelivery(row)) {
     return false;
   }
   return reconcileChatRunFromSessionRow(host, row, options);

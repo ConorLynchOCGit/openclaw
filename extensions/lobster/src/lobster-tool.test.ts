@@ -273,6 +273,77 @@ describe("lobster plugin tool", () => {
     expect(details.flow).toEqual(createdFlow);
   });
 
+  it("creates a linked correction as a new managed checkpoint with model-authored lineage", async () => {
+    const runner = { run: vi.fn() };
+    const createdFlow = {
+      flowId: "flow-correction",
+      revision: 0,
+      syncMode: "managed" as const,
+      controllerId: "tests/correction",
+      ownerKey: "agent:business-ops:subagent:same-owner",
+      status: "waiting" as const,
+      goal: "Correct closed proposal",
+    };
+    const createManaged = vi.fn().mockReturnValue(createdFlow);
+    const taskFlow = createFakeTaskFlow({ createManaged });
+    const tool = createLobsterTool(fakeApi(), { runner, taskFlow });
+    const correctionState = {
+      continuitySchema: "openclaw.taskflow.correction.v1",
+      priorFlowId: "flow-terminal",
+      priorFlowRevision: 5,
+      governingArtifactsDigest: "a".repeat(64),
+      governingArtifactCount: 1,
+    };
+
+    await tool.execute("call-linked-correction", {
+      action: "checkpoint",
+      flowControllerId: "tests/correction",
+      flowGoal: "Correct closed proposal",
+      flowStateJson: JSON.stringify(correctionState),
+      flowWaitingStep: "await_correction_review",
+    });
+
+    expect(createManaged).toHaveBeenCalledWith({
+      controllerId: "tests/correction",
+      goal: "Correct closed proposal",
+      status: "waiting",
+      currentStep: "await_correction_review",
+      stateJson: correctionState,
+    });
+    expect(taskFlow.validateCloseoutHandoff).toHaveBeenCalledWith({
+      stateJson: correctionState,
+    });
+    expect(runner.run).not.toHaveBeenCalled();
+  });
+
+  it("does not create a correction when the exact closeout handoff is stale", async () => {
+    const createManaged = vi.fn();
+    const taskFlow = createFakeTaskFlow({
+      createManaged,
+      validateCloseoutHandoff: vi.fn().mockReturnValue({
+        valid: false,
+        code: "revision_conflict",
+      }),
+    });
+    const tool = createLobsterTool(fakeApi(), { runner: { run: vi.fn() }, taskFlow });
+
+    await expect(
+      tool.execute("call-stale-correction", {
+        action: "checkpoint",
+        flowControllerId: "tests/correction",
+        flowGoal: "Correct closed proposal",
+        flowStateJson: JSON.stringify({
+          continuitySchema: "openclaw.taskflow.correction.v1",
+          priorFlowId: "flow-terminal",
+          priorFlowRevision: 4,
+          governingArtifactsDigest: "a".repeat(64),
+          governingArtifactCount: 1,
+        }),
+      }),
+    ).rejects.toThrow(/TaskFlow correction handoff failed: revision_conflict/);
+    expect(createManaged).not.toHaveBeenCalled();
+  });
+
   it("revision-safely advances one waiting TaskFlow checkpoint", async () => {
     const runner = { run: vi.fn() };
     const taskFlow = createFakeTaskFlow();

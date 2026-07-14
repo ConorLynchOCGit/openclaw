@@ -459,6 +459,112 @@ function sessionDetailItems(params: {
   return details;
 }
 
+function formatCodexUsage(
+  usage: NonNullable<
+    GatewaySessionRow["codexExecutionTree"]
+  >["rounds"][number]["contributionUsage"],
+): string {
+  if (!usage) {
+    return t("common.na");
+  }
+  const parts = [
+    usage.freshInputTokens !== undefined ? `fresh ${usage.freshInputTokens}` : null,
+    usage.cachedInputTokens !== undefined ? `cached ${usage.cachedInputTokens}` : null,
+    usage.outputTokens !== undefined ? `output ${usage.outputTokens}` : null,
+  ].filter((value): value is string => Boolean(value));
+  return parts.length > 0 ? parts.join(" · ") : t("common.na");
+}
+
+function renderCodexExecutionTree(tree: GatewaySessionRow["codexExecutionTree"]) {
+  if (!tree) {
+    return nothing;
+  }
+  return html`
+    <div class="session-details-section">
+      <div class="session-details-section__header">
+        <div>
+          <div class="session-details-panel__eyebrow">Execution</div>
+          <div class="session-details-section__title">
+            ${tree.rounds.length} parent ${tree.rounds.length === 1 ? "round" : "rounds"} ·
+            ${tree.settlement}
+          </div>
+        </div>
+      </div>
+      <div class="session-execution-tree">
+        ${tree.rounds.map(
+          (round) => html`
+            <details class="session-execution-round" ?open=${tree.rounds.length === 1}>
+              <summary>
+                <strong>${round.model ?? "Codex"}</strong>
+                <span class="muted mono">${round.threadId} / ${round.turnId}</span>
+                <span class="muted">${round.settlement}</span>
+              </summary>
+              <div class="session-execution-round__meta">
+                <span>${formatCodexUsage(round.contributionUsage)}</span>
+                ${round.durationMs !== undefined
+                  ? html`<span>${formatRuntimeMs(round.durationMs)}</span>`
+                  : nothing}
+                ${round.reasoningEffort
+                  ? html`<span>reasoning ${round.reasoningEffort}</span>`
+                  : nothing}
+                ${round.failureClass ? html`<span>${round.failureClass}</span>` : nothing}
+                ${round.finalRef ? html`<span class="mono">${round.finalRef}</span>` : nothing}
+              </div>
+              ${round.children.length > 0
+                ? html`<ul class="session-execution-children">
+                    ${round.children.map(
+                      (child) => html`
+                        <li>
+                          <strong>${child.label ?? child.role ?? "Child"}</strong>
+                          <span class="muted">${child.model ?? "model unknown"}</span>
+                          <span class="muted">${child.reasoningEffort ?? "reasoning unknown"}</span>
+                          <span class="muted">${child.status ?? "status unknown"}</span>
+                          <span
+                            >${formatCodexUsage(
+                              child.usage && {
+                                freshInputTokens:
+                                  child.usage.inputTokens === undefined
+                                    ? undefined
+                                    : Math.max(
+                                        0,
+                                        child.usage.inputTokens -
+                                          (child.usage.cachedInputTokens ?? 0),
+                                      ),
+                                cachedInputTokens: child.usage.cachedInputTokens,
+                                outputTokens: child.usage.outputTokens,
+                              },
+                            )}</span
+                          >
+                          ${child.finalRef
+                            ? html`<span class="mono">${child.finalRef}</span>`
+                            : nothing}
+                        </li>
+                      `,
+                    )}
+                  </ul>`
+                : html`<div class="muted session-details-empty">No child runs recorded.</div>`}
+            </details>
+          `,
+        )}
+        ${tree.unassignedChildren?.length
+          ? html`<div class="session-execution-round">
+              <strong>Children without a proven parent turn</strong>
+              <ul class="session-execution-children">
+                ${tree.unassignedChildren.map(
+                  (child) => html`<li>
+                    <strong>${child.label ?? child.role ?? "Child"}</strong>
+                    <span class="muted">${child.status ?? "status unknown"}</span>
+                    ${child.finalRef ? html`<span class="mono">${child.finalRef}</span>` : nothing}
+                  </li>`,
+                )}
+              </ul>
+            </div>`
+          : nothing}
+      </div>
+    </div>
+  `;
+}
+
 function isRowControlTarget(target: EventTarget | null): boolean {
   return (
     target instanceof Element &&
@@ -814,6 +920,11 @@ function renderRows(row: GatewaySessionRow, props: SessionsProps) {
   const checkpointCount = row.compactionCheckpointCount ?? 0;
   const visibleCheckpointCount = Math.max(checkpointCount, latestCheckpoint ? 1 : 0);
   const hasCheckpoints = checkpointCount > 0 || Boolean(latestCheckpoint);
+  const hasDetails =
+    hasCheckpoints ||
+    row.hasCodexExecution === true ||
+    Boolean(row.codexExecutionTree) ||
+    row.finalDelivery?.state === "pending";
   const isExpanded = props.expandedCheckpointKey === row.key;
   const checkpointItems = props.checkpointItemsByKey[row.key] ?? [];
   const checkpointError = props.checkpointErrorByKey[row.key];
@@ -858,13 +969,13 @@ function renderRows(row: GatewaySessionRow, props: SessionsProps) {
             : "data-table-badge--unknown";
   const rowClass = [
     "session-data-row",
-    hasCheckpoints ? "session-data-row--expandable" : "",
+    hasDetails ? "session-data-row--expandable" : "",
     isExpanded ? "session-data-row--expanded" : "",
   ]
     .filter(Boolean)
     .join(" ");
   const activateCheckpointDetails = () => {
-    if (hasCheckpoints) {
+    if (hasDetails) {
       props.onToggleCheckpointDetails(row.key);
     }
   };
@@ -872,17 +983,17 @@ function renderRows(row: GatewaySessionRow, props: SessionsProps) {
   return [
     html`<tr
       class=${rowClass}
-      tabindex=${hasCheckpoints ? "0" : nothing}
-      aria-expanded=${hasCheckpoints ? String(isExpanded) : nothing}
-      aria-controls=${hasCheckpoints ? detailsId : nothing}
+      tabindex=${hasDetails ? "0" : nothing}
+      aria-expanded=${hasDetails ? String(isExpanded) : nothing}
+      aria-controls=${hasDetails ? detailsId : nothing}
       @click=${(e: MouseEvent) => {
-        if (!hasCheckpoints || isRowControlTarget(e.target)) {
+        if (!hasDetails || isRowControlTarget(e.target)) {
           return;
         }
         activateCheckpointDetails();
       }}
       @keydown=${(e: KeyboardEvent) => {
-        if (!hasCheckpoints || isRowControlTarget(e.target)) {
+        if (!hasDetails || isRowControlTarget(e.target)) {
           return;
         }
         if (e.key === "Enter" || e.key === " ") {
@@ -1070,7 +1181,7 @@ function renderRows(row: GatewaySessionRow, props: SessionsProps) {
           : nothing}
       </td>
     </tr>`,
-    ...(isExpanded && hasCheckpoints
+    ...(isExpanded && hasDetails
       ? [
           html`<tr id=${detailsId} class="session-checkpoint-details-row">
             <td colspan="14">
@@ -1106,78 +1217,93 @@ function renderRows(row: GatewaySessionRow, props: SessionsProps) {
                   )}
                 </div>
 
-                <div class="session-details-section">
-                  <div class="session-details-section__header">
-                    <div>
-                      <div class="session-details-panel__eyebrow">
-                        ${t("sessionsView.compactionHistory")}
+                ${row.finalDelivery?.state === "pending"
+                  ? html`<div class="session-details-section">
+                      <div class="session-details-section__header">
+                        <div>
+                          <div class="session-details-panel__eyebrow">Delivery</div>
+                          <div class="session-details-section__title">Final delivery pending</div>
+                        </div>
                       </div>
-                      <div class="session-details-section__title">${checkpointLabel}</div>
-                    </div>
-                  </div>
-                  ${props.checkpointLoadingKey === row.key
-                    ? html`<div class="muted session-details-empty">
-                        ${t("sessionsView.loadingCheckpoints")}
-                      </div>`
-                    : checkpointError
-                      ? html`<div class="callout danger">${checkpointError}</div>`
-                      : checkpointItems.length === 0
+                    </div>`
+                  : nothing}
+                ${renderCodexExecutionTree(row.codexExecutionTree)}
+                ${hasCheckpoints
+                  ? html`<div class="session-details-section">
+                      <div class="session-details-section__header">
+                        <div>
+                          <div class="session-details-panel__eyebrow">
+                            ${t("sessionsView.compactionHistory")}
+                          </div>
+                          <div class="session-details-section__title">${checkpointLabel}</div>
+                        </div>
+                      </div>
+                      ${props.checkpointLoadingKey === row.key
                         ? html`<div class="muted session-details-empty">
-                            ${t("sessionsView.noCheckpoints")}
+                            ${t("sessionsView.loadingCheckpoints")}
                           </div>`
-                        : html`
-                            <div class="session-checkpoint-list">
-                              ${checkpointItems.map(
-                                (checkpoint) => html`
-                                  <div class="session-checkpoint-card">
-                                    <div class="session-checkpoint-card__header">
-                                      <strong>
-                                        ${formatCheckpointReason(checkpoint.reason)} ·
-                                        ${formatRelativeTimestamp(checkpoint.createdAt)}
-                                      </strong>
-                                      <span class="muted session-checkpoint-card__delta">
-                                        ${formatCheckpointDelta(checkpoint)}
-                                      </span>
-                                    </div>
-                                    ${checkpoint.summary
-                                      ? html`<div class="session-checkpoint-card__summary">
-                                          ${checkpoint.summary}
-                                        </div>`
-                                      : html`
-                                          <div class="muted">${t("sessionsView.noSummary")}</div>
-                                        `}
-                                    <div class="session-checkpoint-card__actions">
-                                      <button
-                                        class="btn btn--sm"
-                                        ?disabled=${props.checkpointBusyKey ===
-                                        checkpoint.checkpointId}
-                                        @click=${() =>
-                                          props.onBranchFromCheckpoint(
-                                            row.key,
-                                            checkpoint.checkpointId,
-                                          )}
-                                      >
-                                        ${t("sessionsView.branchFromCheckpoint")}
-                                      </button>
-                                      <button
-                                        class="btn btn--sm"
-                                        ?disabled=${props.checkpointBusyKey ===
-                                        checkpoint.checkpointId}
-                                        @click=${() =>
-                                          props.onRestoreCheckpoint(
-                                            row.key,
-                                            checkpoint.checkpointId,
-                                          )}
-                                      >
-                                        ${t("sessionsView.restoreCheckpoint")}
-                                      </button>
-                                    </div>
-                                  </div>
-                                `,
-                              )}
-                            </div>
-                          `}
-                </div>
+                        : checkpointError
+                          ? html`<div class="callout danger">${checkpointError}</div>`
+                          : checkpointItems.length === 0
+                            ? html`<div class="muted session-details-empty">
+                                ${t("sessionsView.noCheckpoints")}
+                              </div>`
+                            : html`
+                                <div class="session-checkpoint-list">
+                                  ${checkpointItems.map(
+                                    (checkpoint) => html`
+                                      <div class="session-checkpoint-card">
+                                        <div class="session-checkpoint-card__header">
+                                          <strong>
+                                            ${formatCheckpointReason(checkpoint.reason)} ·
+                                            ${formatRelativeTimestamp(checkpoint.createdAt)}
+                                          </strong>
+                                          <span class="muted session-checkpoint-card__delta">
+                                            ${formatCheckpointDelta(checkpoint)}
+                                          </span>
+                                        </div>
+                                        ${checkpoint.summary
+                                          ? html`<div class="session-checkpoint-card__summary">
+                                              ${checkpoint.summary}
+                                            </div>`
+                                          : html`
+                                              <div class="muted">
+                                                ${t("sessionsView.noSummary")}
+                                              </div>
+                                            `}
+                                        <div class="session-checkpoint-card__actions">
+                                          <button
+                                            class="btn btn--sm"
+                                            ?disabled=${props.checkpointBusyKey ===
+                                            checkpoint.checkpointId}
+                                            @click=${() =>
+                                              props.onBranchFromCheckpoint(
+                                                row.key,
+                                                checkpoint.checkpointId,
+                                              )}
+                                          >
+                                            ${t("sessionsView.branchFromCheckpoint")}
+                                          </button>
+                                          <button
+                                            class="btn btn--sm"
+                                            ?disabled=${props.checkpointBusyKey ===
+                                            checkpoint.checkpointId}
+                                            @click=${() =>
+                                              props.onRestoreCheckpoint(
+                                                row.key,
+                                                checkpoint.checkpointId,
+                                              )}
+                                          >
+                                            ${t("sessionsView.restoreCheckpoint")}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    `,
+                                  )}
+                                </div>
+                              `}
+                    </div>`
+                  : nothing}
               </div>
             </td>
           </tr>`,

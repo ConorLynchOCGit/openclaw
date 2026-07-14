@@ -77,6 +77,100 @@ describe("runtime TaskFlow", () => {
     expect(created.requesterOrigin?.threadId).toBe("thread:456");
   });
 
+  it("selects active managed continuity separately from newer terminal flows", () => {
+    const taskFlow = createRuntimeTaskFlow().bindSession({ sessionKey: "agent:main:main" });
+    const active = requireCreatedFlow(
+      taskFlow.tryCreateManaged({
+        controllerId: "tests/runtime-taskflow",
+        goal: "Current continuity",
+        status: "waiting",
+      }),
+    );
+    const terminal = requireCreatedFlow(
+      taskFlow.tryCreateManaged({
+        controllerId: "tests/runtime-taskflow",
+        goal: "Newer terminal flow",
+      }),
+    );
+    const finished = taskFlow.finish({
+      flowId: terminal.flowId,
+      expectedRevision: terminal.revision,
+    });
+    if (!finished.applied) {
+      throw new Error("expected terminal TaskFlow to finish");
+    }
+
+    expect(taskFlow.findLatestActiveManaged()?.flowId).toBe(active.flowId);
+    expect(taskFlow.findLatestTerminalManaged()?.flowId).toBe(finished.flow.flowId);
+  });
+
+  it("validates an exact terminal handoff after a fresh physical session retains the owner key", () => {
+    const runtime = createRuntimeTaskFlow();
+    const requesterOrigin = { channel: "telegram", to: "telegram:123" };
+    const priorOwner = runtime.bindSession({
+      sessionKey: "agent:main:subagent:prior",
+      requesterOrigin,
+    });
+    const prior = requireCreatedFlow(
+      priorOwner.tryCreateManaged({
+        controllerId: "tests/runtime-taskflow",
+        goal: "Original work",
+      }),
+    );
+    const closed = priorOwner.finish({
+      flowId: prior.flowId,
+      expectedRevision: prior.revision,
+      stateJson: { artifact: { ref: "candidate.md", digest: "digest-1" } },
+    });
+    if (!closed.applied) {
+      throw new Error("expected terminal TaskFlow to finish");
+    }
+    const handoff = priorOwner.buildCloseoutHandoff(closed.flow.flowId);
+    if (!handoff) {
+      throw new Error("expected terminal handoff");
+    }
+    const correctionState = handoff.stateJson;
+    const resetOwner = runtime.bindSession({
+      sessionKey: "agent:main:subagent:prior",
+      requesterOrigin,
+    });
+
+    expect(resetOwner.validateCloseoutHandoff({ stateJson: correctionState })).toEqual({
+      valid: true,
+    });
+    expect(handoff.governingArtifacts).toEqual([{ ref: "candidate.md", digest: "digest-1" }]);
+    const correction = requireCreatedFlow(
+      resetOwner.tryCreateManaged({
+        controllerId: "tests/runtime-taskflow",
+        goal: "Correct original work",
+        stateJson: correctionState,
+      }),
+    );
+    expect(correction.ownerKey).toBe("agent:main:subagent:prior");
+    expect(correction.stateJson).toEqual(correctionState);
+    expect(
+      runtime
+        .bindSession({
+          sessionKey: "agent:main:subagent:unrelated",
+          requesterOrigin,
+        })
+        .validateCloseoutHandoff({ stateJson: correctionState }),
+    ).toEqual({ valid: false, code: "handoff_not_authorized" });
+    expect(
+      runtime
+        .bindSession({
+          sessionKey: "agent:main:subagent:prior",
+          requesterOrigin: { channel: "telegram", to: "telegram:other" },
+        })
+        .validateCloseoutHandoff({ stateJson: correctionState }),
+    ).toEqual({ valid: false, code: "handoff_not_authorized" });
+    expect(
+      resetOwner.validateCloseoutHandoff({
+        stateJson: { ...correctionState, priorFlowRevision: closed.flow.revision - 1 },
+      }),
+    ).toEqual({ valid: false, code: "revision_conflict" });
+  });
+
   it("rejects tool contexts without a bound session key", () => {
     const runtime = createRuntimeTaskFlow();
     expect(() =>

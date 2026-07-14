@@ -31,7 +31,13 @@ export type ReadbackProjection = {
 
 type SessionReadbackLike = Pick<
   GatewaySessionRow,
-  "key" | "status" | "hasActiveRun" | "sessionId" | "finalAssistantText" | "readbackProvenance"
+  | "key"
+  | "status"
+  | "hasActiveRun"
+  | "sessionId"
+  | "finalAssistantText"
+  | "readbackProvenance"
+  | "finalDelivery"
 > & {
   agentId?: string | null;
 };
@@ -109,6 +115,7 @@ export function buildSessionReadbackProjection(session: SessionReadbackLike): Re
   const hasActiveRun =
     session.hasActiveRun === true ||
     (session.hasActiveRun === undefined && session.status === "running");
+  const pendingFinalDelivery = session.finalDelivery?.state === "pending";
   return {
     readbackSubject: {
       scope: "session",
@@ -119,9 +126,11 @@ export function buildSessionReadbackProjection(session: SessionReadbackLike): Re
     finality: {
       status: hasActiveRun
         ? "running"
-        : finalAssistantText
-          ? "done"
-          : (session.status ?? "unknown"),
+        : pendingFinalDelivery
+          ? "pending_delivery"
+          : finalAssistantText
+            ? "done"
+            : (session.status ?? "unknown"),
       finalAssistantTextPresent: finalAssistantText !== null,
       finalAssistantTextChars: finalAssistantText?.length ?? null,
       finalAssistantTextDigest: finalAssistantText ? digestText(finalAssistantText) : null,
@@ -129,12 +138,13 @@ export function buildSessionReadbackProjection(session: SessionReadbackLike): Re
         ? finalityPointer({ sessionKey: session.key, agentId: session.agentId })
         : null,
       provenance: session.readbackProvenance ?? null,
-      mismatch: hasActiveRun
-        ? null
-        : statusConflictMismatch(session.readbackProvenance, {
-            compatibilityStatus: session.status ?? null,
-            finalAssistantTextPresent: finalAssistantText !== null,
-          }),
+      mismatch:
+        hasActiveRun || pendingFinalDelivery
+          ? null
+          : statusConflictMismatch(session.readbackProvenance, {
+              compatibilityStatus: session.status ?? null,
+              finalAssistantTextPresent: finalAssistantText !== null,
+            }),
     },
   };
 }
