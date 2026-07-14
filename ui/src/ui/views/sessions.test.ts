@@ -860,6 +860,109 @@ describe("sessions view", () => {
     ).toBe("123,456 to 38,920 tokens");
   });
 
+  it("renders Codex team totals and complete child evidence", async () => {
+    const container = document.createElement("div");
+    render(
+      renderSessions({
+        ...buildProps(
+          buildResult({
+            key: "agent:coding:proof",
+            kind: "direct",
+            updatedAt: Date.now(),
+            hasCodexExecution: true,
+            codexTeamUsage: {
+              basis: "cumulative",
+              state: "settled",
+              parentRoundCount: 1,
+              childCount: 2,
+              inputTokens: 500,
+              freshInputTokens: 120,
+              cachedInputTokens: 380,
+              outputTokens: 40,
+              reasoningOutputTokens: 10,
+              totalTokens: 540,
+            },
+            codexExecutionTree: {
+              source: "trajectory",
+              settlement: "settled",
+              rounds: [
+                {
+                  threadId: "thread-parent",
+                  turnId: "turn-parent",
+                  coverage: "complete",
+                  settlement: "settled",
+                  contributionUsage: {
+                    freshInputTokens: 80,
+                    cachedInputTokens: 300,
+                    outputTokens: 25,
+                  },
+                  children: [
+                    {
+                      source: "codex-native",
+                      taskId: "task-review",
+                      role: "codex_reviewer",
+                      objective: "Verify the implementation evidence",
+                      model: "gpt-5.6-terra",
+                      reasoningEffort: "high",
+                      status: "succeeded",
+                      terminalSummary: "Confirmed the implementation evidence.",
+                      finalRef: "codex-thread:thread-review",
+                      usage: {
+                        inputTokens: 100,
+                        cachedInputTokens: 60,
+                        outputTokens: 10,
+                      },
+                    },
+                  ],
+                },
+              ],
+              unassignedChildren: [
+                {
+                  source: "codex-native",
+                  taskId: "task-explorer",
+                  role: "project_explorer",
+                  objective: "Locate the existing UI seam",
+                  status: "succeeded",
+                  progressSummary: "Mapped the existing Sessions view.",
+                  finalRef: "codex-thread:thread-explorer",
+                  usage: {
+                    inputTokens: 20,
+                    cachedInputTokens: 10,
+                    outputTokens: 5,
+                  },
+                },
+              ],
+            },
+          }),
+        ),
+        expandedCheckpointKey: "agent:coding:proof",
+      }),
+      container,
+    );
+    await Promise.resolve();
+
+    const execution = container.querySelector(".session-execution-tree");
+    const text = execution?.textContent?.replace(/\s+/g, " ").trim() ?? "";
+    expect(text).toContain("Cumulative team usage · settled");
+    expect(text).toContain("cumulative");
+    expect(text).toContain("1 parent round · 2 children");
+    expect(text).toContain("input 500");
+    expect(text).toContain("fresh 120");
+    expect(text).toContain("cached 380");
+    expect(text).toContain("output 40");
+    expect(text).toContain("reasoning 10");
+    expect(text).toContain("total 540");
+    expect(text).toContain("Objective: Verify the implementation evidence");
+    expect(text).toContain("Contribution: Confirmed the implementation evidence.");
+    expect(text).toContain("fresh 40 · cached 60 · output 10");
+    expect(text).toContain("codex-thread:thread-review");
+    expect(text).toContain("Children without a proven parent turn");
+    expect(text).toContain("Objective: Locate the existing UI seam");
+    expect(text).toContain("Contribution: Mapped the existing Sessions view.");
+    expect(text).toContain("fresh 10 · cached 10 · output 5");
+    expect(text).toContain("codex-thread:thread-explorer");
+  });
+
   it("does not expand checkpoint details when the row has none or a nested control was used", async () => {
     const container = document.createElement("div");
     const onToggleCheckpointDetails = vi.fn();

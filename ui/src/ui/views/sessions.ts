@@ -475,8 +475,72 @@ function formatCodexUsage(
   return parts.length > 0 ? parts.join(" · ") : t("common.na");
 }
 
-function renderCodexExecutionTree(tree: GatewaySessionRow["codexExecutionTree"]) {
-  if (!tree) {
+type CodexExecutionChild = NonNullable<
+  GatewaySessionRow["codexExecutionTree"]
+>["rounds"][number]["children"][number];
+
+function renderCodexExecutionChild(child: CodexExecutionChild) {
+  const contribution = child.terminalSummary ?? child.progressSummary;
+  return html`<li>
+    <strong>${child.label ?? child.role ?? "Child"}</strong>
+    ${child.objective ? html`<span class="muted">Objective: ${child.objective}</span>` : nothing}
+    ${contribution ? html`<span class="muted">Contribution: ${contribution}</span>` : nothing}
+    <span class="muted">${child.model ?? "model unknown"}</span>
+    <span class="muted">${child.reasoningEffort ?? "reasoning unknown"}</span>
+    <span class="muted">${child.status ?? "status unknown"}</span>
+    <span
+      >${formatCodexUsage(
+        child.usage && {
+          freshInputTokens:
+            child.usage.inputTokens === undefined
+              ? undefined
+              : Math.max(0, child.usage.inputTokens - (child.usage.cachedInputTokens ?? 0)),
+          cachedInputTokens: child.usage.cachedInputTokens,
+          outputTokens: child.usage.outputTokens,
+        },
+      )}</span
+    >
+    ${child.finalRef ? html`<span class="mono">${child.finalRef}</span>` : nothing}
+  </li>`;
+}
+
+function renderCodexTeamUsage(usage: GatewaySessionRow["codexTeamUsage"]) {
+  if (!usage) {
+    return nothing;
+  }
+  const countLabel = [
+    usage.parentRoundCount !== undefined
+      ? `${usage.parentRoundCount} parent ${usage.parentRoundCount === 1 ? "round" : "rounds"}`
+      : null,
+    `${usage.childCount} ${usage.childCount === 1 ? "child" : "children"}`,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" · ");
+  const tokenParts = [
+    usage.inputTokens !== undefined ? `input ${usage.inputTokens}` : null,
+    usage.freshInputTokens !== undefined ? `fresh ${usage.freshInputTokens}` : null,
+    usage.cachedInputTokens !== undefined ? `cached ${usage.cachedInputTokens}` : null,
+    usage.outputTokens !== undefined ? `output ${usage.outputTokens}` : null,
+    usage.reasoningOutputTokens !== undefined ? `reasoning ${usage.reasoningOutputTokens}` : null,
+    usage.totalTokens !== undefined ? `total ${usage.totalTokens}` : null,
+  ].filter((value): value is string => Boolean(value));
+  return html`
+    <div class="session-execution-round">
+      <div class="session-details-section__title">Cumulative team usage · ${usage.state}</div>
+      <div class="session-execution-round__meta">
+        <span>${usage.basis}</span>
+        <span>${countLabel}</span>
+        ${tokenParts.map((part) => html`<span>${part}</span>`)}
+      </div>
+    </div>
+  `;
+}
+
+function renderCodexExecution(
+  tree: GatewaySessionRow["codexExecutionTree"],
+  teamUsage: GatewaySessionRow["codexTeamUsage"],
+) {
+  if (!tree && !teamUsage) {
     return nothing;
   }
   return html`
@@ -485,13 +549,16 @@ function renderCodexExecutionTree(tree: GatewaySessionRow["codexExecutionTree"])
         <div>
           <div class="session-details-panel__eyebrow">Execution</div>
           <div class="session-details-section__title">
-            ${tree.rounds.length} parent ${tree.rounds.length === 1 ? "round" : "rounds"} ·
-            ${tree.settlement}
+            ${tree
+              ? html`${tree.rounds.length} parent ${tree.rounds.length === 1 ? "round" : "rounds"} ·
+                ${tree.settlement}`
+              : "Usage only"}
           </div>
         </div>
       </div>
       <div class="session-execution-tree">
-        ${tree.rounds.map(
+        ${renderCodexTeamUsage(teamUsage)}
+        ${tree?.rounds.map(
           (round) => html`
             <details class="session-execution-round" ?open=${tree.rounds.length === 1}>
               <summary>
@@ -512,51 +579,17 @@ function renderCodexExecutionTree(tree: GatewaySessionRow["codexExecutionTree"])
               </div>
               ${round.children.length > 0
                 ? html`<ul class="session-execution-children">
-                    ${round.children.map(
-                      (child) => html`
-                        <li>
-                          <strong>${child.label ?? child.role ?? "Child"}</strong>
-                          <span class="muted">${child.model ?? "model unknown"}</span>
-                          <span class="muted">${child.reasoningEffort ?? "reasoning unknown"}</span>
-                          <span class="muted">${child.status ?? "status unknown"}</span>
-                          <span
-                            >${formatCodexUsage(
-                              child.usage && {
-                                freshInputTokens:
-                                  child.usage.inputTokens === undefined
-                                    ? undefined
-                                    : Math.max(
-                                        0,
-                                        child.usage.inputTokens -
-                                          (child.usage.cachedInputTokens ?? 0),
-                                      ),
-                                cachedInputTokens: child.usage.cachedInputTokens,
-                                outputTokens: child.usage.outputTokens,
-                              },
-                            )}</span
-                          >
-                          ${child.finalRef
-                            ? html`<span class="mono">${child.finalRef}</span>`
-                            : nothing}
-                        </li>
-                      `,
-                    )}
+                    ${round.children.map(renderCodexExecutionChild)}
                   </ul>`
                 : html`<div class="muted session-details-empty">No child runs recorded.</div>`}
             </details>
           `,
         )}
-        ${tree.unassignedChildren?.length
+        ${tree?.unassignedChildren?.length
           ? html`<div class="session-execution-round">
               <strong>Children without a proven parent turn</strong>
               <ul class="session-execution-children">
-                ${tree.unassignedChildren.map(
-                  (child) => html`<li>
-                    <strong>${child.label ?? child.role ?? "Child"}</strong>
-                    <span class="muted">${child.status ?? "status unknown"}</span>
-                    ${child.finalRef ? html`<span class="mono">${child.finalRef}</span>` : nothing}
-                  </li>`,
-                )}
+                ${tree.unassignedChildren.map(renderCodexExecutionChild)}
               </ul>
             </div>`
           : nothing}
@@ -924,6 +957,7 @@ function renderRows(row: GatewaySessionRow, props: SessionsProps) {
     hasCheckpoints ||
     row.hasCodexExecution === true ||
     Boolean(row.codexExecutionTree) ||
+    Boolean(row.codexTeamUsage) ||
     row.finalDelivery?.state === "pending";
   const isExpanded = props.expandedCheckpointKey === row.key;
   const checkpointItems = props.checkpointItemsByKey[row.key] ?? [];
@@ -1227,7 +1261,7 @@ function renderRows(row: GatewaySessionRow, props: SessionsProps) {
                       </div>
                     </div>`
                   : nothing}
-                ${renderCodexExecutionTree(row.codexExecutionTree)}
+                ${renderCodexExecution(row.codexExecutionTree, row.codexTeamUsage)}
                 ${hasCheckpoints
                   ? html`<div class="session-details-section">
                       <div class="session-details-section__header">
