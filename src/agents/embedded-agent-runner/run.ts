@@ -2167,8 +2167,15 @@ export async function runEmbeddedAgent(
             }
           }
 
+          const midTurnPreflightCompactionRequired = preflightRecovery?.source === "mid-turn";
           const contextOverflowError = !aborted
             ? (() => {
+                if (midTurnPreflightCompactionRequired) {
+                  return {
+                    text: `Mid-turn context precheck requires ${preflightRecovery.route}.`,
+                    source: "midTurnPreflight" as const,
+                  };
+                }
                 if (promptError) {
                   const errorText = formatErrorMessage(promptError);
                   if (isLikelyContextOverflowError(errorText)) {

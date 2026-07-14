@@ -433,6 +433,45 @@ describe("overflow compaction in run loop", () => {
     expect(result.meta.error).toBeUndefined();
   });
 
+  it("compacts when the mid-turn precheck is the only authoritative overflow signal", async () => {
+    mockedRunEmbeddedAttempt
+      .mockResolvedValueOnce(
+        makeAttemptResult({
+          promptError: new Error("LLM request failed."),
+          promptErrorSource: null,
+          preflightRecovery: {
+            route: "compact_then_truncate",
+            source: "mid-turn",
+            handled: false,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(makeAttemptResult({ promptError: null }));
+
+    mockedCompactDirect.mockResolvedValueOnce(
+      makeCompactionSuccess({
+        summary: "Compacted after synthetic mid-turn context advisory",
+        firstKeptEntryId: "entry-9",
+        tokensBefore: 160000,
+      }),
+    );
+    mockedTruncateOversizedToolResultsInSession.mockResolvedValueOnce({
+      truncated: true,
+      truncatedCount: 3,
+    });
+
+    const result = await runEmbeddedAgent(baseParams);
+
+    expect(mockedIsLikelyContextOverflowError).not.toHaveBeenCalledWith("LLM request failed.");
+    expect(mockedCompactDirect).toHaveBeenCalledTimes(1);
+    expect(mockedTruncateOversizedToolResultsInSession).toHaveBeenCalledTimes(1);
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(2);
+    expectRetryContinuesFromTranscript();
+    expectLogIncludes(mockedLog.warn, "source=midTurnPreflight");
+    expectLogIncludes(mockedLog.info, "auto-compaction succeeded");
+    expect(result.meta.error).toBeUndefined();
+  });
+
   it("runs post-compaction tool-result truncation before retry for mixed precheck routes", async () => {
     mockedRunEmbeddedAttempt
       .mockResolvedValueOnce(
