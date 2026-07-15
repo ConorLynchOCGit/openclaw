@@ -2,6 +2,12 @@ model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
 features.tool_suggest = false
 
+# OpenClaw selects whether a run enters Code Mode. This project config owns
+# which inherited Codex-native namespaces remain visible to V2 children.
+[features.code_mode]
+enabled = false
+direct_only_tool_namespaces = ["mcp__openclaw_repo_workbench"]
+
 [features.multi_agent_v2]
 enabled = true
 max_concurrent_threads_per_session = 6

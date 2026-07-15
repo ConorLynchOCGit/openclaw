@@ -534,23 +534,6 @@ describe("Codex app-server native code mode config", () => {
     });
   });
 
-  it("keeps the Coding workbench namespace direct under code-mode-only", () => {
-    const request = buildThreadStartParams(createAttemptParams({ provider: "openai" }), {
-      cwd: "/repo",
-      dynamicTools: [],
-      appServer: createAppServerOptions() as never,
-      nativeCodeModeEnabled: true,
-      nativeCodeModeOnlyEnabled: true,
-      nativeCodeModeDirectOnlyToolNamespaces: ["mcp__openclaw_repo_workbench"],
-    });
-
-    expect(request.config).toMatchObject({
-      "features.code_mode": true,
-      "features.code_mode_only": true,
-      "features.code_mode.direct_only_tool_namespaces": ["mcp__openclaw_repo_workbench"],
-    });
-  });
-
   it("enables Codex code mode on thread/resume", () => {
     const request = buildThreadResumeParams(createAttemptParams({ provider: "openai" }), {
       threadId: "thread-1",

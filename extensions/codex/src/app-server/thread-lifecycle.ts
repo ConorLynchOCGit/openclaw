@@ -113,8 +113,6 @@ export const CODEX_CODE_MODE_DISABLED_THREAD_CONFIG: JsonObject = {
   "features.code_mode_only": false,
 };
 
-export const CODEX_REPO_WORKBENCH_DIRECT_NAMESPACE = "mcp__openclaw_repo_workbench";
-
 const CODEX_LIGHTWEIGHT_CONTEXT_THREAD_CONFIG: JsonObject = {
   project_doc_max_bytes: 0,
 };
@@ -315,7 +313,6 @@ export async function startOrResumeThread(params: {
   nativeHookRelayGeneration?: string;
   nativeCodeModeEnabled?: boolean;
   nativeCodeModeOnlyEnabled?: boolean;
-  nativeCodeModeDirectOnlyToolNamespaces?: readonly string[];
   userMcpServersEnabled?: boolean;
   mcpServersFingerprint?: string;
   mcpServersFingerprintEvaluated?: boolean;
@@ -580,7 +577,6 @@ export async function startOrResumeThread(params: {
             config: resumeConfig,
             nativeCodeModeEnabled: params.nativeCodeModeEnabled,
             nativeCodeModeOnlyEnabled: params.nativeCodeModeOnlyEnabled,
-            nativeCodeModeDirectOnlyToolNamespaces: params.nativeCodeModeDirectOnlyToolNamespaces,
           }),
         );
         const requestModelProvider =
@@ -712,7 +708,6 @@ export async function startOrResumeThread(params: {
       config,
       nativeCodeModeEnabled: params.nativeCodeModeEnabled,
       nativeCodeModeOnlyEnabled: params.nativeCodeModeOnlyEnabled,
-      nativeCodeModeDirectOnlyToolNamespaces: params.nativeCodeModeDirectOnlyToolNamespaces,
       environmentSelection: params.environmentSelection,
       modelProvider: startModelProvider,
     }),
@@ -965,7 +960,6 @@ export function buildThreadStartParams(
     config?: JsonObject;
     nativeCodeModeEnabled?: boolean;
     nativeCodeModeOnlyEnabled?: boolean;
-    nativeCodeModeDirectOnlyToolNamespaces?: readonly string[];
     environmentSelection?: CodexTurnEnvironmentParams[];
     modelProvider?: string | null;
   },
@@ -988,7 +982,6 @@ export function buildThreadStartParams(
   const runtimeConfig = buildCodexRuntimeThreadConfigForRun(params, options.config, {
     nativeCodeModeEnabled: options.nativeCodeModeEnabled,
     nativeCodeModeOnlyEnabled: options.nativeCodeModeOnlyEnabled,
-    nativeCodeModeDirectOnlyToolNamespaces: options.nativeCodeModeDirectOnlyToolNamespaces,
   });
   const useProjectDeveloperInstructions = isCodexNativeCodingTeamRun(params);
   return {
@@ -1036,7 +1029,6 @@ export function buildThreadResumeParams(
     config?: JsonObject;
     nativeCodeModeEnabled?: boolean;
     nativeCodeModeOnlyEnabled?: boolean;
-    nativeCodeModeDirectOnlyToolNamespaces?: readonly string[];
   },
 ): CodexThreadResumeParams {
   const resolvedModelProvider = resolveCodexAppServerModelProvider({
@@ -1057,7 +1049,6 @@ export function buildThreadResumeParams(
   const runtimeConfig = buildCodexRuntimeThreadConfigForRun(params, options.config, {
     nativeCodeModeEnabled: options.nativeCodeModeEnabled,
     nativeCodeModeOnlyEnabled: options.nativeCodeModeOnlyEnabled,
-    nativeCodeModeDirectOnlyToolNamespaces: options.nativeCodeModeDirectOnlyToolNamespaces,
   });
   const useProjectDeveloperInstructions = isCodexNativeCodingTeamRun(params);
   return {
@@ -1155,22 +1146,11 @@ export function buildCodexRuntimeThreadConfig(
   options: {
     nativeCodeModeEnabled?: boolean;
     nativeCodeModeOnlyEnabled?: boolean;
-    nativeCodeModeDirectOnlyToolNamespaces?: readonly string[];
   } = {},
 ): JsonObject {
-  const directOnlyToolNamespaces = [
-    ...new Set(
-      (options.nativeCodeModeDirectOnlyToolNamespaces ?? [])
-        .map((namespace) => namespace.trim())
-        .filter(Boolean),
-    ),
-  ];
   const codeModeConfig: JsonObject = {
     ...CODEX_CODE_MODE_THREAD_CONFIG,
     "features.code_mode_only": options.nativeCodeModeOnlyEnabled === true,
-    ...(directOnlyToolNamespaces.length > 0
-      ? { "features.code_mode.direct_only_tool_namespaces": directOnlyToolNamespaces }
-      : {}),
   };
   if (options.nativeCodeModeEnabled === false) {
     const disabledConfig = mergeCodexThreadConfigs(
@@ -1182,7 +1162,6 @@ export function buildCodexRuntimeThreadConfig(
     // Native patch streaming is part of native code mode, so do not send it
     // when runtime policy disables that tool surface.
     delete disabledConfig["features.apply_patch_streaming_events"];
-    delete disabledConfig["features.code_mode.direct_only_tool_namespaces"];
     return disabledConfig;
   }
   if (options.nativeCodeModeOnlyEnabled === true) {
@@ -1208,7 +1187,6 @@ function buildCodexRuntimeThreadConfigForRun(
   options: {
     nativeCodeModeEnabled?: boolean;
     nativeCodeModeOnlyEnabled?: boolean;
-    nativeCodeModeDirectOnlyToolNamespaces?: readonly string[];
   } = {},
 ): JsonObject {
   const baseConfig = buildCodexRuntimeThreadConfig(config, options);

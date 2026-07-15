@@ -538,9 +538,7 @@ describe("runCodexAppServerAttempt", () => {
     expect(startParams.dynamicTools).toEqual([]);
     expect(startParams.config?.["features.code_mode"]).toBe(true);
     expect(startParams.config?.["features.code_mode_only"]).toBe(true);
-    expect(startParams.config?.["features.code_mode.direct_only_tool_namespaces"]).toEqual([
-      "mcp__openclaw_repo_workbench",
-    ]);
+    expect(startParams.config?.["features.code_mode.direct_only_tool_namespaces"]).toBeUndefined();
     expect(startParams.config).not.toHaveProperty("features.multi_agent");
     expect(startParams.config).not.toHaveProperty("features.multi_agent_v2");
 

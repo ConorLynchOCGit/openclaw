@@ -32,6 +32,16 @@ describe("OpenClaw Codex repo workbench plugin", () => {
 
     expect(configToml).toContain("[mcp_servers.openclaw_repo_workbench]");
     expect(configToml).toContain(
+      '[features.code_mode]\nenabled = false\ndirect_only_tool_namespaces = ["mcp__openclaw_repo_workbench"]',
+    );
+    const agentFiles = await fs.readdir(path.join(REPO_ROOT, ".codex/agents"));
+    const agentConfigs = await Promise.all(
+      agentFiles
+        .filter((file) => file.endsWith(".toml"))
+        .map((file) => fs.readFile(path.join(REPO_ROOT, ".codex/agents", file), "utf8")),
+    );
+    expect(agentConfigs.every((config) => !config.includes("features.code_mode"))).toBe(true);
+    expect(configToml).toContain(
       'args = [".agents/plugins/plugins/openclaw-coding-workbench/mcp/openclaw-repo-workbench.mjs"]',
     );
     expect(configToml).toContain("required = true");

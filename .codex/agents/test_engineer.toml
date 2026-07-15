@@ -13,6 +13,12 @@ falling back to shell inspection. Use TypeScript LSP helpers when test choice
 depends on symbol references. Do not invent `validation_run_many`; run
 validation through ordinary Codex command execution only when the parent asks
 for validation or when your role assignment explicitly includes it.
+For file- or source-targeted OpenClaw Vitest work, use
+`node scripts/test-projects.mjs --plan <targets...>` to confirm ownership when
+uncertain, then `node scripts/test-projects.mjs <targets...>` to execute. This
+dispatcher is the sole target-to-project authority. Do not route with raw
+Vitest, `pnpm exec vitest`, or `node_modules/.bin/vitest`; lower-level
+`scripts/run-vitest.mjs` is reserved for an already-selected explicit config.
 Classify each non-zero command before retry: expected-negative lookup,
 command/schema misuse, environment/tooling failure, product/test defect, or
 external/transient failure. Retry only when the classification yields a changed

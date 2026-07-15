@@ -105,7 +105,6 @@ export async function startCodexAttemptThread(params: {
   nativeExecutionAllowed: boolean;
   codeModeEnabled: boolean;
   codeModeOnly: boolean;
-  codeModeDirectOnlyToolNamespaces?: readonly string[];
   sandboxExecServerEnabled: boolean;
   sandbox: CodexSandboxContext;
   contextEngineProjection: CodexContextEngineThreadBootstrapProjection | undefined;
@@ -313,7 +312,6 @@ export async function startCodexAttemptThread(params: {
                 nativeHookRelayGeneration: params.nativeHookRelayGeneration,
                 nativeCodeModeEnabled: params.codeModeEnabled,
                 nativeCodeModeOnlyEnabled: params.codeModeOnly,
-                nativeCodeModeDirectOnlyToolNamespaces: params.codeModeDirectOnlyToolNamespaces,
                 userMcpServersEnabled: params.nativeExecutionAllowed,
                 mcpServersFingerprint: params.bundleMcpThreadConfig.fingerprint,
                 mcpServersFingerprintEvaluated: params.bundleMcpThreadConfig.evaluated,

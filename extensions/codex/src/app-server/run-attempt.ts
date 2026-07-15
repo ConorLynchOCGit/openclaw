@@ -235,7 +235,6 @@ import {
   buildContextEngineBinding,
   buildTurnCollaborationMode,
   buildTurnStartParams,
-  CODEX_REPO_WORKBENCH_DIRECT_NAMESPACE,
   codexDynamicToolsFingerprint,
   type CodexAppServerThreadLifecycleBinding,
   type CodexContextEngineThreadBootstrapProjection,
@@ -670,10 +669,6 @@ export async function runCodexAppServerAttempt(
   const isNativeCodingRun = isCodexNativeCodingAgent(sessionAgentId);
   const codeModeEnabled = nativeExecutionAllowed;
   const codeModeOnly = nativeExecutionAllowed && (isNativeCodingRun || appServer.codeModeOnly);
-  const codeModeDirectOnlyToolNamespaces =
-    nativeExecutionAllowed && isNativeCodingRun
-      ? [CODEX_REPO_WORKBENCH_DIRECT_NAMESPACE]
-      : undefined;
   preDynamicStartupStages.mark("native-execution-profile");
   for (const diagnostic of bundleMcpThreadConfig.diagnostics) {
     embeddedAgentLog.warn(`bundle-mcp: ${diagnostic.pluginId}: ${diagnostic.message}`);
@@ -703,7 +698,6 @@ export async function runCodexAppServerAttempt(
         nativeExecutionReason: nativeExecutionDecision.reason,
         codeModeEnabled,
         codeModeOnly,
-        codeModeDirectOnlyToolNamespaces,
       },
     );
   }
@@ -1261,7 +1255,6 @@ export async function runCodexAppServerAttempt(
       nativeExecutionAllowed,
       codeModeEnabled,
       codeModeOnly,
-      codeModeDirectOnlyToolNamespaces,
       sandboxExecServerEnabled,
       sandbox,
       contextEngineProjection,
