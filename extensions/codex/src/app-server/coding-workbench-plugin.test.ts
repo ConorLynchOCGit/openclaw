@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -7,6 +8,10 @@ const REPO_ROOT = path.resolve(import.meta.dirname, "../../../..");
 const PLUGIN_ROOT = path.join(REPO_ROOT, ".agents/plugins/plugins/openclaw-coding-workbench");
 const MCP_SERVER = path.join(PLUGIN_ROOT, "mcp/openclaw-repo-workbench.mjs");
 const WORKBENCH_OPTIONS = { cwd: REPO_ROOT, env: {} };
+
+function sha256(value: string | Buffer): string {
+  return createHash("sha256").update(value).digest("hex");
+}
 
 describe("OpenClaw Codex repo workbench plugin", () => {
   it("is declared as a project Codex MCP server with only read-only batched repo tools", async () => {
@@ -67,7 +72,13 @@ describe("OpenClaw Codex repo workbench plugin", () => {
           status: string;
           text?: string;
           returnedBytes?: number;
-          sha256?: string;
+          file?: { bytes: number; sha256: string };
+          selectedRange?: {
+            startLine: number;
+            endLine: number;
+            bytes: number;
+            sha256: string;
+          };
         }>;
       }>;
       repoGlobMany: (
@@ -95,6 +106,9 @@ describe("OpenClaw Codex repo workbench plugin", () => {
       { queries: [{ pattern: "openclaw_repo_workbench", path: ".codex/config.toml" }] },
       WORKBENCH_OPTIONS,
     );
+    const readPath = path.join(REPO_ROOT, "docs/agents/coding/codex-agents/README.md");
+    const readData = await fs.readFile(readPath);
+    const selected = readData.toString("utf8").split(/\r?\n/u).slice(0, 8).join("\n");
     const read = await workbench.repoReadMany(
       { files: [{ path: "docs/agents/coding/codex-agents/README.md", endLine: 8 }] },
       WORKBENCH_OPTIONS,
@@ -122,7 +136,15 @@ describe("OpenClaw Codex repo workbench plugin", () => {
     expect(read.results[0]?.status).toBe("ok");
     expect(read.results[0]?.text).toContain("1: # Execution Coding Codex Agents");
     expect(read.results[0]?.returnedBytes).toEqual(expect.any(Number));
-    expect(read.results[0]?.sha256).toMatch(/^[a-f0-9]{64}$/u);
+    expect(read.results[0]).toMatchObject({
+      file: { bytes: readData.length, sha256: sha256(readData) },
+      selectedRange: {
+        startLine: 1,
+        endLine: 8,
+        bytes: Buffer.byteLength(selected, "utf8"),
+        sha256: sha256(selected),
+      },
+    });
     expect(glob.results[0]?.files).toContain(".codex/agents/codex_reviewer.toml");
     expect(glob.results[0]?.fileCount).toBeGreaterThan(0);
     expect(glob.results[0]?.limits).toMatchObject({ maxResults: 20 });

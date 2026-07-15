@@ -1,8 +1,10 @@
 /**
  * Handles sessions-yield interruption, persistence, and artifact cleanup.
  */
+import type { AssistantMessageEventStreamLike } from "../../../llm/types.js";
 import { isTranscriptOnlyOpenClawAssistantMessage } from "../../../shared/transcript-only-openclaw-assistant.js";
 import type { AgentMessage } from "../../runtime/index.js";
+import { buildAssistantMessageWithZeroUsage } from "../../stream-message-shared.js";
 import { log } from "../logger.js";
 import { resolveEmbeddedAbortSettleTimeoutMs } from "./attempt.abort-settle-timeout.js";
 
@@ -49,60 +51,22 @@ export async function waitForSessionsYieldAbortSettle(params: {
   }
 }
 
-// Return a synthetic aborted response so agent runtime unwinds without a real provider call.
+// Yield aborts the active loop mechanically, but reports a native successful
+// stop so lifecycle consumers do not confuse the handoff with cancellation.
 export function createYieldAbortedResponse(model: {
   api?: string;
   provider?: string;
   id?: string;
-}): {
-  [Symbol.asyncIterator]: () => AsyncGenerator<never, void, unknown>;
-  result: () => Promise<{
-    role: "assistant";
-    content: Array<{ type: "text"; text: string }>;
-    stopReason: "aborted";
-    api: string;
-    provider: string;
-    model: string;
-    usage: {
-      input: number;
-      output: number;
-      cacheRead: number;
-      cacheWrite: number;
-      totalTokens: number;
-      cost: {
-        input: number;
-        output: number;
-        cacheRead: number;
-        cacheWrite: number;
-        total: number;
-      };
-    };
-    timestamp: number;
-  }>;
-} {
-  const message = {
-    role: "assistant" as const,
-    content: [{ type: "text" as const, text: "" }],
-    stopReason: "aborted" as const,
-    api: model.api ?? "",
-    provider: model.provider ?? "",
-    model: model.id ?? "",
-    usage: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 0,
-      cost: {
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        total: 0,
-      },
+}): AssistantMessageEventStreamLike {
+  const message = buildAssistantMessageWithZeroUsage({
+    model: {
+      api: model.api ?? "",
+      provider: model.provider ?? "",
+      id: model.id ?? "",
     },
-    timestamp: Date.now(),
-  };
+    content: [{ type: "text" as const, text: "" }],
+    stopReason: "stop",
+  });
   return {
     async *[Symbol.asyncIterator]() {},
     result: async () => message,
@@ -150,7 +114,32 @@ export async function persistSessionsYieldContextMessage(
   );
 }
 
-// Remove the synthetic yield interrupt + aborted assistant entry from the live transcript.
+function isEmptyYieldAssistantArtifact(message: unknown): boolean {
+  if (!message || typeof message !== "object") {
+    return false;
+  }
+  const candidate = message as {
+    role?: unknown;
+    stopReason?: unknown;
+    content?: unknown;
+  };
+  if (
+    candidate.role !== "assistant" ||
+    (candidate.stopReason !== "stop" && candidate.stopReason !== "aborted") ||
+    !Array.isArray(candidate.content)
+  ) {
+    return false;
+  }
+  return candidate.content.every((part) => {
+    if (!part || typeof part !== "object") {
+      return false;
+    }
+    const content = part as { type?: unknown; text?: unknown };
+    return content.type === "text" && typeof content.text === "string" && !content.text.trim();
+  });
+}
+
+// Remove the synthetic yield interrupt and empty assistant artifact from the transcript.
 export function stripSessionsYieldArtifacts(activeSession: {
   messages: AgentMessage[];
   agent: { state: { messages: AgentMessage[] } };
@@ -161,7 +150,7 @@ export function stripSessionsYieldArtifacts(activeSession: {
     const last = strippedMessages.at(-1) as
       | AgentMessage
       | { role?: string; customType?: string; stopReason?: string };
-    if (last?.role === "assistant" && "stopReason" in last && last.stopReason === "aborted") {
+    if (isEmptyYieldAssistantArtifact(last)) {
       strippedMessages.pop();
       continue;
     }
@@ -187,6 +176,7 @@ export function stripSessionsYieldArtifacts(activeSession: {
             message?: {
               role?: string;
               stopReason?: string;
+              content?: unknown;
               provider?: string;
               model?: string;
             };
@@ -211,14 +201,12 @@ export function stripSessionsYieldArtifacts(activeSession: {
 
   sessionManager.removeTrailingEntries(
     (entry) => {
-      const isYieldAbortAssistant =
-        entry.type === "message" &&
-        entry.message?.role === "assistant" &&
-        entry.message?.stopReason === "aborted";
+      const isYieldAssistant =
+        entry.type === "message" && isEmptyYieldAssistantArtifact(entry.message);
       const isYieldInterruptMessage =
         entry.type === "custom_message" &&
         entry.customType === SESSIONS_YIELD_INTERRUPT_CUSTOM_TYPE;
-      return isYieldAbortAssistant || isYieldInterruptMessage;
+      return isYieldAssistant || isYieldInterruptMessage;
     },
     {
       preserveTrailing: (entry) =>

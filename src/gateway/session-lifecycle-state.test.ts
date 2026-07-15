@@ -131,6 +131,56 @@ describe("session lifecycle state", () => {
     });
   });
 
+  it("projects an intentional yield as done and resumes it on the next start", () => {
+    const yielded = deriveGatewaySessionLifecycleSnapshot({
+      session: {
+        updatedAt: 1_000,
+        status: "running",
+        startedAt: 1_200,
+      },
+      event: {
+        ts: 2_000,
+        data: {
+          phase: "end",
+          startedAt: 1_200,
+          endedAt: 1_900,
+          yielded: true,
+          aborted: true,
+          stopReason: "aborted",
+          livenessState: "paused",
+        },
+      },
+    });
+
+    expect(yielded).toEqual({
+      updatedAt: 1_900,
+      status: "done",
+      startedAt: 1_200,
+      endedAt: 1_900,
+      runtimeMs: 700,
+      abortedLastRun: false,
+    });
+    expect(
+      deriveGatewaySessionLifecycleSnapshot({
+        session: yielded,
+        event: {
+          ts: 2_500,
+          data: {
+            phase: "start",
+            startedAt: 2_500,
+          },
+        },
+      }),
+    ).toEqual({
+      updatedAt: 2_500,
+      status: "running",
+      startedAt: 2_500,
+      endedAt: undefined,
+      runtimeMs: undefined,
+      abortedLastRun: false,
+    });
+  });
+
   it("maps aborted stop reasons to killed", () => {
     expectPersistedLifecyclePatch({
       entry: { startedAt: 1_100 },
@@ -173,6 +223,19 @@ describe("session lifecycle state", () => {
         phase: "end",
         aborted: true,
         stopReason: "rpc",
+        timeoutPhase: "queue",
+        providerStarted: false,
+        endedAt: 1_550,
+      },
+      status: "killed",
+      abortedLastRun: true,
+    },
+    {
+      name: "maps unyielded native stop cancellations to killed sessions",
+      data: {
+        phase: "end",
+        aborted: true,
+        stopReason: "stop",
         timeoutPhase: "queue",
         providerStarted: false,
         endedAt: 1_550,

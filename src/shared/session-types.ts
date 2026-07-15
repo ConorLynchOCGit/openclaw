@@ -183,7 +183,10 @@ export type GatewaySessionUsage = {
   };
 };
 
-export type GatewaySessionLaneVerdict = "complete" | "partial" | "blocked";
+export type GatewaySessionTaskStatus = "complete" | "partial" | "blocked";
+export type GatewaySessionReviewDecision = "approve" | "revise" | "block" | "needs_more_research";
+/** Legacy field type retained only for readback of already-stored transcripts. */
+export type GatewaySessionLaneVerdict = GatewaySessionTaskStatus;
 
 export type GatewaySessionCodexToolMix = {
   shell: number;
@@ -379,6 +382,11 @@ export type GatewaySessionRow = {
     attemptCount?: number;
     lastError?: string | null;
   };
+  /** Exact model-authored task lifecycle observation from the settled transcript. */
+  taskStatus?: GatewaySessionTaskStatus;
+  /** Exact model-authored artifact review observation; never inferred from task or transport state. */
+  reviewDecision?: GatewaySessionReviewDecision;
+  /** Legacy Verdict observation retained only for already-stored transcripts. */
   laneVerdict?: GatewaySessionLaneVerdict;
   codexExecutionEvidence?: GatewaySessionCodexExecutionEvidence;
   responseUsage?: "on" | "off" | "tokens" | "full";

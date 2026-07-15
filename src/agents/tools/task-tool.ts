@@ -19,7 +19,10 @@ import {
 } from "../../config/sessions.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
-import { resolveModelAuthoredTaskVerdict } from "../../tasks/task-completion-contract.js";
+import {
+  resolveModelAuthoredTaskCloseout,
+  resolveModelAuthoredTaskVerdict,
+} from "../../tasks/task-completion-contract.js";
 import type { GatewayMessageChannel } from "../../utils/message-channel.js";
 import {
   computeChildResultContentDigest,
@@ -107,7 +110,7 @@ function formatTaskResult(params: {
   inlineResult: boolean;
   resultRef: string;
   transcriptFinalRef: string;
-  receiptLeadLine?: string;
+  receiptLeadLines?: string[];
   inspectCommand: string;
   previewText?: string;
   previewChars?: number;
@@ -138,10 +141,10 @@ function formatTaskResult(params: {
       "  <task_result_status>",
       "child task completed; full result remains in the child session transcript",
       "  </task_result_status>",
-      ...(params.receiptLeadLine
+      ...(params.receiptLeadLines?.length
         ? [
             '  <task_result_lead modelAuthored="true">',
-            escapeXmlText(params.receiptLeadLine),
+            ...params.receiptLeadLines.map((line) => escapeXmlText(line)),
             "  </task_result_lead>",
           ]
         : []),
@@ -201,6 +204,10 @@ function isCodexCodingAgentId(agentId: string): boolean {
   return CODEX_CODING_AGENT_IDS.has(agentId.trim().toLowerCase());
 }
 
+function isReviewerAgentId(agentId: string): boolean {
+  return agentId.trim().toLowerCase() === "reviewer";
+}
+
 function resolveTaskToolContext(params: {
   agentId: string;
   requesterAgentId?: string;
@@ -234,12 +241,18 @@ function formatCodingTaskHandoffContract(agentId: string): string | undefined {
   ].join("\n");
 }
 
-function formatTaskCloseoutContract(): string {
+function formatTaskCloseoutContract(agentId: string): string {
   return [
     "[Task Closeout Contract]",
-    'Start the final response with exactly one model-authored line: "Verdict: complete", "Verdict: partial", or "Verdict: blocked".',
-    "Choose the verdict from your own domain judgment and the governing requirements. Transport completion alone is not semantic completion.",
-    "The runtime may carry that exact lead line in a parent receipt, but it will not interpret it, enforce it, or turn it into quality state.",
+    'Start the final response with exactly one model-authored line: "Task status: complete", "Task status: partial", or "Task status: blocked".',
+    "Task status reports whether you completed this delegated task. It is independent of runtime transport completion and does not approve or reject a reviewed artifact.",
+    ...(isReviewerAgentId(agentId)
+      ? [
+          'On the next non-empty line, report exactly one model-authored artifact decision: "Review decision: approve", "Review decision: revise", "Review decision: block", or "Review decision: needs_more_research".',
+          'A completed review that requires artifact revision uses "Task status: complete" and "Review decision: revise". Do not derive either axis from the other.',
+        ]
+      : []),
+    "Choose each model-authored value from your own domain judgment and the governing requirements. The runtime may carry the exact lead lines in a parent receipt, but it will not infer one from another or turn them into runtime quality state.",
   ].join("\n");
 }
 
@@ -247,10 +260,26 @@ function renderTaskForChild(params: { agentId: string; task: string }): string {
   const contract = formatCodingTaskHandoffContract(params.agentId);
   return [
     ...(contract ? [contract] : []),
-    formatTaskCloseoutContract(),
+    formatTaskCloseoutContract(params.agentId),
     "[Task Scope]",
     params.task,
   ].join("\n\n");
+}
+
+function resolveTaskReceiptLeadLines(params: { agentId: string; replyText: string }): string[] {
+  const closeout = resolveModelAuthoredTaskCloseout(params.replyText);
+  if (closeout.taskStatus || (isReviewerAgentId(params.agentId) && closeout.reviewDecision)) {
+    return [
+      ...(closeout.taskStatus ? [`Task status: ${closeout.taskStatus}`] : []),
+      ...(isReviewerAgentId(params.agentId) && closeout.reviewDecision
+        ? [`Review decision: ${closeout.reviewDecision}`]
+        : []),
+    ];
+  }
+
+  // Keep the legacy first-line form readable for already-stored transcripts only.
+  const legacyVerdict = resolveModelAuthoredTaskVerdict(params.replyText);
+  return legacyVerdict ? [`Verdict: ${legacyVerdict}`] : [];
 }
 
 export async function buildTaskTranscriptFinalRef(params: {
@@ -612,8 +641,8 @@ export function createTaskTool(
         childSessionKey: spawn.childSessionKey,
         cfg: opts?.config,
       });
-      const modelAuthoredVerdict = resolveModelAuthoredTaskVerdict(replyText);
-      const receiptLeadLine = modelAuthoredVerdict ? `Verdict: ${modelAuthoredVerdict}` : undefined;
+      const receiptLeadLines = resolveTaskReceiptLeadLines({ agentId, replyText });
+      const receiptLeadLine = receiptLeadLines[0];
       const inspectCommand = `openclaw sessions show ${spawn.childSessionKey} --agent ${agentId}`;
       const previewText = buildTaskResultPreview(replyText, inlineResult);
       const text = formatTaskResult({
@@ -629,7 +658,7 @@ export function createTaskTool(
         inlineResult,
         resultRef,
         transcriptFinalRef,
-        receiptLeadLine,
+        receiptLeadLines,
         inspectCommand,
         previewText,
         previewChars: previewText?.length ?? 0,
@@ -658,6 +687,7 @@ export function createTaskTool(
         resultSource: "transcript",
         transcriptFinalRef,
         ...(receiptLeadLine ? { receiptLeadLine } : {}),
+        ...(receiptLeadLines.length > 0 ? { receiptLeadLines } : {}),
         inspectCommand,
         previewOnly: !inlineResult,
         previewChars: previewText?.length ?? 0,

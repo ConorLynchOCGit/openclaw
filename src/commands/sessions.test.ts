@@ -863,6 +863,8 @@ describe("sessionsCommand", () => {
     }
 
     const output = logs.join("\n");
+    expect(output).toContain("taskStatus: n/a");
+    expect(output).toContain("reviewDecision: n/a");
     expect(output).toContain("laneVerdict: complete");
     expect(output).toContain("toolPlanes: openclaw=0; codex=inactive");
     expect(output).toContain(
@@ -871,6 +873,46 @@ describe("sessionsCommand", () => {
     expect(output).toContain(
       "codexTeamUsage: basis=cumulative state=settled children=0 total=1000",
     );
+  });
+
+  it("renders completed review work and a revise decision as separate fields", async () => {
+    const sessionId = "88888888-8888-4888-8888-888888888888";
+    const sessionKey = "agent:reviewer:closeout-readback";
+    const store = writeStore(
+      {
+        [sessionKey]: {
+          sessionId,
+          updatedAt: Date.now(),
+          status: "done",
+        },
+      },
+      "sessions-show-review-closeout",
+    );
+    const transcript = path.join(path.dirname(store), `${sessionId}.jsonl`);
+    fs.writeFileSync(
+      transcript,
+      JSON.stringify({
+        message: {
+          role: "assistant",
+          content:
+            "Task status: complete\nReview decision: revise\nThe review is done; the artifact needs changes.",
+        },
+      }),
+    );
+
+    const { runtime, logs } = makeRuntime();
+    try {
+      await sessionsShowCommand({ store, sessionKey, agent: "reviewer" }, runtime);
+    } finally {
+      fs.rmSync(store, { force: true });
+      fs.rmSync(transcript, { force: true });
+    }
+
+    const output = logs.join("\n");
+    expect(output).toContain("status: done");
+    expect(output).toContain("taskStatus: complete");
+    expect(output).toContain("reviewDecision: revise");
+    expect(output).toContain("laneVerdict: n/a");
   });
 
   it("exposes active trajectory progress when session status projection is missing", async () => {

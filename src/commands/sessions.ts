@@ -589,6 +589,8 @@ export async function sessionsShowCommand(
     `endedAt: ${row.endedAt ? new Date(row.endedAt).toISOString() : "n/a"}`,
     `activeProgress: ${formatSessionActiveProgress(selectedActiveProgress ?? undefined)}`,
     `childSessions: ${(row.childSessions ?? []).length}`,
+    `taskStatus: ${row.taskStatus ?? "n/a"}`,
+    `reviewDecision: ${row.reviewDecision ?? "n/a"}`,
     `laneVerdict: ${row.laneVerdict ?? "n/a"}`,
     `toolPlanes: openclaw=${row.promptContext?.openclawDynamicTools?.count ?? 0}; codex=${
       row.promptContext?.codexNativeWorkbench?.active === true

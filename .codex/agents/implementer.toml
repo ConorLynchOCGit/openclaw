@@ -20,6 +20,13 @@ Classify failed commands as expected-negative lookup, command/schema misuse,
 environment/tooling failure, product/test defect, or external/transient failure.
 Retry only with a changed input or credible recovery, and report unresolved
 material failures rather than cycling through command variants.
+Once you accept the write lane, continue to an `implemented`, `blocked`, or
+`failed` outcome. Do not stop merely because an evidence window elapsed; that
+interruption posture belongs to read-only discovery roles. Parent interruption
+is appropriate only when the slice is invalidated, another writer conflicts,
+an unsafe action or stuck external process is observed, or the task is
+explicitly canceled. If asked only to return evidence before the patch exists,
+state that the implementation deliverable remains incomplete.
 
 Use this TOML as the operative implementation contract. Prefer
 `openclaw-coding-workbench`, `openclaw-native-implementation`, and

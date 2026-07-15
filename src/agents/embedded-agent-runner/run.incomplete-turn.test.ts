@@ -41,6 +41,7 @@ import {
   resolveRunLivenessState,
   resolveSilentToolResultReplyPayload,
   shouldRetryMissingAssistantTurn,
+  shouldContinueSettledPostToolTurn,
   shouldTreatEmptyAssistantReplyAsSilent,
 } from "./run/incomplete-turn.js";
 import type { EmbeddedRunAttemptResult } from "./run/types.js";
@@ -79,14 +80,20 @@ describe("runEmbeddedAgent incomplete-turn safety", () => {
     expect(warnMessages().join("\n")).not.toContain(text);
   }
 
-  function runAttemptCall(index: number): { prompt?: string } {
+  function runAttemptCall(index: number): {
+    prompt?: string;
+    suppressNextUserMessagePersistence?: boolean;
+  } {
     // Continuation prompt assertions read the exact prompt passed to the runner
     // attempt rather than derived result metadata.
     const call = mockedRunEmbeddedAttempt.mock.calls[index];
     if (!call) {
       throw new Error(`Expected run embedded attempt call ${index}`);
     }
-    return call[0] as { prompt?: string };
+    return call[0] as {
+      prompt?: string;
+      suppressNextUserMessagePersistence?: boolean;
+    };
   }
 
   it("emits the before_agent_run hook block message as the agent payload", async () => {
@@ -862,6 +869,145 @@ describe("runEmbeddedAgent incomplete-turn safety", () => {
     const secondCall = runAttemptCall(1);
     expect(secondCall.prompt).toContain(EMPTY_RESPONSE_RETRY_INSTRUCTION);
     expectWarnMessageWith("empty response detected");
+  });
+
+  it("continues once from settled mutating tool results without replaying the task", async () => {
+    mockedClassifyFailoverReason.mockReturnValue(null);
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        assistantTexts: [],
+        toolMetas: [{ toolName: "gbrain__put_page", meta: "plans/example" }],
+        replayMetadata: { hadPotentialSideEffects: true, replaySafe: false },
+        itemLifecycle: { startedCount: 1, completedCount: 1, activeCount: 0 },
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "toolUse",
+          provider: "openai",
+          model: "gpt-5.4",
+          content: [],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        assistantTexts: ["Final receipt."],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "end_turn",
+          provider: "openai",
+          model: "gpt-5.4",
+          content: [{ type: "text", text: "Final receipt." }],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+
+    const result = await runEmbeddedAgent({
+      ...overflowBaseRunParams,
+      provider: "openai",
+      model: "gpt-5.4",
+      runId: "run-settled-post-tool-continuation",
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(2);
+    expect(runAttemptCall(1).prompt).toContain("settled tool results");
+    expect(runAttemptCall(1).prompt).not.toContain(overflowBaseRunParams.prompt);
+    expect(runAttemptCall(1).suppressNextUserMessagePersistence).toBe(true);
+    expect(result.meta?.finalAssistantVisibleText).toBe("Final receipt.");
+    expectWarnMessageWith("continuing once from the current transcript");
+  });
+
+  it("does not chain ordinary retries after the settled post-tool continuation is exhausted", async () => {
+    mockedClassifyFailoverReason.mockReturnValue(null);
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        assistantTexts: [],
+        toolMetas: [{ toolName: "write", meta: "path=plans/example.md" }],
+        itemLifecycle: { startedCount: 1, completedCount: 1, activeCount: 0 },
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "toolUse",
+          provider: "openai",
+          model: "gpt-5.4",
+          content: [],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        assistantTexts: [],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "end_turn",
+          provider: "openai",
+          model: "gpt-5.4",
+          content: [],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+
+    const result = await runEmbeddedAgent({
+      ...overflowBaseRunParams,
+      provider: "openai",
+      model: "gpt-5.4",
+      runId: "run-settled-post-tool-continuation-exhausted",
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(2);
+    expect(result.payloads?.[0]?.isError).toBe(true);
+    expect(result.payloads?.[0]?.text).toContain("couldn't generate a response");
+    expectNoWarnMessageWith("empty response detected");
+  });
+
+  it("requires settled synchronous tool evidence for post-tool continuation", () => {
+    const baseAttempt = makeAttemptResult({
+      assistantTexts: [],
+      toolMetas: [{ toolName: "gbrain__get_page", meta: "plans/example" }],
+      itemLifecycle: { startedCount: 1, completedCount: 1, activeCount: 0 },
+      lastAssistant: {
+        role: "assistant",
+        stopReason: "toolUse",
+        provider: "openai",
+        model: "gpt-5.4",
+        content: [],
+      } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+    });
+    const eligible = (attempt: EmbeddedRunAttemptResult) =>
+      shouldContinueSettledPostToolTurn({
+        payloadCount: 0,
+        aborted: false,
+        timedOut: false,
+        attempt,
+      });
+
+    expect(eligible(baseAttempt)).toBe(true);
+    expect(
+      eligible(
+        makeAttemptResult({
+          ...baseAttempt,
+          itemLifecycle: { startedCount: 2, completedCount: 1, activeCount: 0 },
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      eligible(
+        makeAttemptResult({
+          ...baseAttempt,
+          toolMetas: [{ toolName: "image_generate", asyncStarted: true }],
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      eligible(
+        makeAttemptResult({
+          ...baseAttempt,
+          lastToolError: {
+            toolName: "gbrain__get_page",
+            meta: "plans/example",
+            error: "failed",
+          },
+        }),
+      ),
+    ).toBe(false);
   });
 
   it("retries replay-safe missing terminal assistant turns once with the same prompt", async () => {

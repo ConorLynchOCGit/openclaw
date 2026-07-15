@@ -81,7 +81,10 @@ import {
   CODEX_NATIVE_SUBAGENT_RUN_ID_PREFIX,
   CODEX_NATIVE_SUBAGENT_TASK_KIND,
 } from "../tasks/codex-native-subagent-task.js";
-import { resolveModelAuthoredTaskVerdict } from "../tasks/task-completion-contract.js";
+import {
+  resolveModelAuthoredTaskCloseout,
+  resolveModelAuthoredTaskVerdict,
+} from "../tasks/task-completion-contract.js";
 import { listTasksForRelatedSessionKey } from "../tasks/task-registry.js";
 import type { TaskEventMetadata, TaskRecord } from "../tasks/task-registry.types.js";
 import { isRecord } from "../utils.js";
@@ -2909,6 +2912,9 @@ export function buildGatewaySessionRow(params: {
         }
       : undefined;
 
+  const modelAuthoredCloseout =
+    rowStatus === "running" ? undefined : resolveModelAuthoredTaskCloseout(finalAssistantText);
+
   return {
     key,
     agentId: sessionAgentId,
@@ -2989,6 +2995,8 @@ export function buildGatewaySessionRow(params: {
               : {}),
           }
         : { state: "not_requested" },
+    taskStatus: modelAuthoredCloseout?.taskStatus,
+    reviewDecision: modelAuthoredCloseout?.reviewDecision,
     laneVerdict:
       rowStatus === "running" ? undefined : resolveModelAuthoredTaskVerdict(finalAssistantText),
     codexExecutionEvidence,

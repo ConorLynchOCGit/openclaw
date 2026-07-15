@@ -1,5 +1,6 @@
 // OpenClaw Coding Workbench MCP tests cover bounded repo inspection helpers.
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -17,6 +18,16 @@ const workbenchModuleUrl = pathToFileURL(workbenchModulePath).href;
 const imageFixturePath = path.resolve(
   "test/scripts/fixtures/openclaw-coding-workbench-one-pixel.png.base64",
 );
+
+type FileIdentity = {
+  bytes: number;
+  sha256: string;
+};
+
+type SelectedRangeIdentity = FileIdentity & {
+  startLine: number;
+  endLine: number;
+};
 
 type WorkbenchModule = {
   repoSearchMany(
@@ -69,6 +80,8 @@ type WorkbenchModule = {
       returnedStartLine?: number;
       returnedEndLine?: number;
       returnedBytes?: number;
+      file?: FileIdentity;
+      selectedRange?: SelectedRangeIdentity;
       truncated?: boolean;
       nextStartLine?: number;
       effectiveMaxBytes?: number;
@@ -80,7 +93,8 @@ type WorkbenchModule = {
       requestedStartLine: number;
       requestedEndLine: number;
       totalLines: number;
-      sha256: string;
+      file: FileIdentity;
+      selectedRange: SelectedRangeIdentity;
       nextStartLine: number;
       reason: string;
     }>;
@@ -274,6 +288,10 @@ function workspaceOptionsFor(workspace: string) {
   };
 }
 
+function sha256(value: string | Buffer): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
 afterEach(async () => {
   await Promise.all(tempDirs.map((dir) => fs.rm(dir, { recursive: true, force: true })));
   tempDirs = [];
@@ -311,6 +329,49 @@ describe("openclaw-coding-workbench MCP helpers", () => {
       status: "error",
       error: expect.stringContaining("ENOENT"),
     });
+  });
+
+  it("separates exact whole-file and normalized selected-range identities", async () => {
+    const repo = await makeRepo();
+    const workbench = await loadWorkbench();
+    const multibyteLine = "\u03b2eta \u{1f642}";
+    const data = Buffer.from(`first\r\n${multibyteLine}\r\nthird\r\n`, "utf8");
+    const selected = `${multibyteLine}\nthird`;
+    await fs.writeFile(path.join(repo, "src", "crlf.txt"), data);
+
+    const read = await workbench.repoReadMany(
+      {
+        files: [
+          {
+            path: "src/crlf.txt",
+            startLine: 2,
+            endLine: 3,
+            maxBytes: Buffer.byteLength(`2: ${multibyteLine}`, "utf8"),
+          },
+        ],
+      },
+      optionsFor(repo),
+    );
+
+    expect(read.results[0]).toMatchObject({
+      status: "ok",
+      text: `2: ${multibyteLine}`,
+      returnedStartLine: 2,
+      returnedEndLine: 2,
+      file: {
+        bytes: data.length,
+        sha256: sha256(data),
+      },
+      selectedRange: {
+        startLine: 2,
+        endLine: 3,
+        bytes: Buffer.byteLength(selected, "utf8"),
+        sha256: sha256(selected),
+      },
+      truncated: true,
+      nextStartLine: 3,
+    });
+    expect(read.results[0]?.file?.sha256).not.toBe(read.results[0]?.selectedRange?.sha256);
   });
 
   it("clamps optimistic size and result hints instead of failing schema-style", async () => {
@@ -408,7 +469,17 @@ describe("openclaw-coding-workbench MCP helpers", () => {
     expect(read.omitted.every((item) => item.reason.includes("aggregate"))).toBe(true);
     expect(read.omitted.every((item) => item.requestedEndLine >= item.nextStartLine)).toBe(true);
     expect(read.omitted.every((item) => item.totalLines >= item.requestedEndLine)).toBe(true);
-    expect(read.omitted.every((item) => /^[a-f0-9]{64}$/u.test(item.sha256))).toBe(true);
+    for (const item of read.omitted) {
+      const data = await fs.readFile(path.join(repo, item.path));
+      const selected = data.toString("utf8").split(/\r?\n/u).join("\n");
+      expect(item.file).toEqual({ bytes: data.length, sha256: sha256(data) });
+      expect(item.selectedRange).toEqual({
+        startLine: item.requestedStartLine,
+        endLine: item.requestedEndLine,
+        bytes: Buffer.byteLength(selected, "utf8"),
+        sha256: sha256(selected),
+      });
+    }
     expect(serialized).not.toContain('"content"');
     expect(serialized).not.toContain('"lineNumberedContent"');
     expect(serialized).not.toContain('"request"');
@@ -417,6 +488,11 @@ describe("openclaw-coding-workbench MCP helpers", () => {
       (item) => item.status === "ok" && item.truncated && item.nextStartLine,
     );
     expect(truncated).toBeDefined();
+    expect(truncated?.selectedRange).toMatchObject({
+      startLine: 1,
+      endLine: truncated?.totalLines,
+    });
+    expect(truncated?.selectedRange?.endLine).toBeGreaterThan(truncated?.returnedEndLine ?? 0);
     const chunks = [truncated?.text ?? ""];
     let nextStartLine = truncated?.nextStartLine;
     while (nextStartLine) {
@@ -494,8 +570,21 @@ describe("openclaw-coding-workbench MCP helpers", () => {
             items: expect.objectContaining({
               properties: expect.objectContaining({
                 path: expect.any(Object),
+                file: expect.objectContaining({
+                  properties: expect.objectContaining({
+                    bytes: expect.any(Object),
+                    sha256: expect.any(Object),
+                  }),
+                }),
+                selectedRange: expect.objectContaining({
+                  properties: expect.objectContaining({
+                    startLine: expect.any(Object),
+                    endLine: expect.any(Object),
+                    bytes: expect.any(Object),
+                    sha256: expect.any(Object),
+                  }),
+                }),
                 text: expect.any(Object),
-                sha256: expect.any(Object),
                 nextStartLine: expect.any(Object),
               }),
             }),
@@ -507,6 +596,8 @@ describe("openclaw-coding-workbench MCP helpers", () => {
                 path: expect.any(Object),
                 requestedStartLine: expect.any(Object),
                 requestedEndLine: expect.any(Object),
+                file: expect.any(Object),
+                selectedRange: expect.any(Object),
                 nextStartLine: expect.any(Object),
               }),
             }),
@@ -537,7 +628,21 @@ describe("openclaw-coding-workbench MCP helpers", () => {
       });
       expect(called.structuredContent).toMatchObject({
         schemaVersion: "openclaw.repo_workbench.read_many.v2",
-        results: [expect.objectContaining({ text: "1: export const alpha = 1;" })],
+        results: [
+          expect.objectContaining({
+            text: "1: export const alpha = 1;",
+            file: expect.objectContaining({
+              bytes: expect.any(Number),
+              sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+            }),
+            selectedRange: {
+              startLine: 1,
+              endLine: 1,
+              bytes: Buffer.byteLength("export const alpha = 1;", "utf8"),
+              sha256: sha256("export const alpha = 1;"),
+            },
+          }),
+        ],
       });
       expect(called.content).toEqual([]);
     } finally {

@@ -7,9 +7,43 @@ export type RequiredCompletionTerminalResult = {
   terminalSummary?: string;
 };
 
-export type ModelAuthoredTaskVerdict = "complete" | "partial" | "blocked";
+export type ModelAuthoredTaskStatus = "complete" | "partial" | "blocked";
+export type ModelAuthoredReviewDecision = "approve" | "revise" | "block" | "needs_more_research";
 
-/** Reads the optional model-authored first-line verdict used by task receipts and readback. */
+export type ModelAuthoredTaskCloseout = {
+  taskStatus?: ModelAuthoredTaskStatus;
+  reviewDecision?: ModelAuthoredReviewDecision;
+};
+
+/**
+ * Observes exact model-authored closeout labels from the first two non-empty lines.
+ * The fields remain independent; this function does not derive either value.
+ */
+export function resolveModelAuthoredTaskCloseout(
+  value: string | null | undefined,
+): ModelAuthoredTaskCloseout {
+  const leadLines = value
+    ?.split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 2);
+  const taskStatusMatch = leadLines?.[0]?.match(/^Task status: (complete|partial|blocked)$/u);
+  const reviewDecisionMatch = leadLines?.[1]?.match(
+    /^Review decision: (approve|revise|block|needs_more_research)$/u,
+  );
+  const taskStatus = taskStatusMatch?.[1] as ModelAuthoredTaskStatus | undefined;
+  const reviewDecision = reviewDecisionMatch?.[1] as ModelAuthoredReviewDecision | undefined;
+
+  return {
+    ...(taskStatus ? { taskStatus } : {}),
+    ...(reviewDecision ? { reviewDecision } : {}),
+  };
+}
+
+/** Legacy value retained only for readback of already-stored transcripts. */
+export type ModelAuthoredTaskVerdict = ModelAuthoredTaskStatus;
+
+/** Reads the legacy first-line Verdict label from an already-stored transcript. */
 export function resolveModelAuthoredTaskVerdict(
   value: string | null | undefined,
 ): ModelAuthoredTaskVerdict | undefined {

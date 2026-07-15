@@ -399,6 +399,66 @@ export function shouldRetryMissingAssistantTurn(params: {
   return !resolveAttemptReplayMetadata(params.attempt).hadPotentialSideEffects;
 }
 
+/**
+ * Allows one same-transcript continuation after every tool item settled but
+ * the provider omitted the post-tool assistant turn. This is deliberately not
+ * a replay-safety decision: the original prompt and completed tool calls are
+ * not resubmitted, so a prior mutating tool does not make the continuation
+ * unsafe.
+ */
+export function shouldContinueSettledPostToolTurn(params: {
+  payloadCount: number;
+  aborted: boolean;
+  promptError?: unknown;
+  timedOut: boolean;
+  attempt: IncompleteTurnAttempt;
+}): boolean {
+  const lifecycle = params.attempt.itemLifecycle;
+  if (
+    params.aborted ||
+    Boolean(params.promptError) ||
+    params.timedOut ||
+    params.attempt.clientToolCalls ||
+    params.attempt.yieldDetected ||
+    params.attempt.didSendDeterministicApprovalPrompt ||
+    params.attempt.lastToolError ||
+    params.attempt.toolMetas.length === 0 ||
+    !lifecycle ||
+    lifecycle.startedCount === 0 ||
+    lifecycle.activeCount !== 0 ||
+    lifecycle.completedCount < lifecycle.startedCount ||
+    hasCommittedMessagingToolDeliveryEvidence(params.attempt) ||
+    hasAsyncStartedToolActivity(params.attempt.toolMetas) ||
+    hasOnlySilentAssistantReply(params.attempt.assistantTexts)
+  ) {
+    return false;
+  }
+
+  const assistant = params.attempt.currentAttemptAssistant ?? params.attempt.lastAssistant;
+  const toolUseTerminal = isIncompleteTerminalAssistantTurn({
+    hasAssistantVisibleText: params.payloadCount > 0,
+    lastAssistant: params.attempt.lastAssistant,
+  });
+  if (toolUseTerminal) {
+    return true;
+  }
+
+  // A completed post-tool answer is terminal, even when earlier tool narration
+  // was captured in assistantTexts. Only non-visible terminal shapes qualify.
+  if (joinAssistantTexts(params.attempt.assistantTexts).length > 0) {
+    return false;
+  }
+  return (
+    isReasoningOnlyAssistantTurn(assistant) ||
+    isUnsignedThinkingOnlyAssistantTurn(assistant) ||
+    isEmptyResponseAssistantTurn({
+      payloadCount: params.payloadCount,
+      attempt: params.attempt,
+    }) ||
+    !assistant
+  );
+}
+
 function joinAssistantTexts(assistantTexts?: readonly string[]): string {
   return (assistantTexts ?? []).join("\n\n").trim();
 }

@@ -183,6 +183,7 @@ import {
   STRICT_AGENTIC_BLOCKED_TEXT,
   resolveReplayInvalidFlag,
   resolveRunLivenessState,
+  shouldContinueSettledPostToolTurn,
   shouldRetryMissingAssistantTurn,
   shouldTreatEmptyAssistantReplyAsSilent,
 } from "./run/incomplete-turn.js";
@@ -215,6 +216,8 @@ const MAX_SAME_MODEL_IDLE_TIMEOUT_RETRIES = 1;
 const EMBEDDED_RUN_LANE_TIMEOUT_GRACE_MS = 30_000;
 const MID_TURN_PRECHECK_CONTINUATION_PROMPT =
   "Continue from the current transcript after the latest tool result. Do not repeat the original user request, and do not rerun completed tools unless the transcript shows they are still needed.";
+export const SETTLED_POST_TOOL_CONTINUATION_PROMPT =
+  "Continue from the current transcript after the settled tool results. Finish the requested task and produce the user-visible final response. Do not repeat the original request or rerun completed tools; use another tool only if the transcript proves a required step is still incomplete.";
 const COMPACTION_CONTINUATION_RETRY_INSTRUCTION =
   "The previous attempt compacted the conversation context before producing a final user-visible answer. Continue from the compacted transcript and produce the final answer now. Do not restart from scratch, do not repeat completed work, and do not rerun tools unless the transcript clearly lacks required evidence.";
 const NO_REAL_CONVERSATION_MESSAGES_REASON = "no real conversation messages";
@@ -1337,6 +1340,7 @@ export async function runEmbeddedAgent(
       let emptyErrorRetries = 0;
       const MAX_MISSING_ASSISTANT_RETRIES = 1;
       let missingAssistantRetryAttempts = 0;
+      let settledPostToolContinuationAttempts = 0;
       const overloadFailoverBackoffMs = resolveOverloadFailoverBackoffMs(params.config);
       const overloadProfileRotationLimit = resolveOverloadProfileRotationLimit(params.config);
       const rateLimitProfileRotationLimit = resolveRateLimitProfileRotationLimit(params.config);
@@ -3338,6 +3342,7 @@ export async function runEmbeddedAgent(
                 attempt,
               });
           if (
+            settledPostToolContinuationAttempts === 0 &&
             nextPlanningOnlyRetryInstruction &&
             planningOnlyRetryAttempts < maxPlanningOnlyRetryAttempts
           ) {
@@ -3381,6 +3386,7 @@ export async function runEmbeddedAgent(
             continue;
           }
           if (
+            settledPostToolContinuationAttempts === 0 &&
             !nextPlanningOnlyRetryInstruction &&
             nextReasoningOnlyRetryInstruction &&
             reasoningOnlyRetryAttempts < maxReasoningOnlyRetryAttempts
@@ -3399,6 +3405,7 @@ export async function runEmbeddedAgent(
             nextReasoningOnlyRetryInstruction &&
             reasoningOnlyRetryAttempts >= maxReasoningOnlyRetryAttempts;
           if (
+            settledPostToolContinuationAttempts === 0 &&
             !emptyAssistantReplyIsSilent &&
             shouldRetryMissingAssistantTurn({
               payloadCount,
@@ -3417,6 +3424,33 @@ export async function runEmbeddedAgent(
             continue;
           }
           if (
+            settledPostToolContinuationAttempts === 0 &&
+            shouldContinueSettledPostToolTurn({
+              payloadCount,
+              aborted,
+              promptError,
+              timedOut,
+              attempt,
+            }) &&
+            settledPostToolContinuationAttempts < 1
+          ) {
+            settledPostToolContinuationAttempts += 1;
+            nextAttemptPromptOverride = SETTLED_POST_TOOL_CONTINUATION_PROMPT;
+            suppressNextUserMessagePersistence = true;
+            planningOnlyRetryInstruction = null;
+            reasoningOnlyRetryInstruction = null;
+            emptyResponseRetryInstruction = null;
+            compactionContinuationRetryInstruction = null;
+            log.warn(
+              `settled post-tool turn omitted final assistant response: ` +
+                `runId=${params.runId} sessionId=${params.sessionId} ` +
+                `items=${attempt.itemLifecycle.completedCount}/${attempt.itemLifecycle.startedCount} ` +
+                `-- continuing once from the current transcript`,
+            );
+            continue;
+          }
+          if (
+            settledPostToolContinuationAttempts === 0 &&
             !nextPlanningOnlyRetryInstruction &&
             !nextReasoningOnlyRetryInstruction &&
             nextEmptyResponseRetryInstruction &&

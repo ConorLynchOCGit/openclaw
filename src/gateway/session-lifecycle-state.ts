@@ -22,6 +22,7 @@ type LifecycleEventLike = Pick<AgentEventPayload, "ts" | "sessionId"> & {
     livenessState?: unknown;
     timeoutPhase?: unknown;
     providerStarted?: unknown;
+    yielded?: unknown;
   };
 };
 
@@ -68,10 +69,20 @@ function mapAgentRunTerminalOutcomeToSessionStatus(
 
 function resolveTerminalStatus(event: LifecycleEventLike): SessionRunStatus {
   const phase = resolveLifecyclePhase(event);
+  // yielded is event-local provenance, not a durable lifecycle state. Normalize
+  // its abort-shaped unwind to the runtime's native successful stop outcome.
+  const intentionallyYielded = phase === "end" && event.data?.yielded === true;
   const terminal = buildAgentRunTerminalOutcome({
-    status: phase === "error" ? "error" : event.data?.aborted === true ? "timeout" : "ok",
+    status:
+      phase === "error"
+        ? "error"
+        : intentionallyYielded
+          ? "ok"
+          : event.data?.aborted === true
+            ? "timeout"
+            : "ok",
     error: event.data?.error,
-    stopReason: event.data?.stopReason,
+    stopReason: intentionallyYielded ? "stop" : event.data?.stopReason,
     livenessState: event.data?.livenessState,
     timeoutPhase: event.data?.timeoutPhase,
     providerStarted: event.data?.providerStarted,
@@ -148,9 +159,10 @@ export function deriveGatewaySessionLifecycleSnapshot(params: {
   const startedAt = resolveLifecycleStartedAt(existing?.startedAt, params.event);
   const endedAt = resolveLifecycleEndedAt(params.event);
   const updatedAt = endedAt ?? existing?.updatedAt;
+  const status = resolveTerminalStatus(params.event);
   return {
     updatedAt,
-    status: resolveTerminalStatus(params.event),
+    status,
     startedAt,
     endedAt,
     runtimeMs: resolveRuntimeMs({
@@ -158,7 +170,7 @@ export function deriveGatewaySessionLifecycleSnapshot(params: {
       endedAt,
       existingRuntimeMs: existing?.runtimeMs,
     }),
-    abortedLastRun: resolveTerminalStatus(params.event) === "killed",
+    abortedLastRun: status === "killed",
   };
 }
 

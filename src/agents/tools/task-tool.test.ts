@@ -90,6 +90,12 @@ describe("task tool", () => {
         workspaceDir: "/workspace",
       }),
     );
+    const renderedTask = hoisted.spawnSubagentDirectMock.mock.calls[0]?.[0]?.task as
+      | string
+      | undefined;
+    expect(renderedTask).toContain('"Task status: complete"');
+    expect(renderedTask).not.toContain('"Verdict: complete"');
+    expect(renderedTask).not.toContain("Review decision:");
     const spawnContext = hoisted.spawnSubagentDirectMock.mock.calls[0]?.[1] as
       | Record<string, unknown>
       | undefined;
@@ -295,6 +301,14 @@ describe("task tool", () => {
       }),
       expect.anything(),
     );
+    const renderedTask = hoisted.spawnSubagentDirectMock.mock.calls[0]?.[0]?.task as
+      | string
+      | undefined;
+    expect(renderedTask).toContain('"Task status: complete"');
+    expect(renderedTask).toContain('"Review decision: revise"');
+    expect(renderedTask).toContain('"Task status: complete" and "Review decision: revise"');
+    expect(renderedTask).not.toContain('"Verdict: complete"');
+    expect(renderedTask).not.toContain("approve_with_required_revisions");
   });
 
   it("allows runtime-visible /app mentions in child handoff prose", async () => {
@@ -408,8 +422,45 @@ describe("task tool", () => {
     expect(content.text).toContain(shortPlanningResult);
   });
 
-  it("carries only an exact model-authored verdict line in a pointer result", async () => {
-    const childResult = `Verdict: partial\n\n${"Substantive child-owned artifact prose stays out.\n".repeat(50)}`;
+  it("carries only an exact model-authored task status in a pointer result", async () => {
+    const childResult = `Task status: partial\n\n${"Substantive child-owned artifact prose stays out.\n".repeat(50)}`;
+    hoisted.readLatestAssistantReplyMock.mockResolvedValue(childResult);
+
+    const result = await createTaskTool({
+      agentSessionKey: "agent:main:operator",
+      requesterAgentIdOverride: "main",
+    }).execute("call-1", {
+      agentId: "business-ops",
+      task: "Produce a truthful domain closeout.",
+    });
+
+    expect(result.details).toMatchObject({
+      resultInline: false,
+      resultMode: "pointer",
+      receiptLeadLine: "Task status: partial",
+      receiptLeadLines: ["Task status: partial"],
+      inspectCommand:
+        "openclaw sessions show agent:codebase-researcher:subagent:child --agent business-ops",
+    });
+    const content = result.content[0];
+    expect(content?.type).toBe("text");
+    if (!content || content.type !== "text") {
+      throw new Error("Expected text tool result");
+    }
+    expect(content.text).toContain('state="completed"');
+    expect(content.text).toContain('<task_result_lead modelAuthored="true">');
+    expect(content.text).toContain("Task status: partial");
+    expect(content.text).not.toContain("Substantive child-owned artifact prose stays out.");
+  });
+
+  it("surfaces completed review work and a revise decision as independent receipt axes", async () => {
+    const childResult = [
+      "Task status: complete",
+      "Review decision: revise",
+      "",
+      "The review completed, but the artifact still requires changes.",
+      "Review evidence stays in the child transcript.\n".repeat(60),
+    ].join("\n");
     hoisted.readLatestAssistantReplyMock.mockResolvedValue(childResult);
 
     const result = await createTaskTool({
@@ -417,29 +468,79 @@ describe("task tool", () => {
       requesterAgentIdOverride: "main",
     }).execute("call-1", {
       agentId: "reviewer",
-      task: "Produce a truthful domain closeout.",
+      task: "Review the candidate and return an artifact decision.",
     });
 
     expect(result.details).toMatchObject({
       resultInline: false,
       resultMode: "pointer",
-      receiptLeadLine: "Verdict: partial",
-      inspectCommand:
-        "openclaw sessions show agent:codebase-researcher:subagent:child --agent reviewer",
+      receiptLeadLine: "Task status: complete",
+      receiptLeadLines: ["Task status: complete", "Review decision: revise"],
     });
     const content = result.content[0];
     expect(content?.type).toBe("text");
     if (!content || content.type !== "text") {
       throw new Error("Expected text tool result");
     }
-    expect(content.text).toContain('<task_result_lead modelAuthored="true">');
+    expect(content.text).toContain('state="completed"');
+    expect(content.text).toContain("Task status: complete\nReview decision: revise");
+    expect(content.text).not.toContain("Task status: partial");
+    expect(content.text).not.toContain("The review completed");
+  });
+
+  it("keeps the legacy Verdict lead readable for already-stored transcripts", async () => {
+    const childResult = `Verdict: partial\n\n${"Legacy transcript content stays behind the pointer.\n".repeat(50)}`;
+    hoisted.readLatestAssistantReplyMock.mockResolvedValue(childResult);
+
+    const result = await createTaskTool({
+      agentSessionKey: "agent:main:operator",
+      requesterAgentIdOverride: "main",
+    }).execute("call-1", {
+      agentId: "business-ops",
+      task: "Read back the existing child transcript.",
+    });
+
+    expect(result.details).toMatchObject({
+      resultInline: false,
+      resultMode: "pointer",
+      receiptLeadLine: "Verdict: partial",
+      receiptLeadLines: ["Verdict: partial"],
+    });
+    const content = result.content[0];
+    expect(content?.type).toBe("text");
+    if (!content || content.type !== "text") {
+      throw new Error("Expected text tool result");
+    }
     expect(content.text).toContain("Verdict: partial");
-    expect(content.text).not.toContain("Substantive child-owned artifact prose stays out.");
+    expect(content.text).not.toContain("Legacy transcript content");
+  });
+
+  it("does not structure misplaced closeout labels", async () => {
+    hoisted.readLatestAssistantReplyMock.mockResolvedValue(
+      "Review decision: approve\nTask status: complete\nLabels are in the wrong order.",
+    );
+
+    const result = await createTaskTool({
+      agentSessionKey: "agent:main:operator",
+      requesterAgentIdOverride: "main",
+    }).execute("call-1", {
+      agentId: "reviewer",
+      task: "Review the candidate.",
+    });
+
+    expect(result.details).not.toHaveProperty("receiptLeadLine");
+    expect(result.details).not.toHaveProperty("receiptLeadLines");
+    const content = result.content[0];
+    expect(content?.type).toBe("text");
+    if (!content || content.type !== "text") {
+      throw new Error("Expected text tool result");
+    }
+    expect(content.text).not.toContain("<task_result_lead");
   });
 
   it("returns a bounded Business Ops dialogue turn inline to Main", async () => {
     const childResult = [
-      "Verdict: partial",
+      "Task status: partial",
       "",
       "Episode: business-ops/companies/example/collaborative-refinement.md",
       "Question: Which audience must trust this brand first?",
@@ -472,7 +573,7 @@ describe("task tool", () => {
   });
 
   it("keeps an oversized Business Ops result behind native task pointers", async () => {
-    const childResult = `Verdict: partial\n\n${"oversized dialogue payload\n".repeat(100)}`;
+    const childResult = `Task status: partial\n\n${"oversized dialogue payload\n".repeat(100)}`;
     hoisted.readLatestAssistantReplyMock.mockResolvedValue(childResult);
 
     const result = await createTaskTool({

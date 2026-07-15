@@ -40,6 +40,8 @@ describe("buildGatewaySessionDetailProjection", () => {
       updatedAt: Date.parse("2026-07-10T02:50:00.000Z"),
       sessionId: "coding-session-id",
       status: "done",
+      taskStatus: "complete",
+      reviewDecision: "revise",
       spawnedWorkspaceDir: "/home/node/.openclaw/workspace",
       spawnedCwd: "/home/node/.openclaw/workspace",
       finalAssistantText: "substrate proof complete",
@@ -165,6 +167,10 @@ describe("buildGatewaySessionDetailProjection", () => {
       codeModeConfigured: true,
       codeModeOnlyConfigured: true,
     });
+    expect(result.detail.taskStatus).toBe("complete");
+    expect(result.detail.reviewDecision).toBe("revise");
+    expect(result.detail.session.taskStatus).toBe("complete");
+    expect(result.detail.session.reviewDecision).toBe("revise");
     expect(result.detail.promptContext?.codexNativeSurface?.workbenchCapability).toMatchObject({
       workspaceRoot: "/home/node/.openclaw/workspace",
       sourceRoot: "/home/node/.openclaw/workspace/src/openclaw",

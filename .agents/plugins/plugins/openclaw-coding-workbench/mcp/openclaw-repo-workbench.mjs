@@ -170,6 +170,17 @@ const SearchManyOutputSchema = z.object({
     omittedItems: z.number().int(),
   }),
 });
+const Sha256OutputSchema = z.string().regex(/^[a-f0-9]{64}$/u);
+const FileIdentityOutputSchema = z.object({
+  bytes: z.number().int().nonnegative(),
+  sha256: Sha256OutputSchema,
+});
+const SelectedRangeIdentityOutputSchema = z.object({
+  startLine: z.number().int().positive(),
+  endLine: z.number().int().positive(),
+  bytes: z.number().int().nonnegative(),
+  sha256: Sha256OutputSchema,
+});
 const ReadResultOutputSchema = z.object({
   path: z.string(),
   status: z.enum(["ok", "error"]),
@@ -178,9 +189,9 @@ const ReadResultOutputSchema = z.object({
   returnedStartLine: z.number().int().optional(),
   returnedEndLine: z.number().int().optional(),
   totalLines: z.number().int().optional(),
-  sourceBytes: z.number().int().optional(),
+  file: FileIdentityOutputSchema.optional(),
+  selectedRange: SelectedRangeIdentityOutputSchema.optional(),
   returnedBytes: z.number().int().optional(),
-  sha256: z.string().optional(),
   effectiveMaxBytes: z.number().int().optional(),
   requestedMaxBytes: z.number().int().optional(),
   maxBytesClamped: z.boolean().optional(),
@@ -194,7 +205,8 @@ const OmittedReadOutputSchema = z.object({
   requestedStartLine: z.number().int(),
   requestedEndLine: z.number().int(),
   totalLines: z.number().int(),
-  sha256: z.string(),
+  file: FileIdentityOutputSchema,
+  selectedRange: SelectedRangeIdentityOutputSchema,
   nextStartLine: z.number().int(),
   reason: z.enum(["aggregate_text_budget", "aggregate_response_budget"]),
 });
@@ -270,7 +282,7 @@ server.registerTool(
   {
     title: "Read Many",
     description:
-      "Preferred multi-file read tool: read bounded line ranges under the active workspace root. Results use one line-numbered text field, clamp each file to 12 KB, cap the complete response at 32 KB, name omitted files, and return nextStartLine for exact continuation.",
+      "Preferred multi-file read tool: read bounded line ranges under the active workspace root. Results identify the exact whole file and normalized selected range, use one line-numbered text field, clamp each file to 12 KB, cap the complete response at 32 KB, name omitted files, and return nextStartLine for exact continuation.",
     annotations: READ_ONLY_TOOL_ANNOTATIONS,
     outputSchema: ReadManyOutputSchema,
     inputSchema: z.object({
@@ -1014,7 +1026,8 @@ async function readFileRequest(root, request) {
     if (!stat.isFile()) {
       throw new Error("path is not a file");
     }
-    const content = await fs.readFile(file, "utf8");
+    const data = await fs.readFile(file);
+    const content = data.toString("utf8");
     const lines = content.split(/\r?\n/u);
     const requestedStartLine = request.startLine ?? 1;
     const requestedEndLine = request.endLine ?? lines.length;
@@ -1035,6 +1048,7 @@ async function readFileRequest(root, request) {
       );
     }
     const selectedByteLength = Buffer.byteLength(selected, "utf8");
+    const selectedSha256 = sha256(selected);
     const truncated = numbered.returnedEndLine < effectiveEndLine;
     return {
       path: relative(root, file),
@@ -1044,9 +1058,17 @@ async function readFileRequest(root, request) {
       returnedStartLine: requestedStartLine,
       returnedEndLine: numbered.returnedEndLine,
       totalLines: lines.length,
-      sourceBytes: selectedByteLength,
+      file: {
+        bytes: data.length,
+        sha256: sha256(data),
+      },
+      selectedRange: {
+        startLine: requestedStartLine,
+        endLine: effectiveEndLine,
+        bytes: selectedByteLength,
+        sha256: selectedSha256,
+      },
       returnedBytes: numbered.returnedBytes,
-      sha256: sha256(selected),
       effectiveMaxBytes: maxBytes,
       ...(request.maxBytes && request.maxBytes > maxBytes
         ? { requestedMaxBytes: request.maxBytes, maxBytesClamped: true }
@@ -1156,7 +1178,8 @@ function omittedRead(request, result, reason) {
     requestedStartLine: request.startLine ?? 1,
     requestedEndLine: request.endLine ?? result.totalLines,
     totalLines: result.totalLines,
-    sha256: result.sha256,
+    file: result.file,
+    selectedRange: result.selectedRange,
     nextStartLine: result.nextStartLine ?? result.returnedStartLine ?? request.startLine ?? 1,
     reason,
   };
