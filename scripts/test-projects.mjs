@@ -1,5 +1,6 @@
-// Dispatches Vitest project shards for explicit targets, changed files, or the
-// full local suite.
+// Sole target-to-owner test router for user- and agent-selected files.
+// Lower-level runners execute an already-selected config; they must not infer
+// project ownership independently of this dispatcher.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -68,11 +69,31 @@ function isWrapperMetadataRequest(args) {
   return false;
 }
 
+function extractWrapperPlanMode(args) {
+  const forwardedArgs = [];
+  let planOnly = false;
+  let passthrough = false;
+  for (const arg of args) {
+    if (arg === "--") {
+      passthrough = true;
+      forwardedArgs.push(arg);
+      continue;
+    }
+    if (!passthrough && arg === "--plan") {
+      planOnly = true;
+      continue;
+    }
+    forwardedArgs.push(arg);
+  }
+  return { forwardedArgs, planOnly };
+}
+
 function printHelp() {
-  console.log(`Usage: node scripts/test-projects.mjs [--changed <base>] [--watch] [targets...] [-- vitest-args...]
+  console.log(`Usage: node scripts/test-projects.mjs [--changed <base>] [--plan] [--watch] [targets...] [-- vitest-args...]
 
 Runs the Vitest project shards that own the requested targets. With no targets,
-this runs the full local suite. Use explicit targets for local edit loops.`);
+this runs the full local suite. Use explicit targets for local edit loops.
+--plan prints the owner/config receipt without starting Vitest.`);
 }
 
 function cleanupVitestRunSpec(spec) {
@@ -461,11 +482,12 @@ async function runVitestSpecsParallel(specs, concurrency) {
 async function main() {
   const suiteStartedAt = performance.now();
   const phaseTimer = createPhaseTimer();
-  const args = process.argv.slice(2);
-  if (isWrapperMetadataRequest(args)) {
+  const rawArgs = process.argv.slice(2);
+  if (isWrapperMetadataRequest(rawArgs)) {
     printHelp();
     return;
   }
+  const { forwardedArgs: args, planOnly } = extractWrapperPlanMode(rawArgs);
   const baseEnv = resolveLocalVitestEnv(process.env);
   const { targetArgs } = parseTestProjectsArgs(args, process.cwd());
   phaseTimer.mark("parse_args");
@@ -525,6 +547,17 @@ async function main() {
     return;
   }
 
+  const isFullSuiteRun =
+    targetArgs.length === 0 &&
+    changedTargetArgs === null &&
+    !runSpecs.some((spec) => spec.watchMode);
+  printValidationReceipt({ changedTargetArgs, isFullSuiteRun, runSpecs, targetArgs });
+  if (planOnly) {
+    phaseTimer.mark("print_receipt");
+    phaseTimer.print("dispatcher plan timings");
+    printTestSummary("planned", runSpecs.length, performance.now() - suiteStartedAt);
+    return;
+  }
   releaseLock = shouldAcquireLocalHeavyCheckLock(runSpecs, baseEnv)
     ? acquireLocalHeavyCheckLockSync({
         cwd: process.cwd(),
@@ -533,12 +566,6 @@ async function main() {
       })
     : () => {};
   phaseTimer.mark("acquire_lock");
-
-  const isFullSuiteRun =
-    targetArgs.length === 0 &&
-    changedTargetArgs === null &&
-    !runSpecs.some((spec) => spec.watchMode);
-  printValidationReceipt({ changedTargetArgs, isFullSuiteRun, runSpecs, targetArgs });
   printValidationPreflightReceipt({ cwd: process.cwd(), env: baseEnv, runSpecs });
   printValidationPerformanceProfile({
     isFullSuiteRun,

@@ -1,5 +1,6 @@
-// Runs Vitest through repo project selection, local scheduling policy, output
-// watchdogs, and process-group cleanup.
+// Lower-level Vitest executor for an already-selected project config.
+// Ordinary explicit file/source targets delegate to test-projects.mjs, the
+// repository's sole target-to-owner routing authority.
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import { createRequire } from "node:module";
@@ -979,7 +980,10 @@ function spawnTestProjectsRunner(argv, env) {
 
 function main(argv = process.argv.slice(2), env = process.env) {
   if (argv.length === 0) {
-    console.error("usage: node scripts/run-vitest.mjs <vitest args...>");
+    console.error(
+      "usage: node scripts/run-vitest.mjs <vitest args...>\n" +
+        "For file-targeted tests use: node scripts/test-projects.mjs <targets...>",
+    );
     process.exit(1);
   }
 

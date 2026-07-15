@@ -17,7 +17,7 @@ Prove the touched surface first. Do not reflexively run the whole suite.
    - normal source checkout, source change: `pnpm changed:lanes --json`, then `pnpm check:changed` (delegates to Crabbox/Testbox)
    - normal source checkout, tests only: `pnpm test:changed`
    - normal source checkout, one failing file: `pnpm test <path-or-filter> -- --reporter=verbose`
-   - Codex worktree or linked/sparse checkout, one/few explicit files: `node scripts/run-vitest.mjs <path-or-filter>`
+   - Codex worktree or linked/sparse checkout, one/few explicit files: `node scripts/test-projects.mjs <path-or-filter>`
    - Codex worktree or linked/sparse checkout, changed gates or anything broad:
      use the Crabbox wrapper with the provider that matches the proof surface.
      For maintainer heavy `pnpm` gates, that is usually delegated Blacksmith
@@ -41,7 +41,7 @@ Prove the touched surface first. Do not reflexively run the whole suite.
 - In a Codex worktree or linked/sparse checkout, do not run direct local
   `pnpm test*`, `pnpm check*`, `pnpm crabbox:run`, or `scripts/committer` until
   you have verified pnpm will not reconcile or reinstall dependencies. Use
-  `node scripts/run-vitest.mjs` for tiny local proof, `node
+  `node scripts/test-projects.mjs` for tiny local proof, `node
 scripts/crabbox-wrapper.mjs` for Testbox, and `git commit --no-verify` only
   after the relevant remote or node-wrapper proof is already clean.
 - For remote proof, use the Crabbox wrapper first, but name the actual backend.
@@ -76,11 +76,13 @@ mode and will not exit on its own.
 When the checkout is a Codex worktree, prefer the direct node harness instead:
 
 ```bash
-node scripts/run-vitest.mjs <path-or-filter>
+node scripts/test-projects.mjs <path-or-filter>
 ```
 
-That keeps the test scoped without giving pnpm a chance to run dependency
-status checks or install reconciliation in a linked worktree.
+That keeps the test scoped, delegates owner/config selection to one authority,
+and avoids pnpm dependency reconciliation in a linked worktree. Use
+`node scripts/test-projects.mjs --plan <path-or-filter>` to inspect routing
+without starting Vitest.
 
 ## Command Semantics
 

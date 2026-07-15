@@ -1011,6 +1011,24 @@ describe("scripts/test-projects changed-target routing", () => {
     expect(result.stderr).not.toContain("[test] starting");
   });
 
+  it("plans the owning project without starting Vitest", () => {
+    const result = spawnSync(
+      process.execPath,
+      ["scripts/test-projects.mjs", "--plan", "ui/src/ui/e2e/workboard.e2e.test.ts"],
+      {
+        encoding: "utf8",
+        timeout: 5_000,
+      },
+    );
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toContain("request=explicit-targets");
+    expect(result.stderr).toContain("test/vitest/vitest.ui-e2e.config.ts");
+    expect(result.stderr).toContain("[test] planned 1 Vitest shard");
+    expect(result.stderr).not.toContain("validation preflight");
+    expect(result.stderr).not.toContain("[test] starting");
+  });
+
   it("allows explicit split Vitest config targets without treating them as unmatched tests", () => {
     expect(
       findUnmatchedExplicitTestTargets(

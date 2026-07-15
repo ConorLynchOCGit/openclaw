@@ -19,8 +19,12 @@ Use this for Control UI changes that need a real browser flow with deterministic
 - Target one E2E test in a Codex worktree:
 
 ```bash
-node scripts/run-vitest.mjs run --config test/vitest/vitest.ui-e2e.config.ts --configLoader runner ui/src/ui/e2e/chat-flow.e2e.test.ts
+node scripts/test-projects.mjs ui/src/ui/e2e/chat-flow.e2e.test.ts
 ```
+
+When ownership is uncertain, append `--plan` before the target to inspect the
+selected project without starting Vitest. Do not call raw Vitest or select a
+config by memory; the repository dispatcher owns that mapping.
 
 - Run the whole local lane in a normal checkout:
 
