@@ -97,7 +97,7 @@ export type AgentConfig = {
   agentRuntime?: AgentModelEntryConfig["agentRuntime"];
   /** Per-model metadata overrides for this agent. */
   models?: Record<string, AgentModelEntryConfig>;
-  /** @deprecated Legacy per-agent compaction config is kept for raw doctor migration/repair. */
+  /** Per-agent override merged over agents.defaults.compaction for native OpenClaw runs. */
   compaction?: AgentDefaultsConfig["compaction"];
   /** Optional per-agent default thinking level (overrides agents.defaults.thinkingDefault). */
   thinkingDefault?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "adaptive" | "max";

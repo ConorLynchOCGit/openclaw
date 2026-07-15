@@ -8,11 +8,17 @@ describe("isSessionRunActive", () => {
     expect(isSessionRunActive({ status: "running", hasActiveRun: true })).toBe(true);
   });
 
-  it("keeps terminal status authoritative over stale active flags", () => {
+  it("keeps explicit descendant activity authoritative over an outer terminal status", () => {
+    expect(isSessionRunActive({ status: "done", hasActiveSubagentRun: true })).toBe(true);
+    expect(isSessionRunActive({ status: "failed", hasActiveSubagentRun: true })).toBe(true);
+    expect(isSessionRunActive({ status: "killed", hasActiveSubagentRun: true })).toBe(true);
+    expect(isSessionRunActive({ status: "timeout", hasActiveSubagentRun: true })).toBe(true);
+  });
+
+  it("keeps terminal status settled when no active run remains", () => {
+    expect(isSessionRunActive({ status: "done", hasActiveRun: false })).toBe(false);
+    expect(isSessionRunActive({ status: "failed", hasActiveRun: false })).toBe(false);
     expect(isSessionRunActive({ status: "done", hasActiveRun: true })).toBe(false);
-    expect(isSessionRunActive({ status: "failed", hasActiveRun: true })).toBe(false);
-    expect(isSessionRunActive({ status: "killed", hasActiveRun: true })).toBe(false);
-    expect(isSessionRunActive({ status: "timeout", hasActiveRun: true })).toBe(false);
   });
 
   it("keeps legacy running status active when no live-run flag exists", () => {

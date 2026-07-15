@@ -178,6 +178,52 @@ describe("workspace path resolution", () => {
     });
   });
 
+  it("applies per-agent write/edit roots during tool assembly", async () => {
+    await withTempDir("openclaw-scoped-edit-", async (workspaceDir) => {
+      await fs.mkdir(path.join(workspaceDir, "plans"), { recursive: true });
+      await fs.writeFile(path.join(workspaceDir, "plans", "current.md"), "status: draft\n");
+      await fs.writeFile(path.join(workspaceDir, "outside.md"), "status: draft\n");
+      const cfg: OpenClawConfig = {
+        agents: {
+          list: [
+            {
+              id: "planning",
+              tools: { fs: { workspaceOnly: true, writeEditRoots: ["plans"] } },
+            },
+          ],
+        },
+      };
+      const tools = createOpenClawCodingTools({
+        workspaceDir,
+        agentId: "planning",
+        config: cfg,
+      });
+      const { editTool, writeTool } = expectReadWriteEditTools(tools);
+
+      await editTool.execute("scoped-edit", {
+        path: "plans/current.md",
+        edits: [{ oldText: "draft", newText: "approved" }],
+      });
+      await writeTool.execute("scoped-write", {
+        path: "plans/new.md",
+        content: "status: draft\n",
+      });
+      await expect(
+        editTool.execute("outside-edit", {
+          path: "outside.md",
+          edits: [{ oldText: "draft", newText: "approved" }],
+        }),
+      ).rejects.toThrow("outside configured tools.fs.writeEditRoots");
+
+      await expect(
+        fs.readFile(path.join(workspaceDir, "plans", "current.md"), "utf8"),
+      ).resolves.toBe("status: approved\n");
+      await expect(fs.readFile(path.join(workspaceDir, "outside.md"), "utf8")).resolves.toBe(
+        "status: draft\n",
+      );
+    });
+  });
+
   it("lets exec workdir override the workspace default", async () => {
     await withTempDir("openclaw-ws-", async (workspaceDir) => {
       await withTempDir("openclaw-override-", async (overrideDir) => {

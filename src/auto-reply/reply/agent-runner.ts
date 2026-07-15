@@ -2,6 +2,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import { resolveAgentCompactionRuntimeConfig } from "../../agents/agent-compaction-config.js";
 import {
   hasSessionAutoModelFallbackProvenance,
   hasConfiguredModelFallbacks,
@@ -1324,7 +1325,11 @@ export async function runReplyAgent(params: {
     sessionCtx.ChatType,
   );
   const applyReplyToMode = createReplyToModeFilterForChannel(replyToMode, replyToChannel);
-  const cfg = followupRun.run.config;
+  const cfg = resolveAgentCompactionRuntimeConfig({
+    cfg: followupRun.run.config,
+    agentId: followupRun.run.agentId,
+  });
+  followupRun.run.config = cfg;
   const replyMediaContext = createReplyMediaContext({
     cfg,
     sessionKey,

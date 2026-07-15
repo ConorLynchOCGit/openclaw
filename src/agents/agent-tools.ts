@@ -53,6 +53,7 @@ import {
   createSandboxedWriteTool,
   getToolParamsRecord,
   wrapToolMemoryFlushAppendOnlyWrite,
+  wrapToolWriteEditRootGuard,
   wrapToolWorkspaceRootGuard,
   wrapToolWorkspaceRootGuardWithOptions,
   wrapToolParamValidation,
@@ -751,6 +752,11 @@ export function createOpenClawCodingTools(options?: {
   const includeChannelTools = toolConstructionPlan.includeChannelTools;
   const includePluginTools = toolConstructionPlan.includePluginTools;
   const workspaceOnly = fsPolicy.workspaceOnly;
+  const writeEditRoots = (fsConfig.writeEditRoots ?? []).map((root) =>
+    path.isAbsolute(root) ? path.resolve(root) : path.resolve(codingRoot, root),
+  );
+  const guardWriteEditRoots = (tool: AnyAgentTool): AnyAgentTool =>
+    writeEditRoots.length > 0 ? wrapToolWriteEditRootGuard(tool, codingRoot, writeEditRoots) : tool;
   const skillReadRoots = sandboxRoot ? undefined : resolveSkillReadRoots(options?.skillsSnapshot);
   const skillInstructionPaths = resolveSkillInstructionPaths(options?.skillsSnapshot);
   const applyPatchConfig = execConfig.applyPatch;
@@ -823,7 +829,9 @@ export function createOpenClawCodingTools(options?: {
         if (sandboxRoot) {
           continue;
         }
-        const wrapped = createHostWorkspaceWriteTool(codingRoot, { workspaceOnly });
+        const wrapped = guardWriteEditRoots(
+          createHostWorkspaceWriteTool(codingRoot, { workspaceOnly }),
+        );
         base.push(workspaceOnly ? wrapToolWorkspaceRootGuard(wrapped, codingRoot) : wrapped);
         continue;
       }
@@ -831,7 +839,9 @@ export function createOpenClawCodingTools(options?: {
         if (sandboxRoot) {
           continue;
         }
-        const wrapped = createHostWorkspaceEditTool(codingRoot, { workspaceOnly });
+        const wrapped = guardWriteEditRoots(
+          createHostWorkspaceEditTool(codingRoot, { workspaceOnly }),
+        );
         base.push(workspaceOnly ? wrapToolWorkspaceRootGuard(wrapped, codingRoot) : wrapped);
         continue;
       }
@@ -1001,22 +1011,30 @@ export function createOpenClawCodingTools(options?: {
         ? [
             workspaceOnly
               ? wrapToolWorkspaceRootGuardWithOptions(
-                  createSandboxedEditTool({ root: sandboxRoot, bridge: sandboxFsBridge! }),
+                  guardWriteEditRoots(
+                    createSandboxedEditTool({ root: sandboxRoot, bridge: sandboxFsBridge! }),
+                  ),
                   sandboxRoot,
                   {
                     containerWorkdir: sandbox.containerWorkdir,
                   },
                 )
-              : createSandboxedEditTool({ root: sandboxRoot, bridge: sandboxFsBridge! }),
+              : guardWriteEditRoots(
+                  createSandboxedEditTool({ root: sandboxRoot, bridge: sandboxFsBridge! }),
+                ),
             workspaceOnly
               ? wrapToolWorkspaceRootGuardWithOptions(
-                  createSandboxedWriteTool({ root: sandboxRoot, bridge: sandboxFsBridge! }),
+                  guardWriteEditRoots(
+                    createSandboxedWriteTool({ root: sandboxRoot, bridge: sandboxFsBridge! }),
+                  ),
                   sandboxRoot,
                   {
                     containerWorkdir: sandbox.containerWorkdir,
                   },
                 )
-              : createSandboxedWriteTool({ root: sandboxRoot, bridge: sandboxFsBridge! }),
+              : guardWriteEditRoots(
+                  createSandboxedWriteTool({ root: sandboxRoot, bridge: sandboxFsBridge! }),
+                ),
           ]
         : []
       : []),

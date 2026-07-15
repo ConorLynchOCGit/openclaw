@@ -1,6 +1,6 @@
 // Defines Zod schema fragments for agent default configuration.
 import { z } from "zod";
-import { isValidNonNegativeByteSizeString } from "./byte-size.js";
+import { AgentCompactionConfigSchema } from "./zod-schema.agent-compaction.js";
 import {
   HeartbeatSchema,
   AgentSandboxSchema,
@@ -20,11 +20,6 @@ import {
 } from "./zod-schema.core.js";
 
 const SilentReplyPolicySchema = z.union([z.literal("allow"), z.literal("disallow")]);
-
-const NonNegativeByteSizeSchema = z.union([
-  z.number().int().nonnegative(),
-  z.string().refine(isValidNonNegativeByteSizeString, "Expected byte size string like 2mb"),
-]);
 
 const OptionalBootstrapFileNameSchema = z.enum([
   "SOUL.md",
@@ -155,54 +150,7 @@ export const AgentDefaultsSchema = z
       })
       .strict()
       .optional(),
-    compaction: z
-      .object({
-        mode: z.union([z.literal("default"), z.literal("safeguard")]).optional(),
-        provider: z.string().optional(),
-        reserveTokens: z.number().int().nonnegative().optional(),
-        keepRecentTokens: z.number().int().positive().optional(),
-        reserveTokensFloor: z.number().int().nonnegative().optional(),
-        maxHistoryShare: z.number().min(0.1).max(0.9).optional(),
-        customInstructions: z.string().optional(),
-        identifierPolicy: z
-          .union([z.literal("strict"), z.literal("off"), z.literal("custom")])
-          .optional(),
-        identifierInstructions: z.string().optional(),
-        recentTurnsPreserve: z.number().int().min(0).max(12).optional(),
-        qualityGuard: z
-          .object({
-            enabled: z.boolean().optional(),
-            maxRetries: z.number().int().nonnegative().optional(),
-          })
-          .strict()
-          .optional(),
-        midTurnPrecheck: z
-          .object({
-            enabled: z.boolean().optional(),
-          })
-          .strict()
-          .optional(),
-        postIndexSync: z.enum(["off", "async", "await"]).optional(),
-        postCompactionSections: z.array(z.string()).optional(),
-        model: z.string().optional(),
-        timeoutSeconds: z.number().int().positive().optional(),
-        memoryFlush: z
-          .object({
-            enabled: z.boolean().optional(),
-            model: z.string().optional(),
-            softThresholdTokens: z.number().int().nonnegative().optional(),
-            forceFlushTranscriptBytes: NonNegativeByteSizeSchema.optional(),
-            prompt: z.string().optional(),
-            systemPrompt: z.string().optional(),
-          })
-          .strict()
-          .optional(),
-        truncateAfterCompaction: z.boolean().optional(),
-        maxActiveTranscriptBytes: NonNegativeByteSizeSchema.optional(),
-        notifyUser: z.boolean().optional(),
-      })
-      .strict()
-      .optional(),
+    compaction: AgentCompactionConfigSchema,
     runRetries: AgentRunRetriesConfigSchema.optional(),
     embeddedAgent: EmbeddedAgentConfigSchema.optional(),
     thinkingDefault: z

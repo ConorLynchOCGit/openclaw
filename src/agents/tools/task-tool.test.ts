@@ -53,6 +53,17 @@ describe("task tool", () => {
     hoisted.readLatestAssistantReplyMock.mockReset().mockResolvedValue("Context Pack\n\nP1...");
   });
 
+  it("makes exact governed artifacts authoritative in the model-visible task schema", () => {
+    const tool = createTaskTool({
+      agentSessionKey: "agent:main:operator",
+      requesterAgentIdOverride: "main",
+    });
+
+    const schema = JSON.stringify(tool.parameters);
+    expect(schema).toContain("exact workspace artifact governs the work");
+    expect(schema).toContain("without reproducing, paraphrasing, or compressing");
+  });
+
   it("runs a native foreground child and returns the final assistant text", async () => {
     const tool = createTaskTool({
       agentSessionKey: "agent:planning:main",
@@ -208,8 +219,8 @@ describe("task tool", () => {
     });
   });
 
-  it("forces Main-routed Coding tasks to isolated context even when fork is requested", async () => {
-    await createTaskTool({
+  it("rejects Main-routed Coding fork context before launch", async () => {
+    const result = await createTaskTool({
       agentSessionKey: "agent:main:operator",
       requesterAgentIdOverride: "main",
     }).execute("call-1", {
@@ -218,18 +229,19 @@ describe("task tool", () => {
       context: "fork",
     });
 
-    expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
+    expect(hoisted.spawnSubagentDirectMock).not.toHaveBeenCalled();
+    expect(result).toEqual(
       expect.objectContaining({
-        agentId: "coding",
-        context: "isolated",
-        task: expect.stringContaining("Coding Artifact Handoff Contract"),
+        details: expect.objectContaining({
+          status: "error",
+          requiredContext: "isolated",
+        }),
       }),
-      expect.anything(),
     );
   });
 
-  it("forces all cross-agent foreground tasks to isolated context when fork is requested", async () => {
-    await createTaskTool({
+  it("rejects all cross-agent foreground fork context before launch", async () => {
+    const result = await createTaskTool({
       agentSessionKey: "agent:main:operator",
       requesterAgentIdOverride: "main",
     }).execute("call-1", {
@@ -238,12 +250,14 @@ describe("task tool", () => {
       context: "fork",
     });
 
-    expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
+    expect(hoisted.spawnSubagentDirectMock).not.toHaveBeenCalled();
+    expect(result).toEqual(
       expect.objectContaining({
-        agentId: "planning",
-        context: "isolated",
+        details: expect.objectContaining({
+          status: "error",
+          requiredContext: "isolated",
+        }),
       }),
-      expect.anything(),
     );
   });
 

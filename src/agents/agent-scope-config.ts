@@ -40,6 +40,7 @@ export type ResolvedAgentConfig = {
   groupChat?: AgentEntry["groupChat"];
   subagents?: AgentEntry["subagents"];
   runRetries?: AgentEntry["runRetries"];
+  compaction?: AgentEntry["compaction"];
   embeddedAgent?: AgentEntry["embeddedAgent"];
   sandbox?: AgentEntry["sandbox"];
   tools?: AgentEntry["tools"];
@@ -162,6 +163,7 @@ export function resolveAgentConfig(
       typeof entry.runRetries === "object" && entry.runRetries
         ? { ...agentDefaults?.runRetries, ...entry.runRetries }
         : agentDefaults?.runRetries,
+    compaction: entry.compaction,
     embeddedAgent:
       typeof entry.embeddedAgent === "object" && entry.embeddedAgent
         ? entry.embeddedAgent

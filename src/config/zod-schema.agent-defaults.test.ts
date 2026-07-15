@@ -355,6 +355,35 @@ describe("agent defaults schema", () => {
     expect(agent.contextLimits?.memoryGetMaxChars).toBe(18_000);
   });
 
+  it("accepts native per-agent compaction and scoped write/edit roots", () => {
+    const agent = AgentEntrySchema.parse({
+      id: "planning",
+      compaction: {
+        keepRecentTokens: 12_000,
+        recentTurnsPreserve: 4,
+        maxActiveTranscriptBytes: "512kb",
+        memoryFlush: { enabled: false },
+      },
+      tools: {
+        fs: {
+          workspaceOnly: true,
+          writeEditRoots: ["plans"],
+        },
+      },
+    });
+
+    expect(agent.compaction).toMatchObject({
+      keepRecentTokens: 12_000,
+      recentTurnsPreserve: 4,
+      maxActiveTranscriptBytes: "512kb",
+      memoryFlush: { enabled: false },
+    });
+    expect(agent.tools?.fs).toEqual({
+      workspaceOnly: true,
+      writeEditRoots: ["plans"],
+    });
+  });
+
   it("accepts positive heartbeat timeoutSeconds on defaults and agent entries", () => {
     const defaults = AgentDefaultsSchema.parse({
       heartbeat: { timeoutSeconds: 45, skipWhenBusy: true },

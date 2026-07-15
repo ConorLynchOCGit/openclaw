@@ -34,10 +34,12 @@ function createToolHarness() {
 }
 
 async function loadModule() {
-  ({ wrapToolWorkspaceRootGuardWithOptions } = await import("./agent-tools.read.js"));
+  ({ wrapToolWorkspaceRootGuardWithOptions, wrapToolWriteEditRootGuard } =
+    await import("./agent-tools.read.js"));
 }
 
 let wrapToolWorkspaceRootGuardWithOptions: typeof import("./agent-tools.read.js").wrapToolWorkspaceRootGuardWithOptions;
+let wrapToolWriteEditRootGuard: typeof import("./agent-tools.read.js").wrapToolWriteEditRootGuard;
 
 describe("wrapToolWorkspaceRootGuardWithOptions", () => {
   const root = path.resolve("/tmp/root");
@@ -312,6 +314,44 @@ describe("wrapToolWorkspaceRootGuardWithOptions", () => {
     ).rejects.toThrow(/Malformed path parameter: outPath/);
 
     expect(mocks.assertSandboxPath).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+  });
+});
+
+describe("wrapToolWriteEditRootGuard", () => {
+  const workspaceRoot = path.resolve("/tmp/workspace");
+  const plansRoot = path.resolve(workspaceRoot, "plans");
+
+  beforeAll(loadModule);
+
+  beforeEach(() => {
+    mocks.assertSandboxPath.mockReset();
+    mocks.assertSandboxPath.mockImplementation(async ({ filePath, root }) => {
+      const resolved = path.resolve(filePath);
+      const relative = path.relative(path.resolve(root), resolved);
+      if (relative.startsWith("..") || path.isAbsolute(relative)) {
+        throw new Error(`Path escapes sandbox root (${root}): ${filePath}`);
+      }
+      return { resolved, relative };
+    });
+  });
+
+  it("allows write/edit calls under a configured workspace subtree", async () => {
+    const { execute, tool } = createToolHarness();
+    const wrapped = wrapToolWriteEditRootGuard(tool, workspaceRoot, [plansRoot]);
+
+    await wrapped.execute("tc-plans", { path: "plans/current.md" });
+
+    expect(execute).toHaveBeenCalledOnce();
+  });
+
+  it("rejects write/edit calls outside configured workspace subtrees", async () => {
+    const { execute, tool } = createToolHarness();
+    const wrapped = wrapToolWriteEditRootGuard(tool, workspaceRoot, [plansRoot]);
+
+    await expect(wrapped.execute("tc-docs", { path: "docs/current.md" })).rejects.toThrow(
+      "outside configured tools.fs.writeEditRoots",
+    );
     expect(execute).not.toHaveBeenCalled();
   });
 });

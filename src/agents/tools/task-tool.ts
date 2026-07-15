@@ -59,7 +59,7 @@ const TaskToolSchema = Type.Object({
   }),
   task: Type.String({
     description:
-      "Detailed child task prompt. Ask for decision material, not a final plan unless that is the child role.",
+      "Child route intent and bounded task context. When an exact workspace artifact governs the work, pass its path/ref and digest without reproducing, paraphrasing, or compressing its requirements; the child reads that artifact as authority. Ask for decision material, not a final plan unless that is the child role.",
   }),
   taskName: Type.Optional(
     Type.String({
@@ -71,7 +71,7 @@ const TaskToolSchema = Type.Object({
   context: Type.Optional(
     Type.Union([Type.Literal("isolated"), Type.Literal("fork")], {
       description:
-        'Native context. Omit/"isolated" for clean child; "fork" only when the child needs requester transcript.',
+        'Native context. Cross-agent tasks must omit this or use "isolated". "fork" is valid only for same-agent continuation.',
     }),
   ),
   thinking: Type.Optional(
@@ -224,6 +224,22 @@ function resolveTaskToolContext(params: {
   return params.requestedContext === "fork" || params.requestedContext === "isolated"
     ? params.requestedContext
     : undefined;
+}
+
+function validateTaskToolContext(params: {
+  agentId: string;
+  requesterAgentId?: string;
+  requestedContext: unknown;
+}): string | undefined {
+  if (params.requestedContext !== "fork") {
+    return undefined;
+  }
+  const requesterAgentId = params.requesterAgentId?.trim().toLowerCase();
+  const targetAgentId = params.agentId.trim().toLowerCase();
+  if (requesterAgentId && requesterAgentId !== targetAgentId) {
+    return 'cross-agent task context must be "isolated"; "fork" is only valid for same-agent continuation';
+  }
+  return undefined;
 }
 
 function formatCodingTaskHandoffContract(agentId: string): string | undefined {
@@ -507,9 +523,23 @@ export function createTaskTool(
         });
       }
       const taskName = taskNameResult.taskName;
+      const requesterAgentId = resolveRequesterAgentId(opts);
+      const contextError = validateTaskToolContext({
+        agentId,
+        requesterAgentId,
+        requestedContext: params.context,
+      });
+      if (contextError) {
+        return jsonResult({
+          status: "error",
+          error: contextError,
+          requestedContext: params.context,
+          requiredContext: "isolated",
+        });
+      }
       const context = resolveTaskToolContext({
         agentId,
-        requesterAgentId: resolveRequesterAgentId(opts),
+        requesterAgentId,
         requestedContext: params.context,
       });
       const lightContext = resolveTaskToolLightContext(agentId, params.lightContext);
@@ -632,7 +662,6 @@ export function createTaskTool(
       const replyText = wait.replyText.trim();
       const contentDigest = computeChildResultContentDigest(replyText);
       const contentTruncated = includesChildResultTruncationMarker(replyText);
-      const requesterAgentId = resolveRequesterAgentId(opts);
       const inlineResult = shouldInlineTaskResultForParent({ replyText, requesterAgentId });
       const resultRef = `openclaw-transcript://${encodeURIComponent(
         spawn.childSessionKey,

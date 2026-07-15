@@ -286,6 +286,8 @@ export const FIELD_HELP: Record<string, string> = {
     "Per-agent advanced ceiling for the live tool-result max character budget. Omit to inherit defaults or the model-context auto cap.",
   "agents.list[].contextLimits.postCompactionMaxChars":
     "Per-agent override for the post-compaction AGENTS.md excerpt budget.",
+  "agents.list[].compaction":
+    "Optional native compaction override for this OpenClaw agent. Fields merge over agents.defaults.compaction for the agent's turn only; other agents and Codex-native server compaction are unchanged.",
   "agents.list[].thinkingDefault":
     "Optional per-agent default thinking level. Overrides agents.defaults.thinkingDefault for this agent when no per-message or session override is set.",
   "agents.list[].reasoningDefault":
@@ -885,7 +887,9 @@ export const FIELD_HELP: Record<string, string> = {
   "approvals.plugin.targets[].threadId":
     "Optional thread/topic target for channels that support threaded delivery of forwarded plugin approvals.",
   "tools.fs.workspaceOnly":
-    "Restrict filesystem tools (read/write/edit/apply_patch) to the workspace directory (default: false).",
+    "Restrict filesystem tools (read/write/edit) to the workspace directory (default: false). apply_patch has a separate workspace policy.",
+  "tools.fs.writeEditRoots":
+    "Optional workspace-relative or absolute roots allowed for write/edit mutations. This does not widen read access and does not govern apply_patch.",
   "tools.sessions.visibility":
     'Controls which sessions can be targeted by sessions_list/sessions_history/sessions_send. ("tree" default = current session + spawned subagent sessions; "self" = only current; "agent" = any session in the current agent id; "all" = any session; cross-agent still requires tools.agentToAgent).',
   "tools.message.allowCrossContextSend":

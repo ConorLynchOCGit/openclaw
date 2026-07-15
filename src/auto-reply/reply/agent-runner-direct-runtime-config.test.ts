@@ -220,6 +220,49 @@ describe("runReplyAgent runtime config", () => {
     expect(preflightCall.followupRun).toBe(followupRun);
   });
 
+  it("projects a per-agent compaction override into the entire turn-local config", async () => {
+    const scopedCfg = {
+      agents: {
+        defaults: {
+          compaction: {
+            keepRecentTokens: 12_000,
+            memoryFlush: { enabled: true, softThresholdTokens: 8_000 },
+          },
+        },
+        list: [
+          {
+            id: "business-ops",
+            compaction: {
+              keepRecentTokens: 6_000,
+              maxActiveTranscriptBytes: "512kb",
+              memoryFlush: { enabled: false },
+            },
+          },
+        ],
+      },
+    };
+    resolveQueuedReplyExecutionConfigMock.mockResolvedValue(scopedCfg);
+    const { followupRun, replyParams } = createDirectRuntimeReplyParams({
+      shouldFollowup: false,
+      isActive: false,
+    });
+    followupRun.run.agentId = "business-ops";
+
+    await expect(runReplyAgent(replyParams)).rejects.toBe(sentinelError);
+
+    expect(followupRun.run.config).not.toBe(scopedCfg);
+    expect(followupRun.run.config.agents?.defaults?.compaction).toMatchObject({
+      keepRecentTokens: 6_000,
+      maxActiveTranscriptBytes: "512kb",
+      memoryFlush: { enabled: false, softThresholdTokens: 8_000 },
+    });
+    const preflightCall = requireMaintenanceCall(
+      runPreflightCompactionIfNeededMock,
+      "runPreflightCompactionIfNeeded",
+    );
+    expect(preflightCall.cfg).toBe(followupRun.run.config);
+  });
+
   it("passes the derived runtime-policy key to pre-run maintenance", async () => {
     const { followupRun, replyParams } = createDirectRuntimeReplyParams({
       shouldFollowup: false,

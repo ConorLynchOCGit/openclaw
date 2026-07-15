@@ -12,6 +12,7 @@ import { getBlockedNetworkModeReason } from "../agents/sandbox/network-mode.js";
 import { parseDurationMs } from "../cli/parse-duration.js";
 import { isBlockedObjectKey } from "./prototype-keys.js";
 import { LEGACY_WEB_SEARCH_PROVIDER_CONFIG_KEYS } from "./web-search-legacy-provider-keys.js";
+import { AgentCompactionConfigSchema } from "./zod-schema.agent-compaction.js";
 import { AgentModelSchema, AgentToolModelSchema } from "./zod-schema.agent-model.js";
 import {
   GroupChatSchema,
@@ -611,6 +612,7 @@ const ToolExecSchema = z
 const ToolFsSchema = z
   .object({
     workspaceOnly: z.boolean().optional(),
+    writeEditRoots: z.array(z.string().min(1)).optional(),
   })
   .strict()
   .optional();
@@ -1089,6 +1091,7 @@ export const AgentEntrySchema = z
       .strict()
       .optional(),
     runRetries: AgentRunRetriesConfigSchema.optional(),
+    compaction: AgentCompactionConfigSchema,
     embeddedAgent: AgentEntryEmbeddedAgentConfigSchema.optional(),
     sandbox: AgentSandboxSchema,
     params: z.record(z.string(), z.unknown()).optional(),

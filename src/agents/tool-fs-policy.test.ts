@@ -5,6 +5,7 @@ import type { OpenClawConfig } from "../config/config.js";
 import {
   resolveEffectiveToolFsRootExpansionAllowed,
   resolveEffectiveToolFsWorkspaceOnly,
+  resolveToolFsConfig,
 } from "./tool-fs-policy.js";
 
 describe("resolveEffectiveToolFsWorkspaceOnly", () => {
@@ -34,6 +35,25 @@ describe("resolveEffectiveToolFsWorkspaceOnly", () => {
       },
     };
     expect(resolveEffectiveToolFsWorkspaceOnly({ cfg, agentId: "main" })).toBe(false);
+  });
+
+  it("prefers agent-specific write/edit roots without widening global filesystem policy", () => {
+    const cfg = {
+      tools: { fs: { workspaceOnly: true, writeEditRoots: ["global"] } },
+      agents: {
+        list: [
+          {
+            id: "planning",
+            tools: { fs: { writeEditRoots: ["plans"] } },
+          },
+        ],
+      },
+    } as OpenClawConfig;
+
+    expect(resolveToolFsConfig({ cfg, agentId: "planning" })).toEqual({
+      workspaceOnly: true,
+      writeEditRoots: ["plans"],
+    });
   });
 
   it("supports agent-specific enablement when global workspaceOnly is off", () => {

@@ -3,12 +3,16 @@ import type { SessionRunStatus } from "./types.ts";
 
 type SessionRunState = {
   hasActiveRun?: boolean;
+  hasActiveSubagentRun?: boolean;
   status?: SessionRunStatus;
   finalDelivery?: { state?: "pending" | "settled" | "not_requested" };
 };
 
 export function isSessionRunActive(state: SessionRunState): boolean {
   if (state.finalDelivery?.state === "pending") {
+    return true;
+  }
+  if (state.hasActiveSubagentRun === true) {
     return true;
   }
   if (state.status && state.status !== "running") {
