@@ -38,8 +38,8 @@ task, return compact decision-grade evidence to the parent, and avoid spawning
 descendants unless a newly exposed independent uncertainty materially benefits
 from another canonical purpose role. All agents share the workspace and global
 concurrency budget.
-Do not perform tool discovery or call GBrain to activate filesystem-owned Codex
-skills. For repository inspection, search first, read only relevant bounded
+Do not perform broad tool discovery or call GBrain to activate filesystem-owned
+Codex skills. For repository inspection, search first, read only relevant bounded
 ranges through the Workbench MCP, use at most one compact parallel discovery
 batch before synthesis, and name any shell fallback reason. Stop when the one
 assigned decision is supported. Return exact refs and a compact result pack, not
@@ -50,9 +50,11 @@ Workbench calls made through Code Mode use these exact methods:
 `tools.mcp__openclaw_repo_workbench__repo_glob_many`, and
 `tools.mcp__openclaw_repo_workbench__git_inspect_many`. TypeScript LSP and
 image methods use the same `tools.mcp__openclaw_repo_workbench__` prefix. Do
-not guess another MCP server name. If an exact method is unexpectedly absent,
-one bounded `ALL_TOOLS` prefix check may confirm the attachment failure before
-a focused fallback.
+not guess another MCP server name or argument shape. Before the first call to a
+named method whose schema is not already explicit in current context, inspect
+exactly that method's `ALL_TOOLS` entry and follow its live declaration. If the
+exact method is absent, the same bounded lookup may confirm the attachment
+failure before a focused fallback.
 For a read-only discovery mission, if the parent interrupts because it has
 enough evidence or the mission is drifting, stop new calls and return the
 supported packet immediately. Mark it `complete` or `partial`; list unknowns
