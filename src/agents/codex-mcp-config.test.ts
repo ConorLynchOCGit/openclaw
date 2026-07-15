@@ -77,6 +77,28 @@ describe("buildCodexMcpServersConfig", () => {
       },
     });
   });
+
+  it("preserves Codex startup and parallel-call semantics", () => {
+    expect(
+      buildCodexMcpServersConfig({
+        mcpServers: {
+          workbench: {
+            command: "node",
+            args: ["workbench.mjs"],
+            required: true,
+            supports_parallel_tool_calls: true,
+          },
+        },
+      }),
+    ).toEqual({
+      workbench: {
+        command: "node",
+        args: ["workbench.mjs"],
+        required: true,
+        supports_parallel_tool_calls: true,
+      },
+    });
+  });
 });
 
 describe("loadCodexBundleMcpThreadConfig", () => {

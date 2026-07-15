@@ -90,6 +90,12 @@ export function normalizeCodexMcpServerConfig(
   if (toolTimeoutSec) {
     next.tool_timeout_sec = toolTimeoutSec;
   }
+  if (typeof server.required === "boolean") {
+    next.required = server.required;
+  }
+  if (typeof server.supports_parallel_tool_calls === "boolean") {
+    next.supports_parallel_tool_calls = server.supports_parallel_tool_calls;
+  }
   const defaultToolsApprovalMode = resolveCodexDefaultToolsApprovalMode(server);
   if (defaultToolsApprovalMode) {
     next.default_tools_approval_mode = defaultToolsApprovalMode;

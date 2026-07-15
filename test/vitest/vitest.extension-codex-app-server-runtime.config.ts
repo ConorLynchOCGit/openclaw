@@ -10,6 +10,7 @@ export function createExtensionCodexAppServerRuntimeVitestConfig(
       "extensions/codex/src/app-server/auth-bridge.test.ts",
       "extensions/codex/src/app-server/auth-profile-runtime-contract.test.ts",
       "extensions/codex/src/app-server/client.test.ts",
+      "extensions/codex/src/app-server/coding-workbench-plugin.test.ts",
       "extensions/codex/src/app-server/compact.test.ts",
       "extensions/codex/src/app-server/config.test.ts",
       "extensions/codex/src/app-server/managed-binary.test.ts",

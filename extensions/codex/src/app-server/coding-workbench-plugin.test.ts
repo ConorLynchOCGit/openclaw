@@ -18,9 +18,17 @@ describe("OpenClaw Codex repo workbench plugin", () => {
     const configToml = await fs.readFile(path.join(REPO_ROOT, ".codex/config.toml"), "utf8");
     const serverSource = await fs.readFile(MCP_SERVER, "utf8");
     const mcpJson = JSON.parse(await fs.readFile(path.join(PLUGIN_ROOT, ".mcp.json"), "utf8")) as {
-      mcpServers: Record<string, { enabled_tools?: string[] }>;
+      mcpServers: Record<
+        string,
+        {
+          enabled_tools?: string[];
+          required?: boolean;
+          supports_parallel_tool_calls?: boolean;
+        }
+      >;
     };
-    const enabledTools = mcpJson.mcpServers.openclaw_repo_workbench?.enabled_tools ?? [];
+    const workbenchServer = mcpJson.mcpServers.openclaw_repo_workbench;
+    const enabledTools = workbenchServer?.enabled_tools ?? [];
 
     expect(configToml).toContain("[mcp_servers.openclaw_repo_workbench]");
     expect(configToml).toContain(
@@ -28,6 +36,10 @@ describe("OpenClaw Codex repo workbench plugin", () => {
     );
     expect(configToml).toContain("required = true");
     expect(configToml).toContain("supports_parallel_tool_calls = true");
+    expect(workbenchServer).toMatchObject({
+      required: true,
+      supports_parallel_tool_calls: true,
+    });
     expect(configToml).toContain('  "artifact_view_image",');
     expect(serverSource).toContain(
       "Prefer these read-only batched tools for broad repository discovery",

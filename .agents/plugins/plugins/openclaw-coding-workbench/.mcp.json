@@ -6,6 +6,8 @@
       "cwd": ".",
       "startup_timeout_sec": 10,
       "tool_timeout_sec": 30,
+      "required": true,
+      "supports_parallel_tool_calls": true,
       "enabled_tools": [
         "artifact_view_image",
         "repo_search_many",
