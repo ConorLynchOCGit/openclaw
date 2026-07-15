@@ -11,6 +11,10 @@ export const unitUiIncludePatterns = [
   "ui/src/ui/controllers/chat.test.ts",
 ];
 
+export function isNodeUiTestTarget(relative) {
+  return relative === "ui/src/test-helpers/control-ui-e2e.test.ts";
+}
+
 export function isUnitUiTestTarget(relative) {
   if (!relative.endsWith(".test.ts")) {
     return false;

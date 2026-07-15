@@ -180,6 +180,17 @@ describe("scripts/run-vitest", () => {
     ]);
   });
 
+  it("routes Node-backed Control UI helper tests through the tooling config", () => {
+    expect(
+      resolveImplicitVitestArgs(["run", "ui/src/test-helpers/control-ui-e2e.test.ts"]),
+    ).toEqual([
+      "run",
+      "--config",
+      "test/vitest/vitest.tooling.config.ts",
+      "ui/src/test-helpers/control-ui-e2e.test.ts",
+    ]);
+  });
+
   it("routes explicit Docker helper tests through the Docker tooling config", () => {
     expect(resolveImplicitVitestArgs(["run", "test/scripts/docker-build-helper.test.ts"])).toEqual([
       "run",

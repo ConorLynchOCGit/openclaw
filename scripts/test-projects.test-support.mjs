@@ -40,7 +40,7 @@ import {
   resolvePluginSdkLightIncludePattern,
 } from "../test/vitest/vitest.plugin-sdk-paths.mjs";
 import { fullSuiteVitestShards } from "../test/vitest/vitest.test-shards.mjs";
-import { isUnitUiTestTarget } from "../test/vitest/vitest.ui-paths.mjs";
+import { isNodeUiTestTarget, isUnitUiTestTarget } from "../test/vitest/vitest.ui-paths.mjs";
 import {
   resolveUnitFastTestIncludePattern,
   resolveUnitFastTimerTestIncludePattern,
@@ -1929,6 +1929,9 @@ function classifyTarget(arg, cwd) {
   }
   if (isControlUiE2eTarget(relative)) {
     return "uiE2e";
+  }
+  if (isNodeUiTestTarget(relative)) {
+    return "tooling";
   }
   if (relative.startsWith("ui/src/") && relative.endsWith(".browser.test.ts")) {
     return "uiBrowser";

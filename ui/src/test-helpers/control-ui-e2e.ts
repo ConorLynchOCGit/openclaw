@@ -94,6 +94,7 @@ export const systemChromiumExecutableCandidates = [
   "/usr/bin/google-chrome-stable",
 ] as const;
 const chromiumLaunchProbeCache = new Map<string, boolean>();
+const controlUiE2eWarmupTimeoutMs = 60_000;
 
 function resolveRepoRoot(): string {
   const here = path.dirname(fileURLToPath(import.meta.url));
@@ -202,8 +203,24 @@ export async function startControlUiE2eServer(): Promise<ControlUiE2eServer> {
     },
   });
   await server.listen(port);
+  const baseUrl = resolveServerBaseUrl(server);
+  try {
+    const response = await fetch(baseUrl, {
+      signal: AbortSignal.timeout(controlUiE2eWarmupTimeoutMs),
+    });
+    if (!response.ok) {
+      throw new Error(`Control UI E2E warmup returned HTTP ${response.status}`);
+    }
+    await response.arrayBuffer();
+  } catch (error) {
+    await server.close();
+    throw new Error(
+      `Control UI E2E server did not finish its cold compile within ${controlUiE2eWarmupTimeoutMs}ms`,
+      { cause: error },
+    );
+  }
   return {
-    baseUrl: resolveServerBaseUrl(server),
+    baseUrl,
     close: () => server.close(),
   };
 }

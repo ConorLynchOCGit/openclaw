@@ -5,7 +5,11 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { isUiTestTarget, isUnitUiTestTarget } from "../test/vitest/vitest.ui-paths.mjs";
+import {
+  isNodeUiTestTarget,
+  isUiTestTarget,
+  isUnitUiTestTarget,
+} from "../test/vitest/vitest.ui-paths.mjs";
 import { boundaryTestFiles } from "../test/vitest/vitest.unit-paths.mjs";
 import { resolveLocalVitestEnv } from "./lib/vitest-local-scheduling.mjs";
 import { spawnPnpmRunner } from "./pnpm-runner.mjs";
@@ -675,7 +679,10 @@ function withImplicitVitestConfig(argv, config) {
 
 function isToolingTestTarget(target) {
   return (
-    target.startsWith("test/") && target.endsWith(".test.ts") && !TOOLING_EXCLUDED_TESTS.has(target)
+    isNodeUiTestTarget(target) ||
+    (target.startsWith("test/") &&
+      target.endsWith(".test.ts") &&
+      !TOOLING_EXCLUDED_TESTS.has(target))
   );
 }
 

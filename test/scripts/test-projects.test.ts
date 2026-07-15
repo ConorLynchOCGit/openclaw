@@ -1515,6 +1515,17 @@ describe("scripts/test-projects changed-target routing", () => {
     expect(buildVitestArgs(["ui/src/ui/e2e"])).toContain("--configLoader");
   });
 
+  it("routes the Node-backed Control UI helper test to the tooling lane", () => {
+    expect(buildVitestRunPlans(["ui/src/test-helpers/control-ui-e2e.test.ts"])).toEqual([
+      {
+        config: "test/vitest/vitest.tooling.config.ts",
+        forwardedArgs: [],
+        includePatterns: ["ui/src/test-helpers/control-ui-e2e.test.ts"],
+        watchMode: false,
+      },
+    ]);
+  });
+
   it("routes browser ui tests through the native Vitest browser project", () => {
     expect(buildVitestRunPlans(["ui/src/ui/views/sessions.browser.test.ts"])).toEqual([
       {
