@@ -1891,6 +1891,64 @@ describe("CodexAppServerEventProjector", () => {
     ]);
   });
 
+  it("records raw V2 follow-up steering without retaining the child message", async () => {
+    const trajectoryRecorder = {
+      filePath: "trajectory.jsonl",
+      recordEvent: vi.fn(),
+      flush: vi.fn(async () => undefined),
+    };
+    const projector = await createProjector(await createParams(), { trajectoryRecorder });
+
+    await projector.handleNotification(
+      forCurrentTurn("rawResponseItem/completed", {
+        item: {
+          type: "function_call",
+          id: "followup-item",
+          call_id: "followup-call",
+          namespace: "agents",
+          name: "followup_task",
+          arguments: JSON.stringify({
+            target: "/root/home_candidate",
+            fork_turns: true,
+            message: "encrypted-or-private-steering-payload",
+          }),
+        },
+      }),
+    );
+    await projector.handleNotification(
+      forCurrentTurn("rawResponseItem/completed", {
+        item: {
+          type: "function_call_output",
+          call_id: "followup-call",
+          output: "",
+        },
+      }),
+    );
+
+    expect(trajectoryRecorder.recordEvent).toHaveBeenCalledWith(
+      "tool.call",
+      expect.objectContaining({
+        toolCallId: "followup-call",
+        name: "followup_task",
+        namespace: "agents",
+        arguments: { target: "/root/home_candidate", fork_turns: true },
+      }),
+    );
+    expect(trajectoryRecorder.recordEvent).toHaveBeenCalledWith(
+      "tool.result",
+      expect.objectContaining({
+        toolCallId: "followup-call",
+        name: "followup_task",
+        status: "completed",
+        isError: false,
+        result: { accepted: true },
+      }),
+    );
+    expect(JSON.stringify(trajectoryRecorder.recordEvent.mock.calls)).not.toContain(
+      "encrypted-or-private-steering-payload",
+    );
+  });
+
   it("records a raw V2 spawn failure without manufacturing acceptance", async () => {
     const trajectoryRecorder = {
       filePath: "trajectory.jsonl",

@@ -27,6 +27,7 @@ import { saveMediaBuffer } from "openclaw/plugin-sdk/media-store";
 import { asDateTimestampMs } from "openclaw/plugin-sdk/number-runtime";
 import {
   normalizeCodexItemToolEvent,
+  normalizeCodexRawCollaborationToolEvent,
   normalizeCodexRawImageToolEvents,
 } from "./codex-item-event-normalizer.js";
 import { resolveCodexLocalRuntimeAttribution } from "./local-runtime-attribution.js";
@@ -1033,59 +1034,39 @@ export class CodexAppServerEventProjector {
       trajectoryRecorder.recordEvent(event.type, event.data);
     }
 
-    const itemType = readString(item, "type");
     const rawCallId = readString(item, "call_id") ?? readString(item, "callId");
     if (!rawCallId) {
       return;
     }
-    if (itemType === "function_call") {
-      const namespace = readString(item, "namespace");
-      const rawName = readString(item, "name");
-      const normalizedName = rawName?.replace(/[^a-z0-9]/giu, "").toLowerCase();
-      if (namespace !== "agents" || normalizedName !== "spawnagent") {
-        return;
-      }
-      const rawItemId = readString(item, "id");
-      this.registerRawToolTrajectoryAliases(rawCallId, rawItemId ? [rawItemId] : []);
-      this.toolTrajectoryNamesById.set(rawCallId, "spawn_agent");
+    const rawEvent = normalizeCodexRawCollaborationToolEvent({
+      item,
+      knownName: this.toolTrajectoryNamesById.get(rawCallId),
+      threadId: this.threadId,
+      turnId: this.turnId,
+    });
+    if (!rawEvent) {
+      return;
+    }
+    if (rawEvent.type === "tool.call") {
+      this.registerRawToolTrajectoryAliases(rawCallId, rawEvent.aliases);
+      this.toolTrajectoryNamesById.set(rawCallId, rawEvent.name);
       if (this.hasToolTrajectoryEvent(this.toolTrajectoryCallIds, rawCallId)) {
         return;
       }
       this.toolTrajectoryCallIds.add(rawCallId);
-      trajectoryRecorder.recordEvent("tool.call", {
-        source: "codex-native",
-        threadId: this.threadId,
-        turnId: this.turnId,
-        itemId: rawCallId,
-        toolCallId: rawCallId,
-        name: "spawn_agent",
-        namespace: "agents",
-        arguments: {},
-      });
+      trajectoryRecorder.recordEvent(rawEvent.type, rawEvent.data);
       return;
     }
-    if (
-      itemType !== "function_call_output" ||
-      this.toolTrajectoryNamesById.get(rawCallId) !== "spawn_agent" ||
-      this.hasToolTrajectoryEvent(this.toolTrajectoryResultIds, rawCallId)
-    ) {
+    if (this.hasToolTrajectoryEvent(this.toolTrajectoryResultIds, rawCallId)) {
       return;
     }
-    const spawnResult = readRawSpawnResult(item);
     const correlatedId =
       this.findToolTrajectoryEventId(this.toolTrajectoryCallIds, rawCallId) ?? rawCallId;
     this.toolTrajectoryResultIds.add(correlatedId);
-    trajectoryRecorder.recordEvent("tool.result", {
-      source: "codex-native",
-      threadId: this.threadId,
-      turnId: this.turnId,
+    trajectoryRecorder.recordEvent(rawEvent.type, {
+      ...rawEvent.data,
       itemId: correlatedId,
       toolCallId: correlatedId,
-      name: "spawn_agent",
-      namespace: "agents",
-      status: spawnResult.accepted ? "completed" : "failed",
-      isError: !spawnResult.accepted,
-      result: spawnResult,
     });
   }
 
@@ -2001,29 +1982,6 @@ function isHookNotificationMethod(method: string): method is "hook/started" | "h
 
 function readNotificationTurnId(record: JsonObject): string | undefined {
   return readCodexNotificationTurnId(record);
-}
-
-function readRawJsonObject(value: unknown): JsonObject | undefined {
-  if (isJsonObject(value)) {
-    return value;
-  }
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return isJsonObject(parsed) ? parsed : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function readRawSpawnResult(item: JsonObject): {
-  accepted: boolean;
-} {
-  const output = readRawJsonObject(item.output);
-  const taskName = output ? readString(output, "task_name")?.trim() : undefined;
-  return { accepted: Boolean(taskName) };
 }
 
 function readString(record: Record<string, unknown>, key: string): string | undefined {

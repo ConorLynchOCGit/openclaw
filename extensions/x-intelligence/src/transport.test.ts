@@ -136,6 +136,52 @@ describe("XReadTransport", () => {
     });
   });
 
+  it("uses the official XDK transport with bearer auth for current user search", async () => {
+    const mock = await startServer((request, response) => {
+      expect(request.method).toBe("GET");
+      const url = new URL(request.url ?? "", "http://x.invalid");
+      expect(url.pathname).toBe("/2/users/search");
+      expect(url.searchParams.get("query")).toBe("nuclear energy");
+      expect(url.searchParams.get("max_results")).toBe("10");
+      expect(url.searchParams.get("next_token")).toBe("next-page");
+      expect(url.searchParams.get("expansions")).toBe("pinned_tweet_id");
+      expect(url.searchParams.get("user.fields")).toBe("description,public_metrics");
+      expect(request.headers.authorization).toBe(`Bearer ${TOKEN}`);
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ data: [{ id: "1", username: "example" }] }));
+    });
+    const client = transport(mock.baseUrl);
+
+    const result = await client.users.search({
+      query: "nuclear energy",
+      maxResults: 10,
+      paginationToken: "next-page",
+      expansions: ["pinned_tweet_id"],
+      userFields: ["description", "public_metrics"],
+    });
+
+    expect(result.receipt.status).toBe(200);
+    expect(result.data).toMatchObject({ data: [{ id: "1", username: "example" }] });
+  });
+
+  it("rejects unsupported user-search syntax before provider execution", async () => {
+    const client = createXReadTransport({
+      apiKey: TOKEN,
+      baseUrl: "http://127.0.0.1:1",
+      timeoutMs: 100,
+    });
+
+    let error: unknown;
+    try {
+      client.users.search({ query: "(nuclear OR uranium)", maxResults: 10 });
+    } catch (value) {
+      error = value;
+    }
+
+    expect(error).toBeInstanceOf(XTransportError);
+    expect(error.kind).toBe("bad_request");
+  });
+
   it("reads bounded project usage through the official XDK usage client", async () => {
     const mock = await startServer((request, response) => {
       const url = new URL(request.url ?? "", "http://x.invalid");
@@ -255,16 +301,13 @@ describe("XReadTransport", () => {
     expect(JSON.stringify(ownedError)).not.toContain(TOKEN);
   });
 
-  it("reports user-context-only XDK operations as unavailable authentication, not network failure", async () => {
+  it("reports personalized trends as unavailable authentication, not network failure", async () => {
     const client = createXReadTransport({ apiKey: TOKEN });
 
-    const [userSearchError, personalizedTrendsError] = await Promise.all([
-      client.users.search({ query: "OpenClaw", maxResults: 10 }).catch((value: unknown) => value),
-      client.trends.personalized().catch((value: unknown) => value),
-    ]);
+    const personalizedTrendsError = await client.trends
+      .personalized()
+      .catch((value: unknown) => value);
 
-    expect(userSearchError).toBeInstanceOf(XTransportError);
-    expect(userSearchError.kind).toBe("authentication");
     expect(personalizedTrendsError).toBeInstanceOf(XTransportError);
     expect(personalizedTrendsError.kind).toBe("authentication");
   });

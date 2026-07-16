@@ -15,6 +15,7 @@ import { writeAcquisitionManifest } from "./evidence-store.js";
 import { createEpisodeRequestBudget, type XEpisodeBudgetLimits } from "./resource-budget.js";
 import {
   createXReadTransport,
+  X_USER_SEARCH_QUERY_PATTERN,
   XTransportError,
   type XJson,
   type XReadResult,
@@ -66,6 +67,7 @@ const EXPANSIONS = [
   "referenced_tweets.id",
   "referenced_tweets.id.author_id",
 ];
+const USER_EXPANSIONS = ["pinned_tweet_id"];
 
 const PURPOSES = [
   "question_research",
@@ -781,22 +783,56 @@ export function createXIntelligenceTools(params: {
       label: "X Users",
       description:
         "Discover X accounts, resolve stable identity, or inspect bounded follower/following relationships. Resolve candidates to stable IDs before qualification.",
-      parameters: Type.Object(
-        {
-          ...CommonSchema,
-          operation: Type.Union([
-            Type.Literal("search"),
-            Type.Literal("identity"),
-            Type.Literal("followers"),
-            Type.Literal("following"),
-          ]),
-          query: Type.Optional(Type.String({ minLength: 1, maxLength: 1_024 })),
-          id: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
-          username: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
-          ...PageSchema,
-        },
-        { additionalProperties: false },
-      ),
+      parameters: Type.Union([
+        Type.Object(
+          {
+            ...CommonSchema,
+            operation: Type.Literal("search"),
+            query: Type.String({
+              minLength: 1,
+              maxLength: 50,
+              pattern: X_USER_SEARCH_QUERY_PATTERN,
+              description: "Name, username, or profile-bio keywords; not a post-search query.",
+            }),
+            ...PageSchema,
+          },
+          { additionalProperties: false },
+        ),
+        Type.Object(
+          {
+            ...CommonSchema,
+            operation: Type.Literal("identity"),
+            id: Type.String({ minLength: 1, maxLength: 64 }),
+          },
+          { additionalProperties: false },
+        ),
+        Type.Object(
+          {
+            ...CommonSchema,
+            operation: Type.Literal("identity"),
+            username: Type.String({ minLength: 1, maxLength: 64 }),
+          },
+          { additionalProperties: false },
+        ),
+        Type.Object(
+          {
+            ...CommonSchema,
+            operation: Type.Literal("followers"),
+            id: Type.String({ minLength: 1, maxLength: 64 }),
+            ...PageSchema,
+          },
+          { additionalProperties: false },
+        ),
+        Type.Object(
+          {
+            ...CommonSchema,
+            operation: Type.Literal("following"),
+            id: Type.String({ minLength: 1, maxLength: 64 }),
+            ...PageSchema,
+          },
+          { additionalProperties: false },
+        ),
+      ]),
       execute: async (toolCallId, raw, signal) => {
         const args = raw as ToolCommon & Record<string, unknown>;
         const operation = requireString(args, "operation");
@@ -808,7 +844,7 @@ export function createXIntelligenceTools(params: {
           ...page,
           signal,
           userFields: USER_FIELDS,
-          expansions: EXPANSIONS,
+          expansions: USER_EXPANSIONS,
           tweetFields: POST_FIELDS,
         };
         const invoke = () => {
@@ -924,38 +960,61 @@ export function createXIntelligenceTools(params: {
       name: "x_metrics",
       label: "X Metrics",
       description:
-        "Read public post metrics, separately authorized owned timestamped analytics, or bounded project usage. Public credentials are never substituted for owned-account authorization.",
-      parameters: Type.Object(
-        {
-          ...CommonSchema,
-          operation: Type.Union([
-            Type.Literal("public"),
-            Type.Literal("owned"),
-            Type.Literal("usage"),
-          ]),
-          post_ids: Type.Optional(
-            Type.Array(Type.String({ minLength: 1, maxLength: 64 }), {
+        "Read public post metrics, separately authorized owned analytics for an exact time window, or bounded project usage. Public credentials are never substituted for owned-account authorization.",
+      parameters: Type.Union([
+        Type.Object(
+          {
+            ...CommonSchema,
+            operation: Type.Literal("public"),
+            post_ids: Type.Array(Type.String({ minLength: 1, maxLength: 64 }), {
               minItems: 1,
               maxItems: 100,
             }),
-          ),
-          days: Type.Optional(Type.Integer({ minimum: 1, maximum: 90, default: 7 })),
-          start_time: Type.Optional(Type.String()),
-          end_time: Type.Optional(Type.String()),
-          granularity: Type.Optional(
-            Type.Union([
-              Type.Literal("hourly"),
-              Type.Literal("daily"),
-              Type.Literal("weekly"),
-              Type.Literal("total"),
-            ]),
-          ),
-          metric_names: Type.Optional(
-            Type.Array(Type.String({ minLength: 1, maxLength: 64 }), { minItems: 1, maxItems: 50 }),
-          ),
-        },
-        { additionalProperties: false },
-      ),
+          },
+          { additionalProperties: false },
+        ),
+        Type.Object(
+          {
+            ...CommonSchema,
+            operation: Type.Literal("owned"),
+            post_ids: Type.Array(Type.String({ minLength: 1, maxLength: 64 }), {
+              minItems: 1,
+              maxItems: 100,
+            }),
+            start_time: Type.String({
+              minLength: 1,
+              description: "Inclusive ISO-8601 start of the owned analytics window.",
+            }),
+            end_time: Type.String({
+              minLength: 1,
+              description:
+                "Exclusive ISO-8601 end of the owned analytics window (maximum 30 days).",
+            }),
+            granularity: Type.Optional(
+              Type.Union([
+                Type.Literal("hourly"),
+                Type.Literal("daily"),
+                Type.Literal("weekly"),
+                Type.Literal("total"),
+              ]),
+            ),
+            metric_names: Type.Array(Type.String({ minLength: 1, maxLength: 64 }), {
+              minItems: 1,
+              maxItems: 50,
+              description: "Owned-account analytics metrics requested from X.",
+            }),
+          },
+          { additionalProperties: false },
+        ),
+        Type.Object(
+          {
+            ...CommonSchema,
+            operation: Type.Literal("usage"),
+            days: Type.Optional(Type.Integer({ minimum: 1, maximum: 90, default: 7 })),
+          },
+          { additionalProperties: false },
+        ),
+      ]),
       execute: async (toolCallId, raw, signal) => {
         const args = raw as ToolCommon & Record<string, unknown>;
         const operation = requireString(args, "operation");

@@ -6,6 +6,7 @@ import path from "node:path";
 import { AgencyDataStore, resolveAgencyDataStateDir } from "@openclaw/agency-data/api.js";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
 import type { PluginStateKeyedStore } from "openclaw/plugin-sdk/plugin-state-runtime";
+import { Value } from "typebox/value";
 import { afterEach, describe, expect, it } from "vitest";
 import { createXIntelligenceTools } from "./tools.js";
 import { createXReadTransport } from "./transport.js";
@@ -172,6 +173,110 @@ describe("x intelligence model tools", () => {
       /publish|create_post|delete_post|follow_user|send_message|schedule_post/,
     );
     expect(JSON.stringify(tools[0]?.parameters)).toContain("analytics_context");
+  });
+
+  it("publishes operation-specific user and metric schemas", () => {
+    const tools = createXIntelligenceTools({
+      api: fakeApi(),
+      config: { apiKey: TOKEN },
+      ctx: { workspaceDir: "/tmp" },
+    });
+    const users = tools.find((tool) => tool.name === "x_users");
+    const metrics = tools.find((tool) => tool.name === "x_metrics");
+    expect(users).toBeDefined();
+    expect(metrics).toBeDefined();
+
+    expect(
+      Value.Check(users!.parameters, {
+        purpose: "influence_map",
+        operation: "search",
+        query: "nuclear energy",
+        max_results: 10,
+      }),
+    ).toBe(true);
+    expect(Value.Check(users!.parameters, { purpose: "influence_map", operation: "search" })).toBe(
+      false,
+    );
+    expect(
+      Value.Check(users!.parameters, {
+        purpose: "influence_map",
+        operation: "identity",
+        username: "example",
+      }),
+    ).toBe(true);
+    expect(
+      Value.Check(users!.parameters, {
+        purpose: "influence_map",
+        operation: "identity",
+        id: "1",
+        username: "example",
+      }),
+    ).toBe(false);
+
+    expect(
+      Value.Check(metrics!.parameters, {
+        purpose: "format_study",
+        operation: "public",
+        post_ids: ["1"],
+      }),
+    ).toBe(true);
+    expect(
+      Value.Check(metrics!.parameters, {
+        purpose: "owned_performance",
+        operation: "owned",
+        post_ids: ["1"],
+        metric_names: ["impressions"],
+      }),
+    ).toBe(false);
+    expect(
+      Value.Check(metrics!.parameters, {
+        purpose: "owned_performance",
+        operation: "owned",
+        post_ids: ["1"],
+        start_time: "2026-07-01T00:00:00Z",
+        end_time: "2026-07-08T00:00:00Z",
+        granularity: "daily",
+        metric_names: ["impressions"],
+      }),
+    ).toBe(true);
+    expect(
+      Value.Check(metrics!.parameters, {
+        purpose: "owned_performance",
+        operation: "usage",
+        days: 7,
+        post_ids: ["1"],
+      }),
+    ).toBe(false);
+  });
+
+  it("uses user-specific expansions for identity lookup", async () => {
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "x-tools-users-workspace-"));
+    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "x-tools-users-state-"));
+    tempDirs.push(workspaceDir, stateDir);
+    const baseUrl = await startServer((request, response) => {
+      const url = new URL(request.url ?? "", "http://x.invalid");
+      expect(url.pathname).toBe("/2/users/by/username/example");
+      expect(url.searchParams.get("expansions")).toBe("pinned_tweet_id");
+      expect(url.searchParams.get("expansions")).not.toContain("author_id");
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ data: { id: "1", username: "example" } }));
+    });
+    const tools = createXIntelligenceTools({
+      api: fakeApi(),
+      config: { apiKey: TOKEN },
+      ctx: { workspaceDir, sessionKey: "agent:x-researcher:identity" },
+      analyticsStateDir: stateDir,
+      createTransport: () => createXReadTransport({ apiKey: TOKEN, baseUrl, timeoutMs: 1_000 }),
+    });
+    const users = tools.find((tool) => tool.name === "x_users");
+
+    const result = await users!.execute("call-user-identity", {
+      purpose: "influence_map",
+      operation: "identity",
+      username: "example",
+    });
+
+    expect(result.details).toMatchObject({ status: "complete" });
   });
 
   it("returns a truthful no-decision receipt without a provider call when the purpose budget is exhausted", async () => {

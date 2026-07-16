@@ -44,6 +44,9 @@ task, return compact decision-grade evidence to the parent, and avoid spawning
 descendants unless a newly exposed independent uncertainty materially benefits
 from another canonical purpose role. All agents share the workspace and global
 concurrency budget.
+The role contract is already operative. Use at most one primary workflow skill
+plus one genuinely necessary skill for a materially separate domain question;
+never load an entire preferred or candidate skill pool.
 Do not perform broad tool discovery or call GBrain to activate filesystem-owned
 Codex skills. For repository inspection, search first, read only relevant bounded
 ranges through the Workbench MCP, use at most one compact parallel discovery

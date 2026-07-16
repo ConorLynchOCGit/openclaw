@@ -143,13 +143,15 @@ function normalizeName(item: JsonObject, itemType: string): string | undefined {
   return tool;
 }
 
-function normalizeCollaborationToolName(tool: string): string {
+export function normalizeCollaborationToolName(tool: string): string {
   const normalized = tool.replace(/[^a-z0-9]/giu, "").toLowerCase();
   switch (normalized) {
     case "spawnagent":
       return "spawn_agent";
     case "sendinput":
       return "send_input";
+    case "followuptask":
+      return "followup_task";
     case "resumeagent":
       return "resume_agent";
     case "wait":
@@ -160,6 +162,151 @@ function normalizeCollaborationToolName(tool: string): string {
     default:
       return tool;
   }
+}
+
+export type NormalizedCodexRawCollaborationToolEvent = NormalizedCodexItemToolEvent & {
+  toolCallId: string;
+  aliases: string[];
+  name: string;
+};
+
+const RAW_COLLABORATION_ARGUMENT_KEYS = [
+  "agent_type",
+  "task_name",
+  "target",
+  "fork_turns",
+  "thread_id",
+  "threadId",
+  "ids",
+] as const;
+
+function readJsonObject(value: unknown): JsonObject | undefined {
+  if (isJsonObject(value)) {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isJsonObject(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeRawCollaborationArguments(value: unknown, name: string): Record<string, unknown> {
+  if (name === "spawn_agent") {
+    return {};
+  }
+  const raw = readJsonObject(value);
+  if (!raw) {
+    return {};
+  }
+  const safe: Record<string, unknown> = {};
+  for (const key of RAW_COLLABORATION_ARGUMENT_KEYS) {
+    const candidate = raw[key];
+    if (
+      typeof candidate === "string" ||
+      typeof candidate === "number" ||
+      typeof candidate === "boolean"
+    ) {
+      safe[key] = candidate;
+      continue;
+    }
+    if (Array.isArray(candidate)) {
+      safe[key] = candidate.filter(
+        (entry): entry is string => typeof entry === "string" && Boolean(entry.trim()),
+      );
+    }
+  }
+  return sanitizeCodexAgentEventRecord(safe);
+}
+
+function rawCollaborationAccepted(outputValue: unknown, name: string): boolean {
+  const output = readJsonObject(outputValue);
+  if (name === "spawn_agent") {
+    return Boolean(output && readString(output, "task_name"));
+  }
+  if (!output) {
+    return true;
+  }
+  const status = readString(output, "status")?.toLowerCase();
+  return !(
+    output.error !== undefined ||
+    output.success === false ||
+    status === "failed" ||
+    status === "blocked" ||
+    status === "declined"
+  );
+}
+
+/**
+ * Projects the raw Codex V2 collaboration envelope when app-server omits the
+ * canonical item lifecycle event. Prompt/message bodies and encrypted payloads
+ * are intentionally never mirrored into OpenClaw trajectory evidence.
+ */
+export function normalizeCodexRawCollaborationToolEvent(params: {
+  item: JsonObject;
+  knownName?: string;
+  threadId?: string;
+  turnId?: string;
+}): NormalizedCodexRawCollaborationToolEvent | undefined {
+  const itemType = readString(params.item, "type");
+  const toolCallId = readString(params.item, "call_id") ?? readString(params.item, "callId");
+  if (!toolCallId) {
+    return undefined;
+  }
+
+  if (itemType === "function_call") {
+    if (readString(params.item, "namespace") !== "agents") {
+      return undefined;
+    }
+    const rawName = readString(params.item, "name");
+    if (!rawName) {
+      return undefined;
+    }
+    const name = normalizeCollaborationToolName(rawName);
+    return {
+      type: "tool.call",
+      toolCallId,
+      aliases: readString(params.item, "id") ? [readString(params.item, "id") as string] : [],
+      name,
+      data: {
+        source: "codex-native",
+        ...(params.threadId ? { threadId: params.threadId } : {}),
+        ...(params.turnId ? { turnId: params.turnId } : {}),
+        itemId: toolCallId,
+        toolCallId,
+        name,
+        namespace: "agents",
+        arguments: normalizeRawCollaborationArguments(params.item.arguments, name),
+      },
+    };
+  }
+
+  if (itemType !== "function_call_output" || !params.knownName) {
+    return undefined;
+  }
+  const accepted = rawCollaborationAccepted(params.item.output, params.knownName);
+  return {
+    type: "tool.result",
+    toolCallId,
+    aliases: [],
+    name: params.knownName,
+    data: {
+      source: "codex-native",
+      ...(params.threadId ? { threadId: params.threadId } : {}),
+      ...(params.turnId ? { turnId: params.turnId } : {}),
+      itemId: toolCallId,
+      toolCallId,
+      name: params.knownName,
+      namespace: "agents",
+      status: accepted ? "completed" : "failed",
+      isError: !accepted,
+      result: { accepted },
+    },
+  };
 }
 
 function normalizeFileChanges(item: JsonObject): Array<{ path: string; kind: string }> {

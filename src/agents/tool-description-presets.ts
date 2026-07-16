@@ -48,6 +48,7 @@ export function describeTaskTool(): string {
     "Use when you own final synthesis and need source-scout, review, or bounded specialist decision material.",
     "For independent lanes, call task multiple times in the same assistant turn so they can run in parallel.",
     "Do not call sessions_yield after task; task returns a small child result or exact native child-result receipt/pointers as the tool result.",
+    "When task completes with resultInline=true, that inline result is the handoff: consume it directly and do not call sessions_history; use returned refs only for truncated/non-inline recovery or explicit audit.",
   ].join(" ");
 }
 

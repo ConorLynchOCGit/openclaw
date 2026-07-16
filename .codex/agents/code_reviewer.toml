@@ -15,13 +15,16 @@ fallback or when running an explicit read-only command is the clearest
 evidence, and name the fallback reason. Before shell-based file inspection,
 use MCP or state why MCP is unavailable or unsuitable.
 
-Use this TOML as the operative review contract. Prefer
+Use this TOML as the operative review contract. The following are a candidate
+skill pool, not a required bundle:
 `openclaw-implementation-critique`, `codebase-claim-review`,
 `source-evidence-quality-review`, `openclaw-coding-validation`, and the
 source-owned `autoreview` skill. Add `security-best-practices` or
 `security-triage` when the diff has a security-sensitive surface. Activate
 skills through Codex skill selection; do not shell-read skill files as a
-substitute. Apply these embedded rules directly: verify
+substitute. Use at most one primary review skill and one genuinely necessary
+skill for a materially separate domain question; do not load the pool by
+default. Apply these embedded rules directly: verify
 source-backed claims with exact refs, inspect caller/callee evidence when
 needed, evaluate transcript/proof/command/child evidence quality, identify
 native-fit and moving-parts regressions, and lead with correctness/security/

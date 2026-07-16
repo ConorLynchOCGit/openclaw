@@ -9,6 +9,7 @@ import type { SecretInput } from "openclaw/plugin-sdk/secret-input";
 import { requireOwnedMetricsCredential, requirePublicCredential } from "./auth.js";
 
 export const X_API_BASE_URL = "https://api.x.com";
+export const X_USER_SEARCH_QUERY_PATTERN = "^[A-Za-z0-9_' ]{1,50}$";
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 const MAX_TIMEOUT_MS = 120_000;
@@ -183,6 +184,7 @@ export type XReadTransportOptions = {
 };
 
 type XdkReadClient = {
+  readonly request: Client["request"];
   readonly posts: Pick<
     PostsClient,
     | "getAnalytics"
@@ -350,10 +352,26 @@ export class XReadTransport {
   }
 
   private userSearch(input: XUserSearchInput): Promise<XReadResult> {
-    const query = boundedQuery(input.query);
+    const query = boundedString(input.query, "user search query", 50);
+    if (!new RegExp(X_USER_SEARCH_QUERY_PATTERN, "u").test(query)) {
+      throw new XTransportError("bad_request");
+    }
     const options = userSearchOptions(input);
+    const params = new URLSearchParams({ query, max_results: String(options.maxResults) });
+    if (options.paginationToken) {
+      params.set("next_token", options.paginationToken);
+    }
+    appendFields(params, "user.fields", options.userFields);
+    appendFields(params, "expansions", options.expansions);
+    appendFields(params, "tweet.fields", options.tweetFields);
+    // XDK 0.5's generated users.search metadata omits current app-only Bearer
+    // auth. Keep the official XDK client/HTTP path and supply the endpoint's
+    // documented security requirement through its generic request method.
     return this.readPublic(input, (requestOptions) =>
-      this.publicClient.users.search(query, { ...options, requestOptions }),
+      this.publicClient.request<Response>("GET", `/2/users/search?${params.toString()}`, {
+        ...requestOptions,
+        security: [{ BearerToken: [] }],
+      }),
     );
   }
 
@@ -715,6 +733,12 @@ function userSearchOptions(input: XUserSearchInput) {
     expansions: boundedFields(input.expansions),
     tweetFields: boundedFields(input.tweetFields),
   };
+}
+
+function appendFields(params: URLSearchParams, key: string, values: string[]): void {
+  if (values.length > 0) {
+    params.set(key, values.join(","));
+  }
 }
 
 function userFieldOptions(input: XUserIdentityInput) {
