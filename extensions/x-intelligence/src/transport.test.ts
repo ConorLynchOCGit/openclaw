@@ -5,13 +5,13 @@ import {
   resolveOwnedMetricsCredentialAtRuntime,
   resolveOwnedMetricsCredential,
   resolvePublicCredential,
-  XCredentialError,
   X_BEARER_TOKEN_ENV,
   X_OWNED_METRICS_TOKEN_ENV,
 } from "./auth.js";
 import { createXReadTransport, XTransportError } from "./transport.js";
 
 const TOKEN = "public-token-must-not-leak";
+const OWNED_TOKEN = "owned-token-must-not-leak";
 let server: Server | undefined;
 
 afterEach(async () => {
@@ -201,6 +201,171 @@ describe("XReadTransport", () => {
     expect(result.receipt.resourceId).toBe("usage.tweets");
   });
 
+  it("derives owned identity from X, verifies post authors, and receipts every request", async () => {
+    const requests: string[] = [];
+    const mock = await startServer((request, response) => {
+      const url = new URL(request.url ?? "", "http://x.invalid");
+      requests.push(url.pathname);
+      expect(request.headers.authorization).toBe(`Bearer ${OWNED_TOKEN}`);
+      response.setHeader("content-type", "application/json");
+      response.setHeader("x-resource-id", url.pathname);
+      if (url.pathname === "/2/users/me") {
+        expect(url.searchParams.get("user.fields")).toBe("id");
+        response.end(JSON.stringify({ data: { id: "provider-account" } }));
+        return;
+      }
+      if (url.pathname === "/2/tweets") {
+        expect(url.searchParams.get("ids")).toBe("post-1,post-2");
+        expect(url.searchParams.get("tweet.fields")).toBe("author_id");
+        response.end(
+          JSON.stringify({
+            data: [
+              { id: "post-1", author_id: "provider-account" },
+              { id: "post-2", author_id: "provider-account" },
+            ],
+          }),
+        );
+        return;
+      }
+      expect(url.pathname).toBe("/2/tweets/analytics");
+      response.end(
+        JSON.stringify({
+          data: [
+            {
+              id: "post-1",
+              timestamped_metrics: [
+                { timestamp: "2026-07-16T11:00:00Z", metrics: { impressions: 886 } },
+              ],
+            },
+          ],
+        }),
+      );
+    });
+    const client = createXReadTransport({
+      apiKey: TOKEN,
+      ownedMetricsApiKey: OWNED_TOKEN,
+      baseUrl: mock.baseUrl,
+      timeoutMs: 1_000,
+    });
+
+    const result = await client.metrics.owned({
+      tweetIds: ["post-1", "post-2"],
+      startTime: "2026-07-16T00:00:00Z",
+      endTime: "2026-07-17T00:00:00Z",
+      granularity: "hourly",
+      requestedMetrics: ["impressions"],
+    });
+
+    expect(requests).toEqual(["/2/users/me", "/2/tweets", "/2/tweets/analytics"]);
+    expect(result.trustedOwnership).toEqual({
+      provider: "x",
+      accountId: "provider-account",
+      verifiedPostIds: ["post-1", "post-2"],
+      verification: "authenticated_user_and_post_authors",
+    });
+    expect(result.receipts?.map((receipt) => receipt.resourceId)).toEqual(requests);
+    expect(result.data).not.toHaveProperty("trustedOwnership");
+  });
+
+  it("fails owned analytics before the analytics request when a post author mismatches", async () => {
+    let requests = 0;
+    const mock = await startServer((request, response) => {
+      requests += 1;
+      const url = new URL(request.url ?? "", "http://x.invalid");
+      response.setHeader("content-type", "application/json");
+      if (url.pathname === "/2/users/me") {
+        response.end(JSON.stringify({ data: { id: "provider-account" } }));
+        return;
+      }
+      expect(url.pathname).toBe("/2/tweets");
+      response.end(JSON.stringify({ data: [{ id: "post-1", author_id: "other-account" }] }));
+    });
+    const client = createXReadTransport({
+      apiKey: TOKEN,
+      ownedMetricsApiKey: OWNED_TOKEN,
+      baseUrl: mock.baseUrl,
+      timeoutMs: 1_000,
+    });
+
+    const error = await client.metrics
+      .owned({
+        tweetIds: ["post-1"],
+        startTime: "2026-07-16T00:00:00Z",
+        endTime: "2026-07-17T00:00:00Z",
+        granularity: "daily",
+        requestedMetrics: ["impressions"],
+      })
+      .catch((value: unknown) => value);
+
+    expect(error).toBeInstanceOf(XTransportError);
+    expect(error).toMatchObject({
+      kind: "owned_post_author_mismatch",
+      category: "ownership",
+      requestCount: 2,
+    });
+    expect(error.receipts).toHaveLength(2);
+    expect(requests).toBe(2);
+  });
+
+  it("classifies an incomplete authenticated identity response as unsupported", async () => {
+    const mock = await startServer((_request, response) => {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ data: { username: "missing-stable-id" } }));
+    });
+    const client = createXReadTransport({
+      apiKey: TOKEN,
+      ownedMetricsApiKey: OWNED_TOKEN,
+      baseUrl: mock.baseUrl,
+      timeoutMs: 1_000,
+    });
+
+    const error = await client.metrics
+      .owned({
+        tweetIds: ["post-1"],
+        startTime: "2026-07-16T00:00:00Z",
+        endTime: "2026-07-17T00:00:00Z",
+        granularity: "daily",
+        requestedMetrics: ["impressions"],
+      })
+      .catch((value: unknown) => value);
+
+    expect(error).toMatchObject({
+      kind: "owned_attribution_unsupported",
+      category: "unsupported",
+      requestCount: 1,
+    });
+  });
+
+  it.each([
+    [403, "owned_metrics_entitlement", "entitlement"],
+    [404, "owned_attribution_unsupported", "unsupported"],
+    [503, "server", "provider"],
+  ] as const)("classifies owned identity HTTP %i as %s/%s", async (status, kind, category) => {
+    const mock = await startServer((_request, response) => {
+      response.writeHead(status, { "content-type": "application/json" });
+      response.end(JSON.stringify({ error: "bounded" }));
+    });
+    const client = createXReadTransport({
+      apiKey: TOKEN,
+      ownedMetricsApiKey: OWNED_TOKEN,
+      baseUrl: mock.baseUrl,
+      timeoutMs: 1_000,
+    });
+
+    const error = await client.metrics
+      .owned({
+        tweetIds: ["post-1"],
+        startTime: "2026-07-16T00:00:00Z",
+        endTime: "2026-07-17T00:00:00Z",
+        granularity: "daily",
+        requestedMetrics: ["impressions"],
+      })
+      .catch((value: unknown) => value);
+
+    expect(error).toMatchObject({ kind, category, requestCount: 1 });
+    expect(error.receipts).toHaveLength(1);
+  });
+
   it("propagates a supplied pagination token and reports a terminal response", async () => {
     const mock = await startServer((request, response) => {
       const url = new URL(request.url ?? "", "http://x.invalid");
@@ -297,7 +462,12 @@ describe("XReadTransport", () => {
       .catch((value: unknown) => value);
 
     expect(JSON.stringify(result)).not.toContain(TOKEN);
-    expect(ownedError).toBeInstanceOf(XCredentialError);
+    expect(ownedError).toBeInstanceOf(XTransportError);
+    expect(ownedError).toMatchObject({
+      kind: "owned_metrics_configuration",
+      category: "configuration",
+      requestCount: 0,
+    });
     expect(JSON.stringify(ownedError)).not.toContain(TOKEN);
   });
 

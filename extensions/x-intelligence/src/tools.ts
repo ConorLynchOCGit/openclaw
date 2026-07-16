@@ -101,7 +101,6 @@ const CommonSchema = {
         tenant_id: Type.String({ minLength: 1, maxLength: 128 }),
         subject_type: Type.Union([Type.Literal("company"), Type.Literal("person")]),
         subject_id: Type.String({ minLength: 1, maxLength: 128 }),
-        account_id: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
       },
       {
         additionalProperties: false,
@@ -179,7 +178,6 @@ type ToolCommon = {
     tenant_id: string;
     subject_type: "company" | "person";
     subject_id: string;
-    account_id?: string;
   };
 };
 
@@ -373,6 +371,10 @@ function manifestFilters(args: Record<string, unknown>): Record<string, XJson> {
   );
 }
 
+function providerRequestCount(result: XReadResult): number {
+  return Math.max(1, result.receipts?.length ?? 1);
+}
+
 async function writeManifest(params: {
   execution: ExecuteParams;
   result?: XReadResult;
@@ -434,7 +436,7 @@ async function writeManifest(params: {
         publicMetrics: evidence.publicMetrics,
       },
       resources: {
-        requests: params.requestCount ?? 1,
+        requests: params.requestCount ?? (result ? providerRequestCount(result) : 0),
         ...(result ? { bytes: Buffer.byteLength(JSON.stringify(result.data), "utf8") } : {}),
         durationMs: params.durationMs,
       },
@@ -488,14 +490,17 @@ async function executeSourceOperation(params: ExecuteParams) {
       cost: { status: "not_incurred" },
     };
   }
+  let requestCount = 0;
   try {
     const result = await params.invoke();
+    requestCount = providerRequestCount(result);
     const evidence = evidenceFrom(result.data, params.toolName);
     const cacheKeys = await cacheSourceObjects(params.runtime.cache, evidence.objects);
     const artifact = await writeManifest({
       execution: params,
       result,
       durationMs: Date.now() - startedAt,
+      requestCount,
     });
     const analyticsContext = params.args.analytics_context;
     const analytics = await params.runtime.analytics.ingest({
@@ -506,12 +511,10 @@ async function executeSourceOperation(params: ExecuteParams) {
               entityType: analyticsContext.subject_type,
               entityId: analyticsContext.subject_id,
             },
-            ...(analyticsContext.account_id ? { accountId: analyticsContext.account_id } : {}),
           }
         : undefined,
       result,
       manifestRef: artifact.ref,
-      manifestDigest: artifact.digest,
       toolName: params.toolName,
       operation: params.operation,
       methodVersion: params.args.method_version ?? "x-research-method.v1",
@@ -545,12 +548,13 @@ async function executeSourceOperation(params: ExecuteParams) {
       evidence: { ref: artifact.ref, digest: artifact.digest, created: artifact.created },
       analytics,
       cache: { keys: cacheKeys, ttl_max_hours: 24 },
-      resources: { requests: 1, duration_ms: Date.now() - startedAt },
+      resources: { requests: requestCount, duration_ms: Date.now() - startedAt },
       cost: { status: "provider_not_reported" },
       budget,
     };
   } catch (error) {
     const transport = error instanceof XTransportError ? error : undefined;
+    requestCount = transport?.requestCount ?? requestCount;
     const code =
       transport?.kind ??
       (error && typeof error === "object" && "code" in error && typeof error.code === "string"
@@ -561,11 +565,12 @@ async function executeSourceOperation(params: ExecuteParams) {
       durationMs: Date.now() - startedAt,
       error: {
         code,
-        category: transport ? "provider" : "runtime",
+        category: transport?.category ?? "runtime",
         retryable: transport
           ? ["rate_limited", "server", "timeout", "network"].includes(transport.kind)
           : false,
       },
+      requestCount,
     });
     return {
       status: "failed",
@@ -573,9 +578,13 @@ async function executeSourceOperation(params: ExecuteParams) {
       operation: params.operation,
       purpose: params.args.purpose,
       method_version: params.args.method_version ?? "x-research-method.v1",
-      error: { code, ...(transport?.receipt ? { provider_status: transport.receipt.status } : {}) },
+      error: {
+        code,
+        category: transport?.category ?? "runtime",
+        ...(transport?.receipt ? { provider_status: transport.receipt.status } : {}),
+      },
       evidence: { ref: artifact.ref, digest: artifact.digest, created: artifact.created },
-      resources: { requests: 1, duration_ms: Date.now() - startedAt },
+      resources: { requests: requestCount, duration_ms: Date.now() - startedAt },
       cost: { status: "provider_not_reported" },
       budget,
     };

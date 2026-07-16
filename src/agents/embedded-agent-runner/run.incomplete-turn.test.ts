@@ -916,6 +916,71 @@ describe("runEmbeddedAgent incomplete-turn safety", () => {
     expectWarnMessageWith("continuing once from the current transcript");
   });
 
+  it("continues each distinct settled synchronous tool batch before accepting a final response", async () => {
+    mockedClassifyFailoverReason.mockReturnValue(null);
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        assistantTexts: [],
+        toolMetas: [{ toolName: "write", meta: "path=plans/example.md" }],
+        itemLifecycle: { startedCount: 1, completedCount: 1, activeCount: 0 },
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "toolUse",
+          provider: "openai",
+          model: "gpt-5.4",
+          content: [],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        assistantTexts: [],
+        toolMetas: [{ toolName: "read", meta: "path=plans/example.md" }],
+        itemLifecycle: { startedCount: 1, completedCount: 1, activeCount: 0 },
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "toolUse",
+          provider: "openai",
+          model: "gpt-5.4",
+          content: [],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        assistantTexts: ["Final receipt after both batches."],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "end_turn",
+          provider: "openai",
+          model: "gpt-5.4",
+          content: [{ type: "text", text: "Final receipt after both batches." }],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+
+    const result = await runEmbeddedAgent({
+      ...overflowBaseRunParams,
+      provider: "openai",
+      model: "gpt-5.4",
+      runId: "run-distinct-settled-post-tool-continuations",
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(3);
+    expect(runAttemptCall(1).prompt).toContain("settled tool results");
+    expect(runAttemptCall(2).prompt).toContain("settled tool results");
+    expect(runAttemptCall(1).prompt).not.toContain(overflowBaseRunParams.prompt);
+    expect(runAttemptCall(2).prompt).not.toContain(overflowBaseRunParams.prompt);
+    expect(runAttemptCall(1).suppressNextUserMessagePersistence).toBe(true);
+    expect(runAttemptCall(2).suppressNextUserMessagePersistence).toBe(true);
+    expect(result.meta?.finalAssistantVisibleText).toBe("Final receipt after both batches.");
+    expect(
+      warnMessages().filter((message) =>
+        message.includes("continuing once from the current transcript"),
+      ),
+    ).toHaveLength(2);
+  });
+
   it("does not chain ordinary retries after the settled post-tool continuation is exhausted", async () => {
     mockedClassifyFailoverReason.mockReturnValue(null);
     mockedRunEmbeddedAttempt.mockResolvedValueOnce(

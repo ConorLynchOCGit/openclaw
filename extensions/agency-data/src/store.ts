@@ -161,13 +161,21 @@ export class AgencyDataStore {
 }
 
 export function materializeVisibleRecords(records: CanonicalRecord[]): CanonicalRecord[] {
+  const latestByObject = new Map<string, CanonicalRecord>();
+  for (const record of records) {
+    const key = canonicalKey(record.tenant_id, record.object_id);
+    // Reinsert so materialized ordering follows each object's latest append.
+    latestByObject.delete(key);
+    latestByObject.set(key, record);
+  }
+  const latest = [...latestByObject.values()];
   const available = new Set(
-    records
+    latest
       .filter((record) => record.object_type !== "correction_tombstone")
       .map((record) => canonicalKey(record.tenant_id, record.object_id)),
   );
   const removed = new Set<string>();
-  for (const record of records) {
+  for (const record of latest) {
     if (record.object_type !== "correction_tombstone") {
       continue;
     }
@@ -181,7 +189,7 @@ export function materializeVisibleRecords(records: CanonicalRecord[]): Canonical
       removed.add(targetKey);
     }
   }
-  return records.filter(
+  return latest.filter(
     (record) =>
       record.object_type !== "correction_tombstone" &&
       !removed.has(canonicalKey(record.tenant_id, record.object_id)),

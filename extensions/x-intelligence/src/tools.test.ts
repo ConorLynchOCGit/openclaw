@@ -119,7 +119,6 @@ describe("x intelligence model tools", () => {
         tenant_id: "operator",
         subject_type: "company",
         subject_id: "american-atomics",
-        account_id: "456",
       },
     });
     const details = result.details as Record<string, unknown>;
@@ -225,6 +224,23 @@ describe("x intelligence model tools", () => {
         purpose: "owned_performance",
         operation: "owned",
         post_ids: ["1"],
+        start_time: "2026-07-01T00:00:00Z",
+        end_time: "2026-07-08T00:00:00Z",
+        metric_names: ["impressions"],
+        analytics_context: {
+          tenant_id: "operator",
+          subject_type: "company",
+          subject_id: "american-atomics",
+          account_id: "caller-account",
+        },
+      }),
+    ).toBe(false);
+    expect(JSON.stringify(metrics!.parameters)).not.toContain('"account_id"');
+    expect(
+      Value.Check(metrics!.parameters, {
+        purpose: "owned_performance",
+        operation: "owned",
+        post_ids: ["1"],
         metric_names: ["impressions"],
       }),
     ).toBe(false);
@@ -277,6 +293,91 @@ describe("x intelligence model tools", () => {
     });
 
     expect(result.details).toMatchObject({ status: "complete" });
+  });
+
+  it("uses trusted ownership for Agency Data and receipts all owned provider requests", async () => {
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "x-tools-owned-workspace-"));
+    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "x-tools-owned-state-"));
+    tempDirs.push(workspaceDir, stateDir);
+    const api = fakeApi();
+    const tools = createXIntelligenceTools({
+      api,
+      config: { apiKey: TOKEN, ownedMetricsApiKey: "configured-owned-token" },
+      ctx: { workspaceDir, sessionKey: "agent:x-researcher:owned" },
+      analyticsStateDir: stateDir,
+      createTransport: () =>
+        ({
+          metrics: {
+            owned: async () => ({
+              data: {
+                data: [
+                  {
+                    id: "post-owned-1",
+                    timestamped_metrics: [
+                      {
+                        timestamp: "2026-07-16T11:00:00.000Z",
+                        metrics: { impressions: 886 },
+                      },
+                    ],
+                  },
+                ],
+              },
+              receipt: { status: 200, rateLimit: {}, resourceId: "analytics" },
+              receipts: [
+                { status: 200, rateLimit: {}, resourceId: "identity" },
+                { status: 200, rateLimit: {}, resourceId: "posts" },
+                { status: 200, rateLimit: {}, resourceId: "analytics" },
+              ],
+              trustedOwnership: {
+                provider: "x",
+                accountId: "provider-account",
+                verifiedPostIds: ["post-owned-1"],
+                verification: "authenticated_user_and_post_authors",
+              },
+            }),
+          },
+        }) as unknown as ReturnType<typeof createXReadTransport>,
+    });
+    const metrics = tools.find((tool) => tool.name === "x_metrics");
+
+    const result = await metrics!.execute("call-owned-metrics", {
+      purpose: "owned_performance",
+      operation: "owned",
+      post_ids: ["post-owned-1"],
+      start_time: "2026-07-16T00:00:00Z",
+      end_time: "2026-07-17T00:00:00Z",
+      granularity: "hourly",
+      metric_names: ["impressions"],
+      analytics_context: {
+        tenant_id: "operator",
+        subject_type: "company",
+        subject_id: "american-atomics",
+        account_id: "caller-account",
+      },
+    });
+
+    const details = result.details as Record<string, unknown>;
+    expect(details).toMatchObject({
+      status: "complete",
+      analytics: { status: "recorded", records: 2 },
+      resources: { requests: 3 },
+    });
+    const evidence = details.evidence as { ref: string };
+    const manifest = JSON.parse(await fs.readFile(path.join(workspaceDir, evidence.ref), "utf8"));
+    expect(manifest.resources.requests).toBe(3);
+    const analytics = await new AgencyDataStore(resolveAgencyDataStateDir(stateDir)).read({
+      tenantId: "operator",
+    });
+    expect(analytics.records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          object_type: "metric_observation",
+          account_id: "provider-account",
+          numerator: 886,
+        }),
+      ]),
+    );
+    expect(JSON.stringify(analytics.records)).not.toContain("caller-account");
   });
 
   it("returns a truthful no-decision receipt without a provider call when the purpose budget is exhausted", async () => {

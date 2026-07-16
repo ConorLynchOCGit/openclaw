@@ -37,14 +37,29 @@ type WorkbenchModule = {
     limits: {
       maxResponseBytes: number;
     };
+    exclusionPolicies: {
+      default: string[];
+    };
     coverage: {
       requestedQueries: number;
       matchedQueries: number;
       returnedItems: number;
       omittedItems: number;
+      omittedItemsExact: boolean;
     };
     results: Array<{
       status: string;
+      searchedRoots: string[];
+      scope: {
+        mode: string;
+        glob?: string;
+        hiddenIncluded: boolean;
+        ignoreFilesRespected: boolean;
+      };
+      appliedExclusions: {
+        policy: string;
+        count: number;
+      };
       items?: Array<{
         path?: string;
         line?: number;
@@ -59,9 +74,21 @@ type WorkbenchModule = {
       effectiveContextLines?: number;
       requestedContextLines?: number;
       contextLinesClamped?: boolean;
-      responseTruncated?: boolean;
-      omittedItems?: number;
-      nextAction?: string;
+      totalItems: number;
+      returnedItems: number;
+      omittedItems: number;
+      omittedItemsExact: boolean;
+      truncated: boolean;
+      commandOutputTruncated: boolean;
+      responseTruncated: boolean;
+      aggregateOmittedItems: number;
+      searchComplete: boolean;
+      continuation: {
+        complete: boolean;
+        hasMore: boolean;
+        nextAction: string;
+      };
+      nextAction: string;
     }>;
   }>;
   repoReadMany(
@@ -608,7 +635,20 @@ describe("openclaw-coding-workbench MCP helpers", () => {
       expect(searchTool?.outputSchema).toMatchObject({
         type: "object",
         properties: expect.objectContaining({
-          results: expect.any(Object),
+          results: expect.objectContaining({
+            type: "array",
+            items: expect.objectContaining({
+              properties: expect.objectContaining({
+                searchedRoots: expect.any(Object),
+                scope: expect.any(Object),
+                appliedExclusions: expect.any(Object),
+                truncated: expect.any(Object),
+                omittedItems: expect.any(Object),
+                continuation: expect.any(Object),
+              }),
+            }),
+          }),
+          exclusionPolicies: expect.any(Object),
           coverage: expect.any(Object),
         }),
       });
@@ -775,6 +815,14 @@ describe("openclaw-coding-workbench MCP helpers", () => {
       }),
     );
     expect(search.results[1].status).toBe("no_match");
+    expect(search.results[1]).toMatchObject({
+      searchedRoots: ["src"],
+      appliedExclusions: { policy: "default", count: expect.any(Number) },
+      truncated: false,
+      omittedItems: 0,
+      omittedItemsExact: true,
+      continuation: { complete: true, hasMore: false, nextAction: "none" },
+    });
     expect(JSON.stringify(search)).not.toContain('"matches"');
     expect(JSON.stringify(search)).not.toContain('"request"');
     expect(glob.results[0].status).toBe("ok");
@@ -782,6 +830,174 @@ describe("openclaw-coding-workbench MCP helpers", () => {
     expect(glob.results[0].files).toEqual(
       expect.arrayContaining(["src/alpha.ts", "src/gamma.ts", "src/unrelated.ts"]),
     );
+  });
+
+  it("keeps complete max-batch no-match coverage within the aggregate cap", async () => {
+    const repo = await makeRepo();
+    const workbench = await loadWorkbench();
+
+    const search = await workbench.repoSearchMany(
+      {
+        queries: Array.from({ length: 20 }, (_, index) => ({
+          pattern: `max-batch-no-match-${index}`,
+          path: "src",
+          maxMatches: 1,
+        })),
+      },
+      optionsFor(repo),
+    );
+
+    expect(Buffer.byteLength(JSON.stringify(search), "utf8")).toBeLessThanOrEqual(
+      search.limits.maxResponseBytes,
+    );
+    expect(search.results).toHaveLength(20);
+    expect(search.exclusionPolicies.default).toEqual(expect.arrayContaining(["**/.git/**"]));
+    for (const result of search.results) {
+      expect(result).toMatchObject({
+        status: "no_match",
+        searchedRoots: ["src"],
+        appliedExclusions: { policy: "default", count: expect.any(Number) },
+        truncated: false,
+        omittedItems: 0,
+        continuation: { complete: true, hasMore: false, nextAction: "none" },
+      });
+    }
+  });
+
+  it("includes hidden authored/config authority and JSON5 while excluding non-source trees", async () => {
+    const repo = await makeRepo();
+    const included = [
+      [".agents/authority.md", "search-authority-marker agents\n"],
+      [".codex/policy.toml", "search-authority-marker codex\n"],
+      ["config/policy.json5", "{ rule: 'search-authority-marker' }\n"],
+    ] as const;
+    const excluded = [
+      ["packages/example/generated/output.json5", "search-authority-marker generated\n"],
+      ["cache/result.json5", "search-authority-marker cache\n"],
+      ["packages/example/vendor/library.md", "search-authority-marker vendor\n"],
+      ["packages/example/runtime-state/active.json", "search-authority-marker runtime\n"],
+      ["packages/example/node_modules/dependency/index.ts", "search-authority-marker dependency\n"],
+      [".git/search-authority-marker.txt", "search-authority-marker git\n"],
+    ] as const;
+    for (const [relativePath, content] of [...included, ...excluded]) {
+      const file = path.join(repo, relativePath);
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, content, "utf8");
+    }
+    const workbench = await loadWorkbench();
+
+    const search = await workbench.repoSearchMany(
+      { queries: [{ pattern: "search-authority-marker", path: ".", maxMatches: 20 }] },
+      optionsFor(repo),
+    );
+    const result = search.results[0];
+
+    expect(result).toMatchObject({
+      status: "matched",
+      searchedRoots: ["."],
+      scope: {
+        mode: "default_authored_config",
+        hiddenIncluded: true,
+        ignoreFilesRespected: true,
+      },
+      appliedExclusions: { policy: "default", count: search.exclusionPolicies.default.length },
+      totalItems: included.length,
+      returnedItems: included.length,
+      omittedItems: 0,
+      omittedItemsExact: true,
+      truncated: false,
+      continuation: { complete: true, hasMore: false, nextAction: "none" },
+    });
+    expect(result.items?.map((item) => item.path)).toEqual(
+      expect.arrayContaining(included.map(([relativePath]) => relativePath)),
+    );
+    expect(result.items).toHaveLength(included.length);
+    expect(search.exclusionPolicies.default).toEqual(
+      expect.arrayContaining([
+        "**/.git/**",
+        "**/node_modules/**",
+        "**/generated/**",
+        "cache/**",
+        "**/vendor/**",
+        "**/runtime-state/**",
+      ]),
+    );
+  });
+
+  it("applies an explicit caller glob literally without default widening", async () => {
+    const repo = await makeRepo();
+    const fixtures = [
+      [".agents/authority.md", "literal-glob-marker\n"],
+      [".codex/policy.toml", "literal-glob-marker\n"],
+      ["config/policy.json5", "{ value: 'literal-glob-marker' }\n"],
+      ["src/authority.ts", "export const marker = 'literal-glob-marker';\n"],
+    ] as const;
+    for (const [relativePath, content] of fixtures) {
+      const file = path.join(repo, relativePath);
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, content, "utf8");
+    }
+    const workbench = await loadWorkbench();
+
+    const search = await workbench.repoSearchMany(
+      {
+        queries: [
+          { pattern: "literal-glob-marker", path: ".", glob: "src/**/*.ts", maxMatches: 20 },
+        ],
+      },
+      optionsFor(repo),
+    );
+
+    expect(search.results[0]).toMatchObject({
+      status: "matched",
+      scope: {
+        mode: "explicit_glob",
+        glob: "src/**/*.ts",
+        hiddenIncluded: true,
+      },
+      totalItems: 1,
+      returnedItems: 1,
+      omittedItems: 0,
+      continuation: { complete: true, hasMore: false, nextAction: "none" },
+      items: [expect.objectContaining({ path: "src/authority.ts" })],
+    });
+  });
+
+  it("reports exact per-query omissions and continuation", async () => {
+    const repo = await makeRepo();
+    await fs.writeFile(
+      path.join(repo, "src", "many.md"),
+      Array.from({ length: 7 }, (_, index) => `bounded-search-marker ${index}`).join("\n") + "\n",
+      "utf8",
+    );
+    const workbench = await loadWorkbench();
+
+    const search = await workbench.repoSearchMany(
+      { queries: [{ pattern: "bounded-search-marker", path: "src", maxMatches: 3 }] },
+      optionsFor(repo),
+    );
+
+    expect(search.results[0]).toMatchObject({
+      status: "matched",
+      totalItems: 7,
+      returnedItems: 3,
+      omittedItems: 4,
+      omittedItemsExact: true,
+      truncated: true,
+      responseTruncated: false,
+      aggregateOmittedItems: 0,
+      searchComplete: true,
+      continuation: {
+        complete: false,
+        hasMore: true,
+        nextAction: "narrow_pattern_or_path",
+      },
+    });
+    expect(search.coverage).toMatchObject({
+      returnedItems: 3,
+      omittedItems: 4,
+      omittedItemsExact: true,
+    });
   });
 
   it("reports bounded git status without mutating the repository", async () => {
@@ -865,13 +1081,31 @@ describe("openclaw-coding-workbench MCP helpers", () => {
     expect(search.coverage.requestedQueries).toBe(8);
     expect(search.coverage.matchedQueries).toBe(8);
     expect(search.coverage.omittedItems).toBeGreaterThan(0);
+    expect(search.coverage.omittedItemsExact).toBe(true);
     expect(search.results).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           responseTruncated: true,
+          aggregateOmittedItems: expect.any(Number),
           nextAction: "narrow_pattern_or_path",
         }),
       ]),
+    );
+    expect(search.results.some((result) => result.aggregateOmittedItems > 0)).toBe(true);
+    const expectedItems = 20 * 80 + 19;
+    for (const result of search.results) {
+      expect(result.totalItems).toBe(expectedItems);
+      expect(result.returnedItems + result.omittedItems).toBe(result.totalItems);
+      expect(result.omittedItemsExact).toBe(true);
+      expect(result.truncated).toBe(true);
+      expect(result.continuation).toEqual({
+        complete: false,
+        hasMore: true,
+        nextAction: "narrow_pattern_or_path",
+      });
+    }
+    expect(search.coverage.omittedItems).toBe(
+      search.results.reduce((total, result) => total + result.omittedItems, 0),
     );
     expect(serialized).not.toContain('"matches"');
     expect(serialized).not.toContain('"request"');

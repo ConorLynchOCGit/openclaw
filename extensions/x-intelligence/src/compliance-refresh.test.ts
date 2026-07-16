@@ -81,7 +81,10 @@ describe("x compliance refresh", () => {
         },
         users: {
           identity: async () => {
-            throw new XTransportError("unexpected_response", { status: 404, rateLimit: {} });
+            throw new XTransportError("unexpected_response", {
+              receipt: { status: 404, rateLimit: {} },
+              requestCount: 1,
+            });
           },
         },
       },
@@ -122,7 +125,10 @@ describe("x compliance refresh", () => {
       transport: {
         posts: {
           exact: async () => {
-            throw new XTransportError("authentication", { status: 403, rateLimit: {} });
+            throw new XTransportError("authentication", {
+              receipt: { status: 403, rateLimit: {} },
+              requestCount: 1,
+            });
           },
         },
         users: { identity: async () => result({ id: "unused", description: "unused" }) },

@@ -27,20 +27,27 @@ const MAX_RESULTS = 200;
 const MAX_SEARCH_CONTEXT_LINES = 5;
 const DEFAULT_LSP_MAX_LOADED_FILES = 24;
 const PositiveIntSchema = z.number().int().min(1);
+const DEFAULT_SEARCH_EXCLUSION_POLICY = "default";
 const DEFAULT_EXCLUDE_GLOBS = [
-  ".git/**",
+  "**/.git/**",
+  "**/node_modules/**",
+  "**/generated/**",
+  "**/.cache/**",
+  "**/.artifacts/**",
+  "**/vendor/**",
+  "**/runtime-state/**",
   ".openclaw/**",
   "artifacts/**",
+  "cache/**",
   "state/**",
   "transcripts/**",
   "sessions/**",
   "logs/**",
-  "node_modules/**",
-  "dist/**",
-  "build/**",
-  "coverage/**",
-  ".turbo/**",
-  ".next/**",
+  "**/dist/**",
+  "**/build/**",
+  "**/coverage/**",
+  "**/.turbo/**",
+  "**/.next/**",
   "*.log",
   "*.jsonl",
   ".env",
@@ -154,6 +161,64 @@ const BatchOutputSchema = z
     results: z.array(LooseResultSchema),
   })
   .passthrough();
+const SearchItemOutputSchema = z
+  .object({
+    path: z.string().optional(),
+    line: z.number().int().positive().optional(),
+    character: z.number().int().positive().optional(),
+    text: z.string(),
+    context: z.boolean().optional(),
+  })
+  .passthrough();
+const SearchScopeOutputSchema = z.object({
+  mode: z.enum(["default_authored_config", "explicit_glob"]),
+  glob: z.string().optional(),
+  hiddenIncluded: z.boolean(),
+  ignoreFilesRespected: z.boolean(),
+});
+const SearchExclusionsOutputSchema = z.object({
+  policy: z.literal(DEFAULT_SEARCH_EXCLUSION_POLICY),
+  count: z.number().int().nonnegative(),
+});
+const SearchContinuationOutputSchema = z.object({
+  complete: z.boolean(),
+  hasMore: z.boolean(),
+  nextAction: z.enum(["none", "narrow_pattern_or_path", "fix_query_or_path"]),
+});
+const SearchResultOutputSchema = z
+  .object({
+    pattern: z.string(),
+    path: z.string(),
+    searchedRoots: z.array(z.string()),
+    scope: SearchScopeOutputSchema,
+    appliedExclusions: SearchExclusionsOutputSchema,
+    limits: z.object({
+      maxMatches: z.number().int().positive(),
+      outputBytes: z.number().int().positive(),
+    }),
+    effectiveMaxMatches: z.number().int().positive(),
+    effectiveContextLines: z.number().int().nonnegative(),
+    requestedMaxMatches: z.number().int().positive().optional(),
+    maxMatchesClamped: z.boolean().optional(),
+    requestedContextLines: z.number().int().nonnegative().optional(),
+    contextLinesClamped: z.boolean().optional(),
+    status: z.enum(["matched", "no_match", "error"]),
+    items: z.array(SearchItemOutputSchema),
+    totalItems: z.number().int().nonnegative(),
+    returnedItems: z.number().int().nonnegative(),
+    omittedItems: z.number().int().nonnegative(),
+    omittedItemsExact: z.boolean(),
+    truncated: z.boolean(),
+    commandOutputTruncated: z.boolean(),
+    responseTruncated: z.boolean(),
+    aggregateOmittedItems: z.number().int().nonnegative(),
+    searchComplete: z.boolean(),
+    continuation: SearchContinuationOutputSchema,
+    nextAction: z.enum(["none", "narrow_pattern_or_path", "fix_query_or_path"]),
+    stderr: z.string().optional(),
+    error: z.string().optional(),
+  })
+  .passthrough();
 const SearchManyOutputSchema = z.object({
   schemaVersion: z.literal("openclaw.repo_workbench.search_many.v2"),
   root: z.string(),
@@ -162,12 +227,16 @@ const SearchManyOutputSchema = z.object({
     maxMatchesPerQuery: z.number().int(),
     maxResponseBytes: z.number().int(),
   }),
-  results: z.array(LooseResultSchema),
+  exclusionPolicies: z.object({
+    default: z.array(z.string()),
+  }),
+  results: z.array(SearchResultOutputSchema),
   coverage: z.object({
     requestedQueries: z.number().int(),
     matchedQueries: z.number().int(),
     returnedItems: z.number().int(),
     omittedItems: z.number().int(),
+    omittedItemsExact: z.boolean(),
   }),
 });
 const Sha256OutputSchema = z.string().regex(/^[a-f0-9]{64}$/u);
@@ -267,7 +336,7 @@ server.registerTool(
   {
     title: "Search Many",
     description:
-      'Preferred broad-discovery tool: run multiple independent bounded ripgrep searches concurrently under the active workspace root. When ownership or location is unresolved, include one distinctive query with path "." before narrowing to presumed repos. Returns one compact item representation with 1-based line/character anchors, caps the complete response at 16 KB, and marks omitted hits so the caller can narrow the path or pattern.',
+      "Preferred broad-discovery tool: run multiple independent bounded ripgrep searches concurrently under the active workspace root. No-glob searches include hidden authored/config authority such as .agents and .codex; an explicit glob is applied exactly as supplied. Results report scope, exclusions, exact omissions, and continuation status while retaining the 16 KB response cap.",
     annotations: READ_ONLY_TOOL_ANNOTATIONS,
     outputSchema: SearchManyOutputSchema,
     inputSchema: z.object({
@@ -900,23 +969,48 @@ function expandGitRequestRoots(root, gitRoots, request) {
 }
 
 async function runSearchQuery(root, query) {
+  const requestedPath = query.path ?? ".";
+  const maxMatches = clampPositiveInt(query.maxMatches, DEFAULT_SEARCH_MATCHES, MAX_SEARCH_MATCHES);
+  const contextLines = Math.min(query.contextLines ?? 0, MAX_SEARCH_CONTEXT_LINES);
+  const common = {
+    pattern: query.pattern,
+    path: requestedPath,
+    searchedRoots: [],
+    scope: {
+      mode: query.glob === undefined ? "default_authored_config" : "explicit_glob",
+      ...(query.glob === undefined ? {} : { glob: query.glob }),
+      hiddenIncluded: true,
+      ignoreFilesRespected: true,
+    },
+    appliedExclusions: {
+      policy: DEFAULT_SEARCH_EXCLUSION_POLICY,
+      count: DEFAULT_EXCLUDE_GLOBS.length,
+    },
+    limits: {
+      maxMatches,
+      outputBytes: MAX_SEARCH_COMMAND_BYTES,
+    },
+    effectiveMaxMatches: maxMatches,
+    effectiveContextLines: contextLines,
+    ...(query.contextLines && query.contextLines > contextLines
+      ? { requestedContextLines: query.contextLines, contextLinesClamped: true }
+      : {}),
+    ...(query.maxMatches && query.maxMatches > maxMatches
+      ? { requestedMaxMatches: query.maxMatches, maxMatchesClamped: true }
+      : {}),
+  };
   try {
-    const searchRoot = safeResolve(root, query.path ?? ".");
-    const maxMatches = clampPositiveInt(
-      query.maxMatches,
-      DEFAULT_SEARCH_MATCHES,
-      MAX_SEARCH_MATCHES,
-    );
-    const contextLines = Math.min(query.contextLines ?? 0, MAX_SEARCH_CONTEXT_LINES);
+    const searchRoot = safeResolve(root, requestedPath);
+    const searchPath = relative(root, searchRoot);
     const args = [
+      "--hidden",
+      "--no-config",
       "--line-number",
       "--column",
       "--no-heading",
       "--with-filename",
       "--color",
       "never",
-      "--max-count",
-      String(maxMatches),
     ];
     if (query.literal) {
       args.push("-F");
@@ -927,7 +1021,7 @@ async function runSearchQuery(root, query) {
     if (contextLines > 0) {
       args.push("-C", String(contextLines));
     }
-    if (query.glob) {
+    if (query.glob !== undefined) {
       args.push("--glob", query.glob);
     }
     for (const excludeGlob of DEFAULT_EXCLUDE_GLOBS) {
@@ -937,33 +1031,67 @@ async function runSearchQuery(root, query) {
     const output = await runBoundedCommand("rg", args, root, MAX_SEARCH_COMMAND_BYTES);
     const lines = output.stdout.split(/\r?\n/u).filter(Boolean).slice(0, maxMatches);
     const items = parseRipgrepItems(root, lines);
+    const searchComplete = !output.timedOut && (output.exitCode === 0 || output.exitCode === 1);
+    const totalItems = Math.max(items.length, output.totalOutputLines);
+    const omittedItems = Math.max(0, totalItems - items.length);
+    const status = output.exitCode === 0 ? "matched" : output.exitCode === 1 ? "no_match" : "error";
+    const continuation = searchContinuation(status, searchComplete, omittedItems);
     return {
-      pattern: query.pattern,
-      path: relative(root, searchRoot),
-      limits: {
-        maxMatches,
-        outputBytes: MAX_SEARCH_COMMAND_BYTES,
-      },
-      effectiveMaxMatches: maxMatches,
-      effectiveContextLines: contextLines,
-      ...(query.contextLines && query.contextLines > contextLines
-        ? { requestedContextLines: query.contextLines, contextLinesClamped: true }
-        : {}),
-      ...(query.maxMatches && query.maxMatches > maxMatches
-        ? { requestedMaxMatches: query.maxMatches, maxMatchesClamped: true }
-        : {}),
-      status: output.exitCode === 0 ? "matched" : output.exitCode === 1 ? "no_match" : "error",
+      ...common,
+      path: searchPath,
+      searchedRoots: [searchPath],
+      status,
       items,
-      truncated: output.truncated || lines.length >= maxMatches,
+      totalItems,
+      returnedItems: items.length,
+      omittedItems,
+      omittedItemsExact: searchComplete,
+      truncated: omittedItems > 0,
+      commandOutputTruncated: output.truncated,
+      responseTruncated: false,
+      aggregateOmittedItems: 0,
+      searchComplete,
+      continuation,
+      nextAction: continuation.nextAction,
       ...(output.stderr ? { stderr: output.stderr } : {}),
     };
   } catch (error) {
-    return { pattern: query.pattern, status: "error", error: formatError(error) };
+    const continuation = searchContinuation("error", false, 0);
+    return {
+      ...common,
+      status: "error",
+      items: [],
+      totalItems: 0,
+      returnedItems: 0,
+      omittedItems: 0,
+      omittedItemsExact: false,
+      truncated: false,
+      commandOutputTruncated: false,
+      responseTruncated: false,
+      aggregateOmittedItems: 0,
+      searchComplete: false,
+      continuation,
+      nextAction: continuation.nextAction,
+      error: formatError(error),
+    };
   }
 }
 
+function searchContinuation(status, searchComplete, omittedItems) {
+  if (status === "error" || !searchComplete) {
+    return { complete: false, hasMore: false, nextAction: "fix_query_or_path" };
+  }
+  if (omittedItems > 0) {
+    return { complete: false, hasMore: true, nextAction: "narrow_pattern_or_path" };
+  }
+  return { complete: true, hasMore: false, nextAction: "none" };
+}
+
 function fitSearchManyResponse(root, requestedQueries, rawResults) {
-  const results = rawResults.map((result) => ({ ...result }));
+  const results = rawResults.map((result) => ({
+    ...result,
+    items: Array.isArray(result.items) ? [...result.items] : [],
+  }));
   const omittedByResult = new Map();
   let response = buildSearchManyResponse(root, requestedQueries, results, omittedByResult);
 
@@ -984,16 +1112,22 @@ function fitSearchManyResponse(root, requestedQueries, rawResults) {
 
 function buildSearchManyResponse(root, requestedQueries, results, omittedByResult) {
   const normalizedResults = results.map((result) => {
-    const omittedItems = omittedByResult.get(result) ?? 0;
-    return omittedItems > 0
-      ? {
-          ...result,
-          truncated: true,
-          responseTruncated: true,
-          omittedItems,
-          nextAction: "narrow_pattern_or_path",
-        }
-      : result;
+    const aggregateOmittedItems = omittedByResult.get(result) ?? 0;
+    const returnedItems = result.items.length;
+    const omittedItems = result.omittedItemsExact
+      ? Math.max(0, result.totalItems - returnedItems)
+      : result.omittedItems + aggregateOmittedItems;
+    const continuation = searchContinuation(result.status, result.searchComplete, omittedItems);
+    return {
+      ...result,
+      returnedItems,
+      omittedItems,
+      truncated: result.truncated || aggregateOmittedItems > 0,
+      responseTruncated: aggregateOmittedItems > 0,
+      aggregateOmittedItems,
+      continuation,
+      nextAction: continuation.nextAction,
+    };
   });
   return {
     schemaVersion: "openclaw.repo_workbench.search_many.v2",
@@ -1002,6 +1136,9 @@ function buildSearchManyResponse(root, requestedQueries, results, omittedByResul
       defaultMatchesPerQuery: DEFAULT_SEARCH_MATCHES,
       maxMatchesPerQuery: MAX_SEARCH_MATCHES,
       maxResponseBytes: MAX_SEARCH_RESPONSE_BYTES,
+    },
+    exclusionPolicies: {
+      [DEFAULT_SEARCH_EXCLUSION_POLICY]: DEFAULT_EXCLUDE_GLOBS,
     },
     results: normalizedResults,
     coverage: {
@@ -1015,6 +1152,7 @@ function buildSearchManyResponse(root, requestedQueries, results, omittedByResul
         (total, result) => total + (result.omittedItems ?? 0),
         0,
       ),
+      omittedItemsExact: normalizedResults.every((result) => result.omittedItemsExact),
     },
   };
 }
@@ -1344,6 +1482,9 @@ async function runBoundedCommand(command, args, cwd, maxBytes) {
     const stderrChunks = [];
     let stdoutBytes = 0;
     let stderrBytes = 0;
+    let stdoutNewlines = 0;
+    let stdoutSeen = false;
+    let stdoutEndsWithNewline = true;
     let truncated = false;
     let timedOut = false;
     let settled = false;
@@ -1359,10 +1500,12 @@ async function runBoundedCommand(command, args, cwd, maxBytes) {
         stdout = lastNewline >= 0 ? stdout.slice(0, lastNewline + 1) : "";
       }
       resolve({
-        exitCode: timedOut ? 124 : truncated && stdout ? 0 : (exitCode ?? 2),
+        exitCode: timedOut ? 124 : (exitCode ?? 2),
         stdout,
         stderr: Buffer.concat(stderrChunks).toString("utf8"),
         truncated,
+        timedOut,
+        totalOutputLines: stdoutNewlines + (stdoutSeen && !stdoutEndsWithNewline ? 1 : 0),
       });
     };
     const timeout = setTimeout(() => {
@@ -1371,10 +1514,17 @@ async function runBoundedCommand(command, args, cwd, maxBytes) {
     }, DEFAULT_TIMEOUT_MS);
 
     child.stdout.on("data", (chunk) => {
+      const buffer = Buffer.from(chunk);
+      stdoutSeen ||= buffer.length > 0;
+      stdoutEndsWithNewline = buffer.length === 0 ? stdoutEndsWithNewline : buffer.at(-1) === 0x0a;
+      let newlineIndex = buffer.indexOf(0x0a);
+      while (newlineIndex >= 0) {
+        stdoutNewlines += 1;
+        newlineIndex = buffer.indexOf(0x0a, newlineIndex + 1);
+      }
       if (truncated) {
         return;
       }
-      const buffer = Buffer.from(chunk);
       const remaining = maxBytes - stdoutBytes;
       if (buffer.length > remaining) {
         if (remaining > 0) {
@@ -1382,7 +1532,6 @@ async function runBoundedCommand(command, args, cwd, maxBytes) {
           stdoutBytes += remaining;
         }
         truncated = true;
-        child.kill("SIGTERM");
         return;
       }
       stdoutChunks.push(buffer);
@@ -1594,13 +1743,17 @@ function isPathExcluded(root, resolved) {
 function matchesExcludedGlob(rel, glob) {
   const normalized = toPosix(rel);
   const pattern = toPosix(glob);
+  if (pattern.startsWith("**/") && pattern.endsWith("/**")) {
+    const segment = pattern.slice(3, -3);
+    return (
+      normalized === segment ||
+      normalized.startsWith(`${segment}/`) ||
+      normalized.includes(`/${segment}/`)
+    );
+  }
   if (pattern.endsWith("/**")) {
     const prefix = pattern.slice(0, -3);
     return normalized === prefix || normalized.startsWith(`${prefix}/`);
-  }
-  if (pattern.startsWith("**/") && pattern.endsWith("/**")) {
-    const segment = pattern.slice(3, -3);
-    return normalized.includes(`/${segment}/`) || normalized.startsWith(`${segment}/`);
   }
   if (pattern.startsWith("**/*")) {
     const needle = pattern.slice(4).replaceAll("*", "").toLowerCase();

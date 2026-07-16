@@ -24,7 +24,7 @@ describe("X to Agency Data trusted adapter", () => {
         tenantId: "operator",
         subject: { entityType: "company", entityId: "american-atomics" },
         accountId: "request-context-account",
-      },
+      } as never,
       result: {
         data: {
           data: [
@@ -39,7 +39,6 @@ describe("X to Agency Data trusted adapter", () => {
         receipt: { status: 200, rateLimit: {} },
       },
       manifestRef: "artifacts/business-ops/x-acquisition-manifests-v4/one.json",
-      manifestDigest: "sha256:one",
       toolName: "x_posts",
       operation: "recent",
       methodVersion: "topic-pulse.v1",
@@ -72,7 +71,6 @@ describe("X to Agency Data trusted adapter", () => {
       adapter.ingest({
         result: { data: { data: [] }, receipt: { status: 200, rateLimit: {} } },
         manifestRef: "artifacts/none.json",
-        manifestDigest: "sha256:none",
         toolName: "x_posts",
         operation: "recent",
         methodVersion: "question-research.v1",
@@ -92,7 +90,7 @@ describe("X to Agency Data trusted adapter", () => {
         tenantId: "operator",
         subject: { entityType: "company", entityId: "american-atomics" },
         accountId: "request-context-account",
-      },
+      } as never,
       result: {
         data: {
           data: {
@@ -105,7 +103,6 @@ describe("X to Agency Data trusted adapter", () => {
         receipt: { status: 200, rateLimit: {} },
       },
       manifestRef: "artifacts/business-ops/x-acquisition-manifests-v4/profile.json",
-      manifestDigest: "sha256:profile",
       toolName: "x_users",
       operation: "lookup",
       methodVersion: "influence-map.v1",
@@ -145,7 +142,7 @@ describe("X to Agency Data trusted adapter", () => {
         tenantId: "operator",
         subject: { entityType: "person", entityId: "conor-lynch" },
         accountId: "owned-account-context",
-      },
+      } as never,
       result: {
         data: {
           data: {
@@ -157,7 +154,6 @@ describe("X to Agency Data trusted adapter", () => {
         receipt: { status: 200, rateLimit: {} },
       },
       manifestRef: "artifacts/business-ops/x-acquisition-manifests-v4/post.json",
-      manifestDigest: "sha256:post",
       toolName: "x_posts",
       operation: "recent",
       methodVersion: "topic-pulse.v1",
@@ -185,7 +181,7 @@ describe("X to Agency Data trusted adapter", () => {
         tenantId: "operator",
         subject: { entityType: "person", entityId: "conor-lynch" },
         accountId: "conor-account",
-      },
+      } as never,
       result: {
         data: {
           data: [
@@ -200,7 +196,6 @@ describe("X to Agency Data trusted adapter", () => {
         receipt: { status: 200, rateLimit: {} },
       },
       manifestRef: "artifacts/business-ops/x-acquisition-manifests-v4/invalid.json",
-      manifestDigest: "sha256:invalid",
       toolName: "x_posts",
       operation: "recent",
       methodVersion: "topic-pulse.v1",
@@ -222,8 +217,8 @@ describe("X to Agency Data trusted adapter", () => {
       context: {
         tenantId: "operator",
         subject: { entityType: "person", entityId: "conor-lynch" },
-        accountId: "account-conor",
-      },
+        accountId: "caller-supplied-account",
+      } as never,
       result: {
         data: {
           data: [
@@ -239,9 +234,14 @@ describe("X to Agency Data trusted adapter", () => {
           ],
         },
         receipt: { status: 200, rateLimit: {} },
+        trustedOwnership: {
+          provider: "x",
+          accountId: "account-conor",
+          verifiedPostIds: ["post-owned-1"],
+          verification: "authenticated_user_and_post_authors",
+        },
       },
       manifestRef: "artifacts/business-ops/x-acquisition-manifests-v4/owned.json",
-      manifestDigest: "sha256:owned",
       toolName: "x_metrics",
       operation: "owned",
       methodVersion: "owned-performance.v1",
@@ -273,9 +273,66 @@ describe("X to Agency Data trusted adapter", () => {
       ]),
     );
     expect(JSON.stringify(read.records)).not.toContain("timestamped_metrics");
+    expect(JSON.stringify(read.records)).not.toContain("caller-supplied-account");
   });
 
-  it("refuses to canonize owned analytics without an explicit account association", async () => {
+  it("keeps analytical ids stable across captures and distinct across observation times", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "x-agency-data-identity-"));
+    roots.push(root);
+    const adapter = createXAgencyDataAdapter({ stateDir: root });
+    const context = {
+      tenantId: "operator",
+      subject: { entityType: "company" as const, entityId: "american-atomics" },
+    };
+    const providerResult = (timestamp: string) => ({
+      data: {
+        data: [
+          {
+            id: "post-owned-886",
+            timestamped_metrics: [{ timestamp, metrics: { impressions: 886 } }],
+          },
+        ],
+      },
+      receipt: { status: 200, rateLimit: {} },
+      trustedOwnership: {
+        provider: "x" as const,
+        accountId: "provider-account",
+        verifiedPostIds: ["post-owned-886"],
+        verification: "authenticated_user_and_post_authors" as const,
+      },
+    });
+    const ingest = (manifest: string, capturedAt: string, observationAt: string) =>
+      adapter.ingest({
+        context,
+        result: providerResult(observationAt),
+        manifestRef: `artifacts/business-ops/x-acquisition-manifests-v4/${manifest}.json`,
+        toolName: "x_metrics",
+        operation: "owned",
+        methodVersion: "owned-performance.v1",
+        observedAt: capturedAt,
+        authMode: "oauth",
+        distribution: "combined",
+      });
+
+    await ingest("capture-one", "2026-07-16T12:01:00.000Z", "2026-07-16T12:00:00.000Z");
+    await ingest("capture-two", "2026-07-16T12:02:00.000Z", "2026-07-16T12:00:00.000Z");
+    await ingest("capture-three", "2026-07-16T13:01:00.000Z", "2026-07-16T13:00:00.000Z");
+
+    const read = await new AgencyDataStore(resolveAgencyDataStateDir(root)).read({
+      tenantId: "operator",
+    });
+    const metrics = read.records.filter((record) => record.object_type === "metric_observation");
+    expect(metrics).toHaveLength(3);
+    expect(metrics[0]?.object_id).toBe(metrics[1]?.object_id);
+    expect(metrics[2]?.object_id).not.toBe(metrics[0]?.object_id);
+    expect(metrics.map((record) => record.acquisition_manifest_ref)).toEqual([
+      "artifacts/business-ops/x-acquisition-manifests-v4/capture-one.json",
+      "artifacts/business-ops/x-acquisition-manifests-v4/capture-two.json",
+      "artifacts/business-ops/x-acquisition-manifests-v4/capture-three.json",
+    ]);
+  });
+
+  it("refuses to canonize owned analytics without provider-verified ownership", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "x-agency-data-owned-account-"));
     roots.push(root);
     const adapter = createXAgencyDataAdapter({ stateDir: root });
@@ -298,7 +355,6 @@ describe("X to Agency Data trusted adapter", () => {
         receipt: { status: 200, rateLimit: {} },
       },
       manifestRef: "artifacts/business-ops/x-acquisition-manifests-v4/owned-no-account.json",
-      manifestDigest: "sha256:owned-no-account",
       toolName: "x_metrics",
       operation: "owned",
       methodVersion: "owned-performance.v1",
@@ -308,7 +364,7 @@ describe("X to Agency Data trusted adapter", () => {
     expect(result).toMatchObject({
       status: "failed",
       records: 0,
-      error: "owned X analytics require analytics_context.account_id",
+      error: "owned X analytics require provider-verified ownership",
     });
     expect((await new AgencyDataStore(resolveAgencyDataStateDir(root)).read()).records).toEqual([]);
   });

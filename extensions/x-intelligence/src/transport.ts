@@ -37,8 +37,17 @@ export type XReceipt = {
 export type XReadResult<T extends XJson = XJson> = {
   data: T;
   receipt: XReceipt;
+  receipts?: readonly XReceipt[];
   nextToken?: string;
+  trustedOwnership?: XTrustedOwnership;
 };
+
+export type XTrustedOwnership = Readonly<{
+  provider: "x";
+  accountId: string;
+  verifiedPostIds: readonly string[];
+  verification: "authenticated_user_and_post_authors";
+}>;
 
 export type XTransportErrorKind =
   | "bad_request"
@@ -49,21 +58,52 @@ export type XTransportErrorKind =
   | "aborted"
   | "timeout"
   | "network"
-  | "unexpected_response";
+  | "unexpected_response"
+  | "owned_attribution_unsupported"
+  | "owned_post_author_mismatch"
+  | "owned_metrics_entitlement"
+  | "owned_metrics_configuration";
+
+export type XTransportErrorCategory =
+  | "request"
+  | "configuration"
+  | "ownership"
+  | "unsupported"
+  | "entitlement"
+  | "provider";
+
+type XTransportErrorOptions = Readonly<{
+  category?: XTransportErrorCategory;
+  receipt?: XReceipt;
+  receipts?: readonly XReceipt[];
+  requestCount?: number;
+}>;
 
 export class XTransportError extends Error {
   readonly kind: XTransportErrorKind;
+  readonly category: XTransportErrorCategory;
   readonly receipt?: XReceipt;
+  readonly receipts: readonly XReceipt[];
+  readonly requestCount: number;
 
-  constructor(kind: XTransportErrorKind, receipt?: XReceipt) {
+  constructor(kind: XTransportErrorKind, options: XTransportErrorOptions = {}) {
     super(messageFor(kind));
     this.name = "XTransportError";
     this.kind = kind;
-    this.receipt = receipt;
+    this.category = options.category ?? categoryFor(kind);
+    this.receipt = options.receipt;
+    this.receipts = options.receipts ?? (options.receipt ? [options.receipt] : []);
+    this.requestCount = options.requestCount ?? this.receipts.length;
   }
 
   toJSON() {
-    return { kind: this.kind, message: this.message, receipt: this.receipt };
+    return {
+      kind: this.kind,
+      category: this.category,
+      message: this.message,
+      receipt: this.receipt,
+      requestCount: this.requestCount,
+    };
   }
 }
 
@@ -206,6 +246,7 @@ type XdkReadClient = {
     | "getFollowing"
     | "getPosts"
     | "getTimeline"
+    | "getMe"
     | "search"
   >;
 };
@@ -455,7 +496,7 @@ export class XReadTransport {
     ) {
       throw new XTransportError("bad_request");
     }
-    const ids = input.tweetIds.map(boundedId);
+    const ids = Array.from(new Set(input.tweetIds.map(boundedId)));
     const startTime = boundedString(input.startTime, "start time");
     const endTime = boundedString(input.endTime, "end time");
     const startEpoch = Date.parse(startTime);
@@ -471,24 +512,71 @@ export class XReadTransport {
     const granularity = normalizeAnalyticsGranularity(input.granularity);
     const analyticsFields = boundedFields(input.requestedMetrics);
     boundedFields(input.engagementFields);
-    const ownedCredential = this.resolveOwnedMetricsApiKey
-      ? await this.resolveOwnedMetricsApiKey()
-      : requireOwnedMetricsCredential(this.ownedMetricsApiKey, this.env);
+    let ownedCredential: string;
+    try {
+      ownedCredential = this.resolveOwnedMetricsApiKey
+        ? await this.resolveOwnedMetricsApiKey()
+        : requireOwnedMetricsCredential(this.ownedMetricsApiKey, this.env);
+    } catch {
+      throw new XTransportError("owned_metrics_configuration");
+    }
     const client: XdkReadClient = new Client({
       baseUrl: this.baseUrl,
       accessToken: ownedCredential,
       timeout: this.timeoutMs,
       retry: false,
     });
-    return await this.read(
-      (requestOptions) =>
-        client.posts.getAnalytics(ids, endTime, startTime, granularity, {
-          analyticsFields,
-          requestOptions,
-        }),
-      input,
-      [ownedCredential],
+    const receipts: XReceipt[] = [];
+    const readOwned = async (
+      request: (requestOptions: XdkRawRequestOptions) => Promise<Response>,
+    ): Promise<XReadResult> => {
+      try {
+        const result = await this.read(request, input, [ownedCredential]);
+        receipts.push(result.receipt);
+        return result;
+      } catch (error) {
+        if (error instanceof XTransportError) {
+          throw classifyOwnedRequestError(error, receipts);
+        }
+        throw error;
+      }
+    };
+
+    const identity = await readOwned((requestOptions) =>
+      client.users.getMe({ userFields: ["id"], requestOptions }),
     );
+    const accountId = providerDataId(identity.data);
+    if (!accountId) {
+      throw ownedValidationError("owned_attribution_unsupported", receipts);
+    }
+
+    const posts = await readOwned((requestOptions) =>
+      client.posts.getByIds(ids, { tweetFields: ["author_id"], requestOptions }),
+    );
+    const ownership = verifyPostOwnership(posts.data, ids, accountId);
+    if (ownership !== "verified") {
+      throw ownedValidationError(
+        ownership === "mismatch" ? "owned_post_author_mismatch" : "owned_attribution_unsupported",
+        receipts,
+      );
+    }
+
+    const analytics = await readOwned((requestOptions) =>
+      client.posts.getAnalytics(ids, endTime, startTime, granularity, {
+        analyticsFields,
+        requestOptions,
+      }),
+    );
+    return {
+      ...analytics,
+      receipts,
+      trustedOwnership: {
+        provider: "x",
+        accountId,
+        verifiedPostIds: ids,
+        verification: "authenticated_user_and_post_authors",
+      },
+    };
   }
 
   private usage(input: XUsageInput): Promise<XReadResult> {
@@ -523,22 +611,34 @@ export class XReadTransport {
       };
       const response = await request(requestOptions);
       if (!isRawResponse(response)) {
-        throw new XTransportError("unexpected_response");
+        throw new XTransportError("unexpected_response", {
+          category: "provider",
+          requestCount: 1,
+        });
       }
       const receipt = receiptFrom(response.status, response.headers);
       if (!response.ok) {
-        throw new XTransportError(errorKindForStatus(response.status), receipt);
+        throw new XTransportError(errorKindForStatus(response.status), {
+          category: "provider",
+          receipt,
+          requestCount: 1,
+        });
       }
       let data: XJson;
       try {
         data = (await response.json()) as XJson;
       } catch {
-        throw new XTransportError("malformed_response", receipt);
+        throw new XTransportError("malformed_response", {
+          category: "provider",
+          receipt,
+          requestCount: 1,
+        });
       }
       const redactedData = redactJson(data, [...this.secretValues, ...additionalSecrets]);
       return {
         data: redactedData,
         receipt,
+        receipts: [receipt],
         nextToken: readNextToken(redactedData),
       };
     } catch (error) {
@@ -546,23 +646,24 @@ export class XReadTransport {
         throw error;
       }
       if (signal?.aborted) {
-        throw new XTransportError("aborted");
+        throw new XTransportError("aborted", { category: "provider", requestCount: 1 });
       }
       const xdkError = error as { status?: unknown; headers?: unknown; message?: unknown };
       const status = typeof xdkError.status === "number" ? xdkError.status : undefined;
       if (status !== undefined && status > 0) {
-        throw new XTransportError(
-          errorKindForStatus(status),
-          receiptFrom(status, xdkError.headers),
-        );
+        throw new XTransportError(errorKindForStatus(status), {
+          category: "provider",
+          receipt: receiptFrom(status, xdkError.headers),
+          requestCount: 1,
+        });
       }
       if (isTimeoutError(error)) {
-        throw new XTransportError("timeout");
+        throw new XTransportError("timeout", { category: "provider", requestCount: 1 });
       }
       if (isXdkAuthenticationConfigurationError(error)) {
-        throw new XTransportError("authentication");
+        throw new XTransportError("authentication", { category: "configuration" });
       }
-      throw new XTransportError("network");
+      throw new XTransportError("network", { category: "provider", requestCount: 1 });
     }
   }
 }
@@ -600,11 +701,104 @@ function messageFor(kind: XTransportErrorKind): string {
       return "X returned an unexpected response.";
     case "network":
       return "X request failed before a response was received.";
+    case "owned_attribution_unsupported":
+      return "X could not provide the identity fields required to verify owned analytics.";
+    case "owned_post_author_mismatch":
+      return "One or more requested X posts do not belong to the authenticated user.";
+    case "owned_metrics_entitlement":
+      return "The authenticated X user is not entitled to this owned analytics operation.";
+    case "owned_metrics_configuration":
+      return "X owned analytics user authentication is not configured.";
     default: {
       const exhaustiveKind: never = kind;
       return exhaustiveKind;
     }
   }
+}
+
+function categoryFor(kind: XTransportErrorKind): XTransportErrorCategory {
+  switch (kind) {
+    case "bad_request":
+      return "request";
+    case "owned_metrics_configuration":
+      return "configuration";
+    case "owned_post_author_mismatch":
+      return "ownership";
+    case "owned_attribution_unsupported":
+      return "unsupported";
+    case "owned_metrics_entitlement":
+      return "entitlement";
+    default:
+      return "provider";
+  }
+}
+
+function classifyOwnedRequestError(
+  error: XTransportError,
+  completedReceipts: readonly XReceipt[],
+): XTransportError {
+  const receipts = [...completedReceipts, ...error.receipts];
+  const options = {
+    receipt: error.receipt,
+    receipts,
+    requestCount: completedReceipts.length + error.requestCount,
+  };
+  if (error.receipt?.status === 403) {
+    return new XTransportError("owned_metrics_entitlement", options);
+  }
+  if ([404, 405, 501].includes(error.receipt?.status ?? 0)) {
+    return new XTransportError("owned_attribution_unsupported", options);
+  }
+  return new XTransportError(error.kind, { ...options, category: "provider" });
+}
+
+function ownedValidationError(
+  kind: "owned_attribution_unsupported" | "owned_post_author_mismatch",
+  receipts: readonly XReceipt[],
+): XTransportError {
+  return new XTransportError(kind, { receipts: [...receipts], requestCount: receipts.length });
+}
+
+function providerDataId(data: XJson): string | undefined {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return undefined;
+  }
+  const value = data.data;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  return typeof value.id === "string" && value.id.trim() ? value.id.trim() : undefined;
+}
+
+function verifyPostOwnership(
+  data: XJson,
+  requestedIds: readonly string[],
+  accountId: string,
+): "verified" | "mismatch" | "unsupported" {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return "unsupported";
+  }
+  const payload = Array.isArray(data.data) ? data.data : data.data ? [data.data] : [];
+  const expected = new Set(requestedIds);
+  const verified = new Set<string>();
+  for (const value of payload) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      continue;
+    }
+    const id = typeof value.id === "string" ? value.id.trim() : "";
+    const authorId = typeof value.author_id === "string" ? value.author_id.trim() : "";
+    if (!expected.has(id)) {
+      continue;
+    }
+    if (!authorId) {
+      return "unsupported";
+    }
+    if (authorId !== accountId) {
+      return "mismatch";
+    }
+    verified.add(id);
+  }
+  return verified.size === expected.size ? "verified" : "unsupported";
 }
 
 function normalizeBaseUrl(baseUrl: string | undefined): string {

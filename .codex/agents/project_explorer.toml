@@ -5,81 +5,37 @@ model_reasoning_effort = "medium"
 sandbox_mode = "read-only"
 include_apps_instructions = false
 developer_instructions = """
-Stay in exploration mode. Answer the one implementation decision in the parent
-brief with exact files, symbols, tests, and ownership boundaries. Do not turn a
-bounded decision into a whole-project architecture tour. Use the Codex
-workbench MCP first for
-broad discovery: `repo_search_many`, `repo_read_many`, `repo_glob_many`, and
-`git_inspect_many`. Inspect both `business-ops/...` and `src/openclaw/...` when
-the task spans workspace documents and OpenClaw source. Use shell only for
-focused fallback or command evidence, and name the failed MCP call or reason if
-you fall back. Do not edit files. Return an Implementation Context Pack with
-concrete evidence, constraints, risks, and stop rationale.
-Use `lsp_hover_typescript`, `lsp_definition_typescript`, and
-`lsp_references_typescript` for TypeScript symbol questions once a target file
-and symbol are identified.
+Stay read-only and answer the one decision in the parent brief. Do not turn it
+into a project tour, implementation plan, or compound audit. The primary
+workflow skill is `openclaw-coding-workbench`; apply its search/read/LSP
+procedure directly and do not load or enumerate a candidate skill pool.
 
-Use this TOML as the operative exploration contract. Prefer
-`openclaw-coding-workbench`, `openclaw-context-pack`,
-`codebase-claim-review`, and `source-evidence-quality-review`. Do not perform
-tool discovery or call GBrain to activate these filesystem skills. This role
-contract already contains the ordinary bounded exploration procedure. Read one
-named `SKILL.md` with `repo_read_many` only when its body adds a task-specific
-procedure not already present here.
-Select at most one primary workflow skill and one genuinely necessary domain
-skill for a bounded episode. The embedded contract below is already operative;
-do not read the whole preferred skill bundle before ordinary exploration.
-Apply these embedded rules directly: begin with the smallest search/read batch
-that can answer the named decision, inspect only until that decision is
-supported, produce exact refs, downgrade stale or weak claims, separate source/
-runtime/proof/child evidence, and stop once the parent has enough to act. Return
-early only when a blocker invalidates the parent's current plan; do not stream
-ordinary provisional findings. If the parent brief bundles multiple independent
-decisions, answer the highest-impact one and list the rest under `Inspect Next`
-rather than consuming an unbounded evidence budget. If the parent explicitly
-asks you to inspect a
-skill file, read it with `repo_read_many` unless MCP is unavailable.
+Search first with the most distinctive terms and authority roots from the
+brief, then read only the decisive ranges. If ownership is unresolved, begin
+with one bounded search across every plausible workspace authority root; skip
+that search when an exact authoritative file, symbol, or owner is supplied. Use
+symbol tools only after search identifies the file and symbol. Do not edit
+files.
 
-Start with one compact search batch and one targeted read batch over only the
-decisive ranges. Treat the numeric search/read limits in tool schemas as safety
-ceilings, not exploration targets. Add another evidence round only when the
-current evidence exposes a named contradiction, missing authority, or material
-uncertainty that still blocks the assigned decision; state that reason before
-the call. Do not continue merely to make the packet exhaustive.
+The initial evidence round must be the smallest one that can decide the brief.
+The brief's single named uncertainty or contradiction is the only permission
+for one additional evidence round; state it before broadening and stop if the
+initial evidence resolves it. Do not continue for exhaustiveness. If the brief
+contains multiple decisions, answer only the assigned one and return the rest
+as excluded or uninspected lanes.
 
-The parent may interrupt when the decision is supported, the mission has
-expanded, or another round has low expected value. On interruption, stop new
-tool calls and return the evidence already supported. Label coverage `complete`
-or `partial`, list unknowns and plausible uninspected areas, and do not turn a
-partial search into a negative-existence claim.
+Coverage and absence claims must remain exact. Report searched roots, relevant
+file types, exclusions, truncation, omitted-result counts, and continuation
+state from the Workbench result. If an applicable root or file type was not
+covered, or results were truncated, label coverage `partial` and do not claim
+that an implementation, owner, consumer, or evidence does not exist.
 
-Do not enumerate `ALL_TOOLS` or inspect schemas for tools already named in this
-contract. If a direct named call fails because the installed schema differs,
-inspect that one tool definition once, retry it once, and report the mismatch.
-Keep the final Context Pack compact enough for direct parent consumption,
-normally 2,000-4,000 characters, while retaining the decision, exact refs,
-confidence limits, implementation implications, and inspect-next escape hatch.
+Return this compact packet, with exact refs and no raw tool output:
 
-For a TypeScript symbol question, use the 1-based `line` and `character`
-returned by the matching `repo_search_many` item, then batch independent hover,
-definition, and references calls in one Code Mode `Promise.all`. Do not guess or
-probe nearby coordinates when search already returned the exact match column.
-After one semantic hit, do not probe another coordinate.
-Stop after the requested definition/signature and bounded caller/reference
-evidence are established; do not expand into unrelated project inventory.
-
-Use this pack shape:
-## Bottom Line
+## Decision
 ## Coverage: complete | partial
-## What Changes Implementation
-## Files / Symbols / Tests That Matter
-## Evidence
-- Source/location:
-  Concrete detail:
-  Implementation implication:
-## Constraints
-## Risks / Traps
-## Inspect Next
+## Evidence And Implementation Implications
+## Constraints / Risks
 ## Unknowns / Uninspected Areas
 ## Stop Rationale
 """

@@ -5,7 +5,6 @@ import type { XJson, XReadResult } from "./transport.js";
 export type XAnalyticsContext = Readonly<{
   tenantId: string;
   subject: Readonly<{ entityType: "company" | "person"; entityId: string }>;
-  accountId?: string;
 }>;
 
 export type XAnalyticsIngestionResult = Readonly<{
@@ -18,7 +17,6 @@ type IngestInput = Readonly<{
   context?: XAnalyticsContext;
   result: XReadResult;
   manifestRef: string;
-  manifestDigest: string;
   toolName: string;
   operation: string;
   methodVersion: string;
@@ -72,8 +70,9 @@ function boundedError(error: unknown): string {
 function ownedTimestampedMetricRecords(params: {
   item: Record<string, unknown>;
   accountId: string | undefined;
+  verifiedPostIds: ReadonlySet<string>;
+  subjectIdentity: readonly [string, string];
   base: Record<string, unknown>;
-  manifestDigest: string;
   methodVersion: string;
   observedAt: string;
   observationWindow?: IngestInput["observationWindow"];
@@ -82,14 +81,16 @@ function ownedTimestampedMetricRecords(params: {
   if (!Array.isArray(params.item.timestamped_metrics)) {
     return [];
   }
-  if (!params.accountId) {
-    throw new Error("owned X analytics require analytics_context.account_id");
-  }
   const contentId = valueString(params.item.id);
   if (!contentId) {
     return [];
   }
+  if (!params.accountId || !params.verifiedPostIds.has(contentId)) {
+    throw new Error("owned X analytics require provider-verified ownership");
+  }
+  const accountId = params.accountId;
   const uri = `https://x.com/i/web/status/${contentId}`;
+  const distribution = params.distribution ?? "combined";
   return params.item.timestamped_metrics.flatMap((rawBucket) => {
     const bucket = asRecord(rawBucket);
     const timestamp = valueString(bucket?.timestamp);
@@ -107,13 +108,17 @@ function ownedTimestampedMetricRecords(params: {
           ...params.base,
           object_type: "metric_observation",
           object_id: `x-owned-metric-${digest(
-            params.manifestDigest,
+            ...params.subjectIdentity,
+            accountId,
             contentId,
             timestamp,
             metricName,
+            params.methodVersion,
+            params.observationWindow ?? "unspecified",
+            distribution,
           ).slice(0, 40)}`,
           source_ref: { source_id: contentId, uri, captured_at: params.observedAt },
-          account_id: params.accountId,
+          account_id: accountId,
           content_id: contentId,
           metric_definition_id: `x.owned.${metricName}`,
           metric_family: "x_owned_analytics",
@@ -130,7 +135,7 @@ function ownedTimestampedMetricRecords(params: {
           method_version: params.methodVersion,
           observation_at: timestamp,
           ...(params.observationWindow ? { observation_window: params.observationWindow } : {}),
-          distribution: params.distribution ?? "combined",
+          distribution,
         },
       ];
     });
@@ -147,6 +152,11 @@ export function createXAgencyDataAdapter(params: { stateDir: string; now?: () =>
         return { status: "not_requested", records: 0 };
       }
       const observedAt = input.observedAt ?? now();
+      const subjectIdentity = [
+        input.context.subject.entityType,
+        input.context.subject.entityId,
+      ] as const;
+      const verifiedPostIds = new Set(input.result.trustedOwnership?.verifiedPostIds ?? []);
       const base = {
         tenant_id: input.context.tenantId,
         subject: {
@@ -190,7 +200,13 @@ export function createXAgencyDataAdapter(params: { stateDir: string; now?: () =>
           records.push({
             ...base,
             object_type: "source_observation",
-            object_id: `x-source-${digest(input.manifestDigest, id, observationKind).slice(0, 40)}`,
+            object_id: `x-source-${digest(
+              ...subjectIdentity,
+              id,
+              observationKind,
+              observedAt,
+              input.methodVersion,
+            ).slice(0, 40)}`,
             source_ref: { source_id: id, ...(uri ? { uri } : {}), captured_at: observedAt },
             ...(observedAccountId ? { account_id: observedAccountId } : {}),
             ...(text ? { content_id: id } : {}),
@@ -203,9 +219,10 @@ export function createXAgencyDataAdapter(params: { stateDir: string; now?: () =>
           records.push(
             ...ownedTimestampedMetricRecords({
               item,
-              accountId: input.context.accountId,
+              accountId: input.result.trustedOwnership?.accountId,
+              verifiedPostIds,
+              subjectIdentity,
               base,
-              manifestDigest: input.manifestDigest,
               methodVersion: input.methodVersion,
               observedAt,
               observationWindow: input.observationWindow,
@@ -223,7 +240,15 @@ export function createXAgencyDataAdapter(params: { stateDir: string; now?: () =>
               records.push({
                 ...base,
                 object_type: "metric_observation",
-                object_id: `x-metric-${digest(input.manifestDigest, id, metricName).slice(0, 40)}`,
+                object_id: `x-metric-${digest(
+                  ...subjectIdentity,
+                  observedAccountId,
+                  id,
+                  observedAt,
+                  metricName,
+                  input.methodVersion,
+                  "combined",
+                ).slice(0, 40)}`,
                 source_ref: { source_id: id, ...(uri ? { uri } : {}), captured_at: observedAt },
                 account_id: observedAccountId,
                 ...(text ? { content_id: id } : {}),
@@ -250,7 +275,12 @@ export function createXAgencyDataAdapter(params: { stateDir: string; now?: () =>
             records.push({
               ...base,
               object_type: "account_snapshot",
-              object_id: `x-account-${digest(input.manifestDigest, id).slice(0, 40)}`,
+              object_id: `x-account-${digest(
+                ...subjectIdentity,
+                id,
+                observedAt,
+                input.methodVersion,
+              ).slice(0, 40)}`,
               source_ref: { source_id: id, captured_at: observedAt },
               account_id: id,
               snapshot_at: observedAt,

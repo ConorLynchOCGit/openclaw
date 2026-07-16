@@ -88,6 +88,57 @@ describe("agency-data canonical JSONL", () => {
     expect(result.summary.warnings).toContain("sample_size_below_30");
   });
 
+  it("materializes the latest duplicate object once per tenant for metric totals", async () => {
+    const root = await tempStateDir();
+    const ingestor = createTrustedAgencyDataIngestion({ stateDir: root });
+    const metric = {
+      ...base("metric_observation", "x-impressions-post-1-at-noon"),
+      account_id: "account-a",
+      content_id: "post-1",
+      metric_definition_id: "x.owned.impressions",
+      metric_family: "x_owned_analytics",
+      metric_name: "impressions",
+      numerator: 886,
+      denominator: 1,
+      unit: "count",
+      completeness: 1,
+      stabilization: { state: "provisional", as_of: "2026-07-16T12:01:00.000Z" },
+      privacy: { classification: "restricted", restrictions: "owned_account_user_context" },
+      method_version: "owned-performance.v1",
+      observation_at: "2026-07-16T12:00:00.000Z",
+      distribution: "combined",
+    };
+    await ingestor.append({ ...metric, recorded_at: "2026-07-16T12:01:00.000Z" });
+    await ingestor.append({ ...metric, recorded_at: "2026-07-16T12:02:00.000Z" });
+    await ingestor.append({
+      ...metric,
+      tenant_id: "tenant-b",
+      recorded_at: "2026-07-16T12:03:00.000Z",
+    });
+
+    const store = new AgencyDataStore(resolveAgencyDataStateDir(root));
+    const raw = await store.read();
+    expect(raw.records).toHaveLength(3);
+    const materialized = materializeVisibleRecords(raw.records);
+    expect(materialized).toHaveLength(2);
+    expect(materialized.find((record) => record.tenant_id === "tenant-a")).toMatchObject({
+      numerator: 886,
+      recorded_at: "2026-07-16T12:02:00.000Z",
+    });
+
+    const result = await queryMarketingMetrics(store, {
+      tenant_id: "tenant-a",
+      metric_definition_id: "x.owned.impressions",
+      distribution: "combined",
+      trend: false,
+    });
+    expect(result.summary).toMatchObject({
+      sample_size: 1,
+      numerator_total: 886,
+      denominator_total: 1,
+    });
+  });
+
   it("rejects raw content and uses a tombstone rather than mutation", async () => {
     const root = await tempStateDir();
     const ingestor = createTrustedAgencyDataIngestion({ stateDir: root });

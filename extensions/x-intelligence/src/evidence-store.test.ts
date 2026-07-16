@@ -113,6 +113,22 @@ describe("x evidence store", () => {
     expect(await fs.readFile(first.path, "utf8")).toMatch(/^\{"cost":/);
   });
 
+  it("keeps acquisition manifests distinct for separate captures", async () => {
+    const artifactsDir = await fs.mkdtemp(path.join(os.tmpdir(), "x-evidence-captures-"));
+    tempDirs.push(artifactsDir);
+    const firstInput = manifestInput();
+    const first = await writeAcquisitionManifest({ input: firstInput, artifactsDir });
+    const second = await writeAcquisitionManifest({
+      input: { ...firstInput, request: { ...firstInput.request, id: "req-2" } },
+      artifactsDir,
+    });
+
+    expect(first.created).toBe(true);
+    expect(second.created).toBe(true);
+    expect(second.digest).not.toBe(first.digest);
+    expect(second.ref).not.toBe(first.ref);
+  });
+
   it("uses the artifacts env root and detects a mismatched existing digest path", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "x-evidence-root-"));
     tempDirs.push(root);

@@ -1340,7 +1340,10 @@ export async function runEmbeddedAgent(
       let emptyErrorRetries = 0;
       const MAX_MISSING_ASSISTANT_RETRIES = 1;
       let missingAssistantRetryAttempts = 0;
-      let settledPostToolContinuationAttempts = 0;
+      // Tool lifecycle state is fresh for each attempt, so a later qualifying
+      // attempt proves a new settled batch. This flag only fences an exhausted
+      // post-tool continuation from falling through to ordinary retry paths.
+      let hasIssuedSettledPostToolContinuation = false;
       const overloadFailoverBackoffMs = resolveOverloadFailoverBackoffMs(params.config);
       const overloadProfileRotationLimit = resolveOverloadProfileRotationLimit(params.config);
       const rateLimitProfileRotationLimit = resolveRateLimitProfileRotationLimit(params.config);
@@ -3342,7 +3345,7 @@ export async function runEmbeddedAgent(
                 attempt,
               });
           if (
-            settledPostToolContinuationAttempts === 0 &&
+            !hasIssuedSettledPostToolContinuation &&
             nextPlanningOnlyRetryInstruction &&
             planningOnlyRetryAttempts < maxPlanningOnlyRetryAttempts
           ) {
@@ -3386,7 +3389,7 @@ export async function runEmbeddedAgent(
             continue;
           }
           if (
-            settledPostToolContinuationAttempts === 0 &&
+            !hasIssuedSettledPostToolContinuation &&
             !nextPlanningOnlyRetryInstruction &&
             nextReasoningOnlyRetryInstruction &&
             reasoningOnlyRetryAttempts < maxReasoningOnlyRetryAttempts
@@ -3405,7 +3408,7 @@ export async function runEmbeddedAgent(
             nextReasoningOnlyRetryInstruction &&
             reasoningOnlyRetryAttempts >= maxReasoningOnlyRetryAttempts;
           if (
-            settledPostToolContinuationAttempts === 0 &&
+            !hasIssuedSettledPostToolContinuation &&
             !emptyAssistantReplyIsSilent &&
             shouldRetryMissingAssistantTurn({
               payloadCount,
@@ -3424,17 +3427,15 @@ export async function runEmbeddedAgent(
             continue;
           }
           if (
-            settledPostToolContinuationAttempts === 0 &&
             shouldContinueSettledPostToolTurn({
               payloadCount,
               aborted,
               promptError,
               timedOut,
               attempt,
-            }) &&
-            settledPostToolContinuationAttempts < 1
+            })
           ) {
-            settledPostToolContinuationAttempts += 1;
+            hasIssuedSettledPostToolContinuation = true;
             nextAttemptPromptOverride = SETTLED_POST_TOOL_CONTINUATION_PROMPT;
             suppressNextUserMessagePersistence = true;
             planningOnlyRetryInstruction = null;
@@ -3450,7 +3451,7 @@ export async function runEmbeddedAgent(
             continue;
           }
           if (
-            settledPostToolContinuationAttempts === 0 &&
+            !hasIssuedSettledPostToolContinuation &&
             !nextPlanningOnlyRetryInstruction &&
             !nextReasoningOnlyRetryInstruction &&
             nextEmptyResponseRetryInstruction &&
