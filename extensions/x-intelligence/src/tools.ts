@@ -383,6 +383,10 @@ async function writeManifest(params: {
     ? evidenceFrom(result.data, execution.toolName)
     : { ids: [], urls: [], hashes: [], publicMetrics: {}, objects: [] };
   const sessionDigest = execution.ctx.sessionKey ? sha256(execution.ctx.sessionKey) : undefined;
+  // Provider tool-call ids are opaque and may contain characters that are not
+  // valid artifact identifiers. Keep correlation without persisting provider
+  // syntax into the evidence contract.
+  const manifestToolCallId = `toolcall:${sha256(execution.toolCallId)}`;
   return await writeAcquisitionManifest({
     workspaceDir:
       execution.ctx.workspaceDir ??
@@ -397,7 +401,7 @@ async function writeManifest(params: {
         query: execution.args.query_version ?? "x-query-family.v1",
       },
       request: {
-        id: execution.toolCallId,
+        id: manifestToolCallId,
         ...(sessionDigest ? { correlationId: sessionDigest } : {}),
       },
       subject: {
@@ -448,7 +452,7 @@ async function writeManifest(params: {
               version: execution.ctx.activeModel.modelRef,
             }
           : undefined,
-        toolCall: { id: execution.toolCallId, name: execution.toolName, version: TOOL_VERSION },
+        toolCall: { id: manifestToolCallId, name: execution.toolName, version: TOOL_VERSION },
       },
     },
   });

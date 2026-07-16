@@ -108,7 +108,8 @@ describe("x intelligence model tools", () => {
     const tool = tools.find((candidate) => candidate.name === "x_posts");
     expect(tool).toBeDefined();
 
-    const result = await tool!.execute("call-1", {
+    const opaqueToolCallId = "call_native|fc_opaque:123";
+    const result = await tool!.execute(opaqueToolCallId, {
       purpose: "topic_pulse",
       operation: "recent",
       query: "nuclear energy",
@@ -131,6 +132,8 @@ describe("x intelligence model tools", () => {
     const manifest = await fs.readFile(manifestPath, "utf8");
     expect(manifest).toContain("x_acquisition_manifest.v4");
     expect(manifest).toContain("sha256:");
+    expect(manifest).toContain("toolcall:sha256:");
+    expect(manifest).not.toContain(opaqueToolCallId);
     expect(manifest).not.toContain("bounded source post");
     expect(manifest).not.toContain("source profile");
     expect(

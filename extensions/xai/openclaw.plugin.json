@@ -199,6 +199,9 @@
       "authSignals": [
         {
           "provider": "xai"
+        },
+        {
+          "provider": "openrouter"
         }
       ],
       "configSignals": [
