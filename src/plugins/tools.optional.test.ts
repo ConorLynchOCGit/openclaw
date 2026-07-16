@@ -364,15 +364,18 @@ function createXaiToolManifest() {
     enabledByDefault: true,
     channels: [],
     providers: ["xai"],
-    providerAuthEnvVars: {
-      xai: ["XAI_API_KEY"],
+    setup: {
+      providers: [
+        { id: "xai", envVars: ["XAI_API_KEY"] },
+        { id: "openrouter", envVars: ["OPENROUTER_API_KEY"] },
+      ],
     },
     contracts: {
       tools: ["x_search"],
     },
     toolMetadata: {
       x_search: {
-        authSignals: [{ provider: "xai" }],
+        authSignals: [{ provider: "xai" }, { provider: "openrouter" }],
         configSignals: [
           {
             rootPath: "plugins.entries.xai.config",
@@ -1266,6 +1269,46 @@ describe("resolvePluginTools optional tools", () => {
       env: {
         XAI_API_KEY: "test-key",
       },
+    });
+
+    expectResolvedToolNames(tools, ["x_search"]);
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(loadOpenClawPluginsMock).not.toHaveBeenCalled();
+  });
+
+  it("loads x_search when its selected OpenRouter transport has env auth evidence", () => {
+    const config = createContext().config;
+    installToolManifestSnapshot({
+      config,
+      env: { OPENROUTER_API_KEY: "test-key" },
+      plugin: createXaiToolManifest(),
+    });
+    const factory = vi.fn(() => makeTool("x_search"));
+    setActivePluginRegistry(
+      {
+        plugins: [{ id: "xai", status: "loaded" }],
+        tools: [
+          {
+            pluginId: "xai",
+            optional: false,
+            source: "/tmp/xai.js",
+            names: ["x_search"],
+            factory,
+          },
+        ],
+        diagnostics: [],
+      } as never,
+      "test-tool-registry",
+      "gateway-bindable",
+      "/tmp",
+    );
+
+    const tools = resolvePluginTools({
+      context: {
+        ...createContext(),
+        config,
+      } as never,
+      env: { OPENROUTER_API_KEY: "test-key" },
     });
 
     expectResolvedToolNames(tools, ["x_search"]);

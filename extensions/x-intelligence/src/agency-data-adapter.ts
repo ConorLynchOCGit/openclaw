@@ -169,7 +169,6 @@ export function createXAgencyDataAdapter(params: { stateDir: string; now?: () =>
           const text = valueString(item.text);
           const description = valueString(item.description);
           const authorId = valueString(item.author_id);
-          const accountId = authorId ?? input.context.accountId;
           const uri = text ? `https://x.com/i/web/status/${id}` : undefined;
           const contentHash = text
             ? `sha256:${digest(text)}`
@@ -181,13 +180,19 @@ export function createXAgencyDataAdapter(params: { stateDir: string; now?: () =>
             : valueString(item.username) || description
               ? "profile"
               : "source_object";
+          const observedAccountId =
+            sourceObjectKind === "profile"
+              ? id
+              : sourceObjectKind === "post"
+                ? authorId
+                : undefined;
           const observationKind = `${input.toolName}.${input.operation}.${sourceObjectKind}`;
           records.push({
             ...base,
             object_type: "source_observation",
             object_id: `x-source-${digest(input.manifestDigest, id, observationKind).slice(0, 40)}`,
             source_ref: { source_id: id, ...(uri ? { uri } : {}), captured_at: observedAt },
-            ...(accountId ? { account_id: accountId } : {}),
+            ...(observedAccountId ? { account_id: observedAccountId } : {}),
             ...(text ? { content_id: id } : {}),
             observation_kind: observationKind,
             observed_at: observedAt,
@@ -209,7 +214,7 @@ export function createXAgencyDataAdapter(params: { stateDir: string; now?: () =>
           );
 
           const publicMetrics = asRecord(item.public_metrics);
-          if (publicMetrics && accountId) {
+          if (publicMetrics && observedAccountId) {
             for (const [metricName, rawValue] of Object.entries(publicMetrics)) {
               const metricValue = finiteNumber(rawValue);
               if (metricValue === undefined) {
@@ -220,7 +225,7 @@ export function createXAgencyDataAdapter(params: { stateDir: string; now?: () =>
                 object_type: "metric_observation",
                 object_id: `x-metric-${digest(input.manifestDigest, id, metricName).slice(0, 40)}`,
                 source_ref: { source_id: id, ...(uri ? { uri } : {}), captured_at: observedAt },
-                account_id: accountId,
+                account_id: observedAccountId,
                 ...(text ? { content_id: id } : {}),
                 metric_definition_id: `x.public.${metricName}`,
                 metric_family: "x_public_engagement",

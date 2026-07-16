@@ -37,6 +37,10 @@
       {
         "id": "xai",
         "envVars": ["XAI_API_KEY"]
+      },
+      {
+        "id": "openrouter",
+        "envVars": ["OPENROUTER_API_KEY"]
       }
     ]
   },

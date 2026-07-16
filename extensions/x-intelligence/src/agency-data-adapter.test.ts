@@ -23,7 +23,7 @@ describe("X to Agency Data trusted adapter", () => {
       context: {
         tenantId: "operator",
         subject: { entityType: "company", entityId: "american-atomics" },
-        accountId: "aa-account",
+        accountId: "request-context-account",
       },
       result: {
         data: {
@@ -57,6 +57,8 @@ describe("X to Agency Data trusted adapter", () => {
     expect(serialized).not.toContain("Transient source text");
     expect(serialized).toContain("sha256:");
     expect(serialized).toContain("american-atomics");
+    expect(serialized).toContain("aa-account");
+    expect(serialized).not.toContain("request-context-account");
     expect(read.records.filter((record) => record.object_type === "metric_observation")).toEqual(
       expect.arrayContaining([expect.objectContaining({ distribution: "combined" })]),
     );
@@ -76,6 +78,102 @@ describe("X to Agency Data trusted adapter", () => {
         methodVersion: "question-research.v1",
       }),
     ).resolves.toEqual({ status: "not_requested", records: 0 });
+  });
+
+  it("attributes profile metrics to the returned stable profile id", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "x-agency-data-profile-"));
+    roots.push(root);
+    const adapter = createXAgencyDataAdapter({
+      stateDir: root,
+      now: () => "2026-07-16T06:00:00.000Z",
+    });
+    const result = await adapter.ingest({
+      context: {
+        tenantId: "operator",
+        subject: { entityType: "company", entityId: "american-atomics" },
+        accountId: "request-context-account",
+      },
+      result: {
+        data: {
+          data: {
+            id: "returned-profile-id",
+            username: "AmericanAtomics",
+            description: "Transient profile description",
+            public_metrics: { followers_count: 1200, tweet_count: 80 },
+          },
+        },
+        receipt: { status: 200, rateLimit: {} },
+      },
+      manifestRef: "artifacts/business-ops/x-acquisition-manifests-v4/profile.json",
+      manifestDigest: "sha256:profile",
+      toolName: "x_users",
+      operation: "lookup",
+      methodVersion: "influence-map.v1",
+    });
+
+    expect(result).toEqual({ status: "recorded", records: 4 });
+    const read = await new AgencyDataStore(resolveAgencyDataStateDir(root)).read({
+      tenantId: "operator",
+    });
+    expect(read.records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          object_type: "source_observation",
+          account_id: "returned-profile-id",
+        }),
+        expect.objectContaining({
+          object_type: "metric_observation",
+          account_id: "returned-profile-id",
+          metric_definition_id: "x.public.followers_count",
+        }),
+        expect.objectContaining({
+          object_type: "account_snapshot",
+          account_id: "returned-profile-id",
+        }),
+      ]),
+    );
+    expect(JSON.stringify(read.records)).not.toContain("request-context-account");
+    expect(JSON.stringify(read.records)).not.toContain("Transient profile description");
+  });
+
+  it("does not borrow request account context for public post metrics without author identity", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "x-agency-data-post-author-"));
+    roots.push(root);
+    const adapter = createXAgencyDataAdapter({ stateDir: root });
+    const result = await adapter.ingest({
+      context: {
+        tenantId: "operator",
+        subject: { entityType: "person", entityId: "conor-lynch" },
+        accountId: "owned-account-context",
+      },
+      result: {
+        data: {
+          data: {
+            id: "post-without-author",
+            text: "Transient post body",
+            public_metrics: { like_count: 9 },
+          },
+        },
+        receipt: { status: 200, rateLimit: {} },
+      },
+      manifestRef: "artifacts/business-ops/x-acquisition-manifests-v4/post.json",
+      manifestDigest: "sha256:post",
+      toolName: "x_posts",
+      operation: "recent",
+      methodVersion: "topic-pulse.v1",
+    });
+
+    expect(result).toEqual({ status: "recorded", records: 1 });
+    const read = await new AgencyDataStore(resolveAgencyDataStateDir(root)).read({
+      tenantId: "operator",
+    });
+    expect(read.records).toEqual([
+      expect.objectContaining({
+        object_type: "source_observation",
+        content_id: "post-without-author",
+      }),
+    ]);
+    expect(read.records[0]).not.toHaveProperty("account_id");
   });
 
   it("prevalidates the whole derived batch so one invalid metric leaves no partial rows", async () => {
