@@ -12,6 +12,10 @@ import { createXAgencyDataAdapter } from "./agency-data-adapter.js";
 import { requireOwnedMetricsCredentialAtRuntime, type OpenClawConfigSnapshot } from "./auth.js";
 import { createContentCache, type XContentCache } from "./content-cache.js";
 import { writeAcquisitionManifest } from "./evidence-store.js";
+import {
+  requireXOwnedMetricDefinition,
+  supportedXOwnedMetricFields,
+} from "./owned-metric-definitions.js";
 import { createEpisodeRequestBudget, type XEpisodeBudgetLimits } from "./resource-budget.js";
 import {
   createXReadTransport,
@@ -68,6 +72,9 @@ const EXPANSIONS = [
   "referenced_tweets.id.author_id",
 ];
 const USER_EXPANSIONS = ["pinned_tweet_id"];
+const OWNED_METRIC_FIELD_SCHEMA = Type.Union(
+  supportedXOwnedMetricFields().map((value) => Type.Literal(value)),
+);
 
 const PURPOSES = [
   "question_research",
@@ -519,18 +526,6 @@ async function executeSourceOperation(params: ExecuteParams) {
       operation: params.operation,
       methodVersion: params.args.method_version ?? "x-research-method.v1",
       authMode: params.toolName === "x_metrics" && params.operation === "owned" ? "oauth" : "token",
-      observationWindow:
-        params.toolName === "x_metrics" && params.operation === "owned"
-          ? params.args.granularity === "hourly"
-            ? "1h"
-            : params.args.granularity === "daily"
-              ? "24h"
-              : params.args.granularity === "weekly"
-                ? "7d"
-                : "custom"
-          : undefined,
-      distribution:
-        params.toolName === "x_metrics" && params.operation === "owned" ? "combined" : undefined,
     });
     const projection = boundedProjection(result.data);
     return {
@@ -597,6 +592,41 @@ function requireString(args: Record<string, unknown>, key: string): string {
     throw new XTransportError("bad_request");
   }
   return value;
+}
+
+function ownedMetricsInput(args: Record<string, unknown>, signal: AbortSignal | undefined) {
+  const tweetIds = Array.isArray(args.post_ids)
+    ? args.post_ids.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+    : [];
+  if (tweetIds.length === 0) {
+    throw new XTransportError("owned_metrics_post_ids_required");
+  }
+  const startTime = stringValue(args.start_time);
+  const endTime = stringValue(args.end_time);
+  if (!startTime || !endTime) {
+    throw new XTransportError("owned_metrics_window_required");
+  }
+  const requestedMetrics = Array.isArray(args.metric_names)
+    ? args.metric_names.filter(
+        (name): name is string => typeof name === "string" && name.trim().length > 0,
+      )
+    : [];
+  if (requestedMetrics.length === 0) {
+    throw new XTransportError("owned_metrics_fields_required");
+  }
+  try {
+    requestedMetrics.forEach(requireXOwnedMetricDefinition);
+  } catch {
+    throw new XTransportError("owned_metrics_unsupported_field");
+  }
+  return {
+    tweetIds,
+    signal,
+    startTime,
+    endTime,
+    granularity: stringValue(args.granularity) ?? "total",
+    requestedMetrics,
+  };
 }
 
 function pageArgs(args: Record<string, unknown>) {
@@ -1007,7 +1037,7 @@ export function createXIntelligenceTools(params: {
                 Type.Literal("total"),
               ]),
             ),
-            metric_names: Type.Array(Type.String({ minLength: 1, maxLength: 64 }), {
+            metric_names: Type.Array(OWNED_METRIC_FIELD_SCHEMA, {
               minItems: 1,
               maxItems: 50,
               description: "Owned-account analytics metrics requested from X.",
@@ -1030,6 +1060,7 @@ export function createXIntelligenceTools(params: {
         const ids = Array.isArray(args.post_ids)
           ? args.post_ids.filter((id): id is string => typeof id === "string")
           : [];
+        const ownedInput = operation === "owned" ? ownedMetricsInput(args, signal) : undefined;
         const invoke = () =>
           operation === "usage"
             ? getTransport().metrics.usage({
@@ -1038,17 +1069,8 @@ export function createXIntelligenceTools(params: {
               })
             : operation === "public" && ids.length > 0
               ? getTransport().metrics.public({ ids, signal })
-              : operation === "owned" && ids.length > 0
-                ? getTransport().metrics.owned({
-                    tweetIds: ids,
-                    signal,
-                    startTime: requireString(args, "start_time"),
-                    endTime: requireString(args, "end_time"),
-                    granularity: stringValue(args.granularity) ?? "total",
-                    requestedMetrics: Array.isArray(args.metric_names)
-                      ? args.metric_names.filter((name): name is string => typeof name === "string")
-                      : ["impressions", "engagements", "likes", "replies", "retweets"],
-                  })
+              : operation === "owned"
+                ? getTransport().metrics.owned(ownedInput!)
                 : Promise.reject(new XTransportError("bad_request"));
         return execute("x_metrics", operation, args, toolCallId, invoke, {
           subjectKind: operation === "usage" ? "resource" : "post",

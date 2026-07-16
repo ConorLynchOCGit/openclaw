@@ -28,4 +28,9 @@ export function createTrustedAgencyDataIngestion(params: { stateDir: string }) {
 }
 
 export type { CanonicalRecord };
-export { AgencyDataStore, resolveAgencyDataStateDir } from "./src/store.js";
+export { queryMarketingMetrics } from "./src/queries.js";
+export {
+  AgencyDataStore,
+  materializeVisibleRecords,
+  resolveAgencyDataStateDir,
+} from "./src/store.js";

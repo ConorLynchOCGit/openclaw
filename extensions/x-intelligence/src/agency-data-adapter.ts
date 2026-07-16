@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
 import { createTrustedAgencyDataIngestion } from "@openclaw/agency-data/api.js";
+import {
+  requireXOwnedMetricDefinition,
+  X_OWNED_METRIC_DEFINITIONS_VERSION,
+} from "./owned-metric-definitions.js";
 import type { XJson, XReadResult } from "./transport.js";
 
 export type XAnalyticsContext = Readonly<{
@@ -22,8 +26,6 @@ type IngestInput = Readonly<{
   methodVersion: string;
   observedAt?: string;
   authMode?: "oauth" | "token";
-  observationWindow?: "1h" | "24h" | "72h" | "7d" | "28d" | "custom";
-  distribution?: "organic" | "promoted" | "combined";
 }>;
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -75,8 +77,7 @@ function ownedTimestampedMetricRecords(params: {
   base: Record<string, unknown>;
   methodVersion: string;
   observedAt: string;
-  observationWindow?: IngestInput["observationWindow"];
-  distribution?: IngestInput["distribution"];
+  trustedAnalytics: XReadResult["trustedOwnedAnalytics"];
 }): Record<string, unknown>[] {
   if (!Array.isArray(params.item.timestamped_metrics)) {
     return [];
@@ -90,18 +91,31 @@ function ownedTimestampedMetricRecords(params: {
   }
   const accountId = params.accountId;
   const uri = `https://x.com/i/web/status/${contentId}`;
-  const distribution = params.distribution ?? "combined";
+  if (!params.trustedAnalytics) {
+    throw new Error("owned X analytics require trusted provider request context");
+  }
+  const trustedAnalytics = params.trustedAnalytics;
+  const observationWindow = observationWindowFor(trustedAnalytics.granularity);
   return params.item.timestamped_metrics.flatMap((rawBucket) => {
     const bucket = asRecord(rawBucket);
     const timestamp = valueString(bucket?.timestamp);
     const metrics = asRecord(bucket?.metrics);
     if (!timestamp || Number.isNaN(Date.parse(timestamp)) || !metrics) {
-      return [];
+      throw new Error("owned X analytics returned a malformed timestamped metric bucket");
     }
     return Object.entries(metrics).flatMap(([metricName, rawValue]) => {
       const metricValue = finiteNumber(rawValue);
       if (metricValue === undefined) {
-        return [];
+        throw new Error(`owned X analytics returned a malformed value for ${metricName}`);
+      }
+      const definition = requireXOwnedMetricDefinition(metricName);
+      if (trustedAnalytics.providerMetricClass !== definition.providerMetricClass) {
+        throw new Error(
+          `owned X analytics class ${trustedAnalytics.providerMetricClass} cannot map ${metricName}`,
+        );
+      }
+      if (!trustedAnalytics.requestedMetrics.includes(metricName)) {
+        throw new Error(`owned X analytics returned an unrequested field: ${metricName}`);
       }
       return [
         {
@@ -114,18 +128,19 @@ function ownedTimestampedMetricRecords(params: {
             timestamp,
             metricName,
             params.methodVersion,
-            params.observationWindow ?? "unspecified",
-            distribution,
+            observationWindow,
+            definition.providerMetricClass,
+            definition.distribution,
           ).slice(0, 40)}`,
           source_ref: { source_id: contentId, uri, captured_at: params.observedAt },
           account_id: accountId,
           content_id: contentId,
-          metric_definition_id: `x.owned.${metricName}`,
-          metric_family: "x_owned_analytics",
-          metric_name: metricName,
+          metric_definition_id: definition.metricDefinitionId,
+          metric_family: definition.metricFamily,
+          metric_name: definition.metricName,
           numerator: metricValue,
-          denominator: 1,
-          unit: "count",
+          denominator: definition.denominator,
+          unit: definition.unit,
           completeness: 1,
           stabilization: { state: "provisional", as_of: params.observedAt },
           privacy: {
@@ -133,13 +148,34 @@ function ownedTimestampedMetricRecords(params: {
             restrictions: "owned_account_user_context",
           },
           method_version: params.methodVersion,
+          metric_mapping_version: X_OWNED_METRIC_DEFINITIONS_VERSION,
+          provider_metric_class: definition.providerMetricClass,
           observation_at: timestamp,
-          ...(params.observationWindow ? { observation_window: params.observationWindow } : {}),
-          distribution,
+          observation_window: observationWindow,
+          bucket_granularity: trustedAnalytics.granularity,
+          bucket_start: timestamp,
+          request_window_start: trustedAnalytics.startTime,
+          request_window_end: trustedAnalytics.endTime,
+          distribution: definition.distribution,
         },
       ];
     });
   });
+}
+
+function observationWindowFor(
+  granularity: NonNullable<XReadResult["trustedOwnedAnalytics"]>["granularity"],
+): "1h" | "24h" | "7d" | "custom" {
+  if (granularity === "hourly") {
+    return "1h";
+  }
+  if (granularity === "daily") {
+    return "24h";
+  }
+  if (granularity === "weekly") {
+    return "7d";
+  }
+  return "custom";
 }
 
 export function createXAgencyDataAdapter(params: { stateDir: string; now?: () => string }) {
@@ -225,8 +261,7 @@ export function createXAgencyDataAdapter(params: { stateDir: string; now?: () =>
               base,
               methodVersion: input.methodVersion,
               observedAt,
-              observationWindow: input.observationWindow,
-              distribution: input.distribution,
+              trustedAnalytics: input.result.trustedOwnedAnalytics,
             }),
           );
 
@@ -244,8 +279,8 @@ export function createXAgencyDataAdapter(params: { stateDir: string; now?: () =>
                   ...subjectIdentity,
                   observedAccountId,
                   id,
-                  observedAt,
                   metricName,
+                  String(metricValue),
                   input.methodVersion,
                   "combined",
                 ).slice(0, 40)}`,

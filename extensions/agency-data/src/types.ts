@@ -16,7 +16,7 @@ export const CANONICAL_OBJECT_TYPES = [
 ] as const;
 
 export type CanonicalObjectType = (typeof CANONICAL_OBJECT_TYPES)[number];
-export type Distribution = "organic" | "promoted" | "combined";
+export type Distribution = "organic" | "promoted" | "combined" | "provider_total";
 
 export type CanonicalRecord = {
   schema_version: typeof AGENCY_DATA_SCHEMA_VERSION;

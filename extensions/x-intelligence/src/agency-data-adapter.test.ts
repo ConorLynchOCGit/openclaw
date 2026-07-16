@@ -1,7 +1,12 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { AgencyDataStore, resolveAgencyDataStateDir } from "@openclaw/agency-data/api.js";
+import {
+  AgencyDataStore,
+  materializeVisibleRecords,
+  queryMarketingMetrics,
+  resolveAgencyDataStateDir,
+} from "@openclaw/agency-data/api.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { createXAgencyDataAdapter } from "./agency-data-adapter.js";
 
@@ -76,6 +81,120 @@ describe("X to Agency Data trusted adapter", () => {
         methodVersion: "question-research.v1",
       }),
     ).resolves.toEqual({ status: "not_requested", records: 0 });
+  });
+
+  it("does not inflate an analytical sample when the same public metric state is recaptured", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "x-agency-data-public-dedupe-"));
+    roots.push(root);
+    const adapter = createXAgencyDataAdapter({ stateDir: root });
+    const context = {
+      tenantId: "operator",
+      subject: { entityType: "person" as const, entityId: "conor-lynch" },
+    };
+    const ingest = (capturedAt: string, impressions: number) =>
+      adapter.ingest({
+        context,
+        result: {
+          data: {
+            data: {
+              id: "post-public-8",
+              author_id: "account-conor",
+              text: "Transient post body",
+              public_metrics: { impression_count: impressions, like_count: 1 },
+            },
+          },
+          receipt: { status: 200, rateLimit: {} },
+        },
+        manifestRef: `artifacts/business-ops/x-acquisition-manifests-v4/${capturedAt}.json`,
+        toolName: "x_metrics",
+        operation: "public",
+        methodVersion: "owned-performance.v1",
+        observedAt: capturedAt,
+      });
+
+    await ingest("2026-07-16T20:04:39.566Z", 8);
+    await ingest("2026-07-16T20:04:39.633Z", 8);
+    await ingest("2026-07-16T20:04:39.638Z", 8);
+
+    const store = new AgencyDataStore(resolveAgencyDataStateDir(root));
+    const raw = await store.read({ tenantId: "operator" });
+    expect(
+      raw.records.filter((record) => record.object_type === "source_observation"),
+    ).toHaveLength(3);
+    expect(
+      raw.records.filter(
+        (record) =>
+          record.object_type === "metric_observation" &&
+          record.metric_definition_id === "x.public.impression_count",
+      ),
+    ).toHaveLength(3);
+    expect(
+      materializeVisibleRecords(raw.records).filter(
+        (record) =>
+          record.object_type === "metric_observation" &&
+          record.metric_definition_id === "x.public.impression_count",
+      ),
+    ).toHaveLength(1);
+    const metrics = await queryMarketingMetrics(store, {
+      tenant_id: "operator",
+      metric_definition_id: "x.public.impression_count",
+      distribution: "combined",
+      trend: false,
+    });
+    expect(metrics.summary).toMatchObject({
+      sample_size: 1,
+      numerator_total: 8,
+      denominator_total: 1,
+    });
+  });
+
+  it("keeps an unchanged public metric deduplicated when a sibling metric changes", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "x-agency-data-public-partial-change-"));
+    roots.push(root);
+    const adapter = createXAgencyDataAdapter({ stateDir: root });
+    const context = {
+      tenantId: "operator",
+      subject: { entityType: "person" as const, entityId: "conor-lynch" },
+    };
+    const ingest = (observedAt: string, likeCount: number) =>
+      adapter.ingest({
+        context,
+        result: {
+          data: {
+            data: {
+              id: "post-partial-change",
+              author_id: "account-conor",
+              text: "Same transient post body",
+              public_metrics: { impression_count: 8, like_count: likeCount },
+            },
+          },
+          receipt: { status: 200, rateLimit: {} },
+        },
+        manifestRef: `artifacts/business-ops/x-acquisition-manifests-v4/${observedAt}.json`,
+        toolName: "x_metrics",
+        operation: "public",
+        methodVersion: "owned-performance.v1",
+        observedAt,
+      });
+
+    await ingest("2026-07-16T12:00:00.000Z", 1);
+    await ingest("2026-07-16T13:00:00.000Z", 2);
+
+    const store = new AgencyDataStore(resolveAgencyDataStateDir(root));
+    const impressions = await queryMarketingMetrics(store, {
+      tenant_id: "operator",
+      metric_definition_id: "x.public.impression_count",
+      distribution: "combined",
+      trend: false,
+    });
+    const likes = await queryMarketingMetrics(store, {
+      tenant_id: "operator",
+      metric_definition_id: "x.public.like_count",
+      distribution: "combined",
+      trend: false,
+    });
+    expect(impressions.summary).toMatchObject({ sample_size: 1, numerator_total: 8 });
+    expect(likes.summary).toMatchObject({ sample_size: 2, numerator_total: 3 });
   });
 
   it("attributes profile metrics to the returned stable profile id", async () => {
@@ -240,14 +359,20 @@ describe("X to Agency Data trusted adapter", () => {
           verifiedPostIds: ["post-owned-1"],
           verification: "authenticated_user_and_post_authors",
         },
+        trustedOwnedAnalytics: {
+          provider: "x",
+          providerMetricClass: "analytics",
+          startTime: "2026-07-16T11:00:00.000Z",
+          endTime: "2026-07-16T12:00:00.000Z",
+          granularity: "hourly",
+          requestedMetrics: ["impressions", "engagements"],
+        },
       },
       manifestRef: "artifacts/business-ops/x-acquisition-manifests-v4/owned.json",
       toolName: "x_metrics",
       operation: "owned",
       methodVersion: "owned-performance.v1",
       authMode: "oauth",
-      observationWindow: "1h",
-      distribution: "combined",
     });
 
     expect(result).toEqual({ status: "recorded", records: 3 });
@@ -261,10 +386,13 @@ describe("X to Agency Data trusted adapter", () => {
         expect.objectContaining({
           account_id: "account-conor",
           content_id: "post-owned-1",
-          metric_definition_id: "x.owned.impressions",
+          metric_definition_id: "x.owned.analytics.impressions",
           numerator: 500,
-          distribution: "combined",
+          provider_metric_class: "analytics",
+          distribution: "provider_total",
           observation_window: "1h",
+          bucket_granularity: "hourly",
+          bucket_start: "2026-07-16T11:00:00.000Z",
           privacy: {
             classification: "restricted",
             restrictions: "owned_account_user_context",
@@ -300,6 +428,14 @@ describe("X to Agency Data trusted adapter", () => {
         verifiedPostIds: ["post-owned-886"],
         verification: "authenticated_user_and_post_authors" as const,
       },
+      trustedOwnedAnalytics: {
+        provider: "x" as const,
+        providerMetricClass: "analytics" as const,
+        startTime: "2026-07-16T00:00:00.000Z",
+        endTime: "2026-07-17T00:00:00.000Z",
+        granularity: "hourly" as const,
+        requestedMetrics: ["impressions"],
+      },
     });
     const ingest = (manifest: string, capturedAt: string, observationAt: string) =>
       adapter.ingest({
@@ -311,7 +447,6 @@ describe("X to Agency Data trusted adapter", () => {
         methodVersion: "owned-performance.v1",
         observedAt: capturedAt,
         authMode: "oauth",
-        distribution: "combined",
       });
 
     await ingest("capture-one", "2026-07-16T12:01:00.000Z", "2026-07-16T12:00:00.000Z");
@@ -365,6 +500,82 @@ describe("X to Agency Data trusted adapter", () => {
       status: "failed",
       records: 0,
       error: "owned X analytics require provider-verified ownership",
+    });
+    expect((await new AgencyDataStore(resolveAgencyDataStateDir(root)).read()).records).toEqual([]);
+  });
+
+  it("fails the whole owned batch for an unsupported field or mismatched provider class", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "x-agency-data-owned-map-"));
+    roots.push(root);
+    const adapter = createXAgencyDataAdapter({ stateDir: root });
+    const baseResult = {
+      data: {
+        data: [
+          {
+            id: "post-owned-map",
+            timestamped_metrics: [
+              { timestamp: "2026-07-16T11:00:00.000Z", metrics: { unsupported_metric: 10 } },
+            ],
+          },
+        ],
+      },
+      receipt: { status: 200, rateLimit: {} },
+      trustedOwnership: {
+        provider: "x" as const,
+        accountId: "provider-account",
+        verifiedPostIds: ["post-owned-map"],
+        verification: "authenticated_user_and_post_authors" as const,
+      },
+      trustedOwnedAnalytics: {
+        provider: "x" as const,
+        providerMetricClass: "analytics" as const,
+        startTime: "2026-07-16T00:00:00.000Z",
+        endTime: "2026-07-17T00:00:00.000Z",
+        granularity: "hourly" as const,
+        requestedMetrics: ["unsupported_metric"],
+      },
+    };
+    const ingest = (result: typeof baseResult) =>
+      adapter.ingest({
+        context: {
+          tenantId: "operator",
+          subject: { entityType: "person", entityId: "conor-lynch" },
+        },
+        result,
+        manifestRef: "artifacts/business-ops/x-acquisition-manifests-v4/map.json",
+        toolName: "x_metrics",
+        operation: "owned",
+        methodVersion: "owned-performance.v1",
+        authMode: "oauth",
+      });
+
+    await expect(ingest(baseResult)).resolves.toMatchObject({
+      status: "failed",
+      records: 0,
+      error: "unsupported owned X analytics field: unsupported_metric",
+    });
+    const classMismatch = {
+      ...baseResult,
+      data: {
+        data: [
+          {
+            id: "post-owned-map",
+            timestamped_metrics: [
+              { timestamp: "2026-07-16T11:00:00.000Z", metrics: { impressions: 10 } },
+            ],
+          },
+        ],
+      },
+      trustedOwnedAnalytics: {
+        ...baseResult.trustedOwnedAnalytics,
+        providerMetricClass: "organic",
+        requestedMetrics: ["impressions"],
+      },
+    } as unknown as typeof baseResult;
+    await expect(ingest(classMismatch)).resolves.toMatchObject({
+      status: "failed",
+      records: 0,
+      error: "owned X analytics class organic cannot map impressions",
     });
     expect((await new AgencyDataStore(resolveAgencyDataStateDir(root)).read()).records).toEqual([]);
   });

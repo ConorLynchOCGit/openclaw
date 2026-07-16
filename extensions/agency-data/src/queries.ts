@@ -22,6 +22,7 @@ const distribution = Type.Union([
   Type.Literal("organic"),
   Type.Literal("promoted"),
   Type.Literal("combined"),
+  Type.Literal("provider_total"),
 ]);
 
 export const marketingDataCatalogParameters = Type.Object(

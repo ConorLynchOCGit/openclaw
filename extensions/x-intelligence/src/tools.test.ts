@@ -226,6 +226,16 @@ describe("x intelligence model tools", () => {
         post_ids: ["1"],
         start_time: "2026-07-01T00:00:00Z",
         end_time: "2026-07-08T00:00:00Z",
+        metric_names: ["invented_metric"],
+      }),
+    ).toBe(false);
+    expect(
+      Value.Check(metrics!.parameters, {
+        purpose: "owned_performance",
+        operation: "owned",
+        post_ids: ["1"],
+        start_time: "2026-07-01T00:00:00Z",
+        end_time: "2026-07-08T00:00:00Z",
         metric_names: ["impressions"],
         analytics_context: {
           tenant_id: "operator",
@@ -334,6 +344,14 @@ describe("x intelligence model tools", () => {
                 verifiedPostIds: ["post-owned-1"],
                 verification: "authenticated_user_and_post_authors",
               },
+              trustedOwnedAnalytics: {
+                provider: "x",
+                providerMetricClass: "analytics",
+                startTime: "2026-07-16T00:00:00Z",
+                endTime: "2026-07-17T00:00:00Z",
+                granularity: "hourly",
+                requestedMetrics: ["impressions"],
+              },
             }),
           },
         }) as unknown as ReturnType<typeof createXReadTransport>,
@@ -373,11 +391,47 @@ describe("x intelligence model tools", () => {
         expect.objectContaining({
           object_type: "metric_observation",
           account_id: "provider-account",
+          metric_definition_id: "x.owned.analytics.impressions",
+          provider_metric_class: "analytics",
+          distribution: "provider_total",
           numerator: 886,
         }),
       ]),
     );
     expect(JSON.stringify(analytics.records)).not.toContain("caller-account");
+  });
+
+  it("rejects missing owned post IDs before constructing transport or spending a request budget", async () => {
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "x-tools-owned-invalid-"));
+    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "x-tools-owned-invalid-state-"));
+    tempDirs.push(workspaceDir, stateDir);
+    let transportConstructions = 0;
+    const tools = createXIntelligenceTools({
+      api: fakeApi(),
+      config: { apiKey: TOKEN, ownedMetricsApiKey: "configured-owned-token" },
+      ctx: { workspaceDir, sessionKey: "agent:x-researcher:owned-invalid" },
+      analyticsStateDir: stateDir,
+      createTransport: () => {
+        transportConstructions += 1;
+        return createXReadTransport({ apiKey: TOKEN });
+      },
+    });
+    const metrics = tools.find((tool) => tool.name === "x_metrics");
+
+    await expect(
+      metrics!.execute("call-owned-missing-posts", {
+        purpose: "owned_performance",
+        operation: "owned",
+        start_time: "2026-07-16T00:00:00Z",
+        end_time: "2026-07-17T00:00:00Z",
+        metric_names: ["impressions"],
+      }),
+    ).rejects.toMatchObject({
+      kind: "owned_metrics_post_ids_required",
+      category: "request",
+      requestCount: 0,
+    });
+    expect(transportConstructions).toBe(0);
   });
 
   it("returns a truthful no-decision receipt without a provider call when the purpose budget is exhausted", async () => {

@@ -263,6 +263,14 @@ describe("XReadTransport", () => {
       verifiedPostIds: ["post-1", "post-2"],
       verification: "authenticated_user_and_post_authors",
     });
+    expect(result.trustedOwnedAnalytics).toEqual({
+      provider: "x",
+      providerMetricClass: "analytics",
+      startTime: "2026-07-16T00:00:00Z",
+      endTime: "2026-07-17T00:00:00Z",
+      granularity: "hourly",
+      requestedMetrics: ["impressions"],
+    });
     expect(result.receipts?.map((receipt) => receipt.resourceId)).toEqual(requests);
     expect(result.data).not.toHaveProperty("trustedOwnership");
   });
@@ -503,5 +511,36 @@ describe("XReadTransport", () => {
     expect(error).toBeInstanceOf(XTransportError);
     expect(error.kind).toBe("bad_request");
     expect(JSON.stringify(error)).not.toContain("owned-token-must-not-leak");
+  });
+
+  it("rejects unsupported owned-metric fields before resolving credentials or calling X", async () => {
+    let credentialResolutions = 0;
+    const client = createXReadTransport({
+      apiKey: TOKEN,
+      resolveOwnedMetricsApiKey: async () => {
+        credentialResolutions += 1;
+        return OWNED_TOKEN;
+      },
+      baseUrl: "http://127.0.0.1:1",
+      timeoutMs: 100,
+    });
+
+    const error = await client.metrics
+      .owned({
+        tweetIds: ["1"],
+        startTime: "2026-01-01T00:00:00Z",
+        endTime: "2026-01-02T00:00:00Z",
+        granularity: "hourly",
+        requestedMetrics: ["invented_metric"],
+      })
+      .catch((value: unknown) => value);
+
+    expect(error).toBeInstanceOf(XTransportError);
+    expect(error).toMatchObject({
+      kind: "owned_metrics_unsupported_field",
+      category: "request",
+      requestCount: 0,
+    });
+    expect(credentialResolutions).toBe(0);
   });
 });

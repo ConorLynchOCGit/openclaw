@@ -86,6 +86,12 @@ const TYPE_KEYS: Record<CanonicalObjectType, readonly string[]> = {
     "observation_at",
     "observation_window",
     "distribution",
+    "metric_mapping_version",
+    "provider_metric_class",
+    "bucket_granularity",
+    "bucket_start",
+    "request_window_start",
+    "request_window_end",
   ],
   campaign_variant_association: [
     "account_id",
@@ -338,9 +344,21 @@ function validateMetric(record: Record<string, unknown>): void {
   }
   if (
     typeof record.distribution !== "string" ||
-    !["organic", "promoted", "combined"].includes(record.distribution)
+    !["organic", "promoted", "combined", "provider_total"].includes(record.distribution)
   ) {
-    throw new Error("distribution must be organic, promoted, or combined.");
+    throw new Error("distribution must be organic, promoted, combined, or provider_total.");
+  }
+  requireOptionalString(record.metric_mapping_version, "metric_mapping_version");
+  requireOptionalString(record.provider_metric_class, "provider_metric_class");
+  requireOptionalString(record.bucket_granularity, "bucket_granularity");
+  if (record.bucket_start !== undefined) {
+    requireTimestamp(record.bucket_start, "bucket_start");
+  }
+  if (record.request_window_start !== undefined) {
+    requireTimestamp(record.request_window_start, "request_window_start");
+  }
+  if (record.request_window_end !== undefined) {
+    requireTimestamp(record.request_window_end, "request_window_end");
   }
 }
 

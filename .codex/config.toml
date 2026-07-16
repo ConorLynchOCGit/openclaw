@@ -8,10 +8,12 @@ thread. OpenClaw only routes, launches, observes, mirrors, and returns receipts.
 Do not use OpenClaw task/session/history/dynamic-tool conventions as your inner
 workbench.
 
-Read every referenced workspace-visible prompt/spec/artifact in full before
-implementing it. Treat its body as authoritative scope; do not substitute a
-parent summary. Keep completion claims bounded to actual diffs, validation,
-review, and repository closeout.
+Read every explicitly designated governing prompt, plan, or spec in full before
+implementing it; do not substitute a parent summary. Other referenced
+artifacts are evidence or history, not automatically governing scope. Inspect
+only the ranges needed for the current decision unless the governing task
+explicitly promotes the whole artifact. Keep completion claims bounded to
+actual diffs, validation, review, and repository closeout.
 
 Require an ordinary workspace-visible file path for every authoritative plan or
 spec. An OpenClaw transcript/session receipt is not a Codex work artifact. Do
@@ -151,6 +153,10 @@ Complete the bounded assigned deliverable. The loaded purpose-role contract
 controls procedure; the parent message controls scope and exclusions. All
 agents share one workspace and one global concurrency budget, so preserve
 concurrent work and never revert edits you did not make.
+
+Use directly named tools and one owning filesystem skill without inventory
+discovery. Filesystem Codex skills do not come from GBrain. Inspect another
+skill only when it supplies a genuinely separate task-specific procedure.
 
 Return a compact result to the parent. Spawn a descendant only when a newly
 exposed independent uncertainty materially requires a different canonical

@@ -7,6 +7,7 @@ import {
 } from "@xdevplatform/xdk";
 import type { SecretInput } from "openclaw/plugin-sdk/secret-input";
 import { requireOwnedMetricsCredential, requirePublicCredential } from "./auth.js";
+import { requireXOwnedMetricDefinition } from "./owned-metric-definitions.js";
 
 export const X_API_BASE_URL = "https://api.x.com";
 export const X_USER_SEARCH_QUERY_PATTERN = "^[A-Za-z0-9_' ]{1,50}$";
@@ -40,6 +41,7 @@ export type XReadResult<T extends XJson = XJson> = {
   receipts?: readonly XReceipt[];
   nextToken?: string;
   trustedOwnership?: XTrustedOwnership;
+  trustedOwnedAnalytics?: XTrustedOwnedAnalytics;
 };
 
 export type XTrustedOwnership = Readonly<{
@@ -47,6 +49,15 @@ export type XTrustedOwnership = Readonly<{
   accountId: string;
   verifiedPostIds: readonly string[];
   verification: "authenticated_user_and_post_authors";
+}>;
+
+export type XTrustedOwnedAnalytics = Readonly<{
+  provider: "x";
+  providerMetricClass: "analytics";
+  startTime: string;
+  endTime: string;
+  granularity: "hourly" | "daily" | "weekly" | "total";
+  requestedMetrics: readonly string[];
 }>;
 
 export type XTransportErrorKind =
@@ -62,7 +73,11 @@ export type XTransportErrorKind =
   | "owned_attribution_unsupported"
   | "owned_post_author_mismatch"
   | "owned_metrics_entitlement"
-  | "owned_metrics_configuration";
+  | "owned_metrics_configuration"
+  | "owned_metrics_post_ids_required"
+  | "owned_metrics_window_required"
+  | "owned_metrics_fields_required"
+  | "owned_metrics_unsupported_field";
 
 export type XTransportErrorCategory =
   | "request"
@@ -511,6 +526,11 @@ export class XReadTransport {
     }
     const granularity = normalizeAnalyticsGranularity(input.granularity);
     const analyticsFields = boundedFields(input.requestedMetrics);
+    try {
+      analyticsFields.forEach(requireXOwnedMetricDefinition);
+    } catch {
+      throw new XTransportError("owned_metrics_unsupported_field");
+    }
     boundedFields(input.engagementFields);
     let ownedCredential: string;
     try {
@@ -575,6 +595,14 @@ export class XReadTransport {
         accountId,
         verifiedPostIds: ids,
         verification: "authenticated_user_and_post_authors",
+      },
+      trustedOwnedAnalytics: {
+        provider: "x",
+        providerMetricClass: "analytics",
+        startTime,
+        endTime,
+        granularity,
+        requestedMetrics: analyticsFields,
       },
     };
   }
@@ -709,6 +737,14 @@ function messageFor(kind: XTransportErrorKind): string {
       return "The authenticated X user is not entitled to this owned analytics operation.";
     case "owned_metrics_configuration":
       return "X owned analytics user authentication is not configured.";
+    case "owned_metrics_post_ids_required":
+      return "X owned analytics requires at least one post ID.";
+    case "owned_metrics_window_required":
+      return "X owned analytics requires exact start and end timestamps.";
+    case "owned_metrics_fields_required":
+      return "X owned analytics requires at least one supported metric field.";
+    case "owned_metrics_unsupported_field":
+      return "X owned analytics requested an unsupported metric field.";
     default: {
       const exhaustiveKind: never = kind;
       return exhaustiveKind;
@@ -719,6 +755,10 @@ function messageFor(kind: XTransportErrorKind): string {
 function categoryFor(kind: XTransportErrorKind): XTransportErrorCategory {
   switch (kind) {
     case "bad_request":
+    case "owned_metrics_post_ids_required":
+    case "owned_metrics_window_required":
+    case "owned_metrics_fields_required":
+    case "owned_metrics_unsupported_field":
       return "request";
     case "owned_metrics_configuration":
       return "configuration";
@@ -971,8 +1011,8 @@ function trendOptions(input: XTrendInput) {
   return { maxTrends, trendFields: boundedFields(input.trendFields) };
 }
 
-function normalizeAnalyticsGranularity(value: string): string {
-  const aliases: Record<string, string> = {
+function normalizeAnalyticsGranularity(value: string): "hourly" | "daily" | "weekly" | "total" {
+  const aliases: Record<string, "hourly" | "daily" | "weekly"> = {
     hour: "hourly",
     day: "daily",
     week: "weekly",
@@ -981,7 +1021,7 @@ function normalizeAnalyticsGranularity(value: string): string {
   if (!["hourly", "daily", "weekly", "total"].includes(normalized)) {
     throw new XTransportError("bad_request");
   }
-  return normalized;
+  return normalized as "hourly" | "daily" | "weekly" | "total";
 }
 
 function receiptFrom(status: number, headers: unknown): XReceipt {
