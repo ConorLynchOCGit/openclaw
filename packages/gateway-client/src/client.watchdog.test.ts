@@ -368,7 +368,10 @@ describe("GatewayClient", () => {
       }),
     );
 
-    expect(onAccepted).toHaveBeenCalledWith({ status: "accepted", runId: "run-1" });
+    expect(onAccepted).toHaveBeenCalledWith(
+      { status: "accepted", runId: "run-1" },
+      expect.any(Function),
+    );
     expect((client as unknown as { pending: Map<string, unknown> }).pending.size).toBe(1);
 
     (
@@ -386,6 +389,60 @@ describe("GatewayClient", () => {
 
     await expect(requestPromise).resolves.toEqual({ status: "ok" });
     expect((client as unknown as { pending: Map<string, unknown> }).pending.size).toBe(0);
+  });
+
+  test("ends an explicit request deadline at acceptance and still waits for the final result", async () => {
+    vi.useFakeTimers();
+    try {
+      const { client, send } = createOpenGatewayClient(25);
+      const onAccepted = vi.fn();
+      const requestPromise = client.request<{ status: string }>("agent", undefined, {
+        expectFinal: true,
+        timeoutMs: 25,
+        onAccepted,
+      });
+      const isSettled = trackSettlement(requestPromise);
+      const frame = JSON.parse(String(send.mock.calls[0]?.[0])) as { id: string };
+
+      (
+        client as unknown as {
+          handleMessage: (raw: string) => void;
+        }
+      ).handleMessage(
+        JSON.stringify({
+          type: "res",
+          id: frame.id,
+          ok: true,
+          payload: { status: "accepted", runId: "run-long" },
+        }),
+      );
+
+      await vi.advanceTimersByTimeAsync(250);
+
+      expect(isSettled()).toBe(false);
+      expect(getPendingCount(client)).toBe(1);
+      expect(onAccepted).toHaveBeenCalledWith(
+        { status: "accepted", runId: "run-long" },
+        expect.any(Function),
+      );
+
+      (
+        client as unknown as {
+          handleMessage: (raw: string) => void;
+        }
+      ).handleMessage(
+        JSON.stringify({
+          type: "res",
+          id: frame.id,
+          ok: true,
+          payload: { status: "ok" },
+        }),
+      );
+
+      await expect(requestPromise).resolves.toEqual({ status: "ok" });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("treats chat.send started/in_flight as intermediate when expectFinal waits for final", async () => {
@@ -427,7 +484,10 @@ describe("GatewayClient", () => {
       }),
     );
 
-    expect(onAccepted).toHaveBeenCalledWith({ status: "started", runId: "run-chat" });
+    expect(onAccepted).toHaveBeenCalledWith(
+      { status: "started", runId: "run-chat" },
+      expect.any(Function),
+    );
     expect(getPendingCount(client)).toBe(1);
 
     (

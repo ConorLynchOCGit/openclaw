@@ -1029,6 +1029,20 @@ describe("scripts/test-projects changed-target routing", () => {
     expect(result.stderr).not.toContain("[test] starting");
   });
 
+  it("rejects live tests with the owning live-test command instead of a zero-test pass", () => {
+    const target = "extensions/xai/x-search.live.test.ts";
+    const result = spawnSync(process.execPath, ["scripts/test-projects.mjs", "--plan", target], {
+      encoding: "utf8",
+      timeout: 5_000,
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("live test target belongs to scripts/test-live.mjs");
+    expect(result.stderr).toContain(
+      `OPENCLAW_LIVE_TEST=1 node scripts/test-live.mjs --no-quiet-live -- ${target}`,
+    );
+  });
+
   it("allows explicit split Vitest config targets without treating them as unmatched tests", () => {
     expect(
       findUnmatchedExplicitTestTargets(

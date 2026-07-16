@@ -1,0 +1,23 @@
+{
+  "name": "@openclaw/x-intelligence",
+  "version": "2026.6.6",
+  "private": true,
+  "description": "Read-only X source transport, compliant evidence, and bounded marketing-intelligence primitives",
+  "type": "module",
+  "dependencies": {
+    "@openclaw/agency-data": "workspace:*",
+    "@xdevplatform/xdk": "0.5.0",
+    "typebox": "1.1.39"
+  },
+  "devDependencies": {
+    "@openclaw/plugin-sdk": "workspace:*"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "scripts": {
+    "probe:capabilities": "tsx scripts/probe-capabilities.ts"
+  }
+}

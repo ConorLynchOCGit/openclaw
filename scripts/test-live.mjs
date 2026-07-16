@@ -79,6 +79,10 @@ export function buildTestLiveEnv(args, baseEnv = process.env) {
     pnpm_config_verify_deps_before_run: baseEnv.pnpm_config_verify_deps_before_run || "false",
     OPENCLAW_LIVE_TEST: baseEnv.OPENCLAW_LIVE_TEST || "1",
     OPENCLAW_LIVE_TEST_QUIET: args.quietOverride ?? baseEnv.OPENCLAW_LIVE_TEST_QUIET ?? "1",
+    // Live probes commonly run as the deployed service identity against a
+    // read-only or differently owned source checkout. Do not make provider
+    // acceptance depend on writing Vitest's disposable module cache there.
+    OPENCLAW_VITEST_FS_MODULE_CACHE: baseEnv.OPENCLAW_VITEST_FS_MODULE_CACHE || "0",
     ...(args.forceCodexHarness ? { OPENCLAW_LIVE_CODEX_HARNESS: "1" } : {}),
   };
 }

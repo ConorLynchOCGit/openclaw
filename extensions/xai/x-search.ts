@@ -10,18 +10,23 @@ import {
 } from "openclaw/plugin-sdk/provider-web-search";
 import { getRuntimeConfigSnapshot } from "openclaw/plugin-sdk/runtime-config-snapshot";
 import {
-  isXaiToolEnabled,
-  resolveXaiToolApiKeyWithAuth,
+  isXSearchToolEnabled,
+  resolveXSearchToolApiKey,
   type XaiToolAuthContext,
 } from "./src/tool-auth-shared.js";
-import { resolveEffectiveXSearchConfig } from "./src/x-search-config.js";
+import {
+  resolveEffectiveXSearchConfig,
+  resolveXSearchToolProvider,
+} from "./src/x-search-config.js";
 import {
   buildXaiXSearchPayload,
   requestXaiXSearch,
+  resolveOpenRouterXSearchMaxTotalResults,
   resolveXaiXSearchEndpoint,
   resolveXaiXSearchInlineCitations,
   resolveXaiXSearchMaxTurns,
   resolveXaiXSearchModel,
+  resolveXaiXSearchServiceTier,
   type XaiXSearchOptions,
 } from "./src/x-search-shared.js";
 import {
@@ -56,6 +61,7 @@ function getSharedXSearchCache(): Map<string, XSearchCacheEntry> {
 }
 
 const X_SEARCH_CACHE = getSharedXSearchCache();
+const X_SEARCH_MAX_HANDLES = 20;
 
 function resolveXSearchConfig(cfg?: unknown): Record<string, unknown> | undefined {
   return resolveEffectiveXSearchConfig(cfg as never);
@@ -67,7 +73,8 @@ function resolveXSearchEnabled(params: {
   runtimeConfig?: unknown;
   auth?: XaiToolAuthContext;
 }): boolean {
-  return isXaiToolEnabled({
+  return isXSearchToolEnabled({
+    provider: resolveXSearchToolProvider(params.config),
     enabled: params.config?.enabled as boolean | undefined,
     runtimeConfig: params.runtimeConfig as never,
     sourceConfig: params.cfg as never,
@@ -76,11 +83,12 @@ function resolveXSearchEnabled(params: {
 }
 
 async function resolveXSearchApiKey(params: {
+  provider: "xai" | "openrouter";
   sourceConfig?: unknown;
   runtimeConfig?: unknown;
   auth?: XaiToolAuthContext;
 }): Promise<string | undefined> {
-  return await resolveXaiToolApiKeyWithAuth(params as never);
+  return await resolveXSearchToolApiKey(params as never);
 }
 
 function normalizeOptionalIsoDate(value: string | undefined, label: string): string | undefined {
@@ -107,20 +115,26 @@ function normalizeOptionalIsoDate(value: string | undefined, label: string): str
 }
 
 function buildXSearchCacheKey(params: {
+  provider: "xai" | "openrouter";
   query: string;
   model: string;
   endpoint: string;
   inlineCitations: boolean;
   maxTurns?: number;
+  maxTotalResults?: number;
+  serviceTier?: "default" | "priority";
   options: Omit<XaiXSearchOptions, "query">;
 }) {
   return JSON.stringify([
     "x_search",
+    params.provider,
     params.model,
     params.endpoint,
     params.query,
     params.inlineCitations,
     params.maxTurns ?? null,
+    params.maxTotalResults ?? null,
+    params.serviceTier ?? null,
     params.options.allowedXHandles ?? null,
     params.options.excludedXHandles ?? null,
     params.options.fromDate ?? null,
@@ -149,13 +163,15 @@ export function createXSearchTool(options?: {
   }
 
   return createXSearchToolDefinition(async (_toolCallId: string, args: Record<string, unknown>) => {
+    const provider = resolveXSearchToolProvider(xSearchConfig);
     const apiKey = await resolveXSearchApiKey({
+      provider,
       sourceConfig: options?.config,
       runtimeConfig: runtimeConfig ?? undefined,
       auth: options?.auth,
     });
     if (!apiKey) {
-      return jsonResult(buildMissingXSearchApiKeyPayload());
+      return jsonResult(buildMissingXSearchApiKeyPayload(provider));
     }
 
     const query = readStringParam(args, "query", { required: true });
@@ -165,6 +181,21 @@ export function createXSearchTool(options?: {
     const toDate = normalizeOptionalIsoDate(readStringParam(args, "to_date"), "to_date");
     if (fromDate && toDate && fromDate > toDate) {
       throw new PluginToolInputError("from_date must be on or before to_date");
+    }
+    if (allowedXHandles?.length && excludedXHandles?.length) {
+      throw new PluginToolInputError(
+        "allowed_x_handles and excluded_x_handles cannot be used together",
+      );
+    }
+    if (allowedXHandles && allowedXHandles.length > X_SEARCH_MAX_HANDLES) {
+      throw new PluginToolInputError(
+        `allowed_x_handles supports at most ${X_SEARCH_MAX_HANDLES} handles`,
+      );
+    }
+    if (excludedXHandles && excludedXHandles.length > X_SEARCH_MAX_HANDLES) {
+      throw new PluginToolInputError(
+        `excluded_x_handles supports at most ${X_SEARCH_MAX_HANDLES} handles`,
+      );
     }
 
     const xSearchOptions: XaiXSearchOptions = {
@@ -177,16 +208,21 @@ export function createXSearchTool(options?: {
       enableVideoUnderstanding: args.enable_video_understanding === true,
     };
     const xSearchConfigRecord = xSearchConfig;
-    const model = resolveXaiXSearchModel(xSearchConfigRecord);
-    const endpoint = resolveXaiXSearchEndpoint(xSearchConfigRecord);
+    const model = resolveXaiXSearchModel(xSearchConfigRecord, provider);
+    const endpoint = resolveXaiXSearchEndpoint(xSearchConfigRecord, provider);
     const inlineCitations = resolveXaiXSearchInlineCitations(xSearchConfigRecord);
     const maxTurns = resolveXaiXSearchMaxTurns(xSearchConfigRecord);
+    const serviceTier = resolveXaiXSearchServiceTier(xSearchConfigRecord);
+    const maxTotalResults = resolveOpenRouterXSearchMaxTotalResults(xSearchConfigRecord);
     const cacheKey = buildXSearchCacheKey({
+      provider,
       query,
       model,
       endpoint,
       inlineCitations,
       maxTurns,
+      maxTotalResults,
+      serviceTier,
       options: {
         allowedXHandles,
         excludedXHandles,
@@ -198,28 +234,33 @@ export function createXSearchTool(options?: {
     });
     const cached = readCache(X_SEARCH_CACHE, cacheKey);
     if (cached) {
-      return jsonResult({ ...cached.value, cached: true });
+      return jsonResult(Object.assign({}, cached.value, { cached: true, cacheStatus: "hit" }));
     }
 
     const startedAt = Date.now();
     const result = await requestXaiXSearch({
+      provider,
       apiKey,
       endpoint,
       model,
       timeoutSeconds: resolveTimeoutSeconds(xSearchConfig?.timeoutSeconds, 30),
       inlineCitations,
       maxTurns,
+      maxTotalResults,
+      serviceTier,
       options: xSearchOptions,
     });
     const payload = buildXaiXSearchPayload({
+      provider,
       query,
       model,
       tookMs: Date.now() - startedAt,
       content: result.content,
-      citations: result.citations,
-      inlineCitations: result.inlineCitations,
+      result,
       options: xSearchOptions,
+      serviceTier,
     });
+    payload.cacheStatus = "miss";
     writeCache(
       X_SEARCH_CACHE,
       cacheKey,

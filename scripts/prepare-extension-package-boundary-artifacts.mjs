@@ -207,6 +207,15 @@ const PACKAGE_DTS_REQUIRED_OUTPUTS = [
   "packages/plugin-sdk/dist/src/plugin-sdk/provider-auth.d.ts",
   "packages/plugin-sdk/dist/src/plugin-sdk/video-generation.d.ts",
 ];
+const AGENCY_DATA_DTS_INPUTS = [
+  "extensions/agency-data/api.ts",
+  "extensions/agency-data/src/schema.ts",
+  "extensions/agency-data/src/store.ts",
+  "extensions/agency-data/src/types.ts",
+  "extensions/agency-data/tsconfig.json",
+];
+const AGENCY_DATA_DTS_STAMP = "dist/plugin-sdk/extensions/agency-data/.boundary-dts.stamp";
+const AGENCY_DATA_DTS_REQUIRED_OUTPUTS = ["dist/plugin-sdk/extensions/agency-data/api.d.ts"];
 const QA_CHANNEL_DTS_INPUTS = [
   "extensions/qa-channel/api.ts",
   "extensions/qa-channel/runtime-api.ts",
@@ -588,6 +597,12 @@ async function main(argv = process.argv.slice(2)) {
       ],
       outputPaths: ["dist/plugin-sdk/.boundary-entry-shims.stamp"],
     });
+    const agencyDataDtsFresh =
+      isArtifactSetFresh({
+        inputPaths: AGENCY_DATA_DTS_INPUTS,
+        outputPaths: [AGENCY_DATA_DTS_STAMP, ...AGENCY_DATA_DTS_REQUIRED_OUTPUTS],
+        includeFile: isRelevantTypeInput,
+      }) && !hasMissingOutput(AGENCY_DATA_DTS_REQUIRED_OUTPUTS);
     const qaChannelDtsFresh =
       isArtifactSetFresh({
         inputPaths: QA_CHANNEL_DTS_INPUTS,
@@ -648,6 +663,37 @@ async function main(argv = process.argv.slice(2)) {
       process.stdout.write("[plugin-sdk package boundary dts] fresh; skipping\n");
     }
     if (mode === "all") {
+      if (!agencyDataDtsFresh) {
+        removeIncrementalStateForMissingOutput({
+          outputPaths: AGENCY_DATA_DTS_REQUIRED_OUTPUTS,
+          tsBuildInfoPath: "dist/plugin-sdk/extensions/agency-data/.tsbuildinfo",
+        });
+        dependentSteps.push({
+          label: "agency-data boundary dts",
+          args: [
+            runTsgoScript,
+            "-p",
+            "extensions/agency-data/tsconfig.json",
+            "--declaration",
+            "true",
+            "--emitDeclarationOnly",
+            "true",
+            "--noEmit",
+            "false",
+            "--outDir",
+            "dist/plugin-sdk/extensions/agency-data",
+            "--rootDir",
+            "extensions/agency-data",
+            "--tsBuildInfoFile",
+            "dist/plugin-sdk/extensions/agency-data/.tsbuildinfo",
+          ],
+          env: { OPENCLAW_TSGO_HEAVY_CHECK_LOCK_HELD: "1" },
+          timeoutMs: 300_000,
+          stampPath: AGENCY_DATA_DTS_STAMP,
+        });
+      } else {
+        process.stdout.write("[agency-data boundary dts] fresh; skipping\n");
+      }
       if (!qaChannelDtsFresh) {
         removeIncrementalStateForMissingOutput({
           outputPaths: QA_CHANNEL_DTS_REQUIRED_OUTPUTS,

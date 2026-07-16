@@ -13,6 +13,7 @@ import { hasInterSessionUserProvenance } from "../sessions/input-provenance.js";
 import { extractAssistantVisibleText } from "../shared/chat-message-content.js";
 import { escapeRegExp } from "../shared/regexp.js";
 import { resolveTrajectoryRuntimeFileSync } from "../trajectory/runtime-file.js";
+import { formatBoundedToolEvidencePreview } from "../trajectory/tool-evidence-preview.js";
 import { estimateStringChars, estimateTokensFromChars } from "../utils/cjk-chars.js";
 import { stripInlineDirectiveTagsForDisplay } from "../utils/directive-tags.js";
 import { extractToolCallNames, hasToolCall } from "../utils/transcript-tools.js";
@@ -2279,6 +2280,7 @@ function activeProgressOutputSummary(
   const error = activeProgressRecord(data?.error);
   const resultError = activeProgressRecord(result?.error);
   return (
+    formatBoundedToolEvidencePreview(data) ??
     boundedProgressText(data?.outputSummary, 500) ??
     boundedProgressText(data?.stderr, 500) ??
     boundedProgressText(data?.stdout, 500) ??

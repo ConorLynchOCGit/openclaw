@@ -1,6 +1,10 @@
 // Gateway RPC call helper.
 // Builds a GatewayClient, resolves auth/scopes, and performs one request.
 import { randomUUID } from "node:crypto";
+import type {
+  GatewayClientRequestFunction,
+  GatewayClientRequestOptions,
+} from "@openclaw/gateway-client";
 import { isLoopbackIpAddress } from "@openclaw/net-policy/ip";
 import { redactSensitiveUrlLikeString } from "@openclaw/net-policy/redact-sensitive-url";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
@@ -32,7 +36,6 @@ import {
   GatewayClient,
   isGatewayConnectAssemblyError,
   type GatewayClientOptions,
-  type GatewayClientRequestOptions,
 } from "./client.js";
 import {
   buildGatewayConnectionDetailsWithResolvers,
@@ -57,11 +60,8 @@ import {
 } from "./method-scopes.js";
 export type { GatewayConnectionDetails };
 
-export type GatewayRequestFunction = <T = Record<string, unknown>>(
-  method: string,
-  params?: unknown,
-  opts?: GatewayClientRequestOptions,
-) => Promise<T>;
+export type GatewayRequestFunction = GatewayClientRequestFunction;
+export type GatewayRequestOptions = GatewayClientRequestOptions;
 
 type CallGatewayBaseOptions = {
   url?: string;
@@ -74,7 +74,7 @@ type CallGatewayBaseOptions = {
   expectFinal?: boolean;
   timeoutMs?: number;
   signal?: AbortSignal;
-  onAccepted?: GatewayClientRequestOptions["onAccepted"];
+  onAccepted?: GatewayRequestOptions["onAccepted"];
   onSignalAbort?: (request: GatewayRequestFunction) => Promise<void> | void;
   clientName?: GatewayClientName;
   clientDisplayName?: string;
@@ -837,6 +837,7 @@ async function executeGatewayRequestWithScopes<T>(params: {
     }
     let settled = false;
     let ignoreClose = false;
+    let timer: NodeJS.Timeout | undefined;
     const startAbort = new AbortController();
     let primaryRequestStarted = false;
     const cleanup = () => {
@@ -888,7 +889,7 @@ async function executeGatewayRequestWithScopes<T>(params: {
         stopAfterAbortHook();
         return;
       }
-      const request: GatewayRequestFunction = activeClient.request.bind(activeClient);
+      const request = activeClient.request.bind(activeClient) as GatewayRequestFunction;
       void Promise.resolve()
         .then(() => opts.onSignalAbort?.(request))
         .catch(() => {})
@@ -926,12 +927,24 @@ async function executeGatewayRequestWithScopes<T>(params: {
             if (!activeClient) {
               throw new Error("gateway client not initialized");
             }
+            // The host facade forwards shared request options unchanged, but
+            // narrows the accepted callback type to its first argument.
+            const request = activeClient.request.bind(activeClient) as GatewayRequestFunction;
             primaryRequestStarted = true;
             const result = await activeClient.request<T>(opts.method, opts.params, {
               expectFinal: opts.expectFinal,
               timeoutMs: opts.timeoutMs,
               signal: opts.signal,
-              onAccepted: opts.onAccepted,
+              onAccepted: (payload: unknown, acceptedRequest?: GatewayRequestFunction) => {
+                // The outer call timer has the same ownership boundary as the
+                // request timer: connect and initial acceptance, never the
+                // accepted run's full lifecycle.
+                if (timer) {
+                  clearTimeout(timer);
+                  timer = undefined;
+                }
+                opts.onAccepted?.(payload, acceptedRequest ?? request);
+              },
             });
             ignoreClose = true;
             stop(undefined, result);
@@ -963,7 +976,7 @@ async function executeGatewayRequestWithScopes<T>(params: {
       },
     });
 
-    const timer: NodeJS.Timeout | undefined = setTimeout(() => {
+    timer = setTimeout(() => {
       ignoreClose = true;
       stop(
         createGatewayTimeoutTransportError({

@@ -1,0 +1,20 @@
+{
+  "id": "agency-data",
+  "name": "Agency Data",
+  "description": "Read-only marketing analytics tools backed by canonical JSONL.",
+  "activation": {
+    "onStartup": false
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  },
+  "contracts": {
+    "tools": [
+      "marketing_data_catalog",
+      "marketing_metrics",
+      "marketing_experiments"
+    ]
+  }
+}

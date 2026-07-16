@@ -1730,6 +1730,59 @@ describe("readLatestTrajectoryProgressProjection", () => {
     });
   });
 
+  test("projects bounded raw X evidence into active progress", async () => {
+    const sessionId = "trajectory-native-x-tool-result";
+    const sessionFile = path.join(tmpDir, `${sessionId}.jsonl`);
+    fs.writeFileSync(sessionFile, "", "utf-8");
+    const recorder = createTrajectoryRuntimeRecorder({
+      sessionId,
+      sessionKey: `agent:x-researcher:${sessionId}`,
+      sessionFile,
+      maxRuntimeFileBytes: 8_000,
+    });
+    if (!recorder) {
+      throw new Error("expected trajectory recorder");
+    }
+
+    recorder.recordEvent("agent.tool", {
+      phase: "result",
+      name: "x_counts",
+      toolCallId: "call-counts",
+      result: {
+        content: [{ type: "text", text: "PRIVATE SOURCE BODY" }],
+        details: {
+          status: "complete",
+          operation: "recent",
+          purpose: "topic_pulse",
+          method_version: "x-topic-pulse.v1",
+          provider_status: 200,
+          evidence: {
+            ref: "artifacts/business-ops/x-acquisition-manifests-v4/counts.json",
+            digest: "sha256:abc123",
+          },
+          resources: { requests: 1, duration_ms: 25 },
+          error: { message: "Bearer secret" },
+        },
+      },
+    });
+    await recorder.flush();
+
+    const projection = readLatestTrajectoryProgressProjection(
+      sessionId,
+      storePath,
+      sessionFile,
+      "x-researcher",
+    );
+
+    expect(projection?.outputSummary).toContain(
+      "x_counts status=complete operation=recent purpose=topic_pulse",
+    );
+    expect(projection?.outputSummary).toContain("providerStatus=200");
+    expect(projection?.outputSummary).toContain("evidence=artifacts/business-ops/");
+    expect(projection?.outputSummary).not.toContain("PRIVATE SOURCE BODY");
+    expect(projection?.outputSummary).not.toContain("Bearer secret");
+  });
+
   test("uses native prompt submission as assistant generation progress without exposing prompt text", async () => {
     const sessionId = "trajectory-native-prompt-submitted";
     const sessionFile = path.join(tmpDir, `${sessionId}.jsonl`);

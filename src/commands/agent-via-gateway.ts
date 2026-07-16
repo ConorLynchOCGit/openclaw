@@ -9,7 +9,7 @@ import {
 import { listAgentIds, resolveDefaultAgentId } from "../agents/agent-scope-config.js";
 import { formatCliCommand } from "../cli/command-format.js";
 import type { CliDeps } from "../cli/deps.types.js";
-import { withProgress } from "../cli/progress.js";
+import { withProgress, type ProgressReporter } from "../cli/progress.js";
 import {
   readGatewayDispatchConfig,
   readGatewayDispatchConfigWithShellEnvFallback,
@@ -22,6 +22,7 @@ import {
   isGatewayTransportError,
   randomIdempotencyKey,
   type GatewayRequestFunction,
+  type GatewayRequestOptions,
 } from "../gateway/call.js";
 import { isGatewaySecretRefUnavailableError } from "../gateway/credentials.js";
 import { ADMIN_SCOPE } from "../gateway/operator-scopes.js";
@@ -65,6 +66,9 @@ const GATEWAY_TRANSIENT_CONNECT_RETRY_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 
 const GATEWAY_FINAL_FRAME_RECOVERY_RETRY_DELAYS_MS = [
   250, 1_000, 2_000, 5_000, 10_000, 15_000,
 ] as const;
+const GATEWAY_ACCEPTED_PROGRESS_POLL_MS = 30_000;
+const GATEWAY_ACCEPTED_PROGRESS_READ_TIMEOUT_MS = 5_000;
+const GATEWAY_ACCEPTED_INACTIVITY_REPORT_MS = 10 * 60_000;
 
 type AgentCliOpts = {
   message: string;
@@ -125,6 +129,8 @@ const defaultAgentSessionModuleLoader: AgentSessionModuleLoader = () =>
 let agentSessionModuleLoader: AgentSessionModuleLoader = defaultAgentSessionModuleLoader;
 let gatewayAbortRetryDelaysMsForTests: readonly number[] | undefined;
 let gatewayFinalFrameRecoveryRetryDelaysMsForTests: readonly number[] | undefined;
+let gatewayAcceptedProgressPollMsForTests: number | undefined;
+let gatewayAcceptedInactivityReportMsForTests: number | undefined;
 
 function resolveGatewayAbortRetryDelaysMs(): readonly number[] {
   return gatewayAbortRetryDelaysMsForTests ?? GATEWAY_ABORT_RETRY_DELAYS_MS;
@@ -176,6 +182,12 @@ export const agentViaGatewayTesting = {
   },
   setGatewayFinalFrameRecoveryRetryDelaysMsForTests(delays?: readonly number[]): void {
     gatewayFinalFrameRecoveryRetryDelaysMsForTests = delays;
+  },
+  setGatewayAcceptedProgressPollMsForTests(pollMs?: number): void {
+    gatewayAcceptedProgressPollMsForTests = pollMs;
+  },
+  setGatewayAcceptedInactivityReportMsForTests(inactivityMs?: number): void {
+    gatewayAcceptedInactivityReportMsForTests = inactivityMs;
   },
 };
 
@@ -355,6 +367,131 @@ function readAcceptedRunContext(payload: unknown): {
   };
 }
 
+function readFiniteTimestamp(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return Math.floor(value);
+  }
+  if (typeof value !== "string" || !value.trim()) {
+    return undefined;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function readAcceptedSessionProgress(payload: unknown): {
+  observedAt?: number;
+  status?: string;
+  source?: string;
+} {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return {};
+  }
+  const row = payload as Record<string, unknown>;
+  const progress =
+    row.activeProgress &&
+    typeof row.activeProgress === "object" &&
+    !Array.isArray(row.activeProgress)
+      ? (row.activeProgress as Record<string, unknown>)
+      : undefined;
+  const observedAt =
+    readFiniteTimestamp(row.lastObservedActivityAt) ??
+    readFiniteTimestamp(progress?.observedAt) ??
+    readFiniteTimestamp(row.updatedAt);
+  return {
+    observedAt,
+    status: normalizeOptionalString(row.status),
+    source:
+      normalizeOptionalString(row.lastObservedActivitySource) ??
+      normalizeOptionalString(progress?.source),
+  };
+}
+
+function startAcceptedGatewayProgressMonitor(params: {
+  request: GatewayRequestFunction;
+  sessionKey: string | undefined;
+  runId: string | undefined;
+  progress: ProgressReporter;
+  runtime: RuntimeEnv;
+}): () => void {
+  const sessionKey = normalizeOptionalString(params.sessionKey);
+  if (!sessionKey) {
+    return () => {};
+  }
+  const pollMs = Math.max(
+    1,
+    Math.floor(gatewayAcceptedProgressPollMsForTests ?? GATEWAY_ACCEPTED_PROGRESS_POLL_MS),
+  );
+  const inactivityMs = Math.max(
+    pollMs,
+    Math.floor(gatewayAcceptedInactivityReportMsForTests ?? GATEWAY_ACCEPTED_INACTIVITY_REPORT_MS),
+  );
+  let stopped = false;
+  let timer: NodeJS.Timeout | undefined;
+  let lastProgressAt = Date.now();
+  let lastObservedAt = 0;
+  let stalledReported = false;
+
+  const schedule = () => {
+    if (stopped) {
+      return;
+    }
+    timer = setTimeout(() => {
+      void inspect();
+    }, pollMs);
+    timer.unref?.();
+  };
+  const inspect = async () => {
+    try {
+      const detail = await params.request(
+        "sessions.show",
+        {
+          key: sessionKey,
+          includeDerivedTitles: false,
+          includeLastMessage: false,
+          includeFinalAssistant: false,
+        },
+        { timeoutMs: GATEWAY_ACCEPTED_PROGRESS_READ_TIMEOUT_MS },
+      );
+      const snapshot = readAcceptedSessionProgress(detail);
+      if (snapshot.observedAt && snapshot.observedAt > lastObservedAt) {
+        lastObservedAt = snapshot.observedAt;
+        lastProgressAt = Date.now();
+        if (stalledReported) {
+          params.runtime.error?.(
+            `Gateway agent run ${params.runId ?? "accepted"} resumed observable progress.`,
+          );
+          stalledReported = false;
+        }
+        const source = snapshot.source ? ` via ${snapshot.source}` : "";
+        params.progress.setLabel(`Agent working${source}...`);
+      }
+      if (snapshot.status && snapshot.status !== "running") {
+        params.progress.setLabel(`Agent ${snapshot.status}; waiting for final receipt...`);
+      }
+    } catch {
+      // Readback is observational. A transient read failure cannot alter or
+      // duplicate the accepted run.
+    }
+
+    if (!stalledReported && Date.now() - lastProgressAt >= inactivityMs) {
+      stalledReported = true;
+      params.progress.setLabel("Agent accepted; no recent activity; still attached...");
+      params.runtime.error?.(
+        `Gateway agent run ${params.runId ?? "accepted"} has no recent observable progress; remaining attached without fallback.`,
+      );
+    }
+    schedule();
+  };
+
+  schedule();
+  return () => {
+    stopped = true;
+    if (timer) {
+      clearTimeout(timer);
+    }
+  };
+}
+
 function createAgentCliSignalBridge(processLike: AgentCliProcessLike = process) {
   const controller = new AbortController();
   let receivedSignal: AgentCliSignal | undefined;
@@ -491,13 +628,15 @@ async function abortAcceptedGatewayAgentRunWithGatewayCall(params: {
   const request: GatewayRequestFunction = async <T = Record<string, unknown>>(
     method: string,
     requestParams?: unknown,
-    opts?: Parameters<GatewayRequestFunction>[2],
+    opts?: GatewayRequestOptions,
   ): Promise<T> =>
     await callGateway<T>({
       method,
       params: requestParams,
       timeoutMs: opts?.timeoutMs ?? undefined,
       expectFinal: opts?.expectFinal,
+      signal: opts?.signal,
+      onAccepted: opts?.onAccepted,
       config: params.config,
       ...params.gatewayIdentity,
     });
@@ -694,7 +833,6 @@ async function agentViaGatewayCommand(
   let activeConnectionAbortAttempted = false;
   let activeConnectionAbortSucceeded = false;
   let response: GatewayAgentResponse | undefined;
-  const finalFrameRecoveryDeadlineMs = Date.now() + gatewayTimeoutMs;
   const dispatchGatewayAgentCall = async (activeCfg: OpenClawConfig) =>
     await withProgress(
       {
@@ -702,66 +840,78 @@ async function agentViaGatewayCommand(
         indeterminate: true,
         enabled: opts.json !== true,
       },
-      async () =>
-        await callGateway({
-          method: "agent",
-          params: {
-            message: body,
-            agentId,
-            model: modelOverride,
-            to: opts.to,
-            replyTo: opts.replyTo,
-            sessionId: opts.sessionId,
-            sessionKey,
-            thinking: opts.thinking,
-            deliver: Boolean(opts.deliver),
-            channel,
-            replyChannel: opts.replyChannel,
-            replyAccountId: opts.replyAccount,
-            bestEffortDeliver: opts.bestEffortDeliver,
-            timeout: timeoutSeconds,
-            lane: opts.lane,
-            extraSystemPrompt: opts.extraSystemPrompt,
-            idempotencyKey,
-          },
-          expectFinal: true,
-          timeoutMs: gatewayTimeoutMs,
-          config: activeCfg,
-          signal: signalBridge.signal,
-          onAccepted: (payload) => {
-            acceptedGatewayRun = true;
-            const accepted = readAcceptedRunContext(payload);
-            acceptedRunId = accepted.runId ?? acceptedRunId;
-            acceptedSessionKey = accepted.sessionKey ?? acceptedSessionKey;
-          },
-          onSignalAbort: async (request) => {
-            activeConnectionAbortAttempted = true;
-            activeConnectionAbortSucceeded = await abortAcceptedGatewayAgentRunOnActiveConnection({
-              runId: acceptedRunId,
-              sessionKey: acceptedSessionKey,
-              signal: signalBridge.getReceivedSignal(),
-              runtime,
-              request,
-            });
-          },
-          ...gatewayIdentity,
-        }),
+      async (progress) => {
+        let stopProgressMonitor = () => {};
+        try {
+          return await callGateway({
+            method: "agent",
+            params: {
+              message: body,
+              agentId,
+              model: modelOverride,
+              to: opts.to,
+              replyTo: opts.replyTo,
+              sessionId: opts.sessionId,
+              sessionKey,
+              thinking: opts.thinking,
+              deliver: Boolean(opts.deliver),
+              channel,
+              replyChannel: opts.replyChannel,
+              replyAccountId: opts.replyAccount,
+              bestEffortDeliver: opts.bestEffortDeliver,
+              // The CLI timeout protects initial dispatch/acceptance. Accepted
+              // runs are durable and progress-observed, so they do not inherit
+              // that wall-clock as an execution kill switch.
+              timeout: 0,
+              lane: opts.lane,
+              extraSystemPrompt: opts.extraSystemPrompt,
+              idempotencyKey,
+            },
+            expectFinal: true,
+            timeoutMs: gatewayTimeoutMs,
+            config: activeCfg,
+            signal: signalBridge.signal,
+            onAccepted: (payload, request) => {
+              acceptedGatewayRun = true;
+              const accepted = readAcceptedRunContext(payload);
+              acceptedRunId = accepted.runId ?? acceptedRunId;
+              acceptedSessionKey = accepted.sessionKey ?? acceptedSessionKey;
+              progress.setLabel("Agent accepted; waiting for progress...");
+              stopProgressMonitor();
+              stopProgressMonitor = startAcceptedGatewayProgressMonitor({
+                request,
+                sessionKey: acceptedSessionKey,
+                runId: acceptedRunId,
+                progress,
+                runtime,
+              });
+            },
+            onSignalAbort: async (request) => {
+              activeConnectionAbortAttempted = true;
+              activeConnectionAbortSucceeded = await abortAcceptedGatewayAgentRunOnActiveConnection(
+                {
+                  runId: acceptedRunId,
+                  sessionKey: acceptedSessionKey,
+                  signal: signalBridge.getReceivedSignal(),
+                  runtime,
+                  request,
+                },
+              );
+            },
+            ...gatewayIdentity,
+          });
+        } finally {
+          stopProgressMonitor();
+        }
+      },
     );
 
   let shellEnvFallbackRetriesRemaining = 1;
   let finalFrameRecoveryAttempt = 0;
   const consumeShellEnvFallbackRetry = () => shellEnvFallbackRetriesRemaining-- > 0;
   const nextFinalFrameRecoveryDelayMs = () => {
-    const remainingMs = Math.max(0, finalFrameRecoveryDeadlineMs - Date.now());
-    if (remainingMs <= 0) {
-      throw new Error(
-        `Gateway final response recovery timed out for run ${acceptedRunId ?? idempotencyKey}.`,
-      );
-    }
     const retryDelaysMs = resolveGatewayFinalFrameRecoveryRetryDelaysMs();
-    const preferredDelayMs =
-      retryDelaysMs[Math.min(finalFrameRecoveryAttempt++, retryDelaysMs.length - 1)] ?? 0;
-    return Math.min(preferredDelayMs, remainingMs);
+    return retryDelaysMs[Math.min(finalFrameRecoveryAttempt++, retryDelaysMs.length - 1)] ?? 0;
   };
   for (;;) {
     try {

@@ -1,0 +1,23 @@
+{
+  "name": "@openclaw/agency-data",
+  "version": "2026.6.6",
+  "private": true,
+  "description": "OpenClaw agency marketing analytics data plugin",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts",
+    "./api.js": "./api.ts"
+  },
+  "dependencies": {
+    "csv-parse": "7.0.1",
+    "typebox": "1.1.39"
+  },
+  "devDependencies": {
+    "@openclaw/plugin-sdk": "workspace:*"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

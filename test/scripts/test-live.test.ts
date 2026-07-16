@@ -64,6 +64,7 @@ describe("scripts/test-live", () => {
       OPENCLAW_LIVE_CODEX_HARNESS: "1",
       OPENCLAW_LIVE_TEST: "1",
       OPENCLAW_LIVE_TEST_QUIET: "1",
+      OPENCLAW_VITEST_FS_MODULE_CACHE: "0",
       PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN: "false",
       pnpm_config_verify_deps_before_run: "false",
     });

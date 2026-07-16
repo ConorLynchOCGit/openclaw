@@ -303,16 +303,22 @@ type Pending = {
   expectFinal: boolean;
   timeout: NodeJS.Timeout | null;
   cleanup?: () => void;
-  onAccepted?: (payload: unknown) => void;
+  onAccepted?: (payload: unknown, request: GatewayClientRequestFunction) => void;
   acceptedNotified?: boolean;
 };
+
+export type GatewayClientRequestFunction = <T = Record<string, unknown>>(
+  method: string,
+  params?: unknown,
+  opts?: GatewayClientRequestOptions,
+) => Promise<T>;
 
 export type GatewayClientRequestOptions = {
   expectFinal?: boolean;
   timeoutMs?: number | null;
   signal?: AbortSignal;
   /** Called once for expectFinal requests after an accepted response, before the final result. */
-  onAccepted?: (payload: unknown) => void;
+  onAccepted?: (payload: unknown, request: GatewayClientRequestFunction) => void;
 };
 
 type GatewayClientErrorShape = {
@@ -1343,10 +1349,17 @@ export class GatewayClient {
         (status === "accepted" ||
           (pending.method === "chat.send" && (status === "started" || status === "in_flight")))
       ) {
+        // An explicit expect-final timeout protects dispatch and initial
+        // acceptance only. Once the gateway owns the durable run, an absolute
+        // client timer must not tear down a progressing execution.
+        if (pending.timeout) {
+          clearTimeout(pending.timeout);
+          pending.timeout = null;
+        }
         if (!pending.acceptedNotified) {
           pending.acceptedNotified = true;
           try {
-            pending.onAccepted?.(parsed.payload);
+            pending.onAccepted?.(parsed.payload, this.request.bind(this));
           } catch (err) {
             this.logDebug(
               `gateway client accepted callback error: ${formatGatewayClientErrorForLog(err)}`,

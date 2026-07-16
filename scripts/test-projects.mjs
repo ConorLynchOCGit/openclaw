@@ -88,6 +88,14 @@ function extractWrapperPlanMode(args) {
   return { forwardedArgs, planOnly };
 }
 
+function findExplicitLiveTestTargets(args, cwd) {
+  const { targetArgs } = parseTestProjectsArgs(args, cwd);
+  return targetArgs.filter((targetArg) => {
+    const relative = path.relative(cwd, path.resolve(cwd, targetArg)).replaceAll(path.sep, "/");
+    return relative.includes(".live.test.");
+  });
+}
+
 function printHelp() {
   console.log(`Usage: node scripts/test-projects.mjs [--changed <base>] [--plan] [--watch] [targets...] [-- vitest-args...]
 
@@ -189,10 +197,9 @@ function collectValidationPreflightEntries({ cwd, env, runSpecs }) {
       path: cachePath,
     })),
   ];
-  return uniquePathEntries(rawEntries).map((entry) => ({
-    ...entry,
-    state: resolvePathState(entry.path),
-  }));
+  return uniquePathEntries(rawEntries).map((entry) =>
+    Object.assign(entry, { state: resolvePathState(entry.path) }),
+  );
 }
 
 function printValidationPreflightReceipt({ cwd, env, runSpecs }) {
@@ -491,6 +498,18 @@ async function main() {
   const baseEnv = resolveLocalVitestEnv(process.env);
   const { targetArgs } = parseTestProjectsArgs(args, process.cwd());
   phaseTimer.mark("parse_args");
+  const explicitLiveTargets = findExplicitLiveTestTargets(args, process.cwd());
+  if (explicitLiveTargets.length > 0) {
+    for (const target of explicitLiveTargets) {
+      console.error(`[test] live test target belongs to scripts/test-live.mjs: ${target}`);
+    }
+    console.error(
+      `[test] run: OPENCLAW_LIVE_TEST=1 node scripts/test-live.mjs --no-quiet-live -- ${explicitLiveTargets.join(" ")}`,
+    );
+    printTestSummary("failed", 1, performance.now() - suiteStartedAt);
+    process.exitCode = 1;
+    return;
+  }
   const unmatchedExplicitTargets = findUnmatchedExplicitTestTargets(args, process.cwd());
   phaseTimer.mark("target_validation");
   if (unmatchedExplicitTargets.length > 0) {

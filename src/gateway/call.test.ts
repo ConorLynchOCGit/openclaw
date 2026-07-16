@@ -11,6 +11,7 @@ import { setActivePluginRegistry } from "../plugins/runtime.js";
 import type { DeviceAuthEntry } from "../shared/device-auth.js";
 import { captureEnv } from "../test-utils/env.js";
 import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../utils/message-channel.js";
+import type { GatewayRequestFunction } from "./call.js";
 import {
   loadConfigMock as getRuntimeConfig,
   pickPrimaryLanIPv4Mock as pickPrimaryLanIPv4,
@@ -85,7 +86,7 @@ let lastRequestOptions: {
     expectFinal?: boolean;
     timeoutMs?: number | null;
     signal?: AbortSignal;
-    onAccepted?: (payload: unknown) => void;
+    onAccepted?: (payload: unknown, request: unknown) => void;
   };
 } | null = null;
 type StartMode = "hello" | "close" | "connect-error" | "silent" | "startup-retry-then-hello";
@@ -201,7 +202,7 @@ class StubGatewayClient {
       expectFinal?: boolean;
       timeoutMs?: number | null;
       signal?: AbortSignal;
-      onAccepted?: (payload: unknown) => void;
+      onAccepted?: (payload: unknown, request: unknown) => void;
     },
   ) {
     lastRequestOptions = { method, params, opts };
@@ -1374,7 +1375,77 @@ describe("callGateway error details", () => {
 
     expect(lastRequestOptions?.method).toBe("agent");
     expect(lastRequestOptions?.opts?.signal).toBe(controller.signal);
-    expect(lastRequestOptions?.opts?.onAccepted).toBe(onAccepted);
+    const forwardedOnAccepted = lastRequestOptions?.opts?.onAccepted;
+    expect(forwardedOnAccepted).toEqual(expect.any(Function));
+    const request = vi.fn();
+    forwardedOnAccepted?.({ status: "accepted" }, request);
+    expect(onAccepted).toHaveBeenCalledWith({ status: "accepted" }, request);
+  });
+
+  it("ends the wrapper deadline at acceptance while the durable request remains pending", async () => {
+    setLocalLoopbackGatewayConfig();
+    vi.useFakeTimers();
+    let resolveFinal: ((value: { ok: true }) => void) | undefined;
+    let settled = false;
+    const onAccepted = vi.fn();
+
+    testing.setDepsForTests({
+      createGatewayClient: (opts) =>
+        ({
+          async request(
+            _method: string,
+            _params: unknown,
+            requestOpts?: {
+              expectFinal?: boolean;
+              timeoutMs?: number | null;
+              onAccepted?: (payload: unknown, request: GatewayRequestFunction) => void;
+            },
+          ) {
+            return await new Promise<{ ok: true }>((resolve) => {
+              resolveFinal = resolve;
+              const acceptedRequest: GatewayRequestFunction = async <T>() => ({ ok: true }) as T;
+              requestOpts?.onAccepted?.({ status: "accepted", runId: "run-long" }, acceptedRequest);
+            });
+          },
+          start() {
+            opts.onHelloOk?.({
+              features: { methods: helloMethods ?? [], events: [] },
+            } as unknown as Parameters<NonNullable<typeof opts.onHelloOk>>[0]);
+          },
+          stop() {},
+          async stopAndWait() {},
+        }) as never,
+      getRuntimeConfig: getRuntimeConfig as unknown as () => OpenClawConfig,
+      loadOrCreateDeviceIdentity: () => deviceIdentityState.value,
+      loadDeviceAuthToken: loadDeviceAuthTokenMock,
+      resolveGatewayPort: resolveGatewayPort as unknown as (
+        cfg?: OpenClawConfig,
+        env?: NodeJS.ProcessEnv,
+      ) => number,
+    });
+
+    const promise = callGateway<{ ok: true }>({
+      method: "agent",
+      expectFinal: true,
+      timeoutMs: 5,
+      onAccepted,
+    });
+    void promise.then(() => {
+      settled = true;
+    });
+
+    await vi.waitFor(() => {
+      expect(onAccepted).toHaveBeenCalledWith(
+        { status: "accepted", runId: "run-long" },
+        expect.any(Function),
+      );
+    });
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(settled).toBe(false);
+    expect(resolveFinal).toEqual(expect.any(Function));
+    resolveFinal?.({ ok: true });
+    await expect(promise).resolves.toEqual({ ok: true });
   });
 
   it("runs the signal abort hook on the active gateway connection before teardown", async () => {

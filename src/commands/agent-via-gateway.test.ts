@@ -237,6 +237,8 @@ function resetAgentCliCommandMocksForTest() {
   agentViaGatewayTesting.resetLazyImportsForTests();
   agentViaGatewayTesting.setGatewayAbortRetryDelaysMsForTests([0, 0, 0, 0]);
   agentViaGatewayTesting.setGatewayFinalFrameRecoveryRetryDelaysMsForTests([0, 0, 0, 0]);
+  agentViaGatewayTesting.setGatewayAcceptedProgressPollMsForTests();
+  agentViaGatewayTesting.setGatewayAcceptedInactivityReportMsForTests();
   loadAgentSessionModuleMock.mockImplementation(async () => await import("./agent/session.js"));
   agentViaGatewayTesting.setAgentSessionModuleLoaderForTests(loadAgentSessionModuleMock);
   originalForceConsoleToStderr = loggingState.forceConsoleToStderr;
@@ -250,6 +252,8 @@ beforeEach(() => {
 afterEach(() => {
   agentViaGatewayTesting.setGatewayAbortRetryDelaysMsForTests();
   agentViaGatewayTesting.setGatewayFinalFrameRecoveryRetryDelaysMsForTests();
+  agentViaGatewayTesting.setGatewayAcceptedProgressPollMsForTests();
+  agentViaGatewayTesting.setGatewayAcceptedInactivityReportMsForTests();
   loggingState.forceConsoleToStderr = originalForceConsoleToStderr;
 });
 
@@ -1373,6 +1377,93 @@ describe("agentCliCommand", () => {
         ]),
       );
     });
+  });
+
+  it("keeps one accepted run attached through descendant progress and reports later inactivity", async () => {
+    vi.useFakeTimers();
+    try {
+      await withTempStore(async () => {
+        agentViaGatewayTesting.setGatewayAcceptedProgressPollMsForTests(300_000);
+        agentViaGatewayTesting.setGatewayAcceptedInactivityReportMsForTests(600_000);
+        let resolveFinal: ((value: Record<string, unknown>) => void) | undefined;
+        let emitProgress = true;
+        let observedAt = Date.now();
+        const acceptedRequest = vi.fn(async (method: string) => {
+          expect(method).toBe("sessions.show");
+          if (emitProgress) {
+            observedAt = Date.now();
+          }
+          return {
+            status: "running",
+            lastObservedActivityAt: observedAt,
+            lastObservedActivitySource: "descendant",
+          };
+        });
+        callGateway.mockImplementationOnce(async (requestValue: unknown) => {
+          const request = requireRecord(requestValue, "gateway request");
+          const params = requireRecord(request.params, "gateway params");
+          expect(params.timeout).toBe(0);
+          const onAccepted = request.onAccepted as
+            | ((payload: unknown, request: typeof acceptedRequest) => void)
+            | undefined;
+          onAccepted?.(
+            {
+              status: "accepted",
+              runId: "run-progress",
+              sessionKey: "agent:main:progress-session",
+            },
+            acceptedRequest,
+          );
+          return await new Promise<Record<string, unknown>>((resolve) => {
+            resolveFinal = resolve;
+          });
+        });
+
+        const runPromise = agentCliCommand(
+          {
+            message: "long task",
+            sessionKey: "agent:main:progress-session",
+            runId: "run-progress",
+            timeout: "1",
+            json: true,
+          },
+          jsonRuntime,
+        );
+
+        await vi.waitFor(() => {
+          expect(callGateway).toHaveBeenCalledTimes(1);
+        });
+        await vi.advanceTimersByTimeAsync(700_000);
+
+        expect(acceptedRequest).toHaveBeenCalledTimes(2);
+        expect(agentCommand).not.toHaveBeenCalled();
+        expect(
+          mockMessages(jsonRuntime.error).some((message) =>
+            message.includes("no recent observable progress"),
+          ),
+        ).toBe(false);
+
+        emitProgress = false;
+        await vi.advanceTimersByTimeAsync(600_000);
+
+        expect(
+          mockMessages(jsonRuntime.error).some((message) =>
+            message.includes("remaining attached without fallback"),
+          ),
+        ).toBe(true);
+        expect(agentCommand).not.toHaveBeenCalled();
+
+        resolveFinal?.({
+          runId: "run-progress",
+          status: "ok",
+          result: { payloads: [{ text: "complete" }] },
+        });
+        await runPromise;
+        expect(agentCommand).not.toHaveBeenCalled();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("promotes gateway deliveryStatus to the top-level JSON response", async () => {

@@ -150,6 +150,38 @@ describe("sessionsTailCommand", () => {
     expect(output).not.toContain("SECRET");
   });
 
+  it("renders bounded X evidence without provider content or errors", async () => {
+    const runtime = makeRuntime();
+    writeJsonl(trajectoryPath, [
+      makeEvent({
+        type: "agent.tool",
+        ts: "2026-05-18T12:04:21.000Z",
+        data: {
+          phase: "result",
+          name: "x_search",
+          result: {
+            content: [{ type: "text", text: "PRIVATE PROVIDER CONTENT" }],
+            details: {
+              responseStatus: "completed",
+              provider: "openrouter",
+              citationCount: 1,
+              citations: ["https://x.com/example/status/1"],
+              providerErrors: [{ message: "OPENROUTER_API_KEY=secret" }],
+            },
+          },
+        },
+      }),
+    ]);
+
+    await sessionsTailCommand({ store: storePath, sessionKey }, runtime);
+
+    const output = runtimeOutput(runtime);
+    expect(output).toContain("x_search status=completed provider=openrouter citations=1");
+    expect(output).toContain("https://x.com/example/status/1");
+    expect(output).not.toContain("PRIVATE PROVIDER CONTENT");
+    expect(output).not.toContain("OPENROUTER_API_KEY");
+  });
+
   it("honors the tail count before rendering existing trajectory events", async () => {
     const runtime = makeRuntime();
     writeJsonl(trajectoryPath, [
@@ -191,7 +223,9 @@ describe("sessionsTailCommand", () => {
     await sessionsTailCommand({ store: storePath, sessionKey, tail: "1", json: true }, runtime);
 
     expect(runtime.error).not.toHaveBeenCalled();
-    const payload = JSON.parse(String(vi.mocked(runtime.log).mock.calls[0]?.[0] ?? "{}")) as {
+    const logged = vi.mocked(runtime.log).mock.calls[0]?.[0];
+    expect(typeof logged).toBe("string");
+    const payload = JSON.parse(typeof logged === "string" ? logged : "{}") as {
       schema?: string;
       sessions?: Array<{
         key?: string;

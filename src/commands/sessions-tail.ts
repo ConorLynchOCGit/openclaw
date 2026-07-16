@@ -17,6 +17,7 @@ import { resolveAgentIdFromSessionKey } from "../routing/session-key.js";
 import { writeRuntimeJson, type RuntimeEnv } from "../runtime.js";
 import { resolveTrajectoryFilePath } from "../trajectory/paths.js";
 import { resolveTrajectoryRuntimeFile } from "../trajectory/runtime-file.js";
+import { formatBoundedToolEvidencePreview } from "../trajectory/tool-evidence-preview.js";
 import type { TrajectoryEvent } from "../trajectory/types.js";
 import { resolveSessionStoreTargetsOrExit } from "./session-store-targets.js";
 import { shortenText } from "./text-format.js";
@@ -257,7 +258,12 @@ function safePreview(event: TrajectoryEvent): string {
     case "tool.timeout":
       return `${toolName(data)} timeout`;
     case "tool.result":
-      return `${toolName(data)} ${resultStatus(data)}`;
+      return formatBoundedToolEvidencePreview(data) ?? `${toolName(data)} ${resultStatus(data)}`;
+    case "agent.tool":
+      return (
+        formatBoundedToolEvidencePreview(data) ??
+        `${toolName(data)} ${toOptionalString(data?.phase) ?? resultStatus(data)}`
+      );
     case "model.completed": {
       const model = modelLabel(event);
       const status = modelCompletionStatus(data);

@@ -2,7 +2,15 @@
 import type { AgentToolResult } from "openclaw/plugin-sdk/agent-core";
 import { Type } from "typebox";
 
-export function buildMissingXSearchApiKeyPayload() {
+export function buildMissingXSearchApiKeyPayload(provider: "xai" | "openrouter" = "xai") {
+  if (provider === "openrouter") {
+    return {
+      error: "missing_openrouter_api_key",
+      message:
+        "x_search is configured for OpenRouter and needs OpenRouter credentials. Configure the OpenRouter provider or set OPENROUTER_API_KEY in the Gateway environment.",
+      docs: "https://openrouter.ai/docs/guides/features/server-tools/web-search",
+    };
+  }
   return {
     error: "missing_xai_api_key",
     message:
@@ -18,7 +26,7 @@ export function createXSearchToolDefinition(
     label: "X Search",
     name: "x_search",
     description:
-      "Search X (formerly Twitter) using xAI, including targeted post or thread lookups. For per-post stats like reposts, replies, bookmarks, or views, prefer the exact post URL or status ID.",
+      "Search X (formerly Twitter) using Grok's native X search, including targeted post or thread lookups. For exact identity, post hydration, counts, or metrics, use the corresponding raw X source tool.",
     parameters: Type.Object({
       query: Type.String({
         description:
