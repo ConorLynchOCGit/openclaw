@@ -1408,8 +1408,29 @@ describe("runCodexAppServerAttempt", () => {
       .split("\n")
       .map(
         (line) =>
-          JSON.parse(line) as { data?: { prompt?: string; systemPrompt?: string }; type?: string },
+          JSON.parse(line) as {
+            data?: {
+              attemptId?: string;
+              lifecycleScope?: string;
+              logicalRunId?: string;
+              prompt?: string;
+              systemPrompt?: string;
+            };
+            type?: string;
+          },
       );
+    const sessionStarted = trajectoryEvents.find((event) => event.type === "session.started");
+    const sessionEnded = trajectoryEvents.find((event) => event.type === "session.ended");
+    expect(sessionStarted?.data).toMatchObject({
+      lifecycleScope: "attempt",
+      logicalRunId: params.runId,
+    });
+    expect(sessionStarted?.data?.attemptId).toEqual(expect.any(String));
+    expect(sessionEnded?.data).toMatchObject({
+      lifecycleScope: "attempt",
+      logicalRunId: params.runId,
+      attemptId: sessionStarted?.data?.attemptId,
+    });
     const compiledContext = trajectoryEvents.find((event) => event.type === "context.compiled");
     expect(compiledContext?.data?.prompt).toBe(inputText);
     expect(compiledContext?.data?.systemPrompt).toContain("## OpenClaw Skills");

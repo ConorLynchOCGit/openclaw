@@ -274,6 +274,8 @@ export type GatewaySessionCodexExecutionEvidence = {
   };
   modelCompleted?: boolean;
   sessionEndedStatus?: string;
+  latestAttemptStatus?: string;
+  latestAttemptId?: string;
   lastEventSeq?: number;
   lastEventType?: string;
   lastObservedAt?: string;

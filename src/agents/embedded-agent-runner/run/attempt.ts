@@ -1,6 +1,7 @@
 /**
  * Orchestrates one embedded-agent attempt from prompt setup through stream result.
  */
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import { MAX_IMAGE_BYTES } from "@openclaw/media-core/constants";
@@ -2018,6 +2019,7 @@ export async function runEmbeddedAttempt(
     let session: Awaited<ReturnType<typeof createAgentSession>>["session"] | undefined;
     let removeToolResultContextGuard: (() => void) | undefined;
     let trajectoryRecorder: ReturnType<typeof createTrajectoryRuntimeRecorder> | null = null;
+    const trajectoryAttemptId = crypto.randomUUID();
     let unsubscribeTrajectoryAgentEventMirror: (() => void) | undefined;
     let trajectoryEndRecorded = false;
     let buildAbortSettlePromise: () => Promise<void> | null = () => null;
@@ -2567,6 +2569,9 @@ export async function runEmbeddedAttempt(
         });
       }
       trajectoryRecorder?.recordEvent("session.started", {
+        lifecycleScope: "attempt",
+        attemptId: trajectoryAttemptId,
+        logicalRunId: params.runId,
         trigger: params.trigger,
         sessionFile: params.sessionFile,
         workspaceDir: effectiveWorkspace,
@@ -3923,15 +3928,24 @@ export async function runEmbeddedAttempt(
           );
           if (promptToolResultTruncation.truncatedCount > 0) {
             promptHistoryMessages = promptToolResultTruncation.messages;
-            log.info(
+            const truncationSummary =
               `[tool-result-truncation] Truncated ${promptToolResultTruncation.truncatedCount} ` +
-                `tool result(s) for prompt history ` +
-                `(maxChars=${promptToolResultMaxChars} ` +
-                `aggregateBudgetChars=${
-                  promptToolResultMaxChars * PROMPT_TOOL_RESULT_AGGREGATE_CAP_MULTIPLIER
-                }) ` +
-                `sessionKey=${params.sessionKey ?? params.sessionId ?? "unknown"}`,
-            );
+              `tool result(s) for prompt history ` +
+              `(maxChars=${promptToolResultMaxChars} ` +
+              `aggregateBudgetChars=${promptToolResultTruncation.aggregateBudgetChars} ` +
+              `aggregate=${promptToolResultTruncation.aggregateTruncatedCount}) ` +
+              `sessionKey=${params.sessionKey ?? params.sessionId ?? "unknown"}`;
+            if (promptToolResultTruncation.aggregatePressureEngaged) {
+              log.warn(`${truncationSummary}; requesting native compaction before provider call`);
+              preflightRecovery = {
+                route: "compact_then_truncate",
+                source: "pre-prompt",
+                handled: false,
+              };
+              skipPromptSubmission = true;
+            } else {
+              log.info(truncationSummary);
+            }
           }
 
           const promptSubmission = resolveRuntimeContextPromptParts({
@@ -5261,6 +5275,9 @@ export async function runEmbeddedAttempt(
         }),
       );
       trajectoryRecorder?.recordEvent("session.ended", {
+        lifecycleScope: "attempt",
+        attemptId: trajectoryAttemptId,
+        logicalRunId: params.runId,
         status: attemptTrajectoryTerminal.status,
         aborted,
         externalAbort,
@@ -5334,6 +5351,9 @@ export async function runEmbeddedAttempt(
       unsubscribeTrajectoryAgentEventMirror = undefined;
       if (trajectoryRecorder && !trajectoryEndRecorded) {
         trajectoryRecorder.recordEvent("session.ended", {
+          lifecycleScope: "attempt",
+          attemptId: trajectoryAttemptId,
+          logicalRunId: params.runId,
           status: promptError ? "error" : aborted || timedOut ? "interrupted" : "cleanup",
           aborted,
           externalAbort,

@@ -1285,7 +1285,7 @@ export async function runEmbeddedAgent(
       let planningOnlyRetryAttempts = 0;
       let reasoningOnlyRetryAttempts = 0;
       let emptyResponseRetryAttempts = 0;
-      let compactionContinuationRetryAttempts = 0;
+      let lastHandledCompactionContinuationEpisode = 0;
       let beforeAgentFinalizeRevisionAttempts = 0;
       let sameModelIdleTimeoutRetries = 0;
       // Cost-runaway breaker for #76293. State lives at the run-loop level
@@ -1321,7 +1321,6 @@ export async function runEmbeddedAgent(
       let planningOnlyRetryInstruction: string | null = null;
       let reasoningOnlyRetryInstruction: string | null = null;
       let emptyResponseRetryInstruction: string | null = null;
-      let compactionContinuationRetryInstruction: string | null = null;
       let nextAttemptPromptOverride: string | null = null;
       const ackExecutionFastPathInstruction = resolveAckExecutionFastPathInstruction({
         provider,
@@ -1628,7 +1627,6 @@ export async function runEmbeddedAgent(
             planningOnlyRetryInstruction,
             reasoningOnlyRetryInstruction,
             emptyResponseRetryInstruction,
-            compactionContinuationRetryInstruction,
           ].filter(
             (value): value is string => typeof value === "string" && value.trim().length > 0,
           );
@@ -3441,7 +3439,6 @@ export async function runEmbeddedAgent(
             planningOnlyRetryInstruction = null;
             reasoningOnlyRetryInstruction = null;
             emptyResponseRetryInstruction = null;
-            compactionContinuationRetryInstruction = null;
             log.warn(
               `settled post-tool turn omitted final assistant response: ` +
                 `runId=${params.runId} sessionId=${params.sessionId} ` +
@@ -3487,18 +3484,19 @@ export async function runEmbeddedAgent(
             !attempt.didSendDeterministicApprovalPrompt &&
             !attempt.lastToolError &&
             !resolveAttemptReplayMetadata(attempt).hadPotentialSideEffects &&
-            compactionContinuationRetryAttempts < 1
+            autoCompactionCount > lastHandledCompactionContinuationEpisode
           ) {
-            compactionContinuationRetryAttempts += 1;
-            compactionContinuationRetryInstruction = COMPACTION_CONTINUATION_RETRY_INSTRUCTION;
+            lastHandledCompactionContinuationEpisode = autoCompactionCount;
+            nextAttemptPromptOverride = COMPACTION_CONTINUATION_RETRY_INSTRUCTION;
+            suppressNextUserMessagePersistence = true;
             log.warn(
               `compaction interrupted visible final answer: runId=${params.runId} sessionId=${params.sessionId} ` +
-                `compactions=${attemptCompactionCount} — retrying ${compactionContinuationRetryAttempts}/1 with compacted-transcript continuation`,
+                `attemptCompactions=${attemptCompactionCount} episode=${autoCompactionCount} ` +
+                "— continuing once for this compaction episode from the compacted transcript",
             );
             postCompactionGuard.armPostCompaction();
             continue;
           }
-          compactionContinuationRetryInstruction = null;
           if (reasoningOnlyRetriesExhausted && !finalAssistantVisibleText) {
             log.warn(
               `reasoning-only retries exhausted: runId=${params.runId} sessionId=${params.sessionId} ` +
@@ -3759,7 +3757,6 @@ export async function runEmbeddedAgent(
             planningOnlyRetryInstruction = null;
             reasoningOnlyRetryInstruction = null;
             emptyResponseRetryInstruction = null;
-            compactionContinuationRetryInstruction = null;
             log.warn(
               `before_agent_finalize requested one more pass: ` +
                 `runId=${params.runId} sessionId=${params.sessionId} ` +

@@ -3153,6 +3153,8 @@ export function readCodexExecutionEvidenceProjection(
   let patchCount = 0;
   let modelCompleted = false;
   let sessionEndedStatus: string | undefined;
+  let latestAttemptStatus: string | undefined;
+  let latestAttemptId: string | undefined;
   let lastEventSeq: number | undefined;
   let lastEventType: string | undefined;
   let lastObservedAt: string | undefined;
@@ -3188,7 +3190,13 @@ export function readCodexExecutionEvidenceProjection(
       continue;
     }
     if (eventType === "session.ended") {
-      sessionEndedStatus = boundedProgressText(data?.status, 80) ?? sessionEndedStatus;
+      const status = boundedProgressText(data?.status, 80);
+      if (data?.lifecycleScope === "attempt") {
+        latestAttemptStatus = status ?? latestAttemptStatus;
+        latestAttemptId = boundedProgressText(data?.attemptId, 100) ?? latestAttemptId;
+      } else {
+        sessionEndedStatus = status ?? sessionEndedStatus;
+      }
       continue;
     }
     if (eventType !== "tool.call" && eventType !== "tool.result") {
@@ -3353,7 +3361,13 @@ export function readCodexExecutionEvidenceProjection(
     lspTools.set(mcpName.tool, lspStats);
   }
 
-  if (toolCallCount === 0 && toolResultCount === 0 && !modelCompleted && !sessionEndedStatus) {
+  if (
+    toolCallCount === 0 &&
+    toolResultCount === 0 &&
+    !modelCompleted &&
+    !sessionEndedStatus &&
+    !latestAttemptStatus
+  ) {
     return undefined;
   }
 
@@ -3413,6 +3427,8 @@ export function readCodexExecutionEvidenceProjection(
       : {}),
     ...(modelCompleted ? { modelCompleted } : {}),
     ...(sessionEndedStatus ? { sessionEndedStatus } : {}),
+    ...(latestAttemptStatus ? { latestAttemptStatus } : {}),
+    ...(latestAttemptId ? { latestAttemptId } : {}),
     ...(lastEventSeq !== undefined ? { lastEventSeq } : {}),
     ...(lastEventType ? { lastEventType } : {}),
     ...(lastObservedAt ? { lastObservedAt } : {}),

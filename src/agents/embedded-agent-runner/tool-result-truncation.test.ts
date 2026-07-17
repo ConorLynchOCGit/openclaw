@@ -415,11 +415,15 @@ describe("truncateOversizedToolResultsInMessages", () => {
       makeAssistantMessage("using tool"),
       makeToolResult("small result"),
     ];
-    const { messages: result, truncatedCount } = truncateOversizedToolResultsInMessages(
-      messages,
-      200_000,
-    );
+    const {
+      messages: result,
+      truncatedCount,
+      aggregateTruncatedCount,
+      aggregatePressureEngaged,
+    } = truncateOversizedToolResultsInMessages(messages, 200_000);
     expect(truncatedCount).toBe(0);
+    expect(aggregateTruncatedCount).toBe(0);
+    expect(aggregatePressureEngaged).toBe(false);
     expect(result).toEqual(messages);
   });
 
@@ -504,12 +508,13 @@ describe("truncateOversizedToolResultsInMessages", () => {
       makeToolResult(medium, "call_3"),
     ];
 
-    const { messages: result, truncatedCount } = truncateOversizedToolResultsInMessages(
-      messages,
-      128_000,
-      12_000,
-      12_000,
-    );
+    const {
+      messages: result,
+      truncatedCount,
+      aggregateTruncatedCount,
+      aggregatePressureEngaged,
+      aggregateBudgetChars,
+    } = truncateOversizedToolResultsInMessages(messages, 128_000, 12_000, 12_000);
 
     const totalChars = result.reduce(
       (sum, message) =>
@@ -517,6 +522,9 @@ describe("truncateOversizedToolResultsInMessages", () => {
       0,
     );
     expect(truncatedCount).toBeGreaterThan(0);
+    expect(aggregateTruncatedCount).toBeGreaterThan(0);
+    expect(aggregatePressureEngaged).toBe(true);
+    expect(aggregateBudgetChars).toBe(12_000);
     expect(totalChars).toBeLessThanOrEqual(12_000);
     expect(result[0]).toBe(messages[0]);
     expect(result[1]).toBe(messages[1]);

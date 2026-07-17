@@ -346,7 +346,13 @@ export function truncateOversizedToolResultsInMessages(
   contextWindowTokens: number,
   maxCharsOverride?: number,
   aggregateMaxCharsOverride?: number,
-): { messages: AgentMessage[]; truncatedCount: number } {
+): {
+  messages: AgentMessage[];
+  truncatedCount: number;
+  aggregateTruncatedCount: number;
+  aggregatePressureEngaged: boolean;
+  aggregateBudgetChars: number;
+} {
   const maxChars = Math.max(
     1,
     maxCharsOverride ?? calculateMaxToolResultChars(contextWindowTokens),
@@ -368,7 +374,13 @@ export function truncateOversizedToolResultsInMessages(
     minKeepChars: RECOVERY_MIN_KEEP_CHARS,
   });
   if (plan.replacements.length === 0) {
-    return { messages, truncatedCount: 0 };
+    return {
+      messages,
+      truncatedCount: 0,
+      aggregateTruncatedCount: 0,
+      aggregatePressureEngaged: false,
+      aggregateBudgetChars,
+    };
   }
 
   const replacementIds = new Set(plan.replacements.map((replacement) => replacement.entryId));
@@ -376,6 +388,9 @@ export function truncateOversizedToolResultsInMessages(
   return {
     messages: replacedBranch.map((entry) => entry.message as AgentMessage),
     truncatedCount: replacementIds.size,
+    aggregateTruncatedCount: plan.aggregateReplacementCount,
+    aggregatePressureEngaged: plan.aggregateReplacementCount > 0,
+    aggregateBudgetChars,
   };
 }
 

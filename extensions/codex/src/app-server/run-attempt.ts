@@ -1,4 +1,5 @@
 // Codex plugin module implements run attempt behavior.
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
@@ -1155,6 +1156,7 @@ export async function runCodexAppServerAttempt(
     prompt: codexTurnPromptText,
     tools: toolBridge.availableSpecs,
   });
+  const trajectoryAttemptId = crypto.randomUUID();
   let client: CodexAppServerClient;
   let thread: CodexAppServerThreadLifecycleBinding;
   let trajectoryEndRecorded = false;
@@ -1316,6 +1318,9 @@ export async function runCodexAppServerAttempt(
     await rebuildCodexTurnPromptTextFromCurrentProjection();
   }
   trajectoryRecorder?.recordEvent("session.started", {
+    lifecycleScope: "attempt",
+    attemptId: trajectoryAttemptId,
+    logicalRunId: params.runId,
     sessionFile: params.sessionFile,
     threadId: thread.threadId,
     authProfileId: startupAuthProfileId,
@@ -2326,6 +2331,9 @@ export async function runCodexAppServerAttempt(
         data: { phase: "turn_start_failed", error: turnStartErrorMessage },
       });
       trajectoryRecorder?.recordEvent("session.ended", {
+        lifecycleScope: "attempt",
+        attemptId: trajectoryAttemptId,
+        logicalRunId: params.runId,
         status: "error",
         threadId: thread.threadId,
         timedOut,
@@ -2679,6 +2687,9 @@ export async function runCodexAppServerAttempt(
       yieldDetected,
     });
     trajectoryRecorder?.recordEvent("session.ended", {
+      lifecycleScope: "attempt",
+      attemptId: trajectoryAttemptId,
+      logicalRunId: params.runId,
       status: finalPromptError ? "error" : finalAborted || timedOut ? "interrupted" : "success",
       threadId: thread.threadId,
       turnId: activeTurnId,
@@ -2834,6 +2845,9 @@ export async function runCodexAppServerAttempt(
     });
     if (trajectoryRecorder && !trajectoryEndRecorded) {
       trajectoryRecorder.recordEvent("session.ended", {
+        lifecycleScope: "attempt",
+        attemptId: trajectoryAttemptId,
+        logicalRunId: params.runId,
         status:
           timedOut || (runAbortController.signal.aborted && !clientClosedAbort)
             ? "interrupted"

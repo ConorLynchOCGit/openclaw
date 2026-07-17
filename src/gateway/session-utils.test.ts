@@ -1378,7 +1378,13 @@ describe("gateway session utils", () => {
         ts: "2026-07-10T01:00:11.000Z",
         seq: 20,
         sourceSeq: 20,
-        data: { threadId: "thread-parent", status: "success" },
+        data: {
+          threadId: "thread-parent",
+          status: "success",
+          lifecycleScope: "attempt",
+          attemptId: "attempt-parent-1",
+          logicalRunId: "run-parent-1",
+        },
       },
     ];
     fs.writeFileSync(
@@ -1426,8 +1432,10 @@ describe("gateway session utils", () => {
         applyPatch: 1,
       },
       modelCompleted: true,
-      sessionEndedStatus: "success",
+      latestAttemptStatus: "success",
+      latestAttemptId: "attempt-parent-1",
     });
+    expect(row.codexExecutionEvidence?.sessionEndedStatus).toBeUndefined();
     expect(row.codexExecutionEvidence?.mcpTools).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

@@ -981,6 +981,82 @@ describe("runEmbeddedAgent incomplete-turn safety", () => {
     ).toHaveLength(2);
   });
 
+  it("continues once for each distinct compaction episode", async () => {
+    const compactedEmptyAttempt = () =>
+      makeAttemptResult({
+        assistantTexts: [],
+        compactionCount: 1,
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "toolUse",
+          provider: "anthropic",
+          model: "test-model",
+          content: [],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      });
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(compactedEmptyAttempt());
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(compactedEmptyAttempt());
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        assistantTexts: ["Final answer after two compaction episodes."],
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "end_turn",
+          provider: "anthropic",
+          model: "test-model",
+          content: [{ type: "text", text: "Final answer after two compaction episodes." }],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      }),
+    );
+
+    const result = await runEmbeddedAgent({
+      ...overflowBaseRunParams,
+      runId: "run-distinct-compaction-continuations",
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(3);
+    expect(runAttemptCall(1).prompt).toContain("compacted transcript");
+    expect(runAttemptCall(2).prompt).toContain("compacted transcript");
+    expect(runAttemptCall(1).prompt).not.toContain(overflowBaseRunParams.prompt);
+    expect(runAttemptCall(2).prompt).not.toContain(overflowBaseRunParams.prompt);
+    expect(runAttemptCall(1).suppressNextUserMessagePersistence).toBe(true);
+    expect(runAttemptCall(2).suppressNextUserMessagePersistence).toBe(true);
+    expect(result.meta?.finalAssistantVisibleText).toBe(
+      "Final answer after two compaction episodes.",
+    );
+    expect(warnMessages().filter((message) => message.includes("compaction episode"))).toHaveLength(
+      2,
+    );
+  });
+
+  it("does not chain a compaction continuation without a new compaction episode", async () => {
+    const emptyToolUseAttempt = (compactionCount: number) =>
+      makeAttemptResult({
+        assistantTexts: [],
+        compactionCount,
+        lastAssistant: {
+          role: "assistant",
+          stopReason: "toolUse",
+          provider: "anthropic",
+          model: "test-model",
+          content: [],
+        } as unknown as EmbeddedRunAttemptResult["lastAssistant"],
+      });
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(emptyToolUseAttempt(1));
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(emptyToolUseAttempt(0));
+
+    const result = await runEmbeddedAgent({
+      ...overflowBaseRunParams,
+      runId: "run-same-compaction-episode-exhausted",
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(2);
+    expect(result.payloads?.[0]?.isError).toBe(true);
+    expect(warnMessages().filter((message) => message.includes("compaction episode"))).toHaveLength(
+      1,
+    );
+  });
+
   it("does not chain ordinary retries after the settled post-tool continuation is exhausted", async () => {
     mockedClassifyFailoverReason.mockReturnValue(null);
     mockedRunEmbeddedAttempt.mockResolvedValueOnce(

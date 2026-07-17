@@ -2652,7 +2652,7 @@ describe("runEmbeddedAttempt tool-result guard budget wiring", () => {
     ).toBe(200_000);
   });
 
-  it("bounds aggregate tool-result prompt history without rewriting append results", async () => {
+  it("routes aggregate tool-result prompt pressure to native compaction", async () => {
     const toolText = "process output ".repeat(70);
     const sessionMessages: AgentMessage[] = [{ role: "user", content: "seed", timestamp: 1 }];
     for (let index = 0; index < 8; index += 1) {
@@ -2671,18 +2671,10 @@ describe("runEmbeddedAttempt tool-result guard budget wiring", () => {
         timestamp: 3 + index * 2,
       } as AgentMessage);
     }
-    let submittedMessages: AgentMessage[] = [];
-    let promptHandlerMessages: AgentMessage[] = [];
-    let afterTurnMessages: AgentMessage[] = [];
-    const afterTurn = vi.fn(async ({ messages }: { messages: AgentMessage[] }) => {
-      afterTurnMessages = messages;
-    });
+    let sawPrompt = false;
 
-    await createContextEngineAttemptRunner({
-      contextEngine: {
-        ...createContextEngineBootstrapAndAssemble(),
-        afterTurn,
-      },
+    const result = await createContextEngineAttemptRunner({
+      contextEngine: createContextEngineBootstrapAndAssemble(),
       sessionKey,
       tempPaths,
       sessionMessages,
@@ -2699,36 +2691,20 @@ describe("runEmbeddedAttempt tool-result guard budget wiring", () => {
           },
         } as OpenClawConfig,
       },
-      createSession: () => {
-        const session = createDefaultEmbeddedSession({ initialMessages: sessionMessages });
-        session.agent.streamFn = async (_model, context) => {
-          const providerMessages = (context as { messages?: AgentMessage[] } | undefined)?.messages;
-          submittedMessages = providerMessages ?? [];
-          return {
-            async result() {
-              return doneMessage;
-            },
-            [Symbol.asyncIterator]() {
-              return (async function* () {})();
-            },
-          };
-        };
-        session.prompt = async (_prompt, options) => {
-          promptHandlerMessages = session.messages.map((message) => message as AgentMessage);
-          options?.preflightResult?.(true);
-          await session.agent.streamFn?.({} as never, { messages: session.messages } as never, {});
-          session.messages = [...session.messages, doneMessage];
-        };
-        return session;
+      sessionPrompt: async (session) => {
+        sawPrompt = true;
+        session.messages = [...session.messages, doneMessage];
       },
     });
 
     expect(sumToolResultTextChars(sessionMessages)).toBeGreaterThan(4_000);
-    expect(sumToolResultTextChars(promptHandlerMessages)).toBeGreaterThan(4_000);
-    expect(sumToolResultTextChars(submittedMessages)).toBeLessThanOrEqual(4_000);
-    expect(JSON.stringify(submittedMessages)).toContain("truncated");
-    expect(afterTurn).toHaveBeenCalledTimes(1);
-    expect(sumToolResultTextChars(afterTurnMessages)).toBeGreaterThan(4_000);
-    expect(JSON.stringify(afterTurnMessages)).not.toContain("truncated");
+    expect(JSON.stringify(sessionMessages)).not.toContain("truncated");
+    expect(sawPrompt).toBe(false);
+    expect(result.promptErrorSource).toBeNull();
+    expect(result.preflightRecovery).toEqual({
+      route: "compact_then_truncate",
+      source: "pre-prompt",
+      handled: false,
+    });
   });
 });

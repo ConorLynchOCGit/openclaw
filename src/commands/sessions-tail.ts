@@ -270,7 +270,9 @@ function safePreview(event: TrajectoryEvent): string {
       return model ? `${model} ${status}` : status;
     }
     case "session.ended":
-      return toOptionalString(data?.status) ?? "ended";
+      return data?.lifecycleScope === "attempt"
+        ? `attempt ${toOptionalString(data?.status) ?? "ended"}`
+        : (toOptionalString(data?.status) ?? "ended");
     case "trace.truncated":
       return "trajectory truncated";
     default:

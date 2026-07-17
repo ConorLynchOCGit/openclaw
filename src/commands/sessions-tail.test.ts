@@ -132,6 +132,16 @@ describe("sessionsTailCommand", () => {
         provider: "openai",
         modelId: "gpt-5.2",
       }),
+      makeEvent({
+        type: "session.ended",
+        ts: "2026-05-18T12:04:30.000Z",
+        data: {
+          status: "error",
+          lifecycleScope: "attempt",
+          attemptId: "attempt-1",
+          logicalRunId: "run-1",
+        },
+      }),
     ]);
 
     await sessionsTailCommand({ store: storePath, sessionKey }, runtime);
@@ -147,6 +157,7 @@ describe("sessionsTailCommand", () => {
     expect(output).toContain("bash ok");
     expect(output).toContain("model.completed");
     expect(output).toContain("openai/gpt-5.2 done");
+    expect(output).toContain("attempt error");
     expect(output).not.toContain("SECRET");
   });
 
