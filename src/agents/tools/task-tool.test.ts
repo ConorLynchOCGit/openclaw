@@ -10,10 +10,16 @@ const hoisted = vi.hoisted(() => {
   const spawnSubagentDirectMock = vi.fn();
   const waitForAgentRunMock = vi.fn();
   const readLatestAssistantReplyMock = vi.fn();
+  const getLatestSubagentRunByChildSessionKeyMock = vi.fn();
+  const resolveSubagentControllerMock = vi.fn();
+  const killControlledSubagentRunMock = vi.fn();
   return {
     spawnSubagentDirectMock,
     waitForAgentRunMock,
     readLatestAssistantReplyMock,
+    getLatestSubagentRunByChildSessionKeyMock,
+    resolveSubagentControllerMock,
+    killControlledSubagentRunMock,
   };
 });
 
@@ -24,6 +30,16 @@ vi.mock("../subagent-spawn.js", () => ({
 vi.mock("../run-wait.js", () => ({
   waitForAgentRun: (...args: unknown[]) => hoisted.waitForAgentRunMock(...args),
   readLatestAssistantReply: (...args: unknown[]) => hoisted.readLatestAssistantReplyMock(...args),
+}));
+
+vi.mock("../subagent-registry-read.js", () => ({
+  getLatestSubagentRunByChildSessionKey: (...args: unknown[]) =>
+    hoisted.getLatestSubagentRunByChildSessionKeyMock(...args),
+}));
+
+vi.mock("../subagent-control.js", () => ({
+  resolveSubagentController: (...args: unknown[]) => hoisted.resolveSubagentControllerMock(...args),
+  killControlledSubagentRun: (...args: unknown[]) => hoisted.killControlledSubagentRunMock(...args),
 }));
 
 let createTaskTool: typeof import("./task-tool.js").createTaskTool;
@@ -51,6 +67,91 @@ describe("task tool", () => {
       status: "ok",
     });
     hoisted.readLatestAssistantReplyMock.mockReset().mockResolvedValue("Context Pack\n\nP1...");
+    hoisted.getLatestSubagentRunByChildSessionKeyMock.mockReset().mockReturnValue(undefined);
+    hoisted.resolveSubagentControllerMock.mockReset().mockReturnValue({
+      controllerSessionKey: "agent:main:operator",
+      callerSessionKey: "agent:main:operator",
+      callerIsSubagent: false,
+      controlScope: "children",
+    });
+    hoisted.killControlledSubagentRunMock.mockReset().mockResolvedValue({
+      status: "ok",
+      killed: true,
+      labels: ["planning"],
+    });
+  });
+
+  it("carries Main's exact current operator turn into a cross-agent foreground task", async () => {
+    const operatorRequest = "Line one.\n\nUnicode stays exact: caf\u00e9.\n- final requirement";
+    await createTaskTool({
+      agentSessionKey: "agent:main:operator",
+      requesterAgentIdOverride: "main",
+      currentInboundMessage: operatorRequest,
+    }).execute("call-1", {
+      agentId: "planning",
+      task: "Own the plan and publish it to plans/example.md.",
+    });
+
+    const renderedTask = hoisted.spawnSubagentDirectMock.mock.calls[0]?.[0]?.task as string;
+    expect(renderedTask).toContain("[Original Operator Request: exact transport]");
+    expect(renderedTask).toContain(`chars=${operatorRequest.length}`);
+    expect(renderedTask).toContain(`sha256=${digestText(operatorRequest)}`);
+    expect(renderedTask).toContain(operatorRequest);
+    expect(renderedTask).toContain("[Routing Context]");
+    expect(renderedTask).toContain("Own the plan and publish it to plans/example.md.");
+  });
+
+  it("does not inject Main's operator turn into another manager's specialist task", async () => {
+    await createTaskTool({
+      agentSessionKey: "agent:planning:operator",
+      requesterAgentIdOverride: "planning",
+      currentInboundMessage: "Operator-wide request",
+    }).execute("call-1", {
+      agentId: "reviewer",
+      task: "Review the exact plan digest.",
+    });
+
+    const renderedTask = hoisted.spawnSubagentDirectMock.mock.calls[0]?.[0]?.task as string;
+    expect(renderedTask).not.toContain("[Original Operator Request: exact transport]");
+    expect(renderedTask).not.toContain("Operator-wide request");
+    expect(renderedTask).toContain("[Task Scope]");
+  });
+
+  it("kills the owned foreground child when the parent task signal aborts", async () => {
+    const controller = new AbortController();
+    hoisted.getLatestSubagentRunByChildSessionKeyMock.mockReturnValue({
+      runId: "run-child",
+      childSessionKey: "agent:planning:subagent:child",
+      requesterSessionKey: "agent:main:operator",
+      controllerSessionKey: "agent:main:operator",
+    });
+    hoisted.spawnSubagentDirectMock.mockImplementationOnce(async () => {
+      controller.abort();
+      return {
+        status: "accepted",
+        childSessionKey: "agent:planning:subagent:child",
+        childSessionId: "session-child",
+        runId: "run-child",
+      };
+    });
+
+    const result = await createTaskTool({
+      agentSessionKey: "agent:main:operator",
+      requesterAgentIdOverride: "main",
+      config: {},
+    }).execute("call-1", { agentId: "planning", task: "Plan the work." }, controller.signal);
+
+    expect(hoisted.resolveSubagentControllerMock).toHaveBeenCalledWith({
+      cfg: {},
+      agentSessionKey: "agent:main:operator",
+    });
+    expect(hoisted.killControlledSubagentRunMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cfg: {},
+        entry: expect.objectContaining({ runId: "run-child" }),
+      }),
+    );
+    expect(result.details).toMatchObject({ status: "error", error: "task wait cancelled" });
   });
 
   it("makes exact governed artifacts authoritative in the model-visible task schema", () => {

@@ -34,6 +34,8 @@ import {
 } from "../live-agent-path-handoff.js";
 import { readLatestAssistantReply, waitForAgentRun, type AgentWaitResult } from "../run-wait.js";
 import type { SpawnedToolContext } from "../spawned-context.js";
+import { killControlledSubagentRun, resolveSubagentController } from "../subagent-control.js";
+import { getLatestSubagentRunByChildSessionKey } from "../subagent-registry-read.js";
 import { spawnSubagentDirect } from "../subagent-spawn.js";
 import { normalizeSubagentTaskName } from "../subagent-task-name.js";
 import type { AnyAgentTool } from "./common.js";
@@ -272,14 +274,67 @@ function formatTaskCloseoutContract(agentId: string): string {
   ].join("\n");
 }
 
-function renderTaskForChild(params: { agentId: string; task: string }): string {
+function renderTaskForChild(params: {
+  agentId: string;
+  task: string;
+  exactOperatorRequest?: string;
+}): string {
   const contract = formatCodingTaskHandoffContract(params.agentId);
+  const exactOperatorRequest = params.exactOperatorRequest;
+  const exactOperatorRequestSection = exactOperatorRequest
+    ? [
+        "[Original Operator Request: exact transport]",
+        `chars=${exactOperatorRequest.length} sha256=${computeChildResultContentDigest(exactOperatorRequest)}`,
+        "The following operator text is unmodified. Treat it as intent and scope; routing context may add ownership or publication details but must not replace it.",
+        exactOperatorRequest,
+      ].join("\n")
+    : undefined;
   return [
     ...(contract ? [contract] : []),
     formatTaskCloseoutContract(params.agentId),
-    "[Task Scope]",
+    ...(exactOperatorRequestSection
+      ? [exactOperatorRequestSection, "[Routing Context]"]
+      : ["[Task Scope]"]),
     params.task,
   ].join("\n\n");
+}
+
+function resolveExactOperatorRequest(params: {
+  requesterAgentId?: string;
+  targetAgentId: string;
+  currentInboundMessage?: string;
+  task: string;
+}): string | undefined {
+  const requesterAgentId = params.requesterAgentId?.trim().toLowerCase();
+  const targetAgentId = params.targetAgentId.trim().toLowerCase();
+  const currentInboundMessage = params.currentInboundMessage;
+  if (
+    requesterAgentId !== "main" ||
+    targetAgentId === "main" ||
+    !currentInboundMessage ||
+    currentInboundMessage.trim().length === 0 ||
+    params.task.includes(currentInboundMessage)
+  ) {
+    return undefined;
+  }
+  return currentInboundMessage;
+}
+
+async function abortForegroundTaskChild(params: {
+  cfg: OpenClawConfig;
+  controllerSessionKey?: string;
+  childSessionKey: string;
+  runId: string;
+}) {
+  const entry = getLatestSubagentRunByChildSessionKey(params.childSessionKey);
+  if (!entry || entry.runId !== params.runId) {
+    return;
+  }
+  const controller = resolveSubagentController({
+    cfg: params.cfg,
+    agentSessionKey: params.controllerSessionKey,
+  });
+  await killControlledSubagentRun({ cfg: params.cfg, controller, entry });
 }
 
 function resolveTaskReceiptLeadLines(params: { agentId: string; replyText: string }): string[] {
@@ -477,6 +532,7 @@ export function createTaskTool(
   opts?: {
     agentSessionKey?: string;
     parentRunId?: string;
+    currentInboundMessage?: string;
     agentChannel?: GatewayMessageChannel;
     agentAccountId?: string;
     agentTo?: string;
@@ -555,7 +611,16 @@ export function createTaskTool(
 
       const spawn = await spawnSubagentDirect(
         {
-          task: renderTaskForChild({ agentId, task: renderedTask.text }),
+          task: renderTaskForChild({
+            agentId,
+            task: renderedTask.text,
+            exactOperatorRequest: resolveExactOperatorRequest({
+              requesterAgentId,
+              targetAgentId: agentId,
+              currentInboundMessage: opts?.currentInboundMessage,
+              task: renderedTask.text,
+            }),
+          }),
           taskName,
           label,
           agentId,
@@ -606,12 +671,31 @@ export function createTaskTool(
       }
 
       opts?.onProgress?.();
+      let cancellationPromise: Promise<void> | undefined;
+      const cancelOwnedChild = () => {
+        cancellationPromise ??= abortForegroundTaskChild({
+          cfg: opts?.config ?? {},
+          controllerSessionKey: opts?.agentSessionKey,
+          childSessionKey: spawn.childSessionKey!,
+          runId: spawn.runId!,
+        }).catch(() => undefined);
+      };
+      if (signal?.aborted) {
+        cancelOwnedChild();
+      } else {
+        signal?.addEventListener("abort", cancelOwnedChild, { once: true });
+      }
       const wait = await waitForForegroundTaskResult({
         runId: spawn.runId,
         sessionKey: spawn.childSessionKey,
         signal,
         onProgress: opts?.onProgress,
       });
+      signal?.removeEventListener("abort", cancelOwnedChild);
+      if (signal?.aborted) {
+        cancelOwnedChild();
+        await cancellationPromise;
+      }
       if (wait.status !== "ok" || !wait.replyText?.trim()) {
         const error =
           wait.error ??
