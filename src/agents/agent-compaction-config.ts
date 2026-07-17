@@ -55,3 +55,21 @@ export function resolveAgentCompactionRuntimeConfig(params: {
     },
   };
 }
+
+/** Resolve the active agent's compaction config and effective summary instructions together. */
+export function resolveAgentCompactionRuntimePolicy(params: {
+  cfg: OpenClawConfig;
+  agentId?: string;
+  customInstructions?: string;
+}): {
+  config: OpenClawConfig;
+  customInstructions?: string;
+} {
+  const config = resolveAgentCompactionRuntimeConfig(params);
+  const explicitInstructions = params.customInstructions?.trim();
+  const configuredInstructions = config.agents?.defaults?.compaction?.customInstructions?.trim();
+  return {
+    config,
+    customInstructions: explicitInstructions || configuredInstructions || undefined,
+  };
+}

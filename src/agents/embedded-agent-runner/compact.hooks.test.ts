@@ -340,6 +340,26 @@ describe("compactEmbeddedAgentSessionDirect hooks", () => {
     );
   });
 
+  it("passes configured native compaction instructions to the compaction session", async () => {
+    await compactEmbeddedAgentSessionDirect({
+      sessionId: "session-1",
+      sessionKey: "agent:reviewer:session-1",
+      sessionFile: "/tmp/session.jsonl",
+      workspaceDir: "/tmp/workspace",
+      config: {
+        agents: {
+          defaults: {
+            compaction: {
+              customInstructions: "Preserve the terminal review packet.",
+            },
+          },
+        },
+      },
+    });
+
+    expect(sessionCompactImpl).toHaveBeenCalledWith("Preserve the terminal review packet.");
+  });
+
   it("routes compaction through shared stream resolution and extra params", () => {
     const resolvedStreamFn = vi.fn();
     resolveEmbeddedAgentStreamFnMock.mockReturnValue(resolvedStreamFn);

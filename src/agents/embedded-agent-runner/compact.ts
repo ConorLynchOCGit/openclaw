@@ -43,6 +43,7 @@ import { normalizeMessageChannel } from "../../utils/message-channel.js";
 import { isReasoningTagProvider } from "../../utils/provider-utils.js";
 import { createBundleLspToolRuntime } from "../agent-bundle-lsp-runtime.js";
 import { createBundleMcpToolRuntime } from "../agent-bundle-mcp-tools.js";
+import { resolveAgentCompactionRuntimePolicy } from "../agent-compaction-config.js";
 import {
   consumeCompactionSafeguardCancelReason,
   setCompactionSafeguardCancelReason,
@@ -96,8 +97,8 @@ import { isFallbackSummaryError, runWithModelFallback } from "../model-fallback.
 import { supportsModelTools } from "../model-tool-support.js";
 import { ensureOpenClawModelsJson } from "../models-config.js";
 import { wrapStreamFnTextTransforms } from "../plugin-text-transforms.js";
-import { applyPreparedRuntimeAuthToModel } from "../provider-request-config.js";
 import { resolveAgentPromptSurfaceForSessionKey } from "../prompt-surface.js";
+import { applyPreparedRuntimeAuthToModel } from "../provider-request-config.js";
 import { registerProviderStreamForModel } from "../provider-stream.js";
 import { collectRuntimeChannelCapabilities } from "../runtime-capabilities.js";
 import { buildAgentRuntimePlan } from "../runtime-plan/build.js";
@@ -455,8 +456,26 @@ function fallbackFailureToCompactionResult(err: unknown): EmbeddedAgentCompactRe
  * Use this when already inside a session/global lane to avoid deadlocks.
  */
 export async function compactEmbeddedAgentSessionDirect(
-  params: CompactEmbeddedAgentSessionParams,
+  paramsInput: CompactEmbeddedAgentSessionParams,
 ): Promise<EmbeddedAgentCompactResult> {
+  let params = paramsInput;
+  if (params.config) {
+    const compactionAgentId = resolveSessionAgentIds({
+      sessionKey: params.sandboxSessionKey ?? params.sessionKey,
+      config: params.config,
+      agentId: params.agentId,
+    }).sessionAgentId;
+    const compactionPolicy = resolveAgentCompactionRuntimePolicy({
+      cfg: params.config,
+      agentId: compactionAgentId,
+      customInstructions: params.customInstructions,
+    });
+    params = {
+      ...params,
+      config: compactionPolicy.config,
+      customInstructions: compactionPolicy.customInstructions,
+    };
+  }
   if (hasExplicitCompactionModel(params) || !hasCompactionModelFallbackCandidates(params)) {
     return await compactEmbeddedAgentSessionDirectOnce(params);
   }

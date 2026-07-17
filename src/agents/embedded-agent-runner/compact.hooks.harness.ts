@@ -50,7 +50,7 @@ export const resolveModelMock: Mock<
   authStorage: { setRuntimeApiKey: vi.fn() },
   modelRegistry: {},
 }));
-export const sessionCompactImpl = vi.fn(async () => ({
+export const sessionCompactImpl = vi.fn(async (_customInstructions?: string) => ({
   summary: "summary",
   firstKeptEntryId: "entry-1",
   tokensBefore: 120,
@@ -116,9 +116,9 @@ function createMockCompactionSession() {
         systemPrompt: undefined as string | undefined,
       },
     },
-    compact: vi.fn(async () => {
+    compact: vi.fn(async (customInstructions?: string) => {
       session.messages.splice(1);
-      return await sessionCompactImpl();
+      return await sessionCompactImpl(customInstructions);
     }),
     setActiveToolsByName: vi.fn(),
     setBaseSystemPrompt: vi.fn((systemPrompt: string) => {

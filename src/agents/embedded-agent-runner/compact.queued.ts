@@ -21,6 +21,7 @@ import type { ProviderRuntimeModel } from "../../plugins/provider-runtime-model.
 import { enqueueCommandInLane } from "../../process/command-queue.js";
 import { parseAgentSessionKey } from "../../routing/session-key.js";
 import { resolveUserPath } from "../../utils.js";
+import { resolveAgentCompactionRuntimePolicy } from "../agent-compaction-config.js";
 import { isDefaultAgentRuntimeId, normalizeOptionalAgentRuntimeId } from "../agent-runtime-id.js";
 import { resolveAgentDir, resolveSessionAgentIds } from "../agent-scope.js";
 import { resolveContextWindowInfo } from "../context-window-guard.js";
@@ -180,19 +181,32 @@ function mergeSecondaryNativeHarnessCompactionDetails(params: {
  * `compactEmbeddedAgentSessionDirect` to avoid deadlocks.
  */
 export async function compactEmbeddedAgentSession(
-  params: CompactEmbeddedAgentSessionParams,
+  paramsInput: CompactEmbeddedAgentSessionParams,
 ): Promise<EmbeddedAgentCompactResult> {
+  let params = paramsInput;
+  const agentIds = resolveSessionAgentIds({
+    sessionKey: params.sessionKey,
+    config: params.config,
+    agentId: params.agentId,
+  });
+  if (params.config) {
+    const compactionPolicy = resolveAgentCompactionRuntimePolicy({
+      cfg: params.config,
+      agentId: agentIds.sessionAgentId,
+      customInstructions: params.customInstructions,
+    });
+    params = {
+      ...params,
+      config: compactionPolicy.config,
+      customInstructions: compactionPolicy.customInstructions,
+    };
+  }
   ensureRuntimePluginsLoaded({
     config: params.config,
     workspaceDir: params.workspaceDir,
     allowGatewaySubagentBinding: params.allowGatewaySubagentBinding,
   });
   ensureContextEnginesInitialized();
-  const agentIds = resolveSessionAgentIds({
-    sessionKey: params.sessionKey,
-    config: params.config,
-    agentId: params.agentId,
-  });
   const agentDir = params.agentDir ?? resolveAgentDir(params.config ?? {}, agentIds.sessionAgentId);
   const resolvedWorkspaceDir = resolveUserPath(params.workspaceDir);
   const contextEngine = await resolveContextEngine(params.config, {

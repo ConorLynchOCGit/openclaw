@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { resolveAgentCompactionRuntimeConfig } from "./agent-compaction-config.js";
+import {
+  resolveAgentCompactionRuntimeConfig,
+  resolveAgentCompactionRuntimePolicy,
+} from "./agent-compaction-config.js";
 
 describe("resolveAgentCompactionRuntimeConfig", () => {
   const cfg: OpenClawConfig = {
@@ -40,5 +43,48 @@ describe("resolveAgentCompactionRuntimeConfig", () => {
 
   it("leaves other agents on the original config object", () => {
     expect(resolveAgentCompactionRuntimeConfig({ cfg, agentId: "planning" })).toBe(cfg);
+  });
+
+  it("projects agent instructions into the effective native compaction policy", () => {
+    const withInstructions: OpenClawConfig = {
+      ...cfg,
+      agents: {
+        ...cfg.agents,
+        list: [
+          ...(cfg.agents?.list ?? []),
+          {
+            id: "reviewer",
+            compaction: {
+              recentTurnsPreserve: 1,
+              customInstructions: "Preserve the terminal verdict and dispositions.",
+            },
+          },
+        ],
+      },
+    };
+
+    const result = resolveAgentCompactionRuntimePolicy({
+      cfg: withInstructions,
+      agentId: "reviewer",
+    });
+
+    expect(result.config.agents?.defaults?.compaction).toMatchObject({
+      keepRecentTokens: 12_000,
+      recentTurnsPreserve: 1,
+    });
+    expect(result.customInstructions).toBe("Preserve the terminal verdict and dispositions.");
+  });
+
+  it("keeps explicit call instructions authoritative over the agent default", () => {
+    const result = resolveAgentCompactionRuntimePolicy({
+      cfg: {
+        agents: {
+          defaults: { compaction: { customInstructions: "default" } },
+        },
+      },
+      customInstructions: " explicit ",
+    });
+
+    expect(result.customInstructions).toBe("explicit");
   });
 });

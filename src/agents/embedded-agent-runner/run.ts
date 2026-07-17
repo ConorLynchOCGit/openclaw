@@ -30,6 +30,7 @@ import {
   retireSessionMcpRuntime,
   retireSessionMcpRuntimeForSessionKey,
 } from "../agent-bundle-mcp-tools.js";
+import { resolveAgentCompactionRuntimePolicy } from "../agent-compaction-config.js";
 import { isDefaultAgentRuntimeId } from "../agent-runtime-id.js";
 import {
   resolveAgentExecutionContract,
@@ -542,6 +543,20 @@ export async function runEmbeddedAgent(
   });
   if (effectiveSessionKey !== params.sessionKey) {
     params = { ...params, sessionKey: effectiveSessionKey };
+  }
+  let compactionCustomInstructions: string | undefined;
+  if (params.config) {
+    const compactionAgentId = resolveSessionAgentIds({
+      sessionKey: params.sessionKey,
+      config: params.config,
+      agentId: params.agentId,
+    }).sessionAgentId;
+    const compactionPolicy = resolveAgentCompactionRuntimePolicy({
+      cfg: params.config,
+      agentId: compactionAgentId,
+    });
+    params = { ...params, config: compactionPolicy.config };
+    compactionCustomInstructions = compactionPolicy.customInstructions;
   }
   const sessionLane = resolveSessionLane(params.sessionKey?.trim() || params.sessionId);
   const globalLane = resolveGlobalLane(params.lane);
@@ -2122,6 +2137,7 @@ export async function runEmbeddedAgent(
                     sessionKey: params.sessionKey,
                     sessionFile: activeSessionFile,
                     tokenBudget: ctxInfo.tokens,
+                    customInstructions: compactionCustomInstructions,
                     force: true,
                     compactionTarget: "budget",
                     runtimeContext: timeoutCompactionRuntimeContext,
@@ -2331,6 +2347,7 @@ export async function runEmbeddedAgent(
                     sessionKey: params.sessionKey,
                     sessionFile: activeSessionFile,
                     tokenBudget: ctxInfo.tokens,
+                    customInstructions: compactionCustomInstructions,
                     ...(overflowTokenCountForCompaction !== undefined
                       ? { currentTokenCount: overflowTokenCountForCompaction }
                       : {}),
