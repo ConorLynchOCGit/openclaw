@@ -1302,6 +1302,7 @@ export async function createContextEngineAttemptRunner(params: {
         },
       },
       ...params.attemptOverrides,
+      deferTerminalLifecycleEnd: params.attemptOverrides?.deferTerminalLifecycleEnd ?? false,
     });
   } finally {
     if (previousTrajectoryEnv === undefined) {

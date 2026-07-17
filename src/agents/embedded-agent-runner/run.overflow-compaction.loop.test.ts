@@ -507,6 +507,54 @@ describe("overflow compaction in run loop", () => {
     expect(result.meta.error).toBeUndefined();
   });
 
+  it("keeps every compaction attempt nonterminal when the logical owner defers finality", async () => {
+    mockedRunEmbeddedAttempt
+      .mockResolvedValueOnce(
+        makeAttemptResult({
+          promptError: new Error("LLM request failed."),
+          promptErrorSource: null,
+          preflightRecovery: {
+            route: "compact_then_truncate",
+            source: "mid-turn",
+            handled: false,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(makeAttemptResult({ promptError: null }));
+
+    mockedCompactDirect.mockResolvedValueOnce(
+      makeCompactionSuccess({
+        summary: "Compacted without leaking attempt finality",
+        firstKeptEntryId: "entry-10",
+        tokensBefore: 160000,
+      }),
+    );
+    mockedTruncateOversizedToolResultsInSession.mockResolvedValueOnce({
+      truncated: true,
+      truncatedCount: 2,
+    });
+
+    const result = await runEmbeddedAgent({
+      ...baseParams,
+      deferTerminalLifecycleEnd: true,
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(2);
+    const firstAttempt = requireMockCallArg(mockedRunEmbeddedAttempt, 0);
+    const resumedAttempt = requireMockCallArg(mockedRunEmbeddedAttempt, 1);
+    expect(firstAttempt).toMatchObject({
+      runId: baseParams.runId,
+      deferTerminalLifecycleEnd: true,
+    });
+    expect(resumedAttempt).toMatchObject({
+      runId: baseParams.runId,
+      deferTerminalLifecycleEnd: true,
+      suppressNextUserMessagePersistence: true,
+    });
+    expectRetryContinuesFromTranscript();
+    expect(result.meta.error).toBeUndefined();
+  });
+
   it("runs post-compaction tool-result truncation before retry for mixed precheck routes", async () => {
     mockedRunEmbeddedAttempt
       .mockResolvedValueOnce(

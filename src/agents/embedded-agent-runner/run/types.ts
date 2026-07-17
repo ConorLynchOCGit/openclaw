@@ -33,7 +33,14 @@ import type { PreemptiveCompactionRoute } from "./preemptive-compaction.types.js
 
 type EmbeddedRunAttemptBase = Omit<
   RunEmbeddedAgentParams,
-  "provider" | "model" | "authProfileId" | "authProfileIdSource" | "thinkLevel" | "lane" | "enqueue"
+  | "provider"
+  | "model"
+  | "authProfileId"
+  | "authProfileIdSource"
+  | "thinkLevel"
+  | "lane"
+  | "enqueue"
+  | "deferTerminalLifecycleEnd"
 >;
 
 export type EmbeddedRunContextWindowInfo = {
@@ -43,6 +50,12 @@ export type EmbeddedRunContextWindowInfo = {
 };
 
 export type EmbeddedRunAttemptParams = EmbeddedRunAttemptBase & {
+  /**
+   * Explicit attempt-finality ownership resolved by the run orchestrator.
+   * Required here so a wrapper cannot silently turn a nonterminal retry,
+   * fallback, or compaction attempt into logical-run finality.
+   */
+  deferTerminalLifecycleEnd: boolean;
   initialReplayState?: EmbeddedRunReplayState;
   /** Pluggable context engine for ingest/assemble/compact lifecycle. */
   contextEngine?: ContextEngine;
