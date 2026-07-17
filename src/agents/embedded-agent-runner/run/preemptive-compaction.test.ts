@@ -413,7 +413,7 @@ describe("preemptive-compaction", () => {
     expect(result.toolResultReducibleChars).toBeGreaterThan(0);
   });
 
-  it("compacts before truncating mixed oversized-plus-aggregate tool tails", () => {
+  it("keeps mixed oversized-plus-aggregate tool tails on the truncation route", () => {
     const oversized = "x".repeat(80_000);
     const medium = "alpha beta gamma delta epsilon ".repeat(500);
     const messages: AgentMessage[] = [
@@ -445,11 +445,11 @@ describe("preemptive-compaction", () => {
     expect(potential.aggregateReducibleChars).toBeGreaterThan(0);
     expect(potential.oversizedReducibleChars).toBeLessThan(potential.maxReducibleChars);
     expect(potential.maxReducibleChars).toBeGreaterThan(desiredOverflowTokens * 4);
-    expect(result.route).toBe("compact_then_truncate");
-    expect(result.shouldCompact).toBe(true);
+    expect(result.route).toBe("truncate_tool_results_only");
+    expect(result.shouldCompact).toBe(false);
   });
 
-  it("compacts before truncating when many individually bounded results create aggregate pressure", () => {
+  it("keeps aggregate pressure from individually bounded results on the truncation route", () => {
     const bounded = "bounded result evidence ".repeat(700);
     const messages: AgentMessage[] = [
       makeAssistantHistory("retained planning decisions"),
@@ -475,7 +475,7 @@ describe("preemptive-compaction", () => {
 
     expect(potential.oversizedReducibleChars).toBe(0);
     expect(potential.aggregateReducibleChars).toBeGreaterThan(0);
-    expect(result.route).toBe("compact_then_truncate");
-    expect(result.shouldCompact).toBe(true);
+    expect(result.route).toBe("truncate_tool_results_only");
+    expect(result.shouldCompact).toBe(false);
   });
 });

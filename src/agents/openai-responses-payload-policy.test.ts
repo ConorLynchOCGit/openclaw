@@ -62,6 +62,33 @@ describe("openai responses payload policy", () => {
     });
   });
 
+  it("projects native server compaction for the 272k Sol route", () => {
+    const model = {
+      id: "gpt-5.6-sol",
+      api: "openai-responses",
+      provider: "openai",
+      baseUrl: "https://api.openai.com/v1",
+      contextWindow: 272_000,
+    } satisfies Pick<
+      Model<"openai-responses">,
+      "api" | "baseUrl" | "contextWindow" | "id" | "provider"
+    >;
+    const payload = {} satisfies Record<string, unknown>;
+
+    applyOpenAIResponsesPayloadPolicy(
+      payload,
+      resolveOpenAIResponsesPayloadPolicy(model, {
+        enableServerCompaction: true,
+        storeMode: "provider-policy",
+      }),
+    );
+
+    expect(payload).toEqual({
+      store: true,
+      context_management: [{ type: "compaction", compact_threshold: 190_400 }],
+    });
+  });
+
   it("does not coerce partial context windows for compaction thresholds", () => {
     const model = {
       id: "gpt-5.4",

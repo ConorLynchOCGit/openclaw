@@ -299,6 +299,7 @@ import {
   installToolResultContextGuard,
 } from "../tool-result-context-guard.js";
 import {
+  resolveLiveToolResultAggregateMaxChars,
   resolveLiveToolResultMaxChars,
   truncateOversizedToolResultsInMessages,
   truncateOversizedToolResultsInSessionManager,
@@ -514,7 +515,6 @@ export {
 };
 
 const MAX_BTW_SNAPSHOT_MESSAGES = 100;
-const PROMPT_TOOL_RESULT_AGGREGATE_CAP_MULTIPLIER = 4;
 
 function pluginMetadataSnapshotCoversProvider(
   snapshot: PluginMetadataSnapshot | undefined,
@@ -3919,12 +3919,18 @@ export async function runEmbeddedAttempt(
             cfg: params.config,
             agentId: sessionAgentId,
           });
+          const promptToolResultAggregateMaxChars = resolveLiveToolResultAggregateMaxChars({
+            contextWindowTokens: contextTokenBudget,
+            perResultMaxChars: promptToolResultMaxChars,
+            cfg: params.config,
+            agentId: sessionAgentId,
+          });
           let promptHistoryMessages = activeSession.messages;
           const promptToolResultTruncation = truncateOversizedToolResultsInMessages(
             activeSession.messages,
             contextTokenBudget,
             promptToolResultMaxChars,
-            promptToolResultMaxChars * PROMPT_TOOL_RESULT_AGGREGATE_CAP_MULTIPLIER,
+            promptToolResultAggregateMaxChars,
           );
           if (promptToolResultTruncation.truncatedCount > 0) {
             promptHistoryMessages = promptToolResultTruncation.messages;
@@ -3936,13 +3942,7 @@ export async function runEmbeddedAttempt(
               `aggregate=${promptToolResultTruncation.aggregateTruncatedCount}) ` +
               `sessionKey=${params.sessionKey ?? params.sessionId ?? "unknown"}`;
             if (promptToolResultTruncation.aggregatePressureEngaged) {
-              log.warn(`${truncationSummary}; requesting native compaction before provider call`);
-              preflightRecovery = {
-                route: "compact_then_truncate",
-                source: "pre-prompt",
-                handled: false,
-              };
-              skipPromptSubmission = true;
+              log.info(`${truncationSummary}; applying request-local prompt projection`);
             } else {
               log.info(truncationSummary);
             }
@@ -4377,46 +4377,17 @@ export async function runEmbeddedAttempt(
             );
           }
           if (preemptiveCompaction?.route === "truncate_tool_results_only") {
-            const toolResultMaxChars = resolveLiveToolResultMaxChars({
-              contextWindowTokens: contextTokenBudget,
-              cfg: params.config,
-              agentId: sessionAgentId,
-            });
-            const truncationResult = truncateOversizedToolResultsInSessionManager({
-              sessionManager,
-              contextWindowTokens: contextTokenBudget,
-              maxCharsOverride: toolResultMaxChars,
-              sessionFile: params.sessionFile,
-              sessionId: params.sessionId,
-              sessionKey: params.sessionKey,
-              agentId: sessionAgentId,
-            });
-            if (truncationResult.truncated) {
-              preflightRecovery = {
-                route: "truncate_tool_results_only",
-                handled: true,
-                truncatedCount: truncationResult.truncatedCount,
-              };
-              log.info(
-                `[context-pressure-advisory] early tool-result truncation succeeded for ` +
-                  `${params.provider}/${params.modelId} route=${preemptiveCompaction.route} ` +
-                  `truncatedCount=${truncationResult.truncatedCount} ` +
-                  `estimatedPromptTokens=${preemptiveCompaction.estimatedPromptTokens} ` +
-                  `promptBudgetBeforeReserve=${preemptiveCompaction.promptBudgetBeforeReserve} ` +
-                  `overflowTokens=${preemptiveCompaction.overflowTokens} ` +
-                  `toolResultReducibleChars=${preemptiveCompaction.toolResultReducibleChars} ` +
-                  `effectiveReserveTokens=${preemptiveCompaction.effectiveReserveTokens} ` +
-                  `sessionFile=${params.sessionFile}`,
-              );
-            }
-            if (!truncationResult.truncated) {
-              log.warn(
-                `[context-pressure-advisory] early tool-result truncation did not help for ` +
-                  `${params.provider}/${params.modelId}; continuing to native provider boundary ` +
-                  `reason=${truncationResult.reason ?? "unknown"} sessionFile=${params.sessionFile}`,
-              );
-              preflightRecovery = { route: "compact_only", handled: false };
-            }
+            log.info(
+              `[context-pressure-advisory] request-local tool-result projection selected for ` +
+                `${params.provider}/${params.modelId} route=${preemptiveCompaction.route} ` +
+                `truncatedCount=${promptToolResultTruncation.truncatedCount} ` +
+                `estimatedPromptTokens=${preemptiveCompaction.estimatedPromptTokens} ` +
+                `promptBudgetBeforeReserve=${preemptiveCompaction.promptBudgetBeforeReserve} ` +
+                `overflowTokens=${preemptiveCompaction.overflowTokens} ` +
+                `toolResultReducibleChars=${preemptiveCompaction.toolResultReducibleChars} ` +
+                `effectiveReserveTokens=${preemptiveCompaction.effectiveReserveTokens} ` +
+                `continuingToNativeProviderBoundary=true sessionFile=${params.sessionFile}`,
+            );
           }
           if (!skipPromptSubmission && preemptiveCompaction?.shouldCompact) {
             preflightRecovery =
@@ -4455,7 +4426,7 @@ export async function runEmbeddedAttempt(
                     messages,
                     contextTokenBudget,
                     promptToolResultMaxChars,
-                    promptToolResultMaxChars * PROMPT_TOOL_RESULT_AGGREGATE_CAP_MULTIPLIER,
+                    promptToolResultAggregateMaxChars,
                   );
                   return providerPromptHistoryTruncation.truncatedCount > 0
                     ? providerPromptHistoryTruncation.messages

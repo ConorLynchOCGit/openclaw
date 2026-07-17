@@ -46,6 +46,8 @@ export const LARGE_CONTEXT_MAX_LIVE_TOOL_RESULT_CHARS = 64_000;
 export const XL_CONTEXT_MAX_LIVE_TOOL_RESULT_CHARS = 96_000;
 const LARGE_CONTEXT_TOOL_RESULT_TOKENS = 100_000;
 const XL_CONTEXT_TOOL_RESULT_TOKENS = 200_000;
+const PROMPT_TOOL_RESULT_AGGREGATE_CAP_MULTIPLIER = 4;
+const AGGREGATE_TOOL_RESULT_CONTEXT_SHARE = 0.5;
 
 /**
  * Minimum characters to keep when truncating.
@@ -248,6 +250,42 @@ export function resolveLiveToolResultMaxChars(params: {
   const configuredCap = resolveAgentContextLimits(params.cfg, params.agentId)?.toolResultMaxChars;
   const cap = configuredCap ?? resolveAutoLiveToolResultMaxChars(params.contextWindowTokens);
   return calculateMaxToolResultCharsWithCap(params.contextWindowTokens, cap);
+}
+
+/**
+ * Resolve a request-local aggregate tool-result budget.
+ *
+ * The per-result multiple prevents many medium results from growing without
+ * bound. The context-share floor avoids treating a large-context model as if
+ * it had only four single-result slots.
+ */
+export function resolveLiveToolResultAggregateMaxChars(params: {
+  contextWindowTokens: number;
+  perResultMaxChars?: number;
+  cfg?: OpenClawConfig;
+  agentId?: string | null;
+}): number {
+  const perResultMaxChars = Math.max(
+    1,
+    Math.floor(
+      params.perResultMaxChars ??
+        resolveLiveToolResultMaxChars({
+          contextWindowTokens: params.contextWindowTokens,
+          cfg: params.cfg,
+          agentId: params.agentId,
+        }),
+    ),
+  );
+  const contextWindowTokens = Number.isFinite(params.contextWindowTokens)
+    ? Math.max(1, Math.floor(params.contextWindowTokens))
+    : 1;
+  const contextShareChars = Math.floor(
+    contextWindowTokens * 4 * AGGREGATE_TOOL_RESULT_CONTEXT_SHARE,
+  );
+  return Math.max(
+    perResultMaxChars * PROMPT_TOOL_RESULT_AGGREGATE_CAP_MULTIPLIER,
+    contextShareChars,
+  );
 }
 
 /**

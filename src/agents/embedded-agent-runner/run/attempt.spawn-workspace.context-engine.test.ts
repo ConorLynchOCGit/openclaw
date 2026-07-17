@@ -2652,7 +2652,7 @@ describe("runEmbeddedAttempt tool-result guard budget wiring", () => {
     ).toBe(200_000);
   });
 
-  it("routes aggregate tool-result prompt pressure to native compaction", async () => {
+  it("projects aggregate tool-result pressure without rewriting the transcript or compacting", async () => {
     const toolText = "process output ".repeat(70);
     const sessionMessages: AgentMessage[] = [{ role: "user", content: "seed", timestamp: 1 }];
     for (let index = 0; index < 8; index += 1) {
@@ -2699,12 +2699,91 @@ describe("runEmbeddedAttempt tool-result guard budget wiring", () => {
 
     expect(sumToolResultTextChars(sessionMessages)).toBeGreaterThan(4_000);
     expect(JSON.stringify(sessionMessages)).not.toContain("truncated");
-    expect(sawPrompt).toBe(false);
+    expect(sawPrompt).toBe(true);
     expect(result.promptErrorSource).toBeNull();
-    expect(result.preflightRecovery).toEqual({
-      route: "compact_then_truncate",
-      source: "pre-prompt",
-      handled: false,
+    expect(result.preflightRecovery).toBeUndefined();
+  });
+
+  it("keeps eight child packets intact and reaches the provider under captured Planning pressure", async () => {
+    const sessionMessages: AgentMessage[] = [{ role: "user", content: "seed", timestamp: 1 }];
+    const childPacketTexts: string[] = [];
+    let timestamp = 2;
+    for (let index = 0; index < 8; index += 1) {
+      const toolCallId = `child_${index}`;
+      const packet = `# Child packet ${index + 1}\n\n${"bounded decision evidence ".repeat(1000)}`;
+      childPacketTexts.push(packet);
+      sessionMessages.push({
+        role: "assistant",
+        content: [{ type: "toolCall", id: toolCallId, name: "task", input: {} }],
+        timestamp: timestamp++,
+      } as unknown as AgentMessage);
+      sessionMessages.push({
+        role: "toolResult",
+        toolCallId,
+        toolName: "task",
+        content: [{ type: "text", text: packet }],
+        details: { childResult: true, contentChars: packet.length, contentTruncated: false },
+        isError: false,
+        timestamp: timestamp++,
+      } as unknown as AgentMessage);
+    }
+    for (let index = 0; index < 6; index += 1) {
+      const toolCallId = `source_${index}`;
+      sessionMessages.push({
+        role: "assistant",
+        content: [{ type: "toolCall", id: toolCallId, name: "read", input: {} }],
+        timestamp: timestamp++,
+      } as unknown as AgentMessage);
+      sessionMessages.push({
+        role: "toolResult",
+        toolCallId,
+        toolName: "read",
+        content: [{ type: "text", text: "large ordinary source result ".repeat(1400) }],
+        isError: false,
+        timestamp: timestamp++,
+      } as AgentMessage);
+    }
+    const originalSessionJson = JSON.stringify(sessionMessages);
+    let sawPrompt = false;
+
+    const result = await createContextEngineAttemptRunner({
+      contextEngine: createContextEngineBootstrapAndAssemble(),
+      sessionKey,
+      tempPaths,
+      sessionMessages,
+      attemptOverrides: {
+        contextTokenBudget: 272_000,
+        config: {
+          agents: {
+            defaults: {
+              contextLimits: { toolResultMaxChars: 80_000 },
+            },
+            list: [{ id: "main" }],
+          },
+        } as OpenClawConfig,
+      },
+      sessionPrompt: async (session) => {
+        sawPrompt = true;
+        session.messages = [...session.messages, doneMessage];
+      },
     });
+
+    expect(sawPrompt).toBe(true);
+    expect(result.preflightRecovery).toBeUndefined();
+    expect(result.promptErrorSource).toBeNull();
+    expect(JSON.stringify(sessionMessages)).toBe(originalSessionJson);
+    expect(originalSessionJson).not.toContain("sessions_history");
+    for (const packet of childPacketTexts) {
+      expect(
+        sessionMessages.some((message) => {
+          if (message.role !== "toolResult" || !Array.isArray(message.content)) {
+            return false;
+          }
+          return message.content.some(
+            (block) => block.type === "text" && "text" in block && block.text === packet,
+          );
+        }),
+      ).toBe(true);
+    }
   });
 });

@@ -23,6 +23,7 @@ let sessionLikelyHasOversizedToolResults: typeof import("./tool-result-truncatio
 let estimateToolResultReductionPotential: typeof import("./tool-result-truncation.js").estimateToolResultReductionPotential;
 let DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS: typeof import("./tool-result-truncation.js").DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS;
 let resolveLiveToolResultMaxChars: typeof import("./tool-result-truncation.js").resolveLiveToolResultMaxChars;
+let resolveLiveToolResultAggregateMaxChars: typeof import("./tool-result-truncation.js").resolveLiveToolResultAggregateMaxChars;
 let isChildResultToolResultMessage: typeof import("./tool-result-truncation.js").isChildResultToolResultMessage;
 let tmpDir: string | undefined;
 
@@ -43,6 +44,7 @@ async function loadFreshToolResultTruncationModuleForTest() {
     estimateToolResultReductionPotential,
     DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS,
     resolveLiveToolResultMaxChars,
+    resolveLiveToolResultAggregateMaxChars,
     isChildResultToolResultMessage,
   } = await import("./tool-result-truncation.js"));
 }
@@ -409,6 +411,15 @@ describe("estimateToolResultReductionPotential", () => {
 });
 
 describe("truncateOversizedToolResultsInMessages", () => {
+  it("gives large-context requests an aggregate budget equal to at least half the window", () => {
+    expect(
+      resolveLiveToolResultAggregateMaxChars({
+        contextWindowTokens: 272_000,
+        perResultMaxChars: 96_000,
+      }),
+    ).toBe(544_000);
+  });
+
   it("returns unchanged messages when nothing is oversized", () => {
     const messages = [
       makeUserMessage("hello"),
@@ -464,6 +475,39 @@ describe("truncateOversizedToolResultsInMessages", () => {
     expect(truncatedCount).toBe(0);
     expect(result[2]).toBe(messages[2]);
     expect(getFirstToolResultText(result[2] as AgentMessage)).toBe(evidence);
+  });
+
+  it("preserves eight bounded child packets while reducing only ordinary tool output", () => {
+    const childPackets = Array.from({ length: 8 }, (_, index) =>
+      makeChildResultToolResult(
+        `# Child packet ${index + 1}\n\n${"decision evidence ".repeat(1400)}`,
+        `child_${index + 1}`,
+      ),
+    );
+    const noisyResults = Array.from({ length: 6 }, (_, index) =>
+      makeToolResult("request-local source payload ".repeat(5000), `noise_${index + 1}`),
+    );
+    const messages: AgentMessage[] = [
+      makeUserMessage("synthesize the complete plan"),
+      ...childPackets,
+      ...noisyResults,
+    ];
+    const originalLengths = messages.map((message) => getToolResultTextLength(message));
+
+    const result = truncateOversizedToolResultsInMessages(messages, 272_000, 80_000, 320_000);
+
+    expect(result.truncatedCount).toBeGreaterThan(0);
+    for (let index = 0; index < childPackets.length; index += 1) {
+      const projected = result.messages[index + 1] as AgentMessage;
+      expect(projected).toBe(childPackets[index]);
+      expect(getFirstToolResultText(projected)).toBe(getFirstToolResultText(childPackets[index]!));
+    }
+    expect(messages.map((message) => getToolResultTextLength(message))).toEqual(originalLengths);
+    expect(
+      result.messages
+        .slice(1 + childPackets.length)
+        .some((message) => getFirstToolResultText(message).includes("truncated")),
+    ).toBe(true);
   });
 
   it("preserves non-toolResult messages", () => {

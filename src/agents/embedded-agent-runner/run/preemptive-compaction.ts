@@ -319,16 +319,12 @@ export function shouldPreemptivelyCompactBeforePrompt(params: {
 
   let route: PreemptiveCompactionRoute = "fits";
   if (overflowTokens > 0) {
-    // Aggregate pressure means several retained results are competing with the
-    // durable conversation. Compact that conversation before trimming result
-    // tails. Truncate-only is reserved for one or more individually oversized
-    // results that can absorb the overflow without aggregate-history pressure.
+    // Tool-result pressure is reducible prompt payload, not semantic
+    // conversation pressure. Prefer request-local reduction whenever it can
+    // comfortably absorb the estimated overflow.
     if (toolResultReducibleChars <= 0) {
       route = "compact_only";
-    } else if (
-      toolResultPotential.aggregateReducibleChars <= 0 &&
-      toolResultPotential.oversizedReducibleChars >= truncateOnlyThresholdChars
-    ) {
+    } else if (toolResultReducibleChars >= truncateOnlyThresholdChars) {
       route = "truncate_tool_results_only";
     } else {
       route = "compact_then_truncate";
