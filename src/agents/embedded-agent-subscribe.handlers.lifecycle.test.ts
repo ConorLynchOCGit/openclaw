@@ -20,6 +20,7 @@ function createContext(
     onBeforeLifecycleTerminal?: () => void | Promise<void>;
     onBlockReply?: ((payload: unknown) => void) | undefined;
     onBlockReplyFlush?: () => void | Promise<void>;
+    terminalLifecyclePhase?: "end" | "finishing";
   },
 ): EmbeddedAgentSubscribeContext {
   // Lifecycle tests only need terminal state and delivery callbacks; omitted
@@ -34,6 +35,7 @@ function createContext(
       sessionKey: "agent:main:main",
       onAgentEvent: overrides?.onAgentEvent,
       onBeforeLifecycleTerminal: overrides?.onBeforeLifecycleTerminal,
+      terminalLifecyclePhase: overrides?.terminalLifecyclePhase,
       ...(onBlockReply ? { onBlockReply } : {}),
       onBlockReplyFlush: overrides?.onBlockReplyFlush,
     },
@@ -155,6 +157,48 @@ describe("handleAgentEnd", () => {
         error: "LLM request failed.",
       },
     });
+  });
+
+  it("keeps deferred attempt errors nonterminal until the outer run settles", async () => {
+    emitAgentEventMock.mockClear();
+    const onAgentEvent = vi.fn();
+    const ctx = createContext(
+      {
+        role: "assistant",
+        stopReason: "error",
+        errorMessage: "context pressure requires compaction",
+        content: [],
+      },
+      { onAgentEvent, terminalLifecyclePhase: "finishing" },
+    );
+
+    await handleAgentEnd(ctx);
+
+    expect(emitAgentEventMock).toHaveBeenCalledWith({
+      runId: "run-1",
+      stream: "lifecycle",
+      data: expect.objectContaining({
+        phase: "finishing",
+        attemptStatus: "error",
+        attemptError: "LLM request failed.",
+      }),
+    });
+    expect(onAgentEvent).toHaveBeenCalledWith({
+      stream: "lifecycle",
+      data: {
+        phase: "finishing",
+        attemptStatus: "error",
+        attemptError: "LLM request failed.",
+      },
+    });
+    expect(
+      emitAgentEventMock.mock.calls.some(
+        ([event]) =>
+          event &&
+          typeof event === "object" &&
+          (event as { data?: { phase?: unknown } }).data?.phase === "error",
+      ),
+    ).toBe(false);
   });
 
   it("logs the resolved error message when run ends with assistant error", async () => {

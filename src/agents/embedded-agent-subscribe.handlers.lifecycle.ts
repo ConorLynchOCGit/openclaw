@@ -149,7 +149,10 @@ export function handleAgentEnd(
         ? { taskEventMetadata: ctx.state.terminalTaskEventMetadata }
         : {}),
     };
-    if (isError) {
+    // Fresh planned runs defer finality to agent-command. Inner attempt errors
+    // remain observable but must not settle agent.wait before retry/compaction.
+    const deferAttemptTerminal = ctx.params.terminalLifecyclePhase === "finishing";
+    if (isError && !deferAttemptTerminal) {
       emitAgentEvent({
         runId: ctx.params.runId,
         stream: "lifecycle",
@@ -175,11 +178,19 @@ export function handleAgentEnd(
       return;
     }
     const successPhase = ctx.params.terminalLifecyclePhase ?? "end";
+    const deferredAttemptErrorMeta =
+      isError && deferAttemptTerminal
+        ? {
+            attemptStatus: "error",
+            attemptError: lifecycleErrorText ?? GENERIC_ASSISTANT_ERROR_TEXT,
+          }
+        : {};
     emitAgentEvent({
       runId: ctx.params.runId,
       stream: "lifecycle",
       data: {
         phase: successPhase,
+        ...deferredAttemptErrorMeta,
         ...terminalMeta,
         ...(livenessState ? { livenessState } : {}),
         ...(replayInvalid ? { replayInvalid } : {}),
@@ -190,6 +201,7 @@ export function handleAgentEnd(
       stream: "lifecycle",
       data: {
         phase: successPhase,
+        ...deferredAttemptErrorMeta,
         ...terminalMeta,
         ...(livenessState ? { livenessState } : {}),
         ...(replayInvalid ? { replayInvalid } : {}),

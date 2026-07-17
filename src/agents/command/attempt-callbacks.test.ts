@@ -34,6 +34,13 @@ describe("createAgentAttemptLifecycleCallbacks", () => {
     callbacks.onAgentEvent({ stream: "lifecycle", data: { phase: "start" } });
     expect(state.lifecycleEnded).toBe(false);
 
+    callbacks.onAgentEvent({
+      stream: "lifecycle",
+      data: { phase: "finishing", attemptStatus: "error" },
+    });
+    expect(state.lifecycleFinishing).toBe(true);
+    expect(state.lifecycleEnded).toBe(false);
+
     callbacks.onAgentEvent({ stream: "lifecycle", data: { phase: "end" } });
     expect(state.lifecycleEnded).toBe(true);
   });
