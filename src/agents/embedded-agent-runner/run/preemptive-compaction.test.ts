@@ -413,7 +413,7 @@ describe("preemptive-compaction", () => {
     expect(result.toolResultReducibleChars).toBeGreaterThan(0);
   });
 
-  it("treats mixed oversized-plus-aggregate tool tails as cumulative recovery potential", () => {
+  it("compacts before truncating mixed oversized-plus-aggregate tool tails", () => {
     const oversized = "x".repeat(80_000);
     const medium = "alpha beta gamma delta epsilon ".repeat(500);
     const messages: AgentMessage[] = [
@@ -445,7 +445,37 @@ describe("preemptive-compaction", () => {
     expect(potential.aggregateReducibleChars).toBeGreaterThan(0);
     expect(potential.oversizedReducibleChars).toBeLessThan(potential.maxReducibleChars);
     expect(potential.maxReducibleChars).toBeGreaterThan(desiredOverflowTokens * 4);
-    expect(result.route).toBe("truncate_tool_results_only");
-    expect(result.shouldCompact).toBe(false);
+    expect(result.route).toBe("compact_then_truncate");
+    expect(result.shouldCompact).toBe(true);
+  });
+
+  it("compacts before truncating when many individually bounded results create aggregate pressure", () => {
+    const bounded = "bounded result evidence ".repeat(700);
+    const messages: AgentMessage[] = [
+      makeAssistantHistory("retained planning decisions"),
+      ...Array.from({ length: 18 }, () => makeToolResultMessage(bounded)),
+    ];
+    const reserveTokens = 2_000;
+    const estimatedPromptTokens = estimatePrePromptTokens({
+      messages,
+      systemPrompt: "sys",
+      prompt: "continue synthesis",
+    });
+    const potential = estimateToolResultReductionPotential({
+      messages,
+      contextWindowTokens: 128_000,
+    });
+    const result = shouldPreemptivelyCompactBeforePrompt({
+      messages,
+      systemPrompt: "sys",
+      prompt: "continue synthesis",
+      contextTokenBudget: estimatedPromptTokens - 1_000 + reserveTokens,
+      reserveTokens,
+    });
+
+    expect(potential.oversizedReducibleChars).toBe(0);
+    expect(potential.aggregateReducibleChars).toBeGreaterThan(0);
+    expect(result.route).toBe("compact_then_truncate");
+    expect(result.shouldCompact).toBe(true);
   });
 });
