@@ -1429,6 +1429,68 @@ describe("gateway agent handler", () => {
     });
   });
 
+  it("uses the target agent primary for a fresh ordinary agent session", async () => {
+    const sessionKey = "agent:memory-curator:default-route-proof";
+    const cfg = {
+      session: { mainKey: "main", scope: "per-sender" },
+      agents: {
+        defaults: {
+          model: { primary: "openai/gpt-5.5", fallbacks: [] },
+        },
+        list: [
+          { id: "main", default: true },
+          {
+            id: "memory-curator",
+            model: {
+              primary: "openrouter/anthropic/claude-haiku-4.5",
+              fallbacks: ["openrouter/google/gemini-2.5-flash-lite"],
+            },
+          },
+        ],
+      },
+    };
+    mocks.listAgentIds.mockReturnValue(["main", "memory-curator"]);
+    mocks.loadConfigReturn = cfg;
+    mocks.loadSessionEntry.mockReturnValue({
+      cfg,
+      storePath: "/tmp/sessions.json",
+      entry: undefined,
+      canonicalKey: sessionKey,
+    });
+    mocks.updateSessionStore.mockImplementation(async (_path, updater) => await updater({}));
+    mocks.agentCommand.mockResolvedValue({
+      payloads: [{ text: "ok" }],
+      meta: { durationMs: 100 },
+    });
+
+    await invokeAgent({
+      message: "route through the configured default",
+      sessionKey,
+      idempotencyKey: "memory-curator-default-route-proof",
+    });
+
+    expectRecordFields(await waitForAgentCommandCall(), {
+      agentId: "memory-curator",
+      provider: undefined,
+      model: undefined,
+      launchExecutionPlan: expect.objectContaining({
+        targetAgentId: "memory-curator",
+        launchMode: "fresh",
+        model: {
+          provider: "openrouter",
+          model: "anthropic/claude-haiku-4.5",
+        },
+        fallbacks: [
+          {
+            provider: "openrouter",
+            model: "google/gemini-2.5-flash-lite",
+          },
+        ],
+        runtime: "openclaw",
+      }),
+    });
+  });
+
   it("forwards explicit ACP turn source markers", async () => {
     primeMainAgentRun();
 

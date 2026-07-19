@@ -180,6 +180,24 @@ describe("buildEmbeddedRunPayloads", () => {
     expectNoPayloadTextContaining(payloads, "SECRET_CANARY_69737");
   });
 
+  it("does not turn a persisted error sentinel into a successful reply", () => {
+    const payloads = buildPayloads({
+      assistantTexts: ["[assistant turn failed before producing content]"],
+      currentAssistant: null,
+      lastAssistant: makeAssistant({
+        stopReason: "error",
+        errorMessage: "upstream request failed",
+        content: [{ type: "text", text: "[assistant turn failed before producing content]" }],
+      }),
+    });
+
+    expectSinglePayloadSummary(payloads, {
+      text: "LLM request failed.",
+      isError: true,
+    });
+    expectNoPayloadTextContaining(payloads, "assistant turn failed before producing content");
+  });
+
   it("suppresses structured provider error messages in user-facing reply payloads", () => {
     const rawError =
       '{"type":"error","error":{"type":"invalid_request_error","message":"SECRET_CANARY_69737"}}';

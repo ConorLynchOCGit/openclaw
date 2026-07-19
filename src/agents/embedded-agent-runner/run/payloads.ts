@@ -316,28 +316,29 @@ export function buildEmbeddedRunPayloads(params: {
     params.didSendDeterministicApprovalPrompt === true || hasSourceReplyPayload;
   const nonEmptyAssistantTexts = params.assistantTexts.filter((text) => text.trim().length > 0);
   const currentAssistant = params.currentAssistant ?? undefined;
+  const assistantForState = currentAssistant ?? params.lastAssistant;
   const assistantForPayload =
     currentAssistant ?? (nonEmptyAssistantTexts.length === 1 ? undefined : params.lastAssistant);
-  const lastAssistantStopReason = assistantForPayload?.stopReason;
+  const lastAssistantStopReason = assistantForState?.stopReason;
   const lastAssistantErrored = lastAssistantStopReason === "error";
   const lastAssistantAborted = lastAssistantStopReason === "aborted";
   const runAborted = params.runAborted === true || lastAssistantAborted;
   const lastAssistantNeedsErrorSurface = lastAssistantErrored || lastAssistantAborted;
   const rawErrorMessage = lastAssistantNeedsErrorSurface
-    ? normalizeOptionalString(assistantForPayload?.errorMessage)
+    ? normalizeOptionalString(assistantForState?.errorMessage)
     : undefined;
   const errorText =
-    assistantForPayload && lastAssistantNeedsErrorSurface
+    assistantForState && lastAssistantNeedsErrorSurface
       ? suppressAssistantArtifacts
         ? undefined
         : lastAssistantErrored || rawErrorMessage
-          ? formatUserFacingAssistantErrorText(assistantForPayload, {
+          ? formatUserFacingAssistantErrorText(assistantForState, {
               cfg: params.config,
               sessionKey: params.sessionKey,
               provider: params.provider,
               model: params.model,
             })
-          : formatAssistantErrorText(assistantForPayload, {
+          : formatAssistantErrorText(assistantForState, {
               cfg: params.config,
               sessionKey: params.sessionKey,
               provider: params.provider,
@@ -481,7 +482,7 @@ export function buildEmbeddedRunPayloads(params: {
     normalizedFallbackAnswerSourceText.length > 0;
   const hasAssistantTextPayload = nonEmptyAssistantTexts.length > 0;
   const answerTexts =
-    suppressAssistantArtifacts || runAborted
+    suppressAssistantArtifacts || runAborted || lastAssistantNeedsErrorSurface
       ? []
       : (shouldUseCanonicalFinalAnswer
           ? [fallbackAnswerSourceText]

@@ -132,4 +132,51 @@ describe("getReplyFromConfig fast-path runtime", () => {
       );
     });
   });
+
+  it("uses a named agent primary instead of one of its fallbacks", async () => {
+    await withTempHome(async (home) => {
+      agentMocks.runEmbeddedAgent.mockResolvedValue(makeEmbeddedTextResult("ok"));
+      const cfg = makeReplyConfig(home) as OpenClawConfig;
+      cfg.agents = {
+        ...cfg.agents,
+        list: [
+          {
+            id: "memory-curator",
+            model: {
+              primary: "openrouter/anthropic/claude-haiku-4.5",
+              fallbacks: ["openrouter/google/gemini-2.5-flash-lite"],
+            },
+            models: {
+              "openrouter/anthropic/claude-haiku-4.5": {},
+              "openrouter/google/gemini-2.5-flash-lite": {},
+            },
+          },
+        ],
+      };
+
+      await getReplyFromConfig(
+        {
+          Body: "hello",
+          BodyForAgent: "hello",
+          RawBody: "hello",
+          CommandBody: "hello",
+          SessionKey: "agent:memory-curator:route-audit",
+          AgentId: "memory-curator",
+          Provider: "webchat",
+          Surface: "webchat",
+          ChatType: "direct",
+        },
+        {},
+        cfg,
+      );
+
+      expect(agentMocks.runEmbeddedAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentId: "memory-curator",
+          provider: "openrouter",
+          model: "anthropic/claude-haiku-4.5",
+        }),
+      );
+    });
+  });
 });

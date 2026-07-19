@@ -75,6 +75,52 @@ const makeConfiguredModel = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("createModelSelectionState catalog loading", () => {
+  it("preserves a named agent primary whose provider-owned model id contains a slash", async () => {
+    const cfg = {
+      agents: {
+        defaults: {
+          model: "openai/gpt-5.5",
+          models: {
+            "openai/gpt-5.5": {},
+          },
+        },
+        list: [
+          {
+            id: "memory-curator",
+            model: {
+              primary: "openrouter/anthropic/claude-haiku-4.5",
+              fallbacks: ["openrouter/google/gemini-2.5-flash-lite"],
+            },
+            models: {
+              "openrouter/anthropic/claude-haiku-4.5": {},
+              "openrouter/google/gemini-2.5-flash-lite": {},
+            },
+          },
+        ],
+      },
+    } as OpenClawConfig;
+
+    const state = await createModelSelectionState({
+      cfg,
+      agentId: "memory-curator",
+      agentCfg: cfg.agents?.defaults,
+      defaultProvider: "openrouter",
+      defaultModel: "anthropic/claude-haiku-4.5",
+      primaryProvider: "openrouter",
+      primaryModel: "anthropic/claude-haiku-4.5",
+      provider: "openrouter",
+      model: "anthropic/claude-haiku-4.5",
+      hasModelDirective: false,
+    });
+
+    expect({ provider: state.provider, model: state.model }).toEqual({
+      provider: "openrouter",
+      model: "anthropic/claude-haiku-4.5",
+    });
+    expect(state.allowedModelKeys).toContain("openrouter/anthropic/claude-haiku-4.5");
+    expect(state.allowedModelKeys).not.toContain("anthropic/claude-haiku-4.5");
+  });
+
   it("skips full catalog loading for ordinary allowlist-backed turns", async () => {
     vi.mocked(loadModelCatalogLocal).mockClear();
     const cfg = {
