@@ -19,6 +19,7 @@ import {
 } from "./evidence-store.js";
 
 const tempDirs: string[] = [];
+const EVIDENCE_RELATIVE_DIR = ["artifacts", "business-ops", "x-acquisition-manifests-v4"];
 
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
@@ -59,6 +60,16 @@ function manifestInput(): XAcquisitionManifestV4Input {
   };
 }
 
+async function createWorkspace(prefix: string): Promise<string> {
+  const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+  tempDirs.push(workspaceDir);
+  return workspaceDir;
+}
+
+function evidenceArtifactsDir(workspaceDir: string): string {
+  return path.join(workspaceDir, ...EVIDENCE_RELATIVE_DIR);
+}
+
 describe("x evidence store", () => {
   it("normalizes immutable manifests without content, identity, raw payload, or credentials", () => {
     const manifest = createAcquisitionManifest(manifestInput());
@@ -94,13 +105,12 @@ describe("x evidence store", () => {
   });
 
   it("produces identical content-addressed refs for equivalent object ordering", async () => {
-    const artifactsDir = await fs.mkdtemp(path.join(os.tmpdir(), "x-evidence-"));
-    tempDirs.push(artifactsDir);
-    const first = await writeAcquisitionManifest({ input: manifestInput(), artifactsDir });
+    const workspaceDir = await createWorkspace("x-evidence-");
+    const first = await writeAcquisitionManifest({ input: manifestInput(), workspaceDir });
     const input = manifestInput();
     const second = await writeAcquisitionManifest({
       input: { ...input, query: { ...input.query, filters: { minLikes: 10, language: "en" } } },
-      artifactsDir,
+      workspaceDir,
     });
 
     expect(first.created).toBe(true);
@@ -114,13 +124,12 @@ describe("x evidence store", () => {
   });
 
   it("keeps acquisition manifests distinct for separate captures", async () => {
-    const artifactsDir = await fs.mkdtemp(path.join(os.tmpdir(), "x-evidence-captures-"));
-    tempDirs.push(artifactsDir);
+    const workspaceDir = await createWorkspace("x-evidence-captures-");
     const firstInput = manifestInput();
-    const first = await writeAcquisitionManifest({ input: firstInput, artifactsDir });
+    const first = await writeAcquisitionManifest({ input: firstInput, workspaceDir });
     const second = await writeAcquisitionManifest({
       input: { ...firstInput, request: { ...firstInput.request, id: "req-2" } },
-      artifactsDir,
+      workspaceDir,
     });
 
     expect(first.created).toBe(true);
@@ -129,29 +138,59 @@ describe("x evidence store", () => {
     expect(second.ref).not.toBe(first.ref);
   });
 
-  it("uses the artifacts env root and detects a mismatched existing digest path", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "x-evidence-root-"));
-    tempDirs.push(root);
-    expect(resolveEvidenceArtifactsDir({ env: { OPENCLAW_ARTIFACTS_DIR: root } })).toBe(
-      path.join(root, "business-ops", "x-acquisition-manifests-v4"),
+  it("uses only the native workspace root and detects a mismatched digest path", async () => {
+    const workspaceDir = await createWorkspace("x-evidence-workspace-");
+    const operationalDir = await createWorkspace("x-operational-artifacts-");
+    const env = {
+      OPENCLAW_WORKSPACE_DIR: workspaceDir,
+      OPENCLAW_WORKSPACE: "/home/node/.openclaw/workspace/src/openclaw",
+      OPENCLAW_ARTIFACTS_DIR: operationalDir,
+    };
+    expect(resolveEvidenceArtifactsDir({ env })).toBe(evidenceArtifactsDir(workspaceDir));
+    expect(resolveEvidenceArtifactsDir({ workspaceDir, env: {} })).toBe(
+      evidenceArtifactsDir(workspaceDir),
     );
-    expect(resolveEvidenceArtifactsDir({ workspaceDir: root, env: {} })).toBe(
-      path.join(root, "artifacts", "business-ops", "x-acquisition-manifests-v4"),
-    );
+    expect(() =>
+      resolveEvidenceArtifactsDir({
+        env: {
+          OPENCLAW_WORKSPACE: "/home/node/.openclaw/workspace",
+          OPENCLAW_ARTIFACTS_DIR: operationalDir,
+        },
+      }),
+    ).toThrow(/OPENCLAW_WORKSPACE_DIR/);
 
     const result = await writeAcquisitionManifest({
       input: manifestInput(),
-      env: { OPENCLAW_ARTIFACTS_DIR: root },
+      env,
     });
     await fs.writeFile(result.path, "tampered\n", "utf8");
-    await expect(
-      writeAcquisitionManifest({ input: manifestInput(), env: { OPENCLAW_ARTIFACTS_DIR: root } }),
-    ).rejects.toBeInstanceOf(XEvidenceArtifactCollisionError);
+    await expect(writeAcquisitionManifest({ input: manifestInput(), env })).rejects.toBeInstanceOf(
+      XEvidenceArtifactCollisionError,
+    );
   });
 
+  it("rejects relative workspace roots instead of deriving identity from cwd", () => {
+    expect(() => resolveEvidenceArtifactsDir({ workspaceDir: "workspace/src/openclaw" })).toThrow(
+      /absolute workspace directory/,
+    );
+  });
+
+  it.runIf(process.platform !== "win32")(
+    "rejects an artifacts symlink that redirects writes outside the workspace",
+    async () => {
+      const workspaceDir = await createWorkspace("x-evidence-symlink-workspace-");
+      const operationalDir = await createWorkspace("x-evidence-symlink-operational-");
+      await fs.symlink(operationalDir, path.join(workspaceDir, "artifacts"), "dir");
+
+      await expect(
+        writeAcquisitionManifest({ input: manifestInput(), workspaceDir }),
+      ).rejects.toThrow();
+      await expect(fs.readdir(operationalDir)).resolves.toEqual([]);
+    },
+  );
+
   it("writes bounded immutable compliance events", async () => {
-    const artifactsDir = await fs.mkdtemp(path.join(os.tmpdir(), "x-compliance-"));
-    tempDirs.push(artifactsDir);
+    const workspaceDir = await createWorkspace("x-compliance-");
     const input = {
       eventId: "event-1",
       type: "takedown" as const,
@@ -161,7 +200,7 @@ describe("x evidence store", () => {
       manifestDigest: "sha256:manifest",
     };
     const event = createComplianceEvent(input);
-    const result = await writeComplianceEvent({ input, artifactsDir });
+    const result = await writeComplianceEvent({ input, workspaceDir });
 
     expect(Object.isFrozen(event)).toBe(true);
     expect(result.artifact).toEqual(event);
@@ -179,8 +218,7 @@ describe("x evidence store", () => {
   });
 
   it("validates and writes a model-authored claim ledger without deriving semantics", async () => {
-    const artifactsDir = await fs.mkdtemp(path.join(os.tmpdir(), "x-claim-ledger-"));
-    tempDirs.push(artifactsDir);
+    const workspaceDir = await createWorkspace("x-claim-ledger-");
     const input = {
       ledgerId: "ledger-1",
       authoredAt: "2026-07-16T00:00:00.000Z",
@@ -203,7 +241,7 @@ describe("x evidence store", () => {
     };
 
     const ledger = createClaimLedger(input);
-    const result = await writeClaimLedger({ input, artifactsDir });
+    const result = await writeClaimLedger({ input, workspaceDir });
     expect(ledger).toMatchObject({ schema: "x_claim_ledger.v1", claims: [{ claimId: "claim-1" }] });
     expect(Object.isFrozen(ledger.claims)).toBe(true);
     expect(result.artifact).toEqual(ledger);

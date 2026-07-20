@@ -399,10 +399,7 @@ async function writeManifest(params: {
   // syntax into the evidence contract.
   const manifestToolCallId = `toolcall:${sha256(execution.toolCallId)}`;
   return await writeAcquisitionManifest({
-    workspaceDir:
-      execution.ctx.workspaceDir ??
-      process.env.OPENCLAW_WORKSPACE ??
-      process.env.OPENCLAW_WORKSPACE_DIR,
+    workspaceDir: execution.ctx.workspaceDir,
     input: {
       versions: {
         request: TOOL_VERSION,

@@ -12,8 +12,9 @@ import {
   validateArtifactsGetParams,
   validateArtifactsListParams,
 } from "../../../packages/gateway-protocol/src/index.js";
-import { resolveDefaultAgentId } from "../../agents/agent-scope.js";
+import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { root } from "../../infra/fs-safe.js";
 import {
   normalizeAgentId,
   parseAgentSessionKey,
@@ -36,6 +37,7 @@ type ArtifactDownloadMode = ArtifactSummary["download"]["mode"];
 type ArtifactRecord = ArtifactSummary & {
   data?: string;
   url?: string;
+  workspaceRef?: string;
 };
 
 type ArtifactQuery = {
@@ -198,6 +200,25 @@ function mediaUrlValue(value: unknown): string | undefined {
   return asNonEmptyString(record?.url);
 }
 
+function workspaceArtifactRefValue(block: Record<string, unknown>): string | undefined {
+  const source = asOptionalRecord(block.source);
+  const ref =
+    asNonEmptyString(block.ref) ??
+    asNonEmptyString(block.artifactRef) ??
+    asNonEmptyString(block.url) ??
+    asNonEmptyString(block.openUrl) ??
+    asNonEmptyString(source?.ref) ??
+    asNonEmptyString(source?.artifactRef) ??
+    asNonEmptyString(source?.url);
+  if (!ref || !ref.startsWith("artifacts/") || ref.includes("\\") || ref.includes("\0")) {
+    return undefined;
+  }
+  const segments = ref.split("/");
+  return segments.some((segment) => !segment || segment === "." || segment === "..")
+    ? undefined
+    : ref;
+}
+
 function isSafeDownloadUrl(value: string): boolean {
   const trimmed = value.trim();
   if (!trimmed || /^data:/i.test(trimmed)) {
@@ -259,6 +280,7 @@ function resolveBlockDownload(
   mode: ArtifactDownloadMode;
   data?: string;
   url?: string;
+  workspaceRef?: string;
   mimeType?: string;
   sizeBytes?: number;
 } {
@@ -270,6 +292,7 @@ function resolveBlockDownload(
   const source = asOptionalRecord(block.source);
   const sourceData = asNonEmptyString(source?.data);
   const sourceUrl = asNonEmptyString(source?.url);
+  const workspaceRef = workspaceArtifactRefValue(block);
   const dataUrl = [url, sourceUrl, imageUrl, audioUrl, data, content, sourceData].find(
     (value) => typeof value === "string" && /^data:/i.test(value),
   );
@@ -288,10 +311,14 @@ function resolveBlockDownload(
     asNonEmptyString(source?.mimeType) ??
     (dataUrl ? mimeFromDataUrl(dataUrl) : undefined);
   const explicitSize = block.sizeBytes ?? source?.sizeBytes;
-  const sizeBytes =
+  const explicitSizeBytes =
     typeof explicitSize === "number" && Number.isFinite(explicitSize) && explicitSize >= 0
       ? Math.floor(explicitSize)
-      : estimateBase64Size(base64);
+      : undefined;
+  if (workspaceRef) {
+    return { mode: "bytes", workspaceRef, mimeType, sizeBytes: explicitSizeBytes };
+  }
+  const sizeBytes = explicitSizeBytes ?? estimateBase64Size(base64);
   if (base64) {
     return { mode: "bytes", ...(opts.includeData ? { data: base64 } : {}), mimeType, sizeBytes };
   }
@@ -315,7 +342,14 @@ function isArtifactBlock(block: Record<string, unknown>): boolean {
     return true;
   }
   return Boolean(
-    block.url || block.openUrl || block.data || block.source || block.image_url || block.audio_url,
+    block.url ||
+    block.openUrl ||
+    block.data ||
+    block.source ||
+    block.ref ||
+    block.artifactRef ||
+    block.image_url ||
+    block.audio_url,
   );
 }
 
@@ -397,6 +431,7 @@ function collectArtifactsFromMessage(params: {
       download: { mode: download.mode },
       ...(download.data ? { data: download.data } : {}),
       ...(download.url ? { url: download.url } : {}),
+      ...(download.workspaceRef ? { workspaceRef: download.workspaceRef } : {}),
     };
     params.artifacts.push(summary);
   }
@@ -449,12 +484,16 @@ async function loadArtifacts(
   query: ArtifactQuery,
   cfg?: OpenClawConfig,
   opts: ArtifactCollectionOptions = {},
-): Promise<{ artifacts: ArtifactRecord[]; sessionKey?: string }> {
+): Promise<{ artifacts: ArtifactRecord[]; sessionKey?: string; agentId?: string }> {
   const resolved = resolveQuerySession(query, cfg);
   if (!resolved) {
     return { artifacts: [] };
   }
   const { sessionKey } = resolved;
+  const artifactAgentId =
+    resolved.agentId ??
+    resolveRequesterSessionAgentId(sessionKey, cfg) ??
+    resolveDefaultAgentId(cfg ?? {});
   const scopedGlobalAgentId =
     cfg?.session?.scope === "global" && sessionKey === "global" ? resolved.agentId : undefined;
   const { storePath, entry } = scopedGlobalAgentId
@@ -462,7 +501,7 @@ async function loadArtifacts(
     : loadSessionEntry(sessionKey);
   const sessionId = entry?.sessionId;
   if (!sessionId || !storePath) {
-    return { sessionKey, artifacts: [] };
+    return { sessionKey, agentId: artifactAgentId, artifacts: [] };
   }
   const artifacts: ArtifactRecord[] = [];
   await visitSessionMessagesAsync(
@@ -489,6 +528,7 @@ async function loadArtifacts(
   );
   return {
     sessionKey,
+    agentId: artifactAgentId,
     artifacts,
   };
 }
@@ -517,14 +557,33 @@ async function findArtifact(
   sessionKey?: string;
 }> {
   const loaded = await loadArtifacts(params, cfg, opts);
+  let artifact = loaded.artifacts.find((candidate) => candidate.id === params.artifactId);
+  if (artifact?.workspaceRef && opts.downloadArtifactId && loaded.agentId) {
+    const workspaceDir = resolveAgentWorkspaceDir(cfg ?? {}, loaded.agentId);
+    try {
+      const workspaceRoot = await root(workspaceDir, {
+        hardlinks: "reject",
+        symlinks: "reject",
+      });
+      const safeRead = await workspaceRoot.read(artifact.workspaceRef);
+      artifact = {
+        ...artifact,
+        data: safeRead.buffer.toString("base64"),
+        sizeBytes: safeRead.stat.size,
+      };
+    } catch {
+      // A workspace ref never falls through to an external archive or path alias.
+      artifact = { ...artifact, download: { mode: "unsupported" } };
+    }
+  }
   return {
     sessionKey: loaded.sessionKey,
-    artifact: loaded.artifacts.find((artifact) => artifact.id === params.artifactId),
+    artifact,
   };
 }
 
 function toSummary(artifact: ArtifactRecord): ArtifactSummary {
-  const { data: _dataValue, url: _url, ...summary } = artifact;
+  const { data: _dataValue, url: _url, workspaceRef: _workspaceRef, ...summary } = artifact;
   return summary;
 }
 

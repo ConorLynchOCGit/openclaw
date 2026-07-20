@@ -1,6 +1,9 @@
 // Artifact method tests cover collection from transcript messages, run/task
 // session lookup, list/get/download responses, and validation errors.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { withTempDir } from "../../test-helpers/temp-dir.js";
 import { expectRecordFields } from "../test-helpers.assertions.js";
 import { artifactsHandlers, collectArtifactsFromMessages } from "./artifacts.js";
 
@@ -195,6 +198,10 @@ function expectArtifactScopeNotFound(
 }
 
 describe("artifacts RPC handlers", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     hoisted.resolveSessionKeyForRun.mockReset();
@@ -342,6 +349,139 @@ describe("artifacts RPC handlers", () => {
     });
     expectFields(downloadPayload.artifact, { id: artifactId });
   });
+
+  it("downloads workspace refs from the native workspace without archive shadowing", async () => {
+    await withTempDir({ prefix: "openclaw-artifact-workspace-" }, async (rootDir) => {
+      const workspaceDir = path.join(rootDir, "workspace");
+      const operationalDir = path.join(rootDir, "operational-artifacts");
+      const nestedSourceDir = path.join(rootDir, "workspace", "src", "openclaw");
+      const ref = "artifacts/business-ops/report.json";
+      await Promise.all([
+        fs.mkdir(path.join(workspaceDir, "artifacts", "business-ops"), { recursive: true }),
+        fs.mkdir(path.join(operationalDir, "artifacts", "business-ops"), { recursive: true }),
+        fs.mkdir(path.join(nestedSourceDir, "artifacts", "business-ops"), { recursive: true }),
+      ]);
+      await Promise.all([
+        fs.writeFile(path.join(workspaceDir, ref), "workspace-evidence\n", "utf8"),
+        fs.writeFile(path.join(operationalDir, ref), "operational-shadow\n", "utf8"),
+        fs.writeFile(path.join(nestedSourceDir, ref), "nested-source-shadow\n", "utf8"),
+      ]);
+      vi.stubEnv("OPENCLAW_HOME", rootDir);
+      vi.stubEnv("OPENCLAW_STATE_DIR", path.join(rootDir, "state"));
+      vi.stubEnv("OPENCLAW_CONFIG_PATH", path.join(rootDir, "state", "openclaw.json"));
+      vi.stubEnv("OPENCLAW_WORKSPACE_DIR", workspaceDir);
+      vi.stubEnv("OPENCLAW_WORKSPACE", nestedSourceDir);
+      vi.stubEnv("OPENCLAW_ARTIFACTS_DIR", operationalDir);
+      mockedMessages([
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "file",
+              ref,
+              data: Buffer.from("inline-shadow\n", "utf8").toString("base64"),
+              mimeType: "application/json",
+              title: "report.json",
+            },
+          ],
+          __openclaw: { seq: 7 },
+        },
+      ]);
+
+      const list = await listArtifacts(
+        { sessionKey: "agent:main:main" },
+        { id: "workspace-ref-list", context: runtimeContext({}) },
+      );
+      const artifact = expectFirstArtifact(list.calls);
+      expectFields(artifact, {
+        title: "report.json",
+        mimeType: "application/json",
+        download: { mode: "bytes" },
+      });
+      expect(artifact).not.toHaveProperty("workspaceRef");
+      const artifactId = requireNonEmptyString(artifact?.id, "expected workspace artifact id");
+
+      const download = await downloadArtifact(
+        { sessionKey: "agent:main:main", artifactId },
+        { id: "workspace-ref-download", context: runtimeContext({}) },
+      );
+      const payload = expectOkPayload(download.calls) as { data?: string };
+      expect(Buffer.from(payload.data ?? "", "base64").toString("utf8")).toBe(
+        "workspace-evidence\n",
+      );
+    });
+  });
+
+  it("does not treat absolute, nested-source, or traversing paths as workspace refs", () => {
+    const refs = [
+      "/srv/openclaw-next/artifacts/business-ops/report.json",
+      "/home/node/.openclaw/workspace/artifacts/business-ops/report.json",
+      "workspace/src/openclaw/artifacts/business-ops/report.json",
+      "artifacts/../operational/report.json",
+      "artifacts/./business-ops/report.json",
+      "artifacts//business-ops/report.json",
+      "artifacts\\business-ops\\report.json",
+    ];
+    const artifacts = collectArtifactsFromMessages({
+      sessionKey: "agent:main:main",
+      messages: [
+        {
+          role: "assistant",
+          content: refs.map((ref, index) => ({ type: "file", ref, title: `report-${index}.json` })),
+          __openclaw: { seq: 8 },
+        },
+      ],
+    });
+
+    expect(artifacts).toHaveLength(refs.length);
+    expect(artifacts.map((artifact) => artifact.download.mode)).toEqual(
+      refs.map(() => "unsupported"),
+    );
+  });
+
+  it.runIf(process.platform !== "win32")(
+    "rejects workspace artifact symlinks instead of following them to an archive",
+    async () => {
+      await withTempDir({ prefix: "openclaw-artifact-symlink-" }, async (rootDir) => {
+        const workspaceDir = path.join(rootDir, "workspace");
+        const operationalDir = path.join(rootDir, "operational-artifacts");
+        const ref = "artifacts/business-ops/report.json";
+        await fs.mkdir(workspaceDir, { recursive: true });
+        await fs.mkdir(path.join(operationalDir, "business-ops"), { recursive: true });
+        await fs.writeFile(
+          path.join(operationalDir, "business-ops", "report.json"),
+          "operational-only\n",
+          "utf8",
+        );
+        await fs.symlink(operationalDir, path.join(workspaceDir, "artifacts"), "dir");
+        vi.stubEnv("OPENCLAW_WORKSPACE_DIR", workspaceDir);
+        mockedMessages([
+          {
+            role: "assistant",
+            content: [{ type: "file", ref, title: "report.json" }],
+            __openclaw: { seq: 9 },
+          },
+        ]);
+        const listed = await listArtifacts(
+          { sessionKey: "agent:main:main" },
+          { id: "symlink-list", context: runtimeContext({}) },
+        );
+        const artifactId = requireNonEmptyString(
+          expectFirstArtifact(listed.calls)?.id,
+          "expected symlink artifact id",
+        );
+
+        const download = await downloadArtifact(
+          { sessionKey: "agent:main:main", artifactId },
+          { id: "symlink-download", context: runtimeContext({}) },
+        );
+        expectFields(expectErrorDetails(download.calls), {
+          type: "artifact_download_unsupported",
+          artifactId,
+        });
+      });
+    },
+  );
 
   it("can scan artifact summaries without retaining inline data", () => {
     const artifacts = collectArtifactsFromMessages({

@@ -61,8 +61,8 @@ function result(data: Record<string, unknown>): XReadResult {
 
 describe("x compliance refresh", () => {
   it("refreshes, replaces, and tombstones active cached IDs without extending retention", async () => {
-    const artifactsDir = await fs.mkdtemp(path.join(os.tmpdir(), "x-compliance-refresh-"));
-    tempDirs.push(artifactsDir);
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "x-compliance-refresh-"));
+    tempDirs.push(workspaceDir);
     let now = 100;
     const cache = createContentCache({ store: memoryStore(), ttlMs: 1_000, now: () => now });
     await cache.put("post:1", { postText: "unchanged" });
@@ -73,7 +73,7 @@ describe("x compliance refresh", () => {
     const summary = await refreshXComplianceCache({
       cache,
       now: () => now,
-      writeEvent: async (input) => await writeComplianceEvent({ input, artifactsDir }),
+      writeEvent: async (input) => await writeComplianceEvent({ input, workspaceDir }),
       transport: {
         posts: {
           exact: async ({ id }) =>
@@ -110,18 +110,22 @@ describe("x compliance refresh", () => {
         compliance: { type: "tombstone", reasonCodes: ["provider-404"] },
       },
     });
-    expect(await fs.readdir(artifactsDir)).toHaveLength(3);
+    expect(
+      await fs.readdir(
+        path.join(workspaceDir, "artifacts", "business-ops", "x-acquisition-manifests-v4"),
+      ),
+    ).toHaveLength(3);
   });
 
   it("does not infer item removal from a provider-wide authorization failure", async () => {
-    const artifactsDir = await fs.mkdtemp(path.join(os.tmpdir(), "x-compliance-auth-"));
-    tempDirs.push(artifactsDir);
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "x-compliance-auth-"));
+    tempDirs.push(workspaceDir);
     const cache = createContentCache({ store: memoryStore(), ttlMs: 1_000, now: () => 100 });
     await cache.put("post:1", { postText: "retain" });
 
     const summary = await refreshXComplianceCache({
       cache,
-      writeEvent: async (input) => await writeComplianceEvent({ input, artifactsDir }),
+      writeEvent: async (input) => await writeComplianceEvent({ input, workspaceDir }),
       transport: {
         posts: {
           exact: async () => {
@@ -140,7 +144,7 @@ describe("x compliance refresh", () => {
       kind: "content",
       record: { postText: "retain" },
     });
-    expect(await fs.readdir(artifactsDir)).toEqual([]);
+    expect(await fs.readdir(workspaceDir)).toEqual([]);
   });
 
   it("keeps the native service single-flight and aborts its in-flight request on stop", async () => {
