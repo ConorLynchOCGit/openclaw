@@ -18,6 +18,7 @@ export type UpdateRestartSentinelMeta = {
   };
   threadId?: string;
   handoffId?: string;
+  acceptedReleaseReceiptId?: string;
   note?: string | null;
   continuationMessage?: string | null;
 };
@@ -50,6 +51,9 @@ export function buildUpdateRestartSentinelPayload(params: {
       mode: result.mode,
       ...(result.root ? { root: result.root } : {}),
       ...(meta.handoffId ? { handoffId: meta.handoffId } : {}),
+      ...(meta.acceptedReleaseReceiptId
+        ? { acceptedReleaseReceiptId: meta.acceptedReleaseReceiptId }
+        : {}),
       before: result.before ?? null,
       after: result.after ?? null,
       steps: result.steps.map((step) => ({

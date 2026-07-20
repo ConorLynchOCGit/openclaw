@@ -1,0 +1,27 @@
+{
+  "name": "@openclaw/talk-voice",
+  "version": "2026.6.6",
+  "private": true,
+  "description": "OpenClaw talk voice plugin",
+  "type": "module",
+  "devDependencies": {
+    "@openclaw/plugin-sdk": "workspace:*",
+    "openclaw": "2026.5.28"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.6.6"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
+  "openclaw": {
+    "compat": {
+      "pluginApi": ">=2026.6.6"
+    },
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

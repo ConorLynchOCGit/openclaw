@@ -5,14 +5,25 @@
   "description": "Read-only X source transport, compliant evidence, and bounded marketing-intelligence primitives",
   "type": "module",
   "dependencies": {
-    "@openclaw/agency-data": "workspace:*",
     "@xdevplatform/xdk": "0.5.0",
     "typebox": "1.1.39"
   },
   "devDependencies": {
+    "@openclaw/agency-data": "workspace:*",
     "@openclaw/plugin-sdk": "workspace:*"
   },
+  "peerDependencies": {
+    "@openclaw/agency-data": "2026.6.6"
+  },
+  "peerDependenciesMeta": {
+    "@openclaw/agency-data": {
+      "optional": true
+    }
+  },
   "openclaw": {
+    "compat": {
+      "pluginApi": ">=2026.6.6"
+    },
     "extensions": [
       "./index.ts"
     ]

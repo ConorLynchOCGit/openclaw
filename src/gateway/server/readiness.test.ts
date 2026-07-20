@@ -69,6 +69,7 @@ function createReadinessHarness(params: {
   getStartupPending?: () => boolean;
   getStartupPendingReason?: Parameters<typeof createReadinessChecker>[0]["getStartupPendingReason"];
   getEventLoopHealth?: Parameters<typeof createReadinessChecker>[0]["getEventLoopHealth"];
+  getReleaseReadiness?: Parameters<typeof createReadinessChecker>[0]["getReleaseReadiness"];
   shouldSkipChannelReadiness?: Parameters<
     typeof createReadinessChecker
   >[0]["shouldSkipChannelReadiness"];
@@ -84,6 +85,7 @@ function createReadinessHarness(params: {
       getStartupPending: params.getStartupPending,
       getStartupPendingReason: params.getStartupPendingReason,
       getEventLoopHealth: params.getEventLoopHealth,
+      getReleaseReadiness: params.getReleaseReadiness,
       shouldSkipChannelReadiness: params.shouldSkipChannelReadiness,
       cacheTtlMs: params.cacheTtlMs,
     }),
@@ -234,6 +236,17 @@ describe("createReadinessChecker", () => {
 
       expect(readiness()).toEqual(readySnapshot());
       expect(manager.getRuntimeSnapshot).not.toHaveBeenCalled();
+    });
+  });
+
+  it("keeps readiness red when the loaded release generation is not ready", () => {
+    withReadinessClock(() => {
+      const { readiness } = createReadinessHarness({
+        getReleaseReadiness: () => ({ ready: false }),
+        shouldSkipChannelReadiness: () => true,
+      });
+
+      expect(readiness()).toEqual(failingSnapshot(["release"]));
     });
   });
 

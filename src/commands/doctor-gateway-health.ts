@@ -77,6 +77,17 @@ export async function checkGatewayHealth(params: {
     });
     healthOk = true;
     noteCliGatewayVersionSkew(status);
+    if (status.degradedPlugins && status.degradedPlugins.length > 0) {
+      note(
+        status.degradedPlugins
+          .map(
+            (plugin) =>
+              `- ${plugin.pluginId} (${plugin.diagnostic.reason}): ${plugin.diagnostic.detail}`,
+          )
+          .join("\n"),
+        "Plugins configured unavailable",
+      );
+    }
     try {
       const statusLocal = await callGateway({
         method: "channels.status",

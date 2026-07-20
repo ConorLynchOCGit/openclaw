@@ -1,5 +1,9 @@
 // Doctor config preflight tests cover state migration preflight behavior before config repair.
 import { describe, expect, it, vi } from "vitest";
+import {
+  listActiveDegradedPlugins,
+  setActiveDegradedPlugins,
+} from "../plugins/runtime-degraded-state.js";
 
 const autoMigrateLegacyStateDir = vi.hoisted(() =>
   vi.fn(async () => ({ migrated: false, skipped: false, changes: [], warnings: [] })),
@@ -25,6 +29,10 @@ const readConfigFileSnapshot = vi.hoisted(() =>
   })),
 );
 const note = vi.hoisted(() => vi.fn());
+const loadInstalledPluginIndexInstallRecordsSync = vi.hoisted(() => vi.fn(() => ({})));
+const runActivePluginPayloadSmokeCheck = vi.hoisted(() =>
+  vi.fn(async () => ({ checked: [] as string[], failures: [] as Array<Record<string, unknown>> })),
+);
 
 vi.mock("./doctor-state-migrations.js", () => ({
   autoMigrateLegacyState,
@@ -44,7 +52,16 @@ vi.mock("../config/io.js", () => ({
 
 vi.mock("../../packages/terminal-core/src/note.js", () => ({ note }));
 
-const { runDoctorConfigPreflight } = await import("./doctor-config-preflight.js");
+vi.mock("../plugins/installed-plugin-index-records.js", () => ({
+  loadInstalledPluginIndexInstallRecordsSync,
+}));
+
+vi.mock("../cli/update-cli/active-plugin-payload-validation.js", () => ({
+  runActivePluginPayloadSmokeCheck,
+}));
+
+const { refreshStartupPluginQuarantine, runDoctorConfigPreflight } =
+  await import("./doctor-config-preflight.js");
 
 describe("runDoctorConfigPreflight state migration", () => {
   it("runs full state migrations after reading the config snapshot", async () => {
@@ -104,5 +121,50 @@ describe("runDoctorConfigPreflight state migration", () => {
     expect(repairLegacyCronStoreWithoutPrompt).not.toHaveBeenCalled();
     expect(autoMigrateLegacyTaskStateSidecars).toHaveBeenCalledWith({ env: process.env });
     expect(note).toHaveBeenCalledWith("- task-imported", "Doctor changes");
+  });
+
+  it("refreshes startup quarantine with static verification only", async () => {
+    vi.clearAllMocks();
+    setActiveDegradedPlugins([]);
+    const cfg = {
+      plugins: { entries: { discord: { enabled: true } } },
+    };
+    const records = {
+      discord: { source: "npm" as const, installPath: "/plugins/discord" },
+    };
+    loadInstalledPluginIndexInstallRecordsSync.mockReturnValueOnce(records);
+    runActivePluginPayloadSmokeCheck.mockResolvedValueOnce({
+      checked: ["discord"],
+      failures: [
+        {
+          pluginId: "discord",
+          installPath: "/plugins/discord",
+          reason: "missing-main-entry",
+          detail: "dist/index.js is missing",
+        },
+      ],
+    });
+
+    const result = await refreshStartupPluginQuarantine({ cfg, env: { OPENCLAW_STATE_DIR: "/s" } });
+
+    expect(loadInstalledPluginIndexInstallRecordsSync).toHaveBeenCalledWith({
+      env: { OPENCLAW_STATE_DIR: "/s" },
+    });
+    expect(runActivePluginPayloadSmokeCheck).toHaveBeenCalledWith({
+      cfg,
+      records,
+      env: { OPENCLAW_STATE_DIR: "/s" },
+    });
+    expect(result.blockingFailures).toEqual([]);
+    expect(listActiveDegradedPlugins()).toMatchObject([
+      {
+        pluginId: "discord",
+        state: "configured-unavailable",
+        diagnostic: { reason: "missing-main-entry" },
+      },
+    ]);
+    expect(autoMigrateLegacyState).not.toHaveBeenCalled();
+    expect(repairLegacyCronStoreWithoutPrompt).not.toHaveBeenCalled();
+    setActiveDegradedPlugins([]);
   });
 });

@@ -61,6 +61,33 @@ describe("docker build cache layout", () => {
     }
   });
 
+  it("selects package-installed runtime bytes without duplicating final image layers", async () => {
+    const dockerfile = await readRepoFile("Dockerfile");
+    const acceptedLayout = dockerfile.indexOf(
+      "FROM base-runtime AS accepted-release-runtime-layout",
+    );
+    const selectedLayout = dockerfile.indexOf(
+      "FROM ${OPENCLAW_RUNTIME_ASSETS_STAGE} AS selected-runtime-layout",
+    );
+    const finalRuntime = dockerfile.indexOf("# ── Stage 3: Runtime");
+
+    expect(dockerfile).toContain("ARG OPENCLAW_RUNTIME_ASSETS_STAGE=source-runtime-layout");
+    expect(dockerfile).toContain("FROM scratch AS openclaw_package");
+    expect(dockerfile).toContain("FROM scratch AS openclaw_release_store");
+    expect(dockerfile).toContain(
+      "COPY --from=openclaw_package openclaw-current.tgz /tmp/openclaw-current.tgz",
+    );
+    expect(dockerfile).toContain(
+      "COPY --from=openclaw_release_store . /opt/openclaw/release-store/",
+    );
+    expect(dockerfile).toContain(
+      "COPY --from=selected-runtime-layout --chown=node:node /app/. /app/",
+    );
+    expect(acceptedLayout).toBeGreaterThan(-1);
+    expect(selectedLayout).toBeGreaterThan(acceptedLayout);
+    expect(finalRuntime).toBeGreaterThan(selectedLayout);
+  });
+
   it("uses pnpm cache mounts in Dockerfiles that install repo dependencies", async () => {
     for (const path of [
       "Dockerfile",

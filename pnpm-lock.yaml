@@ -606,6 +606,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
+  extensions/device-pair:
+    devDependencies:
+      '@openclaw/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+      openclaw:
+        specifier: 2026.5.28
+        version: 2026.5.28
+
   extensions/diagnostics-otel:
     dependencies:
       '@opentelemetry/api':
@@ -1298,6 +1307,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
 
+  extensions/phone-control:
+    devDependencies:
+      '@openclaw/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+      openclaw:
+        specifier: 2026.5.28
+        version: 2026.5.28
+
   extensions/pixverse:
     devDependencies:
       '@openclaw/plugin-sdk':
@@ -1516,6 +1534,15 @@ importers:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
+
+  extensions/talk-voice:
+    devDependencies:
+      '@openclaw/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+      openclaw:
+        specifier: 2026.5.28
+        version: 2026.5.28
 
   extensions/tavily:
     dependencies:
@@ -1745,9 +1772,6 @@ importers:
 
   extensions/x-intelligence:
     dependencies:
-      '@openclaw/agency-data':
-        specifier: workspace:*
-        version: link:../agency-data
       '@xdevplatform/xdk':
         specifier: 0.5.0
         version: 0.5.0(node-fetch@3.3.2)
@@ -1755,6 +1779,9 @@ importers:
         specifier: 1.1.39
         version: 1.1.39
     devDependencies:
+      '@openclaw/agency-data':
+        specifier: workspace:*
+        version: link:../agency-data
       '@openclaw/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk

@@ -5,6 +5,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  ACCEPTED_RELEASE_RECEIPT_ID_ENV,
+  RELEASE_STORE_ROOT_ENV,
+} from "./accepted-release-receipt.js";
 import { SUPERVISOR_HINT_ENV_VARS } from "./supervisor-markers.js";
 import { CONTROL_PLANE_UPDATE_SENTINEL_META_ENV } from "./update-control-plane-sentinel.js";
 import {
@@ -117,8 +121,24 @@ async function runHelperWithExistingSentinel(params: {
 }
 
 describe("managed service update handoff", () => {
-  it("strips process supervisor hints while preserving service identity for the CLI handoff", async () => {
-    const { startManagedServiceUpdateHandoff, stripSupervisorHintEnv } =
+  it("keeps accepted receipt ids out of command labels and rejects channel mixing", async () => {
+    const { formatManagedServiceUpdateCommand } =
+      await import("./update-managed-service-handoff.js");
+    const acceptedReleaseReceiptId = "a".repeat(64);
+
+    expect(formatManagedServiceUpdateCommand({ acceptedReleaseReceiptId })).toBe(
+      "openclaw update --yes",
+    );
+    expect(() =>
+      formatManagedServiceUpdateCommand({
+        acceptedReleaseReceiptId,
+        channel: "stable",
+      }),
+    ).toThrow("cannot include an update channel");
+  });
+
+  it("uses a default-deny environment while preserving required host identity", async () => {
+    const { buildManagedServiceUpdateEnv, startManagedServiceUpdateHandoff } =
       await import("./update-managed-service-handoff.js");
     const serviceIdentityEnv = {
       OPENCLAW_LAUNCHD_LABEL: "com.example.openclaw.test",
@@ -128,14 +148,21 @@ describe("managed service update handoff", () => {
     const supervisorEnv = Object.fromEntries(
       SUPERVISOR_HINT_ENV_VARS.map((key) => [key, "supervised"]),
     ) as NodeJS.ProcessEnv;
-    const stripped = stripSupervisorHintEnv({
+    const stripped = buildManagedServiceUpdateEnv({
       ...supervisorEnv,
       ...serviceIdentityEnv,
+      PATH: "/usr/bin",
+      [RELEASE_STORE_ROOT_ENV]: "/srv/openclaw-next/releases",
+      OPENCLAW_UPDATE_DEV_TARGET_REF: "refs/heads/native-dev",
+      OPENCLAW_GATEWAY_TOKEN: "must-not-leak",
+      NPM_TOKEN: "must-not-leak",
       KEEP_ME: "1",
     });
     expect(stripped).toEqual({
+      PATH: "/usr/bin",
+      [RELEASE_STORE_ROOT_ENV]: "/srv/openclaw-next/releases",
+      OPENCLAW_UPDATE_DEV_TARGET_REF: "refs/heads/native-dev",
       ...serviceIdentityEnv,
-      KEEP_ME: "1",
     });
 
     const result = await startManagedServiceUpdateHandoff({
@@ -148,8 +175,14 @@ describe("managed service update handoff", () => {
       env: {
         ...supervisorEnv,
         ...serviceIdentityEnv,
+        PATH: "/usr/bin",
+        [RELEASE_STORE_ROOT_ENV]: "/srv/openclaw-next/releases",
+        OPENCLAW_UPDATE_DEV_TARGET_REF: "refs/heads/native-dev",
+        OPENCLAW_GATEWAY_TOKEN: "must-not-leak",
+        NPM_TOKEN: "must-not-leak",
         KEEP_ME: "1",
       },
+      acceptedReleaseReceiptId: "a".repeat(64),
       meta: {
         sessionKey: "agent:test:webchat:dm:user-123",
         continuationMessage: "continue after restart",
@@ -171,13 +204,19 @@ describe("managed service update handoff", () => {
       cwd?: string;
       metaPath?: string;
       sentinelPath?: string;
+      commandEnv?: NodeJS.ProcessEnv;
     };
     expect(helperParams.metaPath).toMatch(/sentinel-meta\.json$/u);
     expect(helperParams.sentinelPath).toMatch(/restart-sentinel\.json$/u);
     expect(options.cwd).toBe(os.homedir());
     expect(helperParams.cwd).toBe(os.homedir());
     expect(options.detached).toBe(true);
-    expect(options.env.KEEP_ME).toBe("1");
+    expect(options.env.KEEP_ME).toBeUndefined();
+    expect(options.env.OPENCLAW_GATEWAY_TOKEN).toBeUndefined();
+    expect(options.env.NPM_TOKEN).toBeUndefined();
+    expect(options.env[ACCEPTED_RELEASE_RECEIPT_ID_ENV]).toBe("a".repeat(64));
+    expect(options.env.OPENCLAW_UPDATE_DEV_TARGET_REF).toBe("refs/heads/native-dev");
+    expect(helperParams.commandEnv).toEqual(options.env);
     for (const [key, value] of Object.entries(serviceIdentityEnv)) {
       expect(options.env[key]).toBe(value);
     }
@@ -188,6 +227,10 @@ describe("managed service update handoff", () => {
     }
     expect(options.env.OPENCLAW_UPDATE_RUN_HANDOFF).toBe("1");
     expect(options.env[CONTROL_PLANE_UPDATE_SENTINEL_META_ENV]).toMatch(/sentinel-meta\.json$/u);
+    const metaFile = JSON.parse(await fs.readFile(helperParams.metaPath ?? "", "utf-8")) as {
+      meta?: { acceptedReleaseReceiptId?: string };
+    };
+    expect(metaFile.meta?.acceptedReleaseReceiptId).toBe("a".repeat(64));
   });
 
   it("launches systemd handoffs through a transient user scope", async () => {
@@ -260,7 +303,7 @@ describe("managed service update handoff", () => {
     expect(options.detached).toBe(true);
     expect(options.env.OPENCLAW_SYSTEMD_UNIT).toBe("openclaw-gateway.service");
     expect(options.env.INVOCATION_ID).toBeUndefined();
-    expect(options.env.KEEP_ME).toBe("1");
+    expect(options.env.KEEP_ME).toBeUndefined();
     expect(options.env.OPENCLAW_UPDATE_RUN_HANDOFF).toBe("1");
   });
 

@@ -2,6 +2,11 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import {
+  copyAcceptedReleaseArtifactToStage,
+  type AcceptedReleaseArtifact,
+  verifyStagedAcceptedReleaseArtifact,
+} from "./accepted-release-receipt.js";
 import { pathExists } from "./fs-safe.js";
 import { readPackageVersion } from "./package-json.js";
 import { movePathWithCopyFallback } from "./replace-file.js";
@@ -48,6 +53,14 @@ type StagedNpmInstall = {
   layout: NpmGlobalPrefixLayout;
   packageRoot: string;
   installTarget: ResolvedGlobalInstallTarget;
+};
+
+export type AcceptedLocalPackageUpdate = {
+  artifact: AcceptedReleaseArtifact;
+  releaseStoreRoot: string;
+  assertPredecessor: (packageRoot: string) => Promise<void>;
+  assertInstallPlan?: (archivePath: string) => Promise<void>;
+  assertCandidate: (packageRoot: string) => Promise<void>;
 };
 
 type NpmBinShimBackup = {
@@ -319,6 +332,76 @@ async function cleanupStagedNpmInstall(stage: StagedNpmInstall | null): Promise<
   await removePathBestEffort(stage.prefix);
 }
 
+function acceptedReleaseGuardStep(params: {
+  name: "accepted release preinstall verify" | "accepted release candidate verify";
+  cwd: string;
+  startedAt: number;
+  error?: unknown;
+}): PackageUpdateStepResult {
+  return {
+    name: params.name,
+    command:
+      params.name === "accepted release preinstall verify"
+        ? "verify accepted artifact and predecessor CAS"
+        : "verify accepted candidate manifest",
+    cwd: params.cwd,
+    durationMs: Date.now() - params.startedAt,
+    exitCode: params.error === undefined ? 0 : 1,
+    stdoutTail: params.error === undefined ? "verified" : null,
+    stderrTail: params.error === undefined ? null : formatError(params.error),
+  };
+}
+
+async function prepareAcceptedLocalInstall(params: {
+  accepted: AcceptedLocalPackageUpdate;
+  stage: StagedNpmInstall | null;
+  livePackageRoot: string | null;
+}): Promise<{
+  installSpec: string | null;
+  step: PackageUpdateStepResult;
+}> {
+  const startedAt = Date.now();
+  try {
+    if (!params.stage) {
+      throw new Error("accepted local packages require a clean native npm staging prefix");
+    }
+    if (!params.livePackageRoot) {
+      throw new Error("accepted local packages require an existing predecessor package root");
+    }
+    await params.accepted.assertPredecessor(params.livePackageRoot);
+    const installSpec = await copyAcceptedReleaseArtifactToStage({
+      artifact: params.accepted.artifact,
+      releaseStoreRoot: params.accepted.releaseStoreRoot,
+      stageRoot: params.stage.prefix,
+    });
+    await params.accepted.assertInstallPlan?.(installSpec);
+    await params.accepted.assertPredecessor(params.livePackageRoot);
+    await verifyStagedAcceptedReleaseArtifact({
+      artifact: params.accepted.artifact,
+      stageRoot: params.stage.prefix,
+      filePath: installSpec,
+    });
+    return {
+      installSpec,
+      step: acceptedReleaseGuardStep({
+        name: "accepted release preinstall verify",
+        cwd: params.stage.prefix,
+        startedAt,
+      }),
+    };
+  } catch (error) {
+    return {
+      installSpec: null,
+      step: acceptedReleaseGuardStep({
+        name: "accepted release preinstall verify",
+        cwd: params.stage?.prefix ?? params.livePackageRoot ?? process.cwd(),
+        startedAt,
+        error,
+      }),
+    };
+  }
+}
+
 async function copyPathEntry(source: string, destination: string): Promise<void> {
   const stat = await fs.lstat(source);
   await removePathBestEffort(destination);
@@ -505,6 +588,7 @@ export async function runGlobalPackageUpdateSteps(params: {
   timeoutMs: number;
   env?: NodeJS.ProcessEnv;
   installCwd?: string;
+  acceptedLocalPackage?: AcceptedLocalPackageUpdate;
   postVerifyStep?: (packageRoot: string) => Promise<PackageUpdateStepResult | null>;
 }): Promise<{
   steps: PackageUpdateStepResult[];
@@ -551,6 +635,36 @@ export async function runGlobalPackageUpdateSteps(params: {
       };
     }
 
+    const livePackageRoot =
+      params.installTarget.packageRoot ??
+      params.packageRoot ??
+      (
+        await resolveGlobalInstallTarget({
+          manager: params.installTarget,
+          runCommand: params.runCommand,
+          timeoutMs: params.timeoutMs,
+        })
+      ).packageRoot ??
+      null;
+    let installSpec = preparedSpec.installSpec;
+    if (params.acceptedLocalPackage) {
+      const acceptedInstall = await prepareAcceptedLocalInstall({
+        accepted: params.acceptedLocalPackage,
+        stage: stagedInstall,
+        livePackageRoot,
+      });
+      steps.push(acceptedInstall.step);
+      if (!acceptedInstall.installSpec) {
+        return {
+          steps,
+          verifiedPackageRoot: livePackageRoot,
+          afterVersion: await readPackageVersionIfPresent(livePackageRoot),
+          failedStep: acceptedInstall.step,
+        };
+      }
+      installSpec = acceptedInstall.installSpec;
+    }
+
     const installLocation =
       stagedInstall?.prefix ??
       (installCommandTarget.manager === "pnpm"
@@ -558,12 +672,7 @@ export async function runGlobalPackageUpdateSteps(params: {
         : null);
     const updateStep = await params.runStep({
       name: "global update",
-      argv: globalInstallArgs(
-        installCommandTarget,
-        preparedSpec.installSpec,
-        undefined,
-        installLocation,
-      ),
+      argv: globalInstallArgs(installCommandTarget, installSpec, undefined, installLocation),
       ...installCwd,
       ...installEnv,
       timeoutMs: params.timeoutMs,
@@ -571,7 +680,7 @@ export async function runGlobalPackageUpdateSteps(params: {
 
     steps.push(updateStep);
     let finalInstallStep = updateStep;
-    if (updateStep.exitCode !== 0) {
+    if (updateStep.exitCode !== 0 && !params.acceptedLocalPackage) {
       await cleanupStagedNpmInstall(stagedInstall);
       stagedInstall = null;
       const preparedFallbackInstall = await prepareStagedNpmInstall(
@@ -610,18 +719,6 @@ export async function runGlobalPackageUpdateSteps(params: {
         stagedInstall = null;
       }
     }
-
-    const livePackageRoot =
-      params.installTarget.packageRoot ??
-      params.packageRoot ??
-      (
-        await resolveGlobalInstallTarget({
-          manager: params.installTarget,
-          runCommand: params.runCommand,
-          timeoutMs: params.timeoutMs,
-        })
-      ).packageRoot ??
-      null;
     const verificationPackageRoot = stagedInstall?.packageRoot ?? livePackageRoot;
     let verifiedPackageRoot = livePackageRoot ?? verificationPackageRoot;
 
@@ -631,14 +728,36 @@ export async function runGlobalPackageUpdateSteps(params: {
       if (!stagedInstall) {
         afterVersion = candidateVersion;
       }
-      const expectedVersion = resolveExpectedInstalledVersionFromSpec(
-        params.packageName,
-        params.installSpec,
-      );
+      const expectedVersion =
+        params.acceptedLocalPackage?.artifact.version ??
+        resolveExpectedInstalledVersionFromSpec(params.packageName, params.installSpec);
       const verificationErrors = await collectInstalledGlobalPackageErrors({
         packageRoot: verificationPackageRoot,
         expectedVersion,
       });
+      if (params.acceptedLocalPackage && verificationErrors.length === 0) {
+        const startedAt = Date.now();
+        try {
+          await params.acceptedLocalPackage.assertCandidate(verificationPackageRoot);
+          steps.push(
+            acceptedReleaseGuardStep({
+              name: "accepted release candidate verify",
+              cwd: verificationPackageRoot,
+              startedAt,
+            }),
+          );
+        } catch (error) {
+          steps.push(
+            acceptedReleaseGuardStep({
+              name: "accepted release candidate verify",
+              cwd: verificationPackageRoot,
+              startedAt,
+              error,
+            }),
+          );
+          verificationErrors.push(formatError(error));
+        }
+      }
       if (verificationErrors.length > 0) {
         steps.push({
           name: "global install verify",

@@ -17,6 +17,7 @@ export type PluginBundleFormat = "codex" | "claude" | "cursor";
 /** Diagnostic emitted while discovering or validating plugins. */
 export type PluginDiagnostic = {
   level: "warn" | "error";
+  code?: "channel-setup-failure" | "plugin-verification";
   message: string;
   pluginId?: string;
   source?: string;

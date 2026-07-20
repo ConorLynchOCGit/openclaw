@@ -1,0 +1,183 @@
+#!/usr/bin/env node
+// Emits the one deterministic manifest embedded in a staged core package.
+import { randomUUID } from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import {
+  PROTOTYPE_B_PACKAGE_SHAPE,
+  RELEASE_MANIFEST_FILENAME,
+  releaseManifestDigest,
+  serializeReleaseManifest,
+} from "./lib/release-manifest.mjs";
+
+function usage() {
+  return "usage: node scripts/generate-release-manifest.mjs --input <manifest-input.json> --package-root <staged-package> [--check]";
+}
+
+function readValue(argv, index, option) {
+  const value = argv[index + 1];
+  if (!value || value.startsWith("--")) {
+    throw new Error(`${option} requires a value`);
+  }
+  return value;
+}
+
+export function parseArgs(argv) {
+  let inputPath = "";
+  let packageRoot = "";
+  let check = false;
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--input") {
+      inputPath = readValue(argv, index, arg);
+      index += 1;
+    } else if (arg === "--package-root") {
+      packageRoot = readValue(argv, index, arg);
+      index += 1;
+    } else if (arg === "--check") {
+      check = true;
+    } else {
+      throw new Error(`unknown argument ${arg}\n${usage()}`);
+    }
+  }
+  if (!inputPath || !packageRoot) {
+    throw new Error(usage());
+  }
+  return { inputPath, packageRoot, check };
+}
+
+function requireObject(value, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+  return value;
+}
+
+async function readJson(filePath, label) {
+  try {
+    return JSON.parse(await fs.readFile(filePath, "utf8"));
+  } catch (error) {
+    throw new Error(
+      `${label} is invalid at ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
+}
+
+async function atomicWrite(filePath, bytes) {
+  const temporaryPath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${process.pid}.${randomUUID()}.tmp`,
+  );
+  try {
+    await fs.writeFile(temporaryPath, bytes, { flag: "wx", mode: 0o644 });
+    await fs.rename(temporaryPath, filePath);
+  } finally {
+    await fs.rm(temporaryPath, { force: true });
+  }
+}
+
+function buildPackageJson(packageJson, manifest, digest) {
+  const root = requireObject(packageJson, "package.json");
+  if (root.name !== "openclaw") {
+    throw new Error('staged package.json name must be "openclaw"');
+  }
+  if (root.version !== manifest.package.version) {
+    throw new Error(
+      `staged package version mismatch: package.json=${String(root.version)} manifest=${manifest.package.version}`,
+    );
+  }
+  if (!Array.isArray(root.files) || !root.files.includes(RELEASE_MANIFEST_FILENAME)) {
+    throw new Error(`staged package.json files must include ${RELEASE_MANIFEST_FILENAME}`);
+  }
+  const openclaw = root.openclaw === undefined ? {} : requireObject(root.openclaw, "openclaw");
+  const existingRelease =
+    openclaw.release === undefined ? {} : requireObject(openclaw.release, "openclaw.release");
+  if (
+    existingRelease.packageShape !== undefined &&
+    existingRelease.packageShape !== PROTOTYPE_B_PACKAGE_SHAPE
+  ) {
+    throw new Error(`staged package.json has conflicting openclaw.release.packageShape`);
+  }
+  if (
+    existingRelease.manifestPath !== undefined &&
+    existingRelease.manifestPath !== RELEASE_MANIFEST_FILENAME
+  ) {
+    throw new Error(`staged package.json has conflicting openclaw.release.manifestPath`);
+  }
+  return {
+    ...root,
+    openclaw: {
+      ...openclaw,
+      release: {
+        ...existingRelease,
+        packageShape: PROTOTYPE_B_PACKAGE_SHAPE,
+        manifestPath: RELEASE_MANIFEST_FILENAME,
+        manifestSha256: digest,
+      },
+    },
+  };
+}
+
+export async function embedReleaseManifest(params) {
+  const packageRoot = path.resolve(params.packageRoot);
+  const packageJsonPath = path.join(packageRoot, "package.json");
+  const packageJson = await readJson(packageJsonPath, "staged package.json");
+  const manifestText = serializeReleaseManifest(params.manifest);
+  const manifestBytes = Buffer.from(manifestText, "utf8");
+  const digest = releaseManifestDigest(manifestBytes);
+  const normalizedManifest = JSON.parse(manifestText);
+  const nextPackageJson = buildPackageJson(packageJson, normalizedManifest, digest);
+  const nextPackageJsonBytes = Buffer.from(`${JSON.stringify(nextPackageJson, null, 2)}\n`, "utf8");
+  const manifestPath = path.join(packageRoot, RELEASE_MANIFEST_FILENAME);
+
+  if (params.check) {
+    const [actualManifest, actualPackageJson] = await Promise.all([
+      fs.readFile(manifestPath),
+      readJson(packageJsonPath, "staged package.json"),
+    ]);
+    if (!actualManifest.equals(manifestBytes)) {
+      throw new Error(`embedded ${RELEASE_MANIFEST_FILENAME} does not match generated bytes`);
+    }
+    const release = actualPackageJson.openclaw?.release;
+    if (
+      release?.packageShape !== PROTOTYPE_B_PACKAGE_SHAPE ||
+      release?.manifestPath !== RELEASE_MANIFEST_FILENAME ||
+      release?.manifestSha256 !== digest
+    ) {
+      throw new Error(
+        "staged package.json release-manifest metadata does not match generated bytes",
+      );
+    }
+  } else {
+    await atomicWrite(manifestPath, manifestBytes);
+    await atomicWrite(packageJsonPath, nextPackageJsonBytes);
+  }
+
+  return {
+    releaseManifestDigest: digest,
+    manifestPath,
+    packageVersion: normalizedManifest.package.version,
+    packageShape: normalizedManifest.package.shape,
+  };
+}
+
+export async function generateEmbeddedReleaseManifest(params) {
+  const manifest = await readJson(path.resolve(params.inputPath), "release manifest input");
+  return await embedReleaseManifest({
+    packageRoot: params.packageRoot,
+    manifest,
+    check: params.check,
+  });
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  try {
+    const result = await generateEmbeddedReleaseManifest(parseArgs(process.argv.slice(2)));
+    console.log(JSON.stringify(result));
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
+}

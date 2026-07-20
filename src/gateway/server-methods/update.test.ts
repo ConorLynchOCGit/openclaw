@@ -24,6 +24,7 @@ const isRestartEnabledMock = vi.fn(() => true);
 const readPackageVersionMock = vi.fn(async () => "1.0.0");
 const detectRespawnSupervisorMock = vi.fn<() => RespawnSupervisor | null>(() => null);
 const normalizeUpdateChannelMock = vi.fn((): "stable" | "beta" | "dev" | null => null);
+const packageDeclaresReleaseManifestMock = vi.fn(() => false);
 const startManagedServiceUpdateHandoffMock = vi.fn(async () => ({
   status: "started" as const,
   pid: 12345,
@@ -110,6 +111,10 @@ vi.mock("../../infra/update-runner.js", () => ({
   runGatewayUpdate: runGatewayUpdateMock,
 }));
 
+vi.mock("../../release-manifest-readback.js", () => ({
+  packageDeclaresReleaseManifest: packageDeclaresReleaseManifestMock,
+}));
+
 vi.mock("../../../packages/gateway-protocol/src/index.js", () => ({
   validateUpdateStatusParams: () => true,
   validateUpdateRunParams: () => true,
@@ -135,6 +140,7 @@ vi.mock("../../infra/update-managed-service-handoff.js", () => ({
   formatManagedServiceUpdateCommand: (params?: {
     timeoutMs?: number;
     channel?: "stable" | "beta" | "dev";
+    acceptedReleaseReceiptId?: string;
   }) =>
     params?.timeoutMs
       ? `openclaw update --yes --timeout ${Math.ceil(params.timeoutMs / 1000)}`
@@ -158,6 +164,8 @@ beforeEach(() => {
   readPackageVersionMock.mockResolvedValue("1.0.0");
   normalizeUpdateChannelMock.mockReset();
   normalizeUpdateChannelMock.mockReturnValue(null);
+  packageDeclaresReleaseManifestMock.mockReset();
+  packageDeclaresReleaseManifestMock.mockReturnValue(false);
   detectRespawnSupervisorMock.mockReset();
   detectRespawnSupervisorMock.mockReturnValue(null);
   runGatewayUpdateMock.mockClear();
@@ -456,6 +464,61 @@ describe("update.run restart scheduling", () => {
         }),
       }),
     );
+  });
+
+  it("passes the typed accepted receipt to handoff without inheriting the configured channel", async () => {
+    const acceptedReleaseReceiptId = "a".repeat(64);
+    normalizeUpdateChannelMock.mockReturnValueOnce("stable");
+    detectRespawnSupervisorMock.mockReturnValueOnce("launchd");
+    mockGlobalInstallSurface();
+
+    await withProcessEnv(
+      {
+        OPENCLAW_LAUNCHD_LABEL: "ai.openclaw.gateway",
+        OPENCLAW_ACCEPTED_RELEASE_RECEIPT_ID: "b".repeat(64),
+      },
+      () => invokeUpdateRun({ acceptedReleaseReceiptId }),
+    );
+
+    expect(runGatewayUpdateMock).not.toHaveBeenCalled();
+    expect(startManagedServiceUpdateHandoffMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        acceptedReleaseReceiptId,
+        supervisor: "launchd",
+      }),
+    );
+    const [handoffParams] = firstMockCall(
+      startManagedServiceUpdateHandoffMock,
+      "accepted release handoff",
+    ) as [{ channel?: string; acceptedReleaseReceiptId?: string }];
+    expect(handoffParams).not.toHaveProperty("channel");
+    expect(handoffParams.acceptedReleaseReceiptId).toBe(acceptedReleaseReceiptId);
+    expect(readCapturedPayload().stats).toEqual(
+      expect.objectContaining({ acceptedReleaseReceiptId }),
+    );
+  });
+
+  it("denies the ordinary update route for a release-gated package", async () => {
+    packageDeclaresReleaseManifestMock.mockReturnValueOnce(true);
+    detectRespawnSupervisorMock.mockReturnValueOnce("launchd");
+    mockGlobalInstallSurface();
+
+    const payload = await captureUpdateRunPayload();
+
+    expect(runGatewayUpdateMock).not.toHaveBeenCalled();
+    expect(startManagedServiceUpdateHandoffMock).not.toHaveBeenCalled();
+    expect(scheduleGatewaySigusr1RestartMock).not.toHaveBeenCalled();
+    expect(payload?.result?.reason).toBe("accepted-release-required");
+  });
+
+  it("does not run an accepted receipt through the ordinary in-process update path", async () => {
+    mockGitInstallSurface("/tmp/openclaw-git");
+
+    const payload = await captureUpdateRunPayload({ acceptedReleaseReceiptId: "a".repeat(64) });
+
+    expect(runGatewayUpdateMock).not.toHaveBeenCalled();
+    expect(startManagedServiceUpdateHandoffMock).not.toHaveBeenCalled();
+    expect(payload?.result?.reason).toBe("managed-service-handoff-unavailable");
   });
 
   it("keeps a startup grace before restarting after systemd handoff spawn", async () => {

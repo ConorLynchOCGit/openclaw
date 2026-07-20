@@ -96,6 +96,7 @@ import {
   formatMissingPluginRegisterError,
   formatPluginFailureSummary,
   markPluginActivationDisabled,
+  recordPluginConfiguredUnavailable,
   recordPluginError,
 } from "./loader-records.js";
 import {
@@ -139,6 +140,11 @@ import { installOpenClawPluginSdkNativeResolver } from "./plugin-sdk-native-reso
 import { createEmptyPluginRegistry } from "./registry-empty.js";
 import type { PluginRegistryParams } from "./registry-types.js";
 import { createPluginRegistry, type PluginRecord, type PluginRegistry } from "./registry.js";
+import {
+  clearActiveDegradedPlugin,
+  degradedPluginMatchesRoot,
+  findActiveDegradedPlugin,
+} from "./runtime-degraded-state.js";
 import {
   getActivePluginRegistry,
   getActivePluginRegistryKey,
@@ -2085,6 +2091,23 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
         });
       };
       const pluginRoot = safeRealpathOrResolve(candidate.rootDir);
+      const degradedPluginForId = findActiveDegradedPlugin(pluginId);
+      const degradedPlugin =
+        degradedPluginForId && degradedPluginMatchesRoot(degradedPluginForId, pluginRoot)
+          ? degradedPluginForId
+          : undefined;
+      const clearMismatchedQuarantineAfterLoad =
+        enableState.enabled && Boolean(degradedPluginForId) && !degradedPlugin;
+      if (enableState.enabled && degradedPlugin) {
+        recordPluginConfiguredUnavailable({
+          registry,
+          record,
+          seenIds,
+          origin: candidate.origin,
+          degradedPlugin,
+        });
+        continue;
+      }
       const runtimeCandidateEntry = resolvePreferredBuiltRuntimeArtifact({
         source: candidate.source,
         rootDir: pluginRoot,
@@ -2716,6 +2739,9 @@ export function loadOpenClawPlugins(options: PluginLoadOptions = {}): PluginRegi
         }
         registry.plugins.push(record);
         seenIds.set(pluginId, candidate.origin);
+        if (clearMismatchedQuarantineAfterLoad) {
+          clearActiveDegradedPlugin(pluginId);
+        }
       } catch (err) {
         rollbackPluginGlobalSideEffects(record.id);
         restorePluginRegistry(registry, registrySnapshot);

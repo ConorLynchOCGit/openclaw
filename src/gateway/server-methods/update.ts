@@ -26,6 +26,7 @@ import {
   type UpdateRestartSentinelMeta,
 } from "../../infra/update-restart-sentinel-payload.js";
 import { resolveUpdateInstallSurface, runGatewayUpdate } from "../../infra/update-runner.js";
+import { packageDeclaresReleaseManifest } from "../../release-manifest-readback.js";
 import { formatControlPlaneActor, resolveControlPlaneActor } from "../control-plane-audit.js";
 import {
   getLatestUpdateRestartSentinel,
@@ -131,11 +132,12 @@ export const updateHandlers: GatewayRequestHandlers = {
       extractDeliveryInfo(sessionKey);
     const deliveryContext = requestedDeliveryContext ?? sessionDeliveryContext;
     const threadId = requestedThreadId ?? sessionThreadId;
-    const timeoutMsRaw = (params as { timeoutMs?: unknown }).timeoutMs;
+    const timeoutMsRaw = params.timeoutMs;
     const timeoutMs =
       typeof timeoutMsRaw === "number" && Number.isFinite(timeoutMsRaw)
         ? Math.max(1000, Math.floor(timeoutMsRaw))
         : undefined;
+    const acceptedReleaseReceiptId = params.acceptedReleaseReceiptId;
 
     let result: Awaited<ReturnType<typeof runGatewayUpdate>>;
     let handoff:
@@ -148,6 +150,7 @@ export const updateHandlers: GatewayRequestHandlers = {
       ...(threadId ? { threadId } : {}),
       ...(note !== undefined ? { note } : {}),
       ...(continuationMessage !== undefined ? { continuationMessage } : {}),
+      ...(acceptedReleaseReceiptId ? { acceptedReleaseReceiptId } : {}),
     };
     let supervisor: ReturnType<typeof detectRespawnSupervisor> = null;
     try {
@@ -172,8 +175,26 @@ export const updateHandlers: GatewayRequestHandlers = {
         ? hasManagedServiceHandoffContext(process.env, supervisor)
         : false;
       const requiresManagedServiceHandoff =
-        installSurface.kind === "global" || (installSurface.kind === "git" && supervisor !== null);
-      if (!isRestartEnabled(config) && !supervisor) {
+        acceptedReleaseReceiptId !== undefined ||
+        installSurface.kind === "global" ||
+        (installSurface.kind === "git" && supervisor !== null);
+      const releaseGatedRoutineUpdate =
+        acceptedReleaseReceiptId === undefined &&
+        packageDeclaresReleaseManifest(installSurface.root ?? root);
+      if (releaseGatedRoutineUpdate) {
+        const beforeVersion = installSurface.root
+          ? await readPackageVersion(installSurface.root)
+          : null;
+        result = {
+          status: "skipped",
+          mode: installSurface.mode,
+          ...(installSurface.root ? { root: installSurface.root } : {}),
+          reason: "accepted-release-required",
+          ...(beforeVersion ? { before: { version: beforeVersion } } : {}),
+          steps: [],
+          durationMs: 0,
+        };
+      } else if (!isRestartEnabled(config) && !supervisor) {
         // Package updates need a restart path to finish safely. Dev/git installs
         // can report the disabled restart directly, but global installs must not
         // mutate files if this process cannot come back.
@@ -191,10 +212,13 @@ export const updateHandlers: GatewayRequestHandlers = {
         };
       } else if (requiresManagedServiceHandoff) {
         const handoffChannel =
-          installSurface.kind === "git" ? undefined : (configChannel ?? undefined);
+          acceptedReleaseReceiptId !== undefined || installSurface.kind === "git"
+            ? undefined
+            : (configChannel ?? undefined);
         const command = formatManagedServiceUpdateCommand({
           timeoutMs,
           ...(handoffChannel ? { channel: handoffChannel } : {}),
+          ...(acceptedReleaseReceiptId ? { acceptedReleaseReceiptId } : {}),
         });
         if (supervisor && hasHandoffContext) {
           try {
@@ -208,6 +232,7 @@ export const updateHandlers: GatewayRequestHandlers = {
               root,
               timeoutMs,
               ...(handoffChannel ? { channel: handoffChannel } : {}),
+              ...(acceptedReleaseReceiptId ? { acceptedReleaseReceiptId } : {}),
               restartDelayMs,
               meta: sentinelMeta,
               handoffId,

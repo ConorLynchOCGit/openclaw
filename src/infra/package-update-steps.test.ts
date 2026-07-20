@@ -1,4 +1,5 @@
 // Covers package update step orchestration.
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -870,6 +871,269 @@ describe("runGlobalPackageUpdateSteps", () => {
         throw new Error("expected staged install prefix");
       }
       await expectPathMissing(stagePrefix);
+    });
+  });
+
+  it("copies and verifies an accepted artifact inside staging before native install", async () => {
+    await withTempDir({ prefix: "openclaw-package-update-receipt-" }, async (base) => {
+      const globalRoot = path.join(base, "prefix", "lib", "node_modules");
+      const packageRoot = path.join(globalRoot, "openclaw");
+      await writePackageRoot(packageRoot, "1.0.0");
+
+      const artifactBytes = Buffer.from("accepted package bytes\n", "utf8");
+      const artifactSha256 = createHash("sha256").update(artifactBytes).digest("hex");
+      const releaseStoreRoot = path.join(base, "releases");
+      const artifactPath = path.join(
+        releaseStoreRoot,
+        "artifacts",
+        "sha256",
+        artifactSha256,
+        "openclaw-2.0.0.tgz",
+      );
+      await fs.mkdir(path.dirname(artifactPath), { recursive: true });
+      await fs.writeFile(artifactPath, artifactBytes, { mode: 0o444 });
+
+      const assertPredecessor = vi.fn(async (root: string) => {
+        expect(root).toBe(packageRoot);
+      });
+      const assertCandidate = vi.fn(async (root: string) => {
+        expect(root).not.toBe(packageRoot);
+      });
+      const runStep = vi.fn(async ({ name, argv, cwd }): Promise<PackageUpdateStepResult> => {
+        expect(name).toBe("global update");
+        const stagePrefix = argv[argv.indexOf("--prefix") + 1];
+        if (!stagePrefix) {
+          throw new Error("missing staged prefix");
+        }
+        const stagedArtifact = argv.find((value) => value.endsWith("openclaw-2.0.0.tgz"));
+        expect(stagedArtifact).toBeTruthy();
+        expect(stagedArtifact).not.toBe(artifactPath);
+        await expect(fs.readFile(stagedArtifact ?? "")).resolves.toEqual(artifactBytes);
+        await writePackageRoot(path.join(stagePrefix, "lib", "node_modules", "openclaw"), "2.0.0");
+        return {
+          name,
+          command: argv.join(" "),
+          cwd: cwd ?? process.cwd(),
+          durationMs: 1,
+          exitCode: 0,
+        };
+      });
+
+      const result = await runGlobalPackageUpdateSteps({
+        installTarget: createNpmTarget(globalRoot),
+        installSpec: artifactPath,
+        packageName: "openclaw",
+        packageRoot,
+        runCommand: createRootRunner(globalRoot),
+        runStep,
+        timeoutMs: 1000,
+        acceptedLocalPackage: {
+          artifact: {
+            role: "core",
+            packageName: "openclaw",
+            version: "2.0.0",
+            sha256: artifactSha256,
+            npmIntegrityOrShasum: "sha512-test",
+            packlistDigest: "b".repeat(64),
+            byteSize: artifactBytes.byteLength,
+            contentAddressedLocation: path.relative(releaseStoreRoot, artifactPath),
+            fileName: path.basename(artifactPath),
+            filePath: artifactPath,
+          },
+          releaseStoreRoot,
+          assertPredecessor,
+          assertCandidate,
+        },
+      });
+
+      expect(result.failedStep).toBeNull();
+      expect(result.afterVersion).toBe("2.0.0");
+      expect(result.steps.map((step) => step.name)).toEqual([
+        "accepted release preinstall verify",
+        "global update",
+        "accepted release candidate verify",
+        "global install swap",
+      ]);
+      expect(assertPredecessor).toHaveBeenCalledTimes(2);
+      expect(assertCandidate).toHaveBeenCalledOnce();
+      await expect(fs.readFile(path.join(packageRoot, "package.json"), "utf8")).resolves.toContain(
+        '"version":"2.0.0"',
+      );
+    });
+  });
+
+  it("fails before native install when an accepted artifact no longer matches its SHA", async () => {
+    await withTempDir({ prefix: "openclaw-package-update-receipt-drift-" }, async (base) => {
+      const globalRoot = path.join(base, "prefix", "lib", "node_modules");
+      const packageRoot = path.join(globalRoot, "openclaw");
+      await writePackageRoot(packageRoot, "1.0.0");
+      const releaseStoreRoot = path.join(base, "releases");
+      const expectedSha256 = "a".repeat(64);
+      const artifactPath = path.join(
+        releaseStoreRoot,
+        "artifacts",
+        "sha256",
+        expectedSha256,
+        "openclaw-2.0.0.tgz",
+      );
+      await fs.mkdir(path.dirname(artifactPath), { recursive: true });
+      await fs.writeFile(artifactPath, "substituted\n", { mode: 0o444 });
+      const runStep = vi.fn();
+
+      const result = await runGlobalPackageUpdateSteps({
+        installTarget: createNpmTarget(globalRoot),
+        installSpec: artifactPath,
+        packageName: "openclaw",
+        packageRoot,
+        runCommand: createRootRunner(globalRoot),
+        runStep,
+        timeoutMs: 1000,
+        acceptedLocalPackage: {
+          artifact: {
+            role: "core",
+            packageName: "openclaw",
+            version: "2.0.0",
+            sha256: expectedSha256,
+            npmIntegrityOrShasum: "sha512-test",
+            packlistDigest: "b".repeat(64),
+            byteSize: Buffer.byteLength("substituted\n"),
+            contentAddressedLocation: path.relative(releaseStoreRoot, artifactPath),
+            fileName: path.basename(artifactPath),
+            filePath: artifactPath,
+          },
+          releaseStoreRoot,
+          assertPredecessor: vi.fn(),
+          assertCandidate: vi.fn(),
+        },
+      });
+
+      expect(result.failedStep?.name).toBe("accepted release preinstall verify");
+      expect(result.failedStep?.stderrTail).toContain("SHA-256");
+      expect(runStep).not.toHaveBeenCalled();
+      await expect(fs.readFile(path.join(packageRoot, "package.json"), "utf8")).resolves.toContain(
+        '"version":"1.0.0"',
+      );
+    });
+  });
+
+  it("checks predecessor CAS before opening an accepted artifact", async () => {
+    await withTempDir({ prefix: "openclaw-package-update-predecessor-cas-" }, async (base) => {
+      const globalRoot = path.join(base, "prefix", "lib", "node_modules");
+      const packageRoot = path.join(globalRoot, "openclaw");
+      await writePackageRoot(packageRoot, "1.0.0");
+      const releaseStoreRoot = path.join(base, "releases");
+      const artifactPath = path.join(
+        releaseStoreRoot,
+        "artifacts",
+        "sha256",
+        "a".repeat(64),
+        "missing-openclaw.tgz",
+      );
+      const assertPredecessor = vi.fn(async () => {
+        throw new Error("accepted predecessor drifted");
+      });
+      const runStep = vi.fn();
+
+      const result = await runGlobalPackageUpdateSteps({
+        installTarget: createNpmTarget(globalRoot),
+        installSpec: artifactPath,
+        packageName: "openclaw",
+        packageRoot,
+        runCommand: createRootRunner(globalRoot),
+        runStep,
+        timeoutMs: 1_000,
+        acceptedLocalPackage: {
+          artifact: {
+            role: "core",
+            packageName: "openclaw",
+            version: "2.0.0",
+            sha256: "a".repeat(64),
+            npmIntegrityOrShasum: "sha512-test",
+            packlistDigest: "b".repeat(64),
+            byteSize: 1,
+            contentAddressedLocation: path.relative(releaseStoreRoot, artifactPath),
+            fileName: path.basename(artifactPath),
+            filePath: artifactPath,
+          },
+          releaseStoreRoot,
+          assertPredecessor,
+          assertCandidate: vi.fn(),
+        },
+      });
+
+      expect(result.failedStep?.name).toBe("accepted release preinstall verify");
+      expect(result.failedStep?.stderrTail).toContain("accepted predecessor drifted");
+      expect(assertPredecessor).toHaveBeenCalledOnce();
+      expect(runStep).not.toHaveBeenCalled();
+    });
+  });
+
+  it("does not weaken an accepted install plan with the ordinary omit-optional fallback", async () => {
+    await withTempDir({ prefix: "openclaw-package-update-no-accepted-fallback-" }, async (base) => {
+      const globalRoot = path.join(base, "prefix", "lib", "node_modules");
+      const packageRoot = path.join(globalRoot, "openclaw");
+      await writePackageRoot(packageRoot, "1.0.0");
+      const releaseStoreRoot = path.join(base, "releases");
+      const artifactBytes = Buffer.from("accepted package bytes\n", "utf8");
+      const artifactSha256 = createHash("sha256").update(artifactBytes).digest("hex");
+      const artifactPath = path.join(
+        releaseStoreRoot,
+        "artifacts",
+        "sha256",
+        artifactSha256,
+        "openclaw-2.0.0.tgz",
+      );
+      await fs.mkdir(path.dirname(artifactPath), { recursive: true });
+      await fs.writeFile(artifactPath, artifactBytes, { mode: 0o444 });
+      const runStep = vi.fn(
+        async ({ name, argv, cwd }): Promise<PackageUpdateStepResult> => ({
+          name,
+          command: argv.join(" "),
+          cwd: cwd ?? process.cwd(),
+          durationMs: 1,
+          exitCode: 1,
+          stderrTail: "native install failed",
+        }),
+      );
+
+      const result = await runGlobalPackageUpdateSteps({
+        installTarget: createNpmTarget(globalRoot),
+        installSpec: artifactPath,
+        packageName: "openclaw",
+        packageRoot,
+        runCommand: createRootRunner(globalRoot),
+        runStep,
+        timeoutMs: 1_000,
+        acceptedLocalPackage: {
+          artifact: {
+            role: "core",
+            packageName: "openclaw",
+            version: "2.0.0",
+            sha256: artifactSha256,
+            npmIntegrityOrShasum: "sha512-test",
+            packlistDigest: "b".repeat(64),
+            byteSize: artifactBytes.byteLength,
+            contentAddressedLocation: path.relative(releaseStoreRoot, artifactPath),
+            fileName: path.basename(artifactPath),
+            filePath: artifactPath,
+          },
+          releaseStoreRoot,
+          assertInstallPlan: vi.fn(async () => undefined),
+          assertPredecessor: vi.fn(async () => undefined),
+          assertCandidate: vi.fn(async () => undefined),
+        },
+      });
+
+      expect(result.failedStep?.name).toBe("global update");
+      expect(runStep).toHaveBeenCalledOnce();
+      expect(result.steps.map((step) => step.name)).toEqual([
+        "accepted release preinstall verify",
+        "global update",
+      ]);
+      expect(result.steps.some((step) => step.command.includes("--omit=optional"))).toBe(false);
+      await expect(fs.readFile(path.join(packageRoot, "package.json"), "utf8")).resolves.toContain(
+        '"version":"1.0.0"',
+      );
     });
   });
 });

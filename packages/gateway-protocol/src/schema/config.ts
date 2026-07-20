@@ -84,6 +84,13 @@ export const UpdateRunParamsSchema = Type.Object(
     continuationMessage: Type.Optional(Type.String()),
     restartDelayMs: Type.Optional(Type.Integer({ minimum: 0 })),
     timeoutMs: Type.Optional(Type.Integer({ minimum: 1 })),
+    acceptedReleaseReceiptId: Type.Optional(
+      Type.String({
+        minLength: 64,
+        maxLength: 64,
+        pattern: "^[a-f0-9]{64}$",
+      }),
+    ),
   },
   { additionalProperties: false },
 );

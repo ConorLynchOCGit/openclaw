@@ -4,8 +4,13 @@ import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import {
+  ACCEPTED_RELEASE_RECEIPT_ID_ENV,
+  normalizeAcceptedReleaseReceiptId,
+  RELEASE_STORE_ROOT_ENV,
+} from "./accepted-release-receipt.js";
 import { resolveRestartSentinelPath } from "./restart-sentinel.js";
-import { SUPERVISOR_HINT_ENV_VARS, type RespawnSupervisor } from "./supervisor-markers.js";
+import type { RespawnSupervisor } from "./supervisor-markers.js";
 import {
   CONTROL_PLANE_UPDATE_SENTINEL_META_ENV,
   type ControlPlaneUpdateSentinelMetaFile,
@@ -20,6 +25,40 @@ const SERVICE_IDENTITY_ENV_VARS = new Set<string>([
   "OPENCLAW_SYSTEMD_UNIT",
   "OPENCLAW_WINDOWS_TASK_NAME",
 ] as const);
+const DETACHED_UPDATE_ENV_VARS = new Set<string>([
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "LANG",
+  "LC_ALL",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "XDG_CONFIG_HOME",
+  "XDG_CACHE_HOME",
+  "XDG_DATA_HOME",
+  "XDG_RUNTIME_DIR",
+  "NPM_CONFIG_CACHE",
+  "npm_config_cache",
+  "PNPM_HOME",
+  "COREPACK_HOME",
+  "SYSTEMROOT",
+  "COMSPEC",
+  "PATHEXT",
+  "OPENCLAW_HOME",
+  "OPENCLAW_STATE_DIR",
+  "OPENCLAW_CONFIG_PATH",
+  "OPENCLAW_WORKSPACE_DIR",
+  "OPENCLAW_PROFILE",
+  "OPENCLAW_GATEWAY_PORT",
+  "OPENCLAW_INCLUDE_ROOTS",
+  "OPENCLAW_NIX_MODE",
+  "OPENCLAW_UPDATE_DEV_TARGET_REF",
+  RELEASE_STORE_ROOT_ENV,
+  ...SERVICE_IDENTITY_ENV_VARS,
+]);
 
 const HANDOFF_SCRIPT = String.raw`
 const { spawn } = require("node:child_process");
@@ -121,6 +160,19 @@ function isPendingUpdatePayload(payload) {
   );
 }
 
+function isLowerHexDigest(value) {
+  if (typeof value !== "string" || value.length !== 64) {
+    return false;
+  }
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (!((code >= 48 && code <= 57) || (code >= 97 && code <= 102))) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function buildFallbackFailurePayload(reason) {
   const metaFile = params.metaPath ? readJsonFile(params.metaPath) : null;
   const meta = metaFile && metaFile.version === 1 && metaFile.meta ? metaFile.meta : {};
@@ -133,6 +185,9 @@ function buildFallbackFailurePayload(reason) {
       mode: "unknown",
       ...(typeof meta.handoffId === "string" && meta.handoffId.trim()
         ? { handoffId: meta.handoffId }
+        : {}),
+      ...(isLowerHexDigest(meta.acceptedReleaseReceiptId)
+        ? { acceptedReleaseReceiptId: meta.acceptedReleaseReceiptId }
         : {}),
       reason,
       steps: [],
@@ -203,7 +258,7 @@ function markUpdateSentinelFailureIfPending(reason) {
     }
     const child = spawn(params.commandArgv[0], params.commandArgv.slice(1), {
       cwd: commandCwd,
-      env: process.env,
+      env: params.commandEnv,
       detached: true,
       stdio: ["ignore", outputFd, outputFd],
     });
@@ -292,7 +347,14 @@ function resolveUpdateCliArgv(params: {
 export function formatManagedServiceUpdateCommand(params?: {
   timeoutMs?: number;
   channel?: "stable" | "beta" | "dev";
+  acceptedReleaseReceiptId?: string;
 }): string {
+  const acceptedReleaseReceiptId = params?.acceptedReleaseReceiptId
+    ? normalizeAcceptedReleaseReceiptId(params.acceptedReleaseReceiptId)
+    : undefined;
+  if (acceptedReleaseReceiptId && params?.channel) {
+    throw new Error("accepted release receipt activation cannot include an update channel");
+  }
   const args = ["openclaw", "update", "--yes"];
   if (params?.channel) {
     args.push("--channel", params.channel);
@@ -303,15 +365,20 @@ export function formatManagedServiceUpdateCommand(params?: {
   return args.join(" ");
 }
 
-export function stripSupervisorHintEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const next = { ...env };
-  for (const key of SUPERVISOR_HINT_ENV_VARS) {
-    if (SERVICE_IDENTITY_ENV_VARS.has(key)) {
-      continue;
+export function buildManagedServiceUpdateEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const next: NodeJS.ProcessEnv = {};
+  for (const key of DETACHED_UPDATE_ENV_VARS) {
+    const value = env[key];
+    if (value !== undefined) {
+      next[key] = value;
     }
-    delete next[key];
   }
   return next;
+}
+
+/** @deprecated Use the default-deny environment builder. */
+export function stripSupervisorHintEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return buildManagedServiceUpdateEnv(env);
 }
 
 async function resolveManagedServiceHandoffCwd(root: string): Promise<string> {
@@ -426,7 +493,14 @@ export async function startManagedServiceUpdateHandoff(params: {
   execPath?: string;
   argv1?: string;
   parentPid?: number;
+  acceptedReleaseReceiptId?: string;
 }): Promise<ManagedServiceUpdateHandoffResult> {
+  const acceptedReleaseReceiptId = params.acceptedReleaseReceiptId
+    ? normalizeAcceptedReleaseReceiptId(params.acceptedReleaseReceiptId)
+    : undefined;
+  if (acceptedReleaseReceiptId && params.channel) {
+    throw new Error("accepted release receipt activation cannot include an update channel");
+  }
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), MANAGED_SERVICE_UPDATE_HANDOFF_TEMP_PREFIX));
   const scriptPath = path.join(dir, "handoff.cjs");
   const paramsPath = path.join(dir, "handoff.json");
@@ -441,11 +515,25 @@ export async function startManagedServiceUpdateHandoff(params: {
   const commandLabel = formatManagedServiceUpdateCommand({
     timeoutMs: params.timeoutMs,
     channel: params.channel,
+    acceptedReleaseReceiptId,
   });
   const handoffCwd = await resolveManagedServiceHandoffCwd(params.root);
   const metaFile: ControlPlaneUpdateSentinelMetaFile = {
     version: 1,
-    meta: params.meta,
+    meta: {
+      ...params.meta,
+      ...(acceptedReleaseReceiptId ? { acceptedReleaseReceiptId } : {}),
+    },
+  };
+  const commandEnv = {
+    ...buildManagedServiceUpdateEnv(params.env ?? process.env),
+    ...(acceptedReleaseReceiptId
+      ? {
+          [ACCEPTED_RELEASE_RECEIPT_ID_ENV]: acceptedReleaseReceiptId,
+        }
+      : {}),
+    [CONTROL_PLANE_UPDATE_SENTINEL_META_ENV]: metaPath,
+    OPENCLAW_UPDATE_RUN_HANDOFF: "1",
   };
   const helperParams = {
     parentPid: params.parentPid ?? process.pid,
@@ -458,20 +546,16 @@ export async function startManagedServiceUpdateHandoff(params: {
     metaPath,
     sentinelPath: resolveRestartSentinelPath(),
     sensitivePaths: [scriptPath, paramsPath, metaPath],
+    commandEnv,
   };
 
   await fs.writeFile(scriptPath, `${HANDOFF_SCRIPT}\n`, { mode: 0o700 });
   await fs.writeFile(paramsPath, `${JSON.stringify(helperParams, null, 2)}\n`, { mode: 0o600 });
   await fs.writeFile(metaPath, `${JSON.stringify(metaFile, null, 2)}\n`, { mode: 0o600 });
 
-  const env = {
-    ...stripSupervisorHintEnv(params.env ?? process.env),
-    [CONTROL_PLANE_UPDATE_SENTINEL_META_ENV]: metaPath,
-    OPENCLAW_UPDATE_RUN_HANDOFF: "1",
-  };
   const spawnTarget = await resolveHandoffSpawn({
     supervisor: params.supervisor,
-    env,
+    env: commandEnv,
     execPath: params.execPath ?? process.execPath,
     scriptPath,
     paramsPath,
@@ -479,7 +563,7 @@ export async function startManagedServiceUpdateHandoff(params: {
   });
   const child = spawn(spawnTarget.command, spawnTarget.args, {
     cwd: handoffCwd,
-    env,
+    env: commandEnv,
     detached: true,
     stdio: "ignore",
   });

@@ -9,11 +9,15 @@ import {
 } from "../../daemon/gateway-entrypoint.js";
 import type { UpdateRunResult } from "../../infra/update-runner.js";
 import {
+  acceptedReleaseConfigPreimageMatches,
+  acceptedReleaseUpdateAdmissionError,
+  buildAcceptedReleaseChildEnv,
   buildInvalidConfigPostCoreUpdateResult,
   collectMissingPluginInstallPayloads,
   formatPostUpdateGatewayRecoveryInstructions,
   recoverInstalledLaunchAgentAfterUpdate,
   recoverLaunchAgentAndRecheckGatewayHealth,
+  releaseGatedRoutineUpdateAdmissionError,
   resolvePostCoreUpdateChildStdio,
   resolvePostUpdateServiceStateReadEnv,
   resolvePostInstallDoctorEnv,
@@ -22,6 +26,93 @@ import {
   shouldUseLegacyProcessRestartAfterUpdate,
   updatePluginsAfterCoreUpdate,
 } from "./update-command.js";
+
+describe("accepted release update admission", () => {
+  const acceptedOpts = { yes: true, json: true } as const;
+  const handoffEnv = { OPENCLAW_UPDATE_RUN_HANDOFF: "1" };
+
+  it("admits only the detached non-interactive native update path", () => {
+    expect(acceptedReleaseUpdateAdmissionError({ opts: acceptedOpts, env: handoffEnv })).toBeNull();
+  });
+
+  it.each([
+    { opts: acceptedOpts, env: {}, expected: "managed-service handoff" },
+    { opts: { json: true }, env: handoffEnv, expected: "non-interactive" },
+    { opts: { ...acceptedOpts, channel: "stable" }, env: handoffEnv, expected: "channel" },
+    { opts: { ...acceptedOpts, tag: "latest" }, env: handoffEnv, expected: "tag" },
+    { opts: { ...acceptedOpts, dryRun: true }, env: handoffEnv, expected: "dry run" },
+    { opts: { ...acceptedOpts, restart: false }, env: handoffEnv, expected: "restart" },
+  ])("rejects non-receipt update controls: $expected", ({ opts, env, expected }) => {
+    expect(acceptedReleaseUpdateAdmissionError({ opts, env })).toContain(expected);
+  });
+});
+
+describe("accepted release child environment", () => {
+  it("withholds receipt authority and suppresses ordinary plugin repair", () => {
+    expect(
+      buildAcceptedReleaseChildEnv({
+        OPENCLAW_ACCEPTED_RELEASE_RECEIPT_ID: "a".repeat(64),
+        OPENCLAW_RELEASE_STORE_ROOT: "/srv/openclaw-next/releases",
+        OPENCLAW_UPDATE_RUN_HANDOFF: "1",
+        OPENCLAW_CONTROL_PLANE_UPDATE_SENTINEL_META: "/tmp/sentinel-meta.json",
+        OPENCLAW_UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE: "1",
+        PATH: "/usr/bin",
+      }),
+    ).toEqual({
+      OPENCLAW_UPDATE_DEFER_CONFIGURED_PLUGIN_INSTALL_REPAIR: "1",
+      PATH: "/usr/bin",
+    });
+  });
+});
+
+describe("release-gated routine update admission", () => {
+  it("denies mutation without a receipt while retaining accepted and dry-run routes", () => {
+    expect(
+      releaseGatedRoutineUpdateAdmissionError({
+        acceptedRelease: false,
+        dryRun: false,
+        releaseGatedPackage: true,
+      }),
+    ).toContain("accepted release receipt");
+    expect(
+      releaseGatedRoutineUpdateAdmissionError({
+        acceptedRelease: true,
+        dryRun: false,
+        releaseGatedPackage: true,
+      }),
+    ).toBeNull();
+    expect(
+      releaseGatedRoutineUpdateAdmissionError({
+        acceptedRelease: false,
+        dryRun: true,
+        releaseGatedPackage: true,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("accepted release config preimage", () => {
+  it("treats byte-only and resolved include changes as preimage drift", () => {
+    const before = {
+      exists: true,
+      raw: '{"gateway":{"port":18789}}\n',
+      sourceConfig: { gateway: { port: 18789 } },
+    } as const;
+    expect(acceptedReleaseConfigPreimageMatches(before as never, before as never)).toBe(true);
+    expect(
+      acceptedReleaseConfigPreimageMatches(
+        before as never,
+        { ...before, raw: '{ "gateway": { "port": 18789 } }\n' } as never,
+      ),
+    ).toBe(false);
+    expect(
+      acceptedReleaseConfigPreimageMatches(
+        before as never,
+        { ...before, sourceConfig: { gateway: { port: 19999 } } } as never,
+      ),
+    ).toBe(false);
+  });
+});
 
 describe("resolveGatewayInstallEntrypointCandidates", () => {
   it("prefers index.js before legacy entry.js", () => {
