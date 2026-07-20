@@ -22,7 +22,6 @@ import { verifyReleasePackageInventory } from "./verify-release-package-inventor
 const DRIVER_PROTOCOL = "openclaw.release.prepare.driver.v1";
 const COMMAND_TIMEOUT_MS = 45 * 60 * 1000;
 const MAX_CAPTURE_BYTES = 8 * 1024 * 1024;
-const PLUGIN_PACK_CONCURRENCY = 4;
 const activeChildren = new Set();
 
 function usage() {
@@ -362,24 +361,48 @@ async function writeRootVersion(stageRoot, version) {
   }
 }
 
-async function discoverPackages(stageRoot) {
+export async function resolveRequestedWorkspacePackages(stageRoot, requestedPackageNames) {
+  const requested = new Set(requestedPackageNames);
+  if (requested.size === 0) {
+    return new Map();
+  }
+  const listed = await runCapture("pnpm", ["list", "-r", "--depth", "-1", "--json"], stageRoot, {
+    CI: "true",
+  });
+  let rows;
+  try {
+    rows = JSON.parse(listed.stdout);
+  } catch (error) {
+    throw new Error(
+      `pnpm workspace inventory is invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
+  if (!Array.isArray(rows)) {
+    throw new Error("pnpm workspace inventory must be an array");
+  }
+
   const result = new Map();
-  const extensionsRoot = path.join(stageRoot, "extensions");
-  for (const entry of await fs.readdir(extensionsRoot, { withFileTypes: true })) {
-    if (!entry.isDirectory()) {
+  for (const row of rows) {
+    if (!row || typeof row !== "object" || !requested.has(row.name)) {
       continue;
     }
-    const packageRoot = path.join(extensionsRoot, entry.name);
-    try {
-      const packageJson = await readJson(path.join(packageRoot, "package.json"), "plugin package");
-      if (typeof packageJson.name === "string") {
-        result.set(packageJson.name, { packageRoot, packageJson });
-      }
-    } catch (error) {
-      if (error?.code !== "ENOENT" && error?.cause?.code !== "ENOENT") {
-        throw error;
-      }
+    if (result.has(row.name)) {
+      throw new Error(`pnpm workspace inventory contains duplicate package ${row.name}`);
     }
+    const packageRoot = ensureBelow(
+      stageRoot,
+      requireString(row.path, `${row.name} workspace path`),
+      `${row.name} workspace path`,
+    );
+    const packageJson = await readJson(
+      path.join(packageRoot, "package.json"),
+      `${row.name} package`,
+    );
+    if (packageJson.name !== row.name) {
+      throw new Error(`${row.name} workspace package identity changed`);
+    }
+    result.set(row.name, packageRoot);
   }
   return result;
 }
@@ -443,15 +466,7 @@ async function sourcePluginDescriptor(params) {
     packageJson.openclaw?.compat?.pluginApi,
     `${params.packageName} plugin compatibility`,
   );
-  return { pluginId, compatibilityRange, packageJson };
-}
-
-function insertBatch(items, width) {
-  const batches = [];
-  for (let index = 0; index < items.length; index += width) {
-    batches.push(items.slice(index, index + width));
-  }
-  return batches;
+  return { pluginId, compatibilityRange };
 }
 
 async function findOnlyTarball(directory, packageName) {
@@ -542,7 +557,11 @@ async function prepareAttempt(params) {
     logRoot,
   });
 
-  const packageMap = await discoverPackages(stageRoot);
+  const externalArtifacts = params.predecessorManifest.artifacts.slice(1);
+  const packageMap = await resolveRequestedWorkspacePackages(
+    stageRoot,
+    externalArtifacts.map((artifact) => artifact.packageName),
+  );
   const registry = params.predecessorManifest.artifacts[0].installPlan.registry;
   const artifacts = [];
   const lockMap = new Map();
@@ -553,13 +572,13 @@ async function prepareAttempt(params) {
     packageName: "openclaw",
     packageVersion: version,
     compatibilityRange: requireString(rootPackage.engines?.node, "root Node compatibility"),
-    ownedPluginIds: [],
+    ownedPluginIds: params.predecessorManifest.artifacts[0].ownedPluginIds,
     installPlan: await buildInstallPlan(rootLock, registry),
   });
 
   const sourcePlugins = [];
   const reusedPlugins = [];
-  for (const predecessorArtifact of params.predecessorManifest.artifacts.slice(1)) {
+  for (const predecessorArtifact of externalArtifacts) {
     const source = packageMap.get(predecessorArtifact.packageName);
     if (!source) {
       const receiptArtifact = params.input.predecessor.artifacts.find(
@@ -576,7 +595,7 @@ async function prepareAttempt(params) {
     }
     const descriptor = await sourcePluginDescriptor({
       packageName: predecessorArtifact.packageName,
-      packageRoot: source.packageRoot,
+      packageRoot: source,
     });
     if (
       predecessorArtifact.ownedPluginIds.length !== 1 ||
@@ -586,8 +605,8 @@ async function prepareAttempt(params) {
     }
     const lockBytes = await generateShrinkwrap(
       stageRoot,
-      source.packageRoot,
-      `shrinkwrap-${path.basename(source.packageRoot)}`,
+      source,
+      `shrinkwrap-${path.basename(source)}`,
       logRoot,
     );
     lockMap.set(predecessorArtifact.packageName, lockBytes);
@@ -600,9 +619,9 @@ async function prepareAttempt(params) {
       installPlan: await buildInstallPlan(lockBytes, registry),
     });
     sourcePlugins.push({
-      id: path.basename(source.packageRoot),
+      id: path.basename(source),
       packageName: predecessorArtifact.packageName,
-      packageRoot: source.packageRoot,
+      packageRoot: source,
     });
   }
   artifacts.splice(
@@ -675,21 +694,19 @@ async function prepareAttempt(params) {
   });
 
   const packedByName = new Map();
-  for (const batch of insertBatch(sourcePlugins, PLUGIN_PACK_CONCURRENCY)) {
-    const packed = await Promise.all(
-      batch.map(async (plugin) => [
-        plugin.packageName,
-        await packSourcePlugin({
-          ...plugin,
-          stageRoot,
-          outputRoot,
-          logRoot,
-        }),
-      ]),
-    );
-    for (const [packageName, artifactPath] of packed) {
-      packedByName.set(packageName, artifactPath);
-    }
+  const packedPlugins = await Promise.all(
+    sourcePlugins.map(async (plugin) => [
+      plugin.packageName,
+      await packSourcePlugin({
+        ...plugin,
+        stageRoot,
+        outputRoot,
+        logRoot,
+      }),
+    ]),
+  );
+  for (const [packageName, artifactPath] of packedPlugins) {
+    packedByName.set(packageName, artifactPath);
   }
   const reusedRoot = path.join(outputRoot, "reused");
   await fs.mkdir(reusedRoot, { recursive: true, mode: 0o700 });
