@@ -4,7 +4,6 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import * as tar from "tar";
@@ -120,8 +119,8 @@ function parseInput(value) {
         "predecessor manifest digest",
       ),
       sourceTreeObject: requireString(predecessor.sourceTreeObject, "predecessor source tree"),
-      artifacts: predecessor.artifacts.map((value, index) => {
-        const artifact = requireRecord(value, `predecessor artifact ${index}`);
+      artifacts: predecessor.artifacts.map((artifactValue, index) => {
+        const artifact = requireRecord(artifactValue, `predecessor artifact ${index}`);
         if (artifact.role !== "core" && artifact.role !== "plugin") {
           throw new Error(`predecessor artifact ${index} has an invalid role`);
         }
@@ -505,6 +504,15 @@ async function prepareAttempt(params) {
   await fs.rm(params.attemptRoot, { force: true, recursive: true });
   await fs.mkdir(outputRoot, { recursive: true, mode: 0o700 });
   await materializeSnapshot(params.input, stageRoot, logRoot);
+
+  await runCommand({
+    id: "install-frozen-dependencies",
+    command: "pnpm",
+    args: ["install", "--frozen-lockfile", "--ignore-scripts"],
+    cwd: stageRoot,
+    logRoot,
+    env: { CI: "true" },
+  });
 
   const rootPackage = await readJson(path.join(stageRoot, "package.json"), "root package.json");
   const toolsDigest = await toolchainDigest(stageRoot);
