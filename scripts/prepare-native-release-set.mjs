@@ -376,7 +376,7 @@ async function discoverPackages(stageRoot) {
         result.set(packageJson.name, { packageRoot, packageJson });
       }
     } catch (error) {
-      if (error?.code !== "ENOENT") {
+      if (error?.code !== "ENOENT" && error?.cause?.code !== "ENOENT") {
         throw error;
       }
     }
