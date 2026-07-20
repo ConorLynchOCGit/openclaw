@@ -245,16 +245,13 @@ describe("startCodexAttemptThread", () => {
 
     const threadStart = await waitForThreadStart(harness);
     expect(threadStart.params?.config).toMatchObject(profileConfig);
-    expect(threadStart.params?.environments).toContainEqual({
-      environmentId: "openclaw-system-profile",
-      cwd: systemProfileDir,
-    });
+    expect(threadStart.params).not.toHaveProperty("environments");
     expect(threadStart.params?.selectedCapabilityRoots).toEqual([
       {
         id: "codex-system-skills",
         location: {
           type: "environment",
-          environmentId: "openclaw-system-profile",
+          environmentId: "local",
           path: path.join(systemProfileDir, "skills"),
         },
       },
@@ -262,7 +259,7 @@ describe("startCodexAttemptThread", () => {
         id: "openclaw-shared-system-skills",
         location: {
           type: "environment",
-          environmentId: "openclaw-system-profile",
+          environmentId: "local",
           path: path.join(systemProfileDir, "shared-skills"),
         },
       },
@@ -270,7 +267,7 @@ describe("startCodexAttemptThread", () => {
         id: "openclaw-contributor-guidance",
         location: {
           type: "environment",
-          environmentId: "openclaw-system-profile",
+          environmentId: "local",
           path: path.join(systemProfileDir, "contributor-guidance"),
         },
       },

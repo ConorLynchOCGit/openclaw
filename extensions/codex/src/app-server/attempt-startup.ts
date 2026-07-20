@@ -314,9 +314,13 @@ export async function startCodexAttemptThread(params: {
                   startupSandboxEnvironment,
                   params.nativeExecutionAllowed,
                 );
-            const startupEnvironmentSelection = systemProfile
-              ? [...(executionEnvironmentSelection ?? []), ...systemProfile.environments]
-              : executionEnvironmentSelection;
+            if (systemProfile && startupSandboxEnvironment) {
+              await releaseStartupSandboxEnvironment();
+              throw new Error(
+                "The package-owned Codex system profile requires Codex's native local environment and cannot be combined with OpenClaw's sandbox exec-server.",
+              );
+            }
+            const startupEnvironmentSelection = executionEnvironmentSelection;
             const startupExecutionCwd = params.systemContext
               ? params.effectiveCwd
               : resolveCodexAppServerExecutionCwd({

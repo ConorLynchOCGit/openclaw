@@ -4,14 +4,9 @@
  */
 import path from "node:path";
 import type { CodexAppServerClient } from "./client.js";
-import {
-  isJsonObject,
-  type CodexSelectedCapabilityRoot,
-  type CodexTurnEnvironmentParams,
-  type JsonObject,
-} from "./protocol.js";
+import { isJsonObject, type CodexSelectedCapabilityRoot, type JsonObject } from "./protocol.js";
 
-const SYSTEM_PROFILE_ENVIRONMENT_ID = "openclaw-system-profile";
+const CODEX_LOCAL_ENVIRONMENT_ID = "local";
 
 export type CodexLoadedSystemProfile = {
   profileDir: string;
@@ -19,7 +14,6 @@ export type CodexLoadedSystemProfile = {
   configLayerVersion: string;
   config: JsonObject;
   agentNames: string[];
-  environments: CodexTurnEnvironmentParams[];
   selectedCapabilityRoots: CodexSelectedCapabilityRoot[];
 };
 
@@ -94,7 +88,6 @@ async function loadCodexSystemProfileUncached(params: {
     configLayerVersion,
     config: profileLayer.config,
     agentNames,
-    environments: [{ environmentId: SYSTEM_PROFILE_ENVIRONMENT_ID, cwd: profileDir }],
     selectedCapabilityRoots: [
       buildCapabilityRoot("codex-system-skills", profileDir, "skills"),
       buildCapabilityRoot("openclaw-shared-system-skills", profileDir, "shared-skills"),
@@ -112,7 +105,7 @@ function buildCapabilityRoot(
     id,
     location: {
       type: "environment",
-      environmentId: SYSTEM_PROFILE_ENVIRONMENT_ID,
+      environmentId: CODEX_LOCAL_ENVIRONMENT_ID,
       path: path.join(profileDir, relativePath),
     },
   };
