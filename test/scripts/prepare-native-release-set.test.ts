@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   deriveReleaseVersion,
   parseArgs,
+  requiredBundledPluginsToEnable,
   resolveRequestedWorkspacePackages,
 } from "../../scripts/prepare-native-release-set.mjs";
 
@@ -51,6 +52,20 @@ describe("prepare-native-release-set", () => {
     expect(() => deriveReleaseVersion("latest", "a".repeat(40), "b".repeat(64))).toThrow(
       "cannot derive",
     );
+  });
+
+  it("enables only required bundled plugins reported as disabled", () => {
+    expect(
+      requiredBundledPluginsToEnable(
+        [
+          { id: "agency-data", origin: "bundled", status: "disabled" },
+          { id: "codex", origin: "managed", status: "loaded" },
+          { id: "unrelated", origin: "bundled", status: "disabled" },
+          { id: "workboard", origin: "bundled", status: "error" },
+        ],
+        ["agency-data", "codex", "workboard"],
+      ),
+    ).toEqual(["agency-data"]);
   });
 
   it("resolves only accepted external packages through the native pnpm workspace", async () => {

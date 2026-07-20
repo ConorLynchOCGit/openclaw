@@ -53,6 +53,18 @@ export function parseArgs(argv) {
   return { inputPath: path.resolve(inputPath), outputPath: path.resolve(outputPath) };
 }
 
+export function requiredBundledPluginsToEnable(plugins, requiredPluginIds) {
+  const byId = new Map(
+    plugins
+      .filter((plugin) => plugin && typeof plugin.id === "string")
+      .map((plugin) => [plugin.id, plugin]),
+  );
+  return requiredPluginIds.filter((id) => {
+    const plugin = byId.get(id);
+    return plugin?.origin === "bundled" && plugin.status === "disabled";
+  });
+}
+
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -819,19 +831,33 @@ async function candidateInstall(attempt, operationRoot) {
       env: candidateEnv,
     });
   }
-  const listed = await runCapture(cli, ["plugins", "list", "--json"], candidateRoot, candidateEnv);
-  const payload = JSON.parse(listed.stdout);
+  let listed = await runCapture(cli, ["plugins", "list", "--json"], candidateRoot, candidateEnv);
+  let payload = JSON.parse(listed.stdout);
   if (!Array.isArray(payload.plugins)) {
     throw new Error("candidate plugin readback returned no plugin inventory");
+  }
+  const requiredPluginIds = attempt.manifest.loadedReadiness.requiredPluginIds;
+  for (const pluginId of requiredBundledPluginsToEnable(payload.plugins, requiredPluginIds)) {
+    await runCommand({
+      id: `candidate-enable-${pluginId}`,
+      command: cli,
+      args: ["plugins", "enable", pluginId],
+      cwd: candidateRoot,
+      logRoot: logs,
+      env: candidateEnv,
+    });
+  }
+  listed = await runCapture(cli, ["plugins", "list", "--json"], candidateRoot, candidateEnv);
+  payload = JSON.parse(listed.stdout);
+  if (!Array.isArray(payload.plugins)) {
+    throw new Error("candidate plugin readback returned no plugin inventory after enablement");
   }
   const loaded = new Set(
     payload.plugins
       .filter((plugin) => plugin && plugin.status === "loaded" && typeof plugin.id === "string")
       .map((plugin) => plugin.id),
   );
-  const missing = attempt.manifest.loadedReadiness.requiredPluginIds.filter(
-    (id) => !loaded.has(id),
-  );
+  const missing = requiredPluginIds.filter((id) => !loaded.has(id));
   if (missing.length > 0) {
     throw new Error(`candidate did not load required plugins: ${missing.join(", ")}`);
   }
