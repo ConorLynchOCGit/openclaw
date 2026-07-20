@@ -9,7 +9,7 @@ import { writeNodeBackedJq } from "./test-helpers.ts";
 const repoRoot = path.resolve(import.meta.dirname, "../..");
 const helperPath = path.join(
   repoRoot,
-  ".agents/skills/openclaw-pr-maintainer/scripts/github-activity.sh",
+  "extensions/codex/system-profile/skills/openclaw-pr-maintainer/scripts/github-activity.sh",
 );
 const tempDirs: string[] = [];
 

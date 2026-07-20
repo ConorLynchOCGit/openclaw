@@ -5,7 +5,8 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { createScriptTestHarness } from "./test-helpers.js";
 
-const scriptPath = ".agents/skills/openclaw-secret-scanning-maintainer/scripts/secret-scanning.mjs";
+const scriptPath =
+  "extensions/codex/system-profile/skills/openclaw-secret-scanning-maintainer/scripts/secret-scanning.mjs";
 const { createTempDir } = createScriptTestHarness();
 
 describe("secret scanning maintainer script", () => {
