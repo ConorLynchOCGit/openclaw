@@ -20,6 +20,9 @@
     "extensions": [
       "./index.ts"
     ],
+    "assetScripts": {
+      "copy": "node scripts/copy-system-profile.mjs"
+    },
     "install": {
       "npmSpec": "@openclaw/codex",
       "defaultChoice": "npm",
