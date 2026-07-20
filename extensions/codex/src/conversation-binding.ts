@@ -53,11 +53,14 @@ import {
   releaseLeasedSharedCodexAppServerClient,
 } from "./app-server/shared-client.js";
 import {
+  buildCodexSystemThreadContext,
   assertCodexSystemThreadResponse,
   assertCodexSystemV2Model,
-  resolveCodexSystemThreadContext,
+  resolveCodexSystemProcessContext,
+  type CodexSystemProcessContext,
   type CodexSystemThreadContext,
 } from "./app-server/system-authority.js";
+import { loadCodexSystemProfile } from "./app-server/system-profile.js";
 import {
   CODEX_NATIVE_PERSONALITY_NONE,
   resolveCodexAppServerRequestModelSelection,
@@ -88,6 +91,7 @@ export {
 type CodexConversationRunOptions = {
   pluginConfig?: unknown;
   config?: CodexConversationConfig;
+  systemProfileDir?: string;
   timeoutMs?: number;
   resumeCodexCliSessionOnNode?: ResumeCodexCliSessionOnNodeFn;
 };
@@ -110,6 +114,7 @@ type CodexConversationStartParams = {
   approvalPolicy?: CodexAppServerApprovalPolicy;
   sandbox?: CodexAppServerSandboxMode;
   serviceTier?: CodexServiceTier;
+  systemProfileDir?: string;
 };
 
 type BoundTurnResult = {
@@ -202,6 +207,7 @@ export async function startCodexConversationThread(
       serviceTier: params.serviceTier,
       config: params.config,
       sessionKey: params.sessionKey,
+      systemProfileDir: params.systemProfileDir,
     });
   } else {
     boundWorkspaceDir = await createThread({
@@ -217,6 +223,7 @@ export async function startCodexConversationThread(
       serviceTier: params.serviceTier,
       config: params.config,
       sessionKey: params.sessionKey,
+      systemProfileDir: params.systemProfileDir,
     });
   }
   return createCodexConversationBindingData({
@@ -298,6 +305,7 @@ export async function handleCodexConversationInboundClaim(
         sessionKey: event.sessionKey ?? ctx.sessionKey,
         pluginConfig: options.pluginConfig,
         timeoutMs: options.timeoutMs,
+        systemProfileDir: options.systemProfileDir,
       }),
     );
     return { handled: true, reply: result.reply };
@@ -338,6 +346,7 @@ type CodexThreadBindingParams = {
   config?: CodexAppServerAuthProfileLookup["config"];
   agentId?: string;
   sessionKey?: string;
+  systemProfileDir?: string;
 };
 
 type ConversationAppServerRuntime = Awaited<ReturnType<typeof resolveConversationAppServerRuntime>>;
@@ -360,7 +369,7 @@ function resolveConversationWorkspaceAuthority(params: {
   agentId?: string;
   sessionEntry?: SessionEntry;
   workspaceDir: string;
-  systemContext?: CodexSystemThreadContext;
+  systemProcessContext?: CodexSystemProcessContext;
 } {
   const sessionKey = params.sessionKey?.trim();
   if (!sessionKey) {
@@ -377,12 +386,11 @@ function resolveConversationWorkspaceAuthority(params: {
     store: loadSessionStore(storePath, { skipCache: true }),
     sessionKey,
   }).existing;
-  const hasSystemAuthority =
-    sessionEntry?.worktree?.kind === "system-change" || Boolean(sessionEntry?.codexSystemAuthority);
+  const hasSystemAuthority = sessionEntry?.worktree?.kind === "system-change";
   const workspaceDir = hasSystemAuthority
     ? sessionEntry?.spawnedCwd?.trim() || params.workspaceDir
     : params.workspaceDir;
-  const systemContext = resolveCodexSystemThreadContext({
+  const systemProcessContext = resolveCodexSystemProcessContext({
     sessionEntry,
     agentId,
     cwd: workspaceDir,
@@ -391,7 +399,7 @@ function resolveConversationWorkspaceAuthority(params: {
     agentId,
     sessionEntry,
     workspaceDir,
-    systemContext,
+    systemProcessContext,
   };
 }
 
@@ -457,19 +465,42 @@ async function resolveThreadBindingRuntime(
     startOptions: runtime.start,
     timeoutMs: runtime.requestTimeoutMs,
     authProfileId: params.authProfileId,
-    processProfile: workspaceAuthority.systemContext?.processProfile,
+    processProfile: workspaceAuthority.systemProcessContext?.processProfile,
     ...agentLookup,
   });
-  return {
-    execPolicy,
-    runtime: modelScopedRuntime,
-    agentLookup,
-    model: modelSelection?.model,
-    modelProvider: modelSelection?.modelProvider ?? modelProvider,
-    client,
-    workspaceDir: workspaceAuthority.workspaceDir,
-    systemContext: workspaceAuthority.systemContext,
-  };
+  try {
+    if (workspaceAuthority.systemProcessContext && !params.systemProfileDir) {
+      throw new Error("system-change Codex binding requires the package-owned system profile");
+    }
+    const systemProfile =
+      workspaceAuthority.systemProcessContext && params.systemProfileDir
+        ? await loadCodexSystemProfile({
+            client,
+            systemProfileDir: params.systemProfileDir,
+            timeoutMs: runtime.requestTimeoutMs,
+          })
+        : undefined;
+    const systemContext =
+      workspaceAuthority.systemProcessContext && systemProfile
+        ? buildCodexSystemThreadContext({
+            processContext: workspaceAuthority.systemProcessContext,
+            profile: systemProfile,
+          })
+        : undefined;
+    return {
+      execPolicy,
+      runtime: modelScopedRuntime,
+      agentLookup,
+      model: modelSelection?.model,
+      modelProvider: modelSelection?.modelProvider ?? modelProvider,
+      client,
+      workspaceDir: workspaceAuthority.workspaceDir,
+      systemContext,
+    };
+  } catch (error) {
+    releaseLeasedSharedCodexAppServerClient(client);
+    throw error;
+  }
 }
 
 function buildThreadRequestRuntimeOptions(
@@ -641,6 +672,7 @@ async function runBoundTurn(params: {
   pluginConfig?: unknown;
   config?: CodexConversationConfig;
   sessionKey?: string;
+  systemProfileDir?: string;
   timeoutMs?: number;
 }): Promise<BoundTurnResult> {
   const agentLookup = buildAgentLookup({ agentDir: params.data.agentDir, config: params.config });
@@ -656,8 +688,8 @@ async function runBoundTurn(params: {
   });
   const workspaceDir = workspaceAuthority.workspaceDir;
   if (
-    binding.systemAuthorityFingerprint !== workspaceAuthority.systemContext?.fingerprint &&
-    (binding.systemAuthorityFingerprint || workspaceAuthority.systemContext)
+    binding.systemAuthorityFingerprint !== workspaceAuthority.systemProcessContext?.fingerprint &&
+    (binding.systemAuthorityFingerprint || workspaceAuthority.systemProcessContext)
   ) {
     throw new Error("bound Codex conversation system authority changed");
   }
@@ -718,100 +750,121 @@ async function runBoundTurn(params: {
     startOptions: runtime.start,
     timeoutMs: runtime.requestTimeoutMs,
     authProfileId: binding.authProfileId,
-    processProfile: workspaceAuthority.systemContext?.processProfile,
+    processProfile: workspaceAuthority.systemProcessContext?.processProfile,
     ...agentLookup,
   });
-  const collector = createCodexConversationTurnCollector(threadId);
-  const notificationCleanup = client.addNotificationHandler((notification) =>
-    collector.handleNotification(notification),
-  );
-  const requestCleanup = client.addRequestHandler(
-    async (request): Promise<JsonValue | undefined> => {
-      if (request.method === "item/tool/call") {
-        return {
-          contentItems: [
-            {
-              type: "inputText",
-              text: "OpenClaw native Codex conversation binding does not expose dynamic OpenClaw tools yet.",
-            },
-          ],
-          success: false,
-        };
-      }
-      if (
-        request.method === "item/commandExecution/requestApproval" ||
-        request.method === "item/fileChange/requestApproval"
-      ) {
-        return {
-          decision: "decline",
-          reason:
-            "OpenClaw native Codex conversation binding cannot route interactive approvals yet; use the Codex harness or explicit /acp spawn codex for that workflow.",
-        };
-      }
-      if (request.method === "item/permissions/requestApproval") {
-        return { permissions: {}, scope: "turn" };
-      }
-      if (request.method.includes("requestApproval")) {
-        return {
-          decision: "decline",
-          reason:
-            "OpenClaw native Codex conversation binding cannot route interactive approvals yet; use the Codex harness or explicit /acp spawn codex for that workflow.",
-        };
-      }
-      return undefined;
-    },
-  );
   try {
-    if (workspaceAuthority.systemContext) {
-      assertCodexSystemV2Model(workspaceAuthority.systemContext, modelSelection?.model);
+    if (workspaceAuthority.systemProcessContext && !params.systemProfileDir) {
+      throw new Error("system-change Codex binding requires the package-owned system profile");
     }
-    const response: CodexTurnStartResponse = await client.request(
-      "turn/start",
-      {
-        threadId,
-        input: buildCodexConversationTurnInput({
-          prompt: params.prompt,
-          event: params.event,
-        }),
-        cwd: workspaceDir,
-        ...(workspaceAuthority.systemContext ? { runtimeWorkspaceRoots: [workspaceDir] } : {}),
-        approvalPolicy,
-        approvalsReviewer: modelScopedRuntime.approvalsReviewer,
-        ...(workspaceAuthority.systemContext
-          ? {
-              permissions: workspaceAuthority.systemContext.authority.permissionProfile,
-              environments: workspaceAuthority.systemContext.environments,
-            }
-          : { sandboxPolicy: codexSandboxPolicyForTurn(sandbox, workspaceDir) }),
-        ...(modelSelection?.model ? { model: modelSelection.model } : {}),
-        personality: CODEX_NATIVE_PERSONALITY_NONE,
-        ...((binding.serviceTier ?? runtime.serviceTier)
-          ? { serviceTier: binding.serviceTier ?? runtime.serviceTier }
-          : {}),
-      },
-      { timeoutMs: runtime.requestTimeoutMs },
+    const systemProfile =
+      workspaceAuthority.systemProcessContext && params.systemProfileDir
+        ? await loadCodexSystemProfile({
+            client,
+            systemProfileDir: params.systemProfileDir,
+            timeoutMs: runtime.requestTimeoutMs,
+          })
+        : undefined;
+    const systemContext =
+      workspaceAuthority.systemProcessContext && systemProfile
+        ? buildCodexSystemThreadContext({
+            processContext: workspaceAuthority.systemProcessContext,
+            profile: systemProfile,
+          })
+        : undefined;
+    const collector = createCodexConversationTurnCollector(threadId);
+    const notificationCleanup = client.addNotificationHandler((notification) =>
+      collector.handleNotification(notification),
     );
-    const turnId = response.turn.id;
-    const activeCleanup = trackCodexConversationActiveTurn({
-      sessionFile: params.data.sessionFile,
-      threadId,
-      turnId,
-    });
-    collector.setTurnId(turnId);
-    const completion = await collector
-      .wait({
-        timeoutMs: params.timeoutMs ?? DEFAULT_BOUND_TURN_TIMEOUT_MS,
-      })
-      .finally(activeCleanup);
-    const replyText = completion.replyText.trim();
-    return {
-      reply: {
-        text: replyText || "Codex completed without a text reply.",
+    const requestCleanup = client.addRequestHandler(
+      async (request): Promise<JsonValue | undefined> => {
+        if (request.method === "item/tool/call") {
+          return {
+            contentItems: [
+              {
+                type: "inputText",
+                text: "OpenClaw native Codex conversation binding does not expose dynamic OpenClaw tools yet.",
+              },
+            ],
+            success: false,
+          };
+        }
+        if (
+          request.method === "item/commandExecution/requestApproval" ||
+          request.method === "item/fileChange/requestApproval"
+        ) {
+          return {
+            decision: "decline",
+            reason:
+              "OpenClaw native Codex conversation binding cannot route interactive approvals yet; use the Codex harness or explicit /acp spawn codex for that workflow.",
+          };
+        }
+        if (request.method === "item/permissions/requestApproval") {
+          return { permissions: {}, scope: "turn" };
+        }
+        if (request.method.includes("requestApproval")) {
+          return {
+            decision: "decline",
+            reason:
+              "OpenClaw native Codex conversation binding cannot route interactive approvals yet; use the Codex harness or explicit /acp spawn codex for that workflow.",
+          };
+        }
+        return undefined;
       },
-    };
+    );
+    try {
+      if (systemContext) {
+        assertCodexSystemV2Model(systemContext, modelSelection?.model);
+      }
+      const response: CodexTurnStartResponse = await client.request(
+        "turn/start",
+        {
+          threadId,
+          input: buildCodexConversationTurnInput({
+            prompt: params.prompt,
+            event: params.event,
+          }),
+          cwd: workspaceDir,
+          ...(systemContext ? { runtimeWorkspaceRoots: [workspaceDir] } : {}),
+          approvalPolicy,
+          approvalsReviewer: modelScopedRuntime.approvalsReviewer,
+          ...(systemContext
+            ? {
+                permissions: systemContext.authority.permissionProfile,
+                environments: systemContext.environments,
+              }
+            : { sandboxPolicy: codexSandboxPolicyForTurn(sandbox, workspaceDir) }),
+          ...(modelSelection?.model ? { model: modelSelection.model } : {}),
+          personality: CODEX_NATIVE_PERSONALITY_NONE,
+          ...((binding.serviceTier ?? runtime.serviceTier)
+            ? { serviceTier: binding.serviceTier ?? runtime.serviceTier }
+            : {}),
+        },
+        { timeoutMs: runtime.requestTimeoutMs },
+      );
+      const turnId = response.turn.id;
+      const activeCleanup = trackCodexConversationActiveTurn({
+        sessionFile: params.data.sessionFile,
+        threadId,
+        turnId,
+      });
+      collector.setTurnId(turnId);
+      const completion = await collector
+        .wait({
+          timeoutMs: params.timeoutMs ?? DEFAULT_BOUND_TURN_TIMEOUT_MS,
+        })
+        .finally(activeCleanup);
+      const replyText = completion.replyText.trim();
+      return {
+        reply: {
+          text: replyText || "Codex completed without a text reply.",
+        },
+      };
+    } finally {
+      notificationCleanup();
+      requestCleanup();
+    }
   } finally {
-    notificationCleanup();
-    requestCleanup();
     releaseLeasedSharedCodexAppServerClient(client);
   }
 }
@@ -838,6 +891,7 @@ async function runBoundTurnWithMissingThreadRecovery(params: {
   pluginConfig?: unknown;
   config?: CodexConversationConfig;
   sessionKey?: string;
+  systemProfileDir?: string;
   timeoutMs?: number;
 }): Promise<BoundTurnResult> {
   try {
@@ -866,6 +920,7 @@ async function runBoundTurnWithMissingThreadRecovery(params: {
       serviceTier: binding?.serviceTier,
       config: params.config,
       sessionKey: params.sessionKey,
+      systemProfileDir: params.systemProfileDir,
     });
     return await runBoundTurn(params);
   }

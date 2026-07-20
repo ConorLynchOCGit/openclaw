@@ -58,9 +58,8 @@ export type CodexWorkbenchConfigRead = CodexWorkbenchMethodStatus & {
 export type CodexWorkbenchRoots = {
   executionCwd: string;
   workspaceRoot: string;
-  sourceRoot?: string;
   workbenchRoot: string;
-  pluginRoot?: string;
+  packageProfileRoot?: string;
   mcpServers: string[];
 };
 
@@ -194,6 +193,7 @@ export async function buildCodexWorkbenchCapabilityReport(params: {
   const codexWorkbench = await buildCodexWorkbenchRoots({
     cwd: params.cwd,
     workspaceDir: params.workspaceDir,
+    systemProfileDir: params.systemProfileDir,
     mcpServers,
   });
 
@@ -267,27 +267,17 @@ function buildGeneratedSchemaMethodPresence(): CodexWorkbenchMethodPresence[] {
 async function buildCodexWorkbenchRoots(params: {
   cwd: string;
   workspaceDir: string;
+  systemProfileDir?: string;
   mcpServers: CodexWorkbenchMethodStatus & { count?: number; names?: string[] };
 }): Promise<CodexWorkbenchRoots> {
-  const sourceRoot = await resolveExistingDirectory(
-    path.join(params.workspaceDir, "src", "openclaw"),
-  );
+  const packageProfileRoot = params.systemProfileDir
+    ? await resolveExistingDirectory(params.systemProfileDir)
+    : undefined;
   return {
     executionCwd: params.cwd,
     workspaceRoot: params.workspaceDir,
-    ...(sourceRoot ? { sourceRoot } : {}),
-    workbenchRoot: params.workspaceDir,
-    ...(sourceRoot
-      ? {
-          pluginRoot: path.join(
-            sourceRoot,
-            ".agents",
-            "plugins",
-            "plugins",
-            "openclaw-coding-workbench",
-          ),
-        }
-      : {}),
+    workbenchRoot: params.cwd,
+    ...(packageProfileRoot ? { packageProfileRoot } : {}),
     mcpServers: params.mcpServers.status === "ok" ? (params.mcpServers.names ?? []) : [],
   };
 }
@@ -301,13 +291,11 @@ async function resolveExistingDirectory(candidate: string): Promise<string | und
   }
 }
 
-async function inspectNativeCodexConfig(params: {
-  client: CodexAppServerClient;
-  workspaceDir: string;
-  systemProfileDir?: string;
-  timeoutMs?: number;
-  signal?: AbortSignal;
-}): Promise<{
+async function inspectNativeCodexConfig(
+  params: ProbeParams & {
+    systemProfileDir?: string;
+  },
+): Promise<{
   configRead: CodexWorkbenchConfigRead;
   codexProjectConfig: CodexProjectConfigCapability;
   customAgents: CodexCustomAgentCapability;

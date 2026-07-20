@@ -154,10 +154,18 @@ async function resolveRepository(repoRoot: string): Promise<{
 async function requireSystemChangeBase(params: {
   repository: Awaited<ReturnType<typeof resolveRepository>>;
   baseRef?: string;
+  expectedTreeObject?: string;
 }): Promise<string> {
   const baseRef = params.baseRef?.trim();
   if (!baseRef) {
-    throw new Error("system-change worktrees require an exact local Git object id");
+    throw new Error("system-change worktrees require an exact native snapshot ref");
+  }
+  if (!baseRef.startsWith(`${SNAPSHOT_REF_PREFIX}/`)) {
+    throw new Error(`system-change base is not a native snapshot ref: ${baseRef}`);
+  }
+  const expectedTreeObject = params.expectedTreeObject?.trim();
+  if (!expectedTreeObject) {
+    throw new Error("system-change worktrees require the loaded source tree object");
   }
   if (params.repository.sourceRoot !== params.repository.repoRoot) {
     throw new Error("system-change worktrees require the primary source anchor checkout");
@@ -168,13 +176,25 @@ async function requireSystemChangeBase(params: {
     "--end-of-options",
     `${baseRef}^{commit}`,
   ]);
-  if (resolvedBase.code !== 0 || resolvedBase.stdout.trim() !== baseRef) {
-    throw new Error(`system-change source object is not a local commit: ${baseRef}`);
+  const baseCommit = resolvedBase.stdout.trim();
+  if (resolvedBase.code !== 0 || !baseCommit) {
+    throw new Error(`system-change snapshot is not a local commit: ${baseRef}`);
+  }
+  const resolvedTree = await runGit(params.repository.repoRoot, [
+    "rev-parse",
+    "--verify",
+    "--end-of-options",
+    `${baseRef}^{tree}`,
+  ]);
+  if (resolvedTree.code !== 0 || resolvedTree.stdout.trim() !== expectedTreeObject) {
+    throw new Error(
+      `system-change snapshot tree does not match the loaded release: expected ${expectedTreeObject}, observed ${resolvedTree.stdout.trim() || "unavailable"}`,
+    );
   }
   const anchorHead = await requireGit(params.repository.sourceRoot, ["rev-parse", "HEAD"]);
-  if (anchorHead !== baseRef) {
+  if (anchorHead !== baseCommit) {
     throw new Error(
-      `system-change source anchor does not match loaded object: expected ${baseRef}, observed ${anchorHead}`,
+      `system-change source anchor does not match loaded snapshot: expected ${baseCommit}, observed ${anchorHead}`,
     );
   }
   const status = await requireGitRaw(params.repository.sourceRoot, [
@@ -209,7 +229,7 @@ async function requireSystemChangeBase(params: {
   if (trackedInclude.stdout.trim()) {
     throw new Error("system-change worktrees do not allow .worktreeinclude");
   }
-  return baseRef;
+  return baseCommit;
 }
 
 async function cleanupFailedCreate(repoRoot: string, worktreePath: string, branch: string) {
@@ -545,7 +565,11 @@ export class ManagedWorktreeService {
   async create(params: CreateManagedWorktreeParams): Promise<ManagedWorktreeRecord> {
     const repository = await resolveRepository(params.repoRoot);
     const systemChangeBase = params.systemChange
-      ? await requireSystemChangeBase({ repository, baseRef: params.baseRef })
+      ? await requireSystemChangeBase({
+          repository,
+          baseRef: params.baseRef,
+          expectedTreeObject: params.expectedTreeObject,
+        })
       : undefined;
     const name = validateName(params.name ?? generateName());
     const root = path.join(resolveStateDir(this.env), "worktrees", repository.fingerprint);

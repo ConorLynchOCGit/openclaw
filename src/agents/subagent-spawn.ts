@@ -245,6 +245,9 @@ function validateSystemChangeSessionSource(params: {
   if (!path.isAbsolute(params.source.sourceAnchorPath)) {
     return "system-change source anchor must be an absolute path";
   }
+  if (!params.source.sourceSnapshotRef.startsWith("refs/openclaw/snapshots/")) {
+    return "system-change source must use a native OpenClaw snapshot ref";
+  }
   return undefined;
 }
 
@@ -356,7 +359,7 @@ function buildDirectChildSessionPatch(
   patch: Record<string, unknown>,
   systemChange?: {
     worktree: ManagedWorktreeRecord;
-    authority: NonNullable<SessionEntry["codexSystemAuthority"]>;
+    releaseManifestDigest: string;
   },
 ): Partial<SessionEntry> {
   const entry: Partial<SessionEntry> = {};
@@ -405,8 +408,8 @@ function buildDirectChildSessionPatch(
       repoRoot: systemChange.worktree.repoRoot,
       kind: "system-change",
       baseRef: systemChange.worktree.baseRef,
+      releaseManifestDigest: systemChange.releaseManifestDigest,
     };
-    entry.codexSystemAuthority = systemChange.authority;
   }
   return entry;
 }
@@ -1456,7 +1459,7 @@ export async function spawnSubagentDirect(
     patch: Record<string, unknown>,
     systemChange?: {
       worktree: ManagedWorktreeRecord;
-      authority: NonNullable<SessionEntry["codexSystemAuthority"]>;
+      releaseManifestDigest: string;
     },
   ): Promise<string | undefined> => {
     try {
@@ -1598,7 +1601,8 @@ export async function spawnSubagentDirect(
     try {
       systemChangeWorktree = await subagentSpawnDeps.createSystemChangeWorktree({
         repoRoot: systemChangeSource.sourceAnchorPath,
-        baseRef: systemChangeSource.sourceTreeObject,
+        baseRef: systemChangeSource.sourceSnapshotRef,
+        expectedTreeObject: systemChangeSource.sourceTreeObject,
         ownerKind: "session",
         ownerId: childSessionKey,
         systemChange: true,
@@ -1634,6 +1638,8 @@ export async function spawnSubagentDirect(
     childDepth,
     maxSpawnDepth,
     executionRuntime: childAgentRuntime.id === "codex" ? "codex" : "openclaw",
+    workspaceDir: spawnedWorkspaceDir,
+    cwd: spawnedCwd ?? spawnedWorkspaceDir,
   });
 
   let retainOnSessionKeep = false;
@@ -1702,7 +1708,7 @@ export async function spawnSubagentDirect(
     systemChangeWorktree && systemChangeSource
       ? {
           worktree: systemChangeWorktree,
-          authority: systemChangeSource.codexAuthority,
+          releaseManifestDigest: systemChangeSource.releaseManifestDigest,
         }
       : undefined,
   );

@@ -233,7 +233,10 @@ import {
   type CodexAppServerThreadBinding,
 } from "./session-binding.js";
 import { rotateOversizedCodexAppServerStartupBinding } from "./startup-binding.js";
-import { resolveCodexSystemThreadContext } from "./system-authority.js";
+import {
+  resolveCodexSystemProcessContext,
+  type CodexSystemThreadContext,
+} from "./system-authority.js";
 import {
   buildCodexLaunchEvidenceCapsule,
   buildDeveloperInstructions,
@@ -444,9 +447,7 @@ export async function runCodexAppServerAttempt(
       })
     : undefined;
   const requestedCwd = params.cwd ? resolveUserPath(params.cwd) : undefined;
-  const systemChangeSession =
-    runtimeSessionEntry?.worktree?.kind === "system-change" ||
-    Boolean(runtimeSessionEntry?.codexSystemAuthority);
+  const systemChangeSession = runtimeSessionEntry?.worktree?.kind === "system-change";
   const managedWorktreeCwd = systemChangeSession
     ? runtimeSessionEntry?.spawnedCwd?.trim()
     : undefined;
@@ -548,7 +549,7 @@ export async function runCodexAppServerAttempt(
   const effectiveCwd = sandbox?.enabled
     ? effectiveWorkspace
     : (effectiveRequestedCwd ?? effectiveWorkspace);
-  const systemContext = resolveCodexSystemThreadContext({
+  const systemProcessContext = resolveCodexSystemProcessContext({
     sessionEntry: runtimeSessionEntry,
     agentId: sessionAgentId,
     cwd: effectiveCwd,
@@ -688,7 +689,7 @@ export async function runCodexAppServerAttempt(
     sandbox,
   });
   preDynamicStartupStages.mark("native-exec-policy");
-  const bundleMcpThreadConfig: CodexBundleMcpThreadConfig = systemContext
+  const bundleMcpThreadConfig: CodexBundleMcpThreadConfig = systemChangeSession
     ? { diagnostics: [], evaluated: true }
     : await loadCodexBundleMcpThreadConfig({
         workspaceDir: effectiveWorkspace,
@@ -706,7 +707,7 @@ export async function runCodexAppServerAttempt(
     sandboxExecServerEnabled,
   });
   const nativeExecutionAllowed = nativeExecutionDecision.enabled;
-  if (systemContext && !nativeExecutionAllowed) {
+  if (systemChangeSession && !nativeExecutionAllowed) {
     throw new Error(
       `system-change Codex requires the native execution surface: ${nativeExecutionDecision.reason}`,
     );
@@ -854,7 +855,7 @@ export async function runCodexAppServerAttempt(
       (await readMirroredSessionHistoryMessages(activeSessionFile)) ?? historyMessages;
   }
   const memoryToolNames = getCodexWorkspaceMemoryToolNames(toolBridge.availableSpecs);
-  const workspaceBootstrapContext: CodexWorkspaceBootstrapContext = systemContext
+  const workspaceBootstrapContext: CodexWorkspaceBootstrapContext = systemChangeSession
     ? { bootstrapFiles: [], contextFiles: [] }
     : await buildCodexWorkspaceBootstrapContext({
         params,
@@ -880,7 +881,7 @@ export async function runCodexAppServerAttempt(
     params,
     workspacePromptContext: workspaceBootstrapContext.promptContext,
   });
-  const skillsCollaborationInstructions = systemContext
+  const skillsCollaborationInstructions = systemChangeSession
     ? undefined
     : renderCodexSkillsCollaborationInstructions({
         attempt: params,
@@ -1006,7 +1007,7 @@ export async function runCodexAppServerAttempt(
     });
   let codexTurnPromptText = decorateCodexTurnPromptText(promptBuild.prompt);
   const buildCodexTurnCollaborationDeveloperInstructions = () =>
-    systemContext
+    systemChangeSession
       ? undefined
       : (buildTurnCollaborationMode(params, {
           turnScopedDeveloperInstructions:
@@ -1235,6 +1236,7 @@ export async function runCodexAppServerAttempt(
   let codexEnvironmentSelection: CodexTurnEnvironmentParams[] | undefined;
   let codexExecutionCwd = effectiveCwd;
   let codexSandboxPolicy: CodexSandboxPolicy | undefined;
+  let systemContext: CodexSystemThreadContext | undefined;
   let restartContextEngineCodexThread:
     | (() => Promise<CodexAppServerThreadLifecycleBinding>)
     | undefined;
@@ -1302,7 +1304,7 @@ export async function runCodexAppServerAttempt(
       effectiveWorkspace,
       effectiveCwd,
       systemProfileDir: options.systemProfileDir,
-      systemContext,
+      systemProcessContext,
       dynamicTools: toolBridge.specs,
       developerInstructions: promptBuild.developerInstructions,
       buildFinalConfigPatch: buildNativeHookRelayFinalConfigPatch,
@@ -1327,6 +1329,7 @@ export async function runCodexAppServerAttempt(
     codexEnvironmentSelection = startupResult.environmentSelection;
     codexExecutionCwd = startupResult.executionCwd;
     codexSandboxPolicy = startupResult.sandboxPolicy;
+    systemContext = startupResult.systemContext;
     releaseSharedClientLease = startupResult.releaseSharedClientLease;
     restartContextEngineCodexThread = startupResult.restartContextEngineCodexThread;
     const sandboxLabel =

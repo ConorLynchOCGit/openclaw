@@ -1,6 +1,9 @@
 model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
+project_doc_max_bytes = 0
+default_permissions = "openclaw-system-change"
 features.tool_suggest = false
+features.multi_agent = false
 
 developer_instructions = """
 You are the single cognitive Coding lead inside a Codex-native execution
@@ -131,6 +134,10 @@ not force a review lane, no fixed reviewer count is implied, and the parent may
 truthfully close partial or blocked.
 """
 
+[permissions.openclaw-system-change]
+description = "Write only within the active OpenClaw-managed system-change worktree."
+extends = ":workspace"
+
 # OpenClaw selects whether a run enters Code Mode. This project config owns
 # which inherited Codex-native namespaces remain visible to V2 children.
 [features.code_mode]
@@ -207,10 +214,7 @@ config_file = "agents/test_engineer.toml"
 
 [mcp_servers.openclaw_repo_workbench]
 command = "node"
-args = [
-  "src/openclaw/.agents/plugins/plugins/openclaw-coding-workbench/mcp/openclaw-repo-workbench.mjs",
-]
-cwd = "/home/node/.openclaw/workspace"
+args = ["tools/openclaw-repo-workbench.mjs"]
 startup_timeout_sec = 10
 tool_timeout_sec = 30
 required = true
@@ -225,7 +229,3 @@ enabled_tools = [
   "lsp_definition_typescript",
   "lsp_references_typescript",
 ]
-
-[mcp_servers.openclaw_repo_workbench.env]
-OPENCLAW_REPO_WORKBENCH_ROOT = "/home/node/.openclaw/workspace"
-OPENCLAW_REPO_WORKBENCH_SOURCE_ROOT = "/home/node/.openclaw/workspace/src/openclaw"

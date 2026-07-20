@@ -250,7 +250,7 @@ describe("spawnSubagentDirect workspace inheritance", () => {
 
   it.each([
     [".", "/tmp/workspace-ops"],
-    ["src/openclaw", "/tmp/workspace-ops/src/openclaw"],
+    ["project", "/tmp/workspace-ops/project"],
     ["/tmp/explicit-task-repo", "/tmp/explicit-task-repo"],
   ])("resolves child cwd %s against the target agent workspace", async (cwd, expectedCwd) => {
     hoisted.configOverride = createConfigOverride({

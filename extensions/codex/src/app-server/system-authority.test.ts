@@ -3,13 +3,17 @@ import { describe, expect, it } from "vitest";
 import {
   assertCodexSystemThreadResponse,
   assertCodexSystemV2Model,
+  buildCodexSystemThreadContext,
   resolveCodexSystemFixedEnvironment,
-  resolveCodexSystemThreadContext,
+  resolveCodexSystemProcessContext,
 } from "./system-authority.js";
+import type { CodexLoadedSystemProfile } from "./system-profile.js";
 
 const SOURCE_OBJECT = "a".repeat(40);
+const RELEASE_DIGEST = "b".repeat(64);
 const WORKTREE = "/tmp/openclaw-state/worktrees/system-change-a";
-const CODEX_HOME = "/tmp/openclaw-codex-home/generation-a";
+const STATE_DIR = "/tmp/openclaw-state";
+const PROFILE_DIR = "/opt/openclaw/codex-system-profile";
 
 function createSessionEntry(): SessionEntry {
   return {
@@ -17,141 +21,139 @@ function createSessionEntry(): SessionEntry {
     worktree: {
       id: "worktree-a",
       branch: "openclaw/system-change-a",
-      repoRoot: "/srv/openclaw/source-anchor",
+      repoRoot: "/var/lib/openclaw/source-anchor",
       kind: "system-change",
       baseRef: SOURCE_OBJECT,
-    },
-    codexSystemAuthority: {
-      schemaVersion: 1,
-      releaseManifestDigest: "b".repeat(64),
-      expectedServerVersion: "0.144.1",
-      codexHome: CODEX_HOME,
-      permissionProfile: "openclaw-system-change",
-      capabilityEnvironments: [
-        {
-          environmentId: "generation-capabilities",
-          cwd: "/opt/openclaw/capabilities/generation-a",
-        },
-      ],
-      selectedCapabilityRoots: [
-        {
-          id: "system-skills",
-          location: {
-            type: "environment",
-            environmentId: "generation-capabilities",
-            path: "/opt/openclaw/capabilities/generation-a/skills",
-          },
-        },
-      ],
-      v2ModelIds: ["gpt-5.4-codex"],
-      config: {
-        project_doc_max_bytes: 0,
-        developer_instructions: "Generation-N immutable developer instructions.",
-        "features.multi_agent": false,
-        "features.multi_agent_v2.enabled": true,
-        "shell_environment_policy.set": resolveCodexSystemFixedEnvironment(CODEX_HOME),
-      },
+      releaseManifestDigest: RELEASE_DIGEST,
     },
   } as SessionEntry;
 }
 
+function createProfile(): CodexLoadedSystemProfile {
+  return {
+    profileDir: PROFILE_DIR,
+    projectDir: `${PROFILE_DIR}/project`,
+    configLayerVersion: "profile-v1",
+    agentNames: ["codex_reviewer", "implementer"],
+    config: {
+      project_doc_max_bytes: 0,
+      developer_instructions: "Generation-N immutable developer instructions.",
+      default_permissions: "openclaw-system-change",
+      features: {
+        multi_agent: false,
+        multi_agent_v2: { enabled: true },
+      },
+      permissions: {
+        "openclaw-system-change": { extends: ":workspace" },
+      },
+    },
+    selectedCapabilityRoots: [
+      {
+        id: "system-skills",
+        location: {
+          type: "environment",
+          environmentId: "local",
+          path: `${PROFILE_DIR}/skills`,
+        },
+      },
+    ],
+  };
+}
+
+function createContext() {
+  const processContext = resolveCodexSystemProcessContext({
+    sessionEntry: createSessionEntry(),
+    agentId: "coding",
+    cwd: WORKTREE,
+    env: { OPENCLAW_STATE_DIR: STATE_DIR },
+  });
+  if (!processContext) {
+    throw new Error("expected system process context");
+  }
+  return buildCodexSystemThreadContext({ processContext, profile: createProfile() });
+}
+
 describe("Codex system generation authority", () => {
-  it("resolves immutable thread and process authority from the managed session", () => {
-    const context = resolveCodexSystemThreadContext({
-      sessionEntry: createSessionEntry(),
-      agentId: "coding",
-      cwd: WORKTREE,
-    });
+  it("resolves process identity from the session and thread authority from the package profile", () => {
+    const context = createContext();
+    const codexHome = `${STATE_DIR}/codex/generations/${RELEASE_DIGEST}`;
 
     expect(context).toMatchObject({
+      fingerprint: RELEASE_DIGEST,
       processProfile: {
-        expectedServerVersion: "0.144.1",
-        codexHome: "/tmp/openclaw-codex-home/generation-a",
+        key: RELEASE_DIGEST,
+        codexHome,
       },
-      environments: [
-        { environmentId: "worktree", cwd: WORKTREE },
-        {
-          environmentId: "generation-capabilities",
-          cwd: "/opt/openclaw/capabilities/generation-a",
-        },
-      ],
+      environments: [{ environmentId: "local", cwd: WORKTREE }],
+      authority: {
+        releaseManifestDigest: RELEASE_DIGEST,
+        permissionProfile: "openclaw-system-change",
+      },
     });
-    expect(context?.authority.selectedCapabilityRoots).toEqual(
-      createSessionEntry().codexSystemAuthority?.selectedCapabilityRoots,
+    expect(context.authority.selectedCapabilityRoots).toEqual(
+      createProfile().selectedCapabilityRoots,
     );
-    expect(context?.fingerprint).toBe("b".repeat(64));
-    expect(context?.processProfile.key).toBe("b".repeat(64));
-    const sharedHeavyCheckLock = createSessionEntry();
-    sharedHeavyCheckLock.codexSystemAuthority!.config["shell_environment_policy.set"] = {
-      ...resolveCodexSystemFixedEnvironment(CODEX_HOME),
-      OPENCLAW_HEAVY_CHECK_LOCK_SCOPE: "shared",
-    };
-    expect(() =>
-      resolveCodexSystemThreadContext({
-        sessionEntry: sharedHeavyCheckLock,
-        agentId: "coding",
-        cwd: WORKTREE,
-      }),
-    ).toThrow("invalid fixed shell environment: OPENCLAW_HEAVY_CHECK_LOCK_SCOPE");
-
-    const ambientNpmCache = createSessionEntry();
-    ambientNpmCache.codexSystemAuthority!.config["shell_environment_policy.set"] = {
-      ...resolveCodexSystemFixedEnvironment(CODEX_HOME),
-      NPM_CONFIG_CACHE: "/srv/openclaw-next/.npm",
-    };
-    expect(() =>
-      resolveCodexSystemThreadContext({
-        sessionEntry: ambientNpmCache,
-        agentId: "coding",
-        cwd: WORKTREE,
-      }),
-    ).toThrow("invalid fixed shell environment: NPM_CONFIG_CACHE");
-    assertCodexSystemV2Model(context!, "gpt-5.4-codex");
-    expect(() => assertCodexSystemV2Model(context!, "gpt-5.4-mini")).toThrow(
-      "not declared multi-agent V2",
+    expect(context.authority.config).toMatchObject({
+      project_doc_max_bytes: 0,
+      projects: { [WORKTREE]: { trust_level: "untrusted" } },
+      shell_environment_policy: {
+        set: resolveCodexSystemFixedEnvironment(codexHome),
+      },
+    });
+    expect(() => assertCodexSystemV2Model(context, "gpt-5.6-sol")).not.toThrow();
+    expect(() => assertCodexSystemV2Model(context, undefined)).toThrow(
+      "model selection is missing",
     );
   });
 
-  it("rejects cwd and immutable-root boundary mismatches", () => {
+  it("rejects cwd, agent, release, and profile boundary mismatches", () => {
     expect(() =>
-      resolveCodexSystemThreadContext({
+      resolveCodexSystemProcessContext({
         sessionEntry: createSessionEntry(),
         agentId: "coding",
         cwd: "/tmp/foreign-worktree",
+        env: { OPENCLAW_STATE_DIR: STATE_DIR },
       }),
     ).toThrow("cwd does not match");
 
-    const overlappingHome = createSessionEntry();
-    overlappingHome.codexSystemAuthority!.codexHome = "/tmp/openclaw-state";
     expect(() =>
-      resolveCodexSystemThreadContext({
-        sessionEntry: overlappingHome,
+      resolveCodexSystemProcessContext({
+        sessionEntry: createSessionEntry(),
+        agentId: "planning",
+        cwd: WORKTREE,
+        env: { OPENCLAW_STATE_DIR: STATE_DIR },
+      }),
+    ).toThrow("only run through the Coding agent");
+
+    const missingRelease = createSessionEntry();
+    delete missingRelease.worktree?.releaseManifestDigest;
+    expect(() =>
+      resolveCodexSystemProcessContext({
+        sessionEntry: missingRelease,
         agentId: "coding",
         cwd: WORKTREE,
+        env: { OPENCLAW_STATE_DIR: STATE_DIR },
       }),
-    ).toThrow("requires an external absolute CODEX_HOME");
+    ).toThrow("missing its loaded release identity");
 
-    const overlappingCapability = createSessionEntry();
-    overlappingCapability.codexSystemAuthority!.capabilityEnvironments[0]!.cwd =
-      "/tmp/openclaw-state";
-    expect(() =>
-      resolveCodexSystemThreadContext({
-        sessionEntry: overlappingCapability,
-        agentId: "coding",
-        cwd: WORKTREE,
-      }),
-    ).toThrow("invalid capability environment");
-  });
-
-  it("requires truthful native start and resume readback", () => {
-    const context = resolveCodexSystemThreadContext({
+    const processContext = resolveCodexSystemProcessContext({
       sessionEntry: createSessionEntry(),
       agentId: "coding",
       cwd: WORKTREE,
+      env: { OPENCLAW_STATE_DIR: STATE_DIR },
     })!;
+    const editableCapability = createProfile();
+    editableCapability.selectedCapabilityRoots[0]!.location.path = `${WORKTREE}/skills`;
+    expect(() =>
+      buildCodexSystemThreadContext({ processContext, profile: editableCapability }),
+    ).toThrow("invalid capability root");
+  });
+
+  it("requires truthful native start and resume readback", () => {
+    const context = createContext();
     const response = {
       thread: { id: "thread-a", items: [], cwd: WORKTREE },
-      model: "gpt-5.4-codex",
+      model: "gpt-5.6-sol",
       cwd: WORKTREE,
       runtimeWorkspaceRoots: [WORKTREE],
       instructionSources: [],

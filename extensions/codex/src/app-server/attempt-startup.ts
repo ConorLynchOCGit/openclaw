@@ -54,7 +54,11 @@ import {
   releaseLeasedSharedCodexAppServerClient,
   retireSharedCodexAppServerClientIfCurrent,
 } from "./shared-client.js";
-import type { CodexSystemThreadContext } from "./system-authority.js";
+import {
+  buildCodexSystemThreadContext,
+  type CodexSystemProcessContext,
+  type CodexSystemThreadContext,
+} from "./system-authority.js";
 import { loadCodexSystemProfile } from "./system-profile.js";
 import {
   startOrResumeThread,
@@ -75,6 +79,7 @@ export type StartCodexAttemptThreadResult = {
   environmentSelection: CodexTurnEnvironmentParams[] | undefined;
   executionCwd: string;
   sandboxPolicy: CodexSandboxPolicy | undefined;
+  systemContext: CodexSystemThreadContext | undefined;
   releaseSharedClientLease: () => void;
   restartContextEngineCodexThread: () => Promise<CodexAppServerThreadLifecycleBinding>;
 };
@@ -98,7 +103,7 @@ export async function startCodexAttemptThread(params: {
   effectiveWorkspace: string;
   effectiveCwd: string;
   systemProfileDir?: string;
-  systemContext?: CodexSystemThreadContext;
+  systemProcessContext?: CodexSystemProcessContext;
   dynamicTools: CodexDynamicToolSpec[];
   developerInstructions: string | undefined;
   finalConfigPatch?: Parameters<typeof startOrResumeThread>[0]["finalConfigPatch"];
@@ -144,7 +149,7 @@ export async function startCodexAttemptThread(params: {
         );
         const nativeToolSurfaceRestricted = !params.nativeExecutionAllowed;
         const pluginThreadConfigRequired =
-          !params.systemContext &&
+          !params.systemProcessContext &&
           (nativeToolSurfaceRestricted || shouldBuildCodexPluginThreadConfig(params.pluginConfig));
         // Restricted runs still need a plugin thread config so thread/start
         // carries the explicit apps._default denial patch without app/list.
@@ -169,7 +174,7 @@ export async function startCodexAttemptThread(params: {
           ? resolveCodexPluginsPolicy(pluginThreadConfigPluginConfig)
           : undefined;
         const computerUseMcpElicitationDelegationRequired =
-          !params.systemContext && params.computerUseConfig.enabled;
+          !params.systemProcessContext && params.computerUseConfig.enabled;
         const mcpElicitationDelegationRequired =
           resolvedPluginPolicy?.enabled === true || computerUseMcpElicitationDelegationRequired;
         const enabledPluginConfigKeys = resolvedPluginPolicy
@@ -221,7 +226,7 @@ export async function startCodexAttemptThread(params: {
                   }
                 },
                 abandonSignal: startupAbandonController.signal,
-                processProfile: params.systemContext?.processProfile,
+                processProfile: params.systemProcessContext?.processProfile,
               },
             );
             const activeStartupClient = startupClient;
@@ -242,20 +247,29 @@ export async function startCodexAttemptThread(params: {
             if (startupAbandonController.signal.aborted) {
               throw new Error("codex app-server startup aborted");
             }
-            const systemProfile =
-              !params.systemContext && params.systemProfileDir
-                ? await loadCodexSystemProfile({
-                    client: activeStartupClient,
-                    systemProfileDir: params.systemProfileDir,
-                    timeoutMs: params.appServer.requestTimeoutMs,
-                    signal: startupAbandonController.signal,
+            const systemProfile = params.systemProfileDir
+              ? await loadCodexSystemProfile({
+                  client: activeStartupClient,
+                  systemProfileDir: params.systemProfileDir,
+                  timeoutMs: params.appServer.requestTimeoutMs,
+                  signal: startupAbandonController.signal,
+                })
+              : undefined;
+            if (params.systemProcessContext && !systemProfile) {
+              throw new Error("system-change Codex requires the package-owned system profile");
+            }
+            const systemContext =
+              params.systemProcessContext && systemProfile
+                ? buildCodexSystemThreadContext({
+                    processContext: params.systemProcessContext,
+                    profile: systemProfile,
                   })
                 : undefined;
             threadConfig = mergeCodexThreadConfigs(
-              systemProfile?.config,
+              systemContext?.authority.config ?? systemProfile?.config,
               params.bundleMcpThreadConfig?.configPatch as JsonObject | undefined,
             );
-            if (!params.systemContext) {
+            if (!systemContext) {
               await ensureCodexComputerUse({
                 client: activeStartupClient,
                 pluginConfig: params.pluginConfig,
@@ -274,7 +288,7 @@ export async function startCodexAttemptThread(params: {
             releaseStartupResourcesOnTimeout = releaseStartupSandboxEnvironment;
             try {
               startupSandboxEnvironment =
-                !params.systemContext &&
+                !systemContext &&
                 shouldRequireCodexSandboxExecServerEnvironment({
                   sandbox: params.sandbox,
                   nativeToolSurfaceEnabled: params.nativeExecutionAllowed,
@@ -294,7 +308,7 @@ export async function startCodexAttemptThread(params: {
                 throw new Error("codex app-server startup aborted");
               }
               if (
-                !params.systemContext &&
+                !systemContext &&
                 params.sandbox?.enabled &&
                 params.nativeExecutionAllowed &&
                 params.sandboxExecServerEnabled &&
@@ -308,8 +322,8 @@ export async function startCodexAttemptThread(params: {
               await releaseStartupSandboxEnvironment();
               throw error;
             }
-            const executionEnvironmentSelection = params.systemContext
-              ? params.systemContext.environments
+            const executionEnvironmentSelection = systemContext
+              ? systemContext.environments
               : resolveCodexSandboxEnvironmentSelection(
                   startupSandboxEnvironment,
                   params.nativeExecutionAllowed,
@@ -321,7 +335,7 @@ export async function startCodexAttemptThread(params: {
               );
             }
             const startupEnvironmentSelection = executionEnvironmentSelection;
-            const startupExecutionCwd = params.systemContext
+            const startupExecutionCwd = systemContext
               ? params.effectiveCwd
               : resolveCodexAppServerExecutionCwd({
                   effectiveCwd: params.effectiveCwd,
@@ -329,7 +343,7 @@ export async function startCodexAttemptThread(params: {
                   nativeToolSurfaceEnabled: params.nativeExecutionAllowed,
                 });
             const startupSandboxPolicy =
-              !params.systemContext && startupSandboxEnvironment
+              !systemContext && startupSandboxEnvironment
                 ? resolveCodexExternalSandboxPolicyForOpenClawSandbox(params.sandbox)
                 : undefined;
             const buildThreadLifecycleParams = (signal: AbortSignal) =>
@@ -353,7 +367,7 @@ export async function startCodexAttemptThread(params: {
                 environmentSelection: startupEnvironmentSelection,
                 selectedCapabilityRoots: systemProfile?.selectedCapabilityRoots,
                 contextEngineProjection: params.contextEngineProjection,
-                systemContext: params.systemContext,
+                systemContext,
                 signal,
                 pluginThreadConfig: pluginThreadConfigRequired
                   ? {
@@ -391,6 +405,7 @@ export async function startCodexAttemptThread(params: {
                 environmentSelection: startupEnvironmentSelection,
                 executionCwd: startupExecutionCwd,
                 sandboxPolicy: startupSandboxPolicy,
+                systemContext,
                 restartContextEngineCodexThread: () =>
                   startOrResumeThread(buildThreadLifecycleParams(params.signal)),
               };

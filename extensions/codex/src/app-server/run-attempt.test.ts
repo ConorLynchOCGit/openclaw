@@ -66,7 +66,6 @@ import {
 import { createSandboxContext } from "./sandbox-exec-server.test-helpers.js";
 import { readCodexAppServerBinding, writeCodexAppServerBinding } from "./session-binding.js";
 import * as sharedClientModule from "./shared-client.js";
-import { resolveCodexSystemFixedEnvironment } from "./system-authority.js";
 import { createCodexTestModel } from "./test-support.js";
 import { buildTurnStartParams, startOrResumeThread } from "./thread-lifecycle.js";
 import { CODEX_WORKBENCH_CAPABILITY_CONTROL_METHODS } from "./workbench-capability.js";
@@ -426,6 +425,48 @@ function createRuntimeDynamicTool(name: string): RuntimeDynamicToolForTest {
   };
 }
 
+async function createSystemProfileFixture(systemProfileDir: string) {
+  const projectDir = path.join(systemProfileDir, "project");
+  const config = {
+    project_doc_max_bytes: 0,
+    developer_instructions: "Generation-N immutable developer instructions.",
+    default_permissions: "openclaw-system-change",
+    features: {
+      multi_agent: false,
+      multi_agent_v2: { enabled: true },
+    },
+    permissions: {
+      "openclaw-system-change": { extends: ":workspace" },
+    },
+    mcp_servers: {
+      openclaw_repo_workbench: {
+        command: "node",
+        args: ["tools/openclaw-repo-workbench.mjs"],
+      },
+    },
+  };
+  await fs.mkdir(path.join(projectDir, ".codex"), { recursive: true });
+  await fs.mkdir(path.join(systemProfileDir, "tools"), { recursive: true });
+  await fs.writeFile(
+    path.join(systemProfileDir, "tools", "openclaw-repo-workbench.mjs"),
+    "export {};\n",
+  );
+  return {
+    config,
+    projectDir,
+    readback: {
+      config,
+      layers: [
+        {
+          name: { type: "project", dotCodexFolder: path.join(projectDir, ".codex") },
+          version: "sha256:system-profile",
+          config,
+        },
+      ],
+    },
+  };
+}
+
 function buildEmptyCodexToolTelemetry(): CodexAppServerToolTelemetry {
   return {
     didSendViaMessagingTool: false,
@@ -488,20 +529,21 @@ describe("runCodexAppServerAttempt", () => {
     const sessionFile = path.join(tempDir, "coding-workbench-session.jsonl");
     const workspaceDir = path.join(tempDir, "coding-workbench-workspace");
     const systemProfileDir = path.join(tempDir, "codex-system-profile");
-    const profileConfig = {
-      features: {
-        multi_agent_v2: {
-          enabled: true,
-          max_concurrent_threads_per_session: 6,
-          hide_spawn_agent_metadata: false,
-          non_code_mode_only: true,
-          tool_namespace: "agents",
-        },
+    const profile = await createSystemProfileFixture(systemProfileDir);
+    const profileConfig = profile.config as JsonObject;
+    profileConfig.features = {
+      multi_agent: false,
+      multi_agent_v2: {
+        enabled: true,
+        max_concurrent_threads_per_session: 6,
+        hide_spawn_agent_metadata: false,
+        non_code_mode_only: true,
+        tool_namespace: "agents",
       },
-      agents: {
-        codex_reviewer: {
-          config_file: path.join(systemProfileDir, "project/.codex/agents/codex_reviewer.toml"),
-        },
+    };
+    profileConfig.agents = {
+      codex_reviewer: {
+        config_file: path.join(systemProfileDir, "project/.codex/agents/codex_reviewer.toml"),
       },
     };
     testing.setOpenClawCodingToolsFactoryForTests(() => [
@@ -558,7 +600,6 @@ describe("runCodexAppServerAttempt", () => {
     expect(startParams.config?.["features.code_mode"]).toBe(true);
     expect(startParams.config?.["features.code_mode_only"]).toBe(true);
     expect(startParams.config?.["features.code_mode.direct_only_tool_namespaces"]).toBeUndefined();
-    expect(startParams.config).not.toHaveProperty("features.multi_agent");
     expect((startParams.config?.features as JsonObject | undefined)?.multi_agent_v2).toEqual(
       profileConfig.features.multi_agent_v2,
     );
@@ -648,7 +689,7 @@ describe("runCodexAppServerAttempt", () => {
     );
   });
 
-  it("forces Coding Codex execution cwd to the live workspace instead of /app", async () => {
+  it("forces ordinary Coding execution into its agent workspace instead of /app", async () => {
     const sessionFile = path.join(tempDir, "coding-workspace-cwd-session.jsonl");
     const workspaceDir = path.join(tempDir, "coding-live-workspace");
     await fs.mkdir(path.join(workspaceDir, ".codex", "agents"), { recursive: true });
@@ -695,19 +736,12 @@ describe("runCodexAppServerAttempt", () => {
     const sessionStore = path.join(tempDir, "system-change-sessions.json");
     const workspaceDir = path.join(tempDir, "persistent-caller-workspace");
     const worktreeDir = path.join(tempDir, "worktrees", "system-change-a");
-    const capabilityDir = path.join(tempDir, "generation-capabilities");
-    const codexHome = path.join(tempDir, "codex-home-generation-a");
+    const systemProfileDir = path.join(tempDir, "codex-system-profile");
     const sourceObject = "a".repeat(40);
+    const releaseManifestDigest = "b".repeat(64);
     const permissionProfile = "openclaw-system-change";
-    const config = {
-      project_doc_max_bytes: 0,
-      developer_instructions: "Generation-N immutable developer instructions.",
-      "features.multi_agent": false,
-      "features.multi_agent_v2.enabled": true,
-      "shell_environment_policy.set": resolveCodexSystemFixedEnvironment(codexHome),
-    };
+    const profile = await createSystemProfileFixture(systemProfileDir);
     await fs.mkdir(worktreeDir, { recursive: true });
-    await fs.mkdir(path.join(capabilityDir, "skills"), { recursive: true });
     await fs.writeFile(
       sessionStore,
       JSON.stringify({
@@ -721,33 +755,15 @@ describe("runCodexAppServerAttempt", () => {
             repoRoot: "/srv/openclaw-next/source-anchor",
             kind: "system-change",
             baseRef: sourceObject,
-          },
-          codexSystemAuthority: {
-            schemaVersion: 1,
-            releaseManifestDigest: "b".repeat(64),
-            expectedServerVersion: "0.144.1",
-            codexHome,
-            permissionProfile,
-            capabilityEnvironments: [
-              { environmentId: "generation-capabilities", cwd: capabilityDir },
-            ],
-            selectedCapabilityRoots: [
-              {
-                id: "system-skills",
-                location: {
-                  type: "environment",
-                  environmentId: "generation-capabilities",
-                  path: path.join(capabilityDir, "skills"),
-                },
-              },
-            ],
-            v2ModelIds: ["gpt-5.4-codex"],
-            config,
+            releaseManifestDigest,
           },
         },
       }),
     );
     const { requests, waitForMethod, completeTurn } = createStartedThreadHarness(async (method) => {
+      if (method === "config/read") {
+        return profile.readback;
+      }
       if (method !== "thread/start") {
         return undefined;
       }
@@ -771,6 +787,7 @@ describe("runCodexAppServerAttempt", () => {
 
     const run = runCodexAppServerAttempt(params, {
       pluginConfig: { codexPlugins: { enabled: false } },
+      systemProfileDir,
     });
     await waitForMethod("turn/start");
     await completeTurn({ threadId: "thread-1", turnId: "turn-1" });
@@ -786,28 +803,46 @@ describe("runCodexAppServerAttempt", () => {
       cwd: worktreeDir,
       runtimeWorkspaceRoots: [worktreeDir],
       permissions: permissionProfile,
-      config,
-      selectedCapabilityRoots: [
-        {
-          id: "system-skills",
-          location: {
-            type: "environment",
-            environmentId: "generation-capabilities",
-            path: path.join(capabilityDir, "skills"),
-          },
-        },
-      ],
+      config: {
+        project_doc_max_bytes: 0,
+        developer_instructions: profile.config.developer_instructions,
+        default_permissions: permissionProfile,
+        projects: { [worktreeDir]: { trust_level: "untrusted" } },
+      },
     });
+    expect(startParams?.selectedCapabilityRoots).toEqual([
+      {
+        id: "codex-system-skills",
+        location: {
+          type: "environment",
+          environmentId: "local",
+          path: path.join(systemProfileDir, "skills"),
+        },
+      },
+      {
+        id: "openclaw-shared-system-skills",
+        location: {
+          type: "environment",
+          environmentId: "local",
+          path: path.join(systemProfileDir, "shared-skills"),
+        },
+      },
+      {
+        id: "openclaw-contributor-guidance",
+        location: {
+          type: "environment",
+          environmentId: "local",
+          path: path.join(systemProfileDir, "contributor-guidance"),
+        },
+      },
+    ]);
     expect(startParams).not.toHaveProperty("developerInstructions");
     expect(startParams).not.toHaveProperty("sandbox");
     expect(turnParams).toMatchObject({
       cwd: worktreeDir,
       runtimeWorkspaceRoots: [worktreeDir],
       permissions: permissionProfile,
-      environments: [
-        { environmentId: "worktree", cwd: worktreeDir },
-        { environmentId: "generation-capabilities", cwd: capabilityDir },
-      ],
+      environments: [{ environmentId: "local", cwd: worktreeDir }],
     });
     expect(turnParams).not.toHaveProperty("sandboxPolicy");
     await expect(fs.stat(workspaceDir)).rejects.toMatchObject({ code: "ENOENT" });

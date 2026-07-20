@@ -30,56 +30,13 @@ let spawnSubagentDirect: typeof import("./subagent-spawn.js").spawnSubagentDirec
 let subagentSpawnTesting: typeof import("./subagent-spawn.js").testing;
 
 const SYSTEM_SOURCE_OBJECT = "a".repeat(40);
-const SYSTEM_CODEX_HOME = "/var/lib/openclaw/codex/generation-a";
-const SYSTEM_PACKAGE_CACHE_ROOT = `${SYSTEM_CODEX_HOME}/package-cache`;
-const SYSTEM_SHELL_ENVIRONMENT = {
-  OPENCLAW_HEAVY_CHECK_LOCK_SCOPE: "worktree",
-  XDG_CACHE_HOME: `${SYSTEM_PACKAGE_CACHE_ROOT}/xdg`,
-  COREPACK_HOME: `${SYSTEM_PACKAGE_CACHE_ROOT}/corepack`,
-  NPM_CONFIG_CACHE: `${SYSTEM_PACKAGE_CACHE_ROOT}/npm`,
-  npm_config_cache: `${SYSTEM_PACKAGE_CACHE_ROOT}/npm`,
-  PNPM_HOME: `${SYSTEM_PACKAGE_CACHE_ROOT}/pnpm-home`,
-  PNPM_CONFIG_STORE_DIR: `${SYSTEM_PACKAGE_CACHE_ROOT}/pnpm-store`,
-  npm_config_store_dir: `${SYSTEM_PACKAGE_CACHE_ROOT}/pnpm-store`,
-  pnpm_config_store_dir: `${SYSTEM_PACKAGE_CACHE_ROOT}/pnpm-store`,
-  PNPM_STORE_PATH: `${SYSTEM_PACKAGE_CACHE_ROOT}/pnpm-store`,
-};
 
 function createSystemChangeSessionSource(): SystemChangeSessionSource {
   return {
     sourceAnchorPath: "/srv/openclaw-next/source-anchor",
+    sourceSnapshotRef: "refs/openclaw/snapshots/loaded-generation",
     sourceTreeObject: SYSTEM_SOURCE_OBJECT,
-    codexAuthority: {
-      schemaVersion: 1,
-      releaseManifestDigest: "b".repeat(64),
-      expectedServerVersion: "0.144.1",
-      codexHome: SYSTEM_CODEX_HOME,
-      permissionProfile: "openclaw-system-change",
-      capabilityEnvironments: [
-        {
-          environmentId: "generation-capabilities",
-          cwd: "/opt/openclaw/capabilities/generation-a",
-        },
-      ],
-      selectedCapabilityRoots: [
-        {
-          id: "system-skills",
-          location: {
-            type: "environment",
-            environmentId: "generation-capabilities",
-            path: "/opt/openclaw/capabilities/generation-a/skills",
-          },
-        },
-      ],
-      v2ModelIds: ["gpt-5.4"],
-      config: {
-        project_doc_max_bytes: 0,
-        developer_instructions: "Generation-N immutable developer instructions.",
-        "features.multi_agent": false,
-        "features.multi_agent_v2.enabled": true,
-        "shell_environment_policy.set": { ...SYSTEM_SHELL_ENVIRONMENT },
-      },
-    },
+    releaseManifestDigest: "b".repeat(64),
   };
 }
 
@@ -420,7 +377,8 @@ describe("spawnSubagentDirect seam flow", () => {
     });
     expect(createSystemChangeWorktree).toHaveBeenCalledWith({
       repoRoot: source.sourceAnchorPath,
-      baseRef: source.sourceTreeObject,
+      baseRef: source.sourceSnapshotRef,
+      expectedTreeObject: source.sourceTreeObject,
       ownerKind: "session",
       ownerId: result.childSessionKey,
       systemChange: true,
@@ -435,8 +393,8 @@ describe("spawnSubagentDirect seam flow", () => {
         repoRoot: source.sourceAnchorPath,
         kind: "system-change",
         baseRef: source.sourceTreeObject,
+        releaseManifestDigest: source.releaseManifestDigest,
       },
-      codexSystemAuthority: source.codexAuthority,
     });
   });
 

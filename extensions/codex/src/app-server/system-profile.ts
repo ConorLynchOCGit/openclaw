@@ -2,6 +2,7 @@
  * Loads the immutable, package-owned Codex profile through Codex's native
  * config parser. The editable repository is never a configuration authority.
  */
+import fs from "node:fs/promises";
 import path from "node:path";
 import type { CodexAppServerClient } from "./client.js";
 import { isJsonObject, type CodexSelectedCapabilityRoot, type JsonObject } from "./protocol.js";
@@ -81,18 +82,55 @@ async function loadCodexSystemProfileUncached(params: {
     .filter(([, value]) => isJsonObject(value) && typeof value.config_file === "string")
     .map(([name]) => name)
     .toSorted((left, right) => left.localeCompare(right));
+  const config = await materializePackageOwnedMcpConfig(profileLayer.config, profileDir);
 
   return {
     profileDir,
     projectDir,
     configLayerVersion,
-    config: profileLayer.config,
+    config,
     agentNames,
     selectedCapabilityRoots: [
       buildCapabilityRoot("codex-system-skills", profileDir, "skills"),
       buildCapabilityRoot("openclaw-shared-system-skills", profileDir, "shared-skills"),
       buildCapabilityRoot("openclaw-contributor-guidance", profileDir, "contributor-guidance"),
     ],
+  };
+}
+
+async function materializePackageOwnedMcpConfig(
+  config: JsonObject,
+  profileDir: string,
+): Promise<JsonObject> {
+  const mcpServers = isJsonObject(config.mcp_servers) ? config.mcp_servers : undefined;
+  const workbench = mcpServers?.openclaw_repo_workbench;
+  if (!isJsonObject(workbench) || workbench.command !== "node") {
+    throw new Error("Codex system profile is missing its package-owned Workbench MCP server");
+  }
+  if (
+    !Array.isArray(workbench.args) ||
+    workbench.args.length !== 1 ||
+    workbench.args[0] !== "tools/openclaw-repo-workbench.mjs"
+  ) {
+    throw new Error("Codex system profile has an invalid Workbench MCP package path");
+  }
+  if (workbench.cwd !== undefined || workbench.env !== undefined) {
+    throw new Error("Workbench MCP must inherit the Codex thread cwd and cleared environment");
+  }
+  const executable = path.join(profileDir, "tools", "openclaw-repo-workbench.mjs");
+  const stat = await fs.stat(executable);
+  if (!stat.isFile()) {
+    throw new Error(`Workbench MCP package asset is not a file: ${executable}`);
+  }
+  return {
+    ...config,
+    mcp_servers: {
+      ...mcpServers,
+      openclaw_repo_workbench: {
+        ...workbench,
+        args: [executable],
+      },
+    },
   };
 }
 

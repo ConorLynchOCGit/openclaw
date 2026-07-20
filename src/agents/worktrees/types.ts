@@ -1,12 +1,11 @@
-import type { SessionCodexSystemAuthority } from "../../config/sessions/types.js";
-
 export type ManagedWorktreeOwnerKind = "manual" | "workboard" | "session";
 
 /** Trusted source input projected from the currently loaded release generation. */
 export type SystemChangeSessionSource = {
   sourceAnchorPath: string;
+  sourceSnapshotRef: string;
   sourceTreeObject: string;
-  codexAuthority: SessionCodexSystemAuthority;
+  releaseManifestDigest: string;
 };
 
 export type ProvisionedFileState = {
@@ -39,6 +38,8 @@ export type CreateManagedWorktreeParams = {
   ownerId?: string;
   /** Restricts creation to the clean loaded-generation source anchor and exact local object. */
   systemChange?: boolean;
+  /** Expected tree bound by the loaded release manifest for a system-change base. */
+  expectedTreeObject?: string;
   // Repository checkout hooks and .openclaw/worktree-setup.sh execute repo-local code, so
   // callers reachable from less-privileged surfaces opt out; admin paths keep them on.
   runSetupScript?: boolean;

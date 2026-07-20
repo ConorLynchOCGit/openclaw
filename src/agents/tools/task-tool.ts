@@ -28,16 +28,13 @@ import {
   computeChildResultContentDigest,
   includesChildResultTruncationMarker,
 } from "../child-result-metadata.js";
-import {
-  renderLiveAgentHandoffText,
-  renderLiveAgentPathReference,
-} from "../live-agent-path-handoff.js";
 import { readLatestAssistantReply, waitForAgentRun, type AgentWaitResult } from "../run-wait.js";
 import type { SpawnedToolContext } from "../spawned-context.js";
 import { killControlledSubagentRun, resolveSubagentController } from "../subagent-control.js";
 import { getLatestSubagentRunByChildSessionKey } from "../subagent-registry-read.js";
 import { spawnSubagentDirect } from "../subagent-spawn.js";
 import { normalizeSubagentTaskName } from "../subagent-task-name.js";
+import { resolveLoadedSystemChangeSessionSource } from "../system-change-source.js";
 import { requireGit } from "../worktrees/git.js";
 import type { SystemChangeSessionSource } from "../worktrees/types.js";
 import type { AnyAgentTool } from "./common.js";
@@ -73,7 +70,7 @@ const TaskToolSchema = Type.Object({
   }),
   task: Type.String({
     description:
-      "Child route intent and bounded task context. When an exact workspace artifact governs the work, pass its path/ref and digest without reproducing, paraphrasing, or compressing its requirements; the child reads that artifact as authority. Ask for decision material, not a final plan unless that is the child role.",
+      "Child route intent and bounded task context. When an exact agent-workspace artifact governs the work, pass its path/ref and digest without reproducing, paraphrasing, or compressing its requirements; the child reads that artifact as authority. Ask for decision material, not a final plan unless that is the child role.",
   }),
   taskName: Type.Optional(
     Type.String({
@@ -94,11 +91,22 @@ const TaskToolSchema = Type.Object({
         "Optional explicit child thinking override. Omit by default so the target agent's role profile controls reasoning level; set only when intentionally overriding that profile for this task.",
     }),
   ),
-  cwd: Type.Optional(Type.String()),
+  cwd: Type.Optional(
+    Type.String({
+      description:
+        "Native task checkout. Relative values resolve from the target agent workspace; absolute values must already be runtime-visible. This changes repository context, not agent identity or bootstrap.",
+    }),
+  ),
   lightContext: Type.Optional(
     Type.Boolean({
       description:
         "Use lightweight bootstrap context for bounded children that need their role contract but not root workspace memory/context.",
+    }),
+  ),
+  systemChange: Type.Optional(
+    Type.Boolean({
+      description:
+        "Run Coding in a native managed worktree of the currently loaded OpenClaw generation. Valid only for Main-to-Coding system upgrades; source and cwd are runtime-owned.",
     }),
   ),
 });
@@ -315,11 +323,11 @@ function formatCodingTaskHandoffContract(agentId: string): string | undefined {
   }
   return [
     "[Coding Artifact Handoff Contract]",
-    "If the task includes a workspace-visible prompt, spec, or artifact file path, read that file in full before implementation and treat it as authoritative scope.",
+    "The OpenClaw agent workspace and repository checkout are separate native roots. The Session Context names both.",
+    "If the task includes an agent-workspace prompt, spec, or artifact path, resolve that path against the Agent workspace, read it in full, and treat it as authoritative scope.",
     "The task text is route/scope guidance only when a prompt/spec/artifact file is referenced; do not work from a parent summary instead of the referenced file.",
-    "An OpenClaw transcript/session receipt is transport evidence, not a Codex work artifact. If a required plan has no ordinary workspace-visible file path, do not search session stores or the workspace to reconstruct it; close blocked with workspace_artifact_path_missing.",
-    "Live-agent paths must be workspace-relative paths such as docs/... or src/openclaw/..., or absolute paths under /home/node/.openclaw/workspace/.",
-    "Do not use host-absolute root or service-checkout provenance paths as execution/read paths. If only host-absolute refs are available, close blocked with runtime_visible_artifact_missing.",
+    "An OpenClaw transcript/session receipt is transport evidence, not a Codex work artifact. If a required plan has no ordinary agent-workspace file path, do not search session stores or reconstruct it from prose; close blocked with workspace_artifact_path_missing.",
+    "Resolve source-relative paths against the Task checkout. System-change Coding receives an OpenClaw-managed worktree there; there is no nested src/openclaw checkout under the Agent workspace.",
     "In final closeout, report each governing file ref with observed chars and sha256 digest, or explicitly state that the ref was unreadable and why.",
   ].join("\n");
 }
@@ -608,8 +616,8 @@ export function createTaskTool(
     requesterAgentIdOverride?: string;
     workspaceDir?: string;
     onProgress?: () => void;
-    /** Trusted loaded-generation source for system-change Coding tasks. */
-    systemChangeSessionSource?: SystemChangeSessionSource;
+    /** Test-only override for loaded generation/source resolution. */
+    resolveSystemChangeSessionSource?: () => SystemChangeSessionSource;
   } & SpawnedToolContext,
 ): AnyAgentTool {
   return {
@@ -630,15 +638,6 @@ export function createTaskTool(
       const params = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
       const agentId = readStringParam(params, "agentId", { required: true });
       const task = readStringParam(params, "task", { required: true });
-      const renderedTask = renderLiveAgentHandoffText(task);
-      if (renderedTask.rejectedHostPaths.length > 0) {
-        return jsonResult({
-          status: "error",
-          error:
-            "task handoff contains host-only absolute paths that are not visible to live child agents",
-          rejectedHostPaths: renderedTask.rejectedHostPaths,
-        });
-      }
       const label = readStringParam(params, "label");
       const taskNameResult = normalizeSubagentTaskName(params.taskName);
       if (taskNameResult.error) {
@@ -669,41 +668,54 @@ export function createTaskTool(
       });
       const lightContext = resolveTaskToolLightContext(agentId, params.lightContext);
       const cwd = readStringParam(params, "cwd");
-      const systemChangeSessionSource = isCodexCodingAgentId(agentId)
-        ? opts?.systemChangeSessionSource
-        : undefined;
+      const requestsSystemChange = params.systemChange === true;
+      if (requestsSystemChange && !isCodexCodingAgentId(agentId)) {
+        return jsonResult({
+          status: "error",
+          error: "system-change tasks may only target the Coding agent",
+        });
+      }
+      if (requestsSystemChange && requesterAgentId?.trim().toLowerCase() !== "main") {
+        return jsonResult({
+          status: "error",
+          error: "system-change Coding tasks may only be launched by Main",
+        });
+      }
+      let systemChangeSessionSource: SystemChangeSessionSource | undefined;
+      if (requestsSystemChange) {
+        try {
+          systemChangeSessionSource =
+            opts?.resolveSystemChangeSessionSource?.() ?? resolveLoadedSystemChangeSessionSource();
+        } catch (error) {
+          return jsonResult({
+            status: "error",
+            error: `system-change launch authority is unavailable: ${error instanceof Error ? error.message : String(error)}`,
+          });
+        }
+      }
       if (systemChangeSessionSource && cwd) {
         return jsonResult({
           status: "error",
           error: "system-change Coding cwd is assigned by the native managed-worktree service",
         });
       }
-      const renderedCwd = cwd ? renderLiveAgentPathReference(cwd) : undefined;
-      if (cwd && !renderedCwd && /^\/(?:srv|root)\b/u.test(cwd.trim())) {
-        return jsonResult({
-          status: "error",
-          error: "task cwd is a host-only absolute path that is not visible to live child agents",
-          rejectedHostPaths: [cwd.trim()],
-        });
-      }
-
       const spawn = await spawnSubagentDirect(
         {
           task: renderTaskForChild({
             agentId,
-            task: renderedTask.text,
+            task,
             exactOperatorRequest: resolveExactOperatorRequest({
               requesterAgentId,
               targetAgentId: agentId,
               currentInboundMessage: opts?.currentInboundMessage,
-              task: renderedTask.text,
+              task,
             }),
           }),
           taskName,
           label,
           agentId,
           thinking: readStringParam(params, "thinking"),
-          cwd: renderedCwd ?? cwd,
+          cwd,
           mode: "run",
           cleanup: "keep",
           sandbox: "inherit",

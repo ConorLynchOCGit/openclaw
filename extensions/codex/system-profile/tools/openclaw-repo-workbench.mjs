@@ -381,7 +381,7 @@ server.registerTool(
   {
     title: "Git Inspect Many",
     description:
-      "Preferred diff/status discovery tool: inspect the workspace and nested source git roots with bounded read-only requests.",
+      "Preferred diff/status discovery tool: inspect the active task worktree with bounded read-only requests.",
     annotations: READ_ONLY_TOOL_ANNOTATIONS,
     outputSchema: BatchOutputSchema,
     inputSchema: z.object({
@@ -436,14 +436,14 @@ if (isMainModule()) {
 }
 
 export async function repoSearchMany(input, options = {}) {
-  const root = resolveRepoRoot(options.cwd ?? process.cwd(), options.env ?? process.env);
+  const root = resolveRepoRoot(options.cwd ?? process.cwd());
   const queries = input.queries.slice(0, MAX_BATCH_ITEMS);
   const results = await Promise.all(queries.map((query) => runSearchQuery(root, query)));
   return fitSearchManyResponse(root, queries.length, results);
 }
 
 export async function repoReadMany(input, options = {}) {
-  const root = resolveRepoRoot(options.cwd ?? process.cwd(), options.env ?? process.env);
+  const root = resolveRepoRoot(options.cwd ?? process.cwd());
   const files = input.files.slice(0, MAX_BATCH_ITEMS);
   const rawResults = await Promise.all(files.map((request) => readFileRequest(root, request)));
   return fitReadManyResponse(root, files, rawResults);
@@ -452,9 +452,7 @@ export async function repoReadMany(input, options = {}) {
 export async function artifactViewImage(input, options = {}) {
   const requestedPath = input.path;
   try {
-    const root = realpathSync(
-      resolveRepoRoot(options.cwd ?? process.cwd(), options.env ?? process.env),
-    );
+    const root = realpathSync(resolveRepoRoot(options.cwd ?? process.cwd()));
     // Artifact images can live under the workspace artifact directory, but must still
     // resolve to a regular file inside the canonical workspace root.
     const requested = safeResolve(root, requestedPath, { allowExcluded: true });
@@ -507,16 +505,16 @@ export async function artifactViewImage(input, options = {}) {
 }
 
 export async function repoGlobMany(input, options = {}) {
-  const root = resolveRepoRoot(options.cwd ?? process.cwd(), options.env ?? process.env);
+  const root = resolveRepoRoot(options.cwd ?? process.cwd());
   const globs = input.globs.slice(0, MAX_BATCH_ITEMS);
   const results = await Promise.all(globs.map((request) => runGlobRequest(root, request)));
   return { schemaVersion: "openclaw.repo_workbench.glob_many.v1", root, results };
 }
 
 export async function gitInspectMany(input, options = {}) {
-  const root = resolveRepoRoot(options.cwd ?? process.cwd(), options.env ?? process.env);
+  const root = resolveRepoRoot(options.cwd ?? process.cwd());
   const requests = input.requests.slice(0, MAX_BATCH_ITEMS);
-  const roots = resolveGitRoots(root, options.env ?? process.env);
+  const roots = resolveGitRoots(root);
   const expandedRequests = requests.flatMap((request) =>
     expandGitRequestRoots(root, roots, request).map((gitRoot) => ({ request, gitRoot })),
   );
@@ -528,7 +526,7 @@ export async function gitInspectMany(input, options = {}) {
     root,
     gitRoots: roots.map((gitRoot) => relative(root, gitRoot)),
     gitRootLabels: roots.map((gitRoot) => ({
-      label: gitRoot === root ? "workspace" : "nested_source",
+      label: "workspace",
       path: relative(root, gitRoot),
     })),
     results,
@@ -604,38 +602,16 @@ export async function lspReferencesTypescript(input, options = {}) {
   );
 }
 
-export function resolveRepoRoot(cwd = process.cwd(), env = process.env) {
-  const envRoot = env.OPENCLAW_REPO_WORKBENCH_ROOT?.trim();
-  if (envRoot) {
-    return path.resolve(envRoot);
+export function resolveRepoRoot(cwd = process.cwd()) {
+  const root = realpathSync(path.resolve(cwd));
+  if (!existsSync(path.join(root, ".git"))) {
+    throw new Error(`Codex thread cwd is not a Git worktree: ${root}`);
   }
-  let current = path.resolve(cwd);
-  for (let index = 0; index < 12; index += 1) {
-    if (
-      existsSync(path.join(current, "openclaw.mjs")) &&
-      existsSync(path.join(current, "package.json"))
-    ) {
-      return current;
-    }
-    if (
-      path.basename(current) === "openclaw-coding-workbench" &&
-      existsSync(path.join(current, "..", "..", "openclaw.mjs"))
-    ) {
-      return path.resolve(current, "..", "..");
-    }
-    const parent = path.dirname(current);
-    if (parent === current) {
-      break;
-    }
-    current = parent;
-  }
-  throw new Error(`Unable to resolve OpenClaw repository root from ${cwd}`);
+  return root;
 }
 
 async function withTypeScriptLanguageService(input, options, run) {
-  const root = realpathSync(
-    resolveRepoRoot(options.cwd ?? process.cwd(), options.env ?? process.env),
-  );
+  const root = realpathSync(resolveRepoRoot(options.cwd ?? process.cwd()));
   try {
     const requestedFile = safeResolve(root, input.file);
     const file = resolveExistingPathInside(root, requestedFile);
@@ -933,28 +909,8 @@ function formatTypeScriptDiagnostic(ts, diagnostic) {
     : message;
 }
 
-function resolveSourceRoot(root, env = process.env) {
-  const envSourceRoot = env.OPENCLAW_REPO_WORKBENCH_SOURCE_ROOT?.trim();
-  if (envSourceRoot) {
-    const resolved = path.resolve(envSourceRoot);
-    if (isInside(root, resolved) && existsSync(path.join(resolved, ".git"))) {
-      return resolved;
-    }
-  }
-  const nested = path.join(root, "src", "openclaw");
-  return existsSync(path.join(nested, ".git")) ? nested : undefined;
-}
-
-function resolveGitRoots(root, env = process.env) {
-  const roots = [];
-  if (existsSync(path.join(root, ".git"))) {
-    roots.push(root);
-  }
-  const sourceRoot = resolveSourceRoot(root, env);
-  if (sourceRoot && !roots.includes(sourceRoot)) {
-    roots.push(sourceRoot);
-  }
-  return roots.length > 0 ? roots : [root];
+function resolveGitRoots(root) {
+  return [root];
 }
 
 function expandGitRequestRoots(root, gitRoots, request) {

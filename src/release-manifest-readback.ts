@@ -31,6 +31,7 @@ export type LoadedReleaseManifest = {
 
 export type LoadedReleaseIdentity = {
   releaseManifestDigest: string;
+  sourceSnapshotRef: string;
   sourceTreeObject: string;
   packageVersion: string;
   packageShape: string;
@@ -139,6 +140,7 @@ export function readLoadedReleaseIdentity(packageRoot: string): LoadedReleaseIde
   const loaded = loadEmbeddedReleaseManifest(packageRoot);
   return {
     releaseManifestDigest: loaded.releaseManifestDigest,
+    sourceSnapshotRef: loaded.manifest.source.snapshotRef,
     sourceTreeObject: loaded.manifest.source.treeObject,
     packageVersion: loaded.manifest.package.version,
     packageShape: loaded.manifest.package.shape,

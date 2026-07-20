@@ -1,6 +1,6 @@
 ---
 name: openclaw-coding-workbench
-description: Use for broad or multi-file repository inspection in Codex Coding, especially when the task spans Business Ops and nested OpenClaw source, requires batched search/read/glob/git inspection, or needs TypeScript symbol evidence before implementation.
+description: Use for broad or multi-file repository inspection in Codex Coding when the active task worktree requires batched search/read/glob/git inspection or TypeScript symbol evidence before implementation.
 ---
 
 # OpenClaw Coding Workbench
@@ -14,7 +14,8 @@ tools on Codex's behalf.
 1. Identify the smallest decision-driving search/read set.
 2. Batch independent discovery with `repo_search_many`, `repo_read_many`, and
    `repo_glob_many`.
-3. Use `git_inspect_many` for outer workspace and nested `src/openclaw` state.
+3. Use `git_inspect_many` for the active task worktree. Inspect a second
+   repository only when the task packet names it explicitly.
 4. Use `lsp_hover_typescript`, `lsp_definition_typescript`, or
    `lsp_references_typescript` after likely TypeScript symbols are known.
 5. Use shell for focused commands, tests, formatting, builds, or a concrete

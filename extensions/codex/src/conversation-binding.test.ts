@@ -69,7 +69,6 @@ vi.mock("openclaw/plugin-sdk/exec-approvals-runtime", async (importOriginal) => 
 });
 vi.mock("openclaw/plugin-sdk/agent-runtime", () => agentRuntimeMocks);
 
-import { resolveCodexSystemFixedEnvironment } from "./app-server/system-authority.js";
 import {
   handleCodexConversationBindingResolved,
   handleCodexConversationInboundClaim,
@@ -84,6 +83,47 @@ function mockCallArg(mock: ReturnType<typeof vi.fn>, callIndex = 0, argIndex = 0
     throw new Error(`Expected mock call ${callIndex}`);
   }
   return call[argIndex];
+}
+
+async function createSystemProfileFixture(systemProfileDir: string) {
+  const projectDir = path.join(systemProfileDir, "project");
+  const config = {
+    project_doc_max_bytes: 0,
+    developer_instructions: "Generation-N immutable developer instructions.",
+    default_permissions: "openclaw-system-change",
+    features: {
+      multi_agent: false,
+      multi_agent_v2: { enabled: true },
+    },
+    permissions: {
+      "openclaw-system-change": { extends: ":workspace" },
+    },
+    mcp_servers: {
+      openclaw_repo_workbench: {
+        command: "node",
+        args: ["tools/openclaw-repo-workbench.mjs"],
+      },
+    },
+  };
+  await fs.mkdir(path.join(projectDir, ".codex"), { recursive: true });
+  await fs.mkdir(path.join(systemProfileDir, "tools"), { recursive: true });
+  await fs.writeFile(
+    path.join(systemProfileDir, "tools", "openclaw-repo-workbench.mjs"),
+    "export {};\n",
+  );
+  return {
+    config,
+    readback: {
+      config,
+      layers: [
+        {
+          name: { type: "project", dotCodexFolder: path.join(projectDir, ".codex") },
+          version: "sha256:system-profile",
+          config,
+        },
+      ],
+    },
+  };
 }
 
 describe("codex conversation binding", () => {
@@ -186,39 +226,11 @@ describe("codex conversation binding", () => {
     const sessionFile = path.join(tempDir, "session.jsonl");
     const sessionStore = path.join(tempDir, "sessions.json");
     const worktree = path.join(tempDir, "worktrees", "system-change-a");
-    const codexHome = "/var/lib/openclaw/codex/generation-a";
+    const systemProfileDir = path.join(tempDir, "codex-system-profile");
     const sourceObject = "a".repeat(40);
-    const authority = {
-      schemaVersion: 1,
-      releaseManifestDigest: "b".repeat(64),
-      expectedServerVersion: "0.144.1",
-      codexHome,
-      permissionProfile: "openclaw-system-change",
-      capabilityEnvironments: [
-        {
-          environmentId: "generation-capabilities",
-          cwd: "/opt/openclaw/capabilities/generation-a",
-        },
-      ],
-      selectedCapabilityRoots: [
-        {
-          id: "system-skills",
-          location: {
-            type: "environment",
-            environmentId: "generation-capabilities",
-            path: "/opt/openclaw/capabilities/generation-a/skills",
-          },
-        },
-      ],
-      v2ModelIds: ["gpt-5.4-codex"],
-      config: {
-        project_doc_max_bytes: 0,
-        developer_instructions: "Generation-N immutable developer instructions.",
-        "features.multi_agent": false,
-        "features.multi_agent_v2.enabled": true,
-        "shell_environment_policy.set": resolveCodexSystemFixedEnvironment(codexHome),
-      },
-    };
+    const releaseManifestDigest = "b".repeat(64);
+    const permissionProfile = "openclaw-system-change";
+    const profile = await createSystemProfileFixture(systemProfileDir);
     await fs.writeFile(
       sessionStore,
       JSON.stringify({
@@ -232,8 +244,8 @@ describe("codex conversation binding", () => {
             repoRoot: "/srv/openclaw-next/source-anchor",
             kind: "system-change",
             baseRef: sourceObject,
+            releaseManifestDigest,
           },
-          codexSystemAuthority: authority,
         },
       }),
     );
@@ -245,6 +257,9 @@ describe("codex conversation binding", () => {
     sharedClientMocks.getSharedCodexAppServerClient.mockResolvedValue({
       request: vi.fn(async (method: string, requestParams: Record<string, unknown>) => {
         requests.push({ method, params: requestParams });
+        if (method === "config/read") {
+          return profile.readback;
+        }
         return {
           thread: { id: "thread-system", sessionId: "session-system-change", cwd: worktree },
           model: "gpt-5.4-codex",
@@ -263,6 +278,7 @@ describe("codex conversation binding", () => {
       workspaceDir: path.join(tempDir, "foreign-workspace"),
       model: "gpt-5.4-codex",
       modelProvider: "openai",
+      systemProfileDir,
     });
 
     const sharedClientParams = mockCallArg(sharedClientMocks.getSharedCodexAppServerClient) as {
@@ -270,28 +286,36 @@ describe("codex conversation binding", () => {
     };
     expect(sharedClientParams.processProfile).toMatchObject({
       expectedServerVersion: "0.144.1",
-      codexHome: authority.codexHome,
+      key: releaseManifestDigest,
+      codexHome: expect.stringContaining(`/codex/generations/${releaseManifestDigest}`),
     });
-    expect(sharedClientParams.processProfile?.key).toBe(authority.releaseManifestDigest);
-    expect(requests).toHaveLength(1);
-    expect(requests[0]).toMatchObject({
+    const threadStart = requests.find((request) => request.method === "thread/start");
+    expect(threadStart).toMatchObject({
       method: "thread/start",
       params: {
         cwd: worktree,
         runtimeWorkspaceRoots: [worktree],
-        permissions: authority.permissionProfile,
-        config: authority.config,
-        environments: [
-          { environmentId: "worktree", cwd: worktree },
-          ...authority.capabilityEnvironments,
-        ],
-        selectedCapabilityRoots: authority.selectedCapabilityRoots,
+        permissions: permissionProfile,
+        config: {
+          project_doc_max_bytes: 0,
+          developer_instructions: profile.config.developer_instructions,
+          default_permissions: permissionProfile,
+          projects: { [worktree]: { trust_level: "untrusted" } },
+        },
+        environments: [{ environmentId: "local", cwd: worktree }],
         experimentalRawEvents: true,
       },
     });
-    expect(requests[0]?.params).not.toHaveProperty("sandbox");
-    expect(requests[0]?.params).not.toHaveProperty("developerInstructions");
-    expect(requests[0]?.params).not.toHaveProperty("persistExtendedHistory");
+    expect(
+      (threadStart?.params.selectedCapabilityRoots as Array<{ id: string }>).map((root) => root.id),
+    ).toEqual([
+      "codex-system-skills",
+      "openclaw-shared-system-skills",
+      "openclaw-contributor-guidance",
+    ]);
+    expect(threadStart?.params).not.toHaveProperty("sandbox");
+    expect(threadStart?.params).not.toHaveProperty("developerInstructions");
+    expect(threadStart?.params).not.toHaveProperty("persistExtendedHistory");
     expect(data.workspaceDir).toBe(worktree);
   });
 

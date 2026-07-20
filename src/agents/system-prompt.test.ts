@@ -1368,6 +1368,18 @@ describe("buildSubagentSystemPrompt", () => {
     expect(prompt).not.toContain("OpenClaw command guidance");
   });
 
+  it("reports agent workspace separately from the native task checkout", () => {
+    const prompt = buildSubagentSystemPrompt({
+      childSessionKey: "agent:codebase-researcher:subagent:abc",
+      task: "inspect the loaded source",
+      workspaceDir: "/home/node/.openclaw/workspace",
+      cwd: "/var/lib/openclaw/source-anchor",
+    });
+
+    expect(prompt).toContain("- Agent workspace: /home/node/.openclaw/workspace.");
+    expect(prompt).toContain("- Task checkout: /var/lib/openclaw/source-anchor.");
+  });
+
   it("renders depth-1 orchestrator guidance, labels, and recovery notes", () => {
     const prompt = buildSubagentSystemPrompt({
       childSessionKey: "agent:main:subagent:abc",

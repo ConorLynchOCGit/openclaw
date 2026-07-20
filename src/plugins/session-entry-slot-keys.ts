@@ -32,7 +32,6 @@ const SESSION_ENTRY_RESERVED_SLOT_KEY_LIST = [
   "abortedLastRun",
   "goal",
   "codexNativeChildren",
-  "codexSystemAuthority",
   "sessionStartedAt",
   "lastInteractionAt",
   "startedAt",

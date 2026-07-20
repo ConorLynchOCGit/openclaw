@@ -15,6 +15,7 @@ import { createCodexCommand } from "./src/commands.js";
 import {
   handleCodexConversationBindingResolved,
   handleCodexConversationInboundClaim,
+  startCodexConversationThread,
 } from "./src/conversation-binding.js";
 import { buildCodexMigrationProvider } from "./src/migration/provider.js";
 import {
@@ -30,6 +31,7 @@ export default definePluginEntry({
   name: "Codex",
   description: "Codex app-server harness and Codex-managed GPT model catalog.",
   register(api) {
+    const systemProfileDir = path.join(api.rootDir ?? path.dirname(api.source), "system-profile");
     const resolveCurrentConfig = () =>
       api.runtime.config?.current ? (api.runtime.config.current() as OpenClawConfig) : undefined;
     const resolveCurrentPluginConfig = () =>
@@ -43,7 +45,7 @@ export default definePluginEntry({
     api.registerAgentHarness(
       createCodexAppServerAgentHarness({
         resolvePluginConfig: resolveCurrentPluginConfig,
-        systemProfileDir: path.join(api.rootDir ?? path.dirname(api.source), "system-profile"),
+        systemProfileDir,
       }),
     );
     api.registerProvider(buildCodexProvider({ pluginConfig: api.pluginConfig }));
@@ -61,6 +63,8 @@ export default definePluginEntry({
       createCodexCommand({
         pluginConfig: api.pluginConfig,
         deps: {
+          startCodexConversationThread: (params) =>
+            startCodexConversationThread({ ...params, systemProfileDir }),
           listCodexCliSessionsOnNode: (params) =>
             listCodexCliSessionsOnNode({ runtime: api.runtime, ...params }),
           resolveCodexCliSessionForBindingOnNode: (params) =>
@@ -128,6 +132,7 @@ export default definePluginEntry({
       handleCodexConversationInboundClaim(event, ctx, {
         pluginConfig: resolveCurrentPluginConfig(),
         config: resolveCurrentConfig(),
+        systemProfileDir,
         resumeCodexCliSessionOnNode: (params) =>
           resumeCodexCliSessionOnNode({ runtime: api.runtime, ...params }),
       }),

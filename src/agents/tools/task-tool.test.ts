@@ -56,21 +56,6 @@ function digestText(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-const SYSTEM_CODEX_HOME = "/var/lib/openclaw/codex/generation-a";
-const SYSTEM_PACKAGE_CACHE_ROOT = `${SYSTEM_CODEX_HOME}/package-cache`;
-const SYSTEM_SHELL_ENVIRONMENT = {
-  OPENCLAW_HEAVY_CHECK_LOCK_SCOPE: "worktree",
-  XDG_CACHE_HOME: `${SYSTEM_PACKAGE_CACHE_ROOT}/xdg`,
-  COREPACK_HOME: `${SYSTEM_PACKAGE_CACHE_ROOT}/corepack`,
-  NPM_CONFIG_CACHE: `${SYSTEM_PACKAGE_CACHE_ROOT}/npm`,
-  npm_config_cache: `${SYSTEM_PACKAGE_CACHE_ROOT}/npm`,
-  PNPM_HOME: `${SYSTEM_PACKAGE_CACHE_ROOT}/pnpm-home`,
-  PNPM_CONFIG_STORE_DIR: `${SYSTEM_PACKAGE_CACHE_ROOT}/pnpm-store`,
-  npm_config_store_dir: `${SYSTEM_PACKAGE_CACHE_ROOT}/pnpm-store`,
-  pnpm_config_store_dir: `${SYSTEM_PACKAGE_CACHE_ROOT}/pnpm-store`,
-  PNPM_STORE_PATH: `${SYSTEM_PACKAGE_CACHE_ROOT}/pnpm-store`,
-};
-
 describe("task tool", () => {
   beforeAll(async () => {
     ({ createTaskTool, buildTaskTranscriptFinalRef } = await import("./task-tool.js"));
@@ -184,7 +169,7 @@ describe("task tool", () => {
     });
 
     const schema = JSON.stringify(tool.parameters);
-    expect(schema).toContain("exact workspace artifact governs the work");
+    expect(schema).toContain("exact agent-workspace artifact governs the work");
     expect(schema).toContain("without reproducing, paraphrasing, or compressing");
   });
 
@@ -285,62 +270,60 @@ describe("task tool", () => {
     expect(content.text).toContain("Context Pack\n\nP1...");
   });
 
-  it("renders deployed host provenance paths as live-workspace paths before child handoff", async () => {
+  it("preserves native task cwd and exact artifact refs without path rewriting", async () => {
     await createTaskTool({
       agentSessionKey: "agent:main:operator",
       requesterAgentIdOverride: "main",
     }).execute("call-1", {
       agentId: "coding",
       task: [
-        "Use /srv/openclaw-next/home-repo/docs/projects/execution-platform/prompts/proof.md",
-        "Patch /srv/openclaw-next/src/openclaw/src/agents/tools/task-tool.ts",
-        "Check /srv/openclaw-next/home-repo/docs/agents/coding/AGENTS.md",
+        "Use /home/node/.openclaw/workspace/plans/proof.md",
+        "Patch src/agents/tools/task-tool.ts in the task checkout",
       ].join("\n"),
-      cwd: "/srv/openclaw-next/src/openclaw",
+      cwd: "/var/lib/openclaw/source-anchor",
     });
 
     expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
       expect.objectContaining({
         task: expect.stringContaining(
           [
-            "Use docs/projects/execution-platform/prompts/proof.md",
-            "Patch src/openclaw/src/agents/tools/task-tool.ts",
-            "Check docs/agents/coding/AGENTS.md",
+            "Use /home/node/.openclaw/workspace/plans/proof.md",
+            "Patch src/agents/tools/task-tool.ts in the task checkout",
           ].join("\n"),
         ),
-        cwd: "src/openclaw",
+        cwd: "/var/lib/openclaw/source-anchor",
       }),
       expect.anything(),
     );
     const spawnArgs = JSON.stringify(hoisted.spawnSubagentDirectMock.mock.calls[0]?.[0]);
     expect(spawnArgs).toContain("Coding Artifact Handoff Contract");
-    expect(spawnArgs).toContain("read that file in full before implementation");
+    expect(spawnArgs).toContain("resolve that path against the Agent workspace");
+    expect(spawnArgs).toContain("read it in full");
     expect(spawnArgs).toContain("workspace_artifact_path_missing");
     expect(spawnArgs).toContain("transport evidence, not a Codex work artifact");
-    expect(spawnArgs).not.toContain("/root/");
-    expect(spawnArgs).not.toContain("/srv/");
-    expect(spawnArgs).not.toContain("/root/services");
-    expect(spawnArgs).not.toContain("/srv/openclaw-next");
+    expect(spawnArgs).toContain("OpenClaw-managed worktree");
+    expect(spawnArgs).toContain("there is no nested src/openclaw checkout");
   });
 
-  it("rejects ambiguous root checkout paths before child handoff", async () => {
-    const result = await createTaskTool({
+  it("does not semantically parse or rewrite task prose", async () => {
+    await createTaskTool({
       agentSessionKey: "agent:main:operator",
       requesterAgentIdOverride: "main",
     }).execute("call-1", {
-      agentId: "coding",
-      task: "Use /root/services/openclaw-roles/live/docs/projects/execution-platform/prompts/proof.md",
+      agentId: "codebase-researcher",
+      task: "Compare the literal historical ref /root/archive/example without following it.",
+      cwd: "/var/lib/openclaw/source-anchor",
     });
 
-    expect(hoisted.spawnSubagentDirectMock).not.toHaveBeenCalled();
-    expect(result.details).toMatchObject({
-      status: "error",
-      error:
-        "task handoff contains host-only absolute paths that are not visible to live child agents",
-      rejectedHostPaths: [
-        "/root/services/openclaw-roles/live/docs/projects/execution-platform/prompts/proof.md",
-      ],
-    });
+    expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: expect.stringContaining(
+          "Compare the literal historical ref /root/archive/example without following it.",
+        ),
+        cwd: "/var/lib/openclaw/source-anchor",
+      }),
+      expect.anything(),
+    );
   });
 
   it("rejects Main-routed Coding fork context before launch", async () => {
@@ -404,8 +387,8 @@ describe("task tool", () => {
     );
   });
 
-  it("rejects unmapped host-only paths before child handoff", async () => {
-    const result = await createTaskTool({
+  it("leaves literal host paths in task prose without semantic screening", async () => {
+    await createTaskTool({
       agentSessionKey: "agent:main:operator",
       requesterAgentIdOverride: "main",
     }).execute("call-1", {
@@ -413,13 +396,12 @@ describe("task tool", () => {
       task: "Read /root/not-visible/proof.md before editing.",
     });
 
-    expect(hoisted.spawnSubagentDirectMock).not.toHaveBeenCalled();
-    expect(result.details).toMatchObject({
-      status: "error",
-      error:
-        "task handoff contains host-only absolute paths that are not visible to live child agents",
-      rejectedHostPaths: ["/root/not-visible/proof.md"],
-    });
+    expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: expect.stringContaining("Read /root/not-visible/proof.md before editing."),
+      }),
+      expect.anything(),
+    );
   });
 
   it("does not treat slash-separated prose as a host path", async () => {
@@ -742,38 +724,9 @@ describe("task tool", () => {
     const sourceObject = "a".repeat(40);
     const source: SystemChangeSessionSource = {
       sourceAnchorPath: "/srv/openclaw-next/source-anchor",
+      sourceSnapshotRef: "refs/openclaw/snapshots/loaded-generation",
       sourceTreeObject: sourceObject,
-      codexAuthority: {
-        schemaVersion: 1,
-        releaseManifestDigest: "b".repeat(64),
-        expectedServerVersion: "0.144.1",
-        codexHome: SYSTEM_CODEX_HOME,
-        permissionProfile: "openclaw-system-change",
-        capabilityEnvironments: [
-          {
-            environmentId: "generation-capabilities",
-            cwd: "/opt/openclaw/capabilities/generation-a",
-          },
-        ],
-        selectedCapabilityRoots: [
-          {
-            id: "system-skills",
-            location: {
-              type: "environment",
-              environmentId: "generation-capabilities",
-              path: "/opt/openclaw/capabilities/generation-a/skills",
-            },
-          },
-        ],
-        v2ModelIds: ["gpt-5.4-codex"],
-        config: {
-          project_doc_max_bytes: 0,
-          developer_instructions: "Generation-N immutable developer instructions.",
-          "features.multi_agent": false,
-          "features.multi_agent_v2.enabled": true,
-          "shell_environment_policy.set": { ...SYSTEM_SHELL_ENVIRONMENT },
-        },
-      },
+      releaseManifestDigest: "b".repeat(64),
     };
     const worktree = {
       id: "worktree-a",
@@ -795,11 +748,12 @@ describe("task tool", () => {
     const result = await createTaskTool({
       agentSessionKey: "agent:main:operator",
       requesterAgentIdOverride: "main",
-      systemChangeSessionSource: source,
+      resolveSystemChangeSessionSource: () => source,
     }).execute("call-1", {
       agentId: "coding",
       task: "Implement the loaded system change.",
       context: "isolated",
+      systemChange: true,
     });
 
     expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(

@@ -30,8 +30,8 @@ generic maximum suite.
    screenshot paths without pixel inspection are not UI proof.
 6. Run build, promotion, deploy, rollback, cleanup, or live mutation only when
    the approved task explicitly includes that authority.
-7. Inspect both the durable workspace repo and nested `src/openclaw` repo before
-   closeout.
+7. Inspect the active task worktree before closeout. Inspect another repository
+   only when the task packet names it explicitly.
 
 Record commands, outcomes, material reviewer findings, unresolved limits, and
 whether each touched repo is committed, reverted, or explicitly pending. Do

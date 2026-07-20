@@ -1,13 +1,19 @@
 import path from "node:path";
 import type { SessionEntry } from "openclaw/plugin-sdk/session-store-runtime";
+import { resolveStateDir } from "openclaw/plugin-sdk/state-paths";
+import { mergeCodexThreadConfigs } from "./plugin-thread-config.js";
 import type {
   CodexThreadResumeResponse,
   CodexThreadStartResponse,
   CodexTurnEnvironmentParams,
+  JsonObject,
 } from "./protocol.js";
+import type { CodexLoadedSystemProfile } from "./system-profile.js";
+import { MANAGED_CODEX_APP_SERVER_PACKAGE_VERSION } from "./version.js";
 
 const SYSTEM_CHANGE_AGENT_IDS = new Set(["coding", "execution-coding"]);
-const SYSTEM_WORKTREE_ENVIRONMENT_ID = "worktree";
+const SYSTEM_PERMISSION_PROFILE = "openclaw-system-change";
+const SYSTEM_LOCAL_ENVIRONMENT_ID = "local";
 export const SYSTEM_WORKTREE_LOCK_SCOPE_ENV = "OPENCLAW_HEAVY_CHECK_LOCK_SCOPE";
 export const SYSTEM_WORKTREE_LOCK_SCOPE_VALUE = "worktree";
 
@@ -29,33 +35,45 @@ export function resolveCodexSystemFixedEnvironment(codexHome: string): Record<st
   };
 }
 
-export type CodexSystemAuthority = NonNullable<SessionEntry["codexSystemAuthority"]>;
-
 export type CodexSystemProcessProfile = {
   key: string;
   expectedServerVersion: string;
   codexHome: string;
 };
 
+export type CodexSystemProcessContext = {
+  fingerprint: string;
+  cwd: string;
+  processProfile: CodexSystemProcessProfile;
+};
+
 export type CodexSystemThreadContext = {
-  authority: CodexSystemAuthority;
+  authority: {
+    releaseManifestDigest: string;
+    permissionProfile: string;
+    config: JsonObject;
+    selectedCapabilityRoots: CodexLoadedSystemProfile["selectedCapabilityRoots"];
+  };
   fingerprint: string;
   processProfile: CodexSystemProcessProfile;
   environments: CodexTurnEnvironmentParams[];
 };
 
-export function resolveCodexSystemThreadContext(params: {
-  sessionEntry?: SessionEntry;
+type SystemChangeSessionEntry = SessionEntry & {
+  worktree?: NonNullable<SessionEntry["worktree"]> & {
+    releaseManifestDigest?: string;
+  };
+};
+
+export function resolveCodexSystemProcessContext(params: {
+  sessionEntry?: SystemChangeSessionEntry;
   agentId?: string;
   cwd: string;
-}): CodexSystemThreadContext | undefined {
+  env?: NodeJS.ProcessEnv;
+}): CodexSystemProcessContext | undefined {
   const worktree = params.sessionEntry?.worktree;
-  const authority = params.sessionEntry?.codexSystemAuthority;
-  if (worktree?.kind !== "system-change" && !authority) {
+  if (worktree?.kind !== "system-change") {
     return undefined;
-  }
-  if (worktree?.kind !== "system-change" || !authority) {
-    throw new Error("system-change Codex sessions require both worktree and generation authority");
   }
   const agentId = params.agentId?.trim().toLowerCase();
   if (!agentId || !SYSTEM_CHANGE_AGENT_IDS.has(agentId)) {
@@ -65,20 +83,58 @@ export function resolveCodexSystemThreadContext(params: {
   if (!expectedCwd || path.resolve(expectedCwd) !== path.resolve(params.cwd)) {
     throw new Error("system-change Codex cwd does not match the session-managed worktree");
   }
-  validateAuthority(authority, params.cwd);
-  const environments: CodexTurnEnvironmentParams[] = [
-    { environmentId: SYSTEM_WORKTREE_ENVIRONMENT_ID, cwd: params.cwd },
-    ...authority.capabilityEnvironments.map((environment) => ({ ...environment })),
-  ];
+  const releaseManifestDigest = worktree.releaseManifestDigest?.trim();
+  if (!releaseManifestDigest) {
+    throw new Error("system-change worktree is missing its loaded release identity");
+  }
+  const codexHome = path.join(
+    resolveStateDir(params.env ?? process.env),
+    "codex",
+    "generations",
+    releaseManifestDigest,
+  );
+  if (pathsOverlap(params.cwd, codexHome)) {
+    throw new Error("system-change Codex runtime state must remain outside the managed worktree");
+  }
   return {
-    authority,
-    fingerprint: authority.releaseManifestDigest,
+    fingerprint: releaseManifestDigest,
+    cwd: path.resolve(params.cwd),
     processProfile: {
-      key: authority.releaseManifestDigest,
-      expectedServerVersion: authority.expectedServerVersion,
-      codexHome: authority.codexHome,
+      key: releaseManifestDigest,
+      expectedServerVersion: MANAGED_CODEX_APP_SERVER_PACKAGE_VERSION,
+      codexHome,
     },
-    environments,
+  };
+}
+
+export function buildCodexSystemThreadContext(params: {
+  processContext: CodexSystemProcessContext;
+  profile: CodexLoadedSystemProfile;
+}): CodexSystemThreadContext {
+  const { processContext, profile } = params;
+  validateLoadedProfile(profile, processContext.cwd);
+  const config = mergeCodexThreadConfigs(profile.config, {
+    project_doc_max_bytes: 0,
+    projects: {
+      [processContext.cwd]: { trust_level: "untrusted" },
+    },
+    shell_environment_policy: {
+      set: resolveCodexSystemFixedEnvironment(processContext.processProfile.codexHome),
+    },
+  });
+  if (!config) {
+    throw new Error("Codex system profile produced an empty native thread config");
+  }
+  return {
+    authority: {
+      releaseManifestDigest: processContext.fingerprint,
+      permissionProfile: SYSTEM_PERMISSION_PROFILE,
+      config,
+      selectedCapabilityRoots: profile.selectedCapabilityRoots,
+    },
+    fingerprint: processContext.fingerprint,
+    processProfile: processContext.processProfile,
+    environments: [{ environmentId: SYSTEM_LOCAL_ENVIRONMENT_ID, cwd: processContext.cwd }],
   };
 }
 
@@ -123,101 +179,56 @@ export function assertCodexSystemV2Model(
   context: CodexSystemThreadContext,
   model: string | undefined,
 ): void {
-  const selectedModel = model?.trim();
-  if (!selectedModel || !context.authority.v2ModelIds.includes(selectedModel)) {
-    throw new Error(
-      `Codex system-change model is not declared multi-agent V2 by the loaded generation: ${selectedModel || "missing"}`,
-    );
+  if (!model?.trim()) {
+    throw new Error("Codex system-change model selection is missing");
+  }
+  const features = readObject(context.authority.config.features);
+  const v2 = readObject(features?.multi_agent_v2);
+  if (v2?.enabled !== true) {
+    throw new Error("loaded Codex system profile does not enable multi-agent V2");
   }
 }
 
-function validateAuthority(authority: CodexSystemAuthority, cwd: string): void {
-  if (authority.schemaVersion !== 1) {
-    throw new Error("unsupported Codex system authority schema");
-  }
-  if (!authority.releaseManifestDigest.trim()) {
-    throw new Error("Codex system authority is missing its loaded release identity");
-  }
-  if (!authority.expectedServerVersion.trim()) {
-    throw new Error("Codex system authority is missing the exact app-server version");
-  }
-  if (!path.isAbsolute(authority.codexHome) || pathsOverlap(cwd, authority.codexHome)) {
-    throw new Error("Codex system authority requires an external absolute CODEX_HOME");
-  }
-  if (!authority.permissionProfile.trim()) {
-    throw new Error("Codex system authority is missing a permission profile");
-  }
-  if (authority.config.project_doc_max_bytes !== 0) {
-    throw new Error("Codex system authority must disable editable project documents");
+function validateLoadedProfile(profile: CodexLoadedSystemProfile, cwd: string): void {
+  if (profile.config.project_doc_max_bytes !== 0) {
+    throw new Error("Codex system profile must disable editable project documents");
   }
   if (
-    typeof authority.config.developer_instructions !== "string" ||
-    authority.config.developer_instructions.trim().length === 0
+    typeof profile.config.developer_instructions !== "string" ||
+    !profile.config.developer_instructions.trim()
   ) {
-    throw new Error("Codex system authority is missing generation-N developer instructions");
+    throw new Error("Codex system profile is missing generation-N developer instructions");
   }
-  if (authority.config["features.multi_agent"] !== false) {
-    throw new Error("Codex system authority must disable multi-agent V1");
+  if (profile.config.default_permissions !== SYSTEM_PERMISSION_PROFILE) {
+    throw new Error(`Codex system profile must select ${SYSTEM_PERMISSION_PROFILE}`);
   }
-  if (authority.config["features.multi_agent_v2.enabled"] !== true) {
-    throw new Error("Codex system authority must enable multi-agent V2");
+  const features = readObject(profile.config.features);
+  if (features?.multi_agent !== false || readObject(features?.multi_agent_v2)?.enabled !== true) {
+    throw new Error("Codex system profile must disable V1 and enable V2 collaboration");
   }
-  const shellEnvironmentSet = authority.config["shell_environment_policy.set"];
-  if (!isJsonObject(shellEnvironmentSet)) {
-    throw new Error("Codex system authority is missing its fixed shell environment");
+  const permissions = readObject(profile.config.permissions);
+  if (!readObject(permissions?.[SYSTEM_PERMISSION_PROFILE])) {
+    throw new Error(`Codex system profile is missing ${SYSTEM_PERMISSION_PROFILE}`);
   }
-  for (const [name, value] of Object.entries(
-    resolveCodexSystemFixedEnvironment(authority.codexHome),
-  )) {
-    if (shellEnvironmentSet[name] !== value) {
-      throw new Error(`Codex system authority has an invalid fixed shell environment: ${name}`);
-    }
+  if (profile.selectedCapabilityRoots.length === 0) {
+    throw new Error("Codex system profile has no selected capability roots");
   }
-  if (
-    authority.v2ModelIds.length === 0 ||
-    authority.v2ModelIds.some((model) => !model.trim()) ||
-    new Set(authority.v2ModelIds).size !== authority.v2ModelIds.length
-  ) {
-    throw new Error("Codex system authority requires a unique loaded V2 model set");
-  }
-
-  if (
-    authority.capabilityEnvironments.length === 0 ||
-    authority.selectedCapabilityRoots.length === 0
-  ) {
-    throw new Error("Codex system authority requires immutable capability environments and roots");
-  }
-
-  const environmentIds = new Set<string>([SYSTEM_WORKTREE_ENVIRONMENT_ID]);
-  for (const environment of authority.capabilityEnvironments) {
+  for (const root of profile.selectedCapabilityRoots) {
     if (
-      !environment.environmentId.trim() ||
-      environmentIds.has(environment.environmentId) ||
-      !path.isAbsolute(environment.cwd) ||
-      pathsOverlap(cwd, environment.cwd)
-    ) {
-      throw new Error("Codex system authority has an invalid capability environment");
-    }
-    environmentIds.add(environment.environmentId);
-  }
-  const rootIds = new Set<string>();
-  for (const root of authority.selectedCapabilityRoots) {
-    const environment = authority.capabilityEnvironments.find(
-      (candidate) => candidate.environmentId === root.location.environmentId,
-    );
-    if (
-      !root.id.trim() ||
-      rootIds.has(root.id) ||
       root.location.type !== "environment" ||
-      !environment ||
+      root.location.environmentId !== SYSTEM_LOCAL_ENVIRONMENT_ID ||
       !path.isAbsolute(root.location.path) ||
-      !isWithin(environment.cwd, root.location.path) ||
       isWithin(cwd, root.location.path)
     ) {
-      throw new Error("Codex system authority has an invalid selected capability root");
+      throw new Error("Codex system profile has an invalid capability root");
     }
-    rootIds.add(root.id);
   }
+}
+
+function readObject(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
 
 function isWithin(root: string, candidate: string): boolean {
@@ -227,8 +238,4 @@ function isWithin(root: string, candidate: string): boolean {
 
 function pathsOverlap(left: string, right: string): boolean {
   return isWithin(left, right) || isWithin(right, left);
-}
-
-function isJsonObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

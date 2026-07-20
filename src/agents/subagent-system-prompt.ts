@@ -25,6 +25,10 @@ export function buildSubagentSystemPrompt(params: {
   maxSpawnDepth?: number;
   /** Resolved model execution runtime for the child. */
   executionRuntime?: "openclaw" | "codex";
+  /** Configured agent workspace that owns bootstrap, identity, and durable role context. */
+  workspaceDir?: string;
+  /** Native task checkout used by relative repository tools. */
+  cwd?: string;
 }) {
   const childDepth = typeof params.childDepth === "number" ? params.childDepth : 1;
   const maxSpawnDepth =
@@ -134,6 +138,8 @@ export function buildSubagentSystemPrompt(params: {
         ? `- Requester channel: ${params.requesterOrigin.channel}.`
         : undefined,
       `- Your session: ${params.childSessionKey}.`,
+      params.workspaceDir ? `- Agent workspace: ${params.workspaceDir}.` : undefined,
+      params.cwd ? `- Task checkout: ${params.cwd}.` : undefined,
     ].filter((line): line is string => line !== undefined),
     "",
   );

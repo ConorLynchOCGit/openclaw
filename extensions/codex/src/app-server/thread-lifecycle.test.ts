@@ -96,34 +96,28 @@ function createSystemThreadContext(
   const config = {
     project_doc_max_bytes: 0,
     developer_instructions: "Generation-N immutable developer instructions.",
-    "features.multi_agent": false,
-    "features.multi_agent_v2.enabled": true,
-    "shell_environment_policy.set": resolveCodexSystemFixedEnvironment(codexHome),
+    features: {
+      multi_agent: false,
+      multi_agent_v2: { enabled: true },
+    },
+    shell_environment_policy: {
+      set: resolveCodexSystemFixedEnvironment(codexHome),
+    },
   };
   return {
     authority: {
-      schemaVersion: 1,
       releaseManifestDigest: "b".repeat(64),
-      expectedServerVersion: "0.144.1",
-      codexHome,
       permissionProfile: "openclaw-system-change",
-      capabilityEnvironments: [
-        {
-          environmentId: "generation-capabilities",
-          cwd: "/opt/openclaw/capabilities/generation-a",
-        },
-      ],
       selectedCapabilityRoots: [
         {
           id: "system-skills",
           location: {
             type: "environment",
-            environmentId: "generation-capabilities",
+            environmentId: "local",
             path: "/opt/openclaw/capabilities/generation-a/skills",
           },
         },
       ],
-      v2ModelIds: ["gpt-5.4"],
       config,
     },
     fingerprint: "b".repeat(64),
@@ -132,13 +126,7 @@ function createSystemThreadContext(
       expectedServerVersion: "0.144.1",
       codexHome,
     },
-    environments: [
-      { environmentId: "worktree", cwd },
-      {
-        environmentId: "generation-capabilities",
-        cwd: "/opt/openclaw/capabilities/generation-a",
-      },
-    ],
+    environments: [{ environmentId: "local", cwd }],
   };
 }
 
