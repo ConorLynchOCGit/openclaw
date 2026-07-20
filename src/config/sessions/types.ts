@@ -223,6 +223,31 @@ export type SessionCodexThreadUsage = {
   totalTokens?: number;
 };
 
+export type SessionCodexSelectedCapabilityRoot = {
+  id: string;
+  location: {
+    type: "environment";
+    environmentId: string;
+    path: string;
+  };
+};
+
+/** Immutable, loaded-generation authority used only by native system-change Codex threads. */
+export type SessionCodexSystemAuthority = {
+  schemaVersion: 1;
+  releaseManifestDigest: string;
+  expectedServerVersion: string;
+  codexHome: string;
+  permissionProfile: string;
+  capabilityEnvironments: Array<{
+    environmentId: string;
+    cwd: string;
+  }>;
+  selectedCapabilityRoots: SessionCodexSelectedCapabilityRoot[];
+  v2ModelIds: string[];
+  config: Record<string, SessionPluginJsonValue>;
+};
+
 export type SessionEntry = {
   /**
    * Last delivered heartbeat payload (used to suppress duplicate heartbeat notifications).
@@ -254,6 +279,19 @@ export type SessionEntry = {
   spawnedWorkspaceDir?: string;
   /** Task working directory inherited by spawned sessions and reused on later turns. */
   spawnedCwd?: string;
+  /**
+   * Managed worktree bound to this session. System-change fields are present only
+   * when a trusted loaded-generation caller created the worktree.
+   */
+  worktree?: {
+    id: string;
+    branch: string;
+    repoRoot: string;
+    kind?: "system-change";
+    baseRef?: string;
+  };
+  /** Immutable generation-N Codex authority for a system-change worktree. */
+  codexSystemAuthority?: SessionCodexSystemAuthority;
   /** Explicit parent session linkage for dashboard-created child sessions. */
   parentSessionKey?: string;
   /** True after a thread/topic session has been forked from its parent transcript once. */

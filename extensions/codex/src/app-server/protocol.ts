@@ -76,20 +76,38 @@ export type CodexTurnEnvironmentParams = JsonObject & {
   cwd: string;
 };
 
+export type CodexSelectedCapabilityRoot = {
+  id: string;
+  location: {
+    type: "environment";
+    environmentId: string;
+    path: string;
+  };
+};
+
+export type CodexActivePermissionProfile = {
+  id: string;
+  extends?: string | null;
+};
+
 export type CodexThreadStartParams = JsonObject & {
   input?: CodexUserInput[];
   cwd?: string;
+  runtimeWorkspaceRoots?: string[] | null;
   model?: string;
   modelProvider?: string | null;
   personality?: string | null;
   approvalPolicy?: string | JsonObject;
   approvalsReviewer?: string | null;
   sandbox?: string;
+  permissions?: string;
+  config?: JsonObject;
   serviceTier?: CodexServiceTier | null;
   dynamicTools?: CodexDynamicToolSpec[] | null;
   developerInstructions?: string;
   experimentalRawEvents?: boolean;
   environments?: CodexTurnEnvironmentParams[] | null;
+  selectedCapabilityRoots?: CodexSelectedCapabilityRoot[] | null;
   /** Retired by Codex 0.137, but still sent for supported custom app-server 0.125-0.136. */
   persistExtendedHistory?: boolean;
 };
@@ -113,6 +131,10 @@ export type CodexThreadStartResponse = {
   thread: CodexThread;
   model: string;
   modelProvider?: string | null;
+  cwd?: string;
+  runtimeWorkspaceRoots?: string[];
+  instructionSources?: string[];
+  activePermissionProfile?: CodexActivePermissionProfile | null;
 };
 
 export type CodexThreadForkParams = CodexThreadStartParams & {
@@ -129,6 +151,10 @@ export type CodexThreadResumeResponse = {
   thread: CodexThread;
   model: string;
   modelProvider?: string | null;
+  cwd?: string;
+  runtimeWorkspaceRoots?: string[];
+  instructionSources?: string[];
+  activePermissionProfile?: CodexActivePermissionProfile | null;
 };
 
 export type CodexThreadReadParams = JsonObject & {
@@ -158,10 +184,12 @@ export type CodexTurnStartParams = JsonObject & {
   threadId: string;
   input?: CodexUserInput[];
   cwd?: string;
+  runtimeWorkspaceRoots?: string[] | null;
   model?: string;
   approvalPolicy?: string | JsonObject;
   approvalsReviewer?: string | null;
   sandboxPolicy?: CodexSandboxPolicy;
+  permissions?: string;
   serviceTier?: CodexServiceTier | null;
   effort?: string | null;
   personality?: string | null;

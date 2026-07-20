@@ -69,6 +69,7 @@ vi.mock("openclaw/plugin-sdk/exec-approvals-runtime", async (importOriginal) => 
 });
 vi.mock("openclaw/plugin-sdk/agent-runtime", () => agentRuntimeMocks);
 
+import { resolveCodexSystemFixedEnvironment } from "./app-server/system-authority.js";
 import {
   handleCodexConversationBindingResolved,
   handleCodexConversationInboundClaim,
@@ -178,6 +179,120 @@ describe("codex conversation binding", () => {
     await expect(fs.readFile(`${sessionFile}.codex-app-server.json`, "utf8")).resolves.toContain(
       '"authProfileId": "openai:default"',
     );
+  });
+
+  it("binds a system conversation to its managed cwd and immutable native authority", async () => {
+    const sessionKey = "agent:coding:subagent:system-change";
+    const sessionFile = path.join(tempDir, "session.jsonl");
+    const sessionStore = path.join(tempDir, "sessions.json");
+    const worktree = path.join(tempDir, "worktrees", "system-change-a");
+    const codexHome = "/var/lib/openclaw/codex/generation-a";
+    const sourceObject = "a".repeat(40);
+    const authority = {
+      schemaVersion: 1,
+      releaseManifestDigest: "b".repeat(64),
+      expectedServerVersion: "0.144.1",
+      codexHome,
+      permissionProfile: "openclaw-system-change",
+      capabilityEnvironments: [
+        {
+          environmentId: "generation-capabilities",
+          cwd: "/opt/openclaw/capabilities/generation-a",
+        },
+      ],
+      selectedCapabilityRoots: [
+        {
+          id: "system-skills",
+          location: {
+            type: "environment",
+            environmentId: "generation-capabilities",
+            path: "/opt/openclaw/capabilities/generation-a/skills",
+          },
+        },
+      ],
+      v2ModelIds: ["gpt-5.4-codex"],
+      config: {
+        project_doc_max_bytes: 0,
+        developer_instructions: "Generation-N immutable developer instructions.",
+        "features.multi_agent": false,
+        "features.multi_agent_v2.enabled": true,
+        "shell_environment_policy.set": resolveCodexSystemFixedEnvironment(codexHome),
+      },
+    };
+    await fs.writeFile(
+      sessionStore,
+      JSON.stringify({
+        [sessionKey]: {
+          sessionId: "session-system-change",
+          updatedAt: Date.now(),
+          spawnedCwd: worktree,
+          worktree: {
+            id: "worktree-a",
+            branch: "openclaw/system-change-a",
+            repoRoot: "/srv/openclaw-next/source-anchor",
+            kind: "system-change",
+            baseRef: sourceObject,
+          },
+          codexSystemAuthority: authority,
+        },
+      }),
+    );
+    agentRuntimeMocks.resolveSessionAgentIds.mockReturnValue({
+      defaultAgentId: "main",
+      sessionAgentId: "coding",
+    });
+    const requests: Array<{ method: string; params: Record<string, unknown> }> = [];
+    sharedClientMocks.getSharedCodexAppServerClient.mockResolvedValue({
+      request: vi.fn(async (method: string, requestParams: Record<string, unknown>) => {
+        requests.push({ method, params: requestParams });
+        return {
+          thread: { id: "thread-system", sessionId: "session-system-change", cwd: worktree },
+          model: "gpt-5.4-codex",
+          cwd: worktree,
+          runtimeWorkspaceRoots: [worktree],
+          instructionSources: [],
+          activePermissionProfile: { id: "openclaw-system-change" },
+        };
+      }),
+    });
+
+    const data = await startCodexConversationThread({
+      config: { session: { store: sessionStore } } as never,
+      sessionKey,
+      sessionFile,
+      workspaceDir: path.join(tempDir, "foreign-workspace"),
+      model: "gpt-5.4-codex",
+      modelProvider: "openai",
+    });
+
+    const sharedClientParams = mockCallArg(sharedClientMocks.getSharedCodexAppServerClient) as {
+      processProfile?: Record<string, unknown>;
+    };
+    expect(sharedClientParams.processProfile).toMatchObject({
+      expectedServerVersion: "0.144.1",
+      codexHome: authority.codexHome,
+    });
+    expect(sharedClientParams.processProfile?.key).toBe(authority.releaseManifestDigest);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      method: "thread/start",
+      params: {
+        cwd: worktree,
+        runtimeWorkspaceRoots: [worktree],
+        permissions: authority.permissionProfile,
+        config: authority.config,
+        environments: [
+          { environmentId: "worktree", cwd: worktree },
+          ...authority.capabilityEnvironments,
+        ],
+        selectedCapabilityRoots: authority.selectedCapabilityRoots,
+        experimentalRawEvents: true,
+      },
+    });
+    expect(requests[0]?.params).not.toHaveProperty("sandbox");
+    expect(requests[0]?.params).not.toHaveProperty("developerInstructions");
+    expect(requests[0]?.params).not.toHaveProperty("persistExtendedHistory");
+    expect(data.workspaceDir).toBe(worktree);
   });
 
   it("preserves Codex auth and omits the public OpenAI provider for native bind threads", async () => {

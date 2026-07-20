@@ -2085,7 +2085,7 @@ allowed_sandbox_modes = ["read-only", "workspace-write"]
     );
   });
 
-  it("uses sorted extra skill roots in shared-client keys", () => {
+  it("includes immutable system process profile identity in shared-client keys", () => {
     const startOptions = {
       transport: "stdio" as const,
       command: "codex",
@@ -2093,16 +2093,16 @@ allowed_sandbox_modes = ["read-only", "workspace-write"]
       headers: {},
     };
     const first = codexAppServerStartOptionsKey(startOptions, {
-      extraSkillRoots: ["/workspace/source-skills", "/workspace/shared-skills"],
+      processProfileKey: "generation-a:auth-a:sandbox-a:env-a",
     });
-    const reordered = codexAppServerStartOptionsKey(startOptions, {
-      extraSkillRoots: ["/workspace/shared-skills", "/workspace/source-skills"],
+    const repeated = codexAppServerStartOptionsKey(startOptions, {
+      processProfileKey: "generation-a:auth-a:sandbox-a:env-a",
     });
     const different = codexAppServerStartOptionsKey(startOptions, {
-      extraSkillRoots: ["/workspace/other-skills"],
+      processProfileKey: "generation-b:auth-a:sandbox-a:env-a",
     });
 
-    expect(first).toBe(reordered);
+    expect(first).toBe(repeated);
     expect(first).not.toBe(different);
   });
 

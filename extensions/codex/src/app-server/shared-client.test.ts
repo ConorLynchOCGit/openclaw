@@ -1,4 +1,7 @@
 // Codex tests cover shared client plugin behavior.
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { WebSocketServer, type RawData } from "ws";
 import { CodexAppServerClient, MIN_CODEX_APP_SERVER_VERSION } from "./client.js";
@@ -111,6 +114,8 @@ function clientStartCall(startSpy: unknown) {
   return firstMockArg(startSpy, "CodexAppServerClient.start") as {
     command?: string;
     commandSource?: string;
+    env?: Record<string, string>;
+    clearEnv?: string[];
   };
 }
 
@@ -135,6 +140,7 @@ describe("shared Codex app-server client", () => {
   afterEach(() => {
     resetSharedCodexAppServerClientForTests();
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
     vi.useRealTimers();
     mocks.bridgeCodexAppServerStartOptions.mockClear();
     mocks.applyCodexAppServerAuthProfile.mockClear();
@@ -240,28 +246,118 @@ describe("shared Codex app-server client", () => {
     expect(applyCall?.authProfileId).toBe("openai:work");
   });
 
-  it("sets process-scoped extra skill roots before returning the shared client", async () => {
+  it("starts system Codex with a generation-scoped home and default-deny environment", async () => {
+    const harness = createClientHarness();
+    const startSpy = vi.spyOn(CodexAppServerClient, "start").mockReturnValue(harness.client);
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-system-codex-home-"));
+    const codexHome = path.join(tempRoot, "generation-a");
+    const packageCacheRoot = path.join(codexHome, "package-cache");
+    const npmCache = path.join(packageCacheRoot, "npm");
+    const pnpmStore = path.join(packageCacheRoot, "pnpm-store");
+    const ambientNpmCache = "/srv/openclaw-next/.npm";
+    vi.stubEnv("LANG", "C.UTF-8");
+    vi.stubEnv("OPENAI_API_KEY", "provider-secret");
+    vi.stubEnv("OPENCLAW_GATEWAY_TOKEN", "gateway-secret");
+    vi.stubEnv("DATABASE_URL", "database-secret");
+    vi.stubEnv("NPM_CONFIG_CACHE", ambientNpmCache);
+    vi.stubEnv("npm_config_cache", ambientNpmCache);
+    vi.stubEnv("COREPACK_HOME", "/srv/openclaw-next/.corepack");
+
+    try {
+      const clientPromise = getSharedCodexAppServerClient({
+        timeoutMs: 1000,
+        startOptions: {
+          transport: "stdio",
+          command: "codex",
+          args: ["app-server"],
+          headers: {},
+          env: {
+            OPENROUTER_API_KEY: "unrelated-provider-secret",
+            OPENCLAW_GATEWAY_TOKEN: "configured-gateway-secret",
+            NPM_CONFIG_CACHE: ambientNpmCache,
+          },
+          clearEnv: ["PATH", "HOME", "LANG"],
+        },
+        processProfile: {
+          key: "generation-a:auth-a:sandbox-a:env-a",
+          expectedServerVersion: "0.144.1",
+          codexHome,
+        },
+      });
+      await sendInitializeResult(harness, "openclaw/0.144.1 (linux; test)");
+
+      await expect(clientPromise).resolves.toBe(harness.client);
+      const startCall = clientStartCall(startSpy);
+      expect(startCall.env).toMatchObject({
+        PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        CODEX_HOME: codexHome,
+        HOME: codexHome,
+        LANG: "C.UTF-8",
+        OPENCLAW_HEAVY_CHECK_LOCK_SCOPE: "worktree",
+        XDG_CACHE_HOME: path.join(packageCacheRoot, "xdg"),
+        COREPACK_HOME: path.join(packageCacheRoot, "corepack"),
+        NPM_CONFIG_CACHE: npmCache,
+        npm_config_cache: npmCache,
+        PNPM_HOME: path.join(packageCacheRoot, "pnpm-home"),
+        PNPM_CONFIG_STORE_DIR: pnpmStore,
+        npm_config_store_dir: pnpmStore,
+        pnpm_config_store_dir: pnpmStore,
+        PNPM_STORE_PATH: pnpmStore,
+      });
+      expect(startCall.clearEnv).toEqual(
+        expect.arrayContaining([
+          "DATABASE_URL",
+          "OPENAI_API_KEY",
+          "OPENCLAW_GATEWAY_TOKEN",
+          "OPENROUTER_API_KEY",
+        ]),
+      );
+      expect(startCall.clearEnv).not.toEqual(expect.arrayContaining(["PATH", "HOME", "LANG"]));
+      expect(JSON.stringify(startCall.env)).not.toContain("secret");
+      expect(Object.values(startCall.env ?? {})).not.toContain(ambientNpmCache);
+
+      for (const directory of [
+        codexHome,
+        packageCacheRoot,
+        path.join(packageCacheRoot, "xdg"),
+        path.join(packageCacheRoot, "corepack"),
+        npmCache,
+        path.join(packageCacheRoot, "pnpm-home"),
+        pnpmStore,
+      ]) {
+        expect((await fs.stat(directory)).mode & 0o777).toBe(0o700);
+        await fs.writeFile(path.join(directory, ".writable-cache-proof"), "ok");
+      }
+      expect(harness.writes.some((line) => line.includes("skills/extraRoots/set"))).toBe(false);
+    } finally {
+      resetSharedCodexAppServerClientForTests();
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a system process whose initialized server version is not exact", async () => {
     const harness = createClientHarness();
     vi.spyOn(CodexAppServerClient, "start").mockReturnValue(harness.client);
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-system-version-home-"));
+    try {
+      const clientPromise = getSharedCodexAppServerClient({
+        timeoutMs: 1000,
+        processProfile: {
+          key: "generation-a:auth-a:sandbox-a:env-a",
+          expectedServerVersion: "0.144.1",
+          codexHome: path.join(tempRoot, "generation-a"),
+        },
+      });
+      await sendInitializeResult(harness, "openclaw/0.144.0 (linux; test)");
 
-    const clientPromise = getSharedCodexAppServerClient({
-      timeoutMs: 1000,
-      extraSkillRoots: ["/tmp/workspace/src/openclaw/.agents/skills"],
-    });
-    await sendInitializeResult(harness, "openclaw/0.125.0 (macOS; test)");
-    await vi.waitFor(() => expect(harness.writes.length).toBeGreaterThanOrEqual(3));
-    const extraRootsRequest = JSON.parse(harness.writes[2] ?? "{}") as {
-      id?: number;
-      method?: string;
-      params?: { extraRoots?: string[] };
-    };
-    expect(extraRootsRequest).toMatchObject({
-      method: "skills/extraRoots/set",
-      params: { extraRoots: ["/tmp/workspace/src/openclaw/.agents/skills"] },
-    });
-    harness.send({ id: extraRootsRequest.id, result: {} });
-
-    await expect(clientPromise).resolves.toBe(harness.client);
+      await expect(clientPromise).rejects.toThrow(
+        "Codex app-server version mismatch: expected 0.144.1, observed 0.144.0",
+      );
+      expect(harness.process.stdin.destroyed).toBe(true);
+    } finally {
+      resetSharedCodexAppServerClientForTests();
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
   });
 
   it("skips target auth resolution when native source auth is requested", async () => {

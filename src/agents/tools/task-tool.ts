@@ -38,6 +38,8 @@ import { killControlledSubagentRun, resolveSubagentController } from "../subagen
 import { getLatestSubagentRunByChildSessionKey } from "../subagent-registry-read.js";
 import { spawnSubagentDirect } from "../subagent-spawn.js";
 import { normalizeSubagentTaskName } from "../subagent-task-name.js";
+import { requireGit } from "../worktrees/git.js";
+import type { SystemChangeSessionSource } from "../worktrees/types.js";
 import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readStringParam, textResult } from "./common.js";
 
@@ -54,6 +56,16 @@ const DEFAULT_LIGHT_CONTEXT_AGENT_IDS = new Set([
   "web-researcher",
   "x-researcher",
 ]);
+
+type ManagedWorktreeSettlement = {
+  id: string;
+  path: string;
+  branch: string;
+  baseRef: string;
+  dirty: boolean | null;
+  changedPathCount?: number;
+  statusError?: string;
+};
 
 const TaskToolSchema = Type.Object({
   agentId: Type.String({
@@ -117,6 +129,7 @@ function formatTaskResult(params: {
   previewText?: string;
   previewChars?: number;
   recoveryHistory?: Array<{ source: string; status: string; error?: string }>;
+  worktree?: ManagedWorktreeSettlement;
 }): string {
   const taskNameAttr = params.taskName ? ` taskName="${escapeXmlAttr(params.taskName)}"` : "";
   const childSessionIdAttr = params.childSessionId
@@ -160,6 +173,7 @@ function formatTaskResult(params: {
             "  </task_result_preview>",
           ]
         : []),
+      ...formatManagedWorktreeSettlement(params.worktree),
       ...formatTaskRecoveryHistory(params.recoveryHistory),
       "</task>",
     ].join("\n");
@@ -169,9 +183,60 @@ function formatTaskResult(params: {
     "  <task_result>",
     escapeXmlText(params.replyText.trim()),
     "  </task_result>",
+    ...formatManagedWorktreeSettlement(params.worktree),
     ...formatTaskRecoveryHistory(params.recoveryHistory),
     "</task>",
   ].join("\n");
+}
+
+function formatManagedWorktreeSettlement(
+  worktree: ManagedWorktreeSettlement | undefined,
+): string[] {
+  if (!worktree) {
+    return [];
+  }
+  const dirty = worktree.dirty === null ? "unknown" : String(worktree.dirty);
+  const changedPathCount =
+    worktree.changedPathCount === undefined
+      ? ""
+      : ` changedPathCount="${worktree.changedPathCount}"`;
+  const statusError = worktree.statusError
+    ? ` statusError="${escapeXmlAttr(worktree.statusError)}"`
+    : "";
+  return [
+    `  <managed_worktree id="${escapeXmlAttr(worktree.id)}" path="${escapeXmlAttr(
+      worktree.path,
+    )}" branch="${escapeXmlAttr(worktree.branch)}" baseRef="${escapeXmlAttr(
+      worktree.baseRef,
+    )}" dirty="${dirty}"${changedPathCount}${statusError} />`,
+  ];
+}
+
+async function readManagedWorktreeSettlement(
+  worktree: NonNullable<Awaited<ReturnType<typeof spawnSubagentDirect>>["worktree"]> | undefined,
+): Promise<ManagedWorktreeSettlement | undefined> {
+  if (!worktree) {
+    return undefined;
+  }
+  try {
+    const porcelain = await requireGit(worktree.path, [
+      "status",
+      "--porcelain=v1",
+      "-z",
+      "--untracked-files=all",
+    ]);
+    return {
+      ...worktree,
+      dirty: porcelain.length > 0,
+      changedPathCount: porcelain ? porcelain.split("\0").filter(Boolean).length : 0,
+    };
+  } catch (error) {
+    return {
+      ...worktree,
+      dirty: null,
+      statusError: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 function taskResultInlineLimitForRequester(requesterAgentId: string | undefined): number {
@@ -474,6 +539,7 @@ function formatTaskError(params: {
   contentDigest?: string;
   contentChars?: number;
   contentTruncated?: boolean;
+  worktree?: ManagedWorktreeSettlement;
 }): string {
   const id = params.childSessionKey ?? params.runId ?? params.agentId;
   const runIdAttr = params.runId ? ` runId="${escapeXmlAttr(params.runId)}"` : "";
@@ -495,6 +561,7 @@ function formatTaskError(params: {
     lines.push(escapeXmlText(partialReplyText));
     lines.push("  </partial_task_result>");
   }
+  lines.push(...formatManagedWorktreeSettlement(params.worktree));
   lines.push("</task>");
   return lines.join("\n");
 }
@@ -541,6 +608,8 @@ export function createTaskTool(
     requesterAgentIdOverride?: string;
     workspaceDir?: string;
     onProgress?: () => void;
+    /** Trusted loaded-generation source for system-change Coding tasks. */
+    systemChangeSessionSource?: SystemChangeSessionSource;
   } & SpawnedToolContext,
 ): AnyAgentTool {
   return {
@@ -600,6 +669,15 @@ export function createTaskTool(
       });
       const lightContext = resolveTaskToolLightContext(agentId, params.lightContext);
       const cwd = readStringParam(params, "cwd");
+      const systemChangeSessionSource = isCodexCodingAgentId(agentId)
+        ? opts?.systemChangeSessionSource
+        : undefined;
+      if (systemChangeSessionSource && cwd) {
+        return jsonResult({
+          status: "error",
+          error: "system-change Coding cwd is assigned by the native managed-worktree service",
+        });
+      }
       const renderedCwd = cwd ? renderLiveAgentPathReference(cwd) : undefined;
       if (cwd && !renderedCwd && /^\/(?:srv|root)\b/u.test(cwd.trim())) {
         return jsonResult({
@@ -647,10 +725,12 @@ export function createTaskTool(
           agentMemberRoleIds: opts?.agentMemberRoleIds,
           requesterAgentIdOverride: opts?.requesterAgentIdOverride,
           workspaceDir: opts?.workspaceDir,
+          systemChangeSessionSource,
         },
       );
 
       if (spawn.status !== "accepted" || !spawn.childSessionKey || !spawn.runId) {
+        const worktree = await readManagedWorktreeSettlement(spawn.worktree);
         const text = formatTaskError({
           state: "error",
           childSessionKey: spawn.childSessionKey,
@@ -658,6 +738,7 @@ export function createTaskTool(
           agentId,
           taskName,
           error: spawn.error ?? `child task was not accepted: ${spawn.status}`,
+          worktree,
         });
         return textResult(text, {
           status: spawn.status,
@@ -667,6 +748,7 @@ export function createTaskTool(
           runId: spawn.runId,
           agentId,
           taskName,
+          worktree,
         });
       }
 
@@ -696,6 +778,7 @@ export function createTaskTool(
         cancelOwnedChild();
         await cancellationPromise;
       }
+      const worktree = await readManagedWorktreeSettlement(spawn.worktree);
       if (wait.status !== "ok" || !wait.replyText?.trim()) {
         const error =
           wait.error ??
@@ -717,6 +800,7 @@ export function createTaskTool(
                 contentTruncated: includesChildResultTruncationMarker(wait.replyText),
               }
             : {}),
+          worktree,
         });
         const partialResultTruncated = wait.replyText?.trim()
           ? includesChildResultTruncationMarker(wait.replyText)
@@ -729,6 +813,7 @@ export function createTaskTool(
           runId: spawn.runId,
           agentId,
           taskName,
+          worktree,
           producerAgentId: agentId,
           ownerAgentId: opts?.requesterAgentIdOverride,
           ...(wait.replyText?.trim()
@@ -776,6 +861,7 @@ export function createTaskTool(
         previewText,
         previewChars: previewText?.length ?? 0,
         recoveryHistory: wait.recoveryHistory,
+        worktree,
       });
       return textResult(text, {
         status: "ok",
@@ -810,6 +896,7 @@ export function createTaskTool(
         ...(wait.recoveryHistory?.length ? { recoveryHistory: wait.recoveryHistory } : {}),
         resolvedModel: spawn.resolvedModel,
         resolvedProvider: spawn.resolvedProvider,
+        worktree,
       });
     },
   };

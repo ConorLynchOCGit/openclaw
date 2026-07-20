@@ -4,6 +4,7 @@
 import type { resolveCodexAppServerAuthProfileIdForAgent } from "./auth-bridge.js";
 import type { CodexAppServerClient } from "./client.js";
 import type { CodexAppServerStartOptions } from "./config.js";
+import type { CodexSystemProcessProfile } from "./system-authority.js";
 
 type AuthProfileOrderConfig = Parameters<
   typeof resolveCodexAppServerAuthProfileIdForAgent
@@ -18,7 +19,7 @@ export type CodexAppServerClientFactory = (
   options?: {
     onStartedClient?: (client: CodexAppServerClient) => void;
     abandonSignal?: AbortSignal;
-    extraSkillRoots?: string[];
+    processProfile?: CodexSystemProcessProfile;
   },
 ) => Promise<CodexAppServerClient>;
 
@@ -45,7 +46,7 @@ export const defaultCodexAppServerClientFactory: CodexAppServerClientFactory = (
       config,
       onStartedClient: options?.onStartedClient,
       abandonSignal: options?.abandonSignal,
-      extraSkillRoots: options?.extraSkillRoots,
+      processProfile: options?.processProfile,
     }),
   );
 
@@ -65,6 +66,6 @@ export const defaultLeasedCodexAppServerClientFactory: CodexAppServerClientFacto
       config,
       onStartedClient: options?.onStartedClient,
       abandonSignal: options?.abandonSignal,
-      extraSkillRoots: options?.extraSkillRoots,
+      processProfile: options?.processProfile,
     }),
   );

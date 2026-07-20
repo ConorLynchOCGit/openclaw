@@ -55,6 +55,11 @@ import {
   type CodexAppServerContextEngineProjectionBinding,
   type CodexAppServerThreadBinding,
 } from "./session-binding.js";
+import {
+  assertCodexSystemThreadResponse,
+  assertCodexSystemV2Model,
+  type CodexSystemThreadContext,
+} from "./system-authority.js";
 
 export type CodexAppServerThreadLifecycle = {
   action: "started" | "resumed";
@@ -317,6 +322,7 @@ export async function startOrResumeThread(params: {
   mcpServersFingerprint?: string;
   mcpServersFingerprintEvaluated?: boolean;
   environmentSelection?: CodexTurnEnvironmentParams[];
+  systemContext?: CodexSystemThreadContext;
   pluginThreadConfig?: CodexPluginThreadConfigProvider;
   contextEngineProjection?: CodexContextEngineThreadBootstrapProjection;
   signal?: AbortSignal;
@@ -338,15 +344,14 @@ export async function startOrResumeThread(params: {
     buildContextEngineBinding(params.params, params.contextEngineProjection),
   );
   const userMcpServersConfigPatch =
-    params.userMcpServersEnabled === false
+    params.systemContext || params.userMcpServersEnabled === false
       ? undefined
       : buildCodexUserMcpServersThreadConfigPatch(params.params.config, {
           agentId: params.agentId ?? params.params.agentId,
         });
   const userMcpServersFingerprint = fingerprintUserMcpServersConfigPatch(userMcpServersConfigPatch);
-  const environmentSelectionFingerprint = fingerprintEnvironmentSelection(
-    params.environmentSelection,
-  );
+  const environmentSelection = params.systemContext?.environments ?? params.environmentSelection;
+  const environmentSelectionFingerprint = fingerprintEnvironmentSelection(environmentSelection);
   let binding = await lifecycleTiming.measure("read-binding", () =>
     readCodexAppServerBinding(params.params.sessionFile, {
       authProfileStore: params.params.authProfileStore,
@@ -391,6 +396,17 @@ export async function startOrResumeThread(params: {
     error.name = "AbortError";
     throw error;
   };
+  if (
+    binding?.threadId &&
+    binding.systemAuthorityFingerprint !== params.systemContext?.fingerprint
+  ) {
+    embeddedAgentLog.debug(
+      "codex app-server system authority changed; starting a generation-scoped thread",
+      { threadId: binding.threadId },
+    );
+    await clearCodexAppServerBinding(params.params.sessionFile);
+    binding = undefined;
+  }
   if (binding?.threadId && params.nativeCodeModeEnabled === false) {
     embeddedAgentLog.debug(
       "codex app-server native tool surface disabled for turn; starting transient thread",
@@ -553,18 +569,22 @@ export async function startOrResumeThread(params: {
     } else {
       try {
         const authProfileId = params.params.authProfileId ?? binding.authProfileId;
-        const finalConfigPatch = params.buildFinalConfigPatch?.({
-          action: "resume",
-          binding,
-        }) ?? {
-          configPatch: params.finalConfigPatch,
-          nativeHookRelayGeneration: params.nativeHookRelayGeneration,
-        };
-        const resumeConfig = mergeCodexThreadConfigs(
-          params.config,
-          userMcpServersConfigPatch,
-          finalConfigPatch.configPatch,
-        );
+        const finalConfigPatch: CodexThreadFinalConfigPatchResult = params.systemContext
+          ? {}
+          : (params.buildFinalConfigPatch?.({
+              action: "resume",
+              binding,
+            }) ?? {
+              configPatch: params.finalConfigPatch,
+              nativeHookRelayGeneration: params.nativeHookRelayGeneration,
+            });
+        const resumeConfig = params.systemContext
+          ? params.systemContext.authority.config
+          : mergeCodexThreadConfigs(
+              params.config,
+              userMcpServersConfigPatch,
+              finalConfigPatch.configPatch,
+            );
         const resumeMcpServerNames = readThreadConfigMcpServerNames(resumeConfig);
         const resumeParams = lifecycleTiming.measureSync("thread-resume-params", () =>
           buildThreadResumeParams(params.params, {
@@ -577,6 +597,7 @@ export async function startOrResumeThread(params: {
             config: resumeConfig,
             nativeCodeModeEnabled: params.nativeCodeModeEnabled,
             nativeCodeModeOnlyEnabled: params.nativeCodeModeOnlyEnabled,
+            systemContext: params.systemContext,
           }),
         );
         const requestModelProvider =
@@ -588,6 +609,14 @@ export async function startOrResumeThread(params: {
             params.client.request("thread/resume", resumeParams, { signal: params.signal }),
           ),
         );
+        if (params.systemContext) {
+          assertCodexSystemThreadResponse({
+            response,
+            context: params.systemContext,
+            cwd: params.cwd,
+            action: "resume",
+          });
+        }
         throwIfAborted();
         const boundAuthProfileId = authProfileId;
         const nextMcpServersFingerprint =
@@ -615,6 +644,7 @@ export async function startOrResumeThread(params: {
               pluginAppPolicyContext: binding.pluginAppPolicyContext,
               contextEngine: contextEngineBinding,
               environmentSelectionFingerprint,
+              systemAuthorityFingerprint: params.systemContext?.fingerprint,
               createdAt: binding.createdAt,
             },
             {
@@ -663,6 +693,7 @@ export async function startOrResumeThread(params: {
           pluginAppPolicyContext: binding.pluginAppPolicyContext,
           contextEngine: contextEngineBinding,
           environmentSelectionFingerprint,
+          systemAuthorityFingerprint: params.systemContext?.fingerprint,
           lifecycle: {
             action: "resumed",
             ...(activeTurnIds.length ? { activeTurnIds } : {}),
@@ -680,24 +711,29 @@ export async function startOrResumeThread(params: {
     }
   }
 
-  const pluginThreadConfig = params.pluginThreadConfig?.enabled
-    ? (prebuiltPluginThreadConfig ??
-      (await lifecycleTiming.measure("plugin-config-build", () =>
-        params.pluginThreadConfig?.build(),
-      )))
-    : undefined;
-  const finalConfigPatch = params.buildFinalConfigPatch?.({ action: "start" }) ?? {
-    configPatch: params.finalConfigPatch,
-    nativeHookRelayGeneration: params.nativeHookRelayGeneration,
-  };
-  const config = lifecycleTiming.measureSync("merge-thread-config", () =>
-    mergeCodexThreadConfigs(
-      params.config,
-      userMcpServersConfigPatch,
-      pluginThreadConfig?.configPatch,
-      finalConfigPatch.configPatch,
-    ),
-  );
+  const pluginThreadConfig =
+    !params.systemContext && params.pluginThreadConfig?.enabled
+      ? (prebuiltPluginThreadConfig ??
+        (await lifecycleTiming.measure("plugin-config-build", () =>
+          params.pluginThreadConfig?.build(),
+        )))
+      : undefined;
+  const finalConfigPatch: CodexThreadFinalConfigPatchResult = params.systemContext
+    ? {}
+    : (params.buildFinalConfigPatch?.({ action: "start" }) ?? {
+        configPatch: params.finalConfigPatch,
+        nativeHookRelayGeneration: params.nativeHookRelayGeneration,
+      });
+  const config = params.systemContext
+    ? params.systemContext.authority.config
+    : lifecycleTiming.measureSync("merge-thread-config", () =>
+        mergeCodexThreadConfigs(
+          params.config,
+          userMcpServersConfigPatch,
+          pluginThreadConfig?.configPatch,
+          finalConfigPatch.configPatch,
+        ),
+      );
   const mcpServerNames = readThreadConfigMcpServerNames(config);
   const startParams = lifecycleTiming.measureSync("thread-start-params", () =>
     buildThreadStartParams(params.params, {
@@ -708,8 +744,9 @@ export async function startOrResumeThread(params: {
       config,
       nativeCodeModeEnabled: params.nativeCodeModeEnabled,
       nativeCodeModeOnlyEnabled: params.nativeCodeModeOnlyEnabled,
-      environmentSelection: params.environmentSelection,
+      environmentSelection,
       modelProvider: startModelProvider,
+      systemContext: params.systemContext,
     }),
   );
   const requestModelProvider =
@@ -727,6 +764,14 @@ export async function startOrResumeThread(params: {
     }
   });
   const response = assertCodexThreadStartResponse(threadStartResponse);
+  if (params.systemContext) {
+    assertCodexSystemThreadResponse({
+      response,
+      context: params.systemContext,
+      cwd: params.cwd,
+      action: "start",
+    });
+  }
   throwIfAborted();
   const modelProvider = resolveCodexAppServerModelProvider({
     provider: params.params.provider,
@@ -760,6 +805,7 @@ export async function startOrResumeThread(params: {
           pluginAppPolicyContext: pluginThreadConfig?.policyContext,
           contextEngine: contextEngineBinding,
           environmentSelectionFingerprint,
+          systemAuthorityFingerprint: params.systemContext?.fingerprint,
           createdAt,
         },
         {
@@ -809,6 +855,7 @@ export async function startOrResumeThread(params: {
     pluginAppPolicyContext: pluginThreadConfig?.policyContext,
     contextEngine: contextEngineBinding,
     environmentSelectionFingerprint,
+    systemAuthorityFingerprint: params.systemContext?.fingerprint,
     createdAt,
     updatedAt: createdAt,
     lifecycle: {
@@ -962,6 +1009,7 @@ export function buildThreadStartParams(
     nativeCodeModeOnlyEnabled?: boolean;
     environmentSelection?: CodexTurnEnvironmentParams[];
     modelProvider?: string | null;
+    systemContext?: CodexSystemThreadContext;
   },
 ): CodexThreadStartParams {
   const resolvedModelProvider = resolveCodexAppServerModelProvider({
@@ -979,6 +1027,26 @@ export function buildThreadStartParams(
     agentDir: params.agentDir,
     config: params.config,
   });
+  if (options.systemContext) {
+    assertCodexSystemV2Model(options.systemContext, modelSelection.model);
+    return {
+      model: modelSelection.model,
+      ...(modelSelection.modelProvider ? { modelProvider: modelSelection.modelProvider } : {}),
+      cwd: options.cwd,
+      runtimeWorkspaceRoots: [options.cwd],
+      approvalPolicy: options.appServer.approvalPolicy,
+      approvalsReviewer: options.appServer.approvalsReviewer,
+      permissions: options.systemContext.authority.permissionProfile,
+      ...(options.appServer.serviceTier ? { serviceTier: options.appServer.serviceTier } : {}),
+      personality: CODEX_NATIVE_PERSONALITY_NONE,
+      serviceName: "OpenClaw",
+      config: options.systemContext.authority.config,
+      environments: options.systemContext.environments,
+      selectedCapabilityRoots: options.systemContext.authority.selectedCapabilityRoots,
+      dynamicTools: options.dynamicTools,
+      experimentalRawEvents: true,
+    };
+  }
   const runtimeConfig = buildCodexRuntimeThreadConfigForRun(params, options.config, {
     nativeCodeModeEnabled: options.nativeCodeModeEnabled,
     nativeCodeModeOnlyEnabled: options.nativeCodeModeOnlyEnabled,
@@ -1029,6 +1097,7 @@ export function buildThreadResumeParams(
     config?: JsonObject;
     nativeCodeModeEnabled?: boolean;
     nativeCodeModeOnlyEnabled?: boolean;
+    systemContext?: CodexSystemThreadContext;
   },
 ): CodexThreadResumeParams {
   const resolvedModelProvider = resolveCodexAppServerModelProvider({
@@ -1046,6 +1115,16 @@ export function buildThreadResumeParams(
     agentDir: params.agentDir,
     config: params.config,
   });
+  if (options.systemContext) {
+    assertCodexSystemV2Model(options.systemContext, modelSelection.model);
+    return {
+      threadId: options.threadId,
+      model: modelSelection.model,
+      ...(modelSelection.modelProvider ? { modelProvider: modelSelection.modelProvider } : {}),
+      personality: CODEX_NATIVE_PERSONALITY_NONE,
+      ...(options.appServer.serviceTier ? { serviceTier: options.appServer.serviceTier } : {}),
+    };
+  }
   const runtimeConfig = buildCodexRuntimeThreadConfigForRun(params, options.config, {
     nativeCodeModeEnabled: options.nativeCodeModeEnabled,
     nativeCodeModeOnlyEnabled: options.nativeCodeModeOnlyEnabled,
@@ -1223,6 +1302,7 @@ export function buildTurnStartParams(
     skillsCollaborationInstructions?: string;
     memoryCollaborationInstructions?: string;
     heartbeatCollaborationInstructions?: string;
+    systemContext?: CodexSystemThreadContext;
   },
 ): CodexTurnStartParams {
   const modelSelection = resolveCodexAppServerRequestModelSelection({
@@ -1233,26 +1313,48 @@ export function buildTurnStartParams(
     agentDir: params.agentDir,
     config: params.config,
   });
+  if (options.systemContext) {
+    assertCodexSystemV2Model(options.systemContext, modelSelection.model);
+  }
   return {
     threadId: options.threadId,
     input: buildUserInput(params, options.promptText),
     cwd: options.cwd,
+    ...(options.systemContext ? { runtimeWorkspaceRoots: [options.cwd] } : {}),
     approvalPolicy: options.appServer.approvalPolicy,
     approvalsReviewer: options.appServer.approvalsReviewer,
-    sandboxPolicy:
-      options.sandboxPolicy ?? codexSandboxPolicyForTurn(options.appServer.sandbox, options.cwd),
+    ...(options.systemContext
+      ? { permissions: options.systemContext.authority.permissionProfile }
+      : {
+          sandboxPolicy:
+            options.sandboxPolicy ??
+            codexSandboxPolicyForTurn(options.appServer.sandbox, options.cwd),
+        }),
     model: modelSelection.model,
     personality: CODEX_NATIVE_PERSONALITY_NONE,
     ...(options.appServer.serviceTier ? { serviceTier: options.appServer.serviceTier } : {}),
     effort: resolveReasoningEffort(params.thinkLevel, modelSelection.model),
-    ...(options.environmentSelection ? { environments: options.environmentSelection } : {}),
-    collaborationMode: buildTurnCollaborationMode(params, {
-      model: modelSelection.model,
-      turnScopedDeveloperInstructions: options.turnScopedDeveloperInstructions,
-      skillsCollaborationInstructions: options.skillsCollaborationInstructions,
-      memoryCollaborationInstructions: options.memoryCollaborationInstructions,
-      heartbeatCollaborationInstructions: options.heartbeatCollaborationInstructions,
-    }),
+    ...(options.systemContext
+      ? { environments: options.systemContext.environments }
+      : options.environmentSelection
+        ? { environments: options.environmentSelection }
+        : {}),
+    collaborationMode: options.systemContext
+      ? {
+          mode: "default",
+          settings: {
+            model: modelSelection.model,
+            reasoning_effort: resolveReasoningEffort(params.thinkLevel, modelSelection.model),
+            developer_instructions: null,
+          },
+        }
+      : buildTurnCollaborationMode(params, {
+          model: modelSelection.model,
+          turnScopedDeveloperInstructions: options.turnScopedDeveloperInstructions,
+          skillsCollaborationInstructions: options.skillsCollaborationInstructions,
+          memoryCollaborationInstructions: options.memoryCollaborationInstructions,
+          heartbeatCollaborationInstructions: options.heartbeatCollaborationInstructions,
+        }),
   };
 }
 

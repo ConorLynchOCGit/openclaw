@@ -139,6 +139,7 @@ import { resolveProviderIdForAuth } from "./provider-auth-aliases.js";
 import { normalizeSpawnedRunMetadata } from "./spawned-context.js";
 import { resolveAgentTimeoutMs } from "./timeout.js";
 import { ensureAgentWorkspace } from "./workspace.js";
+import { acquireWorktreeRunLease, resolveWorktreeIdForPath } from "./worktrees/run-lease.js";
 
 const log = createSubsystemLogger("agents/agent-command");
 
@@ -800,6 +801,7 @@ async function prepareAgentCommandExecution(opts: AgentCommandOpts, runtime: Run
   const workspaceDir = resolveUserPath(workspaceDirRaw);
   const cwd =
     normalizeOptionalString(opts.cwd) ?? normalizeOptionalString(sessionEntryRaw?.spawnedCwd);
+  const resolvedCwd = cwd ? resolveUserPath(cwd) : undefined;
   const agentDir = resolveAgentDir(cfg, sessionAgentId);
   const pluginsEnabled = normalizePluginsConfig(cfg.plugins).enabled;
   const manifestMetadataSnapshot = pluginsEnabled
@@ -838,62 +840,73 @@ async function prepareAgentCommandExecution(opts: AgentCommandOpts, runtime: Run
   if (opts.thinkingOnce && !thinkOnce) {
     throw new Error(`Invalid one-shot thinking level. Use one of: ${thinkingLevelsHint}.`);
   }
-  await ensureAgentWorkspace({
-    dir: workspaceDirRaw,
-    ensureBootstrapFiles: !agentCfg?.skipBootstrap,
-    skipOptionalBootstrapFiles: agentCfg?.skipOptionalBootstrapFiles,
-  });
-  const runId = opts.runId?.trim() || sessionId;
-  if (sessionKey && isSubagentSessionKey(sessionKey) && !opts.launchExecutionPlan) {
-    throw new Error("Subagent child runs require a native launchExecutionPlan.");
-  }
-  const { getAcpSessionManager } = await loadAcpManagerRuntime();
-  const acpManager = getAcpSessionManager();
-  const acpResolution = sessionKey
-    ? acpManager.resolveSession({
-        cfg,
-        sessionKey,
-      })
-    : null;
-  const body =
-    !isRawModelRun && acpResolution?.kind === "ready"
-      ? resolveAcpPromptBody(message, opts.internalEvents)
-      : prependInternalEventContext(message, opts.internalEvents);
-  const transcriptBody =
-    opts.transcriptMessage ?? resolveInternalEventTranscriptBody(message, opts.internalEvents);
-
-  return {
-    body,
-    transcriptBody,
-    cfg,
-    configuredThinkingCatalog,
-    normalizedSpawned,
-    agentCfg,
-    thinkOverride,
-    thinkOnce,
-    verboseOverride,
-    timeoutMs,
-    runTimeoutOverrideMs,
-    sessionId,
-    sessionKey,
+  const worktreeId = await resolveWorktreeIdForPath({
     sessionEntry: sessionEntryRaw,
-    sessionStore,
-    storePath,
-    isNewSession,
-    persistedThinking,
-    persistedVerbose,
-    sessionAgentId,
-    outboundSession,
-    workspaceDir,
-    cwd: cwd ? resolveUserPath(cwd) : undefined,
-    agentDir,
-    pluginsEnabled,
-    manifestMetadataSnapshot,
-    modelManifestContext,
-    runId,
-    acpManager,
-    acpResolution,
-  };
+    candidatePaths: [resolvedCwd ?? workspaceDir, workspaceDir],
+  });
+  const runLease = worktreeId ? await acquireWorktreeRunLease(worktreeId) : undefined;
+  try {
+    await ensureAgentWorkspace({
+      dir: workspaceDirRaw,
+      ensureBootstrapFiles: !agentCfg?.skipBootstrap,
+      skipOptionalBootstrapFiles: agentCfg?.skipOptionalBootstrapFiles,
+    });
+    const runId = opts.runId?.trim() || sessionId;
+    if (sessionKey && isSubagentSessionKey(sessionKey) && !opts.launchExecutionPlan) {
+      throw new Error("Subagent child runs require a native launchExecutionPlan.");
+    }
+    const { getAcpSessionManager } = await loadAcpManagerRuntime();
+    const acpManager = getAcpSessionManager();
+    const acpResolution = sessionKey
+      ? acpManager.resolveSession({
+          cfg,
+          sessionKey,
+        })
+      : null;
+    const body =
+      !isRawModelRun && acpResolution?.kind === "ready"
+        ? resolveAcpPromptBody(message, opts.internalEvents)
+        : prependInternalEventContext(message, opts.internalEvents);
+    const transcriptBody =
+      opts.transcriptMessage ?? resolveInternalEventTranscriptBody(message, opts.internalEvents);
+
+    return {
+      body,
+      transcriptBody,
+      cfg,
+      configuredThinkingCatalog,
+      normalizedSpawned,
+      agentCfg,
+      thinkOverride,
+      thinkOnce,
+      verboseOverride,
+      timeoutMs,
+      runTimeoutOverrideMs,
+      sessionId,
+      sessionKey,
+      sessionEntry: sessionEntryRaw,
+      sessionStore,
+      storePath,
+      isNewSession,
+      persistedThinking,
+      persistedVerbose,
+      sessionAgentId,
+      outboundSession,
+      workspaceDir,
+      cwd: resolvedCwd,
+      agentDir,
+      pluginsEnabled,
+      manifestMetadataSnapshot,
+      modelManifestContext,
+      runId,
+      acpManager,
+      acpResolution,
+      runLease,
+    };
+  } catch (error) {
+    await runLease?.release();
+    throw error;
+  }
 }
 
 async function agentCommandInternal(
@@ -936,6 +949,7 @@ async function agentCommandInternal(
     pluginsEnabled,
     manifestMetadataSnapshot,
     modelManifestContext,
+    runLease,
   } = prepared;
   const effectiveCwd = cwd ? resolveUserPath(cwd) : workspaceDir;
   let sessionEntry = prepared.sessionEntry;
@@ -2563,6 +2577,7 @@ async function agentCommandInternal(
       throw error;
     }
   } finally {
+    await runLease?.release();
     if (trackedRestartRecoveryDeliveryContext && sessionStore && sessionKey) {
       try {
         const entry = sessionStore[sessionKey] ?? sessionEntry;

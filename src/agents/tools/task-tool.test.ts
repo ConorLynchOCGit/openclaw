@@ -5,6 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { SystemChangeSessionSource } from "../worktrees/types.js";
 
 const hoisted = vi.hoisted(() => {
   const spawnSubagentDirectMock = vi.fn();
@@ -13,6 +14,7 @@ const hoisted = vi.hoisted(() => {
   const getLatestSubagentRunByChildSessionKeyMock = vi.fn();
   const resolveSubagentControllerMock = vi.fn();
   const killControlledSubagentRunMock = vi.fn();
+  const requireGitMock = vi.fn();
   return {
     spawnSubagentDirectMock,
     waitForAgentRunMock,
@@ -20,11 +22,16 @@ const hoisted = vi.hoisted(() => {
     getLatestSubagentRunByChildSessionKeyMock,
     resolveSubagentControllerMock,
     killControlledSubagentRunMock,
+    requireGitMock,
   };
 });
 
 vi.mock("../subagent-spawn.js", () => ({
   spawnSubagentDirect: (...args: unknown[]) => hoisted.spawnSubagentDirectMock(...args),
+}));
+
+vi.mock("../worktrees/git.js", () => ({
+  requireGit: (...args: unknown[]) => hoisted.requireGitMock(...args),
 }));
 
 vi.mock("../run-wait.js", () => ({
@@ -48,6 +55,21 @@ let buildTaskTranscriptFinalRef: typeof import("./task-tool.js").buildTaskTransc
 function digestText(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
+
+const SYSTEM_CODEX_HOME = "/var/lib/openclaw/codex/generation-a";
+const SYSTEM_PACKAGE_CACHE_ROOT = `${SYSTEM_CODEX_HOME}/package-cache`;
+const SYSTEM_SHELL_ENVIRONMENT = {
+  OPENCLAW_HEAVY_CHECK_LOCK_SCOPE: "worktree",
+  XDG_CACHE_HOME: `${SYSTEM_PACKAGE_CACHE_ROOT}/xdg`,
+  COREPACK_HOME: `${SYSTEM_PACKAGE_CACHE_ROOT}/corepack`,
+  NPM_CONFIG_CACHE: `${SYSTEM_PACKAGE_CACHE_ROOT}/npm`,
+  npm_config_cache: `${SYSTEM_PACKAGE_CACHE_ROOT}/npm`,
+  PNPM_HOME: `${SYSTEM_PACKAGE_CACHE_ROOT}/pnpm-home`,
+  PNPM_CONFIG_STORE_DIR: `${SYSTEM_PACKAGE_CACHE_ROOT}/pnpm-store`,
+  npm_config_store_dir: `${SYSTEM_PACKAGE_CACHE_ROOT}/pnpm-store`,
+  pnpm_config_store_dir: `${SYSTEM_PACKAGE_CACHE_ROOT}/pnpm-store`,
+  PNPM_STORE_PATH: `${SYSTEM_PACKAGE_CACHE_ROOT}/pnpm-store`,
+};
 
 describe("task tool", () => {
   beforeAll(async () => {
@@ -79,6 +101,7 @@ describe("task tool", () => {
       killed: true,
       labels: ["planning"],
     });
+    hoisted.requireGitMock.mockReset().mockResolvedValue("");
   });
 
   it("carries Main's exact current operator turn into a cross-agent foreground task", async () => {
@@ -713,6 +736,98 @@ describe("task tool", () => {
     }
     expect(content.text).toContain('<task_result_ref kind="transcript_final"');
     expect(content.text).not.toContain("oversized dialogue payload");
+  });
+
+  it("passes loaded source authority to Coding and returns the preserved dirty worktree", async () => {
+    const sourceObject = "a".repeat(40);
+    const source: SystemChangeSessionSource = {
+      sourceAnchorPath: "/srv/openclaw-next/source-anchor",
+      sourceTreeObject: sourceObject,
+      codexAuthority: {
+        schemaVersion: 1,
+        releaseManifestDigest: "b".repeat(64),
+        expectedServerVersion: "0.144.1",
+        codexHome: SYSTEM_CODEX_HOME,
+        permissionProfile: "openclaw-system-change",
+        capabilityEnvironments: [
+          {
+            environmentId: "generation-capabilities",
+            cwd: "/opt/openclaw/capabilities/generation-a",
+          },
+        ],
+        selectedCapabilityRoots: [
+          {
+            id: "system-skills",
+            location: {
+              type: "environment",
+              environmentId: "generation-capabilities",
+              path: "/opt/openclaw/capabilities/generation-a/skills",
+            },
+          },
+        ],
+        v2ModelIds: ["gpt-5.4-codex"],
+        config: {
+          project_doc_max_bytes: 0,
+          developer_instructions: "Generation-N immutable developer instructions.",
+          "features.multi_agent": false,
+          "features.multi_agent_v2.enabled": true,
+          "shell_environment_policy.set": { ...SYSTEM_SHELL_ENVIRONMENT },
+        },
+      },
+    };
+    const worktree = {
+      id: "worktree-a",
+      path: "/tmp/openclaw-state/worktrees/system-change-a",
+      branch: "openclaw/system-change-a",
+      baseRef: sourceObject,
+    };
+    hoisted.spawnSubagentDirectMock.mockResolvedValueOnce({
+      status: "accepted",
+      childSessionKey: "agent:coding:subagent:child",
+      childSessionId: "session-child",
+      runId: "run-child",
+      resolvedProvider: "openai",
+      resolvedModel: "gpt-5.4-codex",
+      worktree,
+    });
+    hoisted.requireGitMock.mockResolvedValueOnce(" M src/changed.ts\0?? src/new.ts\0");
+
+    const result = await createTaskTool({
+      agentSessionKey: "agent:main:operator",
+      requesterAgentIdOverride: "main",
+      systemChangeSessionSource: source,
+    }).execute("call-1", {
+      agentId: "coding",
+      task: "Implement the loaded system change.",
+      context: "isolated",
+    });
+
+    expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
+      expect.objectContaining({ agentId: "coding", cwd: undefined }),
+      expect.objectContaining({ systemChangeSessionSource: source }),
+    );
+    expect(hoisted.requireGitMock).toHaveBeenCalledWith(worktree.path, [
+      "status",
+      "--porcelain=v1",
+      "-z",
+      "--untracked-files=all",
+    ]);
+    expect(result.details).toMatchObject({
+      status: "ok",
+      worktree: {
+        ...worktree,
+        dirty: true,
+        changedPathCount: 2,
+      },
+    });
+    const content = result.content[0];
+    expect(content?.type).toBe("text");
+    if (!content || content.type !== "text") {
+      throw new Error("Expected text tool result");
+    }
+    expect(content.text).toContain(
+      `<managed_worktree id="worktree-a" path="${worktree.path}" branch="openclaw/system-change-a" baseRef="${sourceObject}" dirty="true" changedPathCount="2" />`,
+    );
   });
 
   it("returns native child transcript pointers instead of large child finals as parent context", async () => {

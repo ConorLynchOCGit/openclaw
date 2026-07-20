@@ -74,6 +74,7 @@ import { createUpdatePlanTool } from "./tools/update-plan-tool.js";
 import { createVideoGenerateTool } from "./tools/video-generate-tool.js";
 import { createWebFetchTool, createWebSearchTool } from "./tools/web-tools.js";
 import { resolveWorkspaceRoot } from "./workspace-dir.js";
+import type { SystemChangeSessionSource } from "./worktrees/types.js";
 
 type OpenClawToolsDeps = {
   callGateway: typeof callGateway;
@@ -186,6 +187,8 @@ export function createOpenClawTools(
     allowGatewaySubagentBinding?: boolean;
     /** Active skill snapshot; lets read-tool hooks recognize model-visible skills. */
     skillsSnapshot?: SkillSnapshot;
+    /** Trusted loaded-generation source for native system-change Coding tasks. */
+    systemChangeSessionSource?: SystemChangeSessionSource;
   } & SpawnedToolContext,
 ): AnyAgentTool[] {
   const resolvedConfig = options?.config ?? openClawToolsDeps.config;
@@ -547,6 +550,7 @@ export function createOpenClawTools(
             workspaceDir: spawnWorkspaceDir,
             inheritedToolDenylist: options?.inheritedToolDenylist,
             onProgress: touchParentRunProgress,
+            systemChangeSessionSource: options?.systemChangeSessionSource,
           }),
           createSessionsSpawnTool({
             agentSessionKey: options?.agentSessionKey,

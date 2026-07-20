@@ -9,6 +9,7 @@ import {
   loadSubagentSpawnModuleForTest,
 } from "./subagent-spawn.test-helpers.js";
 import { installAcceptedSubagentGatewayMock } from "./test-helpers/subagent-gateway.js";
+import type { SystemChangeSessionSource } from "./worktrees/types.js";
 
 const hoisted = vi.hoisted(() => ({
   callGatewayMock: vi.fn(),
@@ -26,6 +27,61 @@ const hoisted = vi.hoisted(() => ({
 
 let resetSubagentRegistryForTests: typeof import("./subagent-registry.js").resetSubagentRegistryForTests;
 let spawnSubagentDirect: typeof import("./subagent-spawn.js").spawnSubagentDirect;
+let subagentSpawnTesting: typeof import("./subagent-spawn.js").testing;
+
+const SYSTEM_SOURCE_OBJECT = "a".repeat(40);
+const SYSTEM_CODEX_HOME = "/var/lib/openclaw/codex/generation-a";
+const SYSTEM_PACKAGE_CACHE_ROOT = `${SYSTEM_CODEX_HOME}/package-cache`;
+const SYSTEM_SHELL_ENVIRONMENT = {
+  OPENCLAW_HEAVY_CHECK_LOCK_SCOPE: "worktree",
+  XDG_CACHE_HOME: `${SYSTEM_PACKAGE_CACHE_ROOT}/xdg`,
+  COREPACK_HOME: `${SYSTEM_PACKAGE_CACHE_ROOT}/corepack`,
+  NPM_CONFIG_CACHE: `${SYSTEM_PACKAGE_CACHE_ROOT}/npm`,
+  npm_config_cache: `${SYSTEM_PACKAGE_CACHE_ROOT}/npm`,
+  PNPM_HOME: `${SYSTEM_PACKAGE_CACHE_ROOT}/pnpm-home`,
+  PNPM_CONFIG_STORE_DIR: `${SYSTEM_PACKAGE_CACHE_ROOT}/pnpm-store`,
+  npm_config_store_dir: `${SYSTEM_PACKAGE_CACHE_ROOT}/pnpm-store`,
+  pnpm_config_store_dir: `${SYSTEM_PACKAGE_CACHE_ROOT}/pnpm-store`,
+  PNPM_STORE_PATH: `${SYSTEM_PACKAGE_CACHE_ROOT}/pnpm-store`,
+};
+
+function createSystemChangeSessionSource(): SystemChangeSessionSource {
+  return {
+    sourceAnchorPath: "/srv/openclaw-next/source-anchor",
+    sourceTreeObject: SYSTEM_SOURCE_OBJECT,
+    codexAuthority: {
+      schemaVersion: 1,
+      releaseManifestDigest: "b".repeat(64),
+      expectedServerVersion: "0.144.1",
+      codexHome: SYSTEM_CODEX_HOME,
+      permissionProfile: "openclaw-system-change",
+      capabilityEnvironments: [
+        {
+          environmentId: "generation-capabilities",
+          cwd: "/opt/openclaw/capabilities/generation-a",
+        },
+      ],
+      selectedCapabilityRoots: [
+        {
+          id: "system-skills",
+          location: {
+            type: "environment",
+            environmentId: "generation-capabilities",
+            path: "/opt/openclaw/capabilities/generation-a/skills",
+          },
+        },
+      ],
+      v2ModelIds: ["gpt-5.4"],
+      config: {
+        project_doc_max_bytes: 0,
+        developer_instructions: "Generation-N immutable developer instructions.",
+        "features.multi_agent": false,
+        "features.multi_agent_v2.enabled": true,
+        "shell_environment_policy.set": { ...SYSTEM_SHELL_ENVIRONMENT },
+      },
+    },
+  };
+}
 
 function createConfigOverride(overrides?: Record<string, unknown>) {
   return createSubagentSpawnTestConfig(os.tmpdir(), {
@@ -68,7 +124,11 @@ function firstRegisteredSubagentRun(): Record<string, unknown> {
 
 describe("spawnSubagentDirect seam flow", () => {
   beforeAll(async () => {
-    ({ resetSubagentRegistryForTests, spawnSubagentDirect } = await loadSubagentSpawnModuleForTest({
+    ({
+      resetSubagentRegistryForTests,
+      spawnSubagentDirect,
+      testing: subagentSpawnTesting,
+    } = await loadSubagentSpawnModuleForTest({
       callGatewayMock: hoisted.callGatewayMock,
       dispatchGatewayMethodInProcessMock: hoisted.dispatchGatewayMethodInProcessMock,
       hasInProcessGatewayContextMock: hoisted.hasInProcessGatewayContextMock,
@@ -87,6 +147,7 @@ describe("spawnSubagentDirect seam flow", () => {
   });
 
   beforeEach(() => {
+    subagentSpawnTesting.setDepsForTest();
     resetSubagentRegistryForTests();
     hoisted.callGatewayMock.mockReset();
     hoisted.loadSessionStoreMock.mockReset();
@@ -294,6 +355,89 @@ describe("spawnSubagentDirect seam flow", () => {
     const agentParams = requireRecord(agentRequest.params);
     expect(agentParams.sessionKey).toBe(childSessionKey);
     expect(agentParams.cleanupBundleMcpOnRunEnd).toBe(true);
+  });
+
+  it("creates system-change Coding from the exact loaded source and persists its authority", async () => {
+    const source = createSystemChangeSessionSource();
+    const worktreePath = "/tmp/openclaw-state/worktrees/system-change-a";
+    const createSystemChangeWorktree = vi.fn().mockResolvedValue({
+      id: "worktree-a",
+      name: "system-change-a",
+      repoFingerprint: "repo-a",
+      repoRoot: source.sourceAnchorPath,
+      path: worktreePath,
+      branch: "openclaw/system-change-a",
+      baseRef: source.sourceTreeObject,
+      ownerKind: "session",
+      createdAt: 1,
+      lastActiveAt: 1,
+    });
+    const removeSystemChangeWorktreeIfLossless = vi.fn();
+    let persistedStore: Record<string, Record<string, unknown>> | undefined;
+    subagentSpawnTesting.setDepsForTest({
+      createSystemChangeWorktree,
+      removeSystemChangeWorktreeIfLossless,
+    });
+    hoisted.configOverride = createConfigOverride({
+      agents: {
+        defaults: { workspace: os.tmpdir() },
+        list: [
+          {
+            id: "main",
+            workspace: "/tmp/workspace-main",
+            subagents: { allowAgents: ["coding"] },
+          },
+          { id: "coding", workspace: "/tmp/workspace-coding" },
+        ],
+      },
+    });
+    installSessionStoreCaptureMock(hoisted.updateSessionStoreMock, {
+      onStore: (store) => {
+        persistedStore = store;
+      },
+    });
+
+    const result = await spawnSubagentDirect(
+      {
+        task: "implement the loaded system change",
+        agentId: "coding",
+        context: "isolated",
+      },
+      {
+        agentSessionKey: "agent:main:main",
+        systemChangeSessionSource: source,
+      },
+    );
+
+    expect(result).toMatchObject({
+      status: "accepted",
+      worktree: {
+        id: "worktree-a",
+        path: worktreePath,
+        branch: "openclaw/system-change-a",
+        baseRef: source.sourceTreeObject,
+      },
+    });
+    expect(createSystemChangeWorktree).toHaveBeenCalledWith({
+      repoRoot: source.sourceAnchorPath,
+      baseRef: source.sourceTreeObject,
+      ownerKind: "session",
+      ownerId: result.childSessionKey,
+      systemChange: true,
+    });
+    expect(removeSystemChangeWorktreeIfLossless).not.toHaveBeenCalled();
+    const childEntry = persistedStore?.[result.childSessionKey!];
+    expect(childEntry).toMatchObject({
+      spawnedCwd: worktreePath,
+      worktree: {
+        id: "worktree-a",
+        branch: "openclaw/system-change-a",
+        repoRoot: source.sourceAnchorPath,
+        kind: "system-change",
+        baseRef: source.sourceTreeObject,
+      },
+      codexSystemAuthority: source.codexAuthority,
+    });
   });
 
   it("dispatches spawned agent runs in process when a gateway context is available", async () => {

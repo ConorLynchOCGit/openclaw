@@ -77,6 +77,8 @@ export type CodexAppServerThreadBinding = {
   pluginAppPolicyContext?: PluginAppPolicyContext;
   contextEngine?: CodexAppServerContextEngineBinding;
   environmentSelectionFingerprint?: string;
+  /** Immutable generation/profile/capability identity used to create this system thread. */
+  systemAuthorityFingerprint?: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -211,6 +213,10 @@ export async function readCodexAppServerBinding(
         typeof parsed.environmentSelectionFingerprint === "string"
           ? parsed.environmentSelectionFingerprint
           : undefined,
+      systemAuthorityFingerprint:
+        typeof parsed.systemAuthorityFingerprint === "string"
+          ? parsed.systemAuthorityFingerprint
+          : undefined,
       createdAt: typeof parsed.createdAt === "string" ? parsed.createdAt : new Date().toISOString(),
       updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : new Date().toISOString(),
     };
@@ -259,6 +265,7 @@ export async function writeCodexAppServerBinding(
       pluginAppPolicyContext: binding.pluginAppPolicyContext,
       contextEngine: binding.contextEngine,
       environmentSelectionFingerprint: binding.environmentSelectionFingerprint,
+      systemAuthorityFingerprint: binding.systemAuthorityFingerprint,
       createdAt: binding.createdAt ?? now,
       updatedAt: now,
     };

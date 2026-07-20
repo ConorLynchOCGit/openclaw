@@ -115,7 +115,6 @@ function startThreadWithHarness(
     sessionAgentId: "agent-1",
     effectiveWorkspace: paths.workspaceDir,
     effectiveCwd: paths.cwd,
-    extraSkillRoots: [],
     dynamicTools: [],
     developerInstructions: undefined,
     finalConfigPatch: undefined,

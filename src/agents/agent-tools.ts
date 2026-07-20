@@ -114,6 +114,7 @@ import {
   type ToolSearchCatalogToolExecutor,
 } from "./tool-search.js";
 import { resolveWorkspaceRoot } from "./workspace-dir.js";
+import type { SystemChangeSessionSource } from "./worktrees/types.js";
 
 const MEMORY_FLUSH_ALLOWED_TOOL_NAMES = new Set(["read", "write"]);
 
@@ -466,6 +467,8 @@ export function createOpenClawCodingTools(options?: {
    * Defaults to workspaceDir when not set.
    */
   spawnWorkspaceDir?: string;
+  /** Trusted loaded-generation source for native system-change Coding tasks. */
+  systemChangeSessionSource?: SystemChangeSessionSource;
   config?: OpenClawConfig;
   abortSignal?: AbortSignal;
   /** Disable hook-owned diagnostics when an outer runtime owns tool diagnostics. */
@@ -1100,6 +1103,7 @@ export function createOpenClawCodingTools(options?: {
           onYield: options?.onYield,
           allowGatewaySubagentBinding: options?.allowGatewaySubagentBinding,
           recordToolPrepStage: options?.recordToolPrepStage,
+          systemChangeSessionSource: options?.systemChangeSessionSource,
         })
       : pluginToolsOnly),
     ...toolSearchTools,

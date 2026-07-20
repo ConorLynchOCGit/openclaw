@@ -207,6 +207,7 @@ async function applyCodexPluginInstallItem(
     const result = await ensureCodexPluginActivation({
       identity: policy,
       installEvenIfActive: true,
+      allowRuntimeMutation: true,
       request: async (method, requestParams) =>
         await requestTargetCodexAppServerJson({
           method,
@@ -524,6 +525,7 @@ function codexPluginActivationReportState(result: CodexPluginActivationResult): 
     case "disabled":
     case "marketplace_missing":
     case "plugin_missing":
+    case "mutation_forbidden":
       return { installed: false, enabled: false };
     case "refresh_failed":
       return { installed: true, enabled: false };

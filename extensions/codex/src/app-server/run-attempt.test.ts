@@ -66,6 +66,7 @@ import {
 import { createSandboxContext } from "./sandbox-exec-server.test-helpers.js";
 import { readCodexAppServerBinding, writeCodexAppServerBinding } from "./session-binding.js";
 import * as sharedClientModule from "./shared-client.js";
+import { resolveCodexSystemFixedEnvironment } from "./system-authority.js";
 import { createCodexTestModel } from "./test-support.js";
 import { buildTurnStartParams, startOrResumeThread } from "./thread-lifecycle.js";
 import { CODEX_WORKBENCH_CAPABILITY_CONTROL_METHODS } from "./workbench-capability.js";
@@ -666,6 +667,130 @@ describe("runCodexAppServerAttempt", () => {
     const turnRequest = requests.find((request) => request.method === "turn/start");
     expect((startRequest?.params as { cwd?: string } | undefined)?.cwd).toBe(workspaceDir);
     expect((turnRequest?.params as { cwd?: string } | undefined)?.cwd).toBe(workspaceDir);
+  });
+
+  it("binds a system-change Coding run to persisted managed-worktree authority", async () => {
+    const sessionKey = "agent:coding:subagent:system-change";
+    const sessionFile = path.join(tempDir, "system-change-session.jsonl");
+    const sessionStore = path.join(tempDir, "system-change-sessions.json");
+    const workspaceDir = path.join(tempDir, "persistent-caller-workspace");
+    const worktreeDir = path.join(tempDir, "worktrees", "system-change-a");
+    const capabilityDir = path.join(tempDir, "generation-capabilities");
+    const codexHome = path.join(tempDir, "codex-home-generation-a");
+    const sourceObject = "a".repeat(40);
+    const permissionProfile = "openclaw-system-change";
+    const config = {
+      project_doc_max_bytes: 0,
+      developer_instructions: "Generation-N immutable developer instructions.",
+      "features.multi_agent": false,
+      "features.multi_agent_v2.enabled": true,
+      "shell_environment_policy.set": resolveCodexSystemFixedEnvironment(codexHome),
+    };
+    await fs.mkdir(worktreeDir, { recursive: true });
+    await fs.mkdir(path.join(capabilityDir, "skills"), { recursive: true });
+    await fs.writeFile(
+      sessionStore,
+      JSON.stringify({
+        [sessionKey]: {
+          sessionId: "session-system-change",
+          updatedAt: Date.now(),
+          spawnedCwd: worktreeDir,
+          worktree: {
+            id: "worktree-a",
+            branch: "openclaw/system-change-a",
+            repoRoot: "/srv/openclaw-next/source-anchor",
+            kind: "system-change",
+            baseRef: sourceObject,
+          },
+          codexSystemAuthority: {
+            schemaVersion: 1,
+            releaseManifestDigest: "b".repeat(64),
+            expectedServerVersion: "0.144.1",
+            codexHome,
+            permissionProfile,
+            capabilityEnvironments: [
+              { environmentId: "generation-capabilities", cwd: capabilityDir },
+            ],
+            selectedCapabilityRoots: [
+              {
+                id: "system-skills",
+                location: {
+                  type: "environment",
+                  environmentId: "generation-capabilities",
+                  path: path.join(capabilityDir, "skills"),
+                },
+              },
+            ],
+            v2ModelIds: ["gpt-5.4-codex"],
+            config,
+          },
+        },
+      }),
+    );
+    const { requests, waitForMethod, completeTurn } = createStartedThreadHarness(async (method) => {
+      if (method !== "thread/start") {
+        return undefined;
+      }
+      const response = threadStartResult();
+      return {
+        ...response,
+        thread: { ...response.thread, cwd: worktreeDir },
+        cwd: worktreeDir,
+        runtimeWorkspaceRoots: [worktreeDir],
+        instructionSources: [],
+        activePermissionProfile: { id: permissionProfile },
+      };
+    });
+    const params = createParams(sessionFile, workspaceDir);
+    params.agentId = "coding";
+    params.sessionKey = sessionKey;
+    params.cwd = undefined;
+    params.config = { session: { store: sessionStore } };
+    params.disableTools = true;
+    params.runtimePlan = createCodexRuntimePlanFixture();
+
+    const run = runCodexAppServerAttempt(params, {
+      pluginConfig: { codexPlugins: { enabled: false } },
+    });
+    await waitForMethod("turn/start");
+    await completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+    await run;
+
+    const startParams = requests.find((request) => request.method === "thread/start")?.params as
+      | Record<string, unknown>
+      | undefined;
+    const turnParams = requests.find((request) => request.method === "turn/start")?.params as
+      | Record<string, unknown>
+      | undefined;
+    expect(startParams).toMatchObject({
+      cwd: worktreeDir,
+      runtimeWorkspaceRoots: [worktreeDir],
+      permissions: permissionProfile,
+      config,
+      selectedCapabilityRoots: [
+        {
+          id: "system-skills",
+          location: {
+            type: "environment",
+            environmentId: "generation-capabilities",
+            path: path.join(capabilityDir, "skills"),
+          },
+        },
+      ],
+    });
+    expect(startParams).not.toHaveProperty("developerInstructions");
+    expect(startParams).not.toHaveProperty("sandbox");
+    expect(turnParams).toMatchObject({
+      cwd: worktreeDir,
+      runtimeWorkspaceRoots: [worktreeDir],
+      permissions: permissionProfile,
+      environments: [
+        { environmentId: "worktree", cwd: worktreeDir },
+        { environmentId: "generation-capabilities", cwd: capabilityDir },
+      ],
+    });
+    expect(turnParams).not.toHaveProperty("sandboxPolicy");
+    await expect(fs.stat(workspaceDir)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("recreates cached Codex workspace directories after cleanup removes them", async () => {

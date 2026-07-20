@@ -15,6 +15,7 @@ import {
   loadSessionStore,
   resolveSessionStoreEntry,
   resolveStorePath,
+  type SessionEntry,
 } from "openclaw/plugin-sdk/session-store-runtime";
 import { resolveCodexAppServerForModelProvider } from "./app-server/app-server-policy.js";
 import { resolveCodexAppServerAuthProfileIdForAgent } from "./app-server/auth-bridge.js";
@@ -51,6 +52,12 @@ import {
   getLeasedSharedCodexAppServerClient,
   releaseLeasedSharedCodexAppServerClient,
 } from "./app-server/shared-client.js";
+import {
+  assertCodexSystemThreadResponse,
+  assertCodexSystemV2Model,
+  resolveCodexSystemThreadContext,
+  type CodexSystemThreadContext,
+} from "./app-server/system-authority.js";
 import {
   CODEX_NATIVE_PERSONALITY_NONE,
   resolveCodexAppServerRequestModelSelection,
@@ -179,8 +186,9 @@ export async function startCodexConversationThread(
     authProfileId: params.authProfileId ?? existingBinding?.authProfileId,
     ...agentLookup,
   });
+  let boundWorkspaceDir: string;
   if (params.threadId?.trim()) {
-    await attachExistingThread({
+    boundWorkspaceDir = await attachExistingThread({
       pluginConfig: params.pluginConfig,
       sessionFile: params.sessionFile,
       threadId: params.threadId.trim(),
@@ -196,7 +204,7 @@ export async function startCodexConversationThread(
       sessionKey: params.sessionKey,
     });
   } else {
-    await createThread({
+    boundWorkspaceDir = await createThread({
       pluginConfig: params.pluginConfig,
       sessionFile: params.sessionFile,
       workspaceDir,
@@ -213,7 +221,7 @@ export async function startCodexConversationThread(
   }
   return createCodexConversationBindingData({
     sessionFile: params.sessionFile,
-    workspaceDir,
+    workspaceDir: boundWorkspaceDir,
     ...(agentDir ? { agentDir } : {}),
   });
 }
@@ -339,11 +347,63 @@ type CodexThreadBindingRuntime = ConversationAppServerRuntime & {
   client: Awaited<ReturnType<typeof getLeasedSharedCodexAppServerClient>>;
   model?: string;
   modelProvider?: string;
+  workspaceDir: string;
+  systemContext?: CodexSystemThreadContext;
 };
+
+function resolveConversationWorkspaceAuthority(params: {
+  config?: CodexConversationConfig;
+  sessionKey?: string;
+  agentId?: string;
+  workspaceDir: string;
+}): {
+  agentId?: string;
+  sessionEntry?: SessionEntry;
+  workspaceDir: string;
+  systemContext?: CodexSystemThreadContext;
+} {
+  const sessionKey = params.sessionKey?.trim();
+  if (!sessionKey) {
+    return { agentId: params.agentId, workspaceDir: params.workspaceDir };
+  }
+  const agentId =
+    params.agentId ??
+    resolveSessionAgentIds({
+      sessionKey,
+      config: params.config ?? {},
+    }).sessionAgentId;
+  const storePath = resolveStorePath(params.config?.session?.store, { agentId });
+  const sessionEntry = resolveSessionStoreEntry({
+    store: loadSessionStore(storePath, { skipCache: true }),
+    sessionKey,
+  }).existing;
+  const hasSystemAuthority =
+    sessionEntry?.worktree?.kind === "system-change" || Boolean(sessionEntry?.codexSystemAuthority);
+  const workspaceDir = hasSystemAuthority
+    ? sessionEntry?.spawnedCwd?.trim() || params.workspaceDir
+    : params.workspaceDir;
+  const systemContext = resolveCodexSystemThreadContext({
+    sessionEntry,
+    agentId,
+    cwd: workspaceDir,
+  });
+  return {
+    agentId,
+    sessionEntry,
+    workspaceDir,
+    systemContext,
+  };
+}
 
 async function resolveThreadBindingRuntime(
   params: CodexThreadBindingParams,
 ): Promise<CodexThreadBindingRuntime> {
+  const workspaceAuthority = resolveConversationWorkspaceAuthority({
+    config: params.config,
+    sessionKey: params.sessionKey,
+    agentId: params.agentId,
+    workspaceDir: params.workspaceDir,
+  });
   const agentLookup = buildAgentLookup({ agentDir: params.agentDir, config: params.config });
   const modelProvider = resolveThreadRequestModelProvider({
     authProfileId: params.authProfileId,
@@ -364,9 +424,9 @@ async function resolveThreadBindingRuntime(
   const { execPolicy, runtime } = await resolveConversationAppServerRuntime({
     pluginConfig: params.pluginConfig,
     config: params.config,
-    agentId: params.agentId,
+    agentId: workspaceAuthority.agentId,
     sessionKey: params.sessionKey,
-    workspaceDir: params.workspaceDir,
+    workspaceDir: workspaceAuthority.workspaceDir,
     modelProvider: reviewerModelProvider,
     model: params.model,
     agentDir: params.agentDir,
@@ -397,6 +457,7 @@ async function resolveThreadBindingRuntime(
     startOptions: runtime.start,
     timeoutMs: runtime.requestTimeoutMs,
     authProfileId: params.authProfileId,
+    processProfile: workspaceAuthority.systemContext?.processProfile,
     ...agentLookup,
   });
   return {
@@ -406,6 +467,8 @@ async function resolveThreadBindingRuntime(
     model: modelSelection?.model,
     modelProvider: modelSelection?.modelProvider ?? modelProvider,
     client,
+    workspaceDir: workspaceAuthority.workspaceDir,
+    systemContext: workspaceAuthority.systemContext,
   };
 }
 
@@ -444,7 +507,7 @@ async function writeThreadBindingFromResponse(
     params.sessionFile,
     {
       threadId: response.thread.id,
-      cwd: response.thread.cwd ?? params.workspaceDir,
+      cwd: response.cwd ?? response.thread.cwd ?? resolved.workspaceDir,
       authProfileId: params.authProfileId,
       model: response.model ?? resolved.model ?? params.model,
       modelProvider: normalizeCodexAppServerBindingModelProvider({
@@ -456,9 +519,14 @@ async function writeThreadBindingFromResponse(
         ? runtimeApprovalPolicy
         : (params.approvalPolicy ?? runtimeApprovalPolicy),
       sandbox: resolved.execPolicy?.touched
-        ? resolved.runtime.sandbox
-        : (params.sandbox ?? resolved.runtime.sandbox),
+        ? resolved.systemContext
+          ? undefined
+          : resolved.runtime.sandbox
+        : resolved.systemContext
+          ? undefined
+          : (params.sandbox ?? resolved.runtime.sandbox),
       serviceTier: params.serviceTier ?? resolved.runtime.serviceTier,
+      systemAuthorityFingerprint: resolved.systemContext?.fingerprint,
     },
     {
       ...resolved.agentLookup,
@@ -470,46 +538,97 @@ async function attachExistingThread(
   params: CodexThreadBindingParams & {
     threadId: string;
   },
-): Promise<void> {
+): Promise<string> {
   const resolved = await resolveThreadBindingRuntime(params);
   try {
+    if (resolved.systemContext) {
+      assertCodexSystemV2Model(resolved.systemContext, resolved.model);
+    }
     const response: CodexThreadResumeResponse = await resolved.client.request(
       CODEX_CONTROL_METHODS.resumeThread,
-      {
-        threadId: params.threadId,
-        ...(resolved.model ? { model: resolved.model } : {}),
-        ...(resolved.modelProvider ? { modelProvider: resolved.modelProvider } : {}),
-        personality: CODEX_NATIVE_PERSONALITY_NONE,
-        ...buildThreadRequestRuntimeOptions(params, resolved),
-        persistExtendedHistory: true,
-      },
+      resolved.systemContext
+        ? {
+            threadId: params.threadId,
+            ...(resolved.model ? { model: resolved.model } : {}),
+            ...(resolved.modelProvider ? { modelProvider: resolved.modelProvider } : {}),
+            personality: CODEX_NATIVE_PERSONALITY_NONE,
+            ...((params.serviceTier ?? resolved.runtime.serviceTier)
+              ? { serviceTier: params.serviceTier ?? resolved.runtime.serviceTier }
+              : {}),
+          }
+        : {
+            threadId: params.threadId,
+            ...(resolved.model ? { model: resolved.model } : {}),
+            ...(resolved.modelProvider ? { modelProvider: resolved.modelProvider } : {}),
+            personality: CODEX_NATIVE_PERSONALITY_NONE,
+            ...buildThreadRequestRuntimeOptions(params, resolved),
+            persistExtendedHistory: true,
+          },
       { timeoutMs: resolved.runtime.requestTimeoutMs },
     );
+    if (resolved.systemContext) {
+      assertCodexSystemThreadResponse({
+        response,
+        context: resolved.systemContext,
+        cwd: resolved.workspaceDir,
+        action: "resume",
+      });
+    }
     await writeThreadBindingFromResponse(params, resolved, response);
+    return resolved.workspaceDir;
   } finally {
     releaseLeasedSharedCodexAppServerClient(resolved.client);
   }
 }
 
-async function createThread(params: CodexThreadBindingParams): Promise<void> {
+async function createThread(params: CodexThreadBindingParams): Promise<string> {
   const resolved = await resolveThreadBindingRuntime(params);
   try {
+    const requestRuntime = buildThreadRequestRuntimeOptions(params, resolved);
+    if (resolved.systemContext) {
+      assertCodexSystemV2Model(resolved.systemContext, resolved.model);
+    }
     const response: CodexThreadStartResponse = await resolved.client.request(
       "thread/start",
-      {
-        cwd: params.workspaceDir,
-        ...(resolved.model ? { model: resolved.model } : {}),
-        ...(resolved.modelProvider ? { modelProvider: resolved.modelProvider } : {}),
-        personality: CODEX_NATIVE_PERSONALITY_NONE,
-        ...buildThreadRequestRuntimeOptions(params, resolved),
-        developerInstructions:
-          "This Codex thread is bound to an OpenClaw conversation. Answer normally; OpenClaw will deliver your final response back to the conversation.",
-        experimentalRawEvents: true,
-        persistExtendedHistory: true,
-      },
+      resolved.systemContext
+        ? {
+            cwd: resolved.workspaceDir,
+            runtimeWorkspaceRoots: [resolved.workspaceDir],
+            ...(resolved.model ? { model: resolved.model } : {}),
+            ...(resolved.modelProvider ? { modelProvider: resolved.modelProvider } : {}),
+            personality: CODEX_NATIVE_PERSONALITY_NONE,
+            approvalPolicy: requestRuntime.approvalPolicy,
+            approvalsReviewer: requestRuntime.approvalsReviewer,
+            permissions: resolved.systemContext.authority.permissionProfile,
+            ...(requestRuntime.serviceTier ? { serviceTier: requestRuntime.serviceTier } : {}),
+            config: resolved.systemContext.authority.config,
+            environments: resolved.systemContext.environments,
+            selectedCapabilityRoots: resolved.systemContext.authority.selectedCapabilityRoots,
+            experimentalRawEvents: true,
+          }
+        : {
+            cwd: resolved.workspaceDir,
+            ...(resolved.model ? { model: resolved.model } : {}),
+            ...(resolved.modelProvider ? { modelProvider: resolved.modelProvider } : {}),
+            personality: CODEX_NATIVE_PERSONALITY_NONE,
+            ...requestRuntime,
+            developerInstructions:
+              "This Codex thread is bound to an OpenClaw conversation. Answer normally; OpenClaw will deliver your final response back to the conversation.",
+            experimentalRawEvents: true,
+            persistExtendedHistory: true,
+          },
       { timeoutMs: resolved.runtime.requestTimeoutMs },
     );
+    if (resolved.systemContext) {
+      assertCodexSystemThreadResponse({
+        response,
+        context: resolved.systemContext,
+        cwd: resolved.workspaceDir,
+        action: "start",
+      });
+    }
     await writeThreadBindingFromResponse(params, resolved, response);
+    return resolved.workspaceDir;
   } finally {
     releaseLeasedSharedCodexAppServerClient(resolved.client);
   }
@@ -530,7 +649,18 @@ async function runBoundTurn(params: {
   if (!threadId) {
     throw new Error("bound Codex conversation has no thread binding");
   }
-  const workspaceDir = binding.cwd || params.data.workspaceDir;
+  const workspaceAuthority = resolveConversationWorkspaceAuthority({
+    config: params.config,
+    sessionKey: params.sessionKey,
+    workspaceDir: binding.cwd || params.data.workspaceDir,
+  });
+  const workspaceDir = workspaceAuthority.workspaceDir;
+  if (
+    binding.systemAuthorityFingerprint !== workspaceAuthority.systemContext?.fingerprint &&
+    (binding.systemAuthorityFingerprint || workspaceAuthority.systemContext)
+  ) {
+    throw new Error("bound Codex conversation system authority changed");
+  }
   const reviewerModelProvider = resolveModelBackedReviewerPolicyProvider({
     authProfileId: binding.authProfileId,
     modelProvider: binding.modelProvider,
@@ -539,6 +669,7 @@ async function runBoundTurn(params: {
   const { execPolicy, runtime } = await resolveConversationAppServerRuntime({
     pluginConfig: params.pluginConfig,
     config: params.config,
+    agentId: workspaceAuthority.agentId,
     sessionKey: params.sessionKey,
     workspaceDir,
     modelProvider: reviewerModelProvider,
@@ -587,6 +718,7 @@ async function runBoundTurn(params: {
     startOptions: runtime.start,
     timeoutMs: runtime.requestTimeoutMs,
     authProfileId: binding.authProfileId,
+    processProfile: workspaceAuthority.systemContext?.processProfile,
     ...agentLookup,
   });
   const collector = createCodexConversationTurnCollector(threadId);
@@ -630,6 +762,9 @@ async function runBoundTurn(params: {
     },
   );
   try {
+    if (workspaceAuthority.systemContext) {
+      assertCodexSystemV2Model(workspaceAuthority.systemContext, modelSelection?.model);
+    }
     const response: CodexTurnStartResponse = await client.request(
       "turn/start",
       {
@@ -639,9 +774,15 @@ async function runBoundTurn(params: {
           event: params.event,
         }),
         cwd: workspaceDir,
+        ...(workspaceAuthority.systemContext ? { runtimeWorkspaceRoots: [workspaceDir] } : {}),
         approvalPolicy,
         approvalsReviewer: modelScopedRuntime.approvalsReviewer,
-        sandboxPolicy: codexSandboxPolicyForTurn(sandbox, workspaceDir),
+        ...(workspaceAuthority.systemContext
+          ? {
+              permissions: workspaceAuthority.systemContext.authority.permissionProfile,
+              environments: workspaceAuthority.systemContext.environments,
+            }
+          : { sandboxPolicy: codexSandboxPolicyForTurn(sandbox, workspaceDir) }),
         ...(modelSelection?.model ? { model: modelSelection.model } : {}),
         personality: CODEX_NATIVE_PERSONALITY_NONE,
         ...((binding.serviceTier ?? runtime.serviceTier)
@@ -782,7 +923,8 @@ function isCodexThreadNotFoundError(error: unknown): boolean {
   const message = formatErrorMessage(error);
   return (
     /\bthread not found:/iu.test(message) ||
-    /\bbound Codex conversation has no thread binding\b/u.test(message)
+    /\bbound Codex conversation has no thread binding\b/u.test(message) ||
+    /\bbound Codex conversation system authority changed\b/u.test(message)
   );
 }
 

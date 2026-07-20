@@ -21,6 +21,7 @@ export type CodexPluginActivationReason =
   | "disabled"
   | "marketplace_missing"
   | "plugin_missing"
+  | "mutation_forbidden"
   | "auth_required"
   | "refresh_failed";
 
@@ -47,6 +48,8 @@ export type EnsureCodexPluginActivationParams = {
   appCache?: CodexAppInventoryCache;
   appCacheKey?: string;
   installEvenIfActive?: boolean;
+  /** Only offline migration/administrative flows may mutate process-global plugin state. */
+  allowRuntimeMutation?: boolean;
 };
 
 /** Diagnostics from refreshing Codex runtime surfaces after plugin activation. */
@@ -91,6 +94,13 @@ export async function ensureCodexPluginActivation(
       marketplace: resolved.marketplace,
       diagnostics: [],
     };
+  }
+
+  if (params.allowRuntimeMutation !== true) {
+    return activationFailure(params.identity, "mutation_forbidden", {
+      message:
+        "Codex plugin activation requires an immutable startup profile; runtime install/reload is disabled.",
+    });
   }
 
   const installResponse = (await params.request(

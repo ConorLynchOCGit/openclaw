@@ -31,6 +31,7 @@ import {
   setActiveEmbeddedRun,
   supportsModelTools,
   runAgentCleanupStep,
+  type CodexBundleMcpThreadConfig,
   type EmbeddedRunAttemptParams,
   type EmbeddedRunAttemptResult,
   type NativeHookRelayEvent,
@@ -46,6 +47,7 @@ import {
 } from "openclaw/plugin-sdk/diagnostic-runtime";
 import { loadExecApprovals } from "openclaw/plugin-sdk/exec-approvals-runtime";
 import { pathExists } from "openclaw/plugin-sdk/security-runtime";
+import { getSessionEntry, resolveStorePath } from "openclaw/plugin-sdk/session-store-runtime";
 import {
   resolveCodexAppServerForModelProvider,
   resolveCodexAppServerForOpenClawToolPolicy,
@@ -69,6 +71,7 @@ import {
   renderCodexSkillsCollaborationInstructions,
   resolveContextEngineBootstrapProjectionDecision,
   type CodexNativeSurfaceReport,
+  type CodexWorkspaceBootstrapContext,
 } from "./attempt-context.js";
 import {
   classifyCodexModelCallFailureKind,
@@ -230,6 +233,7 @@ import {
   type CodexAppServerThreadBinding,
 } from "./session-binding.js";
 import { rotateOversizedCodexAppServerStartupBinding } from "./startup-binding.js";
+import { resolveCodexSystemThreadContext } from "./system-authority.js";
 import {
   buildCodexLaunchEvidenceCapsule,
   buildDeveloperInstructions,
@@ -428,14 +432,38 @@ export async function runCodexAppServerAttempt(
     config: params.config,
     agentId: params.agentId,
   });
-  const beforeToolCallPolicy = getBeforeToolCallPolicyDiagnosticState();
-  preDynamicStartupStages.mark("config");
-  const resolvedWorkspace = resolveUserPath(params.workspaceDir);
-  await ensureCodexWorkspaceDirOnce(resolvedWorkspace);
-  preDynamicStartupStages.mark("workspace");
   const sandboxSessionKey =
     params.sandboxSessionKey?.trim() || params.sessionKey?.trim() || params.sessionId;
   const contextSessionKey = params.sessionKey?.trim() || sandboxSessionKey;
+  const runtimeSessionEntry = contextSessionKey
+    ? getSessionEntry({
+        sessionKey: contextSessionKey,
+        storePath: resolveStorePath(params.config?.session?.store, { agentId: sessionAgentId }),
+        hydrateSkillPromptRefs: false,
+      })
+    : undefined;
+  const requestedCwd = params.cwd ? resolveUserPath(params.cwd) : undefined;
+  const systemChangeSession =
+    runtimeSessionEntry?.worktree?.kind === "system-change" ||
+    Boolean(runtimeSessionEntry?.codexSystemAuthority);
+  const managedWorktreeCwd = systemChangeSession
+    ? runtimeSessionEntry?.spawnedCwd?.trim()
+    : undefined;
+  if (systemChangeSession && !managedWorktreeCwd) {
+    throw new Error("system-change Codex sessions require a persisted managed-worktree cwd");
+  }
+  const resolvedWorkspace = resolveUserPath(managedWorktreeCwd ?? params.workspaceDir);
+  if (
+    systemChangeSession &&
+    requestedCwd &&
+    path.resolve(requestedCwd) !== path.resolve(resolvedWorkspace)
+  ) {
+    throw new Error("system-change Codex cwd override does not match the managed worktree");
+  }
+  const beforeToolCallPolicy = getBeforeToolCallPolicyDiagnosticState();
+  preDynamicStartupStages.mark("config");
+  await ensureCodexWorkspaceDirOnce(resolvedWorkspace);
+  preDynamicStartupStages.mark("workspace");
   const sandbox = await resolveSandboxContext({
     config: params.config,
     sessionKey: sandboxSessionKey,
@@ -450,9 +478,10 @@ export async function runCodexAppServerAttempt(
   });
   const agentDir = params.agentDir ?? resolveAgentDir(params.config ?? {}, sessionAgentId);
   preDynamicStartupStages.mark("session-agent");
-  const activeContextEngine = isActiveHarnessContextEngine(params.contextEngine)
-    ? params.contextEngine
-    : undefined;
+  const activeContextEngine =
+    !systemChangeSession && isActiveHarnessContextEngine(params.contextEngine)
+      ? params.contextEngine
+      : undefined;
   const isInactiveThreadBootstrapBinding = (binding: CodexAppServerThreadBinding | undefined) =>
     !activeContextEngine && binding?.contextEngine?.projection?.mode === "thread_bootstrap";
   let startupBinding = await readCodexAppServerBinding(params.sessionFile);
@@ -503,9 +532,13 @@ export async function runCodexAppServerAttempt(
       ? resolvedWorkspace
       : sandbox.workspaceDir
     : resolvedWorkspace;
-  const requestedCwd = params.cwd ? resolveUserPath(params.cwd) : undefined;
-  const codingExecutionUsesWorkspaceCwd = isCodexNativeCodingExecutionAgent(sessionAgentId);
-  const effectiveRequestedCwd = codingExecutionUsesWorkspaceCwd ? undefined : requestedCwd;
+  const codingExecutionUsesWorkspaceCwd =
+    isCodexNativeCodingExecutionAgent(sessionAgentId) && !systemChangeSession;
+  const effectiveRequestedCwd = systemChangeSession
+    ? resolvedWorkspace
+    : codingExecutionUsesWorkspaceCwd
+      ? undefined
+      : requestedCwd;
   if (sandbox?.enabled && effectiveRequestedCwd && effectiveRequestedCwd !== resolvedWorkspace) {
     throw new Error(
       "cwd override is not supported for sandboxed Codex app-server runs; omit cwd or use the agent workspace as cwd",
@@ -514,9 +547,12 @@ export async function runCodexAppServerAttempt(
   const effectiveCwd = sandbox?.enabled
     ? effectiveWorkspace
     : (effectiveRequestedCwd ?? effectiveWorkspace);
+  const systemContext = resolveCodexSystemThreadContext({
+    sessionEntry: runtimeSessionEntry,
+    agentId: sessionAgentId,
+    cwd: effectiveCwd,
+  });
   await ensureCodexWorkspaceDirOnce(effectiveWorkspace);
-  const nestedSourceSkillRoot = path.join(effectiveWorkspace, "src/openclaw/.agents/skills");
-  const extraSkillRoots = (await pathExists(nestedSourceSkillRoot)) ? [nestedSourceSkillRoot] : [];
   preDynamicStartupStages.mark("effective-workspace");
   let policyAppServer = resolveCodexAppServerForOpenClawToolPolicy({
     appServer: configuredAppServer,
@@ -651,14 +687,16 @@ export async function runCodexAppServerAttempt(
     sandbox,
   });
   preDynamicStartupStages.mark("native-exec-policy");
-  const bundleMcpThreadConfig = await loadCodexBundleMcpThreadConfig({
-    workspaceDir: effectiveWorkspace,
-    cfg: params.config,
-    agentId: sessionAgentId,
-    toolsEnabled: supportsModelTools(params.model),
-    disableTools: params.disableTools,
-    toolsAllow: nodeExecBlocksNativeExecution ? [] : params.toolsAllow,
-  });
+  const bundleMcpThreadConfig: CodexBundleMcpThreadConfig = systemContext
+    ? { diagnostics: [], evaluated: true }
+    : await loadCodexBundleMcpThreadConfig({
+        workspaceDir: effectiveWorkspace,
+        cfg: params.config,
+        agentId: sessionAgentId,
+        toolsEnabled: supportsModelTools(params.model),
+        disableTools: params.disableTools,
+        toolsAllow: nodeExecBlocksNativeExecution ? [] : params.toolsAllow,
+      });
   preDynamicStartupStages.mark("bundle-mcp");
   const sandboxExecServerEnabled = isCodexSandboxExecServerEnabled(pluginConfig);
   const nativeExecutionDecision = resolveCodexAppServerNativeToolSurfaceDecision(params, sandbox, {
@@ -667,6 +705,11 @@ export async function runCodexAppServerAttempt(
     sandboxExecServerEnabled,
   });
   const nativeExecutionAllowed = nativeExecutionDecision.enabled;
+  if (systemContext && !nativeExecutionAllowed) {
+    throw new Error(
+      `system-change Codex requires the native execution surface: ${nativeExecutionDecision.reason}`,
+    );
+  }
   const isNativeCodingRun = isCodexNativeCodingAgent(sessionAgentId);
   const codeModeEnabled = nativeExecutionAllowed;
   const codeModeOnly = nativeExecutionAllowed && (isNativeCodingRun || appServer.codeModeOnly);
@@ -774,7 +817,7 @@ export async function runCodexAppServerAttempt(
     agentId: sessionAgentId,
     sessionKey: sandboxSessionKey,
     sessionId: params.sessionId,
-    workspaceDir: params.workspaceDir,
+    workspaceDir: effectiveWorkspace,
     messageProvider: params.messageProvider ?? undefined,
     trigger: params.trigger,
     channelId: hookChannelId,
@@ -810,14 +853,16 @@ export async function runCodexAppServerAttempt(
       (await readMirroredSessionHistoryMessages(activeSessionFile)) ?? historyMessages;
   }
   const memoryToolNames = getCodexWorkspaceMemoryToolNames(toolBridge.availableSpecs);
-  const workspaceBootstrapContext = await buildCodexWorkspaceBootstrapContext({
-    params,
-    resolvedWorkspace,
-    effectiveWorkspace,
-    sessionKey: contextSessionKey,
-    sessionAgentId,
-    memoryToolNames,
-  });
+  const workspaceBootstrapContext: CodexWorkspaceBootstrapContext = systemContext
+    ? { bootstrapFiles: [], contextFiles: [] }
+    : await buildCodexWorkspaceBootstrapContext({
+        params,
+        resolvedWorkspace,
+        effectiveWorkspace,
+        sessionKey: contextSessionKey,
+        sessionAgentId,
+        memoryToolNames,
+      });
   const baseDeveloperInstructions = joinPresentSections(
     buildDeveloperInstructions(params, {
       dynamicTools: toolBridge.availableSpecs,
@@ -834,10 +879,12 @@ export async function runCodexAppServerAttempt(
     params,
     workspacePromptContext: workspaceBootstrapContext.promptContext,
   });
-  const skillsCollaborationInstructions = renderCodexSkillsCollaborationInstructions({
-    attempt: params,
-    skillsPrompt: params.skillsSnapshot?.prompt,
-  });
+  const skillsCollaborationInstructions = systemContext
+    ? undefined
+    : renderCodexSkillsCollaborationInstructions({
+        attempt: params,
+        skillsPrompt: params.skillsSnapshot?.prompt,
+      });
   let promptText = params.prompt;
   let developerInstructions = baseDeveloperInstructions;
   let prePromptMessageCount = historyMessages.length;
@@ -958,13 +1005,17 @@ export async function runCodexAppServerAttempt(
     });
   let codexTurnPromptText = decorateCodexTurnPromptText(promptBuild.prompt);
   const buildCodexTurnCollaborationDeveloperInstructions = () =>
-    buildTurnCollaborationMode(params, {
-      turnScopedDeveloperInstructions: workspaceBootstrapContext.turnScopedDeveloperInstructions,
-      skillsCollaborationInstructions,
-      memoryCollaborationInstructions: workspaceBootstrapContext.memoryCollaborationInstructions,
-      heartbeatCollaborationInstructions:
-        workspaceBootstrapContext.heartbeatCollaborationInstructions,
-    }).settings.developer_instructions ?? undefined;
+    systemContext
+      ? undefined
+      : (buildTurnCollaborationMode(params, {
+          turnScopedDeveloperInstructions:
+            workspaceBootstrapContext.turnScopedDeveloperInstructions,
+          skillsCollaborationInstructions,
+          memoryCollaborationInstructions:
+            workspaceBootstrapContext.memoryCollaborationInstructions,
+          heartbeatCollaborationInstructions:
+            workspaceBootstrapContext.heartbeatCollaborationInstructions,
+        }).settings.developer_instructions ?? undefined);
   const buildRenderedCodexDeveloperInstructions = () =>
     joinPresentSections(
       promptBuild.developerInstructions,
@@ -1249,7 +1300,7 @@ export async function runCodexAppServerAttempt(
       sessionAgentId,
       effectiveWorkspace,
       effectiveCwd,
-      extraSkillRoots,
+      systemContext,
       dynamicTools: toolBridge.specs,
       developerInstructions: promptBuild.developerInstructions,
       buildFinalConfigPatch: buildNativeHookRelayFinalConfigPatch,
@@ -2146,6 +2197,7 @@ export async function runCodexAppServerAttempt(
       promptText: codexTurnPromptText,
       sandboxPolicy: codexSandboxPolicy,
       environmentSelection: codexEnvironmentSelection,
+      systemContext,
       model: thread.model,
       modelProvider: thread.modelProvider,
       turnScopedDeveloperInstructions: workspaceBootstrapContext.turnScopedDeveloperInstructions,

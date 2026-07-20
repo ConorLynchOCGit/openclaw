@@ -5,6 +5,10 @@ import path from "node:path";
 import type { EmbeddedRunAttemptParams } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CODEX_GPT5_BEHAVIOR_CONTRACT } from "../../prompt-overlay.js";
+import {
+  resolveCodexSystemFixedEnvironment,
+  type CodexSystemThreadContext,
+} from "./system-authority.js";
 import { createCodexTestModel } from "./test-support.js";
 import {
   buildDeveloperInstructions,
@@ -83,6 +87,59 @@ function createAppServerOptions() {
     approvalsReviewer: "user",
     sandbox: "workspace-write",
   } as const;
+}
+
+function createSystemThreadContext(
+  cwd = "/tmp/openclaw-system-worktree",
+): CodexSystemThreadContext {
+  const codexHome = "/var/lib/openclaw/codex/generation-a";
+  const config = {
+    project_doc_max_bytes: 0,
+    developer_instructions: "Generation-N immutable developer instructions.",
+    "features.multi_agent": false,
+    "features.multi_agent_v2.enabled": true,
+    "shell_environment_policy.set": resolveCodexSystemFixedEnvironment(codexHome),
+  };
+  return {
+    authority: {
+      schemaVersion: 1,
+      releaseManifestDigest: "b".repeat(64),
+      expectedServerVersion: "0.144.1",
+      codexHome,
+      permissionProfile: "openclaw-system-change",
+      capabilityEnvironments: [
+        {
+          environmentId: "generation-capabilities",
+          cwd: "/opt/openclaw/capabilities/generation-a",
+        },
+      ],
+      selectedCapabilityRoots: [
+        {
+          id: "system-skills",
+          location: {
+            type: "environment",
+            environmentId: "generation-capabilities",
+            path: "/opt/openclaw/capabilities/generation-a/skills",
+          },
+        },
+      ],
+      v2ModelIds: ["gpt-5.4"],
+      config,
+    },
+    fingerprint: "b".repeat(64),
+    processProfile: {
+      key: "b".repeat(64),
+      expectedServerVersion: "0.144.1",
+      codexHome,
+    },
+    environments: [
+      { environmentId: "worktree", cwd },
+      {
+        environmentId: "generation-capabilities",
+        cwd: "/opt/openclaw/capabilities/generation-a",
+      },
+    ],
+  };
 }
 
 function createThreadLifecycleParams(
@@ -440,6 +497,83 @@ describe("Codex app-server native code mode config", () => {
 
     expect(startRequest).not.toHaveProperty("developerInstructions");
     expect(resumeRequest).not.toHaveProperty("developerInstructions");
+  });
+
+  it("keeps system authority on thread start and turn while resume remains immutable", () => {
+    const cwd = "/tmp/openclaw-system-worktree";
+    const params = createAttemptParams({ provider: "openai" });
+    const systemContext = createSystemThreadContext(cwd);
+    const appServer = createAppServerOptions() as never;
+
+    const startRequest = buildThreadStartParams(params, {
+      cwd,
+      dynamicTools: [],
+      appServer,
+      developerInstructions: "must not replace loaded authority",
+      config: { project_doc_max_bytes: 64_000 },
+      environmentSelection: [{ environmentId: "foreign", cwd: "/tmp/foreign" }],
+      systemContext,
+    });
+    const resumeRequest = buildThreadResumeParams(params, {
+      threadId: "thread-1",
+      appServer,
+      developerInstructions: "must not be sent on resume",
+      config: { project_doc_max_bytes: 64_000 },
+      systemContext,
+    });
+    const turnRequest = buildTurnStartParams(params, {
+      threadId: "thread-1",
+      cwd,
+      appServer,
+      sandboxPolicy: { type: "dangerFullAccess" },
+      environmentSelection: [{ environmentId: "foreign", cwd: "/tmp/foreign" }],
+      turnScopedDeveloperInstructions: "must not replace loaded authority",
+      systemContext,
+    });
+
+    expect(startRequest).toMatchObject({
+      cwd,
+      runtimeWorkspaceRoots: [cwd],
+      permissions: "openclaw-system-change",
+      config: systemContext.authority.config,
+      environments: systemContext.environments,
+      selectedCapabilityRoots: systemContext.authority.selectedCapabilityRoots,
+      experimentalRawEvents: true,
+    });
+    expect(startRequest).not.toHaveProperty("sandbox");
+    expect(startRequest).not.toHaveProperty("developerInstructions");
+    expect(startRequest).not.toHaveProperty("persistExtendedHistory");
+
+    expect(resumeRequest).toMatchObject({ threadId: "thread-1", model: "gpt-5.4" });
+    for (const mutableField of [
+      "cwd",
+      "runtimeWorkspaceRoots",
+      "permissions",
+      "config",
+      "developerInstructions",
+      "sandbox",
+      "approvalPolicy",
+      "approvalsReviewer",
+      "persistExtendedHistory",
+    ]) {
+      expect(resumeRequest).not.toHaveProperty(mutableField);
+    }
+
+    expect(turnRequest).toMatchObject({
+      threadId: "thread-1",
+      cwd,
+      runtimeWorkspaceRoots: [cwd],
+      permissions: "openclaw-system-change",
+      environments: systemContext.environments,
+      collaborationMode: {
+        mode: "default",
+        settings: {
+          model: "gpt-5.4",
+          developer_instructions: null,
+        },
+      },
+    });
+    expect(turnRequest).not.toHaveProperty("sandboxPolicy");
   });
 
   it("does not inject a multi-agent version from coding session keys", () => {

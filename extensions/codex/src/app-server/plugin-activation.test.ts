@@ -44,11 +44,35 @@ describe("Codex plugin activation", () => {
     expect(calls).toEqual(["plugin/list"]);
   });
 
+  it("does not mutate process-global plugin state during ordinary runtime activation", async () => {
+    const calls: string[] = [];
+    const result = await ensureCodexPluginActivation({
+      identity: identity("google-calendar"),
+      request: async (method) => {
+        calls.push(method);
+        if (method === "plugin/list") {
+          return pluginList([
+            pluginSummary("google-calendar", { installed: false, enabled: false }),
+          ]);
+        }
+        throw new Error(`unexpected mutation ${method}`);
+      },
+    });
+
+    expectActivationResult(result, {
+      ok: false,
+      reason: "mutation_forbidden",
+      installAttempted: false,
+    });
+    expect(calls).toEqual(["plugin/list"]);
+  });
+
   it("can reinstall an already active plugin when migration explicitly applies it", async () => {
     const calls: string[] = [];
     const result = await ensureCodexPluginActivation({
       identity: identity("google-calendar"),
       installEvenIfActive: true,
+      allowRuntimeMutation: true,
       request: async (method, params) => {
         calls.push(method);
         if (method === "plugin/list") {
@@ -94,6 +118,7 @@ describe("Codex plugin activation", () => {
     const appCache = new CodexAppInventoryCache();
     const result = await ensureCodexPluginActivation({
       identity: identity("google-calendar"),
+      allowRuntimeMutation: true,
       appCache,
       appCacheKey: "runtime",
       request: async (method, params) => {
@@ -149,6 +174,7 @@ describe("Codex plugin activation", () => {
     const appCache = new CodexAppInventoryCache();
     const result = await ensureCodexPluginActivation({
       identity: identity("google-calendar"),
+      allowRuntimeMutation: true,
       appCache,
       appCacheKey: "runtime",
       request: async (method) => {
@@ -192,6 +218,7 @@ describe("Codex plugin activation", () => {
   it("reports post-install runtime refresh failures without hiding the install attempt", async () => {
     const result = await ensureCodexPluginActivation({
       identity: identity("google-calendar"),
+      allowRuntimeMutation: true,
       request: async (method) => {
         if (method === "plugin/list") {
           return pluginList([
@@ -224,6 +251,7 @@ describe("Codex plugin activation", () => {
     const calls: Array<{ method: string; params: unknown }> = [];
     const result = await ensureCodexPluginActivation({
       identity: identity("google-calendar"),
+      allowRuntimeMutation: true,
       request: async (method, params) => {
         calls.push({ method, params });
         if (method === "plugin/list") {

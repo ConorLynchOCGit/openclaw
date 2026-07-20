@@ -420,7 +420,7 @@ describe("Codex plugin thread config", () => {
     ]);
   });
 
-  it("re-reads app readiness after re-enabling an installed plugin", async () => {
+  it("keeps an inactive plugin disabled without mutating shared app-server state", async () => {
     const appCache = new CodexAppInventoryCache();
     await appCache.refreshNow({
       key: "runtime",
@@ -486,50 +486,23 @@ describe("Codex plugin thread config", () => {
         destructive_enabled: false,
         open_world_enabled: false,
       },
-      "google-calendar-app": {
-        enabled: true,
-        destructive_enabled: true,
-        open_world_enabled: true,
-        default_tools_approval_mode: "auto",
-      },
     });
-    expect(config.policyContext.apps["google-calendar-app"]).toEqual({
-      configKey: "google-calendar",
-      marketplaceName: CODEX_PLUGINS_MARKETPLACE_NAME,
-      pluginName: "google-calendar",
-      allowDestructiveActions: true,
-      mcpServerNames: [],
+    expect(config.policyContext.apps).toStrictEqual({});
+    expect(config.diagnostics).toContainEqual({
+      code: "plugin_activation_failed",
+      plugin: expect.objectContaining({ pluginName: "google-calendar" }),
+      message:
+        "Codex plugin activation requires an immutable startup profile; runtime install/reload is disabled.",
     });
-    expect(config.diagnostics).toStrictEqual([]);
-    expect(request.mock.calls.map(([method]) => method)).toEqual([
-      "plugin/list",
-      "plugin/read",
-      "plugin/list",
-      "plugin/install",
-      "plugin/list",
-      "skills/list",
-      "hooks/list",
-      "config/mcpServer/reload",
-      "app/list",
-      "app/list",
-      "plugin/list",
-      "plugin/read",
-    ]);
-    expect(appListParams).toEqual([
-      {
-        cursor: undefined,
-        limit: 100,
-        forceRefetch: true,
-      },
-      {
-        cursor: undefined,
-        limit: 100,
-        forceRefetch: true,
-      },
-    ]);
+    const methods = request.mock.calls.map(([method]) => method);
+    expect(methods).not.toContain("plugin/install");
+    expect(methods).not.toContain("skills/list");
+    expect(methods).not.toContain("hooks/list");
+    expect(methods).not.toContain("config/mcpServer/reload");
+    expect(appListParams.length).toBeLessThanOrEqual(1);
   });
 
-  it("surfaces critical post-install refresh failures and keeps plugin apps disabled", async () => {
+  it("surfaces forbidden runtime activation and keeps plugin apps disabled", async () => {
     const appCache = new CodexAppInventoryCache();
     await appCache.refreshNow({
       key: "runtime",
@@ -587,7 +560,7 @@ describe("Codex plugin thread config", () => {
     expect(config.diagnostics).toHaveLength(1);
     expect(config.diagnostics[0]?.code).toBe("plugin_activation_failed");
     expect(config.diagnostics[0]?.message).toBe(
-      "Codex plugin runtime refresh failed after install: skills/list unavailable",
+      "Codex plugin activation requires an immutable startup profile; runtime install/reload is disabled.",
     );
   });
 

@@ -6,6 +6,7 @@ import { withTempDir } from "../test-helpers/temp-dir.js";
 import {
   DEFAULT_GATEWAY_PORT,
   normalizeStateDirEnv,
+  resolveCanonicalConfigPath,
   resolveDefaultConfigCandidates,
   resolveConfigPathCandidate,
   resolveConfigPath,
@@ -142,6 +143,38 @@ describe("state + config path candidates", () => {
 
     expect(resolveStateDir(env, () => "/home/test")).toBe(path.resolve("/new/state"));
   });
+
+  it.each([
+    {
+      runtime: "container bridge",
+      home: "/home/node",
+      stateDir: "/home/node/.openclaw",
+      configPath: "/home/node/.openclaw/openclaw.json",
+      workspaceDir: "/home/node/.openclaw/workspace",
+    },
+    {
+      runtime: "host native",
+      home: "/srv/openclaw-next",
+      stateDir: "/srv/openclaw-next/state",
+      configPath: "/srv/openclaw-next/state/openclaw.json",
+      workspaceDir: "/srv/openclaw-next/home-repo",
+    },
+  ])(
+    "uses native environment paths for the $runtime topology",
+    ({ home, stateDir, configPath, workspaceDir }) => {
+      const env = {
+        HOME: home,
+        OPENCLAW_HOME: home,
+        OPENCLAW_STATE_DIR: stateDir,
+        OPENCLAW_CONFIG_PATH: configPath,
+        OPENCLAW_WORKSPACE_DIR: workspaceDir,
+      } as NodeJS.ProcessEnv;
+
+      expect(resolveStateDir(env, () => "/unused-home")).toBe(stateDir);
+      expect(resolveCanonicalConfigPath(env, stateDir)).toBe(configPath);
+      expect(resolveConfigPath(env, stateDir, () => "/unused-home")).toBe(configPath);
+    },
+  );
 
   it("normalizes relative OPENCLAW_STATE_DIR overrides to absolute paths", () => {
     const env = {

@@ -82,7 +82,7 @@ export type CodexSystemPromptReportWithNativeSurface = CodexSystemPromptReport &
   codexNativeSurface?: CodexNativeSurfaceReport;
 };
 type CodexToolReportEntry = CodexSystemPromptReport["tools"]["entries"][number];
-type CodexWorkspaceBootstrapContext = CodexBootstrapContext & {
+export type CodexWorkspaceBootstrapContext = CodexBootstrapContext & {
   promptContextFiles?: EmbeddedContextFile[];
   developerInstructionFiles?: EmbeddedContextFile[];
   turnScopedDeveloperInstructionFiles?: EmbeddedContextFile[];

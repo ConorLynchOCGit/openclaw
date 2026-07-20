@@ -2,6 +2,7 @@
  * Owns shared and isolated Codex app-server client startup, auth application,
  * lease tracking, and teardown.
  */
+import fs from "node:fs/promises";
 import path from "node:path";
 import { resolveDefaultAgentDir } from "openclaw/plugin-sdk/agent-runtime";
 import {
@@ -17,7 +18,28 @@ import {
   type CodexAppServerStartOptions,
 } from "./config.js";
 import { resolveManagedCodexAppServerStartOptions } from "./managed-binary.js";
+import {
+  resolveCodexSystemFixedEnvironment,
+  type CodexSystemProcessProfile,
+} from "./system-authority.js";
 import { withTimeout } from "./timeout.js";
+
+const SYSTEM_CODEX_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+const SYSTEM_CODEX_INHERITED_ENV_ALLOWLIST = new Set([
+  "ALL_PROXY",
+  "COLORTERM",
+  "HTTPS_PROXY",
+  "HTTP_PROXY",
+  "LANG",
+  "LC_ALL",
+  "NO_COLOR",
+  "NO_PROXY",
+  "TERM",
+  "all_proxy",
+  "https_proxy",
+  "http_proxy",
+  "no_proxy",
+]);
 
 type SharedCodexAppServerClientEntry = {
   client?: CodexAppServerClient;
@@ -112,7 +134,8 @@ type CodexAppServerClientOptions = {
   config?: Parameters<typeof resolveCodexAppServerAuthProfileIdForAgent>[0]["config"];
   onStartedClient?: (client: CodexAppServerClient) => void;
   abandonSignal?: AbortSignal;
-  extraSkillRoots?: string[];
+  /** Immutable loaded-generation process profile; intentionally excludes thread cwd/config. */
+  processProfile?: CodexSystemProcessProfile;
 };
 
 type ResolvedCodexAppServerClientStartContext = {
@@ -120,7 +143,6 @@ type ResolvedCodexAppServerClientStartContext = {
   usesNativeAuth: boolean;
   authProfileId: string | undefined;
   startOptions: CodexAppServerStartOptions;
-  extraSkillRoots: string[];
 };
 
 async function resolveCodexAppServerClientStartContext(
@@ -139,17 +161,24 @@ async function resolveCodexAppServerClientStartContext(
       });
   const requestedStartOptions =
     options?.startOptions ?? resolveCodexAppServerRuntimeOptions().start;
-  const managedStartOptions = await resolveManagedCodexAppServerStartOptions(requestedStartOptions);
-  const startOptions = await bridgeCodexAppServerStartOptions({
+  const processScopedStartOptions = options?.processProfile
+    ? withSystemProcessHome(requestedStartOptions, options.processProfile)
+    : requestedStartOptions;
+  const managedStartOptions =
+    await resolveManagedCodexAppServerStartOptions(processScopedStartOptions);
+  const bridgedStartOptions = await bridgeCodexAppServerStartOptions({
     startOptions: managedStartOptions,
     agentDir,
     authProfileId: usesNativeAuth ? null : authProfileId,
     config: options?.config,
   });
-  const extraSkillRoots = [...new Set(options?.extraSkillRoots ?? [])]
-    .map((root) => path.resolve(root))
-    .toSorted();
-  return { agentDir, usesNativeAuth, authProfileId, startOptions, extraSkillRoots };
+  const startOptions = options?.processProfile
+    ? withSystemDefaultDenyEnvironment(bridgedStartOptions, options.processProfile)
+    : bridgedStartOptions;
+  if (options?.processProfile) {
+    await ensureSystemPackageCacheRoots(options.processProfile);
+  }
+  return { agentDir, usesNativeAuth, authProfileId, startOptions };
 }
 
 /** Gets or starts a shared Codex app-server client without retaining a lease. */
@@ -200,7 +229,7 @@ async function acquireSharedCodexAppServerClient(
   options?: CodexAppServerClientOptions,
   leaseOptions?: { leased: true },
 ): Promise<{ client: CodexAppServerClient; release?: () => void }> {
-  const { agentDir, usesNativeAuth, authProfileId, startOptions, extraSkillRoots } =
+  const { agentDir, usesNativeAuth, authProfileId, startOptions } =
     await resolveCodexAppServerClientStartContext(options);
   const fallbackApiKeyCacheKey = authProfileId
     ? undefined
@@ -209,7 +238,7 @@ async function acquireSharedCodexAppServerClient(
     authProfileId,
     agentDir: usesNativeAuth ? undefined : agentDir,
     fallbackApiKeyCacheKey,
-    extraSkillRoots,
+    processProfileKey: options?.processProfile?.key,
   });
   const state = getSharedCodexAppServerClientState();
   const entry = getOrCreateSharedClientEntry(state, key);
@@ -238,12 +267,7 @@ async function acquireSharedCodexAppServerClient(
       client.addCloseHandler((closedClient) => clearSharedClientEntryIfCurrent(key, closedClient));
       try {
         await client.initialize();
-        await setCodexAppServerExtraSkillRoots({
-          client,
-          extraSkillRoots,
-          timeoutMs: options?.timeoutMs,
-          signal: options?.abandonSignal,
-        });
+        assertExpectedCodexServerVersion(client, options?.processProfile?.expectedServerVersion);
         await applyCodexAppServerAuthProfile({
           client,
           agentDir,
@@ -284,18 +308,13 @@ async function acquireSharedCodexAppServerClient(
 export async function createIsolatedCodexAppServerClient(
   options?: CodexAppServerClientOptions,
 ): Promise<CodexAppServerClient> {
-  const { agentDir, usesNativeAuth, authProfileId, startOptions, extraSkillRoots } =
+  const { agentDir, usesNativeAuth, authProfileId, startOptions } =
     await resolveCodexAppServerClientStartContext(options);
   const client = CodexAppServerClient.start(startOptions);
   const initialize = client.initialize();
   try {
     await withTimeout(initialize, options?.timeoutMs ?? 0, "codex app-server initialize timed out");
-    await setCodexAppServerExtraSkillRoots({
-      client,
-      extraSkillRoots,
-      timeoutMs: options?.timeoutMs,
-      signal: options?.abandonSignal,
-    });
+    assertExpectedCodexServerVersion(client, options?.processProfile?.expectedServerVersion);
     await applyCodexAppServerAuthProfile({
       client,
       agentDir,
@@ -311,20 +330,98 @@ export async function createIsolatedCodexAppServerClient(
   }
 }
 
-async function setCodexAppServerExtraSkillRoots(params: {
-  client: CodexAppServerClient;
-  extraSkillRoots: string[];
-  timeoutMs?: number;
-  signal?: AbortSignal;
-}): Promise<void> {
-  if (params.extraSkillRoots.length === 0) {
+function assertExpectedCodexServerVersion(
+  client: CodexAppServerClient,
+  expectedVersion: string | undefined,
+): void {
+  if (!expectedVersion) {
     return;
   }
-  await params.client.request(
-    "skills/extraRoots/set",
-    { extraRoots: params.extraSkillRoots },
-    { timeoutMs: params.timeoutMs, signal: params.signal },
+  const observedVersion = client.getServerVersion();
+  if (observedVersion !== expectedVersion) {
+    throw new Error(
+      `Codex app-server version mismatch: expected ${expectedVersion}, observed ${observedVersion ?? "unknown"}`,
+    );
+  }
+}
+
+function withSystemProcessHome(
+  startOptions: CodexAppServerStartOptions,
+  profile: CodexSystemProcessProfile,
+): CodexAppServerStartOptions {
+  if (startOptions.transport !== "stdio") {
+    throw new Error("system-change Codex requires the pinned stdio app-server transport");
+  }
+  return {
+    ...startOptions,
+    env: {
+      ...startOptions.env,
+      CODEX_HOME: profile.codexHome,
+      HOME: profile.codexHome,
+    },
+  };
+}
+
+function withSystemDefaultDenyEnvironment(
+  startOptions: CodexAppServerStartOptions,
+  profile: CodexSystemProcessProfile,
+  baseEnv: NodeJS.ProcessEnv = process.env,
+): CodexAppServerStartOptions {
+  const env: Record<string, string> = {
+    PATH: SYSTEM_CODEX_PATH,
+    CODEX_HOME: profile.codexHome,
+    HOME: profile.codexHome,
+    ...resolveCodexSystemFixedEnvironment(profile.codexHome),
+  };
+  for (const key of SYSTEM_CODEX_INHERITED_ENV_ALLOWLIST) {
+    const value = baseEnv[key];
+    if (value !== undefined) {
+      env[key] = value;
+    }
+  }
+  const retained = new Set(Object.keys(env));
+  const retainedCaseFolded = new Set([...retained].map((key) => key.toUpperCase()));
+  const clearEnv = new Set(
+    (startOptions.clearEnv ?? []).filter(
+      (key) => !retainedCaseFolded.has(key.trim().toUpperCase()),
+    ),
   );
+  for (const key of Object.keys(baseEnv)) {
+    if (!retained.has(key)) {
+      clearEnv.add(key);
+    }
+  }
+  for (const key of Object.keys(startOptions.env ?? {})) {
+    if (!retained.has(key)) {
+      clearEnv.add(key);
+    }
+  }
+  return {
+    ...startOptions,
+    env,
+    clearEnv: [...clearEnv].toSorted(),
+  };
+}
+
+async function ensureSystemPackageCacheRoots(profile: CodexSystemProcessProfile): Promise<void> {
+  const codexHome = path.resolve(profile.codexHome);
+  const fixedEnvironment = resolveCodexSystemFixedEnvironment(codexHome);
+  const cacheDirectories = new Set([
+    path.join(codexHome, "package-cache"),
+    fixedEnvironment.XDG_CACHE_HOME,
+    fixedEnvironment.COREPACK_HOME,
+    fixedEnvironment.NPM_CONFIG_CACHE,
+    fixedEnvironment.PNPM_HOME,
+    fixedEnvironment.PNPM_CONFIG_STORE_DIR,
+  ]);
+  for (const directory of [codexHome, ...cacheDirectories]) {
+    await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+    const stat = await fs.lstat(directory);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
+      throw new Error(`Codex system package cache path is not a directory: ${directory}`);
+    }
+    await fs.chmod(directory, 0o700);
+  }
 }
 
 /** Clears and closes all shared clients for deterministic tests. */

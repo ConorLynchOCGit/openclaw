@@ -26,4 +26,17 @@ describe("DEFAULT_AGENT_WORKSPACE_DIR", () => {
 
     expect(resolveDefaultAgentWorkspaceDir()).toBe(path.resolve(workspaceDir));
   });
+
+  it("expands OPENCLAW_WORKSPACE_DIR against OPENCLAW_HOME", () => {
+    const home = path.join(path.sep, "srv", "openclaw-next");
+    const env = {
+      HOME: path.join(path.sep, "home", "other"),
+      OPENCLAW_HOME: home,
+      OPENCLAW_WORKSPACE_DIR: "~/home-repo",
+    } as NodeJS.ProcessEnv;
+
+    expect(resolveDefaultAgentWorkspaceDir(env, () => "/unused-home")).toBe(
+      path.join(home, "home-repo"),
+    );
+  });
 });
