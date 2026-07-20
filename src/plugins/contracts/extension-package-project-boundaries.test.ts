@@ -26,7 +26,7 @@ const trackedCodeFilesByRoot = new Map<string, readonly string[] | null>();
 type TsConfigJson = {
   extends?: unknown;
   compilerOptions?: {
-    paths?: unknown;
+    paths?: Record<string, unknown>;
     rootDir?: unknown;
     outDir?: unknown;
     declaration?: unknown;

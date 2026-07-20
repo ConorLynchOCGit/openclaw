@@ -12,10 +12,8 @@ afterEach(() => {
 });
 
 describe("worktrees cli", () => {
-  it("passes session owner activity and configured limits to gc", async () => {
-    const cfg: OpenClawConfig = {
-      worktrees: { cleanup: { maxCount: 25, maxTotalSizeGb: 50 } },
-    };
+  it("passes session owner activity to native gc", async () => {
+    const cfg: OpenClawConfig = {};
     setRuntimeConfigSnapshot(cfg, cfg);
     const gc = vi.spyOn(managedWorktrees, "gc").mockResolvedValue({
       removed: [],
@@ -29,7 +27,7 @@ describe("worktrees cli", () => {
     await program.parseAsync(["worktrees", "gc"], { from: "user" });
 
     expect(gc).toHaveBeenCalledWith({
-      limits: { maxCount: 25, maxTotalSizeBytes: 50 * 1024 ** 3 },
+      limits: {},
       shouldProtectOwner: expect.any(Function),
     });
   });

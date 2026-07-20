@@ -201,6 +201,10 @@ const loadUpdateHandlers = lazyHandlerModule(
   () => import("./server-methods/update.js"),
   (module) => module.updateHandlers,
 );
+const loadReleaseHandlers = lazyHandlerModule(
+  () => import("./server-methods/release.js"),
+  (module) => module.releaseHandlers,
+);
 const loadUsageHandlers = lazyHandlerModule(
   () => import("./server-methods/usage.js"),
   (module) => module.usageHandlers,
@@ -518,6 +522,10 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...createLazyCoreHandlers({
     methods: ["update.status", "update.run"],
     loadHandlers: loadUpdateHandlers,
+  }),
+  ...createLazyCoreHandlers({
+    methods: ["release.prepare"],
+    loadHandlers: loadReleaseHandlers,
   }),
   ...createLazyCoreHandlers({
     methods: [

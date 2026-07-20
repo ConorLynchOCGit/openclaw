@@ -905,7 +905,7 @@ describe("runGlobalPackageUpdateSteps", () => {
         if (!stagePrefix) {
           throw new Error("missing staged prefix");
         }
-        const stagedArtifact = argv.find((value) => value.endsWith("openclaw-2.0.0.tgz"));
+        const stagedArtifact = argv.find((value: string) => value.endsWith("openclaw-2.0.0.tgz"));
         expect(stagedArtifact).toBeTruthy();
         expect(stagedArtifact).not.toBe(artifactPath);
         await expect(fs.readFile(stagedArtifact ?? "")).resolves.toEqual(artifactBytes);

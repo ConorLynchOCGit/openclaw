@@ -75,6 +75,7 @@ describe("method scope resolution", () => {
     ["nativeHook.invoke", ["operator.admin"]],
     ["wizard.start", ["operator.admin"]],
     ["update.run", ["operator.admin"]],
+    ["release.prepare", ["operator.admin"]],
     ["exec.approvals.get", ["operator.admin"]],
     ["exec.approvals.set", ["operator.admin"]],
     ["exec.approvals.node.get", ["operator.admin"]],

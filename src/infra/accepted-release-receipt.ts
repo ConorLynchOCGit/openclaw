@@ -600,6 +600,65 @@ export async function resolveAcceptedReleaseReceipt(params: {
   };
 }
 
+function acceptedArtifactSetIdentity(resolved: ResolvedAcceptedReleaseReceipt): string {
+  return JSON.stringify(
+    resolved.receipt.orderedArtifacts.map((artifact) => ({
+      role: artifact.role,
+      packageName: artifact.packageName,
+      version: artifact.version,
+      sha256: artifact.sha256,
+      npmIntegrityOrShasum: artifact.npmIntegrityOrShasum,
+      packlistDigest: artifact.packlistDigest,
+      byteSize: artifact.byteSize,
+      contentAddressedLocation: artifact.contentAddressedLocation,
+    })),
+  );
+}
+
+/**
+ * Resolve immutable acceptance history for the exact manifest loaded by N.
+ * This is release-preparation lookup, not an active-release pointer.
+ */
+export async function resolveAcceptedReleaseForLoadedManifest(params: {
+  releaseManifestDigest: string;
+  env?: NodeJS.ProcessEnv;
+  releaseStoreRoot?: string;
+}): Promise<ResolvedAcceptedReleaseReceipt> {
+  const releaseManifestDigest = requireSha256(
+    params.releaseManifestDigest,
+    "loaded release manifest digest",
+  );
+  const releaseStoreRoot = params.releaseStoreRoot
+    ? path.resolve(params.releaseStoreRoot)
+    : resolveReleaseStoreRoot(params.env);
+  const receiptDirectory = path.join(releaseStoreRoot, "receipts", "sha256");
+  const entries = await fs.readdir(receiptDirectory, { withFileTypes: true });
+  const receiptIds = entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+    .map((entry) => entry.name.slice(0, -".json".length))
+    .filter((id) => isLowerHex(id, 64))
+    .toSorted();
+  const matches: ResolvedAcceptedReleaseReceipt[] = [];
+  for (const acceptedReleaseReceiptId of receiptIds) {
+    const resolved = await resolveAcceptedReleaseReceipt({
+      acceptedReleaseReceiptId,
+      releaseStoreRoot,
+    });
+    if (resolved.receipt.releaseManifestDigest === releaseManifestDigest) {
+      matches.push(resolved);
+    }
+  }
+  const first = matches[0];
+  if (!first) {
+    throw new Error("loaded release has no immutable accepted receipt history");
+  }
+  const artifactSet = acceptedArtifactSetIdentity(first);
+  if (matches.some((candidate) => acceptedArtifactSetIdentity(candidate) !== artifactSet)) {
+    throw new Error("loaded release manifest has conflicting accepted artifact histories");
+  }
+  return first;
+}
+
 export async function readEmbeddedReleaseManifestIdentity(packageRoot: string): Promise<{
   releaseManifestDigest: string;
   sourceTreeObject: string;

@@ -25,7 +25,8 @@ describe("release manifest", () => {
 
   it("rejects valid JSON whose bytes do not match protocol field order and whitespace", () => {
     const manifest = createReleaseManifestFixture();
-    const reordered = `${JSON.stringify({ source: manifest.source, ...manifest })}\n`;
+    const { source, ...rest } = manifest;
+    const reordered = `${JSON.stringify({ source, ...rest })}\n`;
 
     expect(() => parseReleaseManifestBytes(Buffer.from(reordered))).toThrow(
       "field order, indentation, and trailing newline",

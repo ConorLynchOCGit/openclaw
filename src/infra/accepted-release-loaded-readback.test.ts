@@ -67,6 +67,7 @@ function createReadiness(params: {
     errors: [],
     identity: {
       releaseManifestDigest: params.resolved.receipt.releaseManifestDigest,
+      sourceSnapshotRef: manifest.source.snapshotRef,
       sourceTreeObject: manifest.source.treeObject,
       packageVersion: manifest.package.version,
       packageShape: manifest.package.shape,

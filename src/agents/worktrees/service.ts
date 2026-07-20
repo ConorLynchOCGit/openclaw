@@ -54,6 +54,7 @@ import type {
   ManagedWorktreeOwnerKind,
   ManagedWorktreeRecord,
   RemoveManagedWorktreeResult,
+  WorktreeSnapshotAdmission,
 } from "./types.js";
 
 export const IDLE_GC_MS = 7 * 24 * 60 * 60 * 1000; // Idle worktrees remain restorable after automatic cleanup.
@@ -89,21 +90,9 @@ type ManagedWorktreeGcParams = {
   limits?: WorktreeCleanupLimits;
 };
 
-/**
- * Maps `worktrees.cleanup` config into enforceable byte/count limits.
- * 0 and unset both mean "no limit", so gc callers can pass the result verbatim.
- */
-export function resolveWorktreeCleanupLimits(config?: {
-  cleanup?: { maxCount?: number; maxTotalSizeGb?: number };
-}): WorktreeCleanupLimits {
-  const maxCount = config?.cleanup?.maxCount;
-  const maxTotalSizeGb = config?.cleanup?.maxTotalSizeGb;
-  return {
-    ...(typeof maxCount === "number" && maxCount > 0 ? { maxCount: Math.floor(maxCount) } : {}),
-    ...(typeof maxTotalSizeGb === "number" && maxTotalSizeGb > 0
-      ? { maxTotalSizeBytes: Math.round(maxTotalSizeGb * 1024 ** 3) }
-      : {}),
-  };
+/** Returns the native no-limit policy for age-based managed-worktree cleanup. */
+export function resolveWorktreeCleanupLimits(): WorktreeCleanupLimits {
+  return {};
 }
 
 function resultMessage(result: GitResult): string {
@@ -434,6 +423,7 @@ async function snapshotWorktree(
   record: ManagedWorktreeRecord,
   reason: string,
   provisionedPaths: readonly string[],
+  beforeSnapshot?: (input: WorktreeSnapshotAdmission) => Promise<void>,
 ): Promise<string> {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-worktree-index-"));
   const indexPath = path.join(tempDir, "index");
@@ -509,6 +499,30 @@ async function snapshotWorktree(
       for (const entry of splitNullBuffer(await requireGitBuffer(record.path, args))) {
         addSnapshotPath(entry);
       }
+    }
+    if (beforeSnapshot) {
+      const changedPaths = new Map<string, Buffer>();
+      for (const entry of splitNullBuffer(
+        await requireGitBuffer(record.path, [
+          "diff",
+          "--name-only",
+          "-z",
+          "--no-renames",
+          "HEAD",
+          "--",
+        ]),
+      )) {
+        changedPaths.set(gitPathKey(entry), entry);
+      }
+      for (const entry of splitNullBuffer(
+        await requireGitBuffer(record.path, ["ls-files", "-z", "--others", "--exclude-standard"]),
+      )) {
+        changedPaths.set(gitPathKey(entry), entry);
+      }
+      await beforeSnapshot({
+        record: { ...record },
+        changedPaths: [...changedPaths.values()],
+      });
     }
     await requireGit(record.path, ["read-tree", "HEAD"], { env });
     // This index came from a tree, so it has no checkout-local skip-worktree
@@ -811,6 +825,7 @@ export class ManagedWorktreeService {
     reason: string;
     force?: boolean;
     claimToken?: string;
+    beforeSnapshot?: (input: WorktreeSnapshotAdmission) => Promise<void>;
   }): Promise<RemoveManagedWorktreeResult> {
     const record = this.requireLiveRecord(params.id);
     const force = params.force ?? false;
@@ -845,6 +860,7 @@ export class ManagedWorktreeService {
           record,
           params.reason,
           provisionedState.map((entry) => entry.path),
+          params.beforeSnapshot,
         );
         updateRegistryWorktree(this.env, record.id, {
           snapshotRef,

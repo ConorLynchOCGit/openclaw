@@ -62,6 +62,7 @@ function buildLoadedReleaseIdentity(
 ): LoadedReleaseIdentity {
   return {
     releaseManifestDigest: loaded.releaseManifestDigest,
+    sourceSnapshotRef: loaded.manifest.source.snapshotRef,
     sourceTreeObject: loaded.manifest.source.treeObject,
     packageVersion: loaded.manifest.package.version,
     packageShape: loaded.manifest.package.shape,

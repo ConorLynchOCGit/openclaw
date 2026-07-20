@@ -140,6 +140,8 @@
     "scripts/npm-runner.mjs",
     "scripts/prepare-git-hooks.mjs",
     "scripts/preinstall-package-manager-warning.mjs",
+    "scripts/prepare-native-release-set.mjs",
+    "scripts/release-git-askpass.mjs",
     "scripts/lib/official-external-channel-catalog.json",
     "scripts/lib/official-external-plugin-catalog.json",
     "scripts/lib/official-external-provider-catalog.json",

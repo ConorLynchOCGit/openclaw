@@ -16,6 +16,7 @@ import {
   assertAcceptedReleasePredecessor,
   copyAcceptedReleaseArtifactToStage,
   resolveAcceptedReleaseReceipt,
+  resolveAcceptedReleaseForLoadedManifest,
 } from "./accepted-release-receipt.js";
 
 const PREDECESSOR_MANIFEST_DIGEST = "1".repeat(64);
@@ -183,6 +184,18 @@ describe("accepted release receipt", () => {
       expect(resolved.coreArtifact.filePath).toBe(fixture.artifactPath);
       expect(resolved.releaseManifest.migration.class).toBe("migration_free");
       expect(resolved.pluginArtifacts).toEqual([]);
+    });
+  });
+
+  it("finds immutable predecessor artifacts by the exact loaded manifest digest", async () => {
+    await withTempDir({ prefix: "openclaw-accepted-loaded-" }, async (root) => {
+      const fixture = await writeAcceptedReleaseStore(root);
+      const resolved = await resolveAcceptedReleaseForLoadedManifest({
+        releaseManifestDigest: releaseManifestDigest(serializeReleaseManifest(fixture.manifest)),
+        releaseStoreRoot: root,
+      });
+      expect(resolved.id).toBe(fixture.receiptId);
+      expect(resolved.receipt.acceptedSourceObject).toBe(fixture.manifest.source.treeObject);
     });
   });
 
