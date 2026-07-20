@@ -20,6 +20,7 @@ import {
 import { createClientHarness, createCodexTestModel } from "./test-support.js";
 
 type ClientHarness = ReturnType<typeof createClientHarness>;
+type HarnessMessage = { id?: number; method?: string; params?: Record<string, unknown> };
 
 type AttemptPaths = {
   agentDir: string;
@@ -76,8 +77,8 @@ const bundleMcpThreadConfig = {
 
 const HARNESS_REQUEST_TIMEOUT_MS = 15_000;
 
-function readHarnessMessages(writes: string[]): Array<{ id?: number; method?: string }> {
-  return writes.map((write) => JSON.parse(write) as { id?: number; method?: string });
+function readHarnessMessages(writes: string[]): HarnessMessage[] {
+  return writes.map((write) => JSON.parse(write) as HarnessMessage);
 }
 
 function startThreadWithHarness(
@@ -91,6 +92,7 @@ function startThreadWithHarness(
     harness?: ClientHarness;
     paths?: AttemptPaths;
     skipStartSpy?: boolean;
+    systemProfileDir?: string;
   },
 ) {
   const harness = overrides?.harness ?? createClientHarness();
@@ -125,6 +127,7 @@ function startThreadWithHarness(
     sandboxExecServerEnabled: false,
     sandbox: null,
     contextEngineProjection: undefined,
+    systemProfileDir: overrides?.systemProfileDir,
     startupTimeoutMs,
     signal,
     onStartupTimeout: vi.fn(),
@@ -143,10 +146,7 @@ async function answerInitialize(harness: ClientHarness): Promise<void> {
   harness.send({ id: initialize.id, result: { userAgent: "openclaw/0.125.0 (macOS; test)" } });
 }
 
-async function waitForRequest(
-  harness: ClientHarness,
-  method: string,
-): Promise<{ id?: number; method?: string }> {
+async function waitForRequest(harness: ClientHarness, method: string): Promise<HarnessMessage> {
   await vi.waitFor(
     () =>
       expect(readHarnessMessages(harness.writes).some((write) => write.method === method)).toBe(
@@ -195,6 +195,92 @@ describe("startCodexAttemptThread", () => {
 
     await expect(run).rejects.toThrow("Invalid bearer token");
     expect(harness.process.stdin.destroyed).toBe(true);
+  });
+
+  it("starts Coding with the immutable package profile and native capability roots", async () => {
+    const paths = createAttemptPaths();
+    const systemProfileDir = path.join(path.dirname(paths.cwd), "system-profile");
+    const profileConfig = {
+      developer_instructions: "immutable Coding profile",
+      features: { multi_agent_v2: { enabled: true } },
+      agents: {
+        implementer: {
+          config_file: path.join(
+            systemProfileDir,
+            "project",
+            ".codex",
+            "agents",
+            "implementer.toml",
+          ),
+        },
+      },
+    };
+    const { harness, run } = startThreadWithHarness(5_000, new AbortController().signal, {
+      paths,
+      systemProfileDir,
+    });
+
+    await answerInitialize(harness);
+    const configRead = await waitForRequest(harness, "config/read");
+    expect(configRead.params).toEqual({
+      cwd: path.join(systemProfileDir, "project"),
+      includeLayers: true,
+    });
+    harness.send({
+      id: configRead.id,
+      result: {
+        config: profileConfig,
+        layers: [
+          {
+            name: {
+              type: "project",
+              dotCodexFolder: path.join(systemProfileDir, "project", ".codex"),
+            },
+            version: "sha256:system-profile",
+            config: profileConfig,
+          },
+        ],
+      },
+    });
+
+    const threadStart = await waitForThreadStart(harness);
+    expect(threadStart.params?.config).toMatchObject(profileConfig);
+    expect(threadStart.params?.environments).toContainEqual({
+      environmentId: "openclaw-system-profile",
+      cwd: systemProfileDir,
+    });
+    expect(threadStart.params?.selectedCapabilityRoots).toEqual([
+      {
+        id: "codex-system-skills",
+        location: {
+          type: "environment",
+          environmentId: "openclaw-system-profile",
+          path: path.join(systemProfileDir, "skills"),
+        },
+      },
+      {
+        id: "openclaw-shared-system-skills",
+        location: {
+          type: "environment",
+          environmentId: "openclaw-system-profile",
+          path: path.join(systemProfileDir, "shared-skills"),
+        },
+      },
+      {
+        id: "openclaw-contributor-guidance",
+        location: {
+          type: "environment",
+          environmentId: "openclaw-system-profile",
+          path: path.join(systemProfileDir, "contributor-guidance"),
+        },
+      },
+    ]);
+
+    harness.send({
+      id: threadStart.id,
+      error: { code: -32000, message: "stop after startup-boundary assertion" },
+    });
+    await expect(run).rejects.toThrow("stop after startup-boundary assertion");
   });
 
   it("retires a failed startup client after another active lease releases", async () => {

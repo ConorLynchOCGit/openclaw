@@ -246,7 +246,8 @@ describe("Codex app-server native code mode config", () => {
     expect(instructions).toContain("Codex owns implementation work inside this thread");
     expect(instructions).toContain("read that file in full before implementation");
     expect(instructions).toContain("completion language");
-    expect(instructions).toContain("`.codex/config.toml`");
+    expect(instructions).toContain("loaded immutable Codex system profile");
+    expect(instructions).toContain("editable worktree copies as source");
     expect(instructions).not.toContain("repo_search_many");
     expect(instructions).not.toContain("Prefer `rg`");
     expect(instructions).not.toContain("Decide early whether the task merits");

@@ -2,6 +2,7 @@
  * Bundled Codex plugin entry: app-server harness, model provider, media
  * understanding, migration provider, CLI-session commands, and binding hooks.
  */
+import path from "node:path";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import { mutateConfigFile } from "openclaw/plugin-sdk/config-mutation";
 import { resolveLivePluginConfigObject } from "openclaw/plugin-sdk/plugin-config-runtime";
@@ -40,7 +41,10 @@ export default definePluginEntry({
         api.pluginConfig as Record<string, unknown>,
       ) ?? api.pluginConfig;
     api.registerAgentHarness(
-      createCodexAppServerAgentHarness({ resolvePluginConfig: resolveCurrentPluginConfig }),
+      createCodexAppServerAgentHarness({
+        resolvePluginConfig: resolveCurrentPluginConfig,
+        systemProfileDir: path.join(api.rootDir ?? path.dirname(api.source), "system-profile"),
+      }),
     );
     api.registerProvider(buildCodexProvider({ pluginConfig: api.pluginConfig }));
     api.registerMediaUnderstandingProvider(

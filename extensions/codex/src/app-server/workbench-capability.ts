@@ -65,8 +65,9 @@ export type CodexWorkbenchRoots = {
 };
 
 export type CodexProjectConfigCapability = {
-  source: ".codex/config.toml";
+  source: "package_system_profile";
   present: boolean;
+  layerVersion?: string;
   multiAgentVersion?: "v1" | "v2";
   maxConcurrentThreadsPerSession?: number;
   toolNamespace?: string;
@@ -76,7 +77,7 @@ export type CodexProjectConfigCapability = {
 };
 
 export type CodexCustomAgentCapability = {
-  source: ".codex/agents";
+  source: "package_system_profile";
   count: number;
   names: string[];
   files: string[];
@@ -137,6 +138,7 @@ export async function buildCodexWorkbenchCapabilityReport(params: {
   threadId: string;
   cwd: string;
   workspaceDir: string;
+  systemProfileDir?: string;
   processCwd?: string;
   appServerStart: {
     transport: string;
@@ -152,28 +154,25 @@ export async function buildCodexWorkbenchCapabilityReport(params: {
   signal?: AbortSignal;
 }): Promise<CodexWorkbenchCapabilityReport> {
   const [
-    codexProjectConfig,
-    customAgents,
+    nativeConfig,
     modelList,
     modelProviderCapabilities,
-    configRead,
     experimentalFeatures,
     mcpServers,
     skillsList,
     pluginList,
     appList,
   ] = await Promise.all([
-    readCodexProjectConfig(params.workspaceDir),
-    readCodexCustomAgents(params.workspaceDir),
+    inspectNativeCodexConfig(params),
     probeModelList(params),
     probeModelProviderCapabilities(params),
-    probeConfigRead(params),
     probeExperimentalFeatureList(params),
     probeMcpServers(params),
     probeSkillsList(params),
     probePluginList(params),
     probeAppList(params),
   ]);
+  const { codexProjectConfig, customAgents } = nativeConfig;
   const appServerVersion = (
     params.client as { getServerVersion?: () => string | undefined }
   ).getServerVersion?.();
@@ -225,7 +224,7 @@ export async function buildCodexWorkbenchCapabilityReport(params: {
     controlMethods: {
       modelList,
       modelProviderCapabilitiesRead: modelProviderCapabilities,
-      configRead,
+      configRead: nativeConfig.configRead,
       experimentalFeatureList: experimentalFeatures,
       mcpServerStatusList: mcpServers,
       skillsList,
@@ -302,78 +301,126 @@ async function resolveExistingDirectory(candidate: string): Promise<string | und
   }
 }
 
-async function readCodexProjectConfig(workspaceDir: string): Promise<CodexProjectConfigCapability> {
-  const source = ".codex/config.toml" as const;
-  try {
-    const content = await fs.readFile(path.join(workspaceDir, source), "utf8");
-    const multiAgentV2 = readTomlBoolean(content, "features.multi_agent_v2", "enabled");
-    const multiAgentV1 = readTomlBoolean(content, "features", "multi_agent");
-    const multiAgentVersion = multiAgentV2 ? "v2" : multiAgentV1 ? "v1" : undefined;
-    const maxConcurrentThreadsPerSession = multiAgentV2
-      ? readTomlNumber(content, "features.multi_agent_v2", "max_concurrent_threads_per_session")
-      : readTomlNumber(content, "agents", "max_threads");
-    const toolNamespace = multiAgentV2
-      ? readTomlScalar(content, "features.multi_agent_v2", "tool_namespace")
-      : undefined;
-    const hideSpawnAgentMetadata = multiAgentV2
-      ? readTomlBoolean(content, "features.multi_agent_v2", "hide_spawn_agent_metadata")
-      : undefined;
-    const nonCodeModeOnly = multiAgentV2
-      ? readTomlBoolean(content, "features.multi_agent_v2", "non_code_mode_only")
-      : undefined;
+async function inspectNativeCodexConfig(params: {
+  client: CodexAppServerClient;
+  workspaceDir: string;
+  systemProfileDir?: string;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}): Promise<{
+  configRead: CodexWorkbenchConfigRead;
+  codexProjectConfig: CodexProjectConfigCapability;
+  customAgents: CodexCustomAgentCapability;
+}> {
+  const source = "package_system_profile" as const;
+  const configCwd = params.systemProfileDir
+    ? path.join(params.systemProfileDir, "project")
+    : params.workspaceDir;
+  const response = await safeRequest<JsonObject>(params, "config/read", {
+    cwd: configCwd,
+    includeLayers: true,
+  });
+  if (response.status !== "ok") {
     return {
+      configRead: response,
+      codexProjectConfig: {
+        source,
+        present: false,
+        error: response.message,
+      },
+      customAgents: {
+        source,
+        count: 0,
+        names: [],
+        files: [],
+        hasCodexReviewer: false,
+        hasCreativeQualityReviewer: false,
+        error: response.message,
+      },
+    };
+  }
+  const config = isJsonObject(response.value.config) ? response.value.config : {};
+  const layers = Array.isArray(response.value.layers) ? response.value.layers : [];
+  const expectedDotCodexDir = path.join(configCwd, ".codex");
+  const profileLayer = layers.find((entry) => {
+    if (!isJsonObject(entry) || !isJsonObject(entry.name)) {
+      return false;
+    }
+    return (
+      entry.name.type === "project" &&
+      typeof entry.name.dotCodexFolder === "string" &&
+      path.resolve(entry.name.dotCodexFolder) === expectedDotCodexDir
+    );
+  });
+  const profileConfig =
+    isJsonObject(profileLayer) && isJsonObject(profileLayer.config) ? profileLayer.config : {};
+  const features = isJsonObject(profileConfig.features) ? profileConfig.features : {};
+  const multiAgentV2 = isJsonObject(features.multi_agent_v2) ? features.multi_agent_v2 : undefined;
+  const multiAgentV1 = features.multi_agent === true;
+  const agents = isJsonObject(profileConfig.agents) ? profileConfig.agents : {};
+  const agentEntries = Object.entries(agents)
+    .filter(([, value]) => isJsonObject(value) && typeof value.config_file === "string")
+    .map(([name, value]) => ({
+      name,
+      file: path.basename((value as JsonObject).config_file as string),
+    }))
+    .toSorted((left, right) => left.name.localeCompare(right.name));
+  const names = agentEntries.map((entry) => entry.name);
+  const layerVersion =
+    isJsonObject(profileLayer) && typeof profileLayer.version === "string"
+      ? profileLayer.version
+      : undefined;
+  const maxConcurrentThreadsPerSession = multiAgentV2?.max_concurrent_threads_per_session;
+  const toolNamespace = multiAgentV2?.tool_namespace;
+  const hideSpawnAgentMetadata = multiAgentV2?.hide_spawn_agent_metadata;
+  const nonCodeModeOnly = multiAgentV2?.non_code_mode_only;
+
+  return {
+    configRead: {
+      status: "ok",
+      includeLayers: true,
+      layerCount: layers.length,
+      configKeyCount: Object.keys(config).length,
+      featureKeys: Object.keys(isJsonObject(config.features) ? config.features : {}).toSorted(
+        (left, right) => left.localeCompare(right),
+      ),
+      agentKeys: Object.keys(isJsonObject(config.agents) ? config.agents : {}).toSorted(
+        (left, right) => left.localeCompare(right),
+      ),
+    },
+    codexProjectConfig: {
       source,
-      present: true,
-      ...(multiAgentVersion ? { multiAgentVersion } : {}),
-      ...(maxConcurrentThreadsPerSession !== undefined ? { maxConcurrentThreadsPerSession } : {}),
-      ...(toolNamespace ? { toolNamespace } : {}),
-      ...(hideSpawnAgentMetadata !== undefined
+      present: Boolean(profileLayer),
+      ...(layerVersion ? { layerVersion } : {}),
+      ...(multiAgentV2?.enabled === true
+        ? { multiAgentVersion: "v2" as const }
+        : multiAgentV1
+          ? { multiAgentVersion: "v1" as const }
+          : {}),
+      ...(typeof maxConcurrentThreadsPerSession === "number"
+        ? { maxConcurrentThreadsPerSession }
+        : {}),
+      ...(typeof toolNamespace === "string" ? { toolNamespace } : {}),
+      ...(typeof hideSpawnAgentMetadata === "boolean"
         ? { spawnAgentMetadataVisible: !hideSpawnAgentMetadata }
         : {}),
-      ...(nonCodeModeOnly !== undefined ? { directModelOnly: nonCodeModeOnly } : {}),
-    };
-  } catch (error) {
-    return {
+      ...(typeof nonCodeModeOnly === "boolean" ? { directModelOnly: nonCodeModeOnly } : {}),
+      ...(!profileLayer
+        ? { error: `No native project layer loaded from ${expectedDotCodexDir}` }
+        : {}),
+    },
+    customAgents: {
       source,
-      present: false,
-      error: formatCapabilityError(error),
-    };
-  }
-}
-
-async function readCodexCustomAgents(workspaceDir: string): Promise<CodexCustomAgentCapability> {
-  const source = ".codex/agents" as const;
-  try {
-    const dir = path.join(workspaceDir, source);
-    const entries = (await fs.readdir(dir, { withFileTypes: true }))
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".toml"))
-      .map((entry) => entry.name)
-      .toSorted((left, right) => left.localeCompare(right));
-    const names: string[] = [];
-    for (const file of entries) {
-      const content = await fs.readFile(path.join(dir, file), "utf8").catch(() => "");
-      names.push(readTomlString(content, "name") ?? file.replace(/\.toml$/u, ""));
-    }
-    const sortedNames = names.toSorted((left, right) => left.localeCompare(right));
-    return {
-      source,
-      count: entries.length,
-      names: sortedNames,
-      files: entries,
-      hasCodexReviewer: sortedNames.includes("codex_reviewer"),
-      hasCreativeQualityReviewer: sortedNames.includes("creative_quality_reviewer"),
-    };
-  } catch (error) {
-    return {
-      source,
-      count: 0,
-      names: [],
-      files: [],
-      hasCodexReviewer: false,
-      hasCreativeQualityReviewer: false,
-      error: formatCapabilityError(error),
-    };
-  }
+      count: agentEntries.length,
+      names,
+      files: agentEntries.map((entry) => entry.file),
+      hasCodexReviewer: names.includes("codex_reviewer"),
+      hasCreativeQualityReviewer: names.includes("creative_quality_reviewer"),
+      ...(!profileLayer
+        ? { error: `No native project layer loaded from ${expectedDotCodexDir}` }
+        : {}),
+    },
+  };
 }
 
 async function probeModelList(
@@ -400,28 +447,6 @@ async function probeModelProviderCapabilities(
     ...readBooleanField(response.value, "namespaceTools", "namespace_tools"),
     ...readBooleanField(response.value, "imageGeneration", "image_generation"),
     ...readBooleanField(response.value, "webSearch", "web_search"),
-  };
-}
-
-async function probeConfigRead(params: ProbeParams): Promise<CodexWorkbenchConfigRead> {
-  const response = await safeRequest<JsonObject>(params, "config/read", {
-    cwd: params.workspaceDir,
-    includeLayers: true,
-  });
-  if (response.status !== "ok") {
-    return response;
-  }
-  const config = isJsonObject(response.value.config) ? response.value.config : {};
-  const features = isJsonObject(config.features) ? config.features : {};
-  const agents = isJsonObject(config.agents) ? config.agents : {};
-  const layers = Array.isArray(response.value.layers) ? response.value.layers : [];
-  return {
-    status: "ok",
-    includeLayers: true,
-    layerCount: layers.length,
-    configKeyCount: Object.keys(config).length,
-    featureKeys: Object.keys(features).toSorted((left, right) => left.localeCompare(right)),
-    agentKeys: Object.keys(agents).toSorted((left, right) => left.localeCompare(right)),
   };
 }
 
@@ -571,50 +596,6 @@ async function safeRequest<T>(
     }
     return { status: "failed", message: formatCapabilityError(error) };
   }
-}
-
-function readTomlBoolean(content: string, section: string, key: string): boolean | undefined {
-  const value = readTomlScalar(content, section, key);
-  return value === "true" ? true : value === "false" ? false : undefined;
-}
-
-function readTomlNumber(content: string, section: string, key: string): number | undefined {
-  const value = readTomlScalar(content, section, key);
-  if (!value) {
-    return undefined;
-  }
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function readTomlString(content: string, key: string): string | undefined {
-  const match = new RegExp(`^\\s*${escapeRegExp(key)}\\s*=\\s*"([^"]*)"`, "mu").exec(content);
-  return match?.[1]?.trim() || undefined;
-}
-
-function readTomlScalar(content: string, section: string, key: string): string | undefined {
-  const keyPattern = new RegExp(`^\\s*${escapeRegExp(key)}\\s*=\\s*([^\\s#]+)`, "u");
-  let inSection = false;
-  for (const line of content.split(/\r?\n/u)) {
-    const sectionMatch = /^\s*\[([^\]]+)\]\s*(?:#.*)?$/u.exec(line);
-    if (sectionMatch) {
-      inSection = sectionMatch[1]?.trim() === section;
-      continue;
-    }
-    if (!inSection) {
-      continue;
-    }
-    const keyMatch = keyPattern.exec(line);
-    const value = keyMatch?.[1]?.trim();
-    if (value) {
-      return value.replace(/^"|"$/gu, "");
-    }
-  }
-  return undefined;
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
 function readBooleanField(

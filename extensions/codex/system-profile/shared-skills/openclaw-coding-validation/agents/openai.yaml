@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenClaw Coding Validation"
+  short_description: "Run focused validation and review evidence"
+  default_prompt: "Validate this change with focused tests, review, and bounded evidence."

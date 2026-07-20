@@ -18,6 +18,7 @@
   "providerCatalogEntry": "./provider-discovery.ts",
   "syntheticAuthRefs": ["codex"],
   "nonSecretAuthMarkers": ["codex-app-server"],
+  "skills": ["./system-profile/shared-skills"],
   "activation": {
     "onStartup": false,
     "onAgentHarnesses": ["codex"]

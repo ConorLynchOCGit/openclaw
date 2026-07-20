@@ -487,30 +487,47 @@ describe("runCodexAppServerAttempt", () => {
   it("attaches Codex workbench capability readback to the actual run startup path", async () => {
     const sessionFile = path.join(tempDir, "coding-workbench-session.jsonl");
     const workspaceDir = path.join(tempDir, "coding-workbench-workspace");
-    await fs.mkdir(path.join(workspaceDir, ".codex", "agents"), { recursive: true });
-    await fs.writeFile(
-      path.join(workspaceDir, ".codex", "config.toml"),
-      [
-        "[features.multi_agent_v2]",
-        "enabled = true",
-        "max_concurrent_threads_per_session = 6",
-        "hide_spawn_agent_metadata = false",
-        "non_code_mode_only = true",
-        'tool_namespace = "agents"',
-        "",
-      ].join("\n"),
-    );
-    await fs.writeFile(
-      path.join(workspaceDir, ".codex", "agents", "codex_reviewer.toml"),
-      ['name = "codex_reviewer"', 'description = "Codex reviewer"', ""].join("\n"),
-    );
+    const systemProfileDir = path.join(tempDir, "codex-system-profile");
+    const profileConfig = {
+      features: {
+        multi_agent_v2: {
+          enabled: true,
+          max_concurrent_threads_per_session: 6,
+          hide_spawn_agent_metadata: false,
+          non_code_mode_only: true,
+          tool_namespace: "agents",
+        },
+      },
+      agents: {
+        codex_reviewer: {
+          config_file: path.join(systemProfileDir, "project/.codex/agents/codex_reviewer.toml"),
+        },
+      },
+    };
     testing.setOpenClawCodingToolsFactoryForTests(() => [
       createRuntimeDynamicTool("message"),
       createRuntimeDynamicTool("sessions_history"),
       createRuntimeDynamicTool("task"),
     ]);
     const events: Array<{ stream: string; data: Record<string, unknown> }> = [];
-    const { requests, waitForMethod, completeTurn } = createStartedThreadHarness();
+    const { requests, waitForMethod, completeTurn } = createStartedThreadHarness(
+      async (method, requestParams) => {
+        if (method !== "config/read") {
+          return undefined;
+        }
+        const cwd = (requestParams as { cwd?: string }).cwd;
+        return {
+          config: profileConfig,
+          layers: [
+            {
+              name: { type: "project", dotCodexFolder: path.join(String(cwd), ".codex") },
+              version: "sha256:system-profile",
+              config: profileConfig,
+            },
+          ],
+        };
+      },
+    );
     const params = createParams(sessionFile, workspaceDir);
     params.agentId = "coding";
     params.sessionKey = "agent:coding:session-workbench";
@@ -529,6 +546,7 @@ describe("runCodexAppServerAttempt", () => {
           enabled: false,
         },
       },
+      systemProfileDir,
     });
     await waitForMethod("turn/start");
     await completeTurn({ threadId: "thread-1", turnId: "turn-1" });
@@ -541,7 +559,9 @@ describe("runCodexAppServerAttempt", () => {
     expect(startParams.config?.["features.code_mode_only"]).toBe(true);
     expect(startParams.config?.["features.code_mode.direct_only_tool_namespaces"]).toBeUndefined();
     expect(startParams.config).not.toHaveProperty("features.multi_agent");
-    expect(startParams.config).not.toHaveProperty("features.multi_agent_v2");
+    expect((startParams.config?.features as JsonObject | undefined)?.multi_agent_v2).toEqual(
+      profileConfig.features.multi_agent_v2,
+    );
 
     const threadReady = events.find(
       (event) =>

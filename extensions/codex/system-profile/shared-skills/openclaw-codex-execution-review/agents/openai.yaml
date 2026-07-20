@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenClaw Codex Execution Review"
+  short_description: "Review Codex workbench and team behavior"
+  default_prompt: "Review this Coding run for Codex-native tool use, purpose-agent use, context reuse, and truthful closeout."

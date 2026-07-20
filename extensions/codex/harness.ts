@@ -43,6 +43,7 @@ export function createCodexAppServerAgentHarness(options?: {
   providerIds?: Iterable<string>;
   pluginConfig?: unknown;
   resolvePluginConfig?: () => unknown;
+  systemProfileDir?: string;
 }): AgentHarness {
   const providerIds = new Set(
     [...(options?.providerIds ?? DEFAULT_CODEX_HARNESS_PROVIDER_IDS)].map((id) =>
@@ -72,6 +73,7 @@ export function createCodexAppServerAgentHarness(options?: {
       const { runCodexAppServerAttempt } = await import("./src/app-server/run-attempt.js");
       return runCodexAppServerAttempt(params, {
         pluginConfig: options?.resolvePluginConfig?.() ?? options?.pluginConfig,
+        systemProfileDir: options?.systemProfileDir,
         nativeHookRelay: { enabled: true },
       });
     },

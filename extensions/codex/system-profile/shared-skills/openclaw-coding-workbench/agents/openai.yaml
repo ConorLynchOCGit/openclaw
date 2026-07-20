@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenClaw Coding Workbench"
+  short_description: "Batch repo inspection with MCP and LSP"
+  default_prompt: "Inspect this workspace with batched MCP and LSP before broad shell exploration."

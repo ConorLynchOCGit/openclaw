@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenClaw Implementation Critique"
+  short_description: "Critique implementation design"
+  default_prompt: "Critique this proposed or completed OpenClaw implementation for root cause, native fit, code health, and proof adequacy."

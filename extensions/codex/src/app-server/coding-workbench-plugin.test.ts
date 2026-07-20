@@ -6,6 +6,9 @@ import { describe, expect, it } from "vitest";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../../../..");
 const PLUGIN_ROOT = path.join(REPO_ROOT, ".agents/plugins/plugins/openclaw-coding-workbench");
+const CODEX_PROFILE_ROOT = path.join(REPO_ROOT, "extensions/codex/system-profile/project/.codex");
+const CODEX_PROFILE_CONFIG = "extensions/codex/system-profile/project/.codex/config.toml";
+const CODEX_PROFILE_AGENTS = "extensions/codex/system-profile/project/.codex/agents";
 const MCP_SERVER = path.join(PLUGIN_ROOT, "mcp/openclaw-repo-workbench.mjs");
 const WORKBENCH_OPTIONS = { cwd: REPO_ROOT, env: {} };
 
@@ -15,7 +18,7 @@ function sha256(value: string | Buffer): string {
 
 describe("OpenClaw Codex repo workbench plugin", () => {
   it("is declared as a project Codex MCP server with only read-only batched repo tools", async () => {
-    const configToml = await fs.readFile(path.join(REPO_ROOT, ".codex/config.toml"), "utf8");
+    const configToml = await fs.readFile(path.join(CODEX_PROFILE_ROOT, "config.toml"), "utf8");
     const serverSource = await fs.readFile(MCP_SERVER, "utf8");
     const mcpJson = JSON.parse(await fs.readFile(path.join(PLUGIN_ROOT, ".mcp.json"), "utf8")) as {
       mcpServers: Record<
@@ -34,15 +37,15 @@ describe("OpenClaw Codex repo workbench plugin", () => {
     expect(configToml).toContain(
       '[features.code_mode]\nenabled = false\ndirect_only_tool_namespaces = ["mcp__openclaw_repo_workbench"]',
     );
-    const agentFiles = await fs.readdir(path.join(REPO_ROOT, ".codex/agents"));
+    const agentFiles = await fs.readdir(path.join(CODEX_PROFILE_ROOT, "agents"));
     const agentConfigs = await Promise.all(
       agentFiles
         .filter((file) => file.endsWith(".toml"))
-        .map((file) => fs.readFile(path.join(REPO_ROOT, ".codex/agents", file), "utf8")),
+        .map((file) => fs.readFile(path.join(CODEX_PROFILE_ROOT, "agents", file), "utf8")),
     );
     expect(agentConfigs.every((config) => !config.includes("features.code_mode"))).toBe(true);
     expect(configToml).toContain(
-      'args = [".agents/plugins/plugins/openclaw-coding-workbench/mcp/openclaw-repo-workbench.mjs"]',
+      '"src/openclaw/.agents/plugins/plugins/openclaw-coding-workbench/mcp/openclaw-repo-workbench.mjs"',
     );
     expect(configToml).toContain("required = true");
     expect(configToml).toContain("supports_parallel_tool_calls = true");
@@ -125,7 +128,7 @@ describe("OpenClaw Codex repo workbench plugin", () => {
     };
 
     const search = await workbench.repoSearchMany(
-      { queries: [{ pattern: "openclaw_repo_workbench", path: ".codex/config.toml" }] },
+      { queries: [{ pattern: "openclaw_repo_workbench", path: CODEX_PROFILE_CONFIG }] },
       WORKBENCH_OPTIONS,
     );
     const readPath = path.join(REPO_ROOT, "docs/agents/coding/codex-agents/README.md");
@@ -136,22 +139,22 @@ describe("OpenClaw Codex repo workbench plugin", () => {
       WORKBENCH_OPTIONS,
     );
     const glob = await workbench.repoGlobMany(
-      { globs: [{ pattern: "*.toml", path: ".codex/agents", maxResults: 20 }] },
+      { globs: [{ pattern: "*.toml", path: CODEX_PROFILE_AGENTS, maxResults: 20 }] },
       WORKBENCH_OPTIONS,
     );
     const git = await workbench.gitInspectMany(
-      { requests: [{ kind: "status", path: ".codex/config.toml" }] },
+      { requests: [{ kind: "status", path: CODEX_PROFILE_CONFIG }] },
       WORKBENCH_OPTIONS,
     );
 
     expect(search.results[0]?.status).toBe("matched");
     expect(search.results[0]).toMatchObject({
       pattern: "openclaw_repo_workbench",
-      path: ".codex/config.toml",
+      path: CODEX_PROFILE_CONFIG,
     });
     expect(search.results[0]?.limits).toMatchObject({ maxMatches: 20 });
     expect(search.results[0]?.items?.[0]).toMatchObject({
-      path: ".codex/config.toml",
+      path: CODEX_PROFILE_CONFIG,
       line: expect.any(Number),
       text: expect.any(String),
     });
@@ -167,7 +170,7 @@ describe("OpenClaw Codex repo workbench plugin", () => {
         sha256: sha256(selected),
       },
     });
-    expect(glob.results[0]?.files).toContain(".codex/agents/codex_reviewer.toml");
+    expect(glob.results[0]?.files).toContain(`${CODEX_PROFILE_AGENTS}/codex_reviewer.toml`);
     expect(glob.results[0]?.fileCount).toBeGreaterThan(0);
     expect(glob.results[0]?.limits).toMatchObject({ maxResults: 20 });
     expect(git.gitRootLabels).toEqual(
@@ -176,7 +179,7 @@ describe("OpenClaw Codex repo workbench plugin", () => {
     expect(git.results[0]).toMatchObject({ status: "ok" });
     expect(git.results[0]).toMatchObject({
       repoRootLabel: "workspace",
-      request: { kind: "status", path: ".codex/config.toml" },
+      request: { kind: "status", path: CODEX_PROFILE_CONFIG },
       limits: { maxBytes: 48000 },
     });
   });

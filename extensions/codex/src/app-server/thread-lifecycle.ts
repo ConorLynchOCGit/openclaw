@@ -37,6 +37,7 @@ import {
   isJsonObject,
   type CodexDynamicToolSpec,
   type CodexSandboxPolicy,
+  type CodexSelectedCapabilityRoot,
   type CodexThreadResumeParams,
   type CodexThreadStartParams,
   type CodexTurnEnvironmentParams,
@@ -322,6 +323,7 @@ export async function startOrResumeThread(params: {
   mcpServersFingerprint?: string;
   mcpServersFingerprintEvaluated?: boolean;
   environmentSelection?: CodexTurnEnvironmentParams[];
+  selectedCapabilityRoots?: CodexSelectedCapabilityRoot[];
   systemContext?: CodexSystemThreadContext;
   pluginThreadConfig?: CodexPluginThreadConfigProvider;
   contextEngineProjection?: CodexContextEngineThreadBootstrapProjection;
@@ -745,6 +747,7 @@ export async function startOrResumeThread(params: {
       nativeCodeModeEnabled: params.nativeCodeModeEnabled,
       nativeCodeModeOnlyEnabled: params.nativeCodeModeOnlyEnabled,
       environmentSelection,
+      selectedCapabilityRoots: params.selectedCapabilityRoots,
       modelProvider: startModelProvider,
       systemContext: params.systemContext,
     }),
@@ -1008,6 +1011,7 @@ export function buildThreadStartParams(
     nativeCodeModeEnabled?: boolean;
     nativeCodeModeOnlyEnabled?: boolean;
     environmentSelection?: CodexTurnEnvironmentParams[];
+    selectedCapabilityRoots?: CodexSelectedCapabilityRoot[];
     modelProvider?: string | null;
     systemContext?: CodexSystemThreadContext;
   },
@@ -1064,6 +1068,9 @@ export function buildThreadStartParams(
     serviceName: "OpenClaw",
     config: runtimeConfig,
     ...resolveCodexThreadEnvironmentSelection(options),
+    ...(options.selectedCapabilityRoots
+      ? { selectedCapabilityRoots: options.selectedCapabilityRoots }
+      : {}),
     ...(!useProjectDeveloperInstructions
       ? {
           developerInstructions:
@@ -1652,7 +1659,7 @@ function buildCodexNativeCodingTeamInstruction(
     "",
     "If the task includes a workspace-visible prompt, spec, or artifact file path, read that file in full before implementation and report observed chars plus sha256 digest in closeout. Treat the file body as authoritative scope; do not work from a parent summary when a required file ref cannot be read.",
     "For completion language, distinguish full spec complete, slice complete, partial implementation, validation not run, reviewer blocked, proof pending, and deferred work. Do not collapse a bounded slice into full-spec completion.",
-    "Use the loaded Codex workspace instructions, `.codex/config.toml`, and `.codex/agents/*.toml` for repository inspection, implementation, helper-team, and review behavior.",
+    "Use the loaded immutable Codex system profile, selected capability roots, and contributor guidance for repository inspection, implementation, helper-team, and review behavior. Treat editable worktree copies as source, not active runtime authority.",
   ];
   if (hasOpenClawSessionsSpawn) {
     lines.push(

@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenClaw Operator UI Validation"
+  short_description: "Validate operator UI behavior visually"
+  default_prompt: "Validate this OpenClaw operator UI change with focused browser tests, real interaction, and visual evidence."

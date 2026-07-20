@@ -397,6 +397,7 @@ export async function runCodexAppServerAttempt(
   params: EmbeddedRunAttemptParams,
   options: {
     pluginConfig?: unknown;
+    systemProfileDir?: string;
     startupTimeoutFloorMs?: number;
     nativeHookRelay?: {
       enabled?: boolean;
@@ -1300,6 +1301,7 @@ export async function runCodexAppServerAttempt(
       sessionAgentId,
       effectiveWorkspace,
       effectiveCwd,
+      systemProfileDir: options.systemProfileDir,
       systemContext,
       dynamicTools: toolBridge.specs,
       developerInstructions: promptBuild.developerInstructions,
@@ -1341,6 +1343,7 @@ export async function runCodexAppServerAttempt(
       processCwd: process.cwd(),
       cwd: codexExecutionCwd,
       workspaceDir: effectiveWorkspace,
+      systemProfileDir: options.systemProfileDir,
       appServerStart: appServer.start,
       ...(sandboxLabel ? { sandbox: sandboxLabel } : {}),
       ...(approvalPolicyLabel ? { approvalPolicy: approvalPolicyLabel } : {}),

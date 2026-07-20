@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codebase Claim Review"
+  short_description: "Verify claims against source"
+  default_prompt: "Verify the implementation-driving claims in this artifact against exact codebase evidence."

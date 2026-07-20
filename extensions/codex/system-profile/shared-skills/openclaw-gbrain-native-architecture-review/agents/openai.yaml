@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenClaw GBrain Architecture Review"
+  short_description: "Review OpenClaw and GBrain fit"
+  default_prompt: "Review this design for native OpenClaw and GBrain ownership, authority boundaries, and avoidable parallel systems."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Genericity And Slop Review"
+  short_description: "Find generic or low-value output"
+  default_prompt: "Review this artifact for genericity, unsupported polish, repetition, and lost domain-specific value."

@@ -9,33 +9,30 @@ import { buildCodexWorkbenchCapabilityReport } from "./workbench-capability.js";
 
 describe("Codex workbench capability report", () => {
   it("records app-server inventory, project config, and custom agents", async () => {
-    const workspaceDir = await makeWorkspace({
-      sourceRoot: true,
-      configToml: [
-        "[features.multi_agent_v2]",
-        "enabled = true",
-        "max_concurrent_threads_per_session = 8",
-        "hide_spawn_agent_metadata = false",
-        "non_code_mode_only = true",
-        'tool_namespace = "agents"',
-        "",
-      ].join("\n"),
-      agents: {
-        "codex_reviewer.toml": [
-          'name = "codex_reviewer"',
-          'description = "Reviews Codex-native implementation runs."',
-          'developer_instructions = "Review the workbench behavior."',
-          "",
-        ].join("\n"),
-        "project_explorer.toml": [
-          'name = "project_explorer"',
-          'description = "Maps project surfaces."',
-          'developer_instructions = "Explore read-only."',
-          "",
-        ].join("\n"),
+    const workspaceDir = await makeWorkspace({ sourceRoot: true });
+    const systemProfileDir = path.join(workspaceDir, "system-profile");
+    const profileProjectDir = path.join(systemProfileDir, "project");
+    const profileConfig = {
+      features: {
+        code_mode: true,
+        multi_agent_v2: {
+          enabled: true,
+          max_concurrent_threads_per_session: 8,
+          hide_spawn_agent_metadata: false,
+          non_code_mode_only: true,
+          tool_namespace: "agents",
+        },
       },
-    });
-    const request = vi.fn(async (method: string, _params: JsonObject | undefined) => {
+      agents: {
+        codex_reviewer: {
+          config_file: path.join(profileProjectDir, ".codex/agents/codex_reviewer.toml"),
+        },
+        project_explorer: {
+          config_file: path.join(profileProjectDir, ".codex/agents/project_explorer.toml"),
+        },
+      },
+    };
+    const request = vi.fn(async (method: string, requestParams: JsonObject | undefined) => {
       if (method === "model/list") {
         return { data: [{ id: "gpt-5.5" }] };
       }
@@ -48,19 +45,18 @@ describe("Codex workbench capability report", () => {
       }
       if (method === "config/read") {
         return {
-          config: {
-            features: {
-              code_mode: true,
-              multi_agent_v2: {
-                enabled: true,
-                max_concurrent_threads_per_session: 8,
-                hide_spawn_agent_metadata: false,
-                non_code_mode_only: true,
-                tool_namespace: "agents",
+          config: profileConfig,
+          layers: [
+            { name: { type: "user" }, version: "sha256:user", config: {} },
+            {
+              name: {
+                type: "project",
+                dotCodexFolder: path.join(String(requestParams?.cwd), ".codex"),
               },
+              version: "sha256:profile",
+              config: profileConfig,
             },
-          },
-          layers: [{ name: "global" }, { name: "project" }],
+          ],
         };
       }
       if (method === "experimentalFeature/list") {
@@ -129,6 +125,7 @@ describe("Codex workbench capability report", () => {
       processCwd: "/app",
       cwd: workspaceDir,
       workspaceDir,
+      systemProfileDir,
       appServerStart: {
         transport: "stdio",
         command: "codex",
@@ -203,7 +200,9 @@ describe("Codex workbench capability report", () => {
       ]),
     );
     expect(report.codexProjectConfig).toMatchObject({
+      source: "package_system_profile",
       present: true,
+      layerVersion: "sha256:profile",
       multiAgentVersion: "v2",
       maxConcurrentThreadsPerSession: 8,
       toolNamespace: "agents",
@@ -211,6 +210,7 @@ describe("Codex workbench capability report", () => {
       directModelOnly: true,
     });
     expect(report.customAgents).toMatchObject({
+      source: "package_system_profile",
       count: 2,
       names: ["codex_reviewer", "project_explorer"],
       files: ["codex_reviewer.toml", "project_explorer.toml"],
@@ -228,9 +228,9 @@ describe("Codex workbench capability report", () => {
       status: "ok",
       includeLayers: true,
       layerCount: 2,
-      configKeyCount: 1,
+      configKeyCount: 2,
       featureKeys: ["code_mode", "multi_agent_v2"],
-      agentKeys: [],
+      agentKeys: ["codex_reviewer", "project_explorer"],
     });
     expect(report.controlMethods.experimentalFeatureList).toEqual({
       status: "ok",
@@ -350,25 +350,8 @@ describe("Codex workbench capability report", () => {
   });
 });
 
-async function makeWorkspace(params: {
-  configToml?: string;
-  agents?: Record<string, string>;
-  sourceRoot?: boolean;
-}): Promise<string> {
+async function makeWorkspace(params: { sourceRoot?: boolean }): Promise<string> {
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-codex-workbench-"));
-  if (params.configToml !== undefined) {
-    await fs.mkdir(path.join(workspaceDir, ".codex"), { recursive: true });
-    await fs.writeFile(path.join(workspaceDir, ".codex", "config.toml"), params.configToml);
-  }
-  if (params.agents) {
-    const agentsDir = path.join(workspaceDir, ".codex", "agents");
-    await fs.mkdir(agentsDir, { recursive: true });
-    await Promise.all(
-      Object.entries(params.agents).map(([file, content]) =>
-        fs.writeFile(path.join(agentsDir, file), content),
-      ),
-    );
-  }
   if (params.sourceRoot) {
     await fs.mkdir(path.join(workspaceDir, "src", "openclaw"), { recursive: true });
   }

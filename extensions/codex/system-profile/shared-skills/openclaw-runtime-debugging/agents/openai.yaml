@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenClaw Runtime Debugging"
+  short_description: "Diagnose runtime seams before patching"
+  default_prompt: "Diagnose this OpenClaw runtime failure at the narrowest observable boundary before proposing a patch."

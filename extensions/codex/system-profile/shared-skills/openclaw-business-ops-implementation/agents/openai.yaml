@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenClaw Business Ops Implementation"
+  short_description: "Preserve Business Ops and publication boundaries"
+  default_prompt: "Implement this Business Ops change while preserving native ownership and approval boundaries."
