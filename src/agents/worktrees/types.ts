@@ -9,6 +9,12 @@ export type SystemChangeSessionSource = {
   codexAuthority: SessionCodexSystemAuthority;
 };
 
+export type ProvisionedFileState = {
+  path: string;
+  mode: number | null;
+  chunks: number;
+};
+
 export type ManagedWorktreeRecord = {
   id: string;
   name: string;
@@ -31,13 +37,10 @@ export type CreateManagedWorktreeParams = {
   baseRef?: string;
   ownerKind?: ManagedWorktreeOwnerKind;
   ownerId?: string;
-  /**
-   * Restricts creation to a clean primary checkout at one exact local object.
-   * System-change worktrees never fetch or provision ignored source files.
-   */
+  /** Restricts creation to the clean loaded-generation source anchor and exact local object. */
   systemChange?: boolean;
-  // Running .openclaw/worktree-setup.sh executes repo-local code, so callers reachable from
-  // less-privileged surfaces (write-scoped session worktrees) opt out; admin paths keep it on.
+  // Repository checkout hooks and .openclaw/worktree-setup.sh execute repo-local code, so
+  // callers reachable from less-privileged surfaces opt out; admin paths keep them on.
   runSetupScript?: boolean;
 };
 
@@ -45,6 +48,17 @@ export type RemoveManagedWorktreeResult = {
   removed: boolean;
   snapshotRef?: string;
   snapshotError?: string;
+};
+
+export type ManagedWorktreeBranch = {
+  name: string;
+  kind: "local" | "remote";
+};
+
+export type ManagedWorktreeBranchesResult = {
+  branches: ManagedWorktreeBranch[];
+  defaultBranch?: string;
+  headBranch?: string;
 };
 
 export type ManagedWorktreeGcResult = {

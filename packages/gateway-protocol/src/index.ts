@@ -440,6 +440,30 @@ import {
   UpdateRunParamsSchema,
   type WakeParams,
   WakeParamsSchema,
+  type WorktreeBranch,
+  WorktreeBranchSchema,
+  type WorktreeRecord,
+  WorktreeRecordSchema,
+  type WorktreesBranchesParams,
+  WorktreesBranchesParamsSchema,
+  type WorktreesBranchesResult,
+  WorktreesBranchesResultSchema,
+  type WorktreesCreateParams,
+  WorktreesCreateParamsSchema,
+  type WorktreesGcParams,
+  WorktreesGcParamsSchema,
+  type WorktreesGcResult,
+  WorktreesGcResultSchema,
+  type WorktreesListParams,
+  WorktreesListParamsSchema,
+  type WorktreesListResult,
+  WorktreesListResultSchema,
+  type WorktreesRemoveParams,
+  WorktreesRemoveParamsSchema,
+  type WorktreesRemoveResult,
+  WorktreesRemoveResultSchema,
+  type WorktreesRestoreParams,
+  WorktreesRestoreParamsSchema,
   type WebLoginStartParams,
   WebLoginStartParamsSchema,
   type WebLoginWaitParams,
@@ -538,6 +562,21 @@ export const validateAgentIdentityParams =
   lazyCompile<AgentIdentityParams>(AgentIdentityParamsSchema);
 export const validateAgentWaitParams = lazyCompile<AgentWaitParams>(AgentWaitParamsSchema);
 export const validateWakeParams = lazyCompile<WakeParams>(WakeParamsSchema);
+export const validateWorktreesListParams =
+  lazyCompile<WorktreesListParams>(WorktreesListParamsSchema);
+export const validateWorktreesCreateParams = lazyCompile<WorktreesCreateParams>(
+  WorktreesCreateParamsSchema,
+);
+export const validateWorktreesRemoveParams = lazyCompile<WorktreesRemoveParams>(
+  WorktreesRemoveParamsSchema,
+);
+export const validateWorktreesRestoreParams = lazyCompile<WorktreesRestoreParams>(
+  WorktreesRestoreParamsSchema,
+);
+export const validateWorktreesGcParams = lazyCompile<WorktreesGcParams>(WorktreesGcParamsSchema);
+export const validateWorktreesBranchesParams = lazyCompile<WorktreesBranchesParams>(
+  WorktreesBranchesParamsSchema,
+);
 export const validateAgentsListParams = lazyCompile<AgentsListParams>(AgentsListParamsSchema);
 export const validateAgentsCreateParams = lazyCompile<AgentsCreateParams>(AgentsCreateParamsSchema);
 export const validateAgentsUpdateParams = lazyCompile<AgentsUpdateParams>(AgentsUpdateParamsSchema);
@@ -1151,6 +1190,18 @@ export {
   ChatSendParamsSchema,
   ChatInjectParamsSchema,
   UpdateRunParamsSchema,
+  WorktreeBranchSchema,
+  WorktreeRecordSchema,
+  WorktreesBranchesParamsSchema,
+  WorktreesBranchesResultSchema,
+  WorktreesCreateParamsSchema,
+  WorktreesGcParamsSchema,
+  WorktreesGcResultSchema,
+  WorktreesListParamsSchema,
+  WorktreesListResultSchema,
+  WorktreesRemoveParamsSchema,
+  WorktreesRemoveResultSchema,
+  WorktreesRestoreParamsSchema,
   TickEventSchema,
   ShutdownEventSchema,
   ProtocolSchemas,
@@ -1361,6 +1412,18 @@ export type {
   WebPushTestParams,
   UpdateStatusParams,
   UpdateRunParams,
+  WorktreeBranch,
+  WorktreeRecord,
+  WorktreesBranchesParams,
+  WorktreesBranchesResult,
+  WorktreesCreateParams,
+  WorktreesGcParams,
+  WorktreesGcResult,
+  WorktreesListParams,
+  WorktreesListResult,
+  WorktreesRemoveParams,
+  WorktreesRemoveResult,
+  WorktreesRestoreParams,
   ChatInjectParams,
 };
 function uniqueStrings(values: string[]): string[] {

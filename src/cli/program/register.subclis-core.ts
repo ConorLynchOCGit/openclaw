@@ -274,6 +274,11 @@ const entrySpecs: readonly CommandGroupDescriptorSpec<SubCliRegistrar>[] = [
       loadModule: () => import("../update-cli.js"),
       exportName: "registerUpdateCli",
     },
+    {
+      commandNames: ["worktrees"],
+      loadModule: () => import("../worktrees-cli.js"),
+      exportName: "registerWorktreesCli",
+    },
   ]),
 ];
 

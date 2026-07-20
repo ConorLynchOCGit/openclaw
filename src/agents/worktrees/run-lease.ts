@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
-import { getProcessStartTime } from "../../shared/pid-alive.js";
+import { getFileLockProcessStartTime } from "../../shared/pid-alive.js";
 import { lockWorktreeForProcess, unlockWorktree } from "./git-lock.js";
 import {
   abortWorktreeRemovalRow,
@@ -20,7 +20,7 @@ const log = createSubsystemLogger("agents/worktrees");
 
 const RELEASE_MAX_ATTEMPTS = 3;
 
-export type WorktreeRunLease = {
+type WorktreeRunLease = {
   id: string;
   token: string;
   release: () => Promise<void>;
@@ -34,7 +34,7 @@ type HeldWorktreeLock = { refcount: number; gitLocked: boolean };
 const heldGitLocks = new Map<string, HeldWorktreeLock>();
 const gitLockTransitionTails = new Map<string, Promise<void>>();
 let ownerChecks: RunLeaseOwnerChecks = {};
-let resolveSelfStartTime = getProcessStartTime;
+let resolveSelfStartTime = getFileLockProcessStartTime;
 let releaseRunLeaseRow = releaseWorktreeRunLeaseRow;
 let unlockWorktreeImpl = unlockWorktree;
 
@@ -323,7 +323,7 @@ export function hasLiveWorktreeRunLease(env: NodeJS.ProcessEnv, worktreeId: stri
 
 const testing = {
   setProcessStartTimeResolverForTest(resolver: ((pid: number) => number | null) | null): void {
-    resolveSelfStartTime = resolver ?? getProcessStartTime;
+    resolveSelfStartTime = resolver ?? getFileLockProcessStartTime;
     ownerChecks = { ...ownerChecks, getProcessStartTime: resolver ?? undefined };
   },
   setDeadPidResolverForTest(resolver: ((pid: number) => boolean) | null): void {
@@ -343,10 +343,14 @@ const testing = {
     gitLockTransitionTails.clear();
     pendingLeaseCleanups.clear();
     ownerChecks = {};
-    resolveSelfStartTime = getProcessStartTime;
+    resolveSelfStartTime = getFileLockProcessStartTime;
     releaseRunLeaseRow = releaseWorktreeRunLeaseRow;
     unlockWorktreeImpl = unlockWorktree;
   },
 };
 
-export { testing as __testing };
+if (process.env.VITEST || process.env.NODE_ENV === "test") {
+  (globalThis as Record<PropertyKey, unknown>)[Symbol.for("openclaw.worktreeRunLeaseTestApi")] = {
+    testing,
+  };
+}

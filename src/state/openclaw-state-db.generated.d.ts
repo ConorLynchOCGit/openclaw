@@ -839,8 +839,8 @@ export interface TaskRuns {
   child_session_key: string | null;
   cleanup_after: number | null;
   created_at: number;
-  delivery_status: string;
   delivery_error: string | null;
+  delivery_status: string;
   ended_at: number | null;
   error: string | null;
   execution_error: string | null;
@@ -852,8 +852,8 @@ export interface TaskRuns {
   owner_key: string;
   parent_flow_id: string | null;
   parent_task_id: string | null;
-  projection_warning: string | null;
   progress_summary: string | null;
+  projection_warning: string | null;
   requester_session_key: string | null;
   run_id: string | null;
   runtime: string;
@@ -945,6 +945,13 @@ export interface WorkspaceSetupState {
   workspace_path: string;
 }
 
+export interface WorktreeProvisionedFileChunks {
+  chunk_index: number;
+  data: Uint8Array;
+  path: string;
+  worktree_id: string;
+}
+
 export interface Worktrees {
   base_ref: string;
   branch: string;
@@ -954,6 +961,7 @@ export interface Worktrees {
   owner_id: string | null;
   owner_kind: string;
   path: string;
+  provisioned_paths_json: string | null;
   removed_at: number | null;
   repo_fingerprint: string;
   repo_root: string;
@@ -1025,5 +1033,6 @@ export interface DB {
   web_push_subscriptions: WebPushSubscriptions;
   web_push_vapid_keys: WebPushVapidKeys;
   workspace_setup_state: WorkspaceSetupState;
+  worktree_provisioned_file_chunks: WorktreeProvisionedFileChunks;
   worktrees: Worktrees;
 }

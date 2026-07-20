@@ -175,6 +175,12 @@ const subCliCommandCatalog = defineCommandDescriptorCatalog([
     hasSubcommands: true,
   },
   {
+    name: "worktrees",
+    description: "Create, inspect, restore, and clean up managed worktrees",
+    hasSubcommands: true,
+    parentDefaultHelp: true,
+  },
+  {
     name: "completion",
     description: "Generate shell completion script",
     hasSubcommands: false,

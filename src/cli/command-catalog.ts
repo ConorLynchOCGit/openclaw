@@ -367,6 +367,7 @@ export const cliCommandCatalog: readonly CliCommandCatalogEntry[] = [
   { commandPath: ["tui"], policy: { networkProxy: "bypass" } },
   { commandPath: ["uninstall"], policy: { networkProxy: "bypass" } },
   { commandPath: ["update"], policy: { hideBanner: true } },
+  { commandPath: ["worktrees"], policy: { loadPlugins: "never", networkProxy: "bypass" } },
   {
     commandPath: ["config", "validate"],
     exact: true,

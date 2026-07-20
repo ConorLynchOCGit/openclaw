@@ -300,6 +300,20 @@ import {
   WizardStatusResultSchema,
   WizardStepSchema,
 } from "./wizard.js";
+import {
+  WorktreeBranchSchema,
+  WorktreeRecordSchema,
+  WorktreesBranchesParamsSchema,
+  WorktreesBranchesResultSchema,
+  WorktreesCreateParamsSchema,
+  WorktreesGcParamsSchema,
+  WorktreesGcResultSchema,
+  WorktreesListParamsSchema,
+  WorktreesListResultSchema,
+  WorktreesRemoveParamsSchema,
+  WorktreesRemoveResultSchema,
+  WorktreesRestoreParamsSchema,
+} from "./worktrees.js";
 
 /** Public schema registry keyed by stable protocol schema name. */
 export const ProtocolSchemas = {
@@ -331,6 +345,18 @@ export const ProtocolSchemas = {
   AgentIdentityResult: AgentIdentityResultSchema,
   AgentWaitParams: AgentWaitParamsSchema,
   WakeParams: WakeParamsSchema,
+  WorktreeRecord: WorktreeRecordSchema,
+  WorktreesListParams: WorktreesListParamsSchema,
+  WorktreesListResult: WorktreesListResultSchema,
+  WorktreesCreateParams: WorktreesCreateParamsSchema,
+  WorktreesRemoveParams: WorktreesRemoveParamsSchema,
+  WorktreesRemoveResult: WorktreesRemoveResultSchema,
+  WorktreesRestoreParams: WorktreesRestoreParamsSchema,
+  WorktreesGcParams: WorktreesGcParamsSchema,
+  WorktreesGcResult: WorktreesGcResultSchema,
+  WorktreeBranch: WorktreeBranchSchema,
+  WorktreesBranchesParams: WorktreesBranchesParamsSchema,
+  WorktreesBranchesResult: WorktreesBranchesResultSchema,
 
   // Node pairing, invocation, presence, and pending-queue payloads.
   NodePairRequestParams: NodePairRequestParamsSchema,

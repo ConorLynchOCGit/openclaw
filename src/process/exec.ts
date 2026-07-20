@@ -250,14 +250,38 @@ export type SpawnResult = {
 export type CommandOptions = {
   timeoutMs: number;
   cwd?: string;
-  input?: string;
+  input?: string | Uint8Array;
   baseEnv?: NodeJS.ProcessEnv;
   env?: NodeJS.ProcessEnv;
   windowsVerbatimArguments?: boolean;
   noOutputTimeoutMs?: number;
   signal?: AbortSignal;
   maxOutputBytes?: number;
+  discardOutput?: boolean;
+  onOutputChunk?: (chunk: Buffer, stream: "stdout" | "stderr") => boolean | void;
   killProcessTree?: boolean;
+};
+
+type BufferedCommandOptions = {
+  timeoutMs?: number;
+  cwd?: string;
+  input?: string | Uint8Array;
+  baseEnv?: NodeJS.ProcessEnv;
+  env?: NodeJS.ProcessEnv;
+  signal?: AbortSignal;
+  maxOutputBytes?: number | { stdout?: number; stderr?: number };
+  discardOutput?: { stdout?: boolean; stderr?: boolean };
+};
+
+type BufferedCommandResult = {
+  stdout: Buffer;
+  stderr: Buffer;
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  killed: boolean;
+  termination: "exit" | "timeout" | "signal" | "output-limit" | "error";
+  outputLimitStream?: "stdout" | "stderr";
+  error?: Error;
 };
 
 const WINDOWS_CLOSE_STATE_SETTLE_TIMEOUT_MS = 250;
@@ -460,11 +484,7 @@ export async function runCommandWithTimeout(
       } else {
         killIssuedByAbort = true;
       }
-      if (
-        killProcessTree &&
-        typeof child.pid === "number" &&
-        child.pid > 0
-      ) {
+      if (killProcessTree && typeof child.pid === "number" && child.pid > 0) {
         if (process.platform === "win32") {
           try {
             spawn("taskkill", ["/PID", String(child.pid), "/T"], {
@@ -549,11 +569,23 @@ export async function runCommandWithTimeout(
     }
 
     child.stdout?.on("data", (d) => {
-      appendCapturedOutput(stdoutCapture, d, maxOutputBytes);
+      const chunk = Buffer.isBuffer(d) ? d : Buffer.from(d);
+      if (!options.discardOutput) {
+        appendCapturedOutput(stdoutCapture, chunk, maxOutputBytes);
+      }
+      if (options.onOutputChunk?.(chunk, "stdout") === false) {
+        killChild(false);
+      }
       armNoOutputTimer();
     });
     child.stderr?.on("data", (d) => {
-      appendCapturedOutput(stderrCapture, d, maxOutputBytes);
+      const chunk = Buffer.isBuffer(d) ? d : Buffer.from(d);
+      if (!options.discardOutput) {
+        appendCapturedOutput(stderrCapture, chunk, maxOutputBytes);
+      }
+      if (options.onOutputChunk?.(chunk, "stderr") === false) {
+        killChild(false);
+      }
       armNoOutputTimer();
     });
     child.on("error", (err) => {
@@ -668,4 +700,89 @@ export async function runCommandWithTimeout(
       waitForExitState();
     });
   });
+}
+
+/** Run a one-shot command with raw, independently capped stdout and stderr buffers. */
+export async function runCommandBuffered(
+  argv: string[],
+  options: BufferedCommandOptions = {},
+): Promise<BufferedCommandResult> {
+  if (options.signal?.aborted) {
+    return {
+      stdout: Buffer.alloc(0),
+      stderr: Buffer.alloc(0),
+      code: null,
+      signal: null,
+      killed: false,
+      termination: "signal",
+      ...(options.signal.reason instanceof Error ? { error: options.signal.reason } : {}),
+    };
+  }
+
+  const chunks = { stdout: [] as Buffer[], stderr: [] as Buffer[] };
+  const capturedBytes = { stdout: 0, stderr: 0 };
+  let outputLimitStream: "stdout" | "stderr" | undefined;
+  const resolveLimit = (stream: "stdout" | "stderr") => {
+    const configured =
+      typeof options.maxOutputBytes === "number"
+        ? options.maxOutputBytes
+        : options.maxOutputBytes?.[stream];
+    return normalizeMaxOutputBytes(configured);
+  };
+  const appendChunk = (chunk: Buffer, stream: "stdout" | "stderr") => {
+    if (options.discardOutput?.[stream]) {
+      return true;
+    }
+    const remaining = Math.max(0, resolveLimit(stream) - capturedBytes[stream]);
+    if (remaining > 0) {
+      const captured = Buffer.from(chunk.subarray(0, remaining));
+      chunks[stream].push(captured);
+      capturedBytes[stream] += captured.byteLength;
+    }
+    if (chunk.byteLength > remaining) {
+      outputLimitStream ??= stream;
+      return false;
+    }
+    return true;
+  };
+  const capturedOutput = (stream: "stdout" | "stderr") =>
+    Buffer.concat(chunks[stream], capturedBytes[stream]);
+
+  try {
+    const result = await runCommandWithTimeout(argv, {
+      timeoutMs: options.timeoutMs ?? 10_000,
+      cwd: options.cwd,
+      input: options.input,
+      baseEnv: options.baseEnv,
+      env: options.env,
+      signal: options.signal,
+      killProcessTree: true,
+      discardOutput: true,
+      onOutputChunk: appendChunk,
+    });
+    const termination: BufferedCommandResult["termination"] = outputLimitStream
+      ? "output-limit"
+      : result.termination === "no-output-timeout"
+        ? "timeout"
+        : result.termination;
+    return {
+      stdout: capturedOutput("stdout"),
+      stderr: capturedOutput("stderr"),
+      code: termination === "exit" ? result.code : null,
+      signal: result.signal,
+      killed: result.killed,
+      termination,
+      ...(outputLimitStream ? { outputLimitStream } : {}),
+    };
+  } catch (error) {
+    return {
+      stdout: capturedOutput("stdout"),
+      stderr: capturedOutput("stderr"),
+      code: null,
+      signal: null,
+      killed: false,
+      termination: "error",
+      error: error instanceof Error ? error : new Error("Command execution failed"),
+    };
+  }
 }

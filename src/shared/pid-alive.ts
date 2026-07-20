@@ -1,5 +1,8 @@
+import childProcess from "node:child_process";
 // PID liveness helpers check whether process ids still refer to active processes.
 import fsSync from "node:fs";
+
+const DARWIN_PS_TIMEOUT_MS = 1000;
 
 function isValidPid(pid: number): boolean {
   return Number.isInteger(pid) && pid > 0;
@@ -82,4 +85,29 @@ export function getProcessStartTime(pid: number): number | null {
   } catch {
     return null;
   }
+}
+
+function getDarwinProcessStartTime(pid: number): number | null {
+  try {
+    const startedAt = childProcess
+      .execFileSync("/bin/ps", ["-o", "lstart=", "-p", String(pid)], {
+        encoding: "utf8",
+        env: { ...process.env, LC_ALL: "C", TZ: "UTC" },
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: DARWIN_PS_TIMEOUT_MS,
+      })
+      .trim();
+    const startedAtMs = Date.parse(`${startedAt} UTC`);
+    return Number.isFinite(startedAtMs) ? Math.floor(startedAtMs / 1000) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Read a cross-platform process identity for filesystem lock ownership. */
+export function getFileLockProcessStartTime(pid: number): number | null {
+  if (!isValidPid(pid)) {
+    return null;
+  }
+  return process.platform === "darwin" ? getDarwinProcessStartTime(pid) : getProcessStartTime(pid);
 }
