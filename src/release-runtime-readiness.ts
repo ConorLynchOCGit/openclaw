@@ -12,8 +12,11 @@ import {
 
 export type LoadedReleasePluginOrigin = {
   pluginId: string;
-  packageName: string;
-  packageVersion: string;
+  ownerPackageName: string;
+  ownerPackageVersion: string;
+  pluginPackageName: string;
+  pluginPackageVersion: string;
+  pluginManifestVersion: string;
   pluginManifestSha256: string;
   compatibilityRange: string;
   originKind: string;
@@ -134,17 +137,21 @@ export function readLoadedReleaseReadiness(
 
       try {
         const installedRoot = resolveInstalledRoot(plugin);
-        const packageName = plugin.packageName?.trim() ?? "";
-        const packageVersion = plugin.version?.trim() ?? "";
         const expectedOrigin = artifact.role === "core" ? "bundled" : "global";
-        if (packageName !== artifact.packageName) {
+        const pluginPackageName = plugin.packageName?.trim() ?? "";
+        const pluginPackageVersion = plugin.packageVersion?.trim() ?? "";
+        const pluginManifestVersion = plugin.version?.trim() ?? "";
+        const ownerPackageName = artifact.role === "core" ? "openclaw" : pluginPackageName;
+        const ownerPackageVersion =
+          artifact.role === "core" ? loaded.manifest.package.version : pluginPackageVersion;
+        if (ownerPackageName !== artifact.packageName) {
           errors.push(
-            `${pluginId}.packageName mismatch: expected ${artifact.packageName}, observed ${packageName || "missing"}`,
+            `${pluginId}.ownerPackageName mismatch: expected ${artifact.packageName}, observed ${ownerPackageName || "missing"}`,
           );
         }
-        if (packageVersion !== artifact.packageVersion) {
+        if (ownerPackageVersion !== artifact.packageVersion) {
           errors.push(
-            `${pluginId}.packageVersion mismatch: expected ${artifact.packageVersion}, observed ${packageVersion || "missing"}`,
+            `${pluginId}.ownerPackageVersion mismatch: expected ${artifact.packageVersion}, observed ${ownerPackageVersion || "missing"}`,
           );
         }
         if (plugin.origin !== expectedOrigin) {
@@ -154,8 +161,11 @@ export function readLoadedReleaseReadiness(
         }
         pluginOrigins.push({
           pluginId,
-          packageName,
-          packageVersion,
+          ownerPackageName,
+          ownerPackageVersion,
+          pluginPackageName,
+          pluginPackageVersion,
+          pluginManifestVersion,
           pluginManifestSha256: digestRegularFile(
             path.join(installedRoot, "openclaw.plugin.json"),
             `${pluginId} manifest`,

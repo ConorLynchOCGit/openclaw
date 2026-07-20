@@ -79,8 +79,11 @@ function createReadiness(params: {
     pluginOrigins: [
       {
         pluginId: "browser",
-        packageName: "openclaw",
-        packageVersion: manifest.package.version,
+        ownerPackageName: "openclaw",
+        ownerPackageVersion: manifest.package.version,
+        pluginPackageName: "@openclaw/browser-plugin",
+        pluginPackageVersion: manifest.package.version,
+        pluginManifestVersion: manifest.package.version,
         pluginManifestSha256: "7".repeat(64),
         compatibilityRange: manifest.artifacts[0]?.compatibilityRange ?? "",
         originKind: "bundled",
@@ -88,8 +91,11 @@ function createReadiness(params: {
       },
       {
         pluginId: "codex",
-        packageName: "@openclaw/codex",
-        packageVersion: manifest.package.version,
+        ownerPackageName: "@openclaw/codex",
+        ownerPackageVersion: manifest.package.version,
+        pluginPackageName: "@openclaw/codex",
+        pluginPackageVersion: manifest.package.version,
+        pluginManifestVersion: manifest.package.version,
         pluginManifestSha256: "8".repeat(64),
         compatibilityRange: manifest.artifacts[1]?.compatibilityRange ?? "",
         originKind: "global",

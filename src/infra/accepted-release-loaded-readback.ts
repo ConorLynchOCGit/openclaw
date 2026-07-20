@@ -77,8 +77,8 @@ export function assertAcceptedReleaseLoadedReadback(params: {
     }
     const expectedOriginKind = artifact.role === "core" ? "bundled" : "global";
     if (
-      origin.packageName !== artifact.packageName ||
-      origin.packageVersion !== artifact.packageVersion ||
+      origin.ownerPackageName !== artifact.packageName ||
+      origin.ownerPackageVersion !== artifact.packageVersion ||
       origin.compatibilityRange !== artifact.compatibilityRange ||
       origin.originKind !== expectedOriginKind ||
       !isLowerHex(origin.pluginManifestSha256, 64)

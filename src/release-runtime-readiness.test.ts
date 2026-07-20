@@ -41,6 +41,7 @@ function createPlugin(params: {
   packageRoot: string;
   pluginId: "browser" | "codex";
   origin: "bundled" | "global";
+  ownerPackageVersion?: string;
 }): PluginRecord {
   const rootDir = path.join(params.packageRoot, "plugins", params.pluginId);
   fs.mkdirSync(rootDir, { recursive: true });
@@ -50,8 +51,9 @@ function createPlugin(params: {
   return {
     id: params.pluginId,
     name: params.pluginId,
-    packageName: params.pluginId === "browser" ? "openclaw" : "@openclaw/codex",
-    version: "2026.7.19-b1.1",
+    packageName: params.pluginId === "browser" ? "@openclaw/browser-plugin" : "@openclaw/codex",
+    packageVersion: params.ownerPackageVersion ?? "2026.7.19-b1.1",
+    version: params.pluginId === "browser" ? "2026.7.19-plugin.1" : "2026.7.19-plugin.2",
     source,
     rootDir,
     origin: params.origin,
@@ -83,6 +85,45 @@ describe("loaded release readiness", () => {
       },
     });
     expect(result?.pluginOrigins.map((item) => item.pluginId)).toEqual(["browser", "codex"]);
+    expect(result?.pluginOrigins).toMatchObject([
+      {
+        pluginId: "browser",
+        ownerPackageName: "openclaw",
+        ownerPackageVersion: "2026.7.19-b1.1",
+        pluginPackageName: "@openclaw/browser-plugin",
+        pluginPackageVersion: "2026.7.19-b1.1",
+        pluginManifestVersion: "2026.7.19-plugin.1",
+      },
+      {
+        pluginId: "codex",
+        ownerPackageName: "@openclaw/codex",
+        ownerPackageVersion: "2026.7.19-b1.1",
+        pluginPackageName: "@openclaw/codex",
+        pluginPackageVersion: "2026.7.19-b1.1",
+        pluginManifestVersion: "2026.7.19-plugin.2",
+      },
+    ]);
+  });
+
+  it("rejects external plugin package metadata that does not match its release owner", () => {
+    const packageRoot = createPackageRoot();
+    const result = readLoadedReleaseReadiness({
+      packageRoot,
+      pluginRegistry: registry([
+        createPlugin({ packageRoot, pluginId: "browser", origin: "bundled" }),
+        createPlugin({
+          packageRoot,
+          pluginId: "codex",
+          origin: "global",
+          ownerPackageVersion: "2026.7.19-tampered",
+        }),
+      ]),
+    });
+
+    expect(result?.ready).toBe(false);
+    expect(result?.errors).toContain(
+      "codex.ownerPackageVersion mismatch: expected 2026.7.19-b1.1, observed 2026.7.19-tampered",
+    );
   });
 
   it("fails closed for missing, shadowed, or unexpected loaded plugins", () => {
