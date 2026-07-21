@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   releaseManifestDigest,
   serializeReleaseManifest,
@@ -32,8 +32,10 @@ function createManifest(params: {
   predecessorDigest: string;
   predecessorTree: string;
   pluginIds?: string[];
+  pluginVersion?: string;
 }): ReleaseManifest {
   const pluginIds = params.pluginIds ?? ["codex"];
+  const pluginVersion = params.pluginVersion ?? params.version;
   return {
     releaseProtocolVersion: 1,
     source: {
@@ -68,8 +70,8 @@ function createManifest(params: {
       {
         role: "plugin",
         packageName: "@openclaw/codex",
-        packageVersion: params.version,
-        compatibilityRange: `>=${params.version}`,
+        packageVersion: pluginVersion,
+        compatibilityRange: `>=${pluginVersion}`,
         ownedPluginIds: pluginIds,
         installPlan: {
           registry: "https://registry.npmjs.org/",
@@ -220,7 +222,7 @@ const preparedWorktree: PreparedReleaseWorktree = {
   },
 };
 
-async function createHarness(pluginIds?: string[]) {
+async function createHarness(pluginIds?: string[], pluginVersion?: string) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "release-package-test-"));
   roots.push(root);
   const operationRoot = path.join(root, "operations", "operation");
@@ -234,6 +236,7 @@ async function createHarness(pluginIds?: string[]) {
     predecessorDigest: PREDECESSOR_DIGEST,
     predecessorTree: PREDECESSOR_TREE,
     pluginIds,
+    pluginVersion,
   });
   const manifestBytes = Buffer.from(serializeReleaseManifest(manifest), "utf8");
   const manifestPath = path.join(buildRoot, "release-manifest.json");
@@ -254,6 +257,36 @@ async function createHarness(pluginIds?: string[]) {
 }
 
 describe("prepareAcceptedReleaseFromSnapshot", () => {
+  it("returns the loaded accepted release for an unchanged source tree without running the driver", async () => {
+    const predecessor = createPredecessor();
+    const authority = createAuthority();
+    const runDriver = vi.fn();
+    const result = await prepareAcceptedReleaseFromSnapshot(
+      {
+        authority,
+        preparedWorktree: {
+          ...preparedWorktree,
+          sourceTreeObject: authority.loadedRelease.sourceTreeObject,
+        },
+        operationId: "8".repeat(64),
+        operationRoot: "/unused-operation",
+        releaseStoreRoot: "/releases",
+        env: {},
+      },
+      {
+        resolvePredecessor: async () => predecessor,
+        runDriver,
+      },
+    );
+
+    expect(result).toEqual({
+      acceptedReleaseReceiptId: predecessor.id,
+      candidateEvidenceRef: predecessor.receipt.candidateEvidenceRef,
+      candidateEvidenceDigest: predecessor.receipt.candidateEvidenceDigest,
+    });
+    expect(runDriver).not.toHaveBeenCalled();
+  });
+
   it("binds native package evidence into one immutable accepted receipt", async () => {
     const harness = await createHarness();
     const publishedMetadata: Array<{ namespace: string; bytes: Buffer }> = [];
@@ -272,11 +305,17 @@ describe("prepareAcceptedReleaseFromSnapshot", () => {
           schema: "openclaw.release.prepare.driver-result.v1",
           manifestPath: harness.manifestPath,
           artifacts: [
-            { role: "core", packageName: "openclaw", artifactPath: harness.corePath },
+            {
+              role: "core",
+              packageName: "openclaw",
+              artifactPath: harness.corePath,
+              disposition: "built",
+            },
             {
               role: "plugin",
               packageName: "@openclaw/codex",
               artifactPath: harness.pluginPath,
+              disposition: "built",
             },
           ],
           checks: [{ id: "native-package-acceptance", status: "passed" }],
@@ -343,6 +382,111 @@ describe("prepareAcceptedReleaseFromSnapshot", () => {
     expect(result.acceptedReleaseReceiptId).toBe(sha256(publishedMetadata[1]!.bytes));
   });
 
+  it("reuses an accepted predecessor artifact without copying or republishing it", async () => {
+    const predecessor = createPredecessor();
+    const predecessorPlugin = predecessor.receipt.orderedArtifacts[1]!;
+    const harness = await createHarness(undefined, predecessorPlugin.version);
+    const predecessorPluginPath = path.join(
+      harness.releaseStoreRoot,
+      "artifacts",
+      "sha256",
+      predecessorPlugin.sha256,
+      predecessorPlugin.fileName,
+    );
+    await fs.mkdir(path.dirname(predecessorPluginPath), { recursive: true });
+    await fs.writeFile(predecessorPluginPath, "predecessor-plugin");
+    predecessorPlugin.filePath = predecessorPluginPath;
+    predecessorPlugin.byteSize = Buffer.byteLength("predecessor-plugin");
+    const publishArtifactCalls: string[] = [];
+    const publishedMetadata: Array<{ namespace: string; bytes: Buffer }> = [];
+
+    await prepareAcceptedReleaseFromSnapshot(
+      {
+        authority: createAuthority(),
+        preparedWorktree,
+        operationId: "8".repeat(64),
+        operationRoot: harness.operationRoot,
+        releaseStoreRoot: harness.releaseStoreRoot,
+        env: {},
+      },
+      {
+        resolvePredecessor: async () => predecessor,
+        runDriver: async () => ({
+          schema: "openclaw.release.prepare.driver-result.v1",
+          manifestPath: harness.manifestPath,
+          artifacts: [
+            {
+              role: "core",
+              packageName: "openclaw",
+              artifactPath: harness.corePath,
+              disposition: "built",
+            },
+            {
+              role: "plugin",
+              packageName: "@openclaw/codex",
+              artifactPath: predecessorPluginPath,
+              disposition: "reused",
+            },
+          ],
+          checks: [{ id: "native-package-acceptance", status: "passed" }],
+        }),
+        verifyInventory: async () => [
+          {
+            role: "core",
+            packageName: "openclaw",
+            packageVersion: harness.manifest.package.version,
+            artifactSha256: sha256(Buffer.from("core")),
+            npmIntegrity: "sha512-core",
+            npmShasum: "core-sha1",
+            packedBytes: 4,
+            packlistSha256: "9".repeat(64),
+          },
+          {
+            role: "plugin",
+            packageName: "@openclaw/codex",
+            packageVersion: predecessorPlugin.version,
+            artifactSha256: predecessorPlugin.sha256,
+            npmIntegrity: predecessorPlugin.npmIntegrityOrShasum,
+            npmShasum: "plugin-sha1",
+            packedBytes: predecessorPlugin.byteSize,
+            packlistSha256: predecessorPlugin.packlistDigest,
+          },
+        ],
+        publishArtifact: async ({ sourcePath }) => {
+          publishArtifactCalls.push(sourcePath);
+          const bytes = await fs.readFile(sourcePath);
+          const digest = sha256(bytes);
+          return {
+            sha256: digest,
+            byteSize: bytes.length,
+            relativePath: `artifacts/sha256/${digest}/${path.basename(sourcePath)}`,
+            filePath: sourcePath,
+          };
+        },
+        publishMetadata: async ({ namespace, bytes }) => {
+          const buffer = Buffer.from(bytes);
+          publishedMetadata.push({ namespace, bytes: buffer });
+          const digest = sha256(buffer);
+          return {
+            sha256: digest,
+            byteSize: buffer.length,
+            relativePath: `${namespace}/sha256/${digest}.json`,
+            filePath: path.join(harness.releaseStoreRoot, `${digest}.json`),
+          };
+        },
+        createAcceptedTag: async () => "openclaw-next-release/reuse",
+        now: () => new Date("2026-07-20T12:00:00.000Z"),
+      },
+    );
+
+    expect(publishArtifactCalls).toEqual([harness.corePath]);
+    const receipt = JSON.parse(publishedMetadata[1]!.bytes.toString("utf8"));
+    expect(receipt.orderedArtifacts[1]).toMatchObject({
+      sha256: predecessorPlugin.sha256,
+      contentAddressedLocation: predecessorPlugin.contentAddressedLocation,
+    });
+  });
+
   it("rejects release-owned plugin drift in a migration-free package", async () => {
     const harness = await createHarness(["codex", "new-plugin"]);
     await expect(
@@ -361,11 +505,17 @@ describe("prepareAcceptedReleaseFromSnapshot", () => {
             schema: "openclaw.release.prepare.driver-result.v1",
             manifestPath: harness.manifestPath,
             artifacts: [
-              { role: "core", packageName: "openclaw", artifactPath: harness.corePath },
+              {
+                role: "core",
+                packageName: "openclaw",
+                artifactPath: harness.corePath,
+                disposition: "built",
+              },
               {
                 role: "plugin",
                 packageName: "@openclaw/codex",
                 artifactPath: harness.pluginPath,
+                disposition: "built",
               },
             ],
             checks: [{ id: "native-package-acceptance", status: "passed" }],

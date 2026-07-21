@@ -144,6 +144,7 @@ describe("plugin npm package manifest staging", () => {
     const packageDir = join(process.cwd(), "extensions", "codex");
     const packageJson = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")) as {
       files?: string[];
+      openclaw?: { release?: { bundleRuntimeDependencies?: boolean } };
     };
     const packedFiles = listNpmPackDryRunFiles(packageDir);
 
@@ -153,6 +154,7 @@ describe("plugin npm package manifest staging", () => {
       "system-profile/shared-skills/openclaw-coding-workbench/SKILL.md",
     );
     expect(packedFiles).toContain("system-profile/tools/openclaw-repo-workbench.mjs");
+    expect(packageJson.openclaw?.release?.bundleRuntimeDependencies).toBe(false);
   });
 
   it("wraps Windows npm.cmd staging through cmd.exe without shell mode", () => {

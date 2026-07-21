@@ -231,21 +231,32 @@ export function verifyAcceptedReleasePlans(params) {
   const unexpected = [...lockMap.keys()]
     .filter((name) => !expectedSet.has(name))
     .toSorted(compareUtf8);
-  if (missing.length > 0 || unexpected.length > 0) {
-    throw new Error(
-      [
-        ...(missing.length > 0 ? [`missing accepted locks: ${missing.join(", ")}`] : []),
-        ...(unexpected.length > 0 ? [`unexpected accepted locks: ${unexpected.join(", ")}`] : []),
-      ].join("; "),
-    );
+  const errors = [
+    ...(missing.length > 0 ? [`missing accepted locks: ${missing.join(", ")}`] : []),
+    ...(unexpected.length > 0 ? [`unexpected accepted locks: ${unexpected.join(", ")}`] : []),
+  ];
+  const verified = [];
+  for (const packageName of expectedNames) {
+    const lockBytes = lockMap.get(packageName);
+    if (!lockBytes) {
+      continue;
+    }
+    try {
+      verified.push(
+        verifyAcceptedReleasePlan({
+          manifest: params.manifest,
+          packageName,
+          lockBytes,
+        }),
+      );
+    } catch (error) {
+      errors.push(`${packageName}: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
-  return expectedNames.map((packageName) =>
-    verifyAcceptedReleasePlan({
-      manifest: params.manifest,
-      packageName,
-      lockBytes: lockMap.get(packageName),
-    }),
-  );
+  if (errors.length > 0) {
+    throw new Error(`accepted release plans rejected:\n${errors.join("\n")}`);
+  }
+  return verified;
 }
 
 function parseLockSpec(value) {

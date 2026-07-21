@@ -7,8 +7,10 @@ import {
   deriveReleaseVersion,
   normalizeMigration,
   parseArgs,
+  pluginPackageChanged,
+  prepareAttempt,
   requiredBundledPluginsToEnable,
-  resolveRequestedWorkspacePackages,
+  resolveRequestedExtensionPackages,
 } from "../../scripts/prepare-native-release-set.mjs";
 import { RESOLVED_OBJECT_SET_ALGORITHM } from "../../src/release-manifest.js";
 
@@ -66,6 +68,20 @@ describe("prepare-native-release-set", () => {
     ).toBe(true);
   });
 
+  it("uses the native extension package boundary for plugin rebuild selection", () => {
+    expect(
+      pluginPackageChanged(
+        ["scripts/prepare-native-release-set.mjs", "src/infra/update-managed-service-handoff.ts"],
+        "extensions/codex",
+      ),
+    ).toBe(false);
+    expect(pluginPackageChanged(["extensions/codex/package.json"], "extensions/codex")).toBe(true);
+    expect(pluginPackageChanged(["pnpm-lock.yaml"], "extensions/codex")).toBe(false);
+    expect(pluginPackageChanged(["extensions/codex/src/index.ts"], "extensions/lobster")).toBe(
+      false,
+    );
+  });
+
   it("requires exact input and output paths", () => {
     expect(parseArgs(["--input", "in.json", "--output", "out.json"])).toMatchObject({
       inputPath: expect.stringContaining("in.json"),
@@ -117,7 +133,7 @@ describe("prepare-native-release-set", () => {
     ).toEqual(["agency-data"]);
   });
 
-  it("resolves only accepted external packages through the native pnpm workspace", async () => {
+  it("resolves only accepted external packages through the native extension boundary", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-release-workspace-"));
     tempDirs.push(root);
     fs.writeFileSync(path.join(root, "pnpm-workspace.yaml"), "packages:\n  - extensions/*\n");
@@ -136,10 +152,97 @@ describe("prepare-native-release-set", () => {
     });
     fs.mkdirSync(path.join(root, "extensions", "package-less"), { recursive: true });
 
-    const resolved = await resolveRequestedWorkspacePackages(root, ["@openclaw/codex", "gbrain"]);
+    const resolved = await resolveRequestedExtensionPackages(root, ["@openclaw/codex", "gbrain"]);
 
     expect([...resolved.keys()]).toEqual(["@openclaw/codex"]);
     expect(resolved.get("@openclaw/codex")).toBe(path.join(root, "extensions", "codex"));
     expect(resolved.has("@openclaw/bundled")).toBe(false);
+  });
+
+  it("reports independent source/reuse failures before dependency or build commands", async () => {
+    const attemptRoot = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-release-preflight-"));
+    tempDirs.push(attemptRoot);
+    const commandIds: string[] = [];
+    const codexVersion = "1.0.0";
+
+    let message = "";
+    try {
+      await prepareAttempt({
+        attemptRoot,
+        input: {
+          snapshot: { treeObject: "a".repeat(40) },
+          predecessor: {
+            releaseManifestDigest: "b".repeat(64),
+            sourceTreeObject: "c".repeat(40),
+            artifacts: [
+              {
+                packageName: "@openclaw/codex",
+                path: "/accepted/codex.tgz",
+                sha256: "d".repeat(64),
+              },
+              {
+                packageName: "@openclaw/lobster",
+                path: "/accepted/lobster.tgz",
+                sha256: "e".repeat(64),
+              },
+            ],
+          },
+          migration: { class: "migration_free", affectedPersistentRoots: [] },
+        },
+        predecessorManifest: {
+          artifacts: [
+            {
+              role: "core",
+              packageName: "openclaw",
+              ownedPluginIds: [],
+              installPlan: { registry: "https://registry.npmjs.org/" },
+            },
+            {
+              role: "plugin",
+              packageName: "@openclaw/codex",
+              packageVersion: codexVersion,
+              ownedPluginIds: ["codex"],
+            },
+            {
+              role: "plugin",
+              packageName: "@openclaw/lobster",
+              packageVersion: "1.0.0",
+              ownedPluginIds: ["lobster"],
+            },
+          ],
+        },
+        materializeSnapshot: async (_input: unknown, stageRoot: string) => {
+          writeJson(path.join(stageRoot, "package.json"), {
+            name: "openclaw",
+            version: "2026.7.1",
+            engines: { node: ">=22" },
+          });
+          fs.writeFileSync(path.join(stageRoot, "CHANGELOG.md"), "# Changelog\n\n");
+          writeJson(path.join(stageRoot, "extensions", "codex", "package.json"), {
+            name: "@openclaw/codex",
+            version: codexVersion,
+            openclaw: { compat: { pluginApi: ">=2026.6.6-0" } },
+          });
+          writeJson(path.join(stageRoot, "extensions", "codex", "openclaw.plugin.json"), {
+            id: "codex",
+          });
+        },
+        toolchainDigest: async () => "f".repeat(64),
+        listSnapshotChangedPaths: async () => ["extensions/codex/src/index.ts"],
+        verifyPredecessorArtifact: async () => {
+          throw new Error("@openclaw/lobster predecessor artifact digest changed");
+        },
+        runCommand: async ({ id }: { id: string }) => {
+          commandIds.push(id);
+          throw new Error(`expensive command started: ${id}`);
+        },
+      });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toContain("@openclaw/codex changed without a native package version change");
+    expect(message).toContain("@openclaw/lobster predecessor artifact digest changed");
+    expect(commandIds).toEqual([]);
   });
 });

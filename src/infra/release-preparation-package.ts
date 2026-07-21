@@ -23,6 +23,7 @@ export type NativeReleaseDriverArtifact = {
   role: "core" | "plugin";
   packageName: string;
   artifactPath: string;
+  disposition: "built" | "reused";
 };
 
 export type NativeReleaseDriverResult = {
@@ -214,17 +215,18 @@ function parseDriverResult(value: unknown): NativeReleaseDriverResult {
   if (!Array.isArray(raw.artifacts) || raw.artifacts.length === 0) {
     throw new Error("native release driver returned no package artifacts");
   }
-  const artifacts: NativeReleaseDriverArtifact[] = raw.artifacts.map((value, index) => {
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
+  const artifacts: NativeReleaseDriverArtifact[] = raw.artifacts.map((entry, index) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
       throw new Error(`native release driver artifact ${index} is invalid`);
     }
-    const artifact = value as Record<string, unknown>;
+    const artifact = entry as Record<string, unknown>;
     if (
       (artifact.role !== "core" && artifact.role !== "plugin") ||
       typeof artifact.packageName !== "string" ||
       !artifact.packageName ||
       typeof artifact.artifactPath !== "string" ||
-      !artifact.artifactPath
+      !artifact.artifactPath ||
+      (artifact.disposition !== "built" && artifact.disposition !== "reused")
     ) {
       throw new Error(`native release driver artifact ${index} is malformed`);
     }
@@ -232,16 +234,17 @@ function parseDriverResult(value: unknown): NativeReleaseDriverResult {
       role: artifact.role,
       packageName: artifact.packageName,
       artifactPath: artifact.artifactPath,
+      disposition: artifact.disposition,
     };
   });
   if (!Array.isArray(raw.checks) || raw.checks.length === 0) {
     throw new Error("native release driver returned no candidate checks");
   }
-  const checks = raw.checks.map((value, index) => {
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
+  const checks = raw.checks.map((entry, index) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
       throw new Error(`native release driver check ${index} is invalid`);
     }
-    const check = value as Record<string, unknown>;
+    const check = entry as Record<string, unknown>;
     if (typeof check.id !== "string" || !check.id || check.status !== "passed") {
       throw new Error(`native release driver check ${index} did not pass`);
     }
@@ -440,6 +443,23 @@ export async function prepareAcceptedReleaseFromSnapshot(
     env: params.env,
     releaseStoreRoot: params.releaseStoreRoot,
   });
+  if (
+    params.preparedWorktree.sourceTreeObject === params.authority.loadedRelease.sourceTreeObject
+  ) {
+    if (
+      predecessor.receipt.releaseManifestDigest !==
+        params.authority.loadedRelease.releaseManifestDigest ||
+      predecessor.releaseManifest.source.treeObject !==
+        params.authority.loadedRelease.sourceTreeObject
+    ) {
+      throw new Error("loaded no-op predecessor does not match the executing generation");
+    }
+    return {
+      acceptedReleaseReceiptId: predecessor.id,
+      candidateEvidenceRef: predecessor.receipt.candidateEvidenceRef,
+      candidateEvidenceDigest: predecessor.receipt.candidateEvidenceDigest,
+    };
+  }
   const input: DriverInput = {
     schema: "openclaw.release.prepare.driver-input.v1",
     operationId: params.operationId,
@@ -481,9 +501,19 @@ export async function prepareAcceptedReleaseFromSnapshot(
     driver.manifestPath,
     "release manifest",
   );
-  const artifactPaths = driver.artifacts.map((artifact) =>
-    ensurePathBelow(params.operationRoot, artifact.artifactPath, "release artifact"),
-  );
+  const artifactPaths = driver.artifacts.map((artifact) => {
+    if (artifact.disposition === "built") {
+      return ensurePathBelow(params.operationRoot, artifact.artifactPath, "release artifact");
+    }
+    const previous = predecessor.receipt.orderedArtifacts.find(
+      (candidate) =>
+        candidate.role === artifact.role && candidate.packageName === artifact.packageName,
+    );
+    if (!previous || path.resolve(artifact.artifactPath) !== path.resolve(previous.filePath)) {
+      throw new Error("reused release artifact does not match the accepted predecessor");
+    }
+    return previous.filePath;
+  });
   const manifestBytes = await fs.readFile(manifestPath);
   const manifest = parseReleaseManifestBytes(manifestBytes);
   const manifestDigest = releaseManifestDigest(manifestBytes);
@@ -516,13 +546,30 @@ export async function prepareAcceptedReleaseFromSnapshot(
 
   const publishedArtifacts: PublishedReleaseObject[] = [];
   for (const [index, artifactPath] of artifactPaths.entries()) {
-    publishedArtifacts.push(
-      await deps.publishArtifact({
-        releaseStoreRoot: params.releaseStoreRoot,
-        sourcePath: artifactPath,
-        fileName: path.basename(artifactPath),
-      }),
-    );
+    const declared = driver.artifacts[index]!;
+    if (declared.disposition === "reused") {
+      const previous = predecessor.receipt.orderedArtifacts.find(
+        (candidate) =>
+          candidate.role === declared.role && candidate.packageName === declared.packageName,
+      );
+      if (!previous || previous.sha256 !== inspected[index]?.artifactSha256) {
+        throw new Error("reused release artifact differs from the accepted predecessor");
+      }
+      publishedArtifacts.push({
+        sha256: previous.sha256,
+        byteSize: previous.byteSize,
+        relativePath: previous.contentAddressedLocation,
+        filePath: previous.filePath,
+      });
+    } else {
+      publishedArtifacts.push(
+        await deps.publishArtifact({
+          releaseStoreRoot: params.releaseStoreRoot,
+          sourcePath: artifactPath,
+          fileName: path.basename(artifactPath),
+        }),
+      );
+    }
     if (publishedArtifacts[index]?.sha256 !== inspected[index]?.artifactSha256) {
       throw new Error("published release artifact differs from verified package inventory");
     }

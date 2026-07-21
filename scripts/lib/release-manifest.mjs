@@ -153,10 +153,11 @@ function requireRegistry(value, path) {
   return registry;
 }
 
-function normalizeInstallPlan(value, path, releaseProtocolVersion) {
+function normalizeInstallPlan(value, path) {
   const plan = requireRecord(value, path);
   const keys = ["registry", "lockSha256", "resolvedObjectSetSha256", "resolvedObjectCount"];
-  if (releaseProtocolVersion === RELEASE_PROTOCOL_VERSION) {
+  const hasAlgorithm = Object.hasOwn(plan, "resolvedObjectSetAlgorithm");
+  if (hasAlgorithm) {
     keys.splice(2, 0, "resolvedObjectSetAlgorithm");
   }
   requireExactKeys(plan, keys, path);
@@ -166,7 +167,7 @@ function normalizeInstallPlan(value, path, releaseProtocolVersion) {
   return {
     registry: requireRegistry(plan.registry, `${path}.registry`),
     lockSha256: requireSha256(plan.lockSha256, `${path}.lockSha256`),
-    ...(releaseProtocolVersion === RELEASE_PROTOCOL_VERSION
+    ...(hasAlgorithm
       ? {
           resolvedObjectSetAlgorithm:
             plan.resolvedObjectSetAlgorithm === RESOLVED_OBJECT_SET_ALGORITHM
@@ -185,7 +186,7 @@ function normalizeInstallPlan(value, path, releaseProtocolVersion) {
   };
 }
 
-function normalizeArtifact(value, index, releaseProtocolVersion) {
+function normalizeArtifact(value, index) {
   const path = `artifacts[${index}]`;
   const artifact = requireRecord(value, path);
   requireExactKeys(
@@ -213,11 +214,7 @@ function normalizeArtifact(value, index, releaseProtocolVersion) {
       `${path}.ownedPluginIds`,
       requirePluginId,
     ),
-    installPlan: normalizeInstallPlan(
-      artifact.installPlan,
-      `${path}.installPlan`,
-      releaseProtocolVersion,
-    ),
+    installPlan: normalizeInstallPlan(artifact.installPlan, `${path}.installPlan`),
   };
 }
 
@@ -268,9 +265,7 @@ function normalizeReleaseManifest(value) {
   if (!Array.isArray(manifest.artifacts) || manifest.artifacts.length === 0) {
     fail("artifacts", "must contain one core artifact and any plugin artifacts");
   }
-  const artifacts = manifest.artifacts.map((artifact, index) =>
-    normalizeArtifact(artifact, index, releaseProtocolVersion),
-  );
+  const artifacts = manifest.artifacts.map((artifact, index) => normalizeArtifact(artifact, index));
   if (artifacts[0].role !== "core" || artifacts[0].packageName !== "openclaw") {
     fail("artifacts[0]", 'must be the core "openclaw" package');
   }

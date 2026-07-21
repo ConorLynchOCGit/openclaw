@@ -122,6 +122,31 @@ describe("accepted release plan verification", () => {
     );
   });
 
+  it("reports independent artifact failures in one prebuild result", () => {
+    const rootLock = lockBytes("openclaw", "2026.7.19-b1.1", "zod");
+    const pluginLock = lockBytes("@openclaw/codex", "2026.7.19-b1.1", "ws");
+    const manifest = manifestForLocks(rootLock, pluginLock);
+    const changedRoot = Buffer.concat([rootLock, Buffer.from("\n")]);
+    const changedPlugin = Buffer.concat([pluginLock, Buffer.from("\n")]);
+
+    let message = "";
+    try {
+      verifyAcceptedReleasePlans({
+        manifest,
+        locks: new Map([
+          ["openclaw", changedRoot],
+          ["@openclaw/codex", changedPlugin],
+        ]),
+      });
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toContain("openclaw: openclaw accepted install plan rejected");
+    expect(message).toContain("@openclaw/codex: @openclaw/codex accepted install plan rejected");
+    expect(message.split("lock digest mismatch")).toHaveLength(3);
+  });
+
   it("rejects local, integrity-less, and mutable registry object references", () => {
     const accepted = lockBytes("openclaw", "2026.7.19-b1.1", "zod");
     const local = Buffer.from(

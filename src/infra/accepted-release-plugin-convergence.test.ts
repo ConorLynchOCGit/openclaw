@@ -156,7 +156,7 @@ describe("accepted release plugin convergence", () => {
     mocks.verifyInstalledPlan.mockResolvedValue(undefined);
   });
 
-  it("installs through the native updater, persists a path-free receipt binding, and skips exact reruns", async () => {
+  it("installs through the native updater and reuses identical bytes across release receipts", async () => {
     await withTempDir({ prefix: "openclaw-accepted-plugin-converge-" }, async (root) => {
       const fixture = await createFixture(root);
       let records: Record<string, PluginInstallRecord> = {
@@ -206,7 +206,6 @@ describe("accepted release plugin convergence", () => {
       expect(records[fixture.pluginId]).toMatchObject({
         source: "npm",
         spec: acceptedReleasePluginInstallRecordSpec({
-          acceptedReleaseReceiptId: fixture.resolvedReceipt.id,
           artifactSha256: fixture.resolvedReceipt.pluginArtifacts[0]?.sha256 ?? "",
         }),
         installPath: fixture.packageRoot,
@@ -218,9 +217,13 @@ describe("accepted release plugin convergence", () => {
 
       mocks.install.mockClear();
       assertCandidate.mockClear();
+      const nextReceipt = {
+        ...fixture.resolvedReceipt,
+        id: "9".repeat(64),
+      } satisfies ResolvedAcceptedReleaseReceipt;
       await expect(
         convergeAcceptedReleasePlugins({
-          resolvedReceipt: fixture.resolvedReceipt,
+          resolvedReceipt: nextReceipt,
           env: fixture.env,
           timeoutMs: 1_000,
           assertCandidate,

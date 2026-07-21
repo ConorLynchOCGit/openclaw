@@ -23,7 +23,7 @@ describe("release manifest", () => {
     );
   });
 
-  it("reads legacy v1 manifests but requires explicit object identity in v2", () => {
+  it("keeps accepted legacy artifact plans reusable inside a v2 release", () => {
     const legacy = createReleaseManifestFixture();
     legacy.releaseProtocolVersion = 1;
     for (const artifact of legacy.artifacts) {
@@ -34,9 +34,9 @@ describe("release manifest", () => {
 
     const missingAlgorithm = createReleaseManifestFixture();
     delete missingAlgorithm.artifacts[0]!.installPlan.resolvedObjectSetAlgorithm;
-    expect(() => serializeReleaseManifest(missingAlgorithm)).toThrow(
-      "missing resolvedObjectSetAlgorithm",
-    );
+    expect(
+      parseReleaseManifestBytes(Buffer.from(serializeReleaseManifest(missingAlgorithm))),
+    ).toEqual(missingAlgorithm);
 
     const unknownAlgorithm = createReleaseManifestFixture();
     unknownAlgorithm.artifacts[0]!.installPlan.resolvedObjectSetAlgorithm =

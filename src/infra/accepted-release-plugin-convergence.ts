@@ -239,17 +239,29 @@ export async function assertAcceptedReleasePluginPredecessor(params: {
   }
 }
 
-export function acceptedReleasePluginInstallRecordSpec(params: {
-  acceptedReleaseReceiptId: string;
-  artifactSha256: string;
-}): string {
-  return `accepted-release:${params.acceptedReleaseReceiptId}:sha256:${params.artifactSha256}`;
+export function acceptedReleasePluginInstallRecordSpec(params: { artifactSha256: string }): string {
+  return `accepted-release:sha256:${params.artifactSha256}`;
+}
+
+function installRecordSpecMatchesArtifact(
+  spec: string | undefined,
+  artifactSha256: string,
+): boolean {
+  if (!spec) {
+    return false;
+  }
+  const canonical = acceptedReleasePluginInstallRecordSpec({ artifactSha256 });
+  if (spec === canonical) {
+    return true;
+  }
+  // Accept records written by the bootstrap protocol. Their receipt prefix is
+  // incidental; the immutable plugin artifact is identified by its digest.
+  return spec.startsWith("accepted-release:") && spec.endsWith(`:sha256:${artifactSha256}`);
 }
 
 function recordMatchesAcceptedPlugin(params: {
   record: PluginInstallRecord | undefined;
   plugin: AcceptedPlugin;
-  acceptedReleaseReceiptId: string;
 }): boolean {
   const record = params.record;
   if (!record) {
@@ -267,11 +279,7 @@ function recordMatchesAcceptedPlugin(params: {
     record.artifactKind === "npm-pack" &&
     record.artifactFormat === "tgz" &&
     record.sourcePath === undefined &&
-    record.spec ===
-      acceptedReleasePluginInstallRecordSpec({
-        acceptedReleaseReceiptId: params.acceptedReleaseReceiptId,
-        artifactSha256: params.plugin.receiptArtifact.sha256,
-      }) &&
+    installRecordSpecMatchesArtifact(record.spec, params.plugin.receiptArtifact.sha256) &&
     path.resolve(record.installPath ?? "") === path.resolve(params.plugin.packageRoot) &&
     record.version === params.plugin.manifestArtifact.packageVersion &&
     record.resolvedName === params.plugin.manifestArtifact.packageName &&
@@ -326,7 +334,6 @@ async function withAcceptedNpmEnvironment<T>(params: {
 }
 
 function buildAcceptedInstallRecord(params: {
-  acceptedReleaseReceiptId: string;
   plugin: AcceptedPlugin;
   npmTarballName?: string;
   resolution?: {
@@ -346,7 +353,6 @@ function buildAcceptedInstallRecord(params: {
   return {
     source: "npm",
     spec: acceptedReleasePluginInstallRecordSpec({
-      acceptedReleaseReceiptId: params.acceptedReleaseReceiptId,
       artifactSha256: params.plugin.receiptArtifact.sha256,
     }),
     installPath: params.plugin.packageRoot,
@@ -437,7 +443,6 @@ export async function assertAcceptedReleasePluginsConverged(params: {
         !recordMatchesAcceptedPlugin({
           record: records[plugin.pluginId],
           plugin,
-          acceptedReleaseReceiptId: params.resolvedReceipt.id,
         })
       ) {
         throw new Error(
@@ -489,7 +494,6 @@ export async function convergeAcceptedReleasePlugins(params: {
             recordMatchesAcceptedPlugin({
               record: records[plugin.pluginId],
               plugin,
-              acceptedReleaseReceiptId: params.resolvedReceipt.id,
             })
           ) {
             try {
@@ -536,7 +540,6 @@ export async function convergeAcceptedReleasePlugins(params: {
 
           const nextRecords = await loadInstalledPluginIndexInstallRecords({ env });
           nextRecords[plugin.pluginId] = buildAcceptedInstallRecord({
-            acceptedReleaseReceiptId: params.resolvedReceipt.id,
             plugin,
             npmTarballName: installed.npmTarballName,
             resolution: installed.npmResolution,
