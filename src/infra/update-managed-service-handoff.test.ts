@@ -233,7 +233,7 @@ describe("managed service update handoff", () => {
     expect(metaFile.meta?.acceptedReleaseReceiptId).toBe("a".repeat(64));
   });
 
-  it("launches systemd handoffs through a transient user scope", async () => {
+  it("launches systemd handoffs through a transient user service outside the caller namespace", async () => {
     const { startManagedServiceUpdateHandoff } =
       await import("./update-managed-service-handoff.js");
     const binDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-systemd-run-bin-"));
@@ -272,19 +272,27 @@ describe("managed service update handoff", () => {
       { env: NodeJS.ProcessEnv; detached?: boolean; cwd?: string },
     ];
     expect(command).toBe(systemdRunPath);
-    expect(args.slice(0, 4)).toEqual([
+    expect(args.slice(0, 8)).toEqual([
       "--user",
-      "--scope",
       "--collect",
-      "--unit=openclaw-update-handoff-123.scope",
+      "--unit=openclaw-update-handoff-123.service",
+      "--property=Type=exec",
+      `--working-directory=${os.homedir()}`,
+      "--",
+      "/usr/bin/env",
+      "-i",
     ]);
-    expect(args.slice(4, 7)).toEqual([
+    expect(args).toContain("OPENCLAW_UPDATE_RUN_HANDOFF=1");
+    expect(args).toContain("OPENCLAW_SYSTEMD_UNIT=openclaw-gateway.service");
+    expect(args).not.toContain("INVOCATION_ID=gateway-invocation");
+    expect(args).not.toContain("KEEP_ME=1");
+    expect(args.slice(-3)).toEqual([
       "/usr/local/bin/node",
       expect.stringMatching(/handoff\.cjs$/u),
       expect.stringMatching(/handoff\.json$/u),
     ]);
-    tempDirs.add(path.dirname(args[5] ?? result.logPath));
-    const helperParams = JSON.parse(await fs.readFile(args[6] ?? "", "utf-8")) as {
+    tempDirs.add(path.dirname(args.at(-2) ?? result.logPath));
+    const helperParams = JSON.parse(await fs.readFile(args.at(-1) ?? "", "utf-8")) as {
       commandArgv?: string[];
       handoffId?: string;
     };

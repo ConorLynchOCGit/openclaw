@@ -20,6 +20,7 @@ import type { UpdateRestartSentinelMeta } from "./update-restart-sentinel-payloa
 
 const PARENT_EXIT_GRACE_MS = 60_000;
 const SYSTEMD_RUN_CANDIDATE_PATHS = ["/usr/bin/systemd-run", "/bin/systemd-run"] as const;
+const ENV_CANDIDATE_PATHS = ["/usr/bin/env", "/bin/env"] as const;
 const SERVICE_IDENTITY_ENV_VARS = new Set<string>([
   "OPENCLAW_LAUNCHD_LABEL",
   "OPENCLAW_SYSTEMD_UNIT",
@@ -438,7 +439,7 @@ function buildSystemdHandoffUnitName(handoffId: string | undefined): string {
     sanitizeSystemdUnitFragment(handoffId) ||
     sanitizeSystemdUnitFragment(`${process.pid}-${Date.now()}`) ||
     "handoff";
-  return `openclaw-update-${suffix}.scope`;
+  return `openclaw-update-${suffix}.service`;
 }
 
 async function resolveHandoffSpawn(params: {
@@ -447,6 +448,7 @@ async function resolveHandoffSpawn(params: {
   execPath: string;
   scriptPath: string;
   paramsPath: string;
+  cwd: string;
   handoffId?: string;
 }): Promise<{ command: string; args: string[] }> {
   if (params.supervisor !== "systemd") {
@@ -466,14 +468,28 @@ async function resolveHandoffSpawn(params: {
       "systemd-run is required to start the managed update handoff outside openclaw-gateway.service",
     );
   }
+  const envPath = await resolveExecutableOnPath("env", params.env, ENV_CANDIDATE_PATHS);
+  if (!envPath) {
+    throw new Error("env is required to start the managed update handoff with a clean environment");
+  }
+
+  const cleanEnvironment = Object.entries(params.env)
+    .filter((entry): entry is [string, string] => entry[1] !== undefined)
+    .toSorted(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}=${value}`);
 
   return {
     command: systemdRunPath,
     args: [
       "--user",
-      "--scope",
       "--collect",
       `--unit=${buildSystemdHandoffUnitName(params.handoffId)}`,
+      "--property=Type=exec",
+      `--working-directory=${params.cwd}`,
+      "--",
+      envPath,
+      "-i",
+      ...cleanEnvironment,
       params.execPath,
       params.scriptPath,
       params.paramsPath,
@@ -559,6 +575,7 @@ export async function startManagedServiceUpdateHandoff(params: {
     execPath: params.execPath ?? process.execPath,
     scriptPath,
     paramsPath,
+    cwd: handoffCwd,
     handoffId: params.handoffId,
   });
   const child = spawn(spawnTarget.command, spawnTarget.args, {
