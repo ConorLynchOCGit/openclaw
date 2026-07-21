@@ -1,12 +1,15 @@
 {
   "name": "@openclaw/codex",
-  "version": "2026.6.6",
+  "version": "2026.6.7",
   "description": "OpenClaw Codex app-server harness and model provider plugin with a Codex-managed GPT catalog.",
   "repository": {
     "type": "git",
     "url": "https://github.com/openclaw/openclaw"
   },
   "type": "module",
+  "files": [
+    "system-profile/**"
+  ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
     "@openai/codex": "0.144.1",
