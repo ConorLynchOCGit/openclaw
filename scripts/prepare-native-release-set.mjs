@@ -486,7 +486,7 @@ async function toolchainDigest(stageRoot) {
   );
 }
 
-async function buildInstallPlan(lockBytes, registry) {
+export function buildInstallPlan(lockBytes, registry) {
   const projection = projectResolvedObjectSet(lockBytes, registry, {
     algorithm: RESOLVED_OBJECT_SET_ALGORITHM,
   });
@@ -624,6 +624,8 @@ async function prepareAttempt(params) {
 
   const sourcePlugins = [];
   const reusedPlugins = [];
+  const reusedRoot = path.join(outputRoot, "reused");
+  await fs.mkdir(reusedRoot, { recursive: true, mode: 0o700 });
   for (const predecessorArtifact of externalArtifacts) {
     const source = packageMap.get(predecessorArtifact.packageName);
     if (!source) {
@@ -635,8 +637,17 @@ async function prepareAttempt(params) {
           `${predecessorArtifact.packageName} has no source package or predecessor artifact`,
         );
       }
-      artifacts.push(predecessorArtifact);
-      reusedPlugins.push({ predecessorArtifact, receiptArtifact });
+      const artifactPath = await copyVerifiedPredecessorArtifact(receiptArtifact, reusedRoot);
+      const lockBytes = await extractShrinkwrap(
+        artifactPath,
+        path.join(params.attemptRoot, "predecessor-lock-extract"),
+      );
+      lockMap.set(predecessorArtifact.packageName, lockBytes);
+      artifacts.push({
+        ...predecessorArtifact,
+        installPlan: buildInstallPlan(lockBytes, registry),
+      });
+      reusedPlugins.push({ predecessorArtifact, artifactPath });
       continue;
     }
     const descriptor = await sourcePluginDescriptor({
@@ -754,13 +765,8 @@ async function prepareAttempt(params) {
   for (const [packageName, artifactPath] of packedPlugins) {
     packedByName.set(packageName, artifactPath);
   }
-  const reusedRoot = path.join(outputRoot, "reused");
-  await fs.mkdir(reusedRoot, { recursive: true, mode: 0o700 });
   for (const reused of reusedPlugins) {
-    packedByName.set(
-      reused.predecessorArtifact.packageName,
-      await copyVerifiedPredecessorArtifact(reused.receiptArtifact, reusedRoot),
-    );
+    packedByName.set(reused.predecessorArtifact.packageName, reused.artifactPath);
   }
 
   const manifestPath = path.join(params.attemptRoot, "release-manifest.json");

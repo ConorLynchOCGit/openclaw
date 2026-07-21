@@ -3,12 +3,14 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  buildInstallPlan,
   deriveReleaseVersion,
   normalizeMigration,
   parseArgs,
   requiredBundledPluginsToEnable,
   resolveRequestedWorkspacePackages,
 } from "../../scripts/prepare-native-release-set.mjs";
+import { RESOLVED_OBJECT_SET_ALGORITHM } from "../../src/release-manifest.js";
 
 const tempDirs: string[] = [];
 
@@ -24,6 +26,30 @@ function writeJson(filePath: string, value: unknown): void {
 }
 
 describe("prepare-native-release-set", () => {
+  it("projects rebuilt and reused lock bytes into the current manifest protocol", () => {
+    const integrity = `sha512-${Buffer.alloc(64, 7).toString("base64")}`;
+    const lock = Buffer.from(
+      JSON.stringify({
+        name: "gbrain",
+        version: "1.0.0",
+        lockfileVersion: 3,
+        packages: {
+          "": { name: "gbrain", version: "1.0.0" },
+          "node_modules/example": {
+            version: "2.0.0",
+            resolved: "https://registry.npmjs.org/example/-/example-2.0.0.tgz",
+            integrity,
+          },
+        },
+      }),
+    );
+
+    expect(buildInstallPlan(lock, "https://registry.npmjs.org/")).toMatchObject({
+      resolvedObjectSetAlgorithm: RESOLVED_OBJECT_SET_ALGORITHM,
+      resolvedObjectCount: 1,
+    });
+  });
+
   it("derives one deterministic npm-valid correction version from release inputs", () => {
     const first = deriveReleaseVersion("2026.7.1", "a".repeat(40), "b".repeat(64));
     const repeated = deriveReleaseVersion("2026.7.1", "a".repeat(40), "b".repeat(64));
