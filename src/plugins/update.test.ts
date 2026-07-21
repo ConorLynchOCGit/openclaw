@@ -3884,6 +3884,73 @@ describe("syncPluginsForUpdateChannel", () => {
     resolveBundledPluginSourcesMock.mockReset();
   });
 
+  it("uses exact checkout paths for dev plugins without touching independent path installs", async () => {
+    const codexPath = "/source/extensions/codex";
+    const lobsterPath = "/source/extensions/lobster";
+    const gbrainPath = "/state/npm/projects/gbrain/node_modules/gbrain";
+    mockBundledSources(
+      createBundledSource({ pluginId: "codex", localPath: codexPath }),
+      createBundledSource({ pluginId: "lobster", localPath: lobsterPath }),
+    );
+
+    const result = await syncPluginsForUpdateChannel({
+      channel: "dev",
+      workspaceDir: "/source",
+      config: {
+        plugins: {
+          installs: {
+            codex: {
+              source: "npm",
+              spec: "accepted-release:sha256:codex",
+              resolvedName: "@openclaw/codex",
+              resolvedSpec: "@openclaw/codex@2026.6.6",
+              installPath: "/state/npm/projects/codex/node_modules/@openclaw/codex",
+              version: "2026.6.6",
+            },
+            lobster: {
+              source: "npm",
+              spec: "accepted-release:sha256:lobster",
+              resolvedName: "@openclaw/lobster",
+              resolvedSpec: "@openclaw/lobster@2026.6.6",
+              installPath: "/state/npm/projects/lobster/node_modules/@openclaw/lobster",
+              version: "2026.6.6",
+            },
+            "gbrain-context": {
+              source: "path",
+              sourcePath: gbrainPath,
+              installPath: gbrainPath,
+              version: "0.42.44-0",
+            },
+          },
+        },
+      },
+    });
+
+    expect(installPluginFromNpmSpecMock).not.toHaveBeenCalled();
+    expect(installPluginFromClawHubMock).not.toHaveBeenCalled();
+    expect(result.changed).toBe(true);
+    expect(result.summary.switchedToBundled).toEqual(["codex", "lobster"]);
+    expect(result.config.plugins?.load?.paths).toEqual([codexPath, lobsterPath]);
+    expectBundledPathInstall({
+      install: result.config.plugins?.installs?.codex,
+      sourcePath: codexPath,
+      installPath: codexPath,
+      spec: "accepted-release:sha256:codex",
+    });
+    expectBundledPathInstall({
+      install: result.config.plugins?.installs?.lobster,
+      sourcePath: lobsterPath,
+      installPath: lobsterPath,
+      spec: "accepted-release:sha256:lobster",
+    });
+    expectRecordFields(result.config.plugins?.installs?.["gbrain-context"], {
+      source: "path",
+      sourcePath: gbrainPath,
+      installPath: gbrainPath,
+      version: "0.42.44-0",
+    });
+  });
+
   it.each([
     {
       name: "keeps bundled path installs on beta without reinstalling from npm",
