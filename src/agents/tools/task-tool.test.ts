@@ -173,6 +173,36 @@ describe("task tool", () => {
     expect(schema).toContain("without reproducing, paraphrasing, or compressing");
   });
 
+  it("projects only the requester's configured target agents into the task schema", () => {
+    const tool = createTaskTool({
+      agentSessionKey: "agent:planning:operator",
+      requesterAgentIdOverride: "planning",
+      config: {
+        agents: {
+          list: [
+            {
+              id: "planning",
+              subagents: { allowAgents: ["reviewer", "codebase-researcher", "missing"] },
+            },
+            { id: "reviewer" },
+            { id: "codebase-researcher" },
+            { id: "coding" },
+          ],
+        },
+      },
+    });
+
+    const agentIdSchema = (
+      tool.parameters as {
+        properties?: { agentId?: { enum?: string[]; description?: string } };
+      }
+    ).properties?.agentId;
+    expect(agentIdSchema?.enum).toEqual(["codebase-researcher", "reviewer"]);
+    expect(agentIdSchema?.description).toContain("codebase-researcher, reviewer");
+    expect(JSON.stringify(agentIdSchema)).not.toContain("coding");
+    expect(JSON.stringify(agentIdSchema)).not.toContain("missing");
+  });
+
   it("runs a native foreground child and returns the final assistant text", async () => {
     const tool = createTaskTool({
       agentSessionKey: "agent:planning:main",

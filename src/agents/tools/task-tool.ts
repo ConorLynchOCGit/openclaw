@@ -24,6 +24,7 @@ import {
   resolveModelAuthoredTaskVerdict,
 } from "../../tasks/task-completion-contract.js";
 import type { GatewayMessageChannel } from "../../utils/message-channel.js";
+import { listAgentIds, resolveAgentConfig } from "../agent-scope-config.js";
 import {
   computeChildResultContentDigest,
   includesChildResultTruncationMarker,
@@ -33,6 +34,7 @@ import type { SpawnedToolContext } from "../spawned-context.js";
 import { killControlledSubagentRun, resolveSubagentController } from "../subagent-control.js";
 import { getLatestSubagentRunByChildSessionKey } from "../subagent-registry-read.js";
 import { spawnSubagentDirect } from "../subagent-spawn.js";
+import { resolveSubagentAllowedTargetIds } from "../subagent-target-policy.js";
 import { normalizeSubagentTaskName } from "../subagent-task-name.js";
 import { resolveLoadedSystemChangeSessionSource } from "../system-change-source.js";
 import { requireGit } from "../worktrees/git.js";
@@ -64,52 +66,57 @@ type ManagedWorktreeSettlement = {
   statusError?: string;
 };
 
-const TaskToolSchema = Type.Object({
-  agentId: Type.String({
-    description: "Target OpenClaw agent id. Required.",
-  }),
-  task: Type.String({
-    description:
-      "Child route intent and bounded task context. When an exact agent-workspace artifact governs the work, pass its path/ref and digest without reproducing, paraphrasing, or compressing its requirements; the child reads that artifact as authority. Ask for decision material, not a final plan unless that is the child role.",
-  }),
-  taskName: Type.Optional(
-    Type.String({
-      description:
-        "Stable alias for later targeting; lowercase letters/digits/underscores/hyphens, starts letter.",
+function createTaskToolSchema(allowedAgentIds: readonly string[] = []) {
+  const allowedDescription =
+    allowedAgentIds.length > 0 ? ` Allowed for this caller: ${allowedAgentIds.join(", ")}.` : "";
+  return Type.Object({
+    agentId: Type.String({
+      description: `Target OpenClaw agent id. Required.${allowedDescription}`,
+      ...(allowedAgentIds.length > 0 ? { enum: [...allowedAgentIds] } : {}),
     }),
-  ),
-  label: Type.Optional(Type.String()),
-  context: Type.Optional(
-    Type.Union([Type.Literal("isolated"), Type.Literal("fork")], {
+    task: Type.String({
       description:
-        'Native context. Cross-agent tasks must omit this or use "isolated". "fork" is valid only for same-agent continuation.',
+        "Child route intent and bounded task context. When an exact agent-workspace artifact governs the work, pass its path/ref and digest without reproducing, paraphrasing, or compressing its requirements; the child reads that artifact as authority. Ask for decision material, not a final plan unless that is the child role.",
     }),
-  ),
-  thinking: Type.Optional(
-    Type.String({
-      description:
-        "Optional explicit child thinking override. Omit by default so the target agent's role profile controls reasoning level; set only when intentionally overriding that profile for this task.",
-    }),
-  ),
-  cwd: Type.Optional(
-    Type.String({
-      description:
-        "Native task checkout. Relative values resolve from the target agent workspace; absolute values must already be runtime-visible. This changes repository context, not agent identity or bootstrap.",
-    }),
-  ),
-  lightContext: Type.Optional(
-    Type.Boolean({
-      description:
-        "Use lightweight bootstrap context for bounded children that need their role contract but not root workspace memory/context.",
-    }),
-  ),
-  systemChange: Type.Optional(
-    Type.Boolean({
-      description:
-        "Run Coding in a native managed worktree of the currently loaded OpenClaw generation. Valid only for Main-to-Coding system upgrades; source and cwd are runtime-owned.",
-    }),
-  ),
-});
+    taskName: Type.Optional(
+      Type.String({
+        description:
+          "Stable alias for later targeting; lowercase letters/digits/underscores/hyphens, starts letter.",
+      }),
+    ),
+    label: Type.Optional(Type.String()),
+    context: Type.Optional(
+      Type.Union([Type.Literal("isolated"), Type.Literal("fork")], {
+        description:
+          'Native context. Cross-agent tasks must omit this or use "isolated". "fork" is valid only for same-agent continuation.',
+      }),
+    ),
+    thinking: Type.Optional(
+      Type.String({
+        description:
+          "Optional explicit child thinking override. Omit by default so the target agent's role profile controls reasoning level; set only when intentionally overriding that profile for this task.",
+      }),
+    ),
+    cwd: Type.Optional(
+      Type.String({
+        description:
+          "Native task checkout. Relative values resolve from the target agent workspace; absolute values must already be runtime-visible. This changes repository context, not agent identity or bootstrap.",
+      }),
+    ),
+    lightContext: Type.Optional(
+      Type.Boolean({
+        description:
+          "Use lightweight bootstrap context for bounded children that need their role contract but not root workspace memory/context.",
+      }),
+    ),
+    systemChange: Type.Optional(
+      Type.Boolean({
+        description:
+          "Run Coding in a native managed worktree of the currently loaded OpenClaw generation. Valid only for Main-to-Coding system upgrades; source and cwd are runtime-owned.",
+      }),
+    ),
+  });
+}
 
 function escapeXmlText(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
@@ -273,6 +280,24 @@ function resolveRequesterAgentId(
   }
   const fromSessionKey = /^agent:([^:]+)/.exec(opts?.agentSessionKey ?? "")?.[1]?.trim();
   return fromSessionKey || undefined;
+}
+
+function resolveTaskAllowedAgentIds(params: {
+  config?: OpenClawConfig;
+  requesterAgentId?: string;
+}): string[] {
+  const requesterAgentId = params.requesterAgentId?.trim();
+  if (!params.config || !requesterAgentId) {
+    return [];
+  }
+  const requesterConfig = resolveAgentConfig(params.config, requesterAgentId);
+  return resolveSubagentAllowedTargetIds({
+    requesterAgentId,
+    allowAgents:
+      requesterConfig?.subagents?.allowAgents ??
+      params.config.agents?.defaults?.subagents?.allowAgents,
+    configuredAgentIds: listAgentIds(params.config),
+  }).allowedIds;
 }
 
 function isCodexCodingAgentId(agentId: string): boolean {
@@ -622,6 +647,11 @@ export function createTaskTool(
       | Promise<SystemChangeSessionSource>;
   } & SpawnedToolContext,
 ): AnyAgentTool {
+  const requesterAgentId = resolveRequesterAgentId(opts);
+  const allowedAgentIds = resolveTaskAllowedAgentIds({
+    config: opts?.config,
+    requesterAgentId,
+  });
   return {
     label: "Task",
     name: "task",
@@ -635,7 +665,7 @@ export function createTaskTool(
       "Do not set `thinking` unless you intentionally need to override the target agent's role profile for this specific task; ordinary specialist tasks should omit it.",
     ],
     executionMode: "parallel",
-    parameters: TaskToolSchema,
+    parameters: createTaskToolSchema(allowedAgentIds),
     execute: async (_toolCallId, args, signal) => {
       const params = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
       const agentId = readStringParam(params, "agentId", { required: true });
@@ -649,7 +679,6 @@ export function createTaskTool(
         });
       }
       const taskName = taskNameResult.taskName;
-      const requesterAgentId = resolveRequesterAgentId(opts);
       const contextError = validateTaskToolContext({
         agentId,
         requesterAgentId,
