@@ -7,6 +7,9 @@
     "url": "https://github.com/openclaw/openclaw"
   },
   "type": "module",
+  "files": [
+    "system-profile/**"
+  ],
   "dependencies": {
     "@openai/codex": "0.144.1",
     "typebox": "1.1.39",

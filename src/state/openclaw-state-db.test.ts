@@ -66,6 +66,46 @@ describe("openclaw state database", () => {
     expect(database.path).toBe(path.join(stateDir, "state", "openclaw.sqlite"));
   });
 
+  it("adds worktree provisioning state to an existing registry", () => {
+    const stateDir = createTempStateDir();
+    const databasePath = path.join(stateDir, "state", "openclaw.sqlite");
+    fs.mkdirSync(path.dirname(databasePath), { recursive: true });
+    const { DatabaseSync } = requireNodeSqlite();
+    const db = new DatabaseSync(databasePath);
+    db.exec(`
+      CREATE TABLE worktrees (
+        id TEXT NOT NULL PRIMARY KEY,
+        repo_fingerprint TEXT NOT NULL,
+        repo_root TEXT NOT NULL,
+        path TEXT NOT NULL,
+        branch TEXT NOT NULL,
+        base_ref TEXT NOT NULL,
+        owner_kind TEXT NOT NULL,
+        owner_id TEXT,
+        snapshot_ref TEXT,
+        created_at INTEGER NOT NULL,
+        last_active_at INTEGER NOT NULL,
+        removed_at INTEGER
+      );
+    `);
+    db.close();
+
+    const database = openOpenClawStateDatabase({
+      env: { OPENCLAW_STATE_DIR: stateDir },
+    });
+    const columns = database.db.prepare("PRAGMA table_info(worktrees)").all() as Array<{
+      name: string;
+    }>;
+    const chunkTable = database.db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'worktree_provisioned_file_chunks'",
+      )
+      .get() as { name?: string } | undefined;
+
+    expect(columns.map((column) => column.name)).toContain("provisioned_paths_json");
+    expect(chunkTable?.name).toBe("worktree_provisioned_file_chunks");
+  });
+
   it("opens databases with early cron tables before creating cron indexes", () => {
     const stateDir = createTempStateDir();
     const databasePath = path.join(stateDir, "state", "openclaw.sqlite");

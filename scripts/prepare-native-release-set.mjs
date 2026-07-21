@@ -861,6 +861,36 @@ async function candidateInstall(attempt, operationRoot) {
   if (missing.length > 0) {
     throw new Error(`candidate did not load required plugins: ${missing.join(", ")}`);
   }
+
+  const codexPlugin = payload.plugins.find(
+    (plugin) => plugin && plugin.id === "codex" && plugin.status === "loaded",
+  );
+  const codexRoot = await fs.realpath(
+    requireString(codexPlugin?.rootDir, "candidate Codex installed root"),
+  );
+  ensureBelow(candidateRoot, codexRoot, "candidate Codex installed root");
+  const codexProfileRoot = path.join(codexRoot, "system-profile");
+  const installedCodex = {
+    profileDigest: await hashTree(path.join(codexProfileRoot, "project")),
+    capabilityDigest: sha256(
+      Buffer.from(
+        [
+          await hashTree(path.join(codexProfileRoot, "skills")),
+          await hashTree(path.join(codexProfileRoot, "shared-skills")),
+          await hashTree(path.join(codexProfileRoot, "tools")),
+        ].join("\n"),
+        "utf8",
+      ),
+    ),
+    contributorGuidanceDigest: await hashTree(path.join(codexProfileRoot, "contributor-guidance")),
+  };
+  for (const [field, expected] of Object.entries(attempt.manifest.codex)) {
+    if (installedCodex[field] !== expected) {
+      throw new Error(
+        `candidate Codex ${field} mismatch: expected ${expected}, observed ${installedCodex[field] ?? "missing"}`,
+      );
+    }
+  }
 }
 
 export async function prepareNativeReleaseSet(params) {
@@ -899,6 +929,7 @@ export async function prepareNativeReleaseSet(params) {
       { id: "content-addressed-artifact-identity", status: "passed" },
       { id: "credential-free-candidate-install", status: "passed" },
       { id: "required-plugin-load", status: "passed" },
+      { id: "codex-system-profile-load", status: "passed" },
     ],
   };
   await writeJsonAtomic(params.outputPath, result);
