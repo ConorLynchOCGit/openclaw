@@ -40,6 +40,7 @@ import type { VoiceWakeRoutingConfig } from "../infra/voicewake-routing.js";
 import { withDiagnosticPhase } from "../logging/diagnostic-phase.js";
 import { startDiagnosticHeartbeat, stopDiagnosticHeartbeat } from "../logging/diagnostic.js";
 import { createSubsystemLogger, runtimeForLogger } from "../logging/subsystem.js";
+import { getLoadedRuntimePluginRegistry } from "../plugins/active-runtime-registry.js";
 import { setCurrentPluginMetadataSnapshot } from "../plugins/current-plugin-metadata-snapshot.js";
 import type { PluginHookGatewayCronService } from "../plugins/hook-types.js";
 import { clearPluginMetadataLifecycleCaches } from "../plugins/plugin-metadata-lifecycle.js";
@@ -863,13 +864,29 @@ export async function startGatewayServer(
   });
   const deferStartupSidecars = opts.deferStartupSidecars === true;
   const isGatewayStartupPending = () => !startupSidecarsReady && !deferStartupSidecars;
+  const releaseRequiredPluginIds = readLoadedReleaseReadiness({ pluginRegistry })?.identity
+    ?.requiredPluginIds;
   const getReadiness = createReadinessChecker({
     channelManager,
     startedAt: serverStartedAt,
     getStartupPending: isGatewayStartupPending,
     getStartupPendingReason: () => startupPendingReason,
     getEventLoopHealth: readinessEventLoopHealth.snapshot,
-    getReleaseReadiness: () => readLoadedReleaseReadiness({ pluginRegistry }),
+    getReleaseReadiness: () => {
+      const releaseRegistry = releaseRequiredPluginIds
+        ? getLoadedRuntimePluginRegistry({
+            loadOptions: {
+              config: getRuntimeConfig(),
+              workspaceDir: defaultWorkspaceDir,
+              onlyPluginIds: releaseRequiredPluginIds,
+              forceFullRuntimeForChannelPlugins: true,
+              runtimeOptions: { allowGatewaySubagentBinding: true },
+            },
+            requiredPluginIds: releaseRequiredPluginIds,
+          })
+        : undefined;
+      return readLoadedReleaseReadiness({ pluginRegistry: releaseRegistry ?? pluginRegistry });
+    },
     shouldSkipChannelReadiness: () =>
       isTruthyEnvValue(process.env.OPENCLAW_SKIP_CHANNELS) ||
       isTruthyEnvValue(process.env.OPENCLAW_SKIP_PROVIDERS),
@@ -1651,6 +1668,12 @@ export async function startGatewayServer(
             deferSidecars: deferStartupSidecars,
             logReadyOnSidecars: !deferStartupSidecars,
             providerAuthPrewarm: { getConfig: getRuntimeConfig },
+            agentRuntimePluginPrewarm: {
+              getConfig: getRuntimeConfig,
+              ...(releaseRequiredPluginIds === undefined
+                ? {}
+                : { requiredPluginIds: releaseRequiredPluginIds }),
+            },
           }),
       ),
     ));

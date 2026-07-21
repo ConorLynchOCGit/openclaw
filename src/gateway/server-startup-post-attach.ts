@@ -338,6 +338,7 @@ function scheduleProviderAuthStatePrewarm(params: {
 function scheduleAgentRuntimePluginPrewarm(params: {
   getConfig: () => OpenClawConfig;
   workspaceDir: string;
+  requiredPluginIds?: readonly string[];
   startupTrace?: GatewayStartupTrace;
   log: {
     info: (msg: string) => void;
@@ -365,6 +366,9 @@ function scheduleAgentRuntimePluginPrewarm(params: {
           config: cfg,
           workspaceDir: params.workspaceDir,
           allowGatewaySubagentBinding: true,
+          ...(params.requiredPluginIds === undefined
+            ? {}
+            : { requiredPluginIds: params.requiredPluginIds }),
         });
         if (!isStopped()) {
           params.log.info(
@@ -1191,6 +1195,7 @@ export async function startGatewayPostAttachRuntime(
       enabled?: boolean;
       delayMs?: number;
       getConfig?: () => OpenClawConfig;
+      requiredPluginIds?: readonly string[];
     };
   },
   runtimeDeps: GatewayPostAttachRuntimeDeps = defaultGatewayPostAttachRuntimeDeps,
@@ -1350,6 +1355,9 @@ export async function startGatewayPostAttachRuntime(
                 params.providerAuthPrewarm?.getConfig ??
                 (() => params.gatewayPluginConfigAtStart),
               workspaceDir: params.defaultWorkspaceDir,
+              ...(params.agentRuntimePluginPrewarm?.requiredPluginIds === undefined
+                ? {}
+                : { requiredPluginIds: params.agentRuntimePluginPrewarm.requiredPluginIds }),
               startupTrace: params.startupTrace,
               log: params.log,
               delayMs: params.agentRuntimePluginPrewarm?.delayMs,
