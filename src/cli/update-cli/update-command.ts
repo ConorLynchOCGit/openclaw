@@ -82,6 +82,7 @@ import {
   globalInstallArgs,
   resolveGlobalInstallTarget,
   resolveGlobalInstallSpec,
+  resolveOwnedGlobalInstallTarget,
   resolvePnpmGlobalDirFromGlobalRoot,
 } from "../../infra/update-global.js";
 import { cleanupStaleManagedServiceUpdateHandoffs } from "../../infra/update-managed-service-handoff-cleanup.js";
@@ -1493,7 +1494,6 @@ async function runPackageInstallUpdate(params: {
   jsonMode: boolean;
   managedServiceEnv?: NodeJS.ProcessEnv;
   invocationCwd?: string;
-  honorPackageRoot?: boolean;
   nodeRunner?: string;
 }): Promise<UpdateRunResult> {
   const manager = await resolveGlobalManager({
@@ -1503,12 +1503,11 @@ async function runPackageInstallUpdate(params: {
   });
   const installEnv = await createGlobalInstallEnv();
   const runCommand = createGlobalCommandRunner();
-  const installTarget = await resolveGlobalInstallTarget({
+  const installTarget = await resolveOwnedGlobalInstallTarget({
     manager,
     runCommand,
     timeoutMs: params.timeoutMs,
     pkgRoot: params.root,
-    honorPackageRoot: params.honorPackageRoot === true,
   });
   const pkgRoot = installTarget.packageRoot;
   const packageName =
@@ -3558,8 +3557,6 @@ async function updateCommandInternal(opts: UpdateCommandOptions): Promise<void> 
             jsonMode: Boolean(opts.json),
             managedServiceEnv: preManagedServiceStop?.serviceEnv,
             invocationCwd,
-            honorPackageRoot:
-              managedServiceRootRedirect !== null || managedServiceNodeRunner !== undefined,
             nodeRunner: managedServiceNodeRunner,
           })
         : await runGitUpdate({

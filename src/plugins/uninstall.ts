@@ -12,6 +12,7 @@ import {
 import { createSafeNpmInstallEnv } from "../infra/safe-package-install.js";
 import { runCommandWithTimeout } from "../process/exec.js";
 import {
+  resolveDefaultPluginExtensionsDir,
   resolveDefaultPluginGitDir,
   resolveDefaultPluginNpmDir,
   resolvePluginInstallDir,
@@ -141,16 +142,17 @@ export function resolveUninstallDirectoryTarget(params: {
     return null;
   }
 
+  const activeExtensionsDir = params.extensionsDir ?? resolveDefaultPluginExtensionsDir();
   const npmManagedInstall = resolveNpmManagedInstall({
     installRecord: params.installRecord,
-    extensionsDir: params.extensionsDir,
+    extensionsDir: activeExtensionsDir,
   });
   if (npmManagedInstall) {
     return npmManagedInstall.installPath;
   }
   const gitManagedInstall = resolveGitManagedInstall({
     installRecord: params.installRecord,
-    extensionsDir: params.extensionsDir,
+    extensionsDir: activeExtensionsDir,
   });
   if (gitManagedInstall) {
     return gitManagedInstall.installPath;
@@ -158,7 +160,7 @@ export function resolveUninstallDirectoryTarget(params: {
 
   let defaultPath: string;
   try {
-    defaultPath = resolvePluginInstallDir(params.pluginId, params.extensionsDir);
+    defaultPath = resolvePluginInstallDir(params.pluginId, activeExtensionsDir);
   } catch {
     return null;
   }
@@ -172,20 +174,13 @@ export function resolveUninstallDirectoryTarget(params: {
     return configuredPath;
   }
 
-  if (params.extensionsDir && isPathInsideOrEqual(params.extensionsDir, configuredPath)) {
+  if (isPathInsideOrEqual(activeExtensionsDir, configuredPath)) {
     return configuredPath;
   }
 
-  const recordedManagedPath = resolveRecordedManagedInstallPath({
-    pluginId: params.pluginId,
-    installPath: configuredPath,
-  });
-  if (recordedManagedPath) {
-    return recordedManagedPath;
-  }
-
-  // Never trust configured installPath blindly for recursive deletes outside
-  // the managed extensions directory.
+  // Persisted records can outlive a state-root move or be copied into a
+  // candidate. Never let their absolute paths authorize deletion outside the
+  // currently active managed roots.
   return defaultPath;
 }
 
@@ -296,26 +291,6 @@ function resolveGitManagedInstall(params: {
     }
   }
   return null;
-}
-
-function resolveRecordedManagedInstallPath(params: {
-  pluginId: string;
-  installPath: string;
-}): string | null {
-  const resolvedInstallPath = path.resolve(params.installPath);
-  const recordedExtensionsDir = path.dirname(resolvedInstallPath);
-  if (path.basename(recordedExtensionsDir) !== "extensions") {
-    return null;
-  }
-
-  try {
-    const canonicalInstallPath = path.resolve(
-      resolvePluginInstallDir(params.pluginId, recordedExtensionsDir),
-    );
-    return canonicalInstallPath === resolvedInstallPath ? params.installPath : null;
-  } catch {
-    return null;
-  }
 }
 
 function isLinkedPathInstallRecord(installRecord: PluginInstallRecord | undefined): boolean {
@@ -538,6 +513,7 @@ export type UninstallPluginParams = {
  */
 export function planPluginUninstall(params: UninstallPluginParams): PluginUninstallPlanResult {
   const { config, pluginId, channelIds, deleteFiles = true, extensionsDir } = params;
+  const activeExtensionsDir = extensionsDir ?? resolveDefaultPluginExtensionsDir();
 
   const hasEntry = pluginId in (config.plugins?.entries ?? {});
   const hasInstall = pluginId in (config.plugins?.installs ?? {});
@@ -562,14 +538,14 @@ export function planPluginUninstall(params: UninstallPluginParams): PluginUninst
     deleteFiles && !isLinked
       ? resolveNpmManagedInstall({
           installRecord,
-          extensionsDir,
+          extensionsDir: activeExtensionsDir,
         })
       : null;
   const gitManagedInstall =
     deleteFiles && !isLinked
       ? resolveGitManagedInstall({
           installRecord,
-          extensionsDir,
+          extensionsDir: activeExtensionsDir,
         })
       : null;
 
@@ -579,7 +555,7 @@ export function planPluginUninstall(params: UninstallPluginParams): PluginUninst
           pluginId,
           hasInstall,
           installRecord,
-          extensionsDir,
+          extensionsDir: activeExtensionsDir,
         })
       : null;
 

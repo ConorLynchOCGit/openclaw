@@ -119,6 +119,7 @@ function shouldSkipRuntimeFile(filePath: string): boolean {
     normalized.includes("/dist/") ||
     normalized.includes("/coverage/") ||
     normalized.includes("/assets/") ||
+    normalized.includes("extensions/canvas/src/host/a2ui-app/") ||
     normalized.endsWith("/web/vite.config.ts")
   ) {
     return true;

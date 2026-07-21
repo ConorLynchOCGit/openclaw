@@ -1550,7 +1550,7 @@ describe("uninstallPlugin", () => {
     await expectPathAccessState(managedDir, "missing");
   });
 
-  it("deletes tracked installs from a recorded managed extensions root", async () => {
+  it("does not delete a tracked install from a different state root", async () => {
     const currentExtensionsDir = path.join(tempDir, "current", "extensions");
     const recordedExtensionsDir = path.join(tempDir, "recorded", "extensions");
     const installPath = resolvePluginInstallDir("my-plugin", recordedExtensionsDir);
@@ -1565,9 +1565,9 @@ describe("uninstallPlugin", () => {
     });
 
     expectSuccessfulUninstallActions(result, {
-      directory: true,
+      directory: false,
     });
-    await expectPathAccessState(installPath, "missing");
+    await expectPathAccessState(installPath, "exists");
   });
 
   it("deletes managed ClawHub install directories", async () => {
@@ -1892,7 +1892,7 @@ describe("resolveUninstallDirectoryTarget", () => {
     ).toBe(resolvePluginInstallDir("openclaw-kitchen-sink-fixture", extensionsDir));
   });
 
-  it("uses configured installPath when it is under the recorded managed extensions root", () => {
+  it("falls back to the active root for a recorded path from another state root", () => {
     const currentExtensionsDir = path.join(os.tmpdir(), "openclaw-uninstall-current", "extensions");
     const recordedExtensionsDir = path.join(
       os.tmpdir(),
@@ -1912,6 +1912,6 @@ describe("resolveUninstallDirectoryTarget", () => {
         },
         extensionsDir: currentExtensionsDir,
       }),
-    ).toBe(installPath);
+    ).toBe(resolvePluginInstallDir("my-plugin", currentExtensionsDir));
   });
 });

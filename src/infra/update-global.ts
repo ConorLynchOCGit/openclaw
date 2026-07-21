@@ -750,6 +750,19 @@ export async function resolveGlobalInstallTarget(params: {
   };
 }
 
+/** Resolves an update target for the exact installed package invoking OpenClaw. */
+export async function resolveOwnedGlobalInstallTarget(params: {
+  manager: GlobalInstallManager | ResolvedGlobalInstallCommand;
+  runCommand: CommandRunner;
+  timeoutMs: number;
+  pkgRoot: string;
+}): Promise<ResolvedGlobalInstallTarget> {
+  return await resolveGlobalInstallTarget({
+    ...params,
+    honorPackageRoot: true,
+  });
+}
+
 /**
  * Identifies which global package manager owns an existing package root.
  * Command probes are checked first, then pnpm/bun layout fingerprints.

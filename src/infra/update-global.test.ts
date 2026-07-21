@@ -35,6 +35,7 @@ import {
   resolveGlobalRoot,
   resolveNpmGlobalPrefixLayoutFromGlobalRoot,
   resolveNpmGlobalPrefixLayoutFromPrefix,
+  resolveOwnedGlobalInstallTarget,
   resolvePnpmGlobalDirFromGlobalRoot,
   type CommandRunner,
 } from "./update-global.js";
@@ -335,12 +336,11 @@ describe("update global helpers", () => {
           packageRoot: pkgRoot,
         });
         await expect(
-          resolveGlobalInstallTarget({
+          resolveOwnedGlobalInstallTarget({
             manager: "npm",
             runCommand,
             timeoutMs: 1000,
             pkgRoot,
-            honorPackageRoot: true,
           }),
         ).resolves.toEqual({
           manager: "npm",
@@ -385,6 +385,19 @@ describe("update global helpers", () => {
       await expect(
         detectGlobalInstallManagerForRoot(runCommand, pkgRoot, 1000),
       ).resolves.toBeNull();
+      await expect(
+        resolveOwnedGlobalInstallTarget({
+          manager: "npm",
+          runCommand,
+          timeoutMs: 1000,
+          pkgRoot,
+        }),
+      ).resolves.toEqual({
+        manager: "npm",
+        command: "npm",
+        globalRoot: brewRoot,
+        packageRoot: pkgRoot,
+      });
       expect(globalInstallArgs("npm", "openclaw@latest", pkgRoot)).toEqual([
         "npm",
         "i",
