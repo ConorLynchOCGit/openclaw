@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import * as tar from "tar";
 import { describe, expect, it } from "vitest";
-import type { ReleaseArtifact } from "../release-manifest.js";
+import { RESOLVED_OBJECT_SET_ALGORITHM, type ReleaseArtifact } from "../release-manifest.js";
 import { withTempDir } from "../test-helpers/temp-dir.js";
 import {
   verifyAcceptedReleaseArtifactInstallPlan,
@@ -55,6 +55,7 @@ function createArtifact(lockBytes: Buffer): ReleaseArtifact {
     installPlan: {
       registry: REGISTRY,
       lockSha256: sha256(lockBytes),
+      resolvedObjectSetAlgorithm: RESOLVED_OBJECT_SET_ALGORITHM,
       resolvedObjectSetSha256: sha256(projection),
       resolvedObjectCount: 1,
     },
@@ -118,8 +119,11 @@ describe("accepted release install plans", () => {
         }),
       ).resolves.toEqual({
         lockSha256: artifact.installPlan.lockSha256,
+        resolvedObjectSetAlgorithm: RESOLVED_OBJECT_SET_ALGORITHM,
         resolvedObjectSetSha256: artifact.installPlan.resolvedObjectSetSha256,
         resolvedObjectCount: artifact.installPlan.resolvedObjectCount,
+        portableObjectSetSha256: artifact.installPlan.resolvedObjectSetSha256,
+        portableObjectCount: artifact.installPlan.resolvedObjectCount,
         pluginPayloadSha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
         pluginManifestSha256: sha256(
           JSON.stringify({ id: "codex", configSchema: { type: "object" } }),
@@ -136,8 +140,11 @@ describe("accepted release install plans", () => {
         }),
       ).resolves.toEqual({
         lockSha256: artifact.installPlan.lockSha256,
+        resolvedObjectSetAlgorithm: RESOLVED_OBJECT_SET_ALGORITHM,
         resolvedObjectSetSha256: artifact.installPlan.resolvedObjectSetSha256,
         resolvedObjectCount: artifact.installPlan.resolvedObjectCount,
+        portableObjectSetSha256: artifact.installPlan.resolvedObjectSetSha256,
+        portableObjectCount: artifact.installPlan.resolvedObjectCount,
       });
 
       const projectRoot = path.join(root, "managed-project");
@@ -186,6 +193,66 @@ describe("accepted release install plans", () => {
           manifestArtifact: artifact,
         }),
       ).rejects.toThrow("does not reproduce the accepted install plan");
+    });
+  });
+
+  it("bridges a legacy path-sensitive package lock to the portable installed object set", async () => {
+    await withTempDir({ prefix: "openclaw-accepted-plan-legacy-" }, async (root) => {
+      const { lockBytes } = await createAcceptedArchive(root);
+      const artifact = createArtifact(lockBytes);
+      delete artifact.installPlan.resolvedObjectSetAlgorithm;
+      artifact.installPlan.resolvedObjectSetSha256 = sha256(
+        `${DEPENDENCY_PATH}\t${DEPENDENCY_VERSION}\t${DEPENDENCY_RESOLVED}\t${DEPENDENCY_INTEGRITY}\n`,
+      );
+
+      const packageRoot = path.join(root, "installed-plugin");
+      await fs.mkdir(packageRoot, { recursive: true });
+      await fs.writeFile(path.join(packageRoot, "npm-shrinkwrap.json"), lockBytes);
+      const accepted = await verifyInstalledAcceptedPackagePlan({
+        packageRoot,
+        manifestArtifact: artifact,
+      });
+      expect(accepted).toMatchObject({
+        resolvedObjectSetAlgorithm: "npm-lock-path-v1",
+        resolvedObjectSetSha256: artifact.installPlan.resolvedObjectSetSha256,
+        portableObjectSetSha256: sha256(
+          `${DEPENDENCY_VERSION}\t${DEPENDENCY_RESOLVED}\t${DEPENDENCY_INTEGRITY}\n`,
+        ),
+        portableObjectCount: 1,
+      });
+
+      const projectRoot = path.join(root, "legacy-managed-project");
+      await fs.mkdir(projectRoot, { recursive: true });
+      await fs.writeFile(
+        path.join(projectRoot, "package-lock.json"),
+        JSON.stringify({
+          name: "openclaw-plugin-managed-root",
+          version: "1.0.0",
+          lockfileVersion: 3,
+          packages: {
+            "": { name: "openclaw-plugin-managed-root", version: "1.0.0" },
+            [`node_modules/${PACKAGE_NAME}`]: {
+              version: PACKAGE_VERSION,
+              resolved: "file:_openclaw-pack-archives/codex.tgz",
+            },
+            [`node_modules/${PACKAGE_NAME}/${DEPENDENCY_PATH}`]: {
+              version: DEPENDENCY_VERSION,
+              resolved: DEPENDENCY_RESOLVED,
+              integrity: DEPENDENCY_INTEGRITY,
+            },
+          },
+        }),
+      );
+      await expect(
+        verifyInstalledAcceptedPluginPlan({
+          projectRoot,
+          manifestArtifact: artifact,
+          expectedPortableObjectSet: {
+            sha256: accepted.portableObjectSetSha256,
+            count: accepted.portableObjectCount,
+          },
+        }),
+      ).resolves.toBeUndefined();
     });
   });
 });

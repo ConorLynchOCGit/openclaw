@@ -19,7 +19,30 @@ describe("release manifest", () => {
     expect(first.indexOf('"source"')).toBeLessThan(first.indexOf('"predecessor"'));
     expect(parseReleaseManifestBytes(Buffer.from(first))).toEqual(manifest);
     expect(releaseManifestDigest(first)).toBe(
-      "309ebcbdb80876fe0f9c26a89e803f732c3e5c7e906e217ed4e7add2ad8fcd5e",
+      "f2240968207e916837438014789c40673f03789e10beb00a79cf00f2a9cc451f",
+    );
+  });
+
+  it("reads legacy v1 manifests but requires explicit object identity in v2", () => {
+    const legacy = createReleaseManifestFixture();
+    legacy.releaseProtocolVersion = 1;
+    for (const artifact of legacy.artifacts) {
+      delete artifact.installPlan.resolvedObjectSetAlgorithm;
+    }
+    const legacyBytes = serializeReleaseManifest(legacy);
+    expect(parseReleaseManifestBytes(Buffer.from(legacyBytes))).toEqual(legacy);
+
+    const missingAlgorithm = createReleaseManifestFixture();
+    delete missingAlgorithm.artifacts[0]!.installPlan.resolvedObjectSetAlgorithm;
+    expect(() => serializeReleaseManifest(missingAlgorithm)).toThrow(
+      "missing resolvedObjectSetAlgorithm",
+    );
+
+    const unknownAlgorithm = createReleaseManifestFixture();
+    unknownAlgorithm.artifacts[0]!.installPlan.resolvedObjectSetAlgorithm =
+      "npm-registry-object-v3" as "npm-registry-object-v2";
+    expect(() => serializeReleaseManifest(unknownAlgorithm)).toThrow(
+      "must equal npm-registry-object-v2",
     );
   });
 

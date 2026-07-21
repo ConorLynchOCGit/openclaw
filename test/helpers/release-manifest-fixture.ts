@@ -1,4 +1,9 @@
-import type { ReleaseArtifact, ReleaseManifest } from "../../src/release-manifest.js";
+import {
+  RELEASE_PROTOCOL_VERSION,
+  RESOLVED_OBJECT_SET_ALGORITHM,
+  type ReleaseArtifact,
+  type ReleaseManifest,
+} from "../../src/release-manifest.js";
 
 const DIGESTS = {
   predecessor: "1".repeat(64),
@@ -28,6 +33,7 @@ export function createReleaseManifestFixture(params?: {
       installPlan: {
         registry: "https://registry.npmjs.org/",
         lockSha256: DIGESTS.rootLock,
+        resolvedObjectSetAlgorithm: RESOLVED_OBJECT_SET_ALGORITHM,
         resolvedObjectSetSha256: DIGESTS.rootObjects,
         resolvedObjectCount: 2,
       },
@@ -41,13 +47,14 @@ export function createReleaseManifestFixture(params?: {
       installPlan: {
         registry: "https://registry.npmjs.org/",
         lockSha256: DIGESTS.pluginLock,
+        resolvedObjectSetAlgorithm: RESOLVED_OBJECT_SET_ALGORITHM,
         resolvedObjectSetSha256: DIGESTS.pluginObjects,
         resolvedObjectCount: 1,
       },
     },
   ];
   return {
-    releaseProtocolVersion: 1,
+    releaseProtocolVersion: RELEASE_PROTOCOL_VERSION,
     source: {
       snapshotRef: "refs/tags/openclaw-next-b1-fixture",
       treeObject: "c".repeat(40),

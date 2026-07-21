@@ -4,7 +4,12 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { findReleaseArtifact, parseReleaseManifestBytes } from "./lib/release-manifest.mjs";
+import {
+  findReleaseArtifact,
+  LEGACY_RESOLVED_OBJECT_SET_ALGORITHM,
+  parseReleaseManifestBytes,
+  RESOLVED_OBJECT_SET_ALGORITHM,
+} from "./lib/release-manifest.mjs";
 
 function usage() {
   return "usage: node scripts/verify-accepted-release-plans.mjs --manifest <release-manifest.json> --lock <package-name=package-lock.json> [--lock ...]";
@@ -109,7 +114,14 @@ export function projectResolvedObjectSet(lockBytes, registry, options = {}) {
     }
   }
 
-  const objectRows = new Set();
+  const algorithm = options.algorithm ?? RESOLVED_OBJECT_SET_ALGORITHM;
+  if (
+    algorithm !== LEGACY_RESOLVED_OBJECT_SET_ALGORITHM &&
+    algorithm !== RESOLVED_OBJECT_SET_ALGORITHM
+  ) {
+    throw new Error(`unsupported resolved object-set algorithm ${String(algorithm)}`);
+  }
+  const objectRows = algorithm === RESOLVED_OBJECT_SET_ALGORITHM ? new Set() : [];
   const expectedLocalPath = acceptedLocalPackage
     ? `node_modules/${acceptedLocalPackage.packageName}`
     : null;
@@ -144,7 +156,15 @@ export function projectResolvedObjectSet(lockBytes, registry, options = {}) {
     }
     const integrity = requireProjectionField(entry.integrity, `${packagePath}.integrity`);
     validateRegistryResolution(resolved, integrity, registry, packagePath);
-    objectRows.add(`${version}\t${resolved}\t${integrity}\n`);
+    const row =
+      algorithm === LEGACY_RESOLVED_OBJECT_SET_ALGORITHM
+        ? `${packagePath}\t${version}\t${resolved}\t${integrity}\n`
+        : `${version}\t${resolved}\t${integrity}\n`;
+    if (objectRows instanceof Set) {
+      objectRows.add(row);
+    } else {
+      objectRows.push(row);
+    }
   }
   const rows = [...objectRows].toSorted(compareUtf8);
   const projection = rows.join("");
@@ -161,7 +181,10 @@ export function projectResolvedObjectSet(lockBytes, registry, options = {}) {
 export function verifyAcceptedReleasePlan(params) {
   const artifact = findReleaseArtifact(params.manifest, params.packageName);
   const lockSha256 = sha256(params.lockBytes);
-  const projected = projectResolvedObjectSet(params.lockBytes, artifact.installPlan.registry);
+  const projected = projectResolvedObjectSet(params.lockBytes, artifact.installPlan.registry, {
+    algorithm:
+      artifact.installPlan.resolvedObjectSetAlgorithm ?? LEGACY_RESOLVED_OBJECT_SET_ALGORITHM,
+  });
   const errors = [];
   if (
     projected.packageName !== artifact.packageName ||

@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   install: vi.fn(),
   loadRecords: vi.fn(),
   verifyArchivePlan: vi.fn(),
+  verifyInstalledPackagePlan: vi.fn(),
   verifyInstalledPayload: vi.fn(),
   verifyInstalledPlan: vi.fn(),
   writeRecords: vi.fn(),
@@ -32,7 +33,9 @@ vi.mock("../plugins/installed-plugin-index-records.js", () => ({
 }));
 
 vi.mock("./accepted-release-install-plan.js", () => ({
+  LEGACY_RESOLVED_OBJECT_SET_ALGORITHM: "npm-lock-path-v1",
   verifyAcceptedReleaseArtifactInstallPlan: mocks.verifyArchivePlan,
+  verifyInstalledAcceptedPackagePlan: mocks.verifyInstalledPackagePlan,
   verifyInstalledAcceptedPluginPayload: mocks.verifyInstalledPayload,
   verifyInstalledAcceptedPluginPlan: mocks.verifyInstalledPlan,
 }));
@@ -133,10 +136,21 @@ describe("accepted release plugin convergence", () => {
     vi.clearAllMocks();
     mocks.verifyArchivePlan.mockResolvedValue({
       lockSha256: "1".repeat(64),
+      resolvedObjectSetAlgorithm: "npm-registry-object-v2",
       resolvedObjectSetSha256: "2".repeat(64),
       resolvedObjectCount: 1,
+      portableObjectSetSha256: "2".repeat(64),
+      portableObjectCount: 1,
       pluginPayloadSha256: "3".repeat(64),
       pluginManifestSha256: "4".repeat(64),
+    });
+    mocks.verifyInstalledPackagePlan.mockResolvedValue({
+      lockSha256: "1".repeat(64),
+      resolvedObjectSetAlgorithm: "npm-lock-path-v1",
+      resolvedObjectSetSha256: "2".repeat(64),
+      resolvedObjectCount: 1,
+      portableObjectSetSha256: "5".repeat(64),
+      portableObjectCount: 1,
     });
     mocks.verifyInstalledPayload.mockResolvedValue(undefined);
     mocks.verifyInstalledPlan.mockResolvedValue(undefined);
@@ -277,6 +291,10 @@ describe("accepted release plugin convergence", () => {
         JSON.stringify({ name: fixture.packageName, version: "1.0.0" }),
       );
       const predecessor = withVersion(createReleaseManifestFixture(), "1.0.0");
+      predecessor.releaseProtocolVersion = 1;
+      for (const artifact of predecessor.artifacts) {
+        delete artifact.installPlan.resolvedObjectSetAlgorithm;
+      }
       mocks.loadRecords.mockResolvedValue({
         [fixture.pluginId]: {
           source: "npm",
@@ -303,6 +321,7 @@ describe("accepted release plugin convergence", () => {
         manifestArtifact: predecessor.artifacts.find(
           (artifact) => artifact.packageName === fixture.packageName,
         ),
+        expectedPortableObjectSet: { count: 1, sha256: "5".repeat(64) },
       });
     });
   });

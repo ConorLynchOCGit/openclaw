@@ -1,6 +1,7 @@
 export type ReleaseInstallPlan = {
   registry: string;
   lockSha256: string;
+  resolvedObjectSetAlgorithm?: "npm-registry-object-v2";
   resolvedObjectSetSha256: string;
   resolvedObjectCount: number;
 };
@@ -15,7 +16,7 @@ export type ReleaseArtifact = {
 };
 
 export type ReleaseManifest = {
-  releaseProtocolVersion: 1;
+  releaseProtocolVersion: 1 | 2;
   source: { snapshotRef: string; treeObject: string };
   predecessor: { releaseManifestDigest: string; sourceTreeObject: string };
   package: {
@@ -50,9 +51,12 @@ export type ReleaseManifest = {
 };
 
 export const RELEASE_MANIFEST_FILENAME: "release-manifest.json";
-export const RELEASE_PROTOCOL_VERSION: 1;
+export const LEGACY_RELEASE_PROTOCOL_VERSION: 1;
+export const RELEASE_PROTOCOL_VERSION: 2;
 export const PROTOTYPE_B_PACKAGE_SHAPE: "prototype-b-native-release-set-v1";
 export const RELEASE_READINESS_CONTRACT_VERSION: 1;
+export const LEGACY_RESOLVED_OBJECT_SET_ALGORITHM: "npm-lock-path-v1";
+export const RESOLVED_OBJECT_SET_ALGORITHM: "npm-registry-object-v2";
 
 export function isLowerHex(value: unknown, expectedLength: number | readonly number[]): boolean;
 export function serializeReleaseManifest(value: unknown): string;

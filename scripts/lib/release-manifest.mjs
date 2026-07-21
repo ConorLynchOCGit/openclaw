@@ -2,9 +2,12 @@ import { createHash } from "node:crypto";
 import nodePath from "node:path";
 
 export const RELEASE_MANIFEST_FILENAME = "release-manifest.json";
-export const RELEASE_PROTOCOL_VERSION = 1;
+export const LEGACY_RELEASE_PROTOCOL_VERSION = 1;
+export const RELEASE_PROTOCOL_VERSION = 2;
 export const PROTOTYPE_B_PACKAGE_SHAPE = "prototype-b-native-release-set-v1";
 export const RELEASE_READINESS_CONTRACT_VERSION = 1;
+export const LEGACY_RESOLVED_OBJECT_SET_ALGORITHM = "npm-lock-path-v1";
+export const RESOLVED_OBJECT_SET_ALGORITHM = "npm-registry-object-v2";
 
 const MAX_RELEASE_MANIFEST_BYTES = 1024 * 1024;
 const PACKAGE_NAME_RE = /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)$/u;
@@ -150,19 +153,30 @@ function requireRegistry(value, path) {
   return registry;
 }
 
-function normalizeInstallPlan(value, path) {
+function normalizeInstallPlan(value, path, releaseProtocolVersion) {
   const plan = requireRecord(value, path);
-  requireExactKeys(
-    plan,
-    ["registry", "lockSha256", "resolvedObjectSetSha256", "resolvedObjectCount"],
-    path,
-  );
+  const keys = ["registry", "lockSha256", "resolvedObjectSetSha256", "resolvedObjectCount"];
+  if (releaseProtocolVersion === RELEASE_PROTOCOL_VERSION) {
+    keys.splice(2, 0, "resolvedObjectSetAlgorithm");
+  }
+  requireExactKeys(plan, keys, path);
   if (!Number.isSafeInteger(plan.resolvedObjectCount) || plan.resolvedObjectCount < 0) {
     fail(`${path}.resolvedObjectCount`, "must be a non-negative safe integer");
   }
   return {
     registry: requireRegistry(plan.registry, `${path}.registry`),
     lockSha256: requireSha256(plan.lockSha256, `${path}.lockSha256`),
+    ...(releaseProtocolVersion === RELEASE_PROTOCOL_VERSION
+      ? {
+          resolvedObjectSetAlgorithm:
+            plan.resolvedObjectSetAlgorithm === RESOLVED_OBJECT_SET_ALGORITHM
+              ? RESOLVED_OBJECT_SET_ALGORITHM
+              : fail(
+                  `${path}.resolvedObjectSetAlgorithm`,
+                  `must equal ${RESOLVED_OBJECT_SET_ALGORITHM}`,
+                ),
+        }
+      : {}),
     resolvedObjectSetSha256: requireSha256(
       plan.resolvedObjectSetSha256,
       `${path}.resolvedObjectSetSha256`,
@@ -171,7 +185,7 @@ function normalizeInstallPlan(value, path) {
   };
 }
 
-function normalizeArtifact(value, index) {
+function normalizeArtifact(value, index, releaseProtocolVersion) {
   const path = `artifacts[${index}]`;
   const artifact = requireRecord(value, path);
   requireExactKeys(
@@ -199,7 +213,11 @@ function normalizeArtifact(value, index) {
       `${path}.ownedPluginIds`,
       requirePluginId,
     ),
-    installPlan: normalizeInstallPlan(artifact.installPlan, `${path}.installPlan`),
+    installPlan: normalizeInstallPlan(
+      artifact.installPlan,
+      `${path}.installPlan`,
+      releaseProtocolVersion,
+    ),
   };
 }
 
@@ -220,9 +238,16 @@ function normalizeReleaseManifest(value) {
     ],
     "root",
   );
-  if (manifest.releaseProtocolVersion !== RELEASE_PROTOCOL_VERSION) {
-    fail("releaseProtocolVersion", `must equal supported protocol ${RELEASE_PROTOCOL_VERSION}`);
+  if (
+    manifest.releaseProtocolVersion !== LEGACY_RELEASE_PROTOCOL_VERSION &&
+    manifest.releaseProtocolVersion !== RELEASE_PROTOCOL_VERSION
+  ) {
+    fail(
+      "releaseProtocolVersion",
+      `must equal supported protocol ${LEGACY_RELEASE_PROTOCOL_VERSION} or ${RELEASE_PROTOCOL_VERSION}`,
+    );
   }
+  const releaseProtocolVersion = manifest.releaseProtocolVersion;
 
   const source = requireRecord(manifest.source, "source");
   requireExactKeys(source, ["snapshotRef", "treeObject"], "source");
@@ -243,7 +268,9 @@ function normalizeReleaseManifest(value) {
   if (!Array.isArray(manifest.artifacts) || manifest.artifacts.length === 0) {
     fail("artifacts", "must contain one core artifact and any plugin artifacts");
   }
-  const artifacts = manifest.artifacts.map(normalizeArtifact);
+  const artifacts = manifest.artifacts.map((artifact, index) =>
+    normalizeArtifact(artifact, index, releaseProtocolVersion),
+  );
   if (artifacts[0].role !== "core" || artifacts[0].packageName !== "openclaw") {
     fail("artifacts[0]", 'must be the core "openclaw" package');
   }
@@ -360,7 +387,7 @@ function normalizeReleaseManifest(value) {
   }
 
   return {
-    releaseProtocolVersion: RELEASE_PROTOCOL_VERSION,
+    releaseProtocolVersion,
     source: {
       snapshotRef: requireString(source.snapshotRef, "source.snapshotRef"),
       treeObject: requireGitObject(source.treeObject, "source.treeObject"),

@@ -4,7 +4,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import * as tar from "tar";
-import type { ReleaseArtifact } from "../release-manifest.js";
+import {
+  LEGACY_RESOLVED_OBJECT_SET_ALGORITHM,
+  RESOLVED_OBJECT_SET_ALGORITHM,
+  type ReleaseArtifact,
+} from "../release-manifest.js";
 import type { AcceptedReleaseArtifact } from "./accepted-release-receipt.js";
 
 const MAX_LOCK_BYTES = 32 * 1024 * 1024;
@@ -14,11 +18,18 @@ type JsonRecord = Record<string, unknown>;
 
 export type AcceptedReleaseInstallPlan = {
   lockSha256: string;
+  resolvedObjectSetAlgorithm: ResolvedObjectSetAlgorithm;
   resolvedObjectSetSha256: string;
   resolvedObjectCount: number;
+  portableObjectSetSha256: string;
+  portableObjectCount: number;
   pluginPayloadSha256?: string;
   pluginManifestSha256?: string;
 };
+
+export type ResolvedObjectSetAlgorithm =
+  | typeof LEGACY_RESOLVED_OBJECT_SET_ALGORITHM
+  | typeof RESOLVED_OBJECT_SET_ALGORITHM;
 
 function sha256(bytes: Uint8Array | string): string {
   return createHash("sha256").update(bytes).digest("hex");
@@ -100,10 +111,11 @@ function validateRegistryObject(params: {
 function projectRegistryObjects(params: {
   lock: JsonRecord;
   registry: string;
+  algorithm: ResolvedObjectSetAlgorithm;
   allowAcceptedLocalPackage?: { packageName: string; packageVersion: string };
 }): { projection: string; count: number; digest: string; localPackageFound: boolean } {
   const packages = params.lock.packages as JsonRecord;
-  const objectRows = new Set<string>();
+  const objectRows: string[] = [];
   let localPackageFound = false;
   const expectedLocalPath = params.allowAcceptedLocalPackage
     ? `node_modules/${params.allowAcceptedLocalPackage.packageName}`
@@ -135,10 +147,17 @@ function projectRegistryObjects(params: {
     }
     const integrity = requireString(entry.integrity, `${packagePath}.integrity`);
     validateRegistryObject({ packagePath, resolved, integrity, registry: params.registry });
-    objectRows.add(`${version}\t${resolved}\t${integrity}\n`);
+    objectRows.push(
+      params.algorithm === LEGACY_RESOLVED_OBJECT_SET_ALGORITHM
+        ? `${packagePath}\t${version}\t${resolved}\t${integrity}\n`
+        : `${version}\t${resolved}\t${integrity}\n`,
+    );
   }
 
-  const rows = [...objectRows].toSorted(compareUtf8);
+  const rows =
+    params.algorithm === RESOLVED_OBJECT_SET_ALGORITHM
+      ? [...new Set(objectRows)].toSorted(compareUtf8)
+      : objectRows;
   const projection = rows.join("");
   return {
     projection,
@@ -146,6 +165,12 @@ function projectRegistryObjects(params: {
     digest: sha256(Buffer.from(projection, "utf8")),
     localPackageFound,
   };
+}
+
+function resolvedObjectSetAlgorithmForArtifact(
+  artifact: ReleaseArtifact,
+): ResolvedObjectSetAlgorithm {
+  return artifact.installPlan.resolvedObjectSetAlgorithm ?? LEGACY_RESOLVED_OBJECT_SET_ALGORITHM;
 }
 
 function verifyPlanProjection(params: {
@@ -172,10 +197,20 @@ function verifyPlanProjection(params: {
     throw new Error(`${params.label} package identity does not match the accepted artifact`);
   }
 
+  const algorithm = resolvedObjectSetAlgorithmForArtifact(params.artifact);
   const projected = projectRegistryObjects({
     lock: params.lock,
     registry: params.artifact.installPlan.registry,
+    algorithm,
   });
+  const portable =
+    algorithm === RESOLVED_OBJECT_SET_ALGORITHM
+      ? projected
+      : projectRegistryObjects({
+          lock: params.lock,
+          registry: params.artifact.installPlan.registry,
+          algorithm: RESOLVED_OBJECT_SET_ALGORITHM,
+        });
   const lockSha256 = sha256(params.lockBytes);
   const errors: string[] = [];
   if (lockSha256 !== params.artifact.installPlan.lockSha256) {
@@ -200,8 +235,11 @@ function verifyPlanProjection(params: {
   }
   return {
     lockSha256,
+    resolvedObjectSetAlgorithm: algorithm,
     resolvedObjectSetSha256: projected.digest,
     resolvedObjectCount: projected.count,
+    portableObjectSetSha256: portable.digest,
+    portableObjectCount: portable.count,
   };
 }
 
@@ -363,6 +401,7 @@ export async function verifyInstalledAcceptedPackagePlan(params: {
 export async function verifyInstalledAcceptedPluginPlan(params: {
   projectRoot: string;
   manifestArtifact: ReleaseArtifact;
+  expectedPortableObjectSet?: { sha256: string; count: number };
 }): Promise<void> {
   const lockPath = path.join(params.projectRoot, "package-lock.json");
   const lockBytes = await readRegularFile(lockPath, "accepted plugin managed-project lock");
@@ -370,6 +409,9 @@ export async function verifyInstalledAcceptedPluginPlan(params: {
   const projected = projectRegistryObjects({
     lock,
     registry: params.manifestArtifact.installPlan.registry,
+    algorithm: params.expectedPortableObjectSet
+      ? RESOLVED_OBJECT_SET_ALGORITHM
+      : resolvedObjectSetAlgorithmForArtifact(params.manifestArtifact),
     allowAcceptedLocalPackage: {
       packageName: params.manifestArtifact.packageName,
       packageVersion: params.manifestArtifact.packageVersion,
@@ -378,10 +420,11 @@ export async function verifyInstalledAcceptedPluginPlan(params: {
   if (!projected.localPackageFound) {
     throw new Error("accepted plugin managed-project lock is missing its local npm-pack artifact");
   }
-  if (
-    projected.count !== params.manifestArtifact.installPlan.resolvedObjectCount ||
-    projected.digest !== params.manifestArtifact.installPlan.resolvedObjectSetSha256
-  ) {
+  const expected = params.expectedPortableObjectSet ?? {
+    count: params.manifestArtifact.installPlan.resolvedObjectCount,
+    sha256: params.manifestArtifact.installPlan.resolvedObjectSetSha256,
+  };
+  if (projected.count !== expected.count || projected.digest !== expected.sha256) {
     throw new Error("accepted plugin managed-project lock contains an unaccepted object set");
   }
 }

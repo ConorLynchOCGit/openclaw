@@ -15,10 +15,15 @@ import {
   loadInstalledPluginIndexInstallRecords,
   writePersistedInstalledPluginIndexInstallRecords,
 } from "../plugins/installed-plugin-index-records.js";
-import type { ReleaseArtifact, ReleaseManifest } from "../release-manifest.js";
+import {
+  LEGACY_RESOLVED_OBJECT_SET_ALGORITHM,
+  type ReleaseArtifact,
+  type ReleaseManifest,
+} from "../release-manifest.js";
 import {
   type AcceptedPluginPayloadIdentity,
   verifyAcceptedReleaseArtifactInstallPlan,
+  verifyInstalledAcceptedPackagePlan,
   verifyInstalledAcceptedPluginPayload,
   verifyInstalledAcceptedPluginPlan,
 } from "./accepted-release-install-plan.js";
@@ -198,7 +203,25 @@ export async function assertAcceptedReleasePluginPredecessor(params: {
       packageRoot: record.installPath ?? "",
       manifestArtifact,
     });
-    await verifyInstalledAcceptedPluginPlan({ projectRoot, manifestArtifact });
+    if (
+      (manifestArtifact.installPlan.resolvedObjectSetAlgorithm ??
+        LEGACY_RESOLVED_OBJECT_SET_ALGORITHM) === LEGACY_RESOLVED_OBJECT_SET_ALGORITHM
+    ) {
+      const acceptedPackagePlan = await verifyInstalledAcceptedPackagePlan({
+        packageRoot: record.installPath ?? "",
+        manifestArtifact,
+      });
+      await verifyInstalledAcceptedPluginPlan({
+        projectRoot,
+        manifestArtifact,
+        expectedPortableObjectSet: {
+          sha256: acceptedPackagePlan.portableObjectSetSha256,
+          count: acceptedPackagePlan.portableObjectCount,
+        },
+      });
+    } else {
+      await verifyInstalledAcceptedPluginPlan({ projectRoot, manifestArtifact });
+    }
     releaseProjectRoots.add(projectRoot);
   }
 

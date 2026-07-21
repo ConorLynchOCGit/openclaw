@@ -9,8 +9,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import * as tar from "tar";
 import { embedReleaseManifest } from "./generate-release-manifest.mjs";
 import {
+  LEGACY_RESOLVED_OBJECT_SET_ALGORITHM,
   parseReleaseManifestBytes,
   PROTOTYPE_B_PACKAGE_SHAPE,
+  RELEASE_PROTOCOL_VERSION,
+  RESOLVED_OBJECT_SET_ALGORITHM,
   serializeReleaseManifest,
 } from "./lib/release-manifest.mjs";
 import {
@@ -484,10 +487,13 @@ async function toolchainDigest(stageRoot) {
 }
 
 async function buildInstallPlan(lockBytes, registry) {
-  const projection = projectResolvedObjectSet(lockBytes, registry);
+  const projection = projectResolvedObjectSet(lockBytes, registry, {
+    algorithm: RESOLVED_OBJECT_SET_ALGORITHM,
+  });
   return {
     registry,
     lockSha256: sha256(lockBytes),
+    resolvedObjectSetAlgorithm: RESOLVED_OBJECT_SET_ALGORITHM,
     resolvedObjectSetSha256: projection.resolvedObjectSetSha256,
     resolvedObjectCount: projection.resolvedObjectCount,
   };
@@ -680,7 +686,7 @@ async function prepareAttempt(params) {
   const manifest = parseReleaseManifestBytes(
     Buffer.from(
       serializeReleaseManifest({
-        releaseProtocolVersion: 1,
+        releaseProtocolVersion: RELEASE_PROTOCOL_VERSION,
         source: {
           snapshotRef: params.input.snapshot.ref,
           treeObject: params.input.snapshot.treeObject,
@@ -892,6 +898,8 @@ async function candidateInstall(attempt, operationRoot) {
         continue;
       }
       const projected = projectResolvedObjectSet(lockBytes, artifact.installPlan.registry, {
+        algorithm:
+          artifact.installPlan.resolvedObjectSetAlgorithm ?? LEGACY_RESOLVED_OBJECT_SET_ALGORITHM,
         allowAcceptedLocalPackage: {
           packageName: artifact.packageName,
           packageVersion: artifact.packageVersion,

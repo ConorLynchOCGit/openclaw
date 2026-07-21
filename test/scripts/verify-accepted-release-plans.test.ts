@@ -4,7 +4,11 @@ import {
   projectResolvedObjectSet,
   verifyAcceptedReleasePlans,
 } from "../../scripts/verify-accepted-release-plans.mjs";
-import { parseReleaseManifestBytes, serializeReleaseManifest } from "../../src/release-manifest.js";
+import {
+  RESOLVED_OBJECT_SET_ALGORITHM,
+  parseReleaseManifestBytes,
+  serializeReleaseManifest,
+} from "../../src/release-manifest.js";
 import { createReleaseManifestFixture } from "../helpers/release-manifest-fixture.js";
 
 const TEST_INTEGRITY = `sha512-${Buffer.alloc(64, 0xa5).toString("base64")}`;
@@ -42,12 +46,14 @@ function manifestForLocks(rootLock: Buffer, pluginLock: Buffer) {
   fixture.artifacts[0]!.installPlan = {
     registry: "https://registry.npmjs.org/",
     lockSha256: sha256(rootLock),
+    resolvedObjectSetAlgorithm: RESOLVED_OBJECT_SET_ALGORITHM,
     resolvedObjectSetSha256: rootProjection.resolvedObjectSetSha256,
     resolvedObjectCount: rootProjection.resolvedObjectCount,
   };
   fixture.artifacts[1]!.installPlan = {
     registry: "https://registry.npmjs.org/",
     lockSha256: sha256(pluginLock),
+    resolvedObjectSetAlgorithm: RESOLVED_OBJECT_SET_ALGORITHM,
     resolvedObjectSetSha256: pluginProjection.resolvedObjectSetSha256,
     resolvedObjectCount: pluginProjection.resolvedObjectCount,
   };
@@ -60,7 +66,7 @@ describe("accepted release plan verification", () => {
     const result = projectResolvedObjectSet(lock, "https://registry.npmjs.org/");
 
     expect(result.projection).toBe(
-      `node_modules/zod\t1.2.3\thttps://registry.npmjs.org/zod/-/zod-1.2.3.tgz\t${TEST_INTEGRITY}\n`,
+      `1.2.3\thttps://registry.npmjs.org/zod/-/zod-1.2.3.tgz\t${TEST_INTEGRITY}\n`,
     );
     expect(result.resolvedObjectCount).toBe(1);
   });
