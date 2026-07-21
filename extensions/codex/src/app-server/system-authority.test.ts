@@ -36,13 +36,10 @@ function createProfile(): CodexLoadedSystemProfile {
     config: {
       project_doc_max_bytes: 0,
       developer_instructions: "Generation-N immutable developer instructions.",
-      default_permissions: "openclaw-system-change",
+      default_permissions: ":workspace",
       features: {
         multi_agent: false,
         multi_agent_v2: { enabled: true },
-      },
-      permissions: {
-        "openclaw-system-change": { extends: ":workspace" },
       },
     },
     selectedCapabilityRoots: [
@@ -84,7 +81,7 @@ describe("Codex system generation authority", () => {
       },
       environments: [{ environmentId: "local", cwd: WORKTREE }],
       authority: {
-        permissionProfile: "openclaw-system-change",
+        permissionProfile: ":workspace",
       },
     });
     expect(context.authority.selectedCapabilityRoots).toEqual(
@@ -154,7 +151,7 @@ describe("Codex system generation authority", () => {
       cwd: WORKTREE,
       runtimeWorkspaceRoots: [WORKTREE],
       instructionSources: [],
-      activePermissionProfile: { id: "openclaw-system-change" },
+      activePermissionProfile: { id: ":workspace" },
     };
 
     expect(() =>

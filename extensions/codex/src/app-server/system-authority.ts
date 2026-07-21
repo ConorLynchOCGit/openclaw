@@ -12,7 +12,7 @@ import type { CodexLoadedSystemProfile } from "./system-profile.js";
 import { MANAGED_CODEX_APP_SERVER_PACKAGE_VERSION } from "./version.js";
 
 const SYSTEM_CHANGE_AGENT_IDS = new Set(["coding", "execution-coding"]);
-const SYSTEM_PERMISSION_PROFILE = "openclaw-system-change";
+const SYSTEM_PERMISSION_PROFILE = ":workspace";
 const SYSTEM_LOCAL_ENVIRONMENT_ID = "local";
 export const SYSTEM_WORKTREE_LOCK_SCOPE_ENV = "OPENCLAW_HEAVY_CHECK_LOCK_SCOPE";
 export const SYSTEM_WORKTREE_LOCK_SCOPE_VALUE = "worktree";
@@ -199,10 +199,6 @@ function validateLoadedProfile(profile: CodexLoadedSystemProfile, cwd: string): 
   const features = readObject(profile.config.features);
   if (features?.multi_agent !== false || readObject(features?.multi_agent_v2)?.enabled !== true) {
     throw new Error("Codex system profile must disable V1 and enable V2 collaboration");
-  }
-  const permissions = readObject(profile.config.permissions);
-  if (!readObject(permissions?.[SYSTEM_PERMISSION_PROFILE])) {
-    throw new Error(`Codex system profile is missing ${SYSTEM_PERMISSION_PROFILE}`);
   }
   if (profile.selectedCapabilityRoots.length === 0) {
     throw new Error("Codex system profile has no selected capability roots");

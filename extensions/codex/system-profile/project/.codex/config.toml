@@ -1,7 +1,7 @@
 model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
 project_doc_max_bytes = 0
-default_permissions = "openclaw-system-change"
+default_permissions = ":workspace"
 features.tool_suggest = false
 features.multi_agent = false
 
@@ -133,10 +133,6 @@ existing reviewer only for a narrow clarification. A failed command alone does
 not force a review lane, no fixed reviewer count is implied, and the parent may
 truthfully close partial or blocked.
 """
-
-[permissions.openclaw-system-change]
-description = "Write only within the active OpenClaw-managed system-change worktree."
-extends = ":workspace"
 
 # OpenClaw selects whether a run enters Code Mode. This project config owns
 # which inherited Codex-native namespaces remain visible to V2 children.

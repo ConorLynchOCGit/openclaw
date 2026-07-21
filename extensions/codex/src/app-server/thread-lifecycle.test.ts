@@ -106,7 +106,7 @@ function createSystemThreadContext(
   };
   return {
     authority: {
-      permissionProfile: "openclaw-system-change",
+      permissionProfile: ":workspace",
       selectedCapabilityRoots: [
         {
           id: "system-skills",
@@ -522,7 +522,7 @@ describe("Codex app-server native code mode config", () => {
     expect(startRequest).toMatchObject({
       cwd,
       runtimeWorkspaceRoots: [cwd],
-      permissions: "openclaw-system-change",
+      permissions: ":workspace",
       config: systemContext.authority.config,
       environments: systemContext.environments,
       selectedCapabilityRoots: systemContext.authority.selectedCapabilityRoots,
@@ -551,7 +551,7 @@ describe("Codex app-server native code mode config", () => {
       threadId: "thread-1",
       cwd,
       runtimeWorkspaceRoots: [cwd],
-      permissions: "openclaw-system-change",
+      permissions: ":workspace",
       environments: systemContext.environments,
       collaborationMode: {
         mode: "default",
