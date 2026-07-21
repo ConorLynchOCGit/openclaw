@@ -10,7 +10,7 @@ import {
   pluginPackageChanged,
   prepareAttempt,
   releaseOperationEnvironment,
-  requiredBundledPluginsToEnable,
+  requiredCandidatePluginEntries,
   resolveRequestedExtensionPackages,
 } from "../../scripts/prepare-native-release-set.mjs";
 import { RESOLVED_OBJECT_SET_ALGORITHM } from "../../src/release-manifest.js";
@@ -129,18 +129,14 @@ describe("prepare-native-release-set", () => {
     );
   });
 
-  it("enables only required bundled plugins reported as disabled", () => {
+  it("builds one deterministic native config merge for required candidate plugins", () => {
     expect(
-      requiredBundledPluginsToEnable(
-        [
-          { id: "agency-data", origin: "bundled", status: "disabled" },
-          { id: "codex", origin: "managed", status: "loaded" },
-          { id: "unrelated", origin: "bundled", status: "disabled" },
-          { id: "workboard", origin: "bundled", status: "error" },
-        ],
-        ["agency-data", "codex", "workboard"],
-      ),
-    ).toEqual(["agency-data"]);
+      requiredCandidatePluginEntries(["workboard", "agency-data", "workboard", "codex"]),
+    ).toEqual({
+      "agency-data": { enabled: true },
+      codex: { enabled: true },
+      workboard: { enabled: true },
+    });
   });
 
   it("resolves only accepted external packages through the native extension boundary", async () => {

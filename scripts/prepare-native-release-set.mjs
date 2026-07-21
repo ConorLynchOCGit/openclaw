@@ -59,16 +59,12 @@ export function parseArgs(argv) {
   return { inputPath: path.resolve(inputPath), outputPath: path.resolve(outputPath) };
 }
 
-export function requiredBundledPluginsToEnable(plugins, requiredPluginIds) {
-  const byId = new Map(
-    plugins
-      .filter((plugin) => plugin && typeof plugin.id === "string")
-      .map((plugin) => [plugin.id, plugin]),
+export function requiredCandidatePluginEntries(requiredPluginIds) {
+  return Object.fromEntries(
+    [...new Set(requiredPluginIds)]
+      .toSorted(compareUtf8)
+      .map((pluginId) => [pluginId, { enabled: true }]),
   );
-  return requiredPluginIds.filter((id) => {
-    const plugin = byId.get(id);
-    return plugin?.origin === "bundled" && plugin.status === "disabled";
-  });
 }
 
 export function pluginPackageChanged(changedPaths, packageRoot) {
@@ -1055,11 +1051,6 @@ async function candidateInstall(attempt, operationRoot) {
       );
     }
   }
-  let listed = await runCapture(cli, ["plugins", "list", "--json"], candidateRoot, candidateEnv);
-  let payload = JSON.parse(listed.stdout);
-  if (!Array.isArray(payload.plugins)) {
-    throw new Error("candidate plugin readback returned no plugin inventory");
-  }
   const candidateOwnedPluginIds = new Set([
     ...attempt.manifest.artifacts[coreIndex].ownedPluginIds,
     ...candidatePluginArtifacts.flatMap((artifact) => artifact.ownedPluginIds),
@@ -1067,20 +1058,28 @@ async function candidateInstall(attempt, operationRoot) {
   const requiredPluginIds = attempt.manifest.loadedReadiness.requiredPluginIds.filter((pluginId) =>
     candidateOwnedPluginIds.has(pluginId),
   );
-  for (const pluginId of requiredBundledPluginsToEnable(payload.plugins, requiredPluginIds)) {
+  const requiredPluginEntries = requiredCandidatePluginEntries(requiredPluginIds);
+  if (Object.keys(requiredPluginEntries).length > 0) {
     await runCommand({
-      id: `candidate-enable-${pluginId}`,
+      id: "candidate-configure-required-plugins",
       command: cli,
-      args: ["plugins", "enable", pluginId],
+      args: [
+        "config",
+        "set",
+        "plugins.entries",
+        JSON.stringify(requiredPluginEntries),
+        "--strict-json",
+        "--merge",
+      ],
       cwd: candidateRoot,
       logRoot: logs,
       env: candidateEnv,
     });
   }
-  listed = await runCapture(cli, ["plugins", "list", "--json"], candidateRoot, candidateEnv);
-  payload = JSON.parse(listed.stdout);
+  const listed = await runCapture(cli, ["plugins", "list", "--json"], candidateRoot, candidateEnv);
+  const payload = JSON.parse(listed.stdout);
   if (!Array.isArray(payload.plugins)) {
-    throw new Error("candidate plugin readback returned no plugin inventory after enablement");
+    throw new Error("candidate plugin readback returned no plugin inventory");
   }
   const loaded = new Set(
     payload.plugins

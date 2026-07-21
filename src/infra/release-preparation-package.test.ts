@@ -290,6 +290,30 @@ describe("prepareAcceptedReleaseFromSnapshot", () => {
   it("binds native package evidence into one immutable accepted receipt", async () => {
     const harness = await createHarness();
     const publishedMetadata: Array<{ namespace: string; bytes: Buffer }> = [];
+    const completedDriverResult = {
+      schema: "openclaw.release.prepare.driver-result.v1" as const,
+      manifestPath: harness.manifestPath,
+      artifacts: [
+        {
+          role: "core" as const,
+          packageName: "openclaw",
+          artifactPath: harness.corePath,
+          disposition: "built" as const,
+        },
+        {
+          role: "plugin" as const,
+          packageName: "@openclaw/codex",
+          artifactPath: harness.pluginPath,
+          disposition: "built" as const,
+        },
+      ],
+      checks: [{ id: "native-package-acceptance", status: "passed" as const }],
+    };
+    await fs.writeFile(
+      path.join(harness.operationRoot, "driver-result.json"),
+      `${JSON.stringify(completedDriverResult, null, 2)}\n`,
+    );
+    const runDriver = vi.fn();
     const result = await prepareAcceptedReleaseFromSnapshot(
       {
         authority: createAuthority(),
@@ -301,25 +325,7 @@ describe("prepareAcceptedReleaseFromSnapshot", () => {
       },
       {
         resolvePredecessor: async () => createPredecessor(),
-        runDriver: async () => ({
-          schema: "openclaw.release.prepare.driver-result.v1",
-          manifestPath: harness.manifestPath,
-          artifacts: [
-            {
-              role: "core",
-              packageName: "openclaw",
-              artifactPath: harness.corePath,
-              disposition: "built",
-            },
-            {
-              role: "plugin",
-              packageName: "@openclaw/codex",
-              artifactPath: harness.pluginPath,
-              disposition: "built",
-            },
-          ],
-          checks: [{ id: "native-package-acceptance", status: "passed" }],
-        }),
+        runDriver,
         verifyInventory: async () => [
           {
             role: "core",
@@ -369,6 +375,7 @@ describe("prepareAcceptedReleaseFromSnapshot", () => {
     );
 
     expect(result.candidateEvidenceRef).toContain("operations/operation/candidate-evidence.json");
+    expect(runDriver).not.toHaveBeenCalled();
     expect(publishedMetadata.map((entry) => entry.namespace)).toEqual(["manifests", "receipts"]);
     const receipt = JSON.parse(publishedMetadata[1]!.bytes.toString("utf8"));
     expect(receipt).toMatchObject({

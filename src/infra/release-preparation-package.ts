@@ -9,7 +9,7 @@ import {
   type ResolvedAcceptedReleaseReceipt,
 } from "./accepted-release-receipt.js";
 import type { ReleasePreparationAuthority } from "./release-preparation-authority.js";
-import { writeImmutableOperationJson } from "./release-preparation-store.js";
+import { readOperationJson, writeImmutableOperationJson } from "./release-preparation-store.js";
 import type { PreparedReleaseWorktree } from "./release-preparation-worktree.js";
 import {
   publishReleaseArtifact,
@@ -46,6 +46,7 @@ type InspectedReleaseArtifact = {
 
 type ReleasePreparationPackageDeps = {
   resolvePredecessor: typeof resolveAcceptedReleaseForLoadedManifest;
+  readDriverResult: typeof readOperationJson;
   runDriver: (params: {
     inputPath: string;
     outputPath: string;
@@ -413,6 +414,7 @@ async function defaultCreateAcceptedTag(params: {
 function defaultDeps(): ReleasePreparationPackageDeps {
   return {
     resolvePredecessor: resolveAcceptedReleaseForLoadedManifest,
+    readDriverResult: readOperationJson,
     runDriver: defaultRunDriver,
     verifyInventory: defaultVerifyInventory,
     publishArtifact: publishReleaseArtifact,
@@ -489,13 +491,17 @@ export async function prepareAcceptedReleaseFromSnapshot(
     filePath: inputPath,
     value: input,
   });
-  const driver = await deps.runDriver({
-    inputPath,
-    outputPath,
-    authority: params.authority,
-    operationRoot: params.operationRoot,
-    env: params.env,
-  });
+  const completedDriverResult = await deps.readDriverResult(outputPath);
+  const driver =
+    completedDriverResult === null
+      ? await deps.runDriver({
+          inputPath,
+          outputPath,
+          authority: params.authority,
+          operationRoot: params.operationRoot,
+          env: params.env,
+        })
+      : parseDriverResult(completedDriverResult);
   const manifestPath = ensurePathBelow(
     params.operationRoot,
     driver.manifestPath,
