@@ -147,10 +147,7 @@ async function requireSystemChangeBase(params: {
 }): Promise<string> {
   const baseRef = params.baseRef?.trim();
   if (!baseRef) {
-    throw new Error("system-change worktrees require an exact native snapshot ref");
-  }
-  if (!baseRef.startsWith(`${SNAPSHOT_REF_PREFIX}/`)) {
-    throw new Error(`system-change base is not a native snapshot ref: ${baseRef}`);
+    throw new Error("system-change worktrees require an exact loaded source ref");
   }
   const expectedTreeObject = params.expectedTreeObject?.trim();
   if (!expectedTreeObject) {
@@ -167,7 +164,10 @@ async function requireSystemChangeBase(params: {
   ]);
   const baseCommit = resolvedBase.stdout.trim();
   if (resolvedBase.code !== 0 || !baseCommit) {
-    throw new Error(`system-change snapshot is not a local commit: ${baseRef}`);
+    throw new Error(`system-change base is not a local commit: ${baseRef}`);
+  }
+  if (!baseRef.startsWith(`${SNAPSHOT_REF_PREFIX}/`) && baseRef !== baseCommit) {
+    throw new Error(`system-change base is not a native snapshot ref or exact commit: ${baseRef}`);
   }
   const resolvedTree = await runGit(params.repository.repoRoot, [
     "rev-parse",
@@ -177,7 +177,7 @@ async function requireSystemChangeBase(params: {
   ]);
   if (resolvedTree.code !== 0 || resolvedTree.stdout.trim() !== expectedTreeObject) {
     throw new Error(
-      `system-change snapshot tree does not match the loaded release: expected ${expectedTreeObject}, observed ${resolvedTree.stdout.trim() || "unavailable"}`,
+      `system-change source tree does not match the loaded release: expected ${expectedTreeObject}, observed ${resolvedTree.stdout.trim() || "unavailable"}`,
     );
   }
   const anchorHead = await requireGit(params.repository.sourceRoot, ["rev-parse", "HEAD"]);

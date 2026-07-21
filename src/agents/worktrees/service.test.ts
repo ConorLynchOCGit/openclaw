@@ -249,12 +249,12 @@ describe("ManagedWorktreeService", () => {
     }
   });
 
-  it("requires an exact native snapshot bound to the loaded tree", async () => {
+  it("requires a native snapshot or exact commit bound to the loaded tree", async () => {
     const sourceObject = await git(repo, "rev-parse", "HEAD");
     const sourceTree = await git(repo, "rev-parse", "HEAD^{tree}");
     await expect(
       service.create({ repoRoot: repo, name: "missing-object", systemChange: true }),
-    ).rejects.toThrow("require an exact native snapshot ref");
+    ).rejects.toThrow("require an exact loaded source ref");
     await expect(
       service.create({
         repoRoot: repo,
@@ -263,7 +263,15 @@ describe("ManagedWorktreeService", () => {
         expectedTreeObject: sourceTree,
         systemChange: true,
       }),
-    ).rejects.toThrow("base is not a native snapshot ref: HEAD");
+    ).rejects.toThrow("base is not a native snapshot ref or exact commit: HEAD");
+    const exactCommit = await service.create({
+      repoRoot: repo,
+      name: "exact-commit",
+      baseRef: sourceObject,
+      expectedTreeObject: sourceTree,
+      systemChange: true,
+    });
+    expect(exactCommit.baseRef).toBe(sourceObject);
     await expect(
       service.create({
         repoRoot: repo,
@@ -272,7 +280,7 @@ describe("ManagedWorktreeService", () => {
         expectedTreeObject: sourceTree,
         systemChange: true,
       }),
-    ).rejects.toThrow("snapshot is not a local commit");
+    ).rejects.toThrow("base is not a local commit");
     const source = await createSystemChangeSnapshot(repo, "tree-mismatch");
     await expect(
       service.create({
@@ -282,7 +290,7 @@ describe("ManagedWorktreeService", () => {
         expectedTreeObject: sourceObject,
         systemChange: true,
       }),
-    ).rejects.toThrow("snapshot tree does not match the loaded release");
+    ).rejects.toThrow("source tree does not match the loaded release");
   });
 
   it("rejects .worktreeinclude for system-change worktrees", async () => {
