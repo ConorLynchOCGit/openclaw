@@ -860,7 +860,6 @@ function ensureAdditiveStateColumns(db: DatabaseSync): void {
   ensureColumn(db, "gateway_restart_sentinel", "doctor_hint TEXT");
   ensureColumn(db, "gateway_restart_sentinel", "stats_json TEXT");
   ensureColumn(db, "subagent_runs", "task_name TEXT");
-  ensureColumn(db, "worktrees", "provisioned_paths_json TEXT");
 }
 
 function ensureSchema(db: DatabaseSync, pathname: string): void {
