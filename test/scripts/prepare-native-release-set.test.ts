@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   deriveReleaseVersion,
+  normalizeMigration,
   parseArgs,
   requiredBundledPluginsToEnable,
   resolveRequestedWorkspacePackages,
@@ -46,6 +47,28 @@ describe("prepare-native-release-set", () => {
     });
     expect(() => parseArgs(["--input", "in.json"])).toThrow("usage:");
     expect(() => parseArgs(["--unknown", "value"])).toThrow("unknown argument");
+  });
+
+  it("defaults routine releases to migration-free and preserves explicit migration scope", () => {
+    expect(normalizeMigration(undefined)).toEqual({
+      class: "migration_free",
+      affectedPersistentRoots: [],
+    });
+    expect(
+      normalizeMigration({
+        class: "migration_bearing",
+        affectedPersistentRoots: ["/srv/openclaw-next/state/state/openclaw.sqlite"],
+      }),
+    ).toEqual({
+      class: "migration_bearing",
+      affectedPersistentRoots: ["/srv/openclaw-next/state/state/openclaw.sqlite"],
+    });
+    expect(() =>
+      normalizeMigration({
+        class: "migration_free",
+        affectedPersistentRoots: ["/srv/openclaw-next/state"],
+      }),
+    ).toThrow("cannot name affected persistent roots");
   });
 
   it("rejects non-native base versions", () => {

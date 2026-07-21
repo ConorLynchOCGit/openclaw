@@ -23,6 +23,11 @@ const DRIVER_PROTOCOL = "openclaw.release.prepare.driver.v1";
 const COMMAND_TIMEOUT_MS = 45 * 60 * 1000;
 const MAX_CAPTURE_BYTES = 8 * 1024 * 1024;
 const activeChildren = new Set();
+const MIGRATION_CLASSES = new Set([
+  "migration_free",
+  "migration_bearing",
+  "bootstrap_bridge_rehost",
+]);
 
 function usage() {
   return "usage: node scripts/prepare-native-release-set.mjs --input <driver-input.json> --output <driver-result.json>";
@@ -87,6 +92,27 @@ function requireString(value, label) {
   return value;
 }
 
+export function normalizeMigration(value) {
+  if (value === undefined) {
+    return { class: "migration_free", affectedPersistentRoots: [] };
+  }
+  const migration = requireRecord(value, "release driver migration");
+  const migrationClass = requireString(migration.class, "release driver migration class");
+  if (!MIGRATION_CLASSES.has(migrationClass)) {
+    throw new Error(`release driver migration class is unsupported: ${migrationClass}`);
+  }
+  if (!Array.isArray(migration.affectedPersistentRoots)) {
+    throw new Error("release driver affected persistent roots must be an array");
+  }
+  const affectedPersistentRoots = migration.affectedPersistentRoots.map((entry, index) =>
+    requireString(entry, `release driver affected persistent root ${index}`),
+  );
+  if (migrationClass === "migration_free" && affectedPersistentRoots.length > 0) {
+    throw new Error("migration-free release driver input cannot name affected persistent roots");
+  }
+  return { class: migrationClass, affectedPersistentRoots };
+}
+
 function ensureBelow(root, candidate, label) {
   const resolvedRoot = path.resolve(root);
   const resolved = path.resolve(candidate);
@@ -120,6 +146,7 @@ function parseInput(value) {
       ref: requireString(snapshot.ref, "snapshot ref"),
       treeObject: requireString(snapshot.treeObject, "snapshot tree"),
     },
+    migration: normalizeMigration(input.migration),
     predecessor: {
       receiptId: requireString(predecessor.receiptId, "predecessor receipt ID"),
       manifestPath: path.resolve(
@@ -550,6 +577,7 @@ async function prepareAttempt(params) {
         sourceTreeObject: params.input.snapshot.treeObject,
         predecessorManifestDigest: params.input.predecessor.releaseManifestDigest,
         packageShape: PROTOTYPE_B_PACKAGE_SHAPE,
+        migration: params.input.migration,
         toolchainDigest: toolsDigest,
       }),
       "utf8",
@@ -685,7 +713,7 @@ async function prepareAttempt(params) {
             path.join(codexProfileRoot, "contributor-guidance"),
           ),
         },
-        migration: { class: "migration_free", affectedPersistentRoots: [] },
+        migration: params.input.migration,
         compatibility: params.predecessorManifest.compatibility,
         loadedReadiness: params.predecessorManifest.loadedReadiness,
       }),
