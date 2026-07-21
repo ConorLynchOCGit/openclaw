@@ -39,11 +39,6 @@ export type PluginHealthErrorSummary = {
 export type PluginHealthSummary = {
   loaded: string[];
   errors: PluginHealthErrorSummary[];
-  unavailable?: Array<{
-    id: string;
-    state: "configured-unavailable";
-    diagnostic: import("../plugins/runtime-degraded-state.js").PublicPluginVerificationDiagnostic;
-  }>;
 };
 
 /** Context engine quarantine entry included in health output. */
@@ -73,7 +68,6 @@ export type HealthSummary = {
   plugins?: PluginHealthSummary;
   contextEngines?: ContextEngineHealthSummary;
   modelPricing?: ModelPricingHealthSummary;
-  release?: import("../release-runtime-readiness.js").LoadedReleaseReadiness;
   channels: Record<string, ChannelHealthSummary>;
   channelOrder: string[];
   channelLabels: Record<string, string>;

@@ -5,10 +5,6 @@ import type { PluginActivationState } from "./config-state.js";
 import type { PluginBundleFormat, PluginFormat } from "./manifest-types.js";
 import type { PluginManifestContracts } from "./manifest.js";
 import type { PluginRecord, PluginRegistry } from "./registry.js";
-import {
-  formatPluginVerificationDiagnostic,
-  type DegradedPlugin,
-} from "./runtime-degraded-state.js";
 import type { PluginLogger } from "./types.js";
 
 /** Builds the registry record shape shared by plugin loading, status, and diagnostics. */
@@ -18,7 +14,6 @@ export function createPluginRecord(params: {
   description?: string;
   version?: string;
   packageName?: string;
-  packageVersion?: string;
   format?: PluginFormat;
   bundleFormat?: PluginBundleFormat;
   bundleCapabilities?: string[];
@@ -42,7 +37,6 @@ export function createPluginRecord(params: {
     description: params.description,
     version: params.version,
     packageName: params.packageName,
-    packageVersion: params.packageVersion,
     format: params.format ?? "openclaw",
     bundleFormat: params.bundleFormat,
     bundleCapabilities: params.bundleCapabilities,
@@ -98,31 +92,6 @@ export function markPluginActivationDisabled(record: PluginRecord, reason?: stri
   record.activated = false;
   record.activationSource = "disabled";
   record.activationReason = reason;
-}
-
-/** Records a boot-time payload quarantine without importing or activating the plugin. */
-export function recordPluginConfiguredUnavailable(params: {
-  registry: PluginRegistry;
-  record: PluginRecord;
-  seenIds: Map<string, PluginRecord["origin"]>;
-  origin: PluginRecord["origin"];
-  degradedPlugin: DegradedPlugin;
-}): void {
-  const error = formatPluginVerificationDiagnostic(params.degradedPlugin.diagnostic);
-  params.record.status = "error";
-  params.record.error = error;
-  params.record.failurePhase = "validation";
-  params.record.activated = false;
-  params.record.activationReason = `configured-unavailable: ${params.degradedPlugin.diagnostic.reason}`;
-  params.registry.plugins.push(params.record);
-  params.seenIds.set(params.record.id, params.origin);
-  params.registry.diagnostics.push({
-    level: "error",
-    pluginId: params.record.id,
-    source: params.record.source,
-    code: "plugin-verification",
-    message: error,
-  });
 }
 
 /** Joins auto-enable reasons into the single registry field shown by status surfaces. */

@@ -38,11 +38,6 @@ const coreCliCommandCatalog = defineCommandDescriptorCatalog([
     hasSubcommands: true,
   },
   {
-    name: "release",
-    description: "Prepare accepted immutable OpenClaw releases",
-    hasSubcommands: true,
-  },
-  {
     name: "migrate",
     description: "Import state from another agent system",
     hasSubcommands: true,

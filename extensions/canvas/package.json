@@ -16,9 +16,6 @@
     "ws": "8.21.0"
   },
   "openclaw": {
-    "compat": {
-      "pluginApi": ">=2026.6.6"
-    },
     "extensions": [
       "./index.ts"
     ],

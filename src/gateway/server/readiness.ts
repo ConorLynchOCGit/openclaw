@@ -43,7 +43,6 @@ export function createReadinessChecker(deps: {
   getStartupPending?: () => boolean;
   getStartupPendingReason?: () => string | undefined;
   getEventLoopHealth?: () => GatewayEventLoopHealth | undefined;
-  getReleaseReadiness?: () => { ready: boolean } | undefined;
   shouldSkipChannelReadiness?: () => boolean;
   cacheTtlMs?: number;
 }): ReadinessChecker {
@@ -62,36 +61,34 @@ export function createReadinessChecker(deps: {
         deps.getEventLoopHealth,
       );
     }
+    if (deps.shouldSkipChannelReadiness?.()) {
+      return withEventLoopHealth({ ready: true, failing: [], uptimeMs }, deps.getEventLoopHealth);
+    }
     if (cachedState && now - cachedAt < cacheTtlMs) {
       return withEventLoopHealth({ ...cachedState, uptimeMs }, deps.getEventLoopHealth);
     }
 
+    const snapshot = channelManager.getRuntimeSnapshot();
     const failing: string[] = [];
-    if (deps.getReleaseReadiness?.()?.ready === false) {
-      failing.push("release");
-    }
 
-    if (!deps.shouldSkipChannelReadiness?.()) {
-      const snapshot = channelManager.getRuntimeSnapshot();
-      for (const [channelId, accounts] of Object.entries(snapshot.channelAccounts)) {
-        if (!accounts) {
+    for (const [channelId, accounts] of Object.entries(snapshot.channelAccounts)) {
+      if (!accounts) {
+        continue;
+      }
+      for (const accountSnapshot of Object.values(accounts)) {
+        if (!accountSnapshot) {
           continue;
         }
-        for (const accountSnapshot of Object.values(accounts)) {
-          if (!accountSnapshot) {
-            continue;
-          }
-          const policy: ChannelHealthPolicy = {
-            now,
-            staleEventThresholdMs: DEFAULT_CHANNEL_STALE_EVENT_THRESHOLD_MS,
-            channelConnectGraceMs: DEFAULT_CHANNEL_CONNECT_GRACE_MS,
-            channelId,
-          };
-          const health = evaluateChannelHealth(accountSnapshot, policy);
-          if (!health.healthy && !shouldIgnoreReadinessFailure(accountSnapshot, health)) {
-            failing.push(channelId);
-            break;
-          }
+        const policy: ChannelHealthPolicy = {
+          now,
+          staleEventThresholdMs: DEFAULT_CHANNEL_STALE_EVENT_THRESHOLD_MS,
+          channelConnectGraceMs: DEFAULT_CHANNEL_CONNECT_GRACE_MS,
+          channelId,
+        };
+        const health = evaluateChannelHealth(accountSnapshot, policy);
+        if (!health.healthy && !shouldIgnoreReadinessFailure(accountSnapshot, health)) {
+          failing.push(channelId);
+          break;
         }
       }
     }

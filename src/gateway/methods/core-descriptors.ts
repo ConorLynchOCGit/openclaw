@@ -137,7 +137,6 @@ export const CORE_GATEWAY_METHOD_SPECS: readonly CoreGatewayMethodSpec[] = [
   { name: "skills.proposals.quarantine", scope: "operator.admin" },
   { name: "update.status", scope: "operator.admin" },
   { name: "update.run", scope: "operator.admin", controlPlaneWrite: true },
-  { name: "release.prepare", scope: "operator.admin", controlPlaneWrite: true },
   { name: "voicewake.get", scope: "operator.read" },
   { name: "voicewake.set", scope: "operator.write" },
   { name: "secrets.reload", scope: "operator.admin" },

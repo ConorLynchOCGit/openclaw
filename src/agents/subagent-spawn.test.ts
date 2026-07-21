@@ -316,7 +316,6 @@ describe("spawnSubagentDirect seam flow", () => {
 
   it("creates system-change Coding from the exact loaded source and persists its authority", async () => {
     const source = createSystemChangeSessionSource();
-    source.sourceSnapshotRef = "c".repeat(40);
     const worktreePath = "/tmp/openclaw-state/worktrees/system-change-a";
     const createSystemChangeWorktree = vi.fn().mockResolvedValue({
       id: "worktree-a",

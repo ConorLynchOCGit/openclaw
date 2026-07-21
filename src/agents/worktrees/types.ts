@@ -51,12 +51,6 @@ export type RemoveManagedWorktreeResult = {
   snapshotError?: string;
 };
 
-/** Exact Git paths whose bytes differ from HEAD and will enter a native snapshot. */
-export type WorktreeSnapshotAdmission = {
-  record: ManagedWorktreeRecord;
-  changedPaths: readonly Buffer[];
-};
-
 export type ManagedWorktreeBranch = {
   name: string;
   kind: "local" | "remote";

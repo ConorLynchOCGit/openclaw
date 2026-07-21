@@ -245,7 +245,6 @@ import {
   PluginsUiDescriptorsResultSchema,
 } from "./plugins.js";
 import { PushTestParamsSchema, PushTestResultSchema } from "./push.js";
-import { ReleasePrepareParamsSchema, ReleasePrepareResultSchema } from "./release.js";
 import {
   SecretsReloadParamsSchema,
   SecretsResolveAssignmentSchema,
@@ -604,8 +603,6 @@ export const ProtocolSchemas = {
   ChatEvent: ChatEventSchema,
   UpdateStatusParams: UpdateStatusParamsSchema,
   UpdateRunParams: UpdateRunParamsSchema,
-  ReleasePrepareParams: ReleasePrepareParamsSchema,
-  ReleasePrepareResult: ReleasePrepareResultSchema,
   TickEvent: TickEventSchema,
   ShutdownEvent: ShutdownEventSchema,
 } satisfies Record<string, TSchema>;

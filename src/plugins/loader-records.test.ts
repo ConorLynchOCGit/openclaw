@@ -3,26 +3,6 @@ import { describe, expect, it } from "vitest";
 import { createPluginRecord } from "./loader-records.js";
 
 describe("plugin loader records", () => {
-  it("preserves package identity separately from plugin-manifest version", () => {
-    const record = createPluginRecord({
-      id: "gbrain-context",
-      name: "GBrain Context",
-      version: "0.42.44.0",
-      packageName: "gbrain",
-      packageVersion: "0.42.44-0",
-      source: "/tmp/gbrain/index.js",
-      origin: "global",
-      enabled: true,
-      configSchema: false,
-    });
-
-    expect(record).toMatchObject({
-      version: "0.42.44.0",
-      packageName: "gbrain",
-      packageVersion: "0.42.44-0",
-    });
-  });
-
   it("preserves manifest-declared channel ids before runtime registration", () => {
     const record = createPluginRecord({
       id: "kitchen-sink",

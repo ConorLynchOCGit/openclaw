@@ -2,7 +2,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { note } from "../../packages/terminal-core/src/note.js";
-import type { PluginPayloadSmokeFailure } from "../cli/update-cli/plugin-payload-validation.js";
 import {
   readConfigFileSnapshot,
   recoverConfigFromJsonRootSuffix,
@@ -12,14 +11,6 @@ import { formatConfigIssueLines } from "../config/issue-format.js";
 import type { LegacyConfigIssue } from "../config/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { isTruthyEnvValue } from "../infra/env.js";
-import { normalizePluginsConfig, resolveEffectiveEnableState } from "../plugins/config-state.js";
-import { loadInstalledPluginIndexInstallRecordsSync } from "../plugins/installed-plugin-index-records.js";
-import {
-  buildDegradedPluginsFromVerificationFailures,
-  formatPluginVerificationDiagnostic,
-  setActiveDegradedPlugins,
-  type DegradedPlugin,
-} from "../plugins/runtime-degraded-state.js";
 import { resolveHomeDir } from "../utils.js";
 import { noteIncludeConfinementWarning } from "./doctor-config-analysis.js";
 import { findDoctorLegacyConfigIssues } from "./doctor/shared/legacy-config-issues.js";
@@ -88,70 +79,6 @@ export type DoctorConfigPreflightResult = {
   baseConfig: OpenClawConfig;
 };
 
-function isStartupPluginVerificationFailureActive(params: {
-  cfg: OpenClawConfig;
-  failure: PluginPayloadSmokeFailure;
-}): boolean {
-  return resolveEffectiveEnableState({
-    id: params.failure.pluginId,
-    origin: "global",
-    config: normalizePluginsConfig(params.cfg.plugins),
-    rootConfig: params.cfg,
-  }).enabled;
-}
-
-function buildStartupPluginQuarantine(params: {
-  cfg: OpenClawConfig;
-  failures: readonly PluginPayloadSmokeFailure[];
-}): DegradedPlugin[] {
-  return buildDegradedPluginsFromVerificationFailures(
-    params.failures.filter(
-      (failure) =>
-        Boolean(failure.installPath) &&
-        isStartupPluginVerificationFailureActive({ cfg: params.cfg, failure }),
-    ),
-  );
-}
-
-function formatStartupPluginSmokeFailure(failure: PluginPayloadSmokeFailure): string {
-  return `Plugin "${failure.pluginId}": ${formatPluginVerificationDiagnostic({
-    kind: "plugin-verification",
-    reason: failure.reason,
-    detail: failure.detail,
-    ...(failure.installPath ? { installPath: failure.installPath } : {}),
-  })}. Run \`openclaw update repair\` to retry plugin repair.`;
-}
-
-/** Refresh boot-local quarantine using only static reads of native install records and payloads. */
-export async function refreshStartupPluginQuarantine(params: {
-  cfg: OpenClawConfig;
-  env?: NodeJS.ProcessEnv;
-}): Promise<{
-  quarantinedPlugins: DegradedPlugin[];
-  blockingFailures: PluginPayloadSmokeFailure[];
-}> {
-  const env = params.env ?? process.env;
-  setActiveDegradedPlugins([]);
-  const { runActivePluginPayloadSmokeCheck } =
-    await import("../cli/update-cli/active-plugin-payload-validation.js");
-  const smoke = await runActivePluginPayloadSmokeCheck({
-    cfg: params.cfg,
-    records: loadInstalledPluginIndexInstallRecordsSync({ env }),
-    env,
-  });
-  const quarantinedPlugins = buildStartupPluginQuarantine({
-    cfg: params.cfg,
-    failures: smoke.failures,
-  });
-  const blockingFailures = smoke.failures.filter(
-    (failure) =>
-      !failure.installPath &&
-      isStartupPluginVerificationFailureActive({ cfg: params.cfg, failure }),
-  );
-  setActiveDegradedPlugins(quarantinedPlugins);
-  return { quarantinedPlugins, blockingFailures };
-}
-
 function collectDoctorLegacyIssues(
   snapshot: Awaited<ReturnType<typeof readConfigFileSnapshot>>,
 ): LegacyConfigIssue[] {
@@ -202,7 +129,6 @@ export async function runDoctorConfigPreflight(
     repairPrefixedConfig?: boolean;
     recoverCorruptTargetStore?: boolean;
     invalidConfigNote?: string | false;
-    verifyStartupPluginPayloads?: boolean;
   } = {},
 ): Promise<DoctorConfigPreflightResult> {
   if (options.migrateState !== false) {
@@ -270,41 +196,6 @@ export async function runDoctorConfigPreflight(
         })
       : await autoMigrateLegacyTaskStateSidecars({ env: process.env });
     noteStateMigrationResult(stateResult);
-  }
-
-  if (options.verifyStartupPluginPayloads === true && snapshot.valid) {
-    const pluginVerification = await refreshStartupPluginQuarantine({
-      cfg: baseConfig,
-      env: process.env,
-    });
-    if (pluginVerification.quarantinedPlugins.length > 0) {
-      note(
-        pluginVerification.quarantinedPlugins
-          .map(
-            (plugin) =>
-              `- ${formatStartupPluginSmokeFailure({
-                pluginId: plugin.pluginId,
-                reason: plugin.diagnostic.reason,
-                detail: plugin.diagnostic.detail,
-                ...(plugin.diagnostic.installPath
-                  ? { installPath: plugin.diagnostic.installPath }
-                  : {}),
-              })}`,
-          )
-          .join("\n"),
-        "Doctor warnings",
-      );
-    }
-    if (pluginVerification.blockingFailures.length > 0) {
-      throw new Error(
-        [
-          "OpenClaw plugin verification failed; refusing to report the gateway ready.",
-          ...pluginVerification.blockingFailures.map(
-            (failure) => `- ${formatStartupPluginSmokeFailure(failure)}`,
-          ),
-        ].join("\n"),
-      );
-    }
   }
 
   return {

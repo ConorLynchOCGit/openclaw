@@ -109,7 +109,6 @@ function createAttemptParams(config?: OpenClawConfig): EmbeddedRunAttemptParams 
     modelRegistry: {} as never,
     thinkLevel: "low",
     config,
-    deferTerminalLifecycleEnd: false,
   } as EmbeddedRunAttemptParams;
 }
 

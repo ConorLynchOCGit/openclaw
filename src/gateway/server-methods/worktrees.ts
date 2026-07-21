@@ -149,7 +149,7 @@ export function createWorktreesHandlers(service: WorktreeService): GatewayReques
       }
       try {
         const cfg = context.getRuntimeConfig();
-        const limits = resolveWorktreeCleanupLimits();
+        const limits = resolveWorktreeCleanupLimits(cfg.worktrees);
         respond(
           true,
           await service.gc({

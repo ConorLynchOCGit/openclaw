@@ -374,7 +374,6 @@ export type PluginRecord = {
   name: string;
   version?: string;
   packageName?: string;
-  packageVersion?: string;
   description?: string;
   format?: PluginFormat;
   bundleFormat?: PluginBundleFormat;

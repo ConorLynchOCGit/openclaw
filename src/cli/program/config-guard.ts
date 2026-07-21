@@ -191,10 +191,6 @@ export async function ensureConfigReady(params: {
         migrateState: true,
         migrateLegacyConfig: false,
         invalidConfigNote: false,
-        ...(commandPath[0] === "gateway" &&
-        (commandPath[1] === undefined || commandPath[1] === "run")
-          ? { verifyStartupPluginPayloads: true }
-          : {}),
       });
     return !params.suppressDoctorStdout
       ? (await runDoctorConfigPreflight()).snapshot

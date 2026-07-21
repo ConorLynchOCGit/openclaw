@@ -115,8 +115,6 @@ export type ConfigSchemaLookupParams = SchemaType<"ConfigSchemaLookupParams">;
 export type ConfigSchemaResponse = SchemaType<"ConfigSchemaResponse">;
 export type ConfigSchemaLookupResult = SchemaType<"ConfigSchemaLookupResult">;
 export type UpdateStatusParams = SchemaType<"UpdateStatusParams">;
-export type ReleasePrepareParams = SchemaType<"ReleasePrepareParams">;
-export type ReleasePrepareResult = SchemaType<"ReleasePrepareResult">;
 
 /** Wizard setup flow payloads exchanged by CLI, UI, and gateway. */
 export type WizardStartParams = SchemaType<"WizardStartParams">;

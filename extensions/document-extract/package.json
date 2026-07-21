@@ -11,9 +11,6 @@
     "@openclaw/plugin-sdk": "workspace:*"
   },
   "openclaw": {
-    "compat": {
-      "pluginApi": ">=2026.6.6"
-    },
     "extensions": [
       "./index.ts"
     ]

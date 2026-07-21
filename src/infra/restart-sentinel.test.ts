@@ -19,11 +19,8 @@ import {
 } from "./restart-sentinel.js";
 import {
   CONTROL_PLANE_UPDATE_RESTART_HEALTH_PENDING_REASON,
-  bindAcceptedReleaseUpdateRestartSentinel,
   buildControlPlaneUpdateRestartHealthPendingResult,
   isPendingControlPlaneUpdateRestartSentinel,
-  readPendingAcceptedReleaseReceiptId,
-  writeControlPlaneUpdateRestartSentinel,
 } from "./update-control-plane-sentinel.js";
 import { buildUpdateRestartSentinelPayload } from "./update-restart-sentinel-payload.js";
 
@@ -321,89 +318,6 @@ describe("restart success continuation", () => {
 });
 
 describe("control-plane update restart sentinel", () => {
-  it("persists an opaque receipt id and binds the verified plugin artifact set", async () => {
-    await withRestartSentinelStateDir(async () => {
-      const acceptedReleaseReceiptId = "a".repeat(64);
-      const pendingPayload = buildUpdateRestartSentinelPayload({
-        result: {
-          status: "skipped",
-          mode: "npm",
-          reason: "managed-service-handoff-started",
-          steps: [],
-          durationMs: 0,
-        },
-        meta: { acceptedReleaseReceiptId },
-        nowMs: 1,
-      });
-      await writeRestartSentinel(pendingPayload);
-
-      await expect(readPendingAcceptedReleaseReceiptId()).resolves.toBe(acceptedReleaseReceiptId);
-      await bindAcceptedReleaseUpdateRestartSentinel({
-        acceptedReleaseReceiptId,
-        pluginArtifacts: [
-          {
-            packageName: "@openclaw/plugin-release-test",
-            version: "2026.7.19",
-            sha256: "b".repeat(64),
-            npmIntegrityOrShasum: "sha512-test",
-            packlistDigest: "c".repeat(64),
-            byteSize: 42,
-          },
-        ],
-      });
-
-      const sentinel = await readRestartSentinel();
-      expect(sentinel?.payload.stats).toMatchObject({
-        acceptedReleaseReceiptId,
-        acceptedReleasePluginArtifacts: [
-          {
-            packageName: "@openclaw/plugin-release-test",
-            version: "2026.7.19",
-            sha256: "b".repeat(64),
-            npmIntegrityOrShasum: "sha512-test",
-            packlistDigest: "c".repeat(64),
-            byteSize: 42,
-          },
-        ],
-      });
-      expect(formatRestartSentinelMessage(sentinel!.payload)).not.toContain(
-        acceptedReleaseReceiptId,
-      );
-
-      await writeControlPlaneUpdateRestartSentinel({
-        result: {
-          status: "error",
-          mode: "npm",
-          reason: "post-update-plugins",
-          steps: [],
-          durationMs: 1,
-        },
-        meta: { acceptedReleaseReceiptId },
-      });
-      expect((await readRestartSentinel())?.payload.stats?.acceptedReleasePluginArtifacts).toEqual(
-        sentinel?.payload.stats?.acceptedReleasePluginArtifacts,
-      );
-    });
-  });
-
-  it("rejects a receipt that does not own the pending sentinel", async () => {
-    await withRestartSentinelStateDir(async () => {
-      await writeRestartSentinel({
-        kind: "update",
-        status: "error",
-        ts: 1,
-        stats: { acceptedReleaseReceiptId: "a".repeat(64) },
-      });
-
-      await expect(
-        bindAcceptedReleaseUpdateRestartSentinel({
-          acceptedReleaseReceiptId: "b".repeat(64),
-          pluginArtifacts: [],
-        }),
-      ).rejects.toThrow("receipt does not match");
-    });
-  });
-
   it("keeps restart-health-pending sentinels continuation-free until final success", () => {
     const result = {
       status: "ok" as const,

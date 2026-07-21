@@ -80,11 +80,6 @@ export type StatusSummary = {
   };
   channelSummary: string[];
   queuedSystemEvents: string[];
-  degradedPlugins?: Array<{
-    pluginId: string;
-    state: "configured-unavailable";
-    diagnostic: import("../plugins/runtime-degraded-state.js").PublicPluginVerificationDiagnostic;
-  }>;
   tasks: TaskRegistrySummary;
   taskAudit: TaskAuditSummary;
   taskAuditRetainedLost?: RetainedLostTaskAuditSummary;

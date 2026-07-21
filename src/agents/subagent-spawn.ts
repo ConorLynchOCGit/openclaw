@@ -245,6 +245,9 @@ function validateSystemChangeSessionSource(params: {
   if (!path.isAbsolute(params.source.sourceAnchorPath)) {
     return "system-change source anchor must be an absolute path";
   }
+  if (!params.source.sourceSnapshotRef.startsWith("refs/openclaw/snapshots/")) {
+    return "system-change source must use a native OpenClaw snapshot ref";
+  }
   return undefined;
 }
 

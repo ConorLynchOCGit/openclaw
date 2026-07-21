@@ -38,13 +38,7 @@ import { info } from "../globals.js";
 import { isTruthyEnvValue } from "../infra/env.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { resolveHeartbeatSummaryForAgent } from "../infra/heartbeat-summary.js";
-import {
-  degradedPluginMatchesRoot,
-  listActiveDegradedPlugins,
-  toPublicPluginVerificationDiagnostic,
-} from "../plugins/runtime-degraded-state.js";
 import { getActivePluginRegistry } from "../plugins/runtime.js";
-import { readLoadedReleaseReadiness } from "../release-runtime-readiness.js";
 import { buildChannelAccountBindings, resolvePreferredAccountId } from "../routing/bindings.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 import { type RuntimeEnv, writeRuntimeJson } from "../runtime.js";
@@ -260,31 +254,15 @@ const buildSessionSummary = async (storePath: string) => {
 
 function buildPluginHealthSummary(): PluginHealthSummary | undefined {
   const registry = getActivePluginRegistry();
-  const degradedPlugins = listActiveDegradedPlugins();
-  const unavailable = degradedPlugins
-    .map(({ pluginId, state, diagnostic }) => ({
-      id: pluginId,
-      state,
-      diagnostic: toPublicPluginVerificationDiagnostic(diagnostic),
-    }))
-    .toSorted((left, right) => left.id.localeCompare(right.id));
-  const loaded = (registry?.plugins ?? [])
+  if (!registry) {
+    return undefined;
+  }
+  const loaded = registry.plugins
     .filter((plugin) => plugin.status === "loaded")
     .map((plugin) => plugin.id)
     .toSorted((left, right) => left.localeCompare(right));
-  const errors = (registry?.plugins ?? [])
-    .filter(
-      (plugin) =>
-        plugin.status === "error" &&
-        !degradedPlugins.some(
-          (degraded) =>
-            plugin.id === degraded.pluginId &&
-            plugin.failurePhase === "validation" &&
-            plugin.activationReason === `configured-unavailable: ${degraded.diagnostic.reason}` &&
-            Boolean(plugin.rootDir) &&
-            degradedPluginMatchesRoot(degraded, plugin.rootDir ?? ""),
-        ),
-    )
+  const errors = registry.plugins
+    .filter((plugin) => plugin.status === "error")
     .map((plugin) => {
       const error: PluginHealthErrorSummary = {
         id: plugin.id,
@@ -304,10 +282,10 @@ function buildPluginHealthSummary(): PluginHealthSummary | undefined {
       return error;
     })
     .toSorted((left, right) => left.id.localeCompare(right.id));
-  if (loaded.length === 0 && errors.length === 0 && unavailable.length === 0) {
+  if (loaded.length === 0 && errors.length === 0) {
     return undefined;
   }
-  return { loaded, errors, unavailable };
+  return { loaded, errors };
 }
 
 function readBooleanField(value: unknown, key: string): boolean | undefined {
@@ -629,9 +607,6 @@ export async function getHealthSnapshot(params?: {
 
   const pluginHealth = buildPluginHealthSummary();
   const contextEngineHealth = buildContextEngineHealthSummary();
-  const releaseReadiness = readLoadedReleaseReadiness({
-    pluginRegistry: getActivePluginRegistry(),
-  });
   const summary: HealthSummary = {
     ok: true,
     ts: Date.now(),
@@ -639,7 +614,6 @@ export async function getHealthSnapshot(params?: {
     ...(params?.eventLoop ? { eventLoop: params.eventLoop } : {}),
     ...(pluginHealth ? { plugins: pluginHealth } : {}),
     ...(contextEngineHealth ? { contextEngines: contextEngineHealth } : {}),
-    ...(releaseReadiness ? { release: releaseReadiness } : {}),
     modelPricing: getGatewayModelPricingHealth({ enabled: isGatewayModelPricingEnabled(cfg) }),
     channels,
     channelOrder,

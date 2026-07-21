@@ -10,7 +10,6 @@
 ARG OPENCLAW_EXTENSIONS=""
 ARG OPENCLAW_REQUIRED_BUNDLED_PLUGINS="codex"
 ARG OPENCLAW_BUNDLED_PLUGIN_DIR=extensions
-ARG OPENCLAW_RUNTIME_ASSETS_STAGE=source-runtime-layout
 ARG OPENCLAW_NODE_BOOKWORM_IMAGE="docker.io/library/node:24-bookworm@sha256:8530f76a96d88820d288761f022e318970dda93d01536919fbc16076b7983e63"
 ARG OPENCLAW_NODE_BOOKWORM_SLIM_IMAGE="docker.io/library/node:24-bookworm-slim@sha256:242549cd46785b480c832479a730f4f2a20865d61ea2e404fdb2a5c3d3b73ecf"
 ARG OPENCLAW_NODE_BOOKWORM_SLIM_DIGEST="sha256:242549cd46785b480c832479a730f4f2a20865d61ea2e404fdb2a5c3d3b73ecf"
@@ -165,75 +164,6 @@ ARG OPENCLAW_NODE_BOOKWORM_SLIM_DIGEST
 LABEL org.opencontainers.image.base.name="docker.io/library/node:24-bookworm-slim" \
   org.opencontainers.image.base.digest="${OPENCLAW_NODE_BOOKWORM_SLIM_DIGEST}"
 
-# Normalize both executable origins to one minimal /app layout. Release-gated
-# builds select accepted-release-runtime-layout and never copy application
-# bytes from the source checkout.
-FROM base-runtime AS source-runtime-layout
-ARG OPENCLAW_BUNDLED_PLUGIN_DIR
-WORKDIR /app
-COPY --from=runtime-assets /app/package.json ./package.json
-COPY --from=runtime-assets /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
-COPY --from=runtime-assets /app/node_modules ./node_modules
-COPY --from=runtime-assets /app/dist ./dist
-COPY --from=runtime-assets /app/patches ./patches
-COPY --from=runtime-assets /app/openclaw.mjs ./openclaw.mjs
-COPY --from=runtime-assets /app/src/agents/templates ./src/agents/templates
-COPY --from=runtime-assets /app/${OPENCLAW_BUNDLED_PLUGIN_DIR} ./${OPENCLAW_BUNDLED_PLUGIN_DIR}
-COPY --from=runtime-assets /app/skills ./skills
-COPY --from=runtime-assets /app/docs ./docs
-COPY --from=runtime-assets /app/qa ./qa
-RUN mkdir -p /opt/openclaw/release-store
-
-# Local placeholders keep ordinary source builds independent of release
-# contexts. BuildKit named contexts with these names override the placeholders
-# for accepted-release builds.
-FROM scratch AS openclaw_package
-FROM scratch AS openclaw_release_store
-
-# Match OpenClaw's package-installed Docker path: reify dependencies from the
-# packaged manifest/shrinkwrap, then extract the exact accepted package over
-# that tree and execute its packaged lifecycle.
-FROM base-runtime AS accepted-release-manifest
-WORKDIR /tmp/openclaw-deps
-COPY --from=openclaw_package openclaw-current.tgz /tmp/openclaw-current.tgz
-RUN <<'PREPARE_ACCEPTED_MANIFEST'
-set -eu
-tar -xzf /tmp/openclaw-current.tgz -C /tmp/openclaw-deps --strip-components=1 \
-  package/package.json package/npm-shrinkwrap.json
-node - <<'NODE'
-const fs = require("node:fs");
-const manifestPath = "/tmp/openclaw-deps/package.json";
-const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-for (const name of manifest.bundleDependencies ?? []) delete manifest.dependencies?.[name];
-delete manifest.bundleDependencies;
-delete manifest.devDependencies;
-delete manifest.scripts;
-fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-NODE
-PREPARE_ACCEPTED_MANIFEST
-
-FROM base-runtime AS accepted-release-deps
-WORKDIR /tmp/openclaw-deps
-COPY --from=accepted-release-manifest /tmp/openclaw-deps/ ./
-RUN --mount=type=cache,target=/root/.npm,sharing=locked \
-    npm install --omit=dev --no-fund --no-audit \
- && rm -f node_modules/.package-lock.json
-
-FROM base-runtime AS accepted-release-runtime-layout
-WORKDIR /app
-COPY --from=openclaw_package openclaw-current.tgz /tmp/openclaw-current.tgz
-COPY --from=accepted-release-deps /tmp/openclaw-deps/node_modules ./node_modules
-COPY --from=openclaw_release_store . /opt/openclaw/release-store/
-RUN tar -xzf /tmp/openclaw-current.tgz -C /app --strip-components=1 \
- && chmod 755 /app/openclaw.mjs \
- && node /app/scripts/postinstall-bundled-plugins.mjs \
- && ln -sfn /app /app/node_modules/openclaw \
- && rm -f /tmp/openclaw-current.tgz \
- && chmod -R a-w /opt/openclaw/release-store
-
-ARG OPENCLAW_RUNTIME_ASSETS_STAGE
-FROM ${OPENCLAW_RUNTIME_ASSETS_STAGE} AS selected-runtime-layout
-
 # ── Stage 3: Runtime ────────────────────────────────────────────
 FROM base-runtime
 ARG OPENCLAW_BUNDLED_PLUGIN_DIR
@@ -265,8 +195,8 @@ RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,shar
 
 RUN chown node:node /app
 
-COPY --from=selected-runtime-layout --chown=node:node /app/package.json .
-COPY --from=selected-runtime-layout --chown=node:node /app/pnpm-workspace.yaml .
+COPY --from=build-deps --chown=node:node /app/package.json .
+COPY --from=build-deps --chown=node:node /app/pnpm-workspace.yaml .
 
 # Keep pnpm available in the runtime image for container-local workflows.
 # Use a shared Corepack home so the non-root `node` user does not need a
@@ -314,11 +244,12 @@ RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,shar
 # Optionally install Chromium and Xvfb for browser automation.
 # Build with: docker build --build-arg OPENCLAW_INSTALL_BROWSER=1 ...
 # Adds ~300MB but eliminates the 60-90s Playwright install on every container start.
-# Playwright comes from the selected source or accepted-package layout. Runtime
-# bytes are copied afterward so they do not participate in this cache key.
+# The dependency-only Playwright tree is bind-mounted from build-deps. Pruned
+# runtime node_modules and source-derived assets are copied afterward so they do
+# not participate in this cache key.
 ARG OPENCLAW_INSTALL_BROWSER=""
 ENV PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright
-RUN --mount=type=bind,from=selected-runtime-layout,source=/app/node_modules/playwright-core,target=/opt/playwright-core,readonly \
+RUN --mount=type=bind,from=build-deps,source=/opt/playwright-core,target=/opt/playwright-core,readonly \
     --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,id=openclaw-bookworm-apt-lists,target=/var/lib/apt,sharing=locked \
     if [ -n "$OPENCLAW_INSTALL_BROWSER" ]; then \
@@ -368,10 +299,20 @@ RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,shar
         docker-ce-cli docker-compose-plugin; \
     fi
 
-# Copy the normalized source or exact accepted-package layout only after the
-# expensive browser and optional system-tool layers.
-COPY --from=selected-runtime-layout --chown=node:node /app/. /app/
-COPY --from=selected-runtime-layout /opt/openclaw/release-store/. /opt/openclaw/release-store/
+# Runtime dependencies may depend on source-derived plugin pruning, so copy them
+# only after the expensive browser and optional system-tool layers.
+COPY --from=runtime-assets --chown=node:node /app/node_modules ./node_modules
+
+# Source-derived runtime assets are copied after the browser and optional tool
+# layers so ordinary application changes reuse those expensive installations.
+COPY --from=runtime-assets --chown=node:node /app/dist ./dist
+COPY --from=runtime-assets --chown=node:node /app/patches ./patches
+COPY --from=runtime-assets --chown=node:node /app/openclaw.mjs .
+COPY --from=runtime-assets --chown=node:node /app/src/agents/templates ./src/agents/templates
+COPY --from=runtime-assets --chown=node:node /app/${OPENCLAW_BUNDLED_PLUGIN_DIR} ./${OPENCLAW_BUNDLED_PLUGIN_DIR}
+COPY --from=runtime-assets --chown=node:node /app/skills ./skills
+COPY --from=runtime-assets --chown=node:node /app/docs ./docs
+COPY --from=runtime-assets --chown=node:node /app/qa ./qa
 
 # Expose the CLI binary without requiring npm global writes as non-root.
 RUN ln -sf /app/openclaw.mjs /usr/local/bin/openclaw \

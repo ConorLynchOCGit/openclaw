@@ -7,9 +7,6 @@
     "url": "https://github.com/openclaw/openclaw"
   },
   "type": "module",
-  "files": [
-    "system-profile/**"
-  ],
   "dependencies": {
     "@openai/codex": "0.144.1",
     "typebox": "1.1.39",
@@ -32,7 +29,7 @@
       "minHostVersion": ">=2026.5.1-beta.1"
     },
     "compat": {
-      "pluginApi": ">=2026.6.6-0"
+      "pluginApi": ">=2026.6.6"
     },
     "build": {
       "openclawVersion": "2026.6.6"
@@ -40,7 +37,7 @@
     "release": {
       "publishToClawHub": true,
       "publishToNpm": true,
-      "bundleRuntimeDependencies": false
+      "bundleRuntimeDependencies": true
     }
   }
 }

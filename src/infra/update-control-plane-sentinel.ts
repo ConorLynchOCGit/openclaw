@@ -1,12 +1,9 @@
 // Persists update-control-plane sentinel files used by updater coordination.
 import fs from "node:fs/promises";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
-import { normalizeAcceptedReleaseReceiptId } from "./accepted-release-receipt.js";
 import {
   markUpdateRestartSentinelFailure,
-  readRestartSentinel,
   writeRestartSentinel,
-  type RestartSentinelAcceptedPluginArtifact,
   type RestartSentinelPayload,
 } from "./restart-sentinel.js";
 import {
@@ -64,17 +61,6 @@ function normalizeText(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
 }
 
-function normalizeReceiptId(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  try {
-    return normalizeAcceptedReleaseReceiptId(value);
-  } catch {
-    return undefined;
-  }
-}
-
 function normalizeMeta(value: unknown): UpdateRestartSentinelMeta | null {
   if (!isRecord(value)) {
     return null;
@@ -82,7 +68,6 @@ function normalizeMeta(value: unknown): UpdateRestartSentinelMeta | null {
   const sessionKey = normalizeText(value.sessionKey);
   const threadId = normalizeText(value.threadId);
   const handoffId = normalizeText(value.handoffId);
-  const acceptedReleaseReceiptId = normalizeReceiptId(value.acceptedReleaseReceiptId);
   const channel = isRecord(value.deliveryContext)
     ? normalizeText(value.deliveryContext.channel)
     : undefined;
@@ -103,62 +88,10 @@ function normalizeMeta(value: unknown): UpdateRestartSentinelMeta | null {
     ...(deliveryContext ? { deliveryContext } : {}),
     ...(threadId ? { threadId } : {}),
     ...(handoffId ? { handoffId } : {}),
-    ...(acceptedReleaseReceiptId ? { acceptedReleaseReceiptId } : {}),
     note: typeof value.note === "string" ? value.note : null,
     continuationMessage:
       typeof value.continuationMessage === "string" ? value.continuationMessage : null,
   };
-}
-
-function sameAcceptedPluginArtifacts(
-  left: readonly RestartSentinelAcceptedPluginArtifact[],
-  right: readonly RestartSentinelAcceptedPluginArtifact[],
-): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
-/** Bind the verified accepted plugin set to the existing update sentinel before mutation. */
-export async function bindAcceptedReleaseUpdateRestartSentinel(params: {
-  acceptedReleaseReceiptId: string;
-  pluginArtifacts: readonly RestartSentinelAcceptedPluginArtifact[];
-  env?: NodeJS.ProcessEnv;
-}): Promise<RestartSentinelPayload> {
-  const acceptedReleaseReceiptId = normalizeAcceptedReleaseReceiptId(
-    params.acceptedReleaseReceiptId,
-  );
-  const sentinel = await readRestartSentinel(params.env);
-  if (!sentinel || sentinel.payload.kind !== "update" || sentinel.payload.status === "ok") {
-    throw new Error("accepted release update requires a pending update restart sentinel");
-  }
-  if (sentinel.payload.stats?.acceptedReleaseReceiptId !== acceptedReleaseReceiptId) {
-    throw new Error("accepted release update restart sentinel receipt does not match");
-  }
-  const pluginArtifacts = params.pluginArtifacts.map((artifact) => ({ ...artifact }));
-  const existing = sentinel.payload.stats.acceptedReleasePluginArtifacts;
-  if (existing && !sameAcceptedPluginArtifacts(existing, pluginArtifacts)) {
-    throw new Error("accepted release update restart sentinel plugin set does not match");
-  }
-  const payload: RestartSentinelPayload = {
-    ...sentinel.payload,
-    stats: {
-      ...sentinel.payload.stats,
-      acceptedReleaseReceiptId,
-      acceptedReleasePluginArtifacts: pluginArtifacts,
-    },
-  };
-  await writeRestartSentinel(payload, params.env);
-  return payload;
-}
-
-/** Return the opaque receipt identity from an unfinished accepted-release update. */
-export async function readPendingAcceptedReleaseReceiptId(
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<string | null> {
-  const sentinel = await readRestartSentinel(env);
-  if (!sentinel || sentinel.payload.kind !== "update" || sentinel.payload.status === "ok") {
-    return null;
-  }
-  return normalizeReceiptId(sentinel.payload.stats?.acceptedReleaseReceiptId) ?? null;
 }
 
 /** Read update sentinel routing metadata from the configured handoff file. */
@@ -186,26 +119,12 @@ export async function writeControlPlaneUpdateRestartSentinel(params: {
   result: UpdateRunResult;
   meta: UpdateRestartSentinelMeta;
 }): Promise<string> {
-  const payload = buildUpdateRestartSentinelPayload({
-    result: params.result,
-    meta: params.meta,
-  });
-  if (params.meta.acceptedReleaseReceiptId) {
-    const current = await readRestartSentinel();
-    if (
-      current?.payload.kind === "update" &&
-      current.payload.stats?.acceptedReleaseReceiptId === params.meta.acceptedReleaseReceiptId &&
-      current.payload.stats.acceptedReleasePluginArtifacts
-    ) {
-      payload.stats = {
-        ...payload.stats,
-        acceptedReleasePluginArtifacts: current.payload.stats.acceptedReleasePluginArtifacts.map(
-          (artifact) => ({ ...artifact }),
-        ),
-      };
-    }
-  }
-  return await writeRestartSentinel(payload);
+  return await writeRestartSentinel(
+    buildUpdateRestartSentinelPayload({
+      result: params.result,
+      meta: params.meta,
+    }),
+  );
 }
 
 /** Mark the pending update restart sentinel as failed. */

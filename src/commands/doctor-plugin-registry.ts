@@ -52,15 +52,6 @@ type PluginRegistryDoctorNoteLogger = {
   warn: (message: string) => void;
 };
 
-type ManagedNpmPackageReadFailure = {
-  packageDir: string;
-  reason: string;
-};
-
-function formatPackageReadFailure(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function readJsonObject(filePath: string): Record<string, unknown> | null {
   const parsed = tryReadJsonSync(filePath);
   return isRecord(parsed) ? parsed : null;
@@ -333,19 +324,8 @@ export async function maybeRepairManagedNpmOpenClawPeerLinks(
 ): Promise<boolean> {
   const npmRoots = listManagedPluginNpmRoots(params);
   if (!params.prompter.shouldRepair) {
-    const packageReadFailures: ManagedNpmPackageReadFailure[] = [];
     const audits = await Promise.all(
-      npmRoots.map((npmRoot) =>
-        auditOpenClawPeerDependenciesInManagedNpmRoot({
-          npmRoot,
-          onPackageReadError: (error, packageDir) => {
-            packageReadFailures.push({
-              packageDir,
-              reason: formatPackageReadFailure(error),
-            });
-          },
-        }),
-      ),
+      npmRoots.map((npmRoot) => auditOpenClawPeerDependenciesInManagedNpmRoot({ npmRoot })),
     );
     const issues = audits.flatMap((audit) => audit.issues);
     if (issues.length > 0) {
@@ -354,17 +334,6 @@ export async function maybeRepairManagedNpmOpenClawPeerLinks(
           "Managed npm OpenClaw host peer links need repair:",
           ...issues.map((issue) => `- ${issue.packageName}: ${issue.reason}`),
           `Repair with ${formatCliCommand("openclaw doctor --fix")} to relink managed npm plugin packages.`,
-        ].join("\n"),
-        "Plugin registry",
-      );
-    }
-    if (packageReadFailures.length > 0) {
-      note(
-        [
-          "Managed npm plugin packages could not be inspected:",
-          ...packageReadFailures.map(
-            (failure) => `- ${shortenHomePath(failure.packageDir)}: ${failure.reason}`,
-          ),
         ].join("\n"),
         "Plugin registry",
       );
@@ -382,11 +351,6 @@ export async function maybeRepairManagedNpmOpenClawPeerLinks(
       relinkOpenClawPeerDependenciesInManagedNpmRoot({
         npmRoot,
         logger,
-        onPackageReadError: (error, packageDir) => {
-          logger.warn(
-            `Could not inspect managed npm package ${shortenHomePath(packageDir)}: ${formatPackageReadFailure(error)}`,
-          );
-        },
       }),
     ),
   );

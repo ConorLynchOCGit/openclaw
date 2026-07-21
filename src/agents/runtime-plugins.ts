@@ -37,7 +37,6 @@ export function ensureRuntimePluginsLoaded(params: {
   config?: OpenClawConfig;
   workspaceDir?: string | null;
   allowGatewaySubagentBinding?: boolean;
-  requiredPluginIds?: readonly string[];
 }): void {
   if (params.config && !normalizePluginsConfig(params.config.plugins).enabled) {
     return;
@@ -46,13 +45,10 @@ export function ensureRuntimePluginsLoaded(params: {
     typeof params.workspaceDir === "string" && params.workspaceDir.trim()
       ? resolveUserPath(params.workspaceDir)
       : undefined;
-  const startupPluginIds =
-    params.requiredPluginIds === undefined
-      ? resolveStartupPluginIdsFromCurrentSnapshot({
-          config: params.config,
-          workspaceDir,
-        })
-      : [...params.requiredPluginIds];
+  const startupPluginIds = resolveStartupPluginIdsFromCurrentSnapshot({
+    config: params.config,
+    workspaceDir,
+  });
   const allowGatewaySubagentBinding =
     params.allowGatewaySubagentBinding === true ||
     getActivePluginRuntimeSubagentMode() === "gateway-bindable";

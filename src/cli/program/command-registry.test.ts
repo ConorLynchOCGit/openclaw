@@ -24,13 +24,6 @@ vi.mock("./register.backup.js", () => ({
   },
 }));
 
-vi.mock("./register.release.js", () => ({
-  registerReleaseCommand: (program: Command) => {
-    const release = program.command("release");
-    release.command("prepare");
-  },
-}));
-
 vi.mock("./register.maintenance.js", () => ({
   registerMaintenanceCommands: (program: Command) => {
     program.command("doctor");
@@ -98,7 +91,6 @@ describe("command-registry", () => {
     expect(names).toContain("config");
     expect(names).toContain("agents");
     expect(names).toContain("backup");
-    expect(names).toContain("release");
     expect(names).toContain("mcp");
     expect(names).toContain("sessions");
     expect(names).toContain("commitments");

@@ -12,13 +12,13 @@ import {
   releaseWorktreeRunLeaseRow,
 } from "./registry.js";
 import {
+  __testing,
   abortWorktreeRemoval,
   acquireWorktreeRunLease,
   claimWorktreeRemoval,
   hasLiveWorktreeRunLease,
   resolveWorktreeIdForPath,
 } from "./run-lease.js";
-import { testing as __testing } from "./run-lease.test-support.js";
 import { ManagedWorktreeService } from "./service.js";
 
 const execFileAsync = promisify(execFile);

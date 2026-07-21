@@ -119,36 +119,6 @@ describe("ensureRuntimePluginsLoaded", () => {
     });
   });
 
-  it("lets an immutable release require the complete accepted plugin set", () => {
-    const config = {} as never;
-    hoisted.getCurrentPluginMetadataSnapshot.mockReturnValue({
-      startup: {
-        pluginIds: ["gateway-only"],
-      },
-    });
-
-    ensureRuntimePluginsLoaded({
-      config,
-      workspaceDir: "/tmp/workspace",
-      allowGatewaySubagentBinding: true,
-      requiredPluginIds: ["gateway-only", "lazy-provider"],
-    });
-
-    expect(hoisted.getCurrentPluginMetadataSnapshot).not.toHaveBeenCalled();
-    expect(hoisted.ensureStandaloneRuntimePluginRegistryLoaded).toHaveBeenCalledWith({
-      requiredPluginIds: ["gateway-only", "lazy-provider"],
-      loadOptions: {
-        config,
-        workspaceDir: "/tmp/workspace",
-        onlyPluginIds: ["gateway-only", "lazy-provider"],
-        forceFullRuntimeForChannelPlugins: true,
-        runtimeOptions: {
-          allowGatewaySubagentBinding: true,
-        },
-      },
-    });
-  });
-
   it("delegates startup-scope registry reuse to loader cache compatibility", () => {
     hoisted.getCurrentPluginMetadataSnapshot.mockReturnValue({
       startup: {

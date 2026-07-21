@@ -3,7 +3,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import type { PluginLookUpTable } from "../plugins/plugin-lookup-table.js";
 import type { PluginRegistry } from "../plugins/registry.js";
-import { setActiveDegradedPlugins } from "../plugins/runtime-degraded-state.js";
 import type { PluginRuntimeGatewayRequestScope } from "../plugins/runtime/gateway-request-scope.js";
 import type { PluginRuntime } from "../plugins/runtime/types.js";
 import type { PluginDiagnostic } from "../plugins/types.js";
@@ -407,7 +406,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  setActiveDegradedPlugins([]);
   serverPluginsModule.clearFallbackGatewayContext();
   runtimeModule.clearGatewaySubagentRuntime();
   runtimeRegistryModule.resetPluginRuntimeStateForTest();
@@ -430,41 +428,6 @@ describe("loadGatewayPlugins", () => {
       "[plugins] failed to load plugin: boom (plugin=telegram, source=/tmp/telegram/index.ts)",
     );
     expect(log.warn).not.toHaveBeenCalled();
-  });
-
-  test("does not re-log a quarantined plugin verification diagnostic", () => {
-    const diagnostic: PluginDiagnostic = {
-      level: "error",
-      code: "plugin-verification",
-      pluginId: "broken-payload",
-      source: "/tmp/broken-payload/index.ts",
-      message: "configured plugin payload verification failed (missing-main-entry): missing",
-    };
-    const distinctDiagnostic: PluginDiagnostic = {
-      ...diagnostic,
-      message: "configured plugin payload verification failed (missing-package-json): missing",
-    };
-    const registry = createRegistry([diagnostic, distinctDiagnostic]);
-    loadOpenClawPlugins.mockReturnValue(registry);
-    setActiveDegradedPlugins([
-      {
-        pluginId: "broken-payload",
-        state: "configured-unavailable",
-        diagnostic: {
-          kind: "plugin-verification",
-          reason: "missing-main-entry",
-          detail: "missing",
-        },
-      },
-    ]);
-
-    const log = loadGatewayStartupPluginsForTest();
-
-    expect(log.error).toHaveBeenCalledOnce();
-    expect(log.error).toHaveBeenCalledWith(
-      "[plugins] configured plugin payload verification failed (missing-package-json): missing (plugin=broken-payload, source=/tmp/broken-payload/index.ts)",
-    );
-    expect(registry.diagnostics).toEqual([diagnostic, distinctDiagnostic]);
   });
 
   test("loads only gateway startup plugin ids", () => {

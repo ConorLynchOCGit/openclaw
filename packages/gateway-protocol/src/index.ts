@@ -153,10 +153,6 @@ import {
   ConfigSetParamsSchema,
   type UpdateStatusParams,
   UpdateStatusParamsSchema,
-  type ReleasePrepareParams,
-  ReleasePrepareParamsSchema,
-  type ReleasePrepareResult,
-  ReleasePrepareResultSchema,
   type ConnectParams,
   ConnectParamsSchema,
   type CronAddParams,
@@ -922,9 +918,6 @@ export const validateChatEvent = lazyCompile(ChatEventSchema);
 export const validateChatMessageGetResult = lazyCompile(ChatMessageGetResultSchema);
 export const validateUpdateStatusParams = lazyCompile<UpdateStatusParams>(UpdateStatusParamsSchema);
 export const validateUpdateRunParams = lazyCompile<UpdateRunParams>(UpdateRunParamsSchema);
-export const validateReleasePrepareParams = lazyCompile<ReleasePrepareParams>(
-  ReleasePrepareParamsSchema,
-);
 export const validateWebLoginStartParams =
   lazyCompile<WebLoginStartParams>(WebLoginStartParamsSchema);
 export const validateWebLoginWaitParams = lazyCompile<WebLoginWaitParams>(WebLoginWaitParamsSchema);
@@ -1197,8 +1190,6 @@ export {
   ChatSendParamsSchema,
   ChatInjectParamsSchema,
   UpdateRunParamsSchema,
-  ReleasePrepareParamsSchema,
-  ReleasePrepareResultSchema,
   WorktreeBranchSchema,
   WorktreeRecordSchema,
   WorktreesBranchesParamsSchema,
@@ -1421,8 +1412,6 @@ export type {
   WebPushTestParams,
   UpdateStatusParams,
   UpdateRunParams,
-  ReleasePrepareParams,
-  ReleasePrepareResult,
   WorktreeBranch,
   WorktreeRecord,
   WorktreesBranchesParams,

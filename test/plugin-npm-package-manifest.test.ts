@@ -140,23 +140,6 @@ function writeOptionalPlatformDependencyPackage(packageDir: string): string {
 }
 
 describe("plugin npm package manifest staging", () => {
-  it("ships the immutable Codex system profile in the external plugin package", () => {
-    const packageDir = join(process.cwd(), "extensions", "codex");
-    const packageJson = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")) as {
-      files?: string[];
-      openclaw?: { release?: { bundleRuntimeDependencies?: boolean } };
-    };
-    const packedFiles = listNpmPackDryRunFiles(packageDir);
-
-    expect(packageJson.files).toContain("system-profile/**");
-    expect(packedFiles).toContain("system-profile/project/.codex/config.toml");
-    expect(packedFiles).toContain(
-      "system-profile/shared-skills/openclaw-coding-workbench/SKILL.md",
-    );
-    expect(packedFiles).toContain("system-profile/tools/openclaw-repo-workbench.mjs");
-    expect(packageJson.openclaw?.release?.bundleRuntimeDependencies).toBe(false);
-  });
-
   it("wraps Windows npm.cmd staging through cmd.exe without shell mode", () => {
     const nodeDir = "C:\\Program Files\\nodejs";
     const npmCmdPath = win32.resolve(nodeDir, "npm.cmd");

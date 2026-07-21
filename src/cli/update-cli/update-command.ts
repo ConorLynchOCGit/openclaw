@@ -5,7 +5,6 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Writable } from "node:stream";
-import { isDeepStrictEqual } from "node:util";
 import { confirm, isCancel } from "@clack/prompts";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
@@ -20,7 +19,6 @@ import {
   UPDATE_DEFER_CONFIGURED_PLUGIN_INSTALL_REPAIR_ENV,
   UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE_ENV,
 } from "../../commands/doctor/shared/update-phase.js";
-import type { HealthSummary } from "../../commands/health.types.js";
 import { createPreUpdateConfigSnapshot } from "../../config/backup-rotation.js";
 import {
   assertConfigWriteAllowedInCurrentMode,
@@ -34,7 +32,7 @@ import { resolveConfigIncludes } from "../../config/includes.js";
 import { formatConfigIssueLines } from "../../config/issue-format.js";
 import { asResolvedSourceConfig, asRuntimeConfig } from "../../config/materialize.js";
 import { CONFIG_PATH, resolveIncludeRoots } from "../../config/paths.js";
-import type { ConfigFileSnapshot, OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { PluginInstallRecord } from "../../config/types.plugins.js";
 import {
   GATEWAY_SERVICE_KIND,
@@ -51,28 +49,6 @@ import {
   resolveGatewayService,
   type GatewayService,
 } from "../../daemon/service.js";
-import { callGateway } from "../../gateway/call.js";
-import {
-  verifyAcceptedReleaseArtifactInstallPlan,
-  verifyInstalledAcceptedPackagePlan,
-} from "../../infra/accepted-release-install-plan.js";
-import { assertAcceptedReleaseLoadedReadback } from "../../infra/accepted-release-loaded-readback.js";
-import {
-  assertAcceptedReleasePluginsConverged,
-  assertAcceptedReleasePluginPredecessor,
-  convergeAcceptedReleasePlugins,
-  type AcceptedReleasePluginConvergenceResult,
-} from "../../infra/accepted-release-plugin-convergence.js";
-import {
-  ACCEPTED_RELEASE_RECEIPT_ID_ENV,
-  assertAcceptedReleaseCandidate,
-  assertAcceptedReleaseCandidateIsDistinct,
-  assertAcceptedReleasePredecessor,
-  readAcceptedReleaseReceiptId,
-  RELEASE_STORE_ROOT_ENV,
-  resolveAcceptedReleaseReceipt,
-  type ResolvedAcceptedReleaseReceipt,
-} from "../../infra/accepted-release-receipt.js";
 import { createLowDiskSpaceWarning } from "../../infra/disk-space.js";
 import { pathExists } from "../../infra/fs-safe.js";
 import { readJsonIfExists, writeJson } from "../../infra/json-files.js";
@@ -94,11 +70,8 @@ import {
 } from "../../infra/update-check.js";
 import {
   buildControlPlaneUpdateRestartHealthPendingResult,
-  bindAcceptedReleaseUpdateRestartSentinel,
-  CONTROL_PLANE_UPDATE_SENTINEL_META_ENV,
   markControlPlaneUpdateRestartSentinelFailure,
   readControlPlaneUpdateSentinelMeta,
-  readPendingAcceptedReleaseReceiptId,
   writeControlPlaneUpdateRestartSentinel,
   type ControlPlaneUpdateSentinelMetaFile,
 } from "../../infra/update-control-plane-sentinel.js";
@@ -131,10 +104,6 @@ import {
   type PluginUpdateOutcome,
 } from "../../plugins/update.js";
 import { runCommandWithTimeout } from "../../process/exec.js";
-import {
-  loadEmbeddedReleaseManifest,
-  packageDeclaresReleaseManifest,
-} from "../../release-manifest-readback.js";
 import { defaultRuntime } from "../../runtime.js";
 import { resolveUserPath } from "../../utils.js";
 import { VERSION } from "../../version.js";
@@ -243,29 +212,6 @@ type PostCorePluginUpdateResult = NonNullable<
   NonNullable<UpdateRunResult["postUpdate"]>["plugins"]
 >;
 
-function acceptedPluginConvergenceResult(
-  result: AcceptedReleasePluginConvergenceResult | null,
-  error?: unknown,
-): PostCorePluginUpdateResult {
-  const message =
-    error instanceof Error ? error.message : error === undefined ? null : String(error);
-  const changed = (result?.changed.length ?? 0) > 0;
-  return {
-    status: message ? "error" : "ok",
-    reason: "accepted-release-exact-set",
-    changed,
-    sync: {
-      changed,
-      switchedToBundled: [],
-      switchedToNpm: [],
-      warnings: [],
-      errors: message ? [message] : [],
-    },
-    npm: { changed, outcomes: [] },
-    integrityDrifts: [],
-  };
-}
-
 type PreUpdateConfigRestoreInput = {
   sourceConfig: OpenClawConfig;
   authoredConfig: OpenClawConfig;
@@ -278,40 +224,6 @@ type MissingPluginInstallPayload = {
 };
 
 type PostUpdatePluginWarning = NonNullable<PostCorePluginUpdateResult["warnings"]>[number];
-
-export function acceptedReleaseUpdateAdmissionError(params: {
-  opts: UpdateCommandOptions;
-  env?: NodeJS.ProcessEnv;
-}): string | null {
-  const env = params.env ?? process.env;
-  if (env.OPENCLAW_UPDATE_RUN_HANDOFF !== "1") {
-    return "Accepted release activation requires the native managed-service handoff.";
-  }
-  if (!params.opts.yes || !params.opts.json) {
-    return "Accepted release activation requires the non-interactive typed update path.";
-  }
-  if (params.opts.channel || params.opts.tag) {
-    return "Accepted release activation cannot be combined with a channel or package tag.";
-  }
-  if (params.opts.dryRun) {
-    return "Accepted release activation cannot run as a dry run.";
-  }
-  if (params.opts.restart === false) {
-    return "Accepted release activation requires restart verification.";
-  }
-  return null;
-}
-
-export function releaseGatedRoutineUpdateAdmissionError(params: {
-  acceptedRelease: boolean;
-  dryRun: boolean;
-  releaseGatedPackage: boolean;
-}): string | null {
-  if (!params.acceptedRelease && !params.dryRun && params.releaseGatedPackage) {
-    return "This release-gated installation requires an accepted release receipt for routine updates.";
-  }
-  return null;
-}
 
 function pickUpdateQuip(): string {
   return UPDATE_QUIPS[Math.floor(Math.random() * UPDATE_QUIPS.length)] ?? "Update complete.";
@@ -1076,17 +988,6 @@ async function maybeRestartServiceAfterFailedMutableUpdate(params: {
   }
 }
 
-export function acceptedReleaseConfigPreimageMatches(
-  before: Pick<ConfigFileSnapshot, "exists" | "raw" | "sourceConfig">,
-  after: Pick<ConfigFileSnapshot, "exists" | "raw" | "sourceConfig">,
-): boolean {
-  return (
-    before.exists === after.exists &&
-    before.raw === after.raw &&
-    isDeepStrictEqual(before.sourceConfig, after.sourceConfig)
-  );
-}
-
 function isRunningInsideGatewayService(
   env: Record<string, string | undefined> = process.env,
 ): boolean {
@@ -1582,59 +1483,6 @@ async function gatewayServiceCommandUsesRoot(params: {
   return expectedRootReal === serviceRootReal;
 }
 
-function isWhitespace(character: string): boolean {
-  return character.trim().length === 0;
-}
-
-function redactTokenEndingWith(value: string, suffix: string): string {
-  let redacted = value;
-  let searchFrom = 0;
-  for (;;) {
-    const suffixStart = redacted.indexOf(suffix, searchFrom);
-    if (suffixStart < 0) {
-      return redacted;
-    }
-    let tokenStart = suffixStart;
-    while (tokenStart > 0 && !isWhitespace(redacted[tokenStart - 1] ?? "")) {
-      tokenStart -= 1;
-    }
-    const replacement = "<accepted-release-artifact>";
-    redacted = `${redacted.slice(0, tokenStart)}${replacement}${redacted.slice(suffixStart + suffix.length)}`;
-    searchFrom = tokenStart + replacement.length;
-  }
-}
-
-function redactAcceptedArtifactText(
-  value: string | null | undefined,
-  acceptedRelease: ResolvedAcceptedReleaseReceipt,
-): string | null | undefined {
-  if (value == null) {
-    return value;
-  }
-  let redacted = value;
-  for (const artifact of acceptedRelease.receipt.orderedArtifacts) {
-    const stagedSuffix = path.join(
-      ".openclaw-accepted-release",
-      artifact.sha256,
-      artifact.fileName,
-    );
-    redacted = redacted.replaceAll(artifact.filePath, "<accepted-release-artifact>");
-    redacted = redactTokenEndingWith(redacted, stagedSuffix);
-  }
-  return redacted;
-}
-
-export function buildAcceptedReleaseChildEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const childEnv = { ...env };
-  delete childEnv[ACCEPTED_RELEASE_RECEIPT_ID_ENV];
-  delete childEnv[RELEASE_STORE_ROOT_ENV];
-  delete childEnv[CONTROL_PLANE_UPDATE_SENTINEL_META_ENV];
-  delete childEnv.OPENCLAW_UPDATE_RUN_HANDOFF;
-  delete childEnv[UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE_ENV];
-  childEnv[UPDATE_DEFER_CONFIGURED_PLUGIN_INSTALL_REPAIR_ENV] = "1";
-  return childEnv;
-}
-
 async function runPackageInstallUpdate(params: {
   root: string;
   installKind: "git" | "package" | "unknown";
@@ -1647,24 +1495,13 @@ async function runPackageInstallUpdate(params: {
   invocationCwd?: string;
   honorPackageRoot?: boolean;
   nodeRunner?: string;
-  acceptedRelease?: ResolvedAcceptedReleaseReceipt;
-}): Promise<{ result: UpdateRunResult }> {
-  const acceptedRelease = params.acceptedRelease;
+}): Promise<UpdateRunResult> {
   const manager = await resolveGlobalManager({
     root: params.root,
     installKind: params.installKind,
     timeoutMs: params.timeoutMs,
   });
-  const acceptedChildEnv = acceptedRelease ? buildAcceptedReleaseChildEnv(process.env) : undefined;
-  const baseInstallEnv = await createGlobalInstallEnv(acceptedChildEnv);
-  const acceptedRegistry = acceptedRelease?.releaseManifest.artifacts[0]?.installPlan.registry;
-  const installEnv = acceptedRegistry
-    ? {
-        ...baseInstallEnv,
-        NPM_CONFIG_REGISTRY: acceptedRegistry,
-        npm_config_registry: acceptedRegistry,
-      }
-    : baseInstallEnv;
+  const installEnv = await createGlobalInstallEnv();
   const runCommand = createGlobalCommandRunner();
   const installTarget = await resolveGlobalInstallTarget({
     manager,
@@ -1677,16 +1514,11 @@ async function runPackageInstallUpdate(params: {
   const packageName =
     (pkgRoot ? await readPackageName(pkgRoot) : await readPackageName(params.root)) ??
     DEFAULT_PACKAGE_NAME;
-  if (acceptedRelease && packageName !== acceptedRelease.coreArtifact.packageName) {
-    throw new Error("loaded package name does not match the accepted core artifact");
-  }
-  const installSpec = acceptedRelease
-    ? acceptedRelease.coreArtifact.filePath
-    : resolveGlobalInstallSpec({
-        packageName,
-        tag: params.tag,
-        env: installEnv,
-      });
+  const installSpec = resolveGlobalInstallSpec({
+    packageName,
+    tag: params.tag,
+    env: installEnv,
+  });
 
   const beforeVersion = pkgRoot ? await readPackageVersion(pkgRoot) : null;
   if (pkgRoot) {
@@ -1716,42 +1548,6 @@ async function runPackageInstallUpdate(params: {
     runCommand,
     timeoutMs: params.timeoutMs,
     ...(installEnv === undefined ? {} : { env: installEnv }),
-    ...(acceptedRelease
-      ? {
-          acceptedLocalPackage: {
-            artifact: acceptedRelease.coreArtifact,
-            releaseStoreRoot: acceptedRelease.releaseStoreRoot,
-            assertPredecessor: async (packageRoot: string) => {
-              await assertAcceptedReleasePredecessor({
-                packageRoot,
-                receipt: acceptedRelease.receipt,
-              });
-            },
-            assertInstallPlan: async (archivePath: string) => {
-              const manifestArtifact = acceptedRelease.releaseManifest.artifacts[0];
-              if (!manifestArtifact || manifestArtifact.role !== "core") {
-                throw new Error("accepted release manifest is missing its ordered core artifact");
-              }
-              await verifyAcceptedReleaseArtifactInstallPlan({
-                archivePath,
-                receiptArtifact: acceptedRelease.coreArtifact,
-                manifestArtifact,
-              });
-            },
-            assertCandidate: async (packageRoot: string) => {
-              await assertAcceptedReleaseCandidate({
-                packageRoot,
-                resolvedReceipt: acceptedRelease,
-              });
-              const manifestArtifact = acceptedRelease.releaseManifest.artifacts[0];
-              if (!manifestArtifact || manifestArtifact.role !== "core") {
-                throw new Error("accepted release manifest is missing its ordered core artifact");
-              }
-              await verifyInstalledAcceptedPackagePlan({ packageRoot, manifestArtifact });
-            },
-          },
-        }
-      : {}),
     runStep: (stepParams) =>
       runUpdateStep({
         ...stepParams,
@@ -1760,9 +1556,7 @@ async function runPackageInstallUpdate(params: {
     postVerifyStep: async (verifiedPackageRoot) => {
       const entryPath = await resolveGatewayInstallEntrypoint(verifiedPackageRoot);
       if (entryPath) {
-        if (!acceptedRelease) {
-          await createUpdateConfigSnapshot();
-        }
+        await createUpdateConfigSnapshot();
         const candidateHostVersion = await readPackageVersion(verifiedPackageRoot);
         return await runUpdateStep({
           name: `${CLI_NAME} doctor`,
@@ -1771,22 +1565,17 @@ async function runPackageInstallUpdate(params: {
             entryPath,
             "doctor",
             "--non-interactive",
-            ...(acceptedRelease ? [] : ["--fix"]),
+            "--fix",
           ],
           cwd: verifiedPackageRoot,
           env: {
             ...resolvePostInstallDoctorEnv({
-              ...(acceptedChildEnv ? { baseEnv: acceptedChildEnv } : {}),
               serviceEnv: params.managedServiceEnv,
               invocationCwd: params.invocationCwd,
             }),
             OPENCLAW_UPDATE_IN_PROGRESS: "1",
-            ...(acceptedRelease
-              ? {}
-              : {
-                  [UPDATE_DEFER_CONFIGURED_PLUGIN_INSTALL_REPAIR_ENV]: "1",
-                  [UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE_ENV]: "1",
-                }),
+            [UPDATE_DEFER_CONFIGURED_PLUGIN_INSTALL_REPAIR_ENV]: "1",
+            [UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE_ENV]: "1",
             ...(candidateHostVersion === null
               ? {}
               : { OPENCLAW_COMPATIBILITY_HOST_VERSION: candidateHostVersion }),
@@ -1798,27 +1587,16 @@ async function runPackageInstallUpdate(params: {
       return null;
     },
   });
-  const reportedSteps = acceptedRelease
-    ? packageUpdate.steps.map((step) => ({
-        ...step,
-        command:
-          redactAcceptedArtifactText(step.command, acceptedRelease) ?? "<accepted-release-command>",
-        stdoutTail: redactAcceptedArtifactText(step.stdoutTail, acceptedRelease),
-        stderrTail: redactAcceptedArtifactText(step.stderrTail, acceptedRelease),
-      }))
-    : packageUpdate.steps;
 
   return {
-    result: {
-      status: packageUpdate.failedStep ? "error" : "ok",
-      mode: manager,
-      root: packageUpdate.verifiedPackageRoot ?? params.root,
-      reason: packageUpdate.failedStep ? packageUpdate.failedStep.name : undefined,
-      before: { version: beforeVersion },
-      after: { version: packageUpdate.afterVersion ?? beforeVersion },
-      steps: reportedSteps,
-      durationMs: Date.now() - params.startedAt,
-    },
+    status: packageUpdate.failedStep ? "error" : "ok",
+    mode: manager,
+    root: packageUpdate.verifiedPackageRoot ?? params.root,
+    reason: packageUpdate.failedStep ? packageUpdate.failedStep.name : undefined,
+    before: { version: beforeVersion },
+    after: { version: packageUpdate.afterVersion ?? beforeVersion },
+    steps: packageUpdate.steps,
+    durationMs: Date.now() - params.startedAt,
   };
 }
 
@@ -2598,8 +2376,7 @@ type UpdateFinalizeResult = {
   restart: false;
   postUpdate: {
     doctor: {
-      status: "ok" | "skipped";
-      reason?: string;
+      status: "ok";
     };
     plugins: PostCorePluginUpdateResult;
   };
@@ -2644,97 +2421,6 @@ export async function updateFinalizeCommand(opts: UpdateFinalizeOptions): Promis
   assertConfigWriteAllowedInCurrentMode();
 
   const root = await resolveUpdateRoot();
-  const pendingAcceptedReleaseReceiptId = await readPendingAcceptedReleaseReceiptId();
-  const releaseGatedPackage = packageDeclaresReleaseManifest(root);
-  if (releaseGatedPackage) {
-    if (!pendingAcceptedReleaseReceiptId) {
-      defaultRuntime.error(
-        "Release-owned plugin repair requires a pending accepted release receipt in the update sentinel.",
-      );
-      defaultRuntime.exit(1);
-      return;
-    }
-    if (opts.channel) {
-      defaultRuntime.error("Accepted release repair cannot include an update channel.");
-      defaultRuntime.exit(1);
-      return;
-    }
-
-    let acceptedRelease: ResolvedAcceptedReleaseReceipt;
-    let pluginUpdate: PostCorePluginUpdateResult;
-    const configBefore = await readConfigFileSnapshot({ skipPluginValidation: true });
-    try {
-      if (!configBefore.valid) {
-        throw new Error("Accepted release repair requires a valid unchanged config preimage.");
-      }
-      acceptedRelease = await resolveAcceptedReleaseReceipt({
-        acceptedReleaseReceiptId: pendingAcceptedReleaseReceiptId,
-        env: process.env,
-      });
-      await bindAcceptedReleaseUpdateRestartSentinel({
-        acceptedReleaseReceiptId: acceptedRelease.id,
-        pluginArtifacts: acceptedRelease.pluginArtifacts.map((artifact) => ({
-          packageName: artifact.packageName,
-          version: artifact.version,
-          sha256: artifact.sha256,
-          npmIntegrityOrShasum: artifact.npmIntegrityOrShasum,
-          packlistDigest: artifact.packlistDigest,
-          byteSize: artifact.byteSize,
-        })),
-      });
-      await assertAcceptedReleaseCandidate({ packageRoot: root, resolvedReceipt: acceptedRelease });
-      const convergence = await convergeAcceptedReleasePlugins({
-        resolvedReceipt: acceptedRelease,
-        config: configBefore.config,
-        env: process.env,
-        timeoutMs: timeoutMs ?? DEFAULT_UPDATE_STEP_TIMEOUT_MS,
-        assertCandidate: async () => {
-          await assertAcceptedReleaseCandidate({
-            packageRoot: root,
-            resolvedReceipt: acceptedRelease,
-          });
-        },
-      });
-      const configAfter = await readConfigFileSnapshot({ skipPluginValidation: true });
-      if (!configAfter.valid || !acceptedReleaseConfigPreimageMatches(configBefore, configAfter)) {
-        throw new Error("Accepted release repair changed the persistent config preimage.");
-      }
-      await assertAcceptedReleasePluginsConverged({
-        resolvedReceipt: acceptedRelease,
-        env: process.env,
-      });
-      pluginUpdate = acceptedPluginConvergenceResult(convergence);
-    } catch (error) {
-      pluginUpdate = acceptedPluginConvergenceResult(null, error);
-    }
-
-    const configChannel = configBefore.valid
-      ? normalizeUpdateChannel(configBefore.config.update?.channel)
-      : null;
-    const result: UpdateFinalizeResult = {
-      status: pluginUpdate.status === "error" ? "error" : "ok",
-      mode: "finalize",
-      root,
-      channel: configChannel ?? DEFAULT_PACKAGE_CHANNEL,
-      restart: false,
-      postUpdate: {
-        doctor: { status: "skipped", reason: "accepted-release-exact-repair" },
-        plugins: pluginUpdate,
-      },
-    };
-    if (opts.json) {
-      defaultRuntime.writeJson(result);
-    } else if (result.status === "ok") {
-      defaultRuntime.log(theme.muted("Accepted release plugin repair converged."));
-    } else {
-      defaultRuntime.error(pluginUpdate.sync.errors.join("; "));
-    }
-    if (result.status === "error") {
-      defaultRuntime.exit(1);
-    }
-    return;
-  }
-
   let configSnapshot = await readConfigFileSnapshot({ skipPluginValidation: true });
   const preFinalizeConfig = configSnapshot.valid
     ? {
@@ -3199,7 +2885,6 @@ async function continuePostCoreUpdateInFreshProcess(params: {
   preUpdateConfig?: PreUpdateConfigRestoreInput;
   updateStartedAtMs: number;
   nodeRunner?: string;
-  acceptedRelease?: ResolvedAcceptedReleaseReceipt;
 }): Promise<{ resumed: boolean; pluginUpdate?: PostCorePluginUpdateResult }> {
   const entryPath = await resolveGatewayInstallEntrypoint(params.root);
   if (!entryPath) {
@@ -3225,48 +2910,35 @@ async function continuePostCoreUpdateInFreshProcess(params: {
   const sourceConfigPath = path.join(resultDir, "source-config.json");
   const postCoreHostVersion = await readPackageVersion(params.root);
 
-  const pluginInstallRecords = params.acceptedRelease
-    ? params.pluginInstallRecords
-    : preparePostCorePluginInstallRecordsForFreshProcess({
-        records: params.pluginInstallRecords,
-        targetVersion: postCoreHostVersion,
-      });
+  const pluginInstallRecords = preparePostCorePluginInstallRecordsForFreshProcess({
+    records: params.pluginInstallRecords,
+    targetVersion: postCoreHostVersion,
+  });
 
   try {
-    if (!params.acceptedRelease) {
-      if (pluginInstallRecords && pluginInstallRecords !== params.pluginInstallRecords) {
-        await writePersistedInstalledPluginIndexInstallRecords(pluginInstallRecords);
-      }
-      await writePostCorePluginInstallRecordsFile(installRecordsPath, pluginInstallRecords);
-      await writePostCoreSourceConfigFile(sourceConfigPath, params.preUpdateConfig);
+    if (pluginInstallRecords && pluginInstallRecords !== params.pluginInstallRecords) {
+      await writePersistedInstalledPluginIndexInstallRecords(pluginInstallRecords);
     }
+    await writePostCorePluginInstallRecordsFile(installRecordsPath, pluginInstallRecords);
+    await writePostCoreSourceConfigFile(sourceConfigPath, params.preUpdateConfig);
     const childStdio = resolvePostCoreUpdateChildStdio();
-    const inheritedChildEnv = stripGatewayServiceMarkerEnv(
-      disableUpdatedPackageCompileCacheEnv(process.env),
-    );
-    if (params.acceptedRelease) {
-      delete inheritedChildEnv[ACCEPTED_RELEASE_RECEIPT_ID_ENV];
-      delete inheritedChildEnv[CONTROL_PLANE_UPDATE_SENTINEL_META_ENV];
-    }
     const child = spawn(params.nodeRunner ?? resolveNodeRunner(), argv, {
       stdio: childStdio,
       env: {
-        ...inheritedChildEnv,
+        ...stripGatewayServiceMarkerEnv(disableUpdatedPackageCompileCacheEnv(process.env)),
         OPENCLAW_UPDATE_IN_PROGRESS: "1",
         [POST_CORE_UPDATE_ENV]: "1",
-        ...(!params.acceptedRelease ? { [POST_CORE_UPDATE_CHANNEL_ENV]: params.channel } : {}),
-        ...(!params.acceptedRelease && params.requestedChannel
+        [POST_CORE_UPDATE_CHANNEL_ENV]: params.channel,
+        ...(params.requestedChannel
           ? { [POST_CORE_UPDATE_REQUESTED_CHANNEL_ENV]: params.requestedChannel }
           : {}),
         [POST_CORE_UPDATE_RESULT_PATH_ENV]: resultPath,
-        ...(!params.acceptedRelease
-          ? { [POST_CORE_UPDATE_INSTALL_RECORDS_PATH_ENV]: installRecordsPath }
-          : { OPENCLAW_UPDATE_RUN_HANDOFF: "1" }),
+        [POST_CORE_UPDATE_INSTALL_RECORDS_PATH_ENV]: installRecordsPath,
         [POST_CORE_UPDATE_STARTED_AT_ENV]: String(params.updateStartedAtMs),
         ...(postCoreHostVersion === null
           ? {}
           : { OPENCLAW_COMPATIBILITY_HOST_VERSION: postCoreHostVersion }),
-        ...(!params.acceptedRelease && params.preUpdateConfig
+        ...(params.preUpdateConfig
           ? { [POST_CORE_UPDATE_SOURCE_CONFIG_PATH_ENV]: sourceConfigPath }
           : {}),
       },
@@ -3431,50 +3103,9 @@ export async function updateCommand(opts: UpdateCommandOptions): Promise<void> {
 
 async function updateCommandInternal(opts: UpdateCommandOptions): Promise<void> {
   suppressDeprecations();
-  const postCoreUpdateResume = process.env[POST_CORE_UPDATE_ENV] === "1";
-  let acceptedReleaseReceiptId: string | null;
-  try {
-    acceptedReleaseReceiptId = readAcceptedReleaseReceiptId(process.env);
-    if (postCoreUpdateResume) {
-      const pendingReceiptId = await readPendingAcceptedReleaseReceiptId();
-      if (
-        acceptedReleaseReceiptId &&
-        pendingReceiptId &&
-        acceptedReleaseReceiptId !== pendingReceiptId
-      ) {
-        throw new Error("Post-core accepted release receipt does not match the update sentinel.");
-      }
-      acceptedReleaseReceiptId ??= pendingReceiptId;
-    }
-  } catch (error) {
-    defaultRuntime.error(error instanceof Error ? error.message : String(error));
-    defaultRuntime.exit(1);
-    return;
-  }
-  let acceptedRelease: ResolvedAcceptedReleaseReceipt | null = null;
-  if (acceptedReleaseReceiptId) {
-    const admissionError = postCoreUpdateResume
-      ? null
-      : acceptedReleaseUpdateAdmissionError({ opts, env: process.env });
-    if (admissionError) {
-      defaultRuntime.error(admissionError);
-      defaultRuntime.exit(1);
-      return;
-    }
-    try {
-      acceptedRelease = await resolveAcceptedReleaseReceipt({
-        acceptedReleaseReceiptId,
-        env: process.env,
-      });
-    } catch (error) {
-      defaultRuntime.error(error instanceof Error ? error.message : String(error));
-      defaultRuntime.exit(1);
-      return;
-    }
-  } else {
-    await cleanupStaleManagedServiceUpdateHandoffs().catch(() => undefined);
-  }
+  await cleanupStaleManagedServiceUpdateHandoffs().catch(() => undefined);
   const invocationCwd = tryResolveInvocationCwd();
+  const postCoreUpdateResume = process.env[POST_CORE_UPDATE_ENV] === "1";
   const postCoreUpdateChannel = process.env[POST_CORE_UPDATE_CHANNEL_ENV]?.trim();
   const postCoreRequestedChannelInput =
     process.env[POST_CORE_UPDATE_REQUESTED_CHANNEL_ENV]?.trim() ?? "";
@@ -3485,94 +3116,14 @@ async function updateCommandInternal(opts: UpdateCommandOptions): Promise<void> 
   if (timeoutMs === null) {
     return;
   }
+  if (opts.dryRun !== true) {
+    await disableCurrentOpenClawUpdateLaunchdJob().catch(() => undefined);
+    assertConfigWriteAllowedInCurrentMode();
+  }
   const updateStepTimeoutMs = timeoutMs ?? DEFAULT_UPDATE_STEP_TIMEOUT_MS;
 
   let root = await resolveUpdateRoot();
-  if (!acceptedRelease && opts.dryRun !== true) {
-    let releaseGatedPackage: boolean;
-    try {
-      releaseGatedPackage = packageDeclaresReleaseManifest(root);
-    } catch (error) {
-      defaultRuntime.error(error instanceof Error ? error.message : String(error));
-      defaultRuntime.exit(1);
-      return;
-    }
-    const admissionError = releaseGatedRoutineUpdateAdmissionError({
-      acceptedRelease: false,
-      dryRun: false,
-      releaseGatedPackage,
-    });
-    if (admissionError) {
-      defaultRuntime.error(admissionError);
-      defaultRuntime.exit(1);
-      return;
-    }
-  }
   if (postCoreUpdateResume) {
-    if (acceptedRelease) {
-      let pluginUpdate: PostCorePluginUpdateResult;
-      try {
-        const configBefore = await readConfigFileSnapshot({ skipPluginValidation: true });
-        if (!configBefore.valid) {
-          throw new Error(
-            "Accepted release convergence requires a valid unchanged config preimage.",
-          );
-        }
-        await bindAcceptedReleaseUpdateRestartSentinel({
-          acceptedReleaseReceiptId: acceptedRelease.id,
-          pluginArtifacts: acceptedRelease.pluginArtifacts.map((artifact) => ({
-            packageName: artifact.packageName,
-            version: artifact.version,
-            sha256: artifact.sha256,
-            npmIntegrityOrShasum: artifact.npmIntegrityOrShasum,
-            packlistDigest: artifact.packlistDigest,
-            byteSize: artifact.byteSize,
-          })),
-        });
-        await assertAcceptedReleaseCandidate({
-          packageRoot: root,
-          resolvedReceipt: acceptedRelease,
-        });
-        const convergence = await convergeAcceptedReleasePlugins({
-          resolvedReceipt: acceptedRelease,
-          config: configBefore.config,
-          env: process.env,
-          timeoutMs: updateStepTimeoutMs,
-          assertCandidate: async () => {
-            await assertAcceptedReleaseCandidate({
-              packageRoot: root,
-              resolvedReceipt: acceptedRelease,
-            });
-          },
-        });
-        const configAfter = await readConfigFileSnapshot({ skipPluginValidation: true });
-        if (
-          !configAfter.valid ||
-          !acceptedReleaseConfigPreimageMatches(configBefore, configAfter)
-        ) {
-          throw new Error("Accepted release convergence changed the persistent config preimage.");
-        }
-        pluginUpdate = acceptedPluginConvergenceResult(convergence);
-      } catch (error) {
-        pluginUpdate = acceptedPluginConvergenceResult(null, error);
-      }
-      const resultPath = process.env[POST_CORE_UPDATE_RESULT_PATH_ENV];
-      if (resultPath) {
-        await writePostCorePluginUpdateResultFile(resultPath, pluginUpdate);
-      } else if (opts.json) {
-        defaultRuntime.writeJson({
-          status: pluginUpdate.status === "error" ? "error" : "ok",
-          mode: "unknown",
-          root,
-          steps: [],
-          durationMs: 0,
-          postUpdate: { plugins: pluginUpdate },
-        } satisfies UpdateRunResult);
-      }
-      defaultRuntime.exit(pluginUpdate.status === "error" ? 1 : 0);
-      return;
-    }
-
     if (
       postCoreUpdateChannel !== "stable" &&
       postCoreUpdateChannel !== "beta" &&
@@ -3688,11 +3239,6 @@ async function updateCommandInternal(opts: UpdateCommandOptions): Promise<void> 
   }
 
   const installKind = updateStatus.installKind;
-  if (acceptedRelease && installKind !== "package") {
-    defaultRuntime.error("Accepted release activation requires an existing package installation.");
-    defaultRuntime.exit(1);
-    return;
-  }
   const switchToGit = requestedChannel === "dev" && installKind !== "git";
   const switchToPackage =
     requestedChannel !== null && requestedChannel !== "dev" && installKind === "git";
@@ -3763,84 +3309,9 @@ async function updateCommandInternal(opts: UpdateCommandOptions): Promise<void> 
     }
   }
 
-  if (!acceptedRelease && opts.dryRun !== true) {
-    let releaseGatedPackage: boolean;
-    try {
-      releaseGatedPackage = packageDeclaresReleaseManifest(root);
-    } catch (error) {
-      defaultRuntime.error(error instanceof Error ? error.message : String(error));
-      defaultRuntime.exit(1);
-      return;
-    }
-    const admissionError = releaseGatedRoutineUpdateAdmissionError({
-      acceptedRelease: false,
-      dryRun: false,
-      releaseGatedPackage,
-    });
-    if (admissionError) {
-      defaultRuntime.error(admissionError);
-      defaultRuntime.exit(1);
-      return;
-    }
-    await disableCurrentOpenClawUpdateLaunchdJob().catch(() => undefined);
-    assertConfigWriteAllowedInCurrentMode();
-  }
-
-  if (acceptedRelease) {
-    const loadedPackageName = await readPackageName(root);
-    if (loadedPackageName !== acceptedRelease.coreArtifact.packageName) {
-      defaultRuntime.error("Loaded package name does not match the accepted core artifact.");
-      defaultRuntime.exit(1);
-      return;
-    }
-    try {
-      const acceptedPredecessorManifest = loadEmbeddedReleaseManifest(root).manifest;
-      assertAcceptedReleaseCandidateIsDistinct({
-        predecessorManifest: acceptedPredecessorManifest,
-        resolvedReceipt: acceptedRelease,
-      });
-      await assertAcceptedReleasePredecessor({
-        packageRoot: root,
-        receipt: acceptedRelease.receipt,
-      });
-      await assertAcceptedReleasePluginPredecessor({
-        predecessorManifest: acceptedPredecessorManifest,
-        env: process.env,
-      });
-      await bindAcceptedReleaseUpdateRestartSentinel({
-        acceptedReleaseReceiptId: acceptedRelease.id,
-        pluginArtifacts: acceptedRelease.pluginArtifacts.map((artifact) => ({
-          packageName: artifact.packageName,
-          version: artifact.version,
-          sha256: artifact.sha256,
-          npmIntegrityOrShasum: artifact.npmIntegrityOrShasum,
-          packlistDigest: artifact.packlistDigest,
-          byteSize: artifact.byteSize,
-        })),
-      });
-    } catch (error) {
-      defaultRuntime.error(error instanceof Error ? error.message : String(error));
-      defaultRuntime.exit(1);
-      return;
-    }
-    if (!configSnapshot.valid) {
-      defaultRuntime.error(
-        "Accepted release activation requires a valid unchanged config preimage; no repair was attempted.",
-      );
-      defaultRuntime.exit(1);
-      return;
-    }
-    await cleanupStaleManagedServiceUpdateHandoffs().catch(() => undefined);
-    await disableCurrentOpenClawUpdateLaunchdJob().catch(() => undefined);
-    assertConfigWriteAllowedInCurrentMode();
-  }
-
   if (updateInstallKind !== "git") {
     currentVersion = switchToPackage ? null : await readPackageVersion(root);
-    if (acceptedRelease) {
-      targetVersion = acceptedRelease.coreArtifact.version;
-      tag = "accepted-release";
-    } else if (explicitTag) {
+    if (explicitTag) {
       targetVersion = await resolveTargetVersion(tag, timeoutMs);
     } else {
       targetVersion = await resolveNpmChannelTag({ channel, timeoutMs }).then((resolved) => {
@@ -3851,25 +3322,23 @@ async function updateCommandInternal(opts: UpdateCommandOptions): Promise<void> 
     }
     const cmp =
       currentVersion && targetVersion ? compareSemverStrings(currentVersion, targetVersion) : null;
-    if (!acceptedRelease) {
-      packageAlreadyCurrent =
-        updateInstallKind === "package" &&
-        !switchToPackage &&
-        currentVersion != null &&
-        targetVersion != null &&
-        currentVersion === targetVersion &&
-        (requestedChannel === null || requestedChannel === storedChannel);
-      downgradeRisk =
-        canResolveRegistryVersionForPackageTarget(tag) &&
-        !fallbackToLatest &&
-        currentVersion != null &&
-        (targetVersion == null || (cmp != null && cmp > 0));
-      packageInstallSpec = resolveGlobalInstallSpec({
-        packageName: DEFAULT_PACKAGE_NAME,
-        tag,
-        env: process.env,
-      });
-    }
+    packageAlreadyCurrent =
+      updateInstallKind === "package" &&
+      !switchToPackage &&
+      currentVersion != null &&
+      targetVersion != null &&
+      currentVersion === targetVersion &&
+      (requestedChannel === null || requestedChannel === storedChannel);
+    downgradeRisk =
+      canResolveRegistryVersionForPackageTarget(tag) &&
+      !fallbackToLatest &&
+      currentVersion != null &&
+      (targetVersion == null || (cmp != null && cmp > 0));
+    packageInstallSpec = resolveGlobalInstallSpec({
+      packageName: DEFAULT_PACKAGE_NAME,
+      tag,
+      env: process.env,
+    });
   }
 
   if (opts.dryRun) {
@@ -3983,7 +3452,7 @@ async function updateCommandInternal(opts: UpdateCommandOptions): Promise<void> 
     );
   }
 
-  if (updateInstallKind === "package" && !acceptedRelease) {
+  if (updateInstallKind === "package") {
     const runtimePreflightError = await resolvePackageRuntimePreflightError({
       tag,
       timeoutMs,
@@ -4077,43 +3546,40 @@ async function updateCommandInternal(opts: UpdateCommandOptions): Promise<void> 
 
   let result: UpdateRunResult;
   try {
-    if (updateInstallKind === "package") {
-      const packageOutcome = await runPackageInstallUpdate({
-        root,
-        installKind,
-        tag,
-        timeoutMs: updateStepTimeoutMs,
-        startedAt,
-        progress,
-        jsonMode: Boolean(opts.json),
-        managedServiceEnv: preManagedServiceStop?.serviceEnv,
-        invocationCwd,
-        honorPackageRoot:
-          managedServiceRootRedirect !== null || managedServiceNodeRunner !== undefined,
-        nodeRunner: managedServiceNodeRunner,
-        ...(acceptedRelease ? { acceptedRelease } : {}),
-      });
-      result = packageOutcome.result;
-    } else {
-      result = await runGitUpdate({
-        root,
-        switchToGit,
-        installKind,
-        timeoutMs,
-        startedAt,
-        progress,
-        channel,
-        tag,
-        showProgress,
-        opts,
-        stop,
-        devTargetRef,
-        beforeGitMutation:
-          updateInstallKind === "git"
-            ? () => stopManagedServiceBeforeMutableUpdate(gitMutationRoots ?? [root])
-            : undefined,
-      });
-    }
+    result =
+      updateInstallKind === "package"
+        ? await runPackageInstallUpdate({
+            root,
+            installKind,
+            tag,
+            timeoutMs: updateStepTimeoutMs,
+            startedAt,
+            progress,
+            jsonMode: Boolean(opts.json),
+            managedServiceEnv: preManagedServiceStop?.serviceEnv,
+            invocationCwd,
+            honorPackageRoot:
+              managedServiceRootRedirect !== null || managedServiceNodeRunner !== undefined,
+            nodeRunner: managedServiceNodeRunner,
+          })
+        : await runGitUpdate({
+            root,
+            switchToGit,
+            installKind,
+            timeoutMs,
+            startedAt,
+            progress,
+            channel,
+            tag,
+            showProgress,
+            opts,
+            stop,
+            devTargetRef,
+            beforeGitMutation:
+              updateInstallKind === "git"
+                ? () => stopManagedServiceBeforeMutableUpdate(gitMutationRoots ?? [root])
+                : undefined,
+          });
   } catch (err) {
     stop();
     if (err instanceof UpdateCommandAbort) {
@@ -4182,8 +3648,10 @@ async function updateCommandInternal(opts: UpdateCommandOptions): Promise<void> 
     return;
   }
 
-  const shouldResumePostCoreInFreshProcess =
-    acceptedRelease !== null || shouldResumePostCoreUpdateInFreshProcess({ result, downgradeRisk });
+  const shouldResumePostCoreInFreshProcess = shouldResumePostCoreUpdateInFreshProcess({
+    result,
+    downgradeRisk,
+  });
 
   let postUpdateConfigSnapshot =
     result.status === "ok" && !opts.dryRun
@@ -4221,47 +3689,25 @@ async function updateCommandInternal(opts: UpdateCommandOptions): Promise<void> 
   let postCorePluginUpdate: PostCorePluginUpdateResult | undefined;
   let pluginsUpdatedInFreshProcess = false;
   if (shouldResumePostCoreInFreshProcess) {
-    if (
-      acceptedRelease &&
-      (!configSnapshot.valid ||
-        !postUpdateConfigSnapshot.valid ||
-        !acceptedReleaseConfigPreimageMatches(configSnapshot, postUpdateConfigSnapshot))
-    ) {
-      pluginsUpdatedInFreshProcess = true;
-      postCorePluginUpdate = acceptedPluginConvergenceResult(
-        null,
-        new Error("accepted release activation changed the persistent config preimage"),
-      );
-    } else {
-      const freshProcessResult = await continuePostCoreUpdateInFreshProcess({
-        root: postUpdateRoot,
-        channel,
-        requestedChannel,
-        opts,
-        pluginInstallRecords: preUpdatePluginInstallRecords,
-        updateStartedAtMs: startedAt,
-        nodeRunner: managedServiceNodeRunner,
-        ...(acceptedRelease ? { acceptedRelease } : {}),
-        preUpdateConfig: configSnapshot.valid
-          ? {
-              sourceConfig: configSnapshot.sourceConfig,
-              authoredConfig: isRecord(configSnapshot.parsed)
-                ? (configSnapshot.parsed as OpenClawConfig)
-                : configSnapshot.sourceConfig,
-            }
-          : undefined,
-      });
-      if (acceptedRelease && !freshProcessResult.resumed) {
-        pluginsUpdatedInFreshProcess = true;
-        postCorePluginUpdate = acceptedPluginConvergenceResult(
-          null,
-          new Error("accepted release fresh-process convergence entrypoint is unavailable"),
-        );
-      } else {
-        pluginsUpdatedInFreshProcess = freshProcessResult.resumed;
-        postCorePluginUpdate = freshProcessResult.pluginUpdate;
-      }
-    }
+    const freshProcessResult = await continuePostCoreUpdateInFreshProcess({
+      root: postUpdateRoot,
+      channel,
+      requestedChannel,
+      opts,
+      pluginInstallRecords: preUpdatePluginInstallRecords,
+      updateStartedAtMs: startedAt,
+      nodeRunner: managedServiceNodeRunner,
+      preUpdateConfig: configSnapshot.valid
+        ? {
+            sourceConfig: configSnapshot.sourceConfig,
+            authoredConfig: isRecord(configSnapshot.parsed)
+              ? (configSnapshot.parsed as OpenClawConfig)
+              : configSnapshot.sourceConfig,
+          }
+        : undefined,
+    });
+    pluginsUpdatedInFreshProcess = freshProcessResult.resumed;
+    postCorePluginUpdate = freshProcessResult.pluginUpdate;
   }
 
   if (!pluginsUpdatedInFreshProcess) {
@@ -4433,49 +3879,6 @@ async function updateCommandInternal(opts: UpdateCommandOptions): Promise<void> 
     });
     defaultRuntime.exit(1);
     return;
-  }
-
-  if (acceptedRelease) {
-    try {
-      await assertAcceptedReleaseCandidate({
-        packageRoot: postUpdateRoot,
-        resolvedReceipt: acceptedRelease,
-      });
-      await assertAcceptedReleasePluginsConverged({
-        resolvedReceipt: acceptedRelease,
-        env: process.env,
-      });
-      if (!postUpdateConfigSnapshot.valid) {
-        throw new Error("accepted release loaded readback requires a valid config snapshot");
-      }
-      const health = await callGateway<HealthSummary>({
-        method: "health",
-        params: { probe: true },
-        timeoutMs: Math.min(updateStepTimeoutMs, 30_000),
-        config: {
-          ...postUpdateConfigSnapshot.config,
-          gateway: {
-            ...postUpdateConfigSnapshot.config.gateway,
-            port: gatewayPort,
-          },
-        },
-      });
-      await assertAcceptedReleaseLoadedReadback({
-        readiness: health.release,
-        resolvedReceipt: acceptedRelease,
-        packageRoot: postUpdateRoot,
-        env: process.env,
-      });
-    } catch (error) {
-      await markControlPlaneUpdateRestartSentinelFailureBestEffort({
-        meta: controlPlaneUpdateSentinelMeta,
-        reason: "accepted-release-manifest-mismatch",
-        jsonMode: Boolean(opts.json),
-      });
-      defaultRuntime.error(error instanceof Error ? error.message : String(error));
-      defaultRuntime.exit(1);
-      return;
-    }
   }
 
   await writeControlPlaneUpdateRestartSentinelBestEffort({

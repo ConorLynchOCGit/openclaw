@@ -191,30 +191,6 @@ describe("ensureConfigReady", () => {
     }
   });
 
-  it.each([["gateway"], ["gateway", "run"]])(
-    "runs static plugin verification for Gateway startup: %j",
-    async (...commandPath) => {
-      await runEnsureConfigReady(commandPath);
-
-      expect(loadAndMaybeMigrateDoctorConfigMock).toHaveBeenCalledWith({
-        migrateState: true,
-        migrateLegacyConfig: false,
-        invalidConfigNote: false,
-        verifyStartupPluginPayloads: true,
-      });
-    },
-  );
-
-  it("does not run startup plugin verification for Gateway health", async () => {
-    await runEnsureConfigReady(["gateway", "health"]);
-
-    expect(loadAndMaybeMigrateDoctorConfigMock).toHaveBeenCalledWith({
-      migrateState: true,
-      migrateLegacyConfig: false,
-      invalidConfigNote: false,
-    });
-  });
-
   it("runs doctor flow when lightweight startup detection finds legacy state", async () => {
     const root = useTempOpenClawHome();
     writeLegacyTaskSidecarMarker(root);

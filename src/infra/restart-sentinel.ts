@@ -21,21 +21,10 @@ export type RestartSentinelStep = {
   log?: RestartSentinelLog | null;
 };
 
-export type RestartSentinelAcceptedPluginArtifact = {
-  packageName: string;
-  version: string;
-  sha256: string;
-  npmIntegrityOrShasum: string;
-  packlistDigest: string;
-  byteSize: number;
-};
-
 export type RestartSentinelStats = {
   mode?: string;
   root?: string;
   handoffId?: string;
-  acceptedReleaseReceiptId?: string;
-  acceptedReleasePluginArtifacts?: RestartSentinelAcceptedPluginArtifact[];
   before?: Record<string, unknown> | null;
   after?: Record<string, unknown> | null;
   steps?: RestartSentinelStep[];

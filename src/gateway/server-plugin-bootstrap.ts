@@ -6,10 +6,6 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { PluginLookUpTable } from "../plugins/plugin-lookup-table.js";
 import type { PluginRegistryParams } from "../plugins/registry-types.js";
 import type { PluginRegistry } from "../plugins/registry.js";
-import {
-  findActiveDegradedPlugin,
-  formatPluginVerificationDiagnostic,
-} from "../plugins/runtime-degraded-state.js";
 import { pinActivePluginChannelRegistry } from "../plugins/runtime.js";
 import {
   setGatewayNodesRuntime,
@@ -69,14 +65,6 @@ function logGatewayPluginDiagnostics(params: {
   log: Pick<GatewayPluginBootstrapLog, "error" | "info">;
 }) {
   for (const diag of params.diagnostics) {
-    const degradedPlugin = diag.pluginId ? findActiveDegradedPlugin(diag.pluginId) : undefined;
-    if (
-      diag.code === "plugin-verification" &&
-      degradedPlugin &&
-      diag.message === formatPluginVerificationDiagnostic(degradedPlugin.diagnostic)
-    ) {
-      continue;
-    }
     const details = [
       diag.pluginId ? `plugin=${diag.pluginId}` : null,
       diag.source ? `source=${diag.source}` : null,
