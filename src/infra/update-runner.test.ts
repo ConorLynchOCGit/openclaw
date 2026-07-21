@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 // Covers gateway update runner scenarios.
 import fs from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 import { bundledDistPluginFile } from "openclaw/plugin-sdk/test-fixtures";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { BUNDLED_RUNTIME_SIDECAR_PATHS } from "../plugins/runtime-sidecar-paths.js";
@@ -13,6 +15,7 @@ import { resolveStableNodePath } from "./stable-node-path.js";
 import { runGatewayUpdate } from "./update-runner.js";
 
 const execFileSyncMock = vi.hoisted(() => vi.fn(() => "/tmp/openclaw-test-global-npmrc\n"));
+const execFileAsync = promisify(execFile);
 
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
@@ -2110,6 +2113,74 @@ describe("runGatewayUpdate", () => {
     expect(calls).toContain(`git -C ${tempDir} checkout --detach ${targetSha}`);
     expect(calls).not.toContain(`git -C ${tempDir} rev-parse @{upstream}`);
     expect(calls).not.toContain(`git -C ${tempDir} rebase ${targetSha}`);
+  });
+
+  it("executes an exact ref through a real disposable Git worktree", async () => {
+    await fs.writeFile(
+      path.join(tempDir, "package.json"),
+      JSON.stringify({ name: "openclaw", version: "1.0.0", packageManager: "pnpm@10.25.0" }),
+      "utf-8",
+    );
+    await setupUiIndex();
+
+    const runGit = async (...args: string[]) => {
+      const result = await execFileAsync("git", args, { cwd: tempDir });
+      return result.stdout.trim();
+    };
+    await runGit("init", "--initial-branch=main");
+    await runGit("config", "user.name", "OpenClaw Update Test");
+    await runGit("config", "user.email", "openclaw-update-test@example.invalid");
+    await runGit("add", ".");
+    await runGit("commit", "-m", "base");
+    const baseSha = await runGit("rev-parse", "HEAD");
+
+    await fs.writeFile(path.join(tempDir, "target.txt"), "exact target\n", "utf-8");
+    await runGit("add", "target.txt");
+    await runGit("commit", "-m", "target");
+    const targetSha = await runGit("rev-parse", "HEAD");
+    await runGit("checkout", "--detach", baseSha);
+
+    const calls: string[][] = [];
+    let mutationPrepared = 0;
+    const runCommand = async (
+      argv: string[],
+      options?: { cwd?: string; env?: NodeJS.ProcessEnv },
+    ) => {
+      calls.push(argv);
+      if (argv[0] !== "git") {
+        return { stdout: "", stderr: "", code: 0 };
+      }
+      try {
+        const result = await execFileAsync(argv[0], argv.slice(1), {
+          cwd: options?.cwd,
+          env: options?.env,
+        });
+        return { stdout: result.stdout, stderr: result.stderr, code: 0 };
+      } catch (error) {
+        const failed = error as Error & { stdout?: string; stderr?: string; code?: number };
+        return {
+          stdout: failed.stdout ?? "",
+          stderr: failed.stderr ?? failed.message,
+          code: typeof failed.code === "number" ? failed.code : 1,
+        };
+      }
+    };
+
+    const result = await runWithCommand(runCommand, {
+      channel: "dev",
+      devTargetRef: targetSha,
+      beforeGitMutation: async () => {
+        mutationPrepared += 1;
+      },
+    });
+
+    expect(result.status).toBe("ok");
+    expect(await runGit("rev-parse", "HEAD")).toBe(targetSha);
+    expect(await runGit("status", "--porcelain")).toBe("");
+    expect(mutationPrepared).toBe(1);
+    expect(calls).toContainEqual(["git", "-C", tempDir, "rev-parse", targetSha]);
+    expect(calls).toContainEqual(["git", "-C", tempDir, "checkout", "--detach", targetSha]);
+    expect(calls.some((argv) => argv.includes("rebase"))).toBe(false);
   });
 
   it("resolves symbolic dev target refs from the fetched remote branch", async () => {
