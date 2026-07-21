@@ -122,6 +122,37 @@ export function normalizeMigration(value) {
   return { class: migrationClass, affectedPersistentRoots };
 }
 
+export function releaseOperationEnvironment(operationRoot) {
+  const cacheRoot = path.join(path.resolve(operationRoot), "cache");
+  return {
+    XDG_CACHE_HOME: path.join(cacheRoot, "xdg"),
+    NPM_CONFIG_CACHE: path.join(cacheRoot, "npm"),
+    npm_config_cache: path.join(cacheRoot, "npm"),
+  };
+}
+
+async function prepareReleaseOperationEnvironment(operationRoot) {
+  const environment = releaseOperationEnvironment(operationRoot);
+  await Promise.all(
+    [...new Set(Object.values(environment))].map(async (directory) => {
+      await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+      const pending = path.join(directory, `.openclaw-write-probe-${process.pid}.pending`);
+      const committed = path.join(directory, `.openclaw-write-probe-${process.pid}.committed`);
+      try {
+        await fs.writeFile(pending, "ok\n", { flag: "wx", mode: 0o600 });
+        await fs.rename(pending, committed);
+        if ((await fs.readFile(committed, "utf8")) !== "ok\n") {
+          throw new Error(`release cache write probe changed bytes in ${directory}`);
+        }
+      } finally {
+        await fs.rm(pending, { force: true });
+        await fs.rm(committed, { force: true });
+      }
+    }),
+  );
+  Object.assign(process.env, environment);
+}
+
 function ensureBelow(root, candidate, label) {
   const resolvedRoot = path.resolve(root);
   const resolved = path.resolve(candidate);
@@ -1102,6 +1133,7 @@ export async function prepareNativeReleaseSet(params) {
   const input = parseInput(await readJson(params.inputPath, "release driver input"));
   const operationRoot = path.dirname(params.inputPath);
   ensureBelow(operationRoot, params.outputPath, "release driver output");
+  await prepareReleaseOperationEnvironment(operationRoot);
   const predecessorBytes = await fs.readFile(input.predecessor.manifestPath);
   if (sha256(predecessorBytes) !== input.predecessor.releaseManifestDigest) {
     throw new Error("predecessor manifest bytes do not match the loaded release digest");

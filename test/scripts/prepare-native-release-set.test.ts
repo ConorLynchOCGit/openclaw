@@ -9,6 +9,7 @@ import {
   parseArgs,
   pluginPackageChanged,
   prepareAttempt,
+  releaseOperationEnvironment,
   requiredBundledPluginsToEnable,
   resolveRequestedExtensionPackages,
 } from "../../scripts/prepare-native-release-set.mjs";
@@ -111,6 +112,15 @@ describe("prepare-native-release-set", () => {
         affectedPersistentRoots: ["/srv/openclaw-next/state"],
       }),
     ).toThrow("cannot name affected persistent roots");
+  });
+
+  it("isolates package-manager caches from caller HOME state", () => {
+    const operationRoot = path.join(os.tmpdir(), "openclaw-release-operation");
+    expect(releaseOperationEnvironment(operationRoot)).toEqual({
+      XDG_CACHE_HOME: path.join(operationRoot, "cache", "xdg"),
+      NPM_CONFIG_CACHE: path.join(operationRoot, "cache", "npm"),
+      npm_config_cache: path.join(operationRoot, "cache", "npm"),
+    });
   });
 
   it("rejects non-native base versions", () => {
