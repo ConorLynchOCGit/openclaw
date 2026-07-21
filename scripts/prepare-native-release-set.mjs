@@ -859,6 +859,63 @@ async function candidateInstall(attempt, operationRoot) {
       env: candidateEnv,
     });
   }
+  const managedProjectsRoot = path.join(state, "npm", "projects");
+  const managedProjectNames = await fs.readdir(managedProjectsRoot);
+  for (const artifact of attempt.manifest.artifacts.filter((entry) => entry.role === "plugin")) {
+    const matches = [];
+    for (const projectName of managedProjectNames) {
+      const projectRoot = path.join(managedProjectsRoot, projectName);
+      const lockPath = path.join(projectRoot, "package-lock.json");
+      let lockBytes;
+      try {
+        lockBytes = await fs.readFile(lockPath);
+      } catch (error) {
+        if (error?.code === "ENOENT") {
+          continue;
+        }
+        throw error;
+      }
+      let lock;
+      try {
+        lock = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(lockBytes));
+      } catch {
+        continue;
+      }
+      const localEntry = lock?.packages?.[`node_modules/${artifact.packageName}`];
+      if (
+        !localEntry ||
+        typeof localEntry !== "object" ||
+        Array.isArray(localEntry) ||
+        typeof localEntry.resolved !== "string" ||
+        !localEntry.resolved.startsWith("file:")
+      ) {
+        continue;
+      }
+      const projected = projectResolvedObjectSet(lockBytes, artifact.installPlan.registry, {
+        allowAcceptedLocalPackage: {
+          packageName: artifact.packageName,
+          packageVersion: artifact.packageVersion,
+        },
+      });
+      if (projected.localPackageFound) {
+        matches.push(projected);
+      }
+    }
+    if (matches.length !== 1) {
+      throw new Error(
+        `candidate expected one managed project for ${artifact.packageName}; found ${matches.length}`,
+      );
+    }
+    const observed = matches[0];
+    if (
+      observed.resolvedObjectCount !== artifact.installPlan.resolvedObjectCount ||
+      observed.resolvedObjectSetSha256 !== artifact.installPlan.resolvedObjectSetSha256
+    ) {
+      throw new Error(
+        `candidate managed project for ${artifact.packageName} does not reproduce the accepted object set`,
+      );
+    }
+  }
   let listed = await runCapture(cli, ["plugins", "list", "--json"], candidateRoot, candidateEnv);
   let payload = JSON.parse(listed.stdout);
   if (!Array.isArray(payload.plugins)) {
@@ -954,6 +1011,7 @@ export async function prepareNativeReleaseSet(params) {
       { id: "native-build", status: "passed" },
       { id: "native-package-inventory", status: "passed" },
       { id: "accepted-install-plans", status: "passed" },
+      { id: "installed-plugin-object-sets", status: "passed" },
       { id: "content-addressed-artifact-identity", status: "passed" },
       { id: "credential-free-candidate-install", status: "passed" },
       { id: "required-plugin-load", status: "passed" },

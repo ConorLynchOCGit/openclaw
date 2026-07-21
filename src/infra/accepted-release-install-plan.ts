@@ -103,7 +103,7 @@ function projectRegistryObjects(params: {
   allowAcceptedLocalPackage?: { packageName: string; packageVersion: string };
 }): { projection: string; count: number; digest: string; localPackageFound: boolean } {
   const packages = params.lock.packages as JsonRecord;
-  const rows: string[] = [];
+  const objectRows = new Set<string>();
   let localPackageFound = false;
   const expectedLocalPath = params.allowAcceptedLocalPackage
     ? `node_modules/${params.allowAcceptedLocalPackage.packageName}`
@@ -135,9 +135,10 @@ function projectRegistryObjects(params: {
     }
     const integrity = requireString(entry.integrity, `${packagePath}.integrity`);
     validateRegistryObject({ packagePath, resolved, integrity, registry: params.registry });
-    rows.push(`${packagePath}\t${version}\t${resolved}\t${integrity}\n`);
+    objectRows.add(`${version}\t${resolved}\t${integrity}\n`);
   }
 
+  const rows = [...objectRows].toSorted(compareUtf8);
   const projection = rows.join("");
   return {
     projection,

@@ -68,7 +68,7 @@ function validateRegistryResolution(resolved, integrity, registry, packagePath) 
   validateNpmIntegrity(integrity, packagePath);
 }
 
-export function projectResolvedObjectSet(lockBytes, registry) {
+export function projectResolvedObjectSet(lockBytes, registry, options = {}) {
   let parsed;
   try {
     parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(lockBytes));
@@ -94,27 +94,59 @@ export function projectResolvedObjectSet(lockBytes, registry) {
   if (!rootEntry || typeof rootEntry !== "object" || Array.isArray(rootEntry)) {
     throw new Error("accepted npm lock must contain a root package entry");
   }
+  const acceptedLocalPackage = options.allowAcceptedLocalPackage;
   const packageName = requireProjectionField(parsed.name, "accepted npm lock name");
-  const packageVersion = requireProjectionField(parsed.version, "accepted npm lock version");
-  const rootPackageName = requireProjectionField(rootEntry.name, "root lock package name");
-  const rootPackageVersion = requireProjectionField(rootEntry.version, "root lock package version");
-  if (packageName !== rootPackageName || packageVersion !== rootPackageVersion) {
-    throw new Error("accepted npm lock root identity does not match its package entry");
+  let packageVersion = "";
+  if (!acceptedLocalPackage) {
+    packageVersion = requireProjectionField(parsed.version, "accepted npm lock version");
+    const rootPackageName = requireProjectionField(rootEntry.name, "root lock package name");
+    const rootPackageVersion = requireProjectionField(
+      rootEntry.version,
+      "root lock package version",
+    );
+    if (packageName !== rootPackageName || packageVersion !== rootPackageVersion) {
+      throw new Error("accepted npm lock root identity does not match its package entry");
+    }
   }
 
-  const rows = [];
+  const objectRows = new Set();
+  const expectedLocalPath = acceptedLocalPackage
+    ? `node_modules/${acceptedLocalPackage.packageName}`
+    : null;
+  let localPackageFound = false;
   for (const packagePath of Object.keys(packages).filter(Boolean).toSorted(compareUtf8)) {
     const entry = packages[packagePath];
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
       throw new Error(`${packagePath} lock entry must be an object`);
     }
-    const normalizedPath = requireProjectionField(packagePath, "lock package path");
+    requireProjectionField(packagePath, "lock package path");
     const version = requireProjectionField(entry.version, `${packagePath}.version`);
     const resolved = requireProjectionField(entry.resolved, `${packagePath}.resolved`);
+    if (packagePath === expectedLocalPath && resolved.startsWith("file:")) {
+      if (version !== acceptedLocalPackage.packageVersion) {
+        throw new Error(
+          `${packagePath} local package version does not match the accepted artifact`,
+        );
+      }
+      const localPath = resolved.slice("file:".length);
+      if (
+        !localPath ||
+        path.isAbsolute(localPath) ||
+        localPath
+          .replaceAll("\\", "/")
+          .split("/")
+          .some((part) => part === "..")
+      ) {
+        throw new Error(`${packagePath} has an unsafe local package resolution`);
+      }
+      localPackageFound = true;
+      continue;
+    }
     const integrity = requireProjectionField(entry.integrity, `${packagePath}.integrity`);
     validateRegistryResolution(resolved, integrity, registry, packagePath);
-    rows.push(`${normalizedPath}\t${version}\t${resolved}\t${integrity}\n`);
+    objectRows.add(`${version}\t${resolved}\t${integrity}\n`);
   }
+  const rows = [...objectRows].toSorted(compareUtf8);
   const projection = rows.join("");
   return {
     packageName,
@@ -122,6 +154,7 @@ export function projectResolvedObjectSet(lockBytes, registry) {
     projection,
     resolvedObjectCount: rows.length,
     resolvedObjectSetSha256: sha256(Buffer.from(projection, "utf8")),
+    localPackageFound,
   };
 }
 

@@ -45,7 +45,7 @@ function createAcceptedLock(): Record<string, unknown> {
 }
 
 function createArtifact(lockBytes: Buffer): ReleaseArtifact {
-  const projection = `${DEPENDENCY_PATH}\t${DEPENDENCY_VERSION}\t${DEPENDENCY_RESOLVED}\t${DEPENDENCY_INTEGRITY}\n`;
+  const projection = `${DEPENDENCY_VERSION}\t${DEPENDENCY_RESOLVED}\t${DEPENDENCY_INTEGRITY}\n`;
   return {
     role: "plugin",
     packageName: PACKAGE_NAME,
@@ -154,7 +154,12 @@ describe("accepted release install plans", () => {
               version: PACKAGE_VERSION,
               resolved: "file:_openclaw-pack-archives/codex.tgz",
             },
-            [DEPENDENCY_PATH]: {
+            [`node_modules/${PACKAGE_NAME}/${DEPENDENCY_PATH}`]: {
+              version: DEPENDENCY_VERSION,
+              resolved: DEPENDENCY_RESOLVED,
+              integrity: DEPENDENCY_INTEGRITY,
+            },
+            [`node_modules/duplicate/${DEPENDENCY_PATH}`]: {
               version: DEPENDENCY_VERSION,
               resolved: DEPENDENCY_RESOLVED,
               integrity: DEPENDENCY_INTEGRITY,
