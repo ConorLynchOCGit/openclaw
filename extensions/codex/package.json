@@ -8,8 +8,10 @@
   },
   "type": "module",
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@openai/codex": "0.144.1",
     "typebox": "1.1.39",
+    "typescript": "6.0.3",
     "ws": "8.21.0",
     "zod": "4.4.3"
   },
@@ -37,7 +39,7 @@
     "release": {
       "publishToClawHub": true,
       "publishToNpm": true,
-      "bundleRuntimeDependencies": true
+      "bundleRuntimeDependencies": false
     }
   }
 }

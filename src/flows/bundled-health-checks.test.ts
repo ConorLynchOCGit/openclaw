@@ -10,6 +10,9 @@ import type { HealthCheckContext } from "./health-checks.js";
 const mocks = vi.hoisted(() => ({
   registerPolicyDoctorChecks: vi.fn(),
   registerCodexDoctorChecks: vi.fn(),
+  tryLoadActivatedBundledPluginPublicSurfaceModuleSync: vi.fn(() => ({
+    registerCodexDoctorChecks: mocks.registerCodexDoctorChecks,
+  })),
   resolveBundledPluginPublicArtifactPath: vi.fn(
     (params: { dirName: string; artifactBasename: string }) =>
       `/bundled/${params.dirName}/${params.artifactBasename}`,
@@ -29,6 +32,11 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../plugins/public-surface-loader.js", () => ({
   loadBundledPluginPublicArtifactModuleSync: mocks.loadBundledPluginPublicArtifactModuleSync,
   resolveBundledPluginPublicArtifactPath: mocks.resolveBundledPluginPublicArtifactPath,
+}));
+
+vi.mock("../plugin-sdk/facade-runtime.js", () => ({
+  tryLoadActivatedBundledPluginPublicSurfaceModuleSync:
+    mocks.tryLoadActivatedBundledPluginPublicSurfaceModuleSync,
 }));
 
 let workspaceDir: string;
@@ -74,28 +82,22 @@ describe("registerBundledHealthChecks", () => {
     expect(mocks.registerCodexDoctorChecks).not.toHaveBeenCalled();
   });
 
-  it("loads bundled Codex health checks when Codex extension is enabled", () => {
+  it("loads managed Codex health checks when Codex extension is enabled", () => {
     registerBundledHealthChecks({
       cfg: { plugins: { entries: { codex: { enabled: true } } } },
       cwd: workspaceDir,
     });
 
-    expect(mocks.loadBundledPluginPublicArtifactModuleSync).toHaveBeenCalledWith({
+    expect(mocks.tryLoadActivatedBundledPluginPublicSurfaceModuleSync).toHaveBeenCalledWith({
       dirName: "codex",
       artifactBasename: "api.js",
     });
     expect(mocks.registerCodexDoctorChecks).toHaveBeenCalledWith({
       registerHealthCheck: expect.any(Function),
-      plugin: expect.objectContaining({
-        id: "codex",
-        origin: "bundled",
-        rootDir: "/bundled/codex",
-        source: "/bundled/codex/api.js",
-      }),
     });
   });
 
-  it("binds loader-owned plugin context into bundled health check detection", async () => {
+  it("lets the managed Codex module retain its own package root", async () => {
     let observedPlugin: unknown;
     mocks.registerCodexDoctorChecks.mockImplementationOnce((host) => {
       host.registerHealthCheck({
@@ -122,14 +124,18 @@ describe("registerBundledHealthChecks", () => {
       cfg: { plugins: { entries: { codex: { enabled: true } } } },
     });
 
-    expect(observedPlugin).toEqual(
-      expect.objectContaining({
-        id: "codex",
-        origin: "bundled",
-        rootDir: "/bundled/codex",
-        source: "/bundled/codex/api.js",
-      }),
-    );
+    expect(observedPlugin).toBeUndefined();
+  });
+
+  it("skips Codex health registration when no activated plugin facade is available", () => {
+    mocks.tryLoadActivatedBundledPluginPublicSurfaceModuleSync.mockReturnValueOnce(null);
+
+    registerBundledHealthChecks({
+      cfg: { plugins: { entries: { codex: { enabled: true } } } },
+      cwd: workspaceDir,
+    });
+
+    expect(mocks.registerCodexDoctorChecks).not.toHaveBeenCalled();
   });
 
   it("does not use policy.jsonc existence as extension activation", () => {
@@ -160,6 +166,7 @@ describe("registerBundledHealthChecks", () => {
       registerBundledHealthChecks({ cfg: { plugins }, cwd: workspaceDir });
 
       expect(mocks.loadBundledPluginPublicArtifactModuleSync).not.toHaveBeenCalled();
+      expect(mocks.tryLoadActivatedBundledPluginPublicSurfaceModuleSync).not.toHaveBeenCalled();
     }
   });
 

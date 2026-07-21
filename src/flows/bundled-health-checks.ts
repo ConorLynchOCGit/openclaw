@@ -2,6 +2,7 @@ import path from "node:path";
 // Bundled health checks define built-in doctor checks for runtime readiness.
 import { asOptionalObjectRecord as readRecord } from "@openclaw/normalization-core/record-coerce";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { tryLoadActivatedBundledPluginPublicSurfaceModuleSync } from "../plugin-sdk/facade-runtime.js";
 import { normalizePluginsConfig } from "../plugins/config-state.js";
 import { passesManifestOwnerBasePolicy } from "../plugins/manifest-owner-policy.js";
 import {
@@ -34,10 +35,10 @@ export function registerBundledHealthChecks(params: { cfg: OpenClawConfig; cwd?:
     }).registerPolicyDoctorChecks?.(createBundledPluginHealthRegistrationHost("policy"));
   }
   if (registerCodex) {
-    loadBundledPluginPublicArtifactModuleSync<BundledHealthApi>({
+    tryLoadActivatedBundledPluginPublicSurfaceModuleSync<BundledHealthApi>({
       dirName: "codex",
       artifactBasename: "api.js",
-    }).registerCodexDoctorChecks?.(createBundledPluginHealthRegistrationHost("codex"));
+    })?.registerCodexDoctorChecks?.({ registerHealthCheck });
   }
 }
 

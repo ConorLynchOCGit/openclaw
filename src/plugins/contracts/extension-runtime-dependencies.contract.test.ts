@@ -59,6 +59,11 @@ type PackageManifest = {
   devDependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
+  openclaw?: {
+    release?: {
+      bundleRuntimeDependencies?: boolean;
+    };
+  };
 };
 const trackedFilesByRoot = new Map<string, readonly string[] | null>();
 
@@ -282,6 +287,21 @@ describe("extension runtime dependency manifests", () => {
 
     expect(manifest.dependencies?.json5).toBeTypeOf("string");
     expect(manifest.dependencies?.json5).not.toBe("");
+  });
+
+  it("installs Codex runtime dependencies through the native package manager", () => {
+    const manifest = readPackageManifest("extensions/codex/package.json");
+
+    expect(manifest.openclaw?.release?.bundleRuntimeDependencies).toBe(false);
+    expect(manifest.dependencies?.["@modelcontextprotocol/sdk"]).toBe("1.29.0");
+    expect(manifest.dependencies?.typescript).toBe("6.0.3");
+  });
+
+  it("ships enabled bundled marketing plugin dependencies in the root package", () => {
+    const manifest = readPackageManifest("package.json");
+
+    expect(manifest.dependencies?.["@xdevplatform/xdk"]).toBe("0.5.0");
+    expect(manifest.dependencies?.["csv-parse"]).toBe("7.0.1");
   });
 
   for (const manifestPath of listPackageManifests(EXTENSION_ROOT)) {
