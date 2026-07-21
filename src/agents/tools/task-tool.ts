@@ -36,9 +36,9 @@ import { getLatestSubagentRunByChildSessionKey } from "../subagent-registry-read
 import { spawnSubagentDirect } from "../subagent-spawn.js";
 import { resolveSubagentAllowedTargetIds } from "../subagent-target-policy.js";
 import { normalizeSubagentTaskName } from "../subagent-task-name.js";
-import { resolveLoadedSystemChangeSessionSource } from "../system-change-source.js";
+import { resolveLoadedSystemSource } from "../system-change-source.js";
 import { requireGit } from "../worktrees/git.js";
-import type { SystemChangeSessionSource } from "../worktrees/types.js";
+import type { LoadedSystemSource, LoadedSystemSourceMode } from "../worktrees/types.js";
 import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readStringParam, textResult } from "./common.js";
 
@@ -47,6 +47,10 @@ const TASK_RESULT_PARENT_INLINE_MAX_CHARS = 1_800;
 const PLANNING_REVIEW_TASK_RESULT_INLINE_MAX_CHARS = 12_000;
 const TASK_RESULT_PARENT_PREVIEW_MAX_CHARS = 0;
 const CODEX_CODING_AGENT_IDS = new Set(["coding", "execution-coding"]);
+const LOADED_SYSTEM_INSPECTION_AGENT_IDS = new Set([
+  "codebase-researcher",
+  "docs-standards-researcher",
+]);
 const DEFAULT_LIGHT_CONTEXT_AGENT_IDS = new Set([
   "codebase-researcher",
   "docs-standards-researcher",
@@ -66,7 +70,11 @@ type ManagedWorktreeSettlement = {
   statusError?: string;
 };
 
-function createTaskToolSchema(allowedAgentIds: readonly string[] = []) {
+function createTaskToolSchema(params: {
+  allowedAgentIds?: readonly string[];
+  allowArbitraryCwd?: boolean;
+}) {
+  const allowedAgentIds = params.allowedAgentIds ?? [];
   const allowedDescription =
     allowedAgentIds.length > 0 ? ` Allowed for this caller: ${allowedAgentIds.join(", ")}.` : "";
   return Type.Object({
@@ -97,10 +105,20 @@ function createTaskToolSchema(allowedAgentIds: readonly string[] = []) {
           "Optional explicit child thinking override. Omit by default so the target agent's role profile controls reasoning level; set only when intentionally overriding that profile for this task.",
       }),
     ),
-    cwd: Type.Optional(
-      Type.String({
+    ...(params.allowArbitraryCwd
+      ? {
+          cwd: Type.Optional(
+            Type.String({
+              description:
+                "Native task checkout. Relative values resolve from the target agent workspace; absolute values must already be runtime-visible. This changes repository context, not agent identity or bootstrap.",
+            }),
+          ),
+        }
+      : {}),
+    checkout: Type.Optional(
+      Type.Literal("loaded_system", {
         description:
-          "Native task checkout. Relative values resolve from the target agent workspace; absolute values must already be runtime-visible. This changes repository context, not agent identity or bootstrap.",
+          "Bind a source-research agent to a native managed worktree of the exact source commit embedded in the running OpenClaw package. The runtime owns the source store, commit, and cwd.",
       }),
     ),
     lightContext: Type.Optional(
@@ -642,9 +660,7 @@ export function createTaskTool(
     workspaceDir?: string;
     onProgress?: () => void;
     /** Test-only override for loaded generation/source resolution. */
-    resolveSystemChangeSessionSource?: () =>
-      | SystemChangeSessionSource
-      | Promise<SystemChangeSessionSource>;
+    resolveLoadedSystemSource?: () => LoadedSystemSource | Promise<LoadedSystemSource>;
   } & SpawnedToolContext,
 ): AnyAgentTool {
   const requesterAgentId = resolveRequesterAgentId(opts);
@@ -661,11 +677,15 @@ export function createTaskTool(
       "When multiple independent child tasks are useful, call `task` multiple times in the same assistant turn so the runtime can execute them in parallel.",
       "Use one `task` call per independent specialist; do not pack unrelated work into one child prompt just to avoid multiple calls.",
       "For narrow source-scout or reviewer packets that do not need root workspace memory or parent transcript, set `lightContext: true` and include the needed objective/output instructions in the child task.",
+      "For current OpenClaw source evidence, target codebase-researcher or docs-standards-researcher with `checkout: loaded_system`; never provide a host source path. The runtime selects the exact commit embedded in the loaded package.",
       "For Coding handoffs that depend on a full prompt/spec/artifact, pass the workspace-relative file path and chars/digest; do not summarize that artifact into the operative scope.",
       "Do not set `thinking` unless you intentionally need to override the target agent's role profile for this specific task; ordinary specialist tasks should omit it.",
     ],
     executionMode: "parallel",
-    parameters: createTaskToolSchema(allowedAgentIds),
+    parameters: createTaskToolSchema({
+      allowedAgentIds,
+      allowArbitraryCwd: requesterAgentId !== "planning",
+    }),
     execute: async (_toolCallId, args, signal) => {
       const params = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
       const agentId = readStringParam(params, "agentId", { required: true });
@@ -699,7 +719,24 @@ export function createTaskTool(
       });
       const lightContext = resolveTaskToolLightContext(agentId, params.lightContext);
       const cwd = readStringParam(params, "cwd");
+      const checkout = readStringParam(params, "checkout");
+      const requestsLoadedSystemInspection = checkout === "loaded_system";
       const requestsSystemChange = params.systemChange === true;
+      if (checkout && !requestsLoadedSystemInspection) {
+        return jsonResult({ status: "error", error: `unsupported task checkout: ${checkout}` });
+      }
+      if (requestsLoadedSystemInspection && !LOADED_SYSTEM_INSPECTION_AGENT_IDS.has(agentId)) {
+        return jsonResult({
+          status: "error",
+          error: "loaded-system inspection may only target a source-research agent",
+        });
+      }
+      if (requestsLoadedSystemInspection && requestsSystemChange) {
+        return jsonResult({
+          status: "error",
+          error: "loaded-system inspection and system-change modification are mutually exclusive",
+        });
+      }
       if (requestsSystemChange && !isCodexCodingAgentId(agentId)) {
         return jsonResult({
           status: "error",
@@ -712,23 +749,24 @@ export function createTaskTool(
           error: "system-change Coding tasks may only be launched by Main",
         });
       }
-      let systemChangeSessionSource: SystemChangeSessionSource | undefined;
-      if (requestsSystemChange) {
+      let loadedSystemSource: LoadedSystemSource | undefined;
+      let loadedSystemSourceMode: LoadedSystemSourceMode | undefined;
+      if (requestsSystemChange || requestsLoadedSystemInspection) {
         try {
-          systemChangeSessionSource =
-            (await opts?.resolveSystemChangeSessionSource?.()) ??
-            (await resolveLoadedSystemChangeSessionSource());
+          loadedSystemSource =
+            (await opts?.resolveLoadedSystemSource?.()) ?? (await resolveLoadedSystemSource());
+          loadedSystemSourceMode = requestsSystemChange ? "modify" : "inspect";
         } catch (error) {
           return jsonResult({
             status: "error",
-            error: `system-change launch authority is unavailable: ${error instanceof Error ? error.message : String(error)}`,
+            error: `loaded-system source authority is unavailable: ${error instanceof Error ? error.message : String(error)}`,
           });
         }
       }
-      if (systemChangeSessionSource && cwd) {
+      if (loadedSystemSource && cwd) {
         return jsonResult({
           status: "error",
-          error: "system-change Coding cwd is assigned by the native managed-worktree service",
+          error: "loaded-system cwd is assigned by the native managed-worktree service",
         });
       }
       const spawn = await spawnSubagentDirect(
@@ -769,7 +807,8 @@ export function createTaskTool(
           agentMemberRoleIds: opts?.agentMemberRoleIds,
           requesterAgentIdOverride: opts?.requesterAgentIdOverride,
           workspaceDir: opts?.workspaceDir,
-          systemChangeSessionSource,
+          loadedSystemSource,
+          loadedSystemSourceMode,
         },
       );
 

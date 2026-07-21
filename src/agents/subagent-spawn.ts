@@ -67,7 +67,11 @@ import { resolveSubagentSpawnOwnership } from "./subagent-spawn-ownership.js";
 import { resolveSubagentTargetPolicy } from "./subagent-target-policy.js";
 import { normalizeSubagentTaskName } from "./subagent-task-name.js";
 import { managedWorktrees } from "./worktrees/service.js";
-import type { ManagedWorktreeRecord, SystemChangeSessionSource } from "./worktrees/types.js";
+import type {
+  LoadedSystemSource,
+  LoadedSystemSourceMode,
+  ManagedWorktreeRecord,
+} from "./worktrees/types.js";
 export {
   SUBAGENT_SPAWN_ACCEPTED_NOTE,
   SUBAGENT_SPAWN_SESSION_ACCEPTED_NOTE,
@@ -210,8 +214,9 @@ export type SpawnSubagentContext = {
   /** Explicit workspace directory for subagent to inherit (optional). */
   workspaceDir?: string;
   inheritedToolDenylist?: string[];
-  /** Trusted loaded-generation source; never populated from model tool arguments. */
-  systemChangeSessionSource?: SystemChangeSessionSource;
+  /** Trusted loaded-generation source; never populated from model path arguments. */
+  loadedSystemSource?: LoadedSystemSource;
+  loadedSystemSourceMode?: LoadedSystemSourceMode;
 };
 
 function resolveSpawnedCwd(params: {
@@ -231,22 +236,30 @@ function resolveSpawnedCwd(params: {
     : resolveUserPath(requestedCwd);
 }
 
-function validateSystemChangeSessionSource(params: {
-  source: SystemChangeSessionSource;
+function validateLoadedSystemSource(params: {
+  source: LoadedSystemSource;
+  mode: LoadedSystemSourceMode;
   targetAgentId: string;
   requestedCwd?: string;
 }): string | undefined {
-  if (params.targetAgentId !== "coding" && params.targetAgentId !== "execution-coding") {
-    return "system-change worktrees may only be assigned to the Coding agent";
+  const inspectionAgentIds = new Set(["codebase-researcher", "docs-standards-researcher"]);
+  const validTarget =
+    params.mode === "modify"
+      ? params.targetAgentId === "coding" || params.targetAgentId === "execution-coding"
+      : inspectionAgentIds.has(params.targetAgentId);
+  if (!validTarget) {
+    return params.mode === "modify"
+      ? "loaded-system modification worktrees may only be assigned to the Coding agent"
+      : "loaded-system inspection worktrees may only be assigned to a source-research agent";
   }
   if (params.requestedCwd) {
-    return "system-change Coding cwd is assigned by the native managed-worktree service";
+    return "loaded-system cwd is assigned by the native managed-worktree service";
   }
   if (!path.isAbsolute(params.source.sourceAnchorPath)) {
-    return "system-change source anchor must be an absolute path";
+    return "loaded-system source store must be an absolute path";
   }
   if (!params.source.sourceCommit.trim()) {
-    return "system-change source commit is required";
+    return "loaded-system source commit is required";
   }
   return undefined;
 }
@@ -357,8 +370,9 @@ function resolveSubagentAgentGatewayTimeoutMs(runTimeoutSeconds: number): number
 
 function buildDirectChildSessionPatch(
   patch: Record<string, unknown>,
-  systemChange?: {
+  loadedSource?: {
     worktree: ManagedWorktreeRecord;
+    mode: LoadedSystemSourceMode;
   },
 ): Partial<SessionEntry> {
   const entry: Partial<SessionEntry> = {};
@@ -400,13 +414,13 @@ function buildDirectChildSessionPatch(
       }
     }
   }
-  if (systemChange) {
+  if (loadedSource) {
     entry.worktree = {
-      id: systemChange.worktree.id,
-      branch: systemChange.worktree.branch,
-      repoRoot: systemChange.worktree.repoRoot,
-      kind: "system-change",
-      baseRef: systemChange.worktree.baseRef,
+      id: loadedSource.worktree.id,
+      branch: loadedSource.worktree.branch,
+      repoRoot: loadedSource.worktree.repoRoot,
+      kind: loadedSource.mode === "modify" ? "system-change" : "source-inspection",
+      baseRef: loadedSource.worktree.baseRef,
     };
   }
   return entry;
@@ -1305,10 +1319,18 @@ export async function spawnSubagentDirect(
   }
   const targetAgentId = requestedAgentId ? normalizeAgentId(requestedAgentId) : requesterAgentId;
   const requestedCwd = normalizeOptionalString(params.cwd);
-  const systemChangeSource = ctx.systemChangeSessionSource;
-  if (systemChangeSource) {
-    const sourceError = validateSystemChangeSessionSource({
-      source: systemChangeSource,
+  const loadedSystemSource = ctx.loadedSystemSource;
+  const loadedSystemSourceMode = ctx.loadedSystemSourceMode;
+  if (loadedSystemSource || loadedSystemSourceMode) {
+    if (!loadedSystemSource || !loadedSystemSourceMode) {
+      return {
+        status: "forbidden",
+        error: "loaded-system source and mode must be supplied together",
+      };
+    }
+    const sourceError = validateLoadedSystemSource({
+      source: loadedSystemSource,
+      mode: loadedSystemSourceMode,
       targetAgentId,
       requestedCwd,
     });
@@ -1318,7 +1340,7 @@ export async function spawnSubagentDirect(
     if (contextMode !== "isolated") {
       return {
         status: "forbidden",
-        error: "system-change Coding sessions require isolated OpenClaw context",
+        error: "loaded-system sessions require isolated OpenClaw context",
       };
     }
   }
@@ -1384,7 +1406,7 @@ export async function spawnSubagentDirect(
     cfg,
     sessionKey: childSessionKey,
   });
-  if (systemChangeSource && childRuntime.sandboxed) {
+  if (loadedSystemSource && loadedSystemSourceMode === "modify" && childRuntime.sandboxed) {
     return {
       status: "forbidden",
       error: "system-change Coding uses the loaded native Codex permission profile",
@@ -1455,8 +1477,9 @@ export async function spawnSubagentDirect(
   });
   const patchChildSession = async (
     patch: Record<string, unknown>,
-    systemChange?: {
+    loadedSource?: {
       worktree: ManagedWorktreeRecord;
+      mode: LoadedSystemSourceMode;
     },
   ): Promise<string | undefined> => {
     try {
@@ -1472,7 +1495,7 @@ export async function spawnSubagentDirect(
         });
         store[target.canonicalKey] = mergeSessionEntry(
           store[target.canonicalKey],
-          buildDirectChildSessionPatch(patch, systemChange),
+          buildDirectChildSessionPatch(patch, loadedSource),
         );
       });
       return undefined;
@@ -1578,32 +1601,33 @@ export async function spawnSubagentDirect(
       mergeDeliveryContext(bindResult.deliveryOrigin, childSessionOrigin) ?? childSessionOrigin;
   }
 
-  let systemChangeWorktree: ManagedWorktreeRecord | undefined;
+  let loadedSystemWorktree: ManagedWorktreeRecord | undefined;
   const cleanupSystemChangeWorktreeBeforeAgentStart = async (): Promise<string | undefined> => {
-    if (!systemChangeWorktree) {
+    if (!loadedSystemWorktree) {
       return undefined;
     }
     try {
       const removed = await subagentSpawnDeps.removeSystemChangeWorktreeIfLossless(
-        systemChangeWorktree.id,
+        loadedSystemWorktree.id,
       );
       return removed
         ? undefined
-        : `managed worktree ${systemChangeWorktree.id} was preserved because lossless cleanup was not possible`;
+        : `managed worktree ${loadedSystemWorktree.id} was preserved because lossless cleanup was not possible`;
     } catch (error) {
-      return `managed worktree ${systemChangeWorktree.id} cleanup failed: ${summarizeError(error)}`;
+      return `managed worktree ${loadedSystemWorktree.id} cleanup failed: ${summarizeError(error)}`;
     }
   };
-  if (systemChangeSource) {
+  if (loadedSystemSource) {
     try {
-      systemChangeWorktree = await subagentSpawnDeps.createSystemChangeWorktree({
-        repoRoot: systemChangeSource.sourceAnchorPath,
-        baseRef: systemChangeSource.sourceCommit,
+      loadedSystemWorktree = await subagentSpawnDeps.createSystemChangeWorktree({
+        repoRoot: loadedSystemSource.sourceAnchorPath,
+        baseRef: loadedSystemSource.sourceCommit,
         ownerKind: "session",
         ownerId: childSessionKey,
         systemChange: true,
+        runSetupScript: loadedSystemSourceMode === "modify",
       });
-      spawnedCwd = systemChangeWorktree.path;
+      spawnedCwd = loadedSystemWorktree.path;
     } catch (error) {
       await cleanupProvisionalSession(childSessionKey, {
         emitLifecycleHooks: threadBindingReady,
@@ -1701,9 +1725,10 @@ export async function spawnSubagentDirect(
         : {}),
       ...(spawnedCwd ? { spawnedCwd } : {}),
     },
-    systemChangeWorktree && systemChangeSource
+    loadedSystemWorktree && loadedSystemSourceMode
       ? {
-          worktree: systemChangeWorktree,
+          worktree: loadedSystemWorktree,
+          mode: loadedSystemSourceMode,
         }
       : undefined,
   );
@@ -1855,13 +1880,13 @@ export async function spawnSubagentDirect(
       error: messageText,
       childSessionKey,
       runId: childRunId,
-      ...(systemChangeWorktree
+      ...(loadedSystemWorktree
         ? {
             worktree: {
-              id: systemChangeWorktree.id,
-              path: systemChangeWorktree.path,
-              branch: systemChangeWorktree.branch,
-              baseRef: systemChangeWorktree.baseRef,
+              id: loadedSystemWorktree.id,
+              path: loadedSystemWorktree.path,
+              branch: loadedSystemWorktree.branch,
+              baseRef: loadedSystemWorktree.baseRef,
             },
           }
         : {}),
@@ -1917,13 +1942,13 @@ export async function spawnSubagentDirect(
       error: `Failed to register subagent run: ${summarizeError(err)}`,
       childSessionKey,
       runId: childRunId,
-      ...(systemChangeWorktree
+      ...(loadedSystemWorktree
         ? {
             worktree: {
-              id: systemChangeWorktree.id,
-              path: systemChangeWorktree.path,
-              branch: systemChangeWorktree.branch,
-              baseRef: systemChangeWorktree.baseRef,
+              id: loadedSystemWorktree.id,
+              path: loadedSystemWorktree.path,
+              branch: loadedSystemWorktree.branch,
+              baseRef: loadedSystemWorktree.baseRef,
             },
           }
         : {}),
@@ -2000,13 +2025,13 @@ export async function spawnSubagentDirect(
     ...resolvedModelMetadata,
     modelApplied: resolvedModel ? modelApplied : undefined,
     attachments: attachmentsReceipt,
-    ...(systemChangeWorktree
+    ...(loadedSystemWorktree
       ? {
           worktree: {
-            id: systemChangeWorktree.id,
-            path: systemChangeWorktree.path,
-            branch: systemChangeWorktree.branch,
-            baseRef: systemChangeWorktree.baseRef,
+            id: loadedSystemWorktree.id,
+            path: loadedSystemWorktree.path,
+            branch: loadedSystemWorktree.branch,
+            baseRef: loadedSystemWorktree.baseRef,
           },
         }
       : {}),

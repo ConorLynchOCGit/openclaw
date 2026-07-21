@@ -254,15 +254,12 @@ export type SessionEntry = {
   spawnedWorkspaceDir?: string;
   /** Task working directory inherited by spawned sessions and reused on later turns. */
   spawnedCwd?: string;
-  /**
-   * Managed worktree bound to this session. System-change fields are present only
-   * when a trusted loaded-generation caller created the worktree.
-   */
+  /** Managed worktree bound to this session from a trusted runtime owner. */
   worktree?: {
     id: string;
     branch: string;
     repoRoot: string;
-    kind?: "system-change";
+    kind?: "source-inspection" | "system-change";
     baseRef?: string;
   };
   /** Explicit parent session linkage for dashboard-created child sessions. */

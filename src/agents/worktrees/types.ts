@@ -1,10 +1,12 @@
 export type ManagedWorktreeOwnerKind = "manual" | "workboard" | "session";
 
 /** Trusted source input projected from the currently loaded release generation. */
-export type SystemChangeSessionSource = {
+export type LoadedSystemSource = {
   sourceAnchorPath: string;
   sourceCommit: string;
 };
+
+export type LoadedSystemSourceMode = "inspect" | "modify";
 
 export type ProvisionedFileState = {
   path: string;
@@ -34,7 +36,7 @@ export type CreateManagedWorktreeParams = {
   baseRef?: string;
   ownerKind?: ManagedWorktreeOwnerKind;
   ownerId?: string;
-  /** Restricts creation to the clean loaded-generation source anchor and exact local object. */
+  /** Restricts creation to the loaded-generation source store and exact local object. */
   systemChange?: boolean;
   // Repository checkout hooks and .openclaw/worktree-setup.sh execute repo-local code, so
   // callers reachable from less-privileged surfaces opt out; admin paths keep them on.

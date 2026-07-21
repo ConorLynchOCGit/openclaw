@@ -5,7 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SystemChangeSessionSource } from "../worktrees/types.js";
+import type { LoadedSystemSource } from "../worktrees/types.js";
 
 const hoisted = vi.hoisted(() => {
   const spawnSubagentDirectMock = vi.fn();
@@ -201,6 +201,19 @@ describe("task tool", () => {
     expect(agentIdSchema?.description).toContain("codebase-researcher, reviewer");
     expect(JSON.stringify(agentIdSchema)).not.toContain("coding");
     expect(JSON.stringify(agentIdSchema)).not.toContain("missing");
+  });
+
+  it("gives Planning a semantic loaded-system checkout instead of arbitrary cwd", () => {
+    const tool = createTaskTool({
+      agentSessionKey: "agent:planning:operator",
+      requesterAgentIdOverride: "planning",
+    });
+    const properties = (tool.parameters as { properties?: Record<string, { const?: string }> })
+      .properties;
+
+    expect(properties?.checkout?.const).toBe("loaded_system");
+    expect(properties).not.toHaveProperty("cwd");
+    expect(JSON.stringify(tool.promptGuidelines)).toContain("never provide a host source path");
   });
 
   it("runs a native foreground child and returns the final assistant text", async () => {
@@ -752,7 +765,7 @@ describe("task tool", () => {
 
   it("passes loaded source authority to Coding and returns the preserved dirty worktree", async () => {
     const sourceObject = "a".repeat(40);
-    const source: SystemChangeSessionSource = {
+    const source: LoadedSystemSource = {
       sourceAnchorPath: "/srv/openclaw-next/source-anchor",
       sourceCommit: sourceObject,
     };
@@ -776,7 +789,7 @@ describe("task tool", () => {
     const result = await createTaskTool({
       agentSessionKey: "agent:main:operator",
       requesterAgentIdOverride: "main",
-      resolveSystemChangeSessionSource: () => source,
+      resolveLoadedSystemSource: () => source,
     }).execute("call-1", {
       agentId: "coding",
       task: "Implement the loaded system change.",
@@ -786,7 +799,10 @@ describe("task tool", () => {
 
     expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
       expect.objectContaining({ agentId: "coding", cwd: undefined }),
-      expect.objectContaining({ systemChangeSessionSource: source }),
+      expect.objectContaining({
+        loadedSystemSource: source,
+        loadedSystemSourceMode: "modify",
+      }),
     );
     expect(hoisted.requireGitMock).toHaveBeenCalledWith(worktree.path, [
       "status",
@@ -811,6 +827,43 @@ describe("task tool", () => {
       `<managed_worktree id="worktree-a" path="${worktree.path}" branch="openclaw/system-change-a" baseRef="${sourceObject}" dirty="true" changedPathCount="2" />`,
     );
   });
+
+  it.each(["codebase-researcher", "docs-standards-researcher"])(
+    "binds Planning source scout %s to the exact runtime-owned loaded source",
+    async (agentId) => {
+      const source: LoadedSystemSource = {
+        sourceAnchorPath: "/srv/openclaw-next/source-anchor",
+        sourceCommit: "b".repeat(40),
+      };
+      hoisted.spawnSubagentDirectMock.mockResolvedValueOnce({
+        status: "accepted",
+        childSessionKey: "agent:codebase-researcher:subagent:loaded-source",
+        childSessionId: "session-loaded-source",
+        runId: "run-loaded-source",
+        resolvedProvider: "openai",
+        resolvedModel: "gpt-5.4-mini",
+      });
+
+      const result = await createTaskTool({
+        agentSessionKey: "agent:planning:operator",
+        requesterAgentIdOverride: "planning",
+        resolveLoadedSystemSource: () => source,
+      }).execute("call-1", {
+        agentId,
+        task: "Inspect the current implementation.",
+        checkout: "loaded_system",
+      });
+
+      expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
+        expect.objectContaining({ agentId, cwd: undefined }),
+        expect.objectContaining({
+          loadedSystemSource: source,
+          loadedSystemSourceMode: "inspect",
+        }),
+      );
+      expect(result.details).toMatchObject({ status: "ok" });
+    },
+  );
 
   it("returns native child transcript pointers instead of large child finals as parent context", async () => {
     const largePlanningResult = `# Approval Packet\n\n${"substantive planning evidence\n".repeat(360)}`;

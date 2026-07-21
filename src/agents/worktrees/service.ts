@@ -15,7 +15,6 @@ import {
   removeEmptyParents,
   requireGit,
   requireGitBuffer,
-  requireGitRaw,
   runGit,
   type GitResult,
 } from "./git.js";
@@ -162,31 +161,6 @@ async function requireSystemChangeBase(params: {
   }
   if (baseRef !== baseCommit) {
     throw new Error("system-change base must be the exact loaded source commit");
-  }
-  const anchorHead = await requireGit(params.repository.sourceRoot, ["rev-parse", "HEAD"]);
-  if (anchorHead !== baseCommit) {
-    throw new Error(
-      `system-change source anchor does not match loaded source commit: expected ${baseCommit}, observed ${anchorHead}`,
-    );
-  }
-  const status = await requireGitRaw(params.repository.sourceRoot, [
-    "status",
-    "--porcelain=v1",
-    "-z",
-    "--untracked-files=all",
-  ]);
-  if (status.length > 0) {
-    throw new Error("system-change source anchor must be clean");
-  }
-  const includePath = path.join(params.repository.sourceRoot, ".worktreeinclude");
-  const includeStat = await fs.lstat(includePath).catch((error: unknown) => {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return undefined;
-    }
-    throw error;
-  });
-  if (includeStat) {
-    throw new Error("system-change worktrees do not allow .worktreeinclude");
   }
   const trackedInclude = await runGit(params.repository.repoRoot, [
     "ls-tree",
@@ -586,8 +560,9 @@ export class ManagedWorktreeService {
     let gitBase = base.gitOperand;
     let recordBase = base.recordRef;
     const runRepositorySetup = params.runSetupScript !== false;
+    const disableGitHooks = params.systemChange || !runRepositorySetup;
     const worktreeAddArgs = () => [
-      ...(runRepositorySetup ? [] : ["-c", `core.hooksPath=${os.devNull}`]),
+      ...(disableGitHooks ? ["-c", `core.hooksPath=${os.devNull}`] : []),
       "worktree",
       "add",
       "-b",
@@ -615,7 +590,10 @@ export class ManagedWorktreeService {
         ? []
         : await provisionIncludedFiles(repository.sourceRoot, worktreePath);
       if (runRepositorySetup) {
-        await runSetupScript(repository.sourceRoot, worktreePath);
+        await runSetupScript(
+          params.systemChange ? worktreePath : repository.sourceRoot,
+          worktreePath,
+        );
       }
     } catch (error) {
       try {

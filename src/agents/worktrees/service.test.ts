@@ -165,7 +165,14 @@ describe("ManagedWorktreeService", () => {
     const probeUid = process.getuid?.() === 0 ? 65_534 : undefined;
     const probeGid = process.getgid?.() === 0 ? 65_534 : undefined;
     if (probeUid !== undefined && probeGid !== undefined) {
-      await fs.chmod(root, 0o755);
+      for (const parent of [
+        root,
+        path.join(root, "openclaw-state"),
+        path.join(root, "openclaw-state", "worktrees"),
+        path.dirname(first.path),
+      ]) {
+        await fs.chmod(parent, 0o755);
+      }
       await fs.chown(first.path, probeUid, probeGid);
       await fs.chown(second.path, probeUid, probeGid);
     }
@@ -243,7 +250,7 @@ describe("ManagedWorktreeService", () => {
     }
   });
 
-  it("requires the exact checked-out source commit", async () => {
+  it("requires an exact local source commit independent of source-store HEAD", async () => {
     const sourceObject = await git(repo, "rev-parse", "HEAD");
     await expect(
       service.create({ repoRoot: repo, name: "missing-object", systemChange: true }),
@@ -265,16 +272,19 @@ describe("ManagedWorktreeService", () => {
       }),
     ).rejects.toThrow("source is not a local commit");
     await fs.writeFile(path.join(repo, "README.md"), "new generation\n");
-    await git(repo, "add", "README.md");
+    await fs.writeFile(path.join(repo, ".worktreeinclude"), "later-only/**\n");
+    await git(repo, "add", "README.md", ".worktreeinclude");
     await git(repo, "commit", "-m", "new generation");
-    await expect(
-      service.create({
-        repoRoot: repo,
-        name: "stale-commit",
-        baseRef: sourceObject,
-        systemChange: true,
-      }),
-    ).rejects.toThrow("source anchor does not match loaded source commit");
+    await fs.writeFile(path.join(repo, "README.md"), "dirty source-store checkout\n");
+    const created = await service.create({
+      repoRoot: repo,
+      name: "loaded-object",
+      baseRef: sourceObject,
+      systemChange: true,
+      runSetupScript: false,
+    });
+    expect(created.baseRef).toBe(sourceObject);
+    expect(await git(created.path, "rev-parse", "HEAD")).toBe(sourceObject);
   });
 
   it("rejects .worktreeinclude for system-change worktrees", async () => {
@@ -463,7 +473,7 @@ describe("ManagedWorktreeService", () => {
       gatewaySecret,
       databaseSecret,
       tail,
-    ]).toEqual([repo, created.path, "unset", "unset", "unset", "unset", ""]);
+    ]).toEqual([created.path, created.path, "unset", "unset", "unset", "unset", ""]);
     await expect(fs.stat(setupHome)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
