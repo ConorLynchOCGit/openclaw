@@ -497,6 +497,23 @@ async function resolveHandoffSpawn(params: {
   };
 }
 
+async function waitForTransientServiceRegistration(child: ReturnType<typeof spawn>): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code, signal) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(
+        new Error(
+          `systemd-run failed to register the detached update service (${code ?? signal ?? "unknown"})`,
+        ),
+      );
+    });
+  });
+}
+
 export async function startManagedServiceUpdateHandoff(params: {
   root: string;
   timeoutMs?: number;
@@ -584,11 +601,20 @@ export async function startManagedServiceUpdateHandoff(params: {
     detached: true,
     stdio: "ignore",
   });
-  child.unref();
+  if (params.supervisor === "systemd") {
+    try {
+      await waitForTransientServiceRegistration(child);
+    } catch (error) {
+      await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
+    }
+  } else {
+    child.unref();
+  }
 
   return {
     status: "started",
-    ...(child.pid ? { pid: child.pid } : {}),
+    ...(params.supervisor !== "systemd" && child.pid ? { pid: child.pid } : {}),
     command: commandLabel,
     logPath,
   };

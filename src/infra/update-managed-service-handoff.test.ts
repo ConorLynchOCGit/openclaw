@@ -17,10 +17,19 @@ import {
 } from "./update-managed-service-handoff-cleanup.js";
 
 const { spawnMock } = vi.hoisted(() => ({
-  spawnMock: vi.fn(() => ({
-    pid: 24680,
-    unref: vi.fn(),
-  })),
+  spawnMock: vi.fn(() => {
+    const child = {
+      pid: 24680,
+      unref: vi.fn(),
+      once: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
+        if (event === "exit") {
+          queueMicrotask(() => listener(0, null));
+        }
+        return child;
+      }),
+    };
+    return child;
+  }),
 }));
 
 vi.mock("node:child_process", async () => {
@@ -190,6 +199,7 @@ describe("managed service update handoff", () => {
     });
 
     expect(result.status).toBe("started");
+    expect(result.pid).toBe(24680);
     expect(result.command).toBe("openclaw update --yes --timeout 1800");
     expect(spawnMock).toHaveBeenCalledTimes(1);
     const [execPath, args, options] = spawnMock.mock.calls[0] as unknown as [
@@ -265,6 +275,7 @@ describe("managed service update handoff", () => {
     });
 
     expect(result.status).toBe("started");
+    expect(result.pid).toBeUndefined();
     expect(spawnMock).toHaveBeenCalledTimes(1);
     const [command, args, options] = spawnMock.mock.calls[0] as unknown as [
       string,
@@ -313,6 +324,41 @@ describe("managed service update handoff", () => {
     expect(options.env.INVOCATION_ID).toBeUndefined();
     expect(options.env.KEEP_ME).toBeUndefined();
     expect(options.env.OPENCLAW_UPDATE_RUN_HANDOFF).toBe("1");
+  });
+
+  it("fails before Gateway restart when systemd cannot register the transient service", async () => {
+    const { startManagedServiceUpdateHandoff } =
+      await import("./update-managed-service-handoff.js");
+    const binDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-systemd-run-bin-"));
+    tempDirs.add(binDir);
+    const systemdRunPath = path.join(binDir, "systemd-run");
+    await fs.writeFile(systemdRunPath, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    spawnMock.mockImplementationOnce(() => {
+      const child = {
+        pid: 24681,
+        unref: vi.fn(),
+        once: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
+          if (event === "exit") {
+            queueMicrotask(() => listener(1, null));
+          }
+          return child;
+        }),
+      };
+      return child;
+    });
+
+    await expect(
+      startManagedServiceUpdateHandoff({
+        root: "/tmp/openclaw",
+        parentPid: 12345,
+        execPath: "/usr/local/bin/node",
+        argv1: "/opt/openclaw/openclaw.mjs",
+        handoffId: "registration-failure",
+        supervisor: "systemd",
+        env: { PATH: binDir, OPENCLAW_SYSTEMD_UNIT: "openclaw-gateway.service" },
+        meta: {},
+      }),
+    ).rejects.toThrow("failed to register the detached update service");
   });
 
   it("does not overwrite a restart sentinel owned by another startup task", async () => {
