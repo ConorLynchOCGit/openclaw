@@ -43,12 +43,9 @@ async function initializeRepository(root: string, name = "repo"): Promise<string
   return await fs.realpath(repo);
 }
 
-async function createSystemChangeSnapshot(repo: string, name: string) {
+async function readSystemChangeSource(repo: string) {
   const commit = await git(repo, "rev-parse", "HEAD");
-  const tree = await git(repo, "rev-parse", "HEAD^{tree}");
-  const ref = `refs/openclaw/snapshots/${name}`;
-  await git(repo, "update-ref", ref, commit);
-  return { commit, tree, ref };
+  return { commit };
 }
 
 async function addRemote(root: string, repo: string): Promise<string> {
@@ -128,13 +125,12 @@ describe("ManagedWorktreeService", () => {
     });
     await git(repo, "remote", "add", "origin", repo);
     await git(repo, "config", "remote.origin.uploadpack", uploadPack);
-    const source = await createSystemChangeSnapshot(repo, "system-change");
+    const source = await readSystemChangeSource(repo);
 
     const created = await service.create({
       repoRoot: repo,
       name: "system-change",
-      baseRef: source.ref,
-      expectedTreeObject: source.tree,
+      baseRef: source.commit,
       ownerKind: "session",
       ownerId: "agent:coding:subagent:test",
       systemChange: true,
@@ -146,12 +142,11 @@ describe("ManagedWorktreeService", () => {
   });
 
   it("keeps concurrent system-change heavy-check locks inside their own worktrees", async () => {
-    const source = await createSystemChangeSnapshot(repo, "system-locks");
+    const source = await readSystemChangeSource(repo);
     const first = await service.create({
       repoRoot: repo,
       name: "system-lock-a",
-      baseRef: source.ref,
-      expectedTreeObject: source.tree,
+      baseRef: source.commit,
       ownerKind: "session",
       ownerId: "agent:coding:subagent:lock-a",
       systemChange: true,
@@ -159,8 +154,7 @@ describe("ManagedWorktreeService", () => {
     const second = await service.create({
       repoRoot: repo,
       name: "system-lock-b",
-      baseRef: source.ref,
-      expectedTreeObject: source.tree,
+      baseRef: source.commit,
       ownerKind: "session",
       ownerId: "agent:coding:subagent:lock-b",
       systemChange: true,
@@ -249,54 +243,51 @@ describe("ManagedWorktreeService", () => {
     }
   });
 
-  it("requires an exact native snapshot bound to the loaded tree", async () => {
+  it("requires the exact checked-out source commit", async () => {
     const sourceObject = await git(repo, "rev-parse", "HEAD");
-    const sourceTree = await git(repo, "rev-parse", "HEAD^{tree}");
     await expect(
       service.create({ repoRoot: repo, name: "missing-object", systemChange: true }),
-    ).rejects.toThrow("require an exact native snapshot ref");
+    ).rejects.toThrow("require the loaded source commit");
     await expect(
       service.create({
         repoRoot: repo,
         name: "symbolic-object",
         baseRef: "HEAD",
-        expectedTreeObject: sourceTree,
         systemChange: true,
       }),
-    ).rejects.toThrow("base is not a native snapshot ref: HEAD");
+    ).rejects.toThrow("base must be the exact loaded source commit");
     await expect(
       service.create({
         repoRoot: repo,
-        name: "missing-snapshot",
-        baseRef: "refs/openclaw/snapshots/missing",
-        expectedTreeObject: sourceTree,
+        name: "missing-commit",
+        baseRef: "a".repeat(sourceObject.length),
         systemChange: true,
       }),
-    ).rejects.toThrow("snapshot is not a local commit");
-    const source = await createSystemChangeSnapshot(repo, "tree-mismatch");
+    ).rejects.toThrow("source is not a local commit");
+    await fs.writeFile(path.join(repo, "README.md"), "new generation\n");
+    await git(repo, "add", "README.md");
+    await git(repo, "commit", "-m", "new generation");
     await expect(
       service.create({
         repoRoot: repo,
-        name: "tree-mismatch",
-        baseRef: source.ref,
-        expectedTreeObject: sourceObject,
+        name: "stale-commit",
+        baseRef: sourceObject,
         systemChange: true,
       }),
-    ).rejects.toThrow("snapshot tree does not match the loaded release");
+    ).rejects.toThrow("source anchor does not match loaded source commit");
   });
 
   it("rejects .worktreeinclude for system-change worktrees", async () => {
     await fs.writeFile(path.join(repo, ".worktreeinclude"), "cache/**\n");
     await git(repo, "add", ".worktreeinclude");
     await git(repo, "commit", "-m", "add worktree include");
-    const source = await createSystemChangeSnapshot(repo, "forbidden-include");
+    const source = await readSystemChangeSource(repo);
 
     await expect(
       service.create({
         repoRoot: repo,
         name: "forbidden-include",
-        baseRef: source.ref,
-        expectedTreeObject: source.tree,
+        baseRef: source.commit,
         systemChange: true,
       }),
     ).rejects.toThrow("do not allow .worktreeinclude");
@@ -425,7 +416,7 @@ describe("ManagedWorktreeService", () => {
     );
     await git(repo, "add", ".openclaw/worktree-setup.sh");
     await git(repo, "commit", "-m", "add setup script");
-    const source = await createSystemChangeSnapshot(repo, "scrubbed-setup");
+    const source = await readSystemChangeSource(repo);
     const callerPath = "/credential-bearing/bin";
     const fixedHome = path.join(root, "setup-home");
     service = new ManagedWorktreeService({
@@ -444,8 +435,7 @@ describe("ManagedWorktreeService", () => {
     const created = await service.create({
       repoRoot: repo,
       name: "scrubbed-setup",
-      baseRef: source.ref,
-      expectedTreeObject: source.tree,
+      baseRef: source.commit,
       ownerKind: "session",
       ownerId: "agent:coding:subagent:test",
       systemChange: true,

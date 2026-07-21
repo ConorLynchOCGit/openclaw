@@ -34,9 +34,7 @@ const SYSTEM_SOURCE_OBJECT = "a".repeat(40);
 function createSystemChangeSessionSource(): SystemChangeSessionSource {
   return {
     sourceAnchorPath: "/srv/openclaw-next/source-anchor",
-    sourceSnapshotRef: "refs/openclaw/snapshots/loaded-generation",
-    sourceTreeObject: SYSTEM_SOURCE_OBJECT,
-    releaseManifestDigest: "b".repeat(64),
+    sourceCommit: SYSTEM_SOURCE_OBJECT,
   };
 }
 
@@ -324,7 +322,7 @@ describe("spawnSubagentDirect seam flow", () => {
       repoRoot: source.sourceAnchorPath,
       path: worktreePath,
       branch: "openclaw/system-change-a",
-      baseRef: source.sourceTreeObject,
+      baseRef: source.sourceCommit,
       ownerKind: "session",
       createdAt: 1,
       lastActiveAt: 1,
@@ -372,13 +370,12 @@ describe("spawnSubagentDirect seam flow", () => {
         id: "worktree-a",
         path: worktreePath,
         branch: "openclaw/system-change-a",
-        baseRef: source.sourceTreeObject,
+        baseRef: source.sourceCommit,
       },
     });
     expect(createSystemChangeWorktree).toHaveBeenCalledWith({
       repoRoot: source.sourceAnchorPath,
-      baseRef: source.sourceSnapshotRef,
-      expectedTreeObject: source.sourceTreeObject,
+      baseRef: source.sourceCommit,
       ownerKind: "session",
       ownerId: result.childSessionKey,
       systemChange: true,
@@ -392,8 +389,7 @@ describe("spawnSubagentDirect seam flow", () => {
         branch: "openclaw/system-change-a",
         repoRoot: source.sourceAnchorPath,
         kind: "system-change",
-        baseRef: source.sourceTreeObject,
-        releaseManifestDigest: source.releaseManifestDigest,
+        baseRef: source.sourceCommit,
       },
     });
   });

@@ -245,8 +245,8 @@ function validateSystemChangeSessionSource(params: {
   if (!path.isAbsolute(params.source.sourceAnchorPath)) {
     return "system-change source anchor must be an absolute path";
   }
-  if (!params.source.sourceSnapshotRef.startsWith("refs/openclaw/snapshots/")) {
-    return "system-change source must use a native OpenClaw snapshot ref";
+  if (!params.source.sourceCommit.trim()) {
+    return "system-change source commit is required";
   }
   return undefined;
 }
@@ -359,7 +359,6 @@ function buildDirectChildSessionPatch(
   patch: Record<string, unknown>,
   systemChange?: {
     worktree: ManagedWorktreeRecord;
-    releaseManifestDigest: string;
   },
 ): Partial<SessionEntry> {
   const entry: Partial<SessionEntry> = {};
@@ -408,7 +407,6 @@ function buildDirectChildSessionPatch(
       repoRoot: systemChange.worktree.repoRoot,
       kind: "system-change",
       baseRef: systemChange.worktree.baseRef,
-      releaseManifestDigest: systemChange.releaseManifestDigest,
     };
   }
   return entry;
@@ -1459,7 +1457,6 @@ export async function spawnSubagentDirect(
     patch: Record<string, unknown>,
     systemChange?: {
       worktree: ManagedWorktreeRecord;
-      releaseManifestDigest: string;
     },
   ): Promise<string | undefined> => {
     try {
@@ -1601,8 +1598,7 @@ export async function spawnSubagentDirect(
     try {
       systemChangeWorktree = await subagentSpawnDeps.createSystemChangeWorktree({
         repoRoot: systemChangeSource.sourceAnchorPath,
-        baseRef: systemChangeSource.sourceSnapshotRef,
-        expectedTreeObject: systemChangeSource.sourceTreeObject,
+        baseRef: systemChangeSource.sourceCommit,
         ownerKind: "session",
         ownerId: childSessionKey,
         systemChange: true,
@@ -1708,7 +1704,6 @@ export async function spawnSubagentDirect(
     systemChangeWorktree && systemChangeSource
       ? {
           worktree: systemChangeWorktree,
-          releaseManifestDigest: systemChangeSource.releaseManifestDigest,
         }
       : undefined,
   );

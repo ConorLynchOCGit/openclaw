@@ -228,7 +228,7 @@ describe("codex conversation binding", () => {
     const worktree = path.join(tempDir, "worktrees", "system-change-a");
     const systemProfileDir = path.join(tempDir, "codex-system-profile");
     const sourceObject = "a".repeat(40);
-    const releaseManifestDigest = "b".repeat(64);
+    const sourceCommit = sourceObject;
     const permissionProfile = "openclaw-system-change";
     const profile = await createSystemProfileFixture(systemProfileDir);
     await fs.writeFile(
@@ -244,7 +244,6 @@ describe("codex conversation binding", () => {
             repoRoot: "/srv/openclaw-next/source-anchor",
             kind: "system-change",
             baseRef: sourceObject,
-            releaseManifestDigest,
           },
         },
       }),
@@ -286,8 +285,8 @@ describe("codex conversation binding", () => {
     };
     expect(sharedClientParams.processProfile).toMatchObject({
       expectedServerVersion: "0.144.1",
-      key: releaseManifestDigest,
-      codexHome: expect.stringContaining(`/codex/generations/${releaseManifestDigest}`),
+      key: sourceCommit,
+      codexHome: expect.stringContaining(`/codex/generations/${sourceCommit}`),
     });
     const threadStart = requests.find((request) => request.method === "thread/start");
     expect(threadStart).toMatchObject({
@@ -307,7 +306,9 @@ describe("codex conversation binding", () => {
       },
     });
     expect(
-      (threadStart?.params.selectedCapabilityRoots as Array<{ id: string }>).map((root) => root.id),
+      (
+        (threadStart?.params.selectedCapabilityRoots as Array<{ id: string }> | undefined) ?? []
+      ).map((root) => root.id),
     ).toEqual([
       "codex-system-skills",
       "openclaw-shared-system-skills",

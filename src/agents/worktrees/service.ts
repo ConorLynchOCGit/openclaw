@@ -89,21 +89,9 @@ type ManagedWorktreeGcParams = {
   limits?: WorktreeCleanupLimits;
 };
 
-/**
- * Maps `worktrees.cleanup` config into enforceable byte/count limits.
- * 0 and unset both mean "no limit", so gc callers can pass the result verbatim.
- */
-export function resolveWorktreeCleanupLimits(config?: {
-  cleanup?: { maxCount?: number; maxTotalSizeGb?: number };
-}): WorktreeCleanupLimits {
-  const maxCount = config?.cleanup?.maxCount;
-  const maxTotalSizeGb = config?.cleanup?.maxTotalSizeGb;
-  return {
-    ...(typeof maxCount === "number" && maxCount > 0 ? { maxCount: Math.floor(maxCount) } : {}),
-    ...(typeof maxTotalSizeGb === "number" && maxTotalSizeGb > 0
-      ? { maxTotalSizeBytes: Math.round(maxTotalSizeGb * 1024 ** 3) }
-      : {}),
-  };
+/** Returns the default no-limit policy for age-based managed-worktree cleanup. */
+export function resolveWorktreeCleanupLimits(): WorktreeCleanupLimits {
+  return {};
 }
 
 function resultMessage(result: GitResult): string {
@@ -154,18 +142,10 @@ async function resolveRepository(repoRoot: string): Promise<{
 async function requireSystemChangeBase(params: {
   repository: Awaited<ReturnType<typeof resolveRepository>>;
   baseRef?: string;
-  expectedTreeObject?: string;
 }): Promise<string> {
   const baseRef = params.baseRef?.trim();
   if (!baseRef) {
-    throw new Error("system-change worktrees require an exact native snapshot ref");
-  }
-  if (!baseRef.startsWith(`${SNAPSHOT_REF_PREFIX}/`)) {
-    throw new Error(`system-change base is not a native snapshot ref: ${baseRef}`);
-  }
-  const expectedTreeObject = params.expectedTreeObject?.trim();
-  if (!expectedTreeObject) {
-    throw new Error("system-change worktrees require the loaded source tree object");
+    throw new Error("system-change worktrees require the loaded source commit");
   }
   if (params.repository.sourceRoot !== params.repository.repoRoot) {
     throw new Error("system-change worktrees require the primary source anchor checkout");
@@ -178,23 +158,15 @@ async function requireSystemChangeBase(params: {
   ]);
   const baseCommit = resolvedBase.stdout.trim();
   if (resolvedBase.code !== 0 || !baseCommit) {
-    throw new Error(`system-change snapshot is not a local commit: ${baseRef}`);
+    throw new Error(`system-change source is not a local commit: ${baseRef}`);
   }
-  const resolvedTree = await runGit(params.repository.repoRoot, [
-    "rev-parse",
-    "--verify",
-    "--end-of-options",
-    `${baseRef}^{tree}`,
-  ]);
-  if (resolvedTree.code !== 0 || resolvedTree.stdout.trim() !== expectedTreeObject) {
-    throw new Error(
-      `system-change snapshot tree does not match the loaded release: expected ${expectedTreeObject}, observed ${resolvedTree.stdout.trim() || "unavailable"}`,
-    );
+  if (baseRef !== baseCommit) {
+    throw new Error("system-change base must be the exact loaded source commit");
   }
   const anchorHead = await requireGit(params.repository.sourceRoot, ["rev-parse", "HEAD"]);
   if (anchorHead !== baseCommit) {
     throw new Error(
-      `system-change source anchor does not match loaded snapshot: expected ${baseCommit}, observed ${anchorHead}`,
+      `system-change source anchor does not match loaded source commit: expected ${baseCommit}, observed ${anchorHead}`,
     );
   }
   const status = await requireGitRaw(params.repository.sourceRoot, [
@@ -207,8 +179,8 @@ async function requireSystemChangeBase(params: {
     throw new Error("system-change source anchor must be clean");
   }
   const includePath = path.join(params.repository.sourceRoot, ".worktreeinclude");
-  const includeStat = await fs.lstat(includePath).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") {
+  const includeStat = await fs.lstat(includePath).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return undefined;
     }
     throw error;
@@ -568,7 +540,6 @@ export class ManagedWorktreeService {
       ? await requireSystemChangeBase({
           repository,
           baseRef: params.baseRef,
-          expectedTreeObject: params.expectedTreeObject,
         })
       : undefined;
     const name = validateName(params.name ?? generateName());
@@ -1235,4 +1206,3 @@ export type {
   ManagedWorktreeRecord,
   RemoveManagedWorktreeResult,
 } from "./types.js";
-/* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

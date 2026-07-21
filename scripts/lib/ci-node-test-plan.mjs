@@ -526,7 +526,6 @@ function resolveInfraShardName(file) {
     return "core-runtime-infra-channel-plugin";
   }
   if (
-    name.startsWith("accepted-release") ||
     name.startsWith("package") ||
     name.startsWith("ports") ||
     name.startsWith("process") ||

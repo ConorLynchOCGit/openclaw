@@ -738,7 +738,6 @@ describe("runCodexAppServerAttempt", () => {
     const worktreeDir = path.join(tempDir, "worktrees", "system-change-a");
     const systemProfileDir = path.join(tempDir, "codex-system-profile");
     const sourceObject = "a".repeat(40);
-    const releaseManifestDigest = "b".repeat(64);
     const permissionProfile = "openclaw-system-change";
     const profile = await createSystemProfileFixture(systemProfileDir);
     await fs.mkdir(worktreeDir, { recursive: true });
@@ -755,7 +754,6 @@ describe("runCodexAppServerAttempt", () => {
             repoRoot: "/srv/openclaw-next/source-anchor",
             kind: "system-change",
             baseRef: sourceObject,
-            releaseManifestDigest,
           },
         },
       }),

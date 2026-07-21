@@ -617,7 +617,9 @@ export function createTaskTool(
     workspaceDir?: string;
     onProgress?: () => void;
     /** Test-only override for loaded generation/source resolution. */
-    resolveSystemChangeSessionSource?: () => SystemChangeSessionSource;
+    resolveSystemChangeSessionSource?: () =>
+      | SystemChangeSessionSource
+      | Promise<SystemChangeSessionSource>;
   } & SpawnedToolContext,
 ): AnyAgentTool {
   return {
@@ -685,7 +687,8 @@ export function createTaskTool(
       if (requestsSystemChange) {
         try {
           systemChangeSessionSource =
-            opts?.resolveSystemChangeSessionSource?.() ?? resolveLoadedSystemChangeSessionSource();
+            (await opts?.resolveSystemChangeSessionSource?.()) ??
+            (await resolveLoadedSystemChangeSessionSource());
         } catch (error) {
           return jsonResult({
             status: "error",

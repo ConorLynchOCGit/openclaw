@@ -49,7 +49,6 @@ export type CodexSystemProcessContext = {
 
 export type CodexSystemThreadContext = {
   authority: {
-    releaseManifestDigest: string;
     permissionProfile: string;
     config: JsonObject;
     selectedCapabilityRoots: CodexLoadedSystemProfile["selectedCapabilityRoots"];
@@ -59,11 +58,7 @@ export type CodexSystemThreadContext = {
   environments: CodexTurnEnvironmentParams[];
 };
 
-type SystemChangeSessionEntry = SessionEntry & {
-  worktree?: NonNullable<SessionEntry["worktree"]> & {
-    releaseManifestDigest?: string;
-  };
-};
+type SystemChangeSessionEntry = SessionEntry;
 
 export function resolveCodexSystemProcessContext(params: {
   sessionEntry?: SystemChangeSessionEntry;
@@ -83,24 +78,24 @@ export function resolveCodexSystemProcessContext(params: {
   if (!expectedCwd || path.resolve(expectedCwd) !== path.resolve(params.cwd)) {
     throw new Error("system-change Codex cwd does not match the session-managed worktree");
   }
-  const releaseManifestDigest = worktree.releaseManifestDigest?.trim();
-  if (!releaseManifestDigest) {
-    throw new Error("system-change worktree is missing its loaded release identity");
+  const sourceCommit = worktree.baseRef?.trim();
+  if (!sourceCommit) {
+    throw new Error("system-change worktree is missing its source commit");
   }
   const codexHome = path.join(
     resolveStateDir(params.env ?? process.env),
     "codex",
     "generations",
-    releaseManifestDigest,
+    sourceCommit,
   );
   if (pathsOverlap(params.cwd, codexHome)) {
     throw new Error("system-change Codex runtime state must remain outside the managed worktree");
   }
   return {
-    fingerprint: releaseManifestDigest,
+    fingerprint: sourceCommit,
     cwd: path.resolve(params.cwd),
     processProfile: {
-      key: releaseManifestDigest,
+      key: sourceCommit,
       expectedServerVersion: MANAGED_CODEX_APP_SERVER_PACKAGE_VERSION,
       codexHome,
     },
@@ -127,7 +122,6 @@ export function buildCodexSystemThreadContext(params: {
   }
   return {
     authority: {
-      releaseManifestDigest: processContext.fingerprint,
       permissionProfile: SYSTEM_PERMISSION_PROFILE,
       config,
       selectedCapabilityRoots: profile.selectedCapabilityRoots,

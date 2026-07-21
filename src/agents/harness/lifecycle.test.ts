@@ -38,6 +38,7 @@ function createAttemptParams(): AgentHarnessAttemptParams {
     thinkLevel: "low",
     messageChannel: "qa",
     trigger: "manual",
+    deferTerminalLifecycleEnd: false,
   } as AgentHarnessAttemptParams;
 }
 

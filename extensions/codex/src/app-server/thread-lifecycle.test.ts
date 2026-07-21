@@ -106,7 +106,6 @@ function createSystemThreadContext(
   };
   return {
     authority: {
-      releaseManifestDigest: "b".repeat(64),
       permissionProfile: "openclaw-system-change",
       selectedCapabilityRoots: [
         {

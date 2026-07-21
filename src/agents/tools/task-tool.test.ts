@@ -724,9 +724,7 @@ describe("task tool", () => {
     const sourceObject = "a".repeat(40);
     const source: SystemChangeSessionSource = {
       sourceAnchorPath: "/srv/openclaw-next/source-anchor",
-      sourceSnapshotRef: "refs/openclaw/snapshots/loaded-generation",
-      sourceTreeObject: sourceObject,
-      releaseManifestDigest: "b".repeat(64),
+      sourceCommit: sourceObject,
     };
     const worktree = {
       id: "worktree-a",

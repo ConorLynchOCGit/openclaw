@@ -264,8 +264,6 @@ export type SessionEntry = {
     repoRoot: string;
     kind?: "system-change";
     baseRef?: string;
-    /** Loaded package generation that authorized this system-change checkout. */
-    releaseManifestDigest?: string;
   };
   /** Explicit parent session linkage for dashboard-created child sessions. */
   parentSessionKey?: string;

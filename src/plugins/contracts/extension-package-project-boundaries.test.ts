@@ -146,9 +146,6 @@ describe("opt-in extension package boundaries", () => {
     const pathsConfig = readJsonFile<TsConfigJson>(EXTENSION_PACKAGE_BOUNDARY_PATHS_CONFIG);
     expect(pathsConfig.extends).toBe("../tsconfig.json");
     expect(pathsConfig.compilerOptions?.paths).toEqual(EXTENSION_PACKAGE_BOUNDARY_BASE_PATHS);
-    expect(pathsConfig.compilerOptions?.paths?.["@openclaw/agency-data/api.js"]).toEqual([
-      "../dist/plugin-sdk/extensions/agency-data/api.d.ts",
-    ]);
 
     const baseConfig = readJsonFile<TsConfigJson>(EXTENSION_PACKAGE_BOUNDARY_BASE_CONFIG);
     expect(baseConfig.extends).toBe("./tsconfig.package-boundary.paths.json");

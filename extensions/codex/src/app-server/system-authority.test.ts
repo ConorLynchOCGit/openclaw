@@ -10,7 +10,6 @@ import {
 import type { CodexLoadedSystemProfile } from "./system-profile.js";
 
 const SOURCE_OBJECT = "a".repeat(40);
-const RELEASE_DIGEST = "b".repeat(64);
 const WORKTREE = "/tmp/openclaw-state/worktrees/system-change-a";
 const STATE_DIR = "/tmp/openclaw-state";
 const PROFILE_DIR = "/opt/openclaw/codex-system-profile";
@@ -24,7 +23,6 @@ function createSessionEntry(): SessionEntry {
       repoRoot: "/var/lib/openclaw/source-anchor",
       kind: "system-change",
       baseRef: SOURCE_OBJECT,
-      releaseManifestDigest: RELEASE_DIGEST,
     },
   } as SessionEntry;
 }
@@ -76,17 +74,16 @@ function createContext() {
 describe("Codex system generation authority", () => {
   it("resolves process identity from the session and thread authority from the package profile", () => {
     const context = createContext();
-    const codexHome = `${STATE_DIR}/codex/generations/${RELEASE_DIGEST}`;
+    const codexHome = `${STATE_DIR}/codex/generations/${SOURCE_OBJECT}`;
 
     expect(context).toMatchObject({
-      fingerprint: RELEASE_DIGEST,
+      fingerprint: SOURCE_OBJECT,
       processProfile: {
-        key: RELEASE_DIGEST,
+        key: SOURCE_OBJECT,
         codexHome,
       },
       environments: [{ environmentId: "local", cwd: WORKTREE }],
       authority: {
-        releaseManifestDigest: RELEASE_DIGEST,
         permissionProfile: "openclaw-system-change",
       },
     });
@@ -126,7 +123,7 @@ describe("Codex system generation authority", () => {
     ).toThrow("only run through the Coding agent");
 
     const missingRelease = createSessionEntry();
-    delete missingRelease.worktree?.releaseManifestDigest;
+    delete missingRelease.worktree?.baseRef;
     expect(() =>
       resolveCodexSystemProcessContext({
         sessionEntry: missingRelease,
@@ -134,7 +131,7 @@ describe("Codex system generation authority", () => {
         cwd: WORKTREE,
         env: { OPENCLAW_STATE_DIR: STATE_DIR },
       }),
-    ).toThrow("missing its loaded release identity");
+    ).toThrow("missing its source commit");
 
     const processContext = resolveCodexSystemProcessContext({
       sessionEntry: createSessionEntry(),
@@ -143,7 +140,7 @@ describe("Codex system generation authority", () => {
       env: { OPENCLAW_STATE_DIR: STATE_DIR },
     })!;
     const editableCapability = createProfile();
-    editableCapability.selectedCapabilityRoots[0]!.location.path = `${WORKTREE}/skills`;
+    editableCapability.selectedCapabilityRoots[0].location.path = `${WORKTREE}/skills`;
     expect(() =>
       buildCodexSystemThreadContext({ processContext, profile: editableCapability }),
     ).toThrow("invalid capability root");
