@@ -1,6 +1,6 @@
 {
   "name": "@openclaw/codex",
-  "version": "2026.6.7",
+  "version": "2026.6.8",
   "description": "OpenClaw Codex app-server harness and model provider plugin with a Codex-managed GPT catalog.",
   "repository": {
     "type": "git",

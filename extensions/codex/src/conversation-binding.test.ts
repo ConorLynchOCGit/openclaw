@@ -90,13 +90,10 @@ async function createSystemProfileFixture(systemProfileDir: string) {
   const config = {
     project_doc_max_bytes: 0,
     developer_instructions: "Generation-N immutable developer instructions.",
-    default_permissions: "openclaw-system-change",
+    default_permissions: ":workspace",
     features: {
       multi_agent: false,
       multi_agent_v2: { enabled: true },
-    },
-    permissions: {
-      "openclaw-system-change": { extends: ":workspace" },
     },
     mcp_servers: {
       openclaw_repo_workbench: {
@@ -229,7 +226,7 @@ describe("codex conversation binding", () => {
     const systemProfileDir = path.join(tempDir, "codex-system-profile");
     const sourceObject = "a".repeat(40);
     const sourceCommit = sourceObject;
-    const permissionProfile = "openclaw-system-change";
+    const permissionProfile = ":workspace";
     const profile = await createSystemProfileFixture(systemProfileDir);
     await fs.writeFile(
       sessionStore,
@@ -265,7 +262,7 @@ describe("codex conversation binding", () => {
           cwd: worktree,
           runtimeWorkspaceRoots: [worktree],
           instructionSources: [],
-          activePermissionProfile: { id: "openclaw-system-change" },
+          activePermissionProfile: { id: ":workspace" },
         };
       }),
     });
