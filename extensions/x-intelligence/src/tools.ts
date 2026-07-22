@@ -16,46 +16,43 @@ import {
   requireXOwnedMetricDefinition,
   supportedXOwnedMetricFields,
 } from "./owned-metric-definitions.js";
-import { createEpisodeRequestBudget, type XEpisodeBudgetLimits } from "./resource-budget.js";
 import {
   createXReadTransport,
-  X_USER_SEARCH_QUERY_PATTERN,
   XTransportError,
   type XJson,
   type XReadResult,
 } from "./transport.js";
+import {
+  estimateXDirectResponseBytes,
+  type XResearchPriceAuthority,
+} from "./x-research-admission.js";
 
 const TOOL_VERSION = "x-intelligence.v1";
 const MAX_MODEL_RESULT_BYTES = 48 * 1024;
 const MAX_CACHE_ENTRIES = 25_000;
 
-const POST_FIELDS = [
+const POST_CORE_FIELDS = [
   "id",
   "text",
   "author_id",
-  "conversation_id",
   "created_at",
-  "lang",
-  "public_metrics",
+  "conversation_id",
   "referenced_tweets",
+  "lang",
   "entities",
+  "public_metrics",
   "attachments",
-  "possibly_sensitive",
-  "edit_history_tweet_ids",
 ];
-const USER_FIELDS = [
+const USER_IDENTITY_FIELDS = [
   "id",
-  "name",
   "username",
+  "name",
   "description",
   "created_at",
-  "public_metrics",
   "verified",
-  "verified_type",
-  "profile_image_url",
-  "url",
+  "public_metrics",
 ];
-const MEDIA_FIELDS = [
+export const MEDIA_FIELDS = [
   "media_key",
   "type",
   "url",
@@ -65,13 +62,7 @@ const MEDIA_FIELDS = [
   "duration_ms",
   "public_metrics",
 ];
-const EXPANSIONS = [
-  "author_id",
-  "attachments.media_keys",
-  "referenced_tweets.id",
-  "referenced_tweets.id.author_id",
-];
-const USER_EXPANSIONS = ["pinned_tweet_id"];
+const FORMAT_MEDIA_EXPANSIONS = ["attachments.media_keys"];
 const OWNED_METRIC_FIELD_SCHEMA = Type.Union(
   supportedXOwnedMetricFields().map((value) => Type.Literal(value)),
 );
@@ -83,6 +74,15 @@ const PURPOSES = [
   "format_study",
   "source_verification",
   "owned_performance",
+] as const;
+const RESEARCH_PROFILES = ["full_hybrid_per_subject_v2", "reduced_probe_v2"] as const;
+const RESEARCH_STAGES = [
+  "question_discovery",
+  "question_verified_analysis",
+  "topic_discovery",
+  "influence_discovery",
+  "influence_challenge",
+  "format_analysis",
 ] as const;
 
 const PurposeSchema = Type.Union(PURPOSES.map((value) => Type.Literal(value)));
@@ -116,9 +116,24 @@ const CommonSchema = {
       },
     ),
   ),
+  research_profile: Type.Optional(
+    Type.Union(RESEARCH_PROFILES.map((value) => Type.Literal(value))),
+  ),
+  research_stage: Type.Optional(Type.Union(RESEARCH_STAGES.map((value) => Type.Literal(value)))),
+  subject_key: Type.Optional(
+    Type.String({
+      minLength: 1,
+      maxLength: 128,
+      description: "One immutable normalized research subject key for the admitted run.",
+    }),
+  ),
 };
 const PageSchema = {
   max_results: Type.Optional(Type.Integer({ minimum: 10, maximum: 100, default: 25 })),
+  pagination_token: Type.Optional(Type.String({ minLength: 1, maxLength: 1024 })),
+};
+const TimelinePageSchema = {
+  max_results: Type.Optional(Type.Integer({ minimum: 5, maximum: 100, default: 25 })),
   pagination_token: Type.Optional(Type.String({ minLength: 1, maxLength: 1024 })),
 };
 
@@ -128,7 +143,10 @@ export type XIntelligencePluginConfig = {
   ownedMetricsApiKey?: SecretInput;
   timeoutSeconds?: number;
   cacheTtlMinutes?: number;
-  episodeBudgets?: XEpisodeBudgetLimits;
+  /** Exact X Researcher identity admitted by the outer lifecycle owner. */
+  researcherAgentId?: string;
+  /** Versioned operator-approved prices; stale or missing authority blocks research activation. */
+  researchPriceAuthority?: XResearchPriceAuthority;
   complianceRefresh?: {
     enabled?: boolean;
     intervalMinutes?: number;
@@ -140,7 +158,6 @@ export type XIntelligenceRuntime = {
   cache: XContentCache;
   hydrate: Promise<number>;
   analytics: ReturnType<typeof createXAgencyDataAdapter>;
-  budget: ReturnType<typeof createEpisodeRequestBudget>;
 };
 
 const runtimeByApi = new WeakMap<OpenClawPluginApi, XIntelligenceRuntime>();
@@ -165,13 +182,6 @@ export function getXIntelligenceRuntime(
     cache,
     hydrate: cache.hydrate(),
     analytics: createXAgencyDataAdapter({ stateDir: analyticsStateDir }),
-    budget: createEpisodeRequestBudget({
-      store: api.runtime.state.openKeyedStore({
-        namespace: "x-episode-request-budget-v1",
-        maxEntries: MAX_CACHE_ENTRIES,
-      }),
-      limits: config.episodeBudgets,
-    }),
   };
   runtimeByApi.set(api, runtime);
   return runtime;
@@ -186,6 +196,9 @@ type ToolCommon = {
     subject_type: "company" | "person";
     subject_id: string;
   };
+  research_profile?: (typeof RESEARCH_PROFILES)[number];
+  research_stage?: (typeof RESEARCH_STAGES)[number];
+  subject_key?: string;
 };
 
 type ExecuteParams = {
@@ -200,6 +213,12 @@ type ExecuteParams = {
   subjectIds?: string[];
   queryText?: string;
   pageSize?: number;
+  profile?: "post_core_v1" | "format_media_v1" | "user_identity_v1" | "count_v1";
+  maxPosts?: number;
+  maxUsers?: number;
+  maxMedia?: number;
+  maxSerializedBytes?: number;
+  priceAuthority?: XResearchPriceAuthority;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -382,14 +401,230 @@ function providerRequestCount(result: XReadResult): number {
   return Math.max(1, result.receipts?.length ?? 1);
 }
 
+type ResourceReceipt = Readonly<{
+  requests: number;
+  pages: number;
+  posts: number;
+  users: number;
+  counts: number;
+  media: number;
+  serialized_bytes: number;
+}>;
+type FormatMediaReceipt = Readonly<{
+  requested_post_ids: readonly string[];
+  returned_post_ids: readonly string[];
+  missing_post_ids: readonly string[];
+  unexpected_post_ids: readonly string[];
+  required_media_keys: readonly string[];
+  returned_media_keys: readonly string[];
+  missing_media_keys: readonly string[];
+  unexpected_media_keys: readonly string[];
+  posts_without_media: readonly string[];
+  rights: Readonly<{ status: "not_exposed_by_x_api" }>;
+  retention: Readonly<{
+    raw_content_cache_max_hours: 24;
+    evidence_manifest: "metadata_only";
+  }>;
+}>;
+
+type ResponseEnvelope = Readonly<{
+  requests: number;
+  posts?: number;
+  users?: number;
+  counts?: number;
+  media?: number;
+}>;
+
+function responseEnvelope(params: ResponseEnvelope) {
+  return {
+    ...(params.posts !== undefined ? { maxPosts: params.posts } : {}),
+    ...(params.users !== undefined ? { maxUsers: params.users } : {}),
+    ...(params.media !== undefined ? { maxMedia: params.media } : {}),
+    maxSerializedBytes: estimateXDirectResponseBytes(params),
+  };
+}
+
+function responseItems(value: XJson, key: "data" | "media"): Record<string, unknown>[] {
+  const root = asRecord(value);
+  const source = key === "data" ? root?.data : asRecord(root?.includes)?.media;
+  const values = Array.isArray(source) ? source : source ? [source] : [];
+  return values.map(asRecord).filter((item): item is Record<string, unknown> => Boolean(item));
+}
+
+function includedItems(value: XJson, key: "tweets" | "users" | "media"): Record<string, unknown>[] {
+  const root = asRecord(value);
+  const source = asRecord(root?.includes)?.[key];
+  const values = Array.isArray(source) ? source : source ? [source] : [];
+  return values.map(asRecord).filter((item): item is Record<string, unknown> => Boolean(item));
+}
+
+function resourceReceipt(execution: ExecuteParams, result: XReadResult): ResourceReceipt {
+  const data = responseItems(result.data, "data");
+  const includedPosts = includedItems(result.data, "tweets");
+  const includedUsers = includedItems(result.data, "users");
+  const media = includedItems(result.data, "media");
+  const ownedMetrics = execution.toolName === "x_metrics" && execution.operation === "owned";
+  const posts = ownedMetrics
+    ? (result.trustedOwnership?.verifiedPostIds.length ?? 0) + includedPosts.length
+    : (["x_posts", "x_timelines"].includes(execution.toolName) ||
+      (execution.toolName === "x_metrics" && execution.operation === "public")
+        ? data.length
+        : 0) + includedPosts.length;
+  const users =
+    (execution.toolName === "x_users" ? data.length : 0) +
+    includedUsers.length +
+    (ownedMetrics && result.trustedOwnership ? 1 : 0);
+  const receipts = result.receipts ?? [result.receipt];
+  const exactResponseBytes = receipts.every(
+    (receipt) =>
+      typeof receipt.serializedBytes === "number" && Number.isFinite(receipt.serializedBytes),
+  )
+    ? receipts.reduce((total, receipt) => total + (receipt.serializedBytes ?? 0), 0)
+    : Buffer.byteLength(JSON.stringify(result.data), "utf8");
+  return {
+    requests: providerRequestCount(result),
+    pages: execution.pageSize === undefined ? 0 : 1,
+    posts,
+    users,
+    counts: execution.toolName === "x_counts" ? 1 : 0,
+    media: media.length,
+    serialized_bytes: exactResponseBytes,
+  };
+}
+
+function observedCost(execution: ExecuteParams, receipt: ResourceReceipt): Record<string, unknown> {
+  const authority = execution.priceAuthority;
+  if (!authority) {
+    return { status: "price_authority_unavailable" };
+  }
+  const countRate =
+    execution.operation === "all" ? authority.allCountUsd : authority.recentCountUsd;
+  return {
+    status: "calculated_from_returned_resources",
+    provider_cost_usd:
+      receipt.posts * authority.postUsd +
+      receipt.users * authority.userUsd +
+      receipt.counts * countRate,
+    price_identity: {
+      version: authority.version,
+      source: authority.source,
+      as_of: authority.asOf,
+      expires_at: authority.expiresAt,
+    },
+  };
+}
+
+function manifestCost(execution: ExecuteParams, receipt: ResourceReceipt) {
+  const observed = observedCost(execution, receipt);
+  return typeof observed.provider_cost_usd === "number"
+    ? { currency: "USD", amount: observed.provider_cost_usd }
+    : {};
+}
+
+class XProfileResponseError extends Error {
+  readonly resourceReceipt: ResourceReceipt;
+  readonly providerStatus: number;
+  readonly formatMedia?: FormatMediaReceipt;
+
+  constructor(result: XReadResult, receipt: ResourceReceipt, formatMedia?: FormatMediaReceipt) {
+    super("X returned resources outside the admitted operation profile.");
+    this.name = "XProfileResponseError";
+    this.resourceReceipt = receipt;
+    this.providerStatus = result.receipt.status;
+    this.formatMedia = formatMedia;
+  }
+}
+
+function formatMediaReceipt(execution: ExecuteParams, result: XReadResult): FormatMediaReceipt {
+  const requestedPostIds = [...new Set(execution.subjectIds ?? [])];
+  const posts = responseItems(result.data, "data");
+  const returnedPostIds = posts
+    .map((post) => stringValue(post.id))
+    .filter((id): id is string => Boolean(id));
+  const requested = new Set(requestedPostIds);
+  const returned = new Set(returnedPostIds);
+  const requiredMediaKeys = posts.flatMap((post) => {
+    const attachments = asRecord(post.attachments);
+    return Array.isArray(attachments?.media_keys)
+      ? attachments.media_keys.filter(
+          (key): key is string => typeof key === "string" && key.trim().length > 0,
+        )
+      : [];
+  });
+  const media = includedItems(result.data, "media");
+  const returnedMediaKeys = media
+    .map((item) => stringValue(item.media_key))
+    .filter((key): key is string => Boolean(key));
+  const requiredMedia = new Set(requiredMediaKeys);
+  const returnedMedia = new Set(returnedMediaKeys);
+  return {
+    requested_post_ids: requestedPostIds,
+    returned_post_ids: returnedPostIds,
+    missing_post_ids: requestedPostIds.filter((id) => !returned.has(id)),
+    unexpected_post_ids: returnedPostIds.filter((id) => !requested.has(id)),
+    required_media_keys: [...requiredMedia],
+    returned_media_keys: [...returnedMedia],
+    missing_media_keys: [...requiredMedia].filter((key) => !returnedMedia.has(key)),
+    unexpected_media_keys: [...returnedMedia].filter((key) => !requiredMedia.has(key)),
+    posts_without_media: posts
+      .filter((post) => {
+        const attachments = asRecord(post.attachments);
+        return !Array.isArray(attachments?.media_keys) || attachments.media_keys.length === 0;
+      })
+      .map((post) => stringValue(post.id))
+      .filter((id): id is string => Boolean(id)),
+    rights: { status: "not_exposed_by_x_api" },
+    retention: {
+      raw_content_cache_max_hours: 24,
+      evidence_manifest: "metadata_only",
+    },
+  };
+}
+
+function validateProfileResponse(execution: ExecuteParams, result: XReadResult): ResourceReceipt {
+  const receipt = resourceReceipt(execution, result);
+  const formatMedia =
+    execution.profile === "format_media_v1" ? formatMediaReceipt(execution, result) : undefined;
+  const includes = asRecord(asRecord(result.data)?.includes);
+  const hasUnexpectedIncludes = (allowed: readonly string[]) =>
+    Boolean(includes && Object.keys(includes).some((key) => !allowed.includes(key)));
+  const invalid =
+    (execution.profile === "format_media_v1" &&
+      (hasUnexpectedIncludes(["media"]) ||
+        receipt.posts > (execution.maxPosts ?? 10) ||
+        receipt.media > 40 ||
+        Boolean(
+          formatMedia &&
+          (formatMedia.missing_post_ids.length > 0 ||
+            formatMedia.unexpected_post_ids.length > 0 ||
+            formatMedia.missing_media_keys.length > 0 ||
+            formatMedia.unexpected_media_keys.length > 0),
+        ))) ||
+    (execution.profile !== "format_media_v1" && hasUnexpectedIncludes([])) ||
+    (execution.maxPosts !== undefined && receipt.posts > execution.maxPosts) ||
+    (execution.maxUsers !== undefined && receipt.users > execution.maxUsers) ||
+    (execution.maxMedia !== undefined && receipt.media > execution.maxMedia) ||
+    (execution.maxSerializedBytes !== undefined &&
+      receipt.serialized_bytes > execution.maxSerializedBytes);
+  if (invalid) {
+    throw new XProfileResponseError(result, receipt, formatMedia);
+  }
+  return receipt;
+}
+
 async function writeManifest(params: {
   execution: ExecuteParams;
   result?: XReadResult;
+  resourceReceipt?: ResourceReceipt;
   durationMs: number;
   error?: { code: string; category?: string; retryable?: boolean };
   requestCount?: number;
+  observedSerializedBytes?: number;
+  formatMedia?: FormatMediaReceipt;
 }) {
   const { execution, result } = params;
+  const receipt =
+    params.resourceReceipt ?? (result ? resourceReceipt(execution, result) : undefined);
   const evidence = result
     ? evidenceFrom(result.data, execution.toolName)
     : { ids: [], urls: [], hashes: [], publicMetrics: {}, objects: [] };
@@ -420,7 +655,11 @@ async function writeManifest(params: {
       method: { name: `${execution.toolName}.${execution.operation}` },
       query: {
         ...(execution.queryText ? { text: execution.queryText } : {}),
-        filters: manifestFilters(execution.args),
+        filters: {
+          ...manifestFilters(execution.args),
+          ...(execution.profile ? { profile: execution.profile } : {}),
+          ...(params.formatMedia ? { format_media: params.formatMedia } : {}),
+        },
         window: {
           ...(stringValue(execution.args.start_time)
             ? { start: stringValue(execution.args.start_time) }
@@ -440,11 +679,15 @@ async function writeManifest(params: {
         publicMetrics: evidence.publicMetrics,
       },
       resources: {
-        requests: params.requestCount ?? (result ? providerRequestCount(result) : 0),
-        ...(result ? { bytes: Buffer.byteLength(JSON.stringify(result.data), "utf8") } : {}),
+        requests: params.requestCount ?? receipt?.requests ?? 0,
+        ...(receipt
+          ? { bytes: receipt.serialized_bytes }
+          : params.observedSerializedBytes !== undefined
+            ? { bytes: params.observedSerializedBytes }
+            : {}),
         durationMs: params.durationMs,
       },
-      cost: {},
+      cost: receipt ? manifestCost(execution, receipt) : {},
       errors: params.error ? [params.error] : [],
       pagination: {
         pageSize: execution.pageSize,
@@ -469,42 +712,22 @@ async function writeManifest(params: {
 async function executeSourceOperation(params: ExecuteParams) {
   await params.runtime.hydrate;
   const startedAt = Date.now();
-  const budget = await params.runtime.budget.reserve({
-    sessionKey: params.ctx.sessionKey ?? `tool-call:${params.toolCallId}`,
-    purpose: params.args.purpose,
-  });
-  if (!budget.allowed) {
-    const artifact = await writeManifest({
-      execution: params,
-      durationMs: Date.now() - startedAt,
-      error: { code: "episode_budget_exhausted", category: "budget", retryable: false },
-      requestCount: 0,
-    });
-    return {
-      status: "partial",
-      verdict: "no_decision",
-      tool: params.toolName,
-      operation: params.operation,
-      purpose: params.args.purpose,
-      method_version: params.args.method_version ?? "x-research-method.v1",
-      error: { code: "episode_budget_exhausted" },
-      evidence: { ref: artifact.ref, digest: artifact.digest, created: artifact.created },
-      budget,
-      resources: { requests: 0, duration_ms: Date.now() - startedAt },
-      cost: { status: "not_incurred" },
-    };
-  }
   let requestCount = 0;
   try {
     const result = await params.invoke();
-    requestCount = providerRequestCount(result);
+    const receipt = validateProfileResponse(params, result);
+    const formatMedia =
+      params.profile === "format_media_v1" ? formatMediaReceipt(params, result) : undefined;
+    requestCount = receipt.requests;
     const evidence = evidenceFrom(result.data, params.toolName);
     const cacheKeys = await cacheSourceObjects(params.runtime.cache, evidence.objects);
     const artifact = await writeManifest({
       execution: params,
       result,
+      resourceReceipt: receipt,
       durationMs: Date.now() - startedAt,
       requestCount,
+      formatMedia,
     });
     const analyticsContext = params.args.analytics_context;
     const analytics = await params.runtime.analytics.ingest({
@@ -540,29 +763,48 @@ async function executeSourceOperation(params: ExecuteParams) {
       evidence: { ref: artifact.ref, digest: artifact.digest, created: artifact.created },
       analytics,
       cache: { keys: cacheKeys, ttl_max_hours: 24 },
-      resources: { requests: requestCount, duration_ms: Date.now() - startedAt },
-      cost: { status: "provider_not_reported" },
-      budget,
+      profile: params.profile,
+      ...(formatMedia ? { format_media: formatMedia } : {}),
+      requests: receipt.requests,
+      pages: receipt.pages,
+      posts: receipt.posts,
+      users: receipt.users,
+      media: receipt.media,
+      serialized_bytes: receipt.serialized_bytes,
+      resources: { ...receipt, duration_ms: Date.now() - startedAt },
+      cost: observedCost(params, receipt),
     };
   } catch (error) {
     const transport = error instanceof XTransportError ? error : undefined;
-    requestCount = transport?.requestCount ?? requestCount;
+    const profileResponse = error instanceof XProfileResponseError ? error : undefined;
+    const consumedResources = profileResponse?.resourceReceipt;
+    const observedByteReceipts = (transport?.receipts ?? [])
+      .map((receipt) => receipt.serializedBytes)
+      .filter((bytes): bytes is number => typeof bytes === "number" && Number.isFinite(bytes));
+    const observedSerializedBytes =
+      observedByteReceipts.length > 0
+        ? observedByteReceipts.reduce((total, bytes) => total + bytes, 0)
+        : undefined;
+    requestCount = consumedResources?.requests ?? transport?.requestCount ?? requestCount;
     const code =
-      transport?.kind ??
+      (profileResponse ? "unexpected_response" : transport?.kind) ??
       (error && typeof error === "object" && "code" in error && typeof error.code === "string"
         ? error.code
         : "x_source_operation_failed");
     const artifact = await writeManifest({
       execution: params,
+      resourceReceipt: consumedResources,
+      observedSerializedBytes,
       durationMs: Date.now() - startedAt,
       error: {
         code,
-        category: transport?.category ?? "runtime",
+        category: profileResponse ? "provider" : (transport?.category ?? "runtime"),
         retryable: transport
           ? ["rate_limited", "server", "timeout", "network"].includes(transport.kind)
           : false,
       },
       requestCount,
+      formatMedia: profileResponse?.formatMedia,
     });
     return {
       status: "failed",
@@ -572,13 +814,28 @@ async function executeSourceOperation(params: ExecuteParams) {
       method_version: params.args.method_version ?? "x-research-method.v1",
       error: {
         code,
-        category: transport?.category ?? "runtime",
-        ...(transport?.receipt ? { provider_status: transport.receipt.status } : {}),
+        category: profileResponse ? "provider" : (transport?.category ?? "runtime"),
+        ...(profileResponse
+          ? { provider_status: profileResponse.providerStatus }
+          : transport?.receipt
+            ? { provider_status: transport.receipt.status }
+            : {}),
       },
       evidence: { ref: artifact.ref, digest: artifact.digest, created: artifact.created },
-      resources: { requests: requestCount, duration_ms: Date.now() - startedAt },
-      cost: { status: "provider_not_reported" },
-      budget,
+      ...(profileResponse?.formatMedia ? { format_media: profileResponse.formatMedia } : {}),
+      requests: requestCount,
+      resources: consumedResources
+        ? { ...consumedResources, duration_ms: Date.now() - startedAt }
+        : {
+            requests: requestCount,
+            ...(observedSerializedBytes !== undefined
+              ? { serialized_bytes: observedSerializedBytes }
+              : {}),
+            duration_ms: Date.now() - startedAt,
+          },
+      cost: consumedResources
+        ? observedCost(params, consumedResources)
+        : { status: "provider_not_reported" },
     };
   }
 }
@@ -591,7 +848,11 @@ function requireString(args: Record<string, unknown>, key: string): string {
   return value;
 }
 
-function ownedMetricsInput(args: Record<string, unknown>, signal: AbortSignal | undefined) {
+function ownedMetricsInput(
+  args: Record<string, unknown>,
+  signal: AbortSignal | undefined,
+  maxResponseBytes: number,
+) {
   const tweetIds = Array.isArray(args.post_ids)
     ? args.post_ids.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
     : [];
@@ -619,6 +880,7 @@ function ownedMetricsInput(args: Record<string, unknown>, signal: AbortSignal | 
   return {
     tweetIds,
     signal,
+    maxResponseBytes,
     startTime,
     endTime,
     granularity: stringValue(args.granularity) ?? "total",
@@ -679,7 +941,18 @@ export function createXIntelligenceTools(params: {
     args: ToolCommon & Record<string, unknown>,
     toolCallId: string,
     invoke: () => Promise<XReadResult>,
-    options: Pick<ExecuteParams, "subjectKind" | "subjectIds" | "queryText" | "pageSize">,
+    options: Pick<
+      ExecuteParams,
+      | "subjectKind"
+      | "subjectIds"
+      | "queryText"
+      | "pageSize"
+      | "profile"
+      | "maxPosts"
+      | "maxUsers"
+      | "maxMedia"
+      | "maxSerializedBytes"
+    >,
   ) =>
     jsonResult(
       await executeSourceOperation({
@@ -690,6 +963,7 @@ export function createXIntelligenceTools(params: {
         toolCallId,
         invoke,
         runtime,
+        priceAuthority: params.config.researchPriceAuthority,
         ...options,
       }),
     );
@@ -700,44 +974,91 @@ export function createXIntelligenceTools(params: {
       label: "X Posts",
       description:
         "Read bounded recent/archive X posts or hydrate one post, conversation, quote set, or reply set. Use focused queries and continuation tokens rather than broad post dumps.",
-      parameters: Type.Object(
-        {
-          ...CommonSchema,
-          operation: Type.Union([
-            Type.Literal("recent"),
-            Type.Literal("archive"),
-            Type.Literal("exact"),
-            Type.Literal("thread"),
-            Type.Literal("quotes"),
-            Type.Literal("replies"),
-          ]),
-          query: Type.Optional(Type.String({ minLength: 1, maxLength: 1_024 })),
-          id: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
-          start_time: Type.Optional(Type.String()),
-          end_time: Type.Optional(Type.String()),
-          sort_order: Type.Optional(
-            Type.Union([Type.Literal("recency"), Type.Literal("relevancy")]),
+      parameters: Type.Union([
+        Type.Object(
+          {
+            ...CommonSchema,
+            operation: Type.Union([Type.Literal("recent"), Type.Literal("archive")]),
+            query: Type.String({ minLength: 1, maxLength: 1_024 }),
+            start_time: Type.Optional(Type.String()),
+            end_time: Type.Optional(Type.String()),
+            sort_order: Type.Optional(
+              Type.Union([Type.Literal("recency"), Type.Literal("relevancy")]),
+            ),
+            ...PageSchema,
+          },
+          { additionalProperties: false },
+        ),
+        ...(["exact", "thread", "quotes", "replies"] as const).map((operation) =>
+          Type.Object(
+            {
+              ...CommonSchema,
+              operation: Type.Literal(operation),
+              id: Type.String({ minLength: 1, maxLength: 64 }),
+              ...(operation === "exact" ? {} : PageSchema),
+            },
+            { additionalProperties: false },
           ),
-          ...PageSchema,
-        },
-        { additionalProperties: false },
-      ),
+        ),
+        Type.Object(
+          {
+            ...CommonSchema,
+            operation: Type.Literal("batch"),
+            ids: Type.Array(Type.String({ minLength: 1, maxLength: 64 }), {
+              minItems: 1,
+              maxItems: 100,
+              uniqueItems: true,
+              description: "Exact stable X Post IDs to hydrate through the XDK batch endpoint.",
+            }),
+          },
+          { additionalProperties: false },
+        ),
+        Type.Object(
+          {
+            ...CommonSchema,
+            operation: Type.Literal("format_media"),
+            post_ids: Type.Array(Type.String({ minLength: 1, maxLength: 64 }), {
+              minItems: 1,
+              maxItems: 10,
+              uniqueItems: true,
+              description:
+                "Already selected direct-X-qualified Posts only; no author or referenced-Post expansion.",
+            }),
+          },
+          { additionalProperties: false },
+        ),
+      ]),
       execute: async (toolCallId, raw, signal) => {
         const args = raw as ToolCommon & Record<string, unknown>;
         const operation = requireString(args, "operation");
         const query = stringValue(args.query);
         const id = stringValue(args.id);
+        const requestedPostIds = operation === "batch" ? args.ids : args.post_ids;
+        const postIds = Array.isArray(requestedPostIds)
+          ? requestedPostIds.filter((value): value is string => typeof value === "string")
+          : [];
         const page = pageArgs(args);
+        const requestedPostLimit = ["recent", "archive", "thread", "quotes", "replies"].includes(
+          operation,
+        )
+          ? page.maxResults
+          : operation === "exact"
+            ? 1
+            : postIds.length;
+        const envelope = responseEnvelope({
+          requests: 1,
+          posts: requestedPostLimit,
+          users: 0,
+          media: operation === "format_media" ? requestedPostLimit * 4 : 0,
+        });
         const common = {
           ...page,
           signal,
+          maxResponseBytes: envelope.maxSerializedBytes,
           startTime: stringValue(args.start_time),
           endTime: stringValue(args.end_time),
           sortOrder: args.sort_order as "recency" | "relevancy" | undefined,
-          tweetFields: POST_FIELDS,
-          expansions: EXPANSIONS,
-          userFields: USER_FIELDS,
-          mediaFields: MEDIA_FIELDS,
+          tweetFields: POST_CORE_FIELDS,
         };
         const invoke = () => {
           switch (operation) {
@@ -750,6 +1071,15 @@ export function createXIntelligenceTools(params: {
               return getTransport().posts.archive({ ...common, query: query ?? "" });
             case "exact":
               return getTransport().posts.exact({ ...common, id: id ?? "" });
+            case "batch":
+              return getTransport().posts.batch({ ...common, ids: postIds });
+            case "format_media":
+              return getTransport().posts.batch({
+                ...common,
+                ids: postIds,
+                expansions: FORMAT_MEDIA_EXPANSIONS,
+                mediaFields: MEDIA_FIELDS,
+              });
             case "thread":
               return getTransport().posts.thread({ ...common, id: id ?? "" });
             case "quotes":
@@ -762,9 +1092,13 @@ export function createXIntelligenceTools(params: {
         };
         return execute("x_posts", operation, args, toolCallId, invoke, {
           subjectKind: query ? "query" : id ? "post" : "resource",
-          subjectIds: id ? [id] : [],
+          subjectIds: postIds.length > 0 ? postIds : id ? [id] : [],
           queryText: query,
-          pageSize: page.maxResults,
+          pageSize: ["recent", "archive", "thread", "quotes", "replies"].includes(operation)
+            ? page.maxResults
+            : undefined,
+          profile: operation === "format_media" ? "format_media_v1" : "post_core_v1",
+          ...envelope,
         });
       },
     },
@@ -791,9 +1125,11 @@ export function createXIntelligenceTools(params: {
         const args = raw as ToolCommon & Record<string, unknown>;
         const operation = requireString(args, "operation");
         const query = requireString(args, "query");
+        const envelope = responseEnvelope({ requests: 1, counts: 1, posts: 0, users: 0, media: 0 });
         const input = {
           query,
           signal,
+          maxResponseBytes: envelope.maxSerializedBytes,
           startTime: stringValue(args.start_time),
           endTime: stringValue(args.end_time),
           granularity: args.granularity as "minute" | "hour" | "day" | undefined,
@@ -810,7 +1146,7 @@ export function createXIntelligenceTools(params: {
               : operation === "all"
                 ? getTransport().counts.all(input)
                 : Promise.reject(new XTransportError("bad_request")),
-          { subjectKind: "query", queryText: query },
+          { subjectKind: "query", queryText: query, profile: "count_v1", ...envelope },
         );
       },
     },
@@ -827,7 +1163,6 @@ export function createXIntelligenceTools(params: {
             query: Type.String({
               minLength: 1,
               maxLength: 50,
-              pattern: X_USER_SEARCH_QUERY_PATTERN,
               description: "Name, username, or profile-bio keywords; not a post-search query.",
             }),
             ...PageSchema,
@@ -847,6 +1182,30 @@ export function createXIntelligenceTools(params: {
             ...CommonSchema,
             operation: Type.Literal("identity"),
             username: Type.String({ minLength: 1, maxLength: 64 }),
+          },
+          { additionalProperties: false },
+        ),
+        Type.Object(
+          {
+            ...CommonSchema,
+            operation: Type.Literal("identity"),
+            ids: Type.Array(Type.String({ minLength: 1, maxLength: 64 }), {
+              minItems: 1,
+              maxItems: 100,
+              uniqueItems: true,
+            }),
+          },
+          { additionalProperties: false },
+        ),
+        Type.Object(
+          {
+            ...CommonSchema,
+            operation: Type.Literal("identity"),
+            usernames: Type.Array(Type.String({ minLength: 1, maxLength: 64 }), {
+              minItems: 1,
+              maxItems: 100,
+              uniqueItems: true,
+            }),
           },
           { additionalProperties: false },
         ),
@@ -875,20 +1234,38 @@ export function createXIntelligenceTools(params: {
         const query = stringValue(args.query);
         const id = stringValue(args.id);
         const username = stringValue(args.username);
+        const ids = Array.isArray(args.ids)
+          ? args.ids.filter((value): value is string => typeof value === "string")
+          : [];
+        const usernames = Array.isArray(args.usernames)
+          ? args.usernames.filter((value): value is string => typeof value === "string")
+          : [];
         const page = pageArgs(args);
+        const requestedUserLimit =
+          operation === "identity" ? Math.max(ids.length, usernames.length, 1) : page.maxResults;
+        const envelope = responseEnvelope({
+          requests: 1,
+          posts: 0,
+          users: requestedUserLimit,
+          media: 0,
+        });
         const common = {
           ...page,
           signal,
-          userFields: USER_FIELDS,
-          expansions: USER_EXPANSIONS,
-          tweetFields: POST_FIELDS,
+          maxResponseBytes: envelope.maxSerializedBytes,
+          userFields: USER_IDENTITY_FIELDS,
         };
         const invoke = () => {
           switch (operation) {
             case "search":
               return getTransport().users.search({ ...common, query: query ?? "" });
             case "identity":
-              return getTransport().users.identity({ ...common, id, username });
+              return ids.length > 0 || usernames.length > 0
+                ? getTransport().users.identityBatch({
+                    ...common,
+                    ...(ids.length > 0 ? { ids } : { usernames }),
+                  })
+                : getTransport().users.identity({ ...common, id, username });
             case "followers":
               return getTransport().users.followers({ ...common, id: id ?? "" });
             case "following":
@@ -899,9 +1276,13 @@ export function createXIntelligenceTools(params: {
         };
         return execute("x_users", operation, args, toolCallId, invoke, {
           subjectKind: "profile",
-          subjectIds: id ? [id] : [],
-          queryText: query ?? username,
-          pageSize: page.maxResults,
+          subjectIds: ids.length > 0 ? ids : id ? [id] : [],
+          queryText: query ?? username ?? (usernames.length > 0 ? usernames.join(",") : undefined),
+          pageSize: ["search", "followers", "following"].includes(operation)
+            ? page.maxResults
+            : undefined,
+          profile: "user_identity_v1",
+          ...envelope,
         });
       },
     },
@@ -917,7 +1298,7 @@ export function createXIntelligenceTools(params: {
           user_id: Type.String({ minLength: 1, maxLength: 64 }),
           start_time: Type.Optional(Type.String()),
           end_time: Type.Optional(Type.String()),
-          ...PageSchema,
+          ...TimelinePageSchema,
         },
         { additionalProperties: false },
       ),
@@ -926,16 +1307,20 @@ export function createXIntelligenceTools(params: {
         const operation = requireString(args, "operation");
         const id = requireString(args, "user_id");
         const page = pageArgs(args);
+        const envelope = responseEnvelope({
+          requests: 1,
+          posts: page.maxResults,
+          users: 0,
+          media: 0,
+        });
         const input = {
           ...page,
           id,
           signal,
+          maxResponseBytes: envelope.maxSerializedBytes,
           startTime: stringValue(args.start_time),
           endTime: stringValue(args.end_time),
-          tweetFields: POST_FIELDS,
-          expansions: EXPANSIONS,
-          userFields: USER_FIELDS,
-          mediaFields: MEDIA_FIELDS,
+          tweetFields: POST_CORE_FIELDS,
         };
         return execute(
           "x_timelines",
@@ -948,7 +1333,13 @@ export function createXIntelligenceTools(params: {
               : operation === "reverse_chronological"
                 ? getTransport().timelines.reverseChronological(input)
                 : Promise.reject(new XTransportError("bad_request")),
-          { subjectKind: "profile", subjectIds: [id], pageSize: page.maxResults },
+          {
+            subjectKind: "profile",
+            subjectIds: [id],
+            pageSize: page.maxResults,
+            profile: "post_core_v1",
+            ...envelope,
+          },
         );
       },
     },
@@ -1005,6 +1396,7 @@ export function createXIntelligenceTools(params: {
             post_ids: Type.Array(Type.String({ minLength: 1, maxLength: 64 }), {
               minItems: 1,
               maxItems: 100,
+              uniqueItems: true,
             }),
           },
           { additionalProperties: false },
@@ -1016,6 +1408,7 @@ export function createXIntelligenceTools(params: {
             post_ids: Type.Array(Type.String({ minLength: 1, maxLength: 64 }), {
               minItems: 1,
               maxItems: 100,
+              uniqueItems: true,
             }),
             start_time: Type.String({
               minLength: 1,
@@ -1057,7 +1450,16 @@ export function createXIntelligenceTools(params: {
         const ids = Array.isArray(args.post_ids)
           ? args.post_ids.filter((id): id is string => typeof id === "string")
           : [];
-        const ownedInput = operation === "owned" ? ownedMetricsInput(args, signal) : undefined;
+        const envelope = responseEnvelope({
+          requests: operation === "owned" ? 3 : 1,
+          posts: operation === "usage" ? 0 : ids.length,
+          users: operation === "owned" ? 1 : 0,
+          media: 0,
+        });
+        const ownedInput =
+          operation === "owned"
+            ? ownedMetricsInput(args, signal, envelope.maxSerializedBytes)
+            : undefined;
         const invoke = () =>
           operation === "usage"
             ? getTransport().metrics.usage({
@@ -1065,13 +1467,18 @@ export function createXIntelligenceTools(params: {
                 signal,
               })
             : operation === "public" && ids.length > 0
-              ? getTransport().metrics.public({ ids, signal })
+              ? getTransport().metrics.public({
+                  ids,
+                  signal,
+                  maxResponseBytes: envelope.maxSerializedBytes,
+                })
               : operation === "owned"
                 ? getTransport().metrics.owned(ownedInput!)
                 : Promise.reject(new XTransportError("bad_request"));
         return execute("x_metrics", operation, args, toolCallId, invoke, {
           subjectKind: operation === "usage" ? "resource" : "post",
           subjectIds: ids,
+          ...(operation === "usage" ? {} : envelope),
         });
       },
     },

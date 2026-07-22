@@ -41,6 +41,206 @@ export type XaiXSearchOptions = {
   enableVideoUnderstanding?: boolean;
 };
 
+export const XAI_X_SEARCH_RESEARCH_PROFILES = [
+  "full_hybrid_per_subject_v2",
+  "reduced_probe_v2",
+] as const;
+
+export const XAI_X_SEARCH_RESEARCH_STAGES = [
+  "question_discovery",
+  "question_verified_analysis",
+  "topic_discovery",
+  "influence_discovery",
+  "influence_challenge",
+  "format_analysis",
+] as const;
+
+export type XaiXSearchResearchProfile = (typeof XAI_X_SEARCH_RESEARCH_PROFILES)[number];
+export type XaiXSearchResearchStage = (typeof XAI_X_SEARCH_RESEARCH_STAGES)[number];
+
+export type XaiXSearchResearchPolicy = {
+  researchProfile: XaiXSearchResearchProfile;
+  researchStage: XaiXSearchResearchStage;
+  maxSelectedEvidenceBytes: number;
+  maxSerializedRequestBytes: number;
+  maxOutputTokens: number;
+  maxElapsedMs: number;
+  maxRetries: 0;
+  maxProviderDispatches: 1;
+  maxDeliveredCitations: number;
+  searchEnabled: boolean;
+  maxTotalResults?: number;
+};
+
+export type XaiXSearchCacheControl =
+  | { mode: "ordinary"; scope: "ordinary" }
+  | { mode: "bypass"; scope: "bypass" };
+
+export function resolveXaiXSearchCacheControl(value: unknown): XaiXSearchCacheControl {
+  if (value === undefined) {
+    return { mode: "ordinary", scope: "ordinary" };
+  }
+  if (!isRecord(value) || typeof value.mode !== "string") {
+    throw new Error("research_cache_control must select a closed cache mode");
+  }
+  if (value.mode === "bypass" && Object.keys(value).length === 1) {
+    return { mode: "bypass", scope: "bypass" };
+  }
+  throw new Error("research_cache_control must use explicit bypass");
+}
+
+const FULL_HYBRID_V2_POLICIES: Record<XaiXSearchResearchStage, XaiXSearchResearchPolicy> = {
+  question_discovery: {
+    researchProfile: "full_hybrid_per_subject_v2",
+    researchStage: "question_discovery",
+    maxSelectedEvidenceBytes: 12 * 1024,
+    maxSerializedRequestBytes: 12 * 1024,
+    maxOutputTokens: 2_500,
+    maxElapsedMs: 50_000,
+    maxRetries: 0,
+    maxProviderDispatches: 1,
+    maxDeliveredCitations: 20,
+    searchEnabled: true,
+    maxTotalResults: 20,
+  },
+  question_verified_analysis: {
+    researchProfile: "full_hybrid_per_subject_v2",
+    researchStage: "question_verified_analysis",
+    maxSelectedEvidenceBytes: 24 * 1024,
+    maxSerializedRequestBytes: 24 * 1024,
+    maxOutputTokens: 2_500,
+    maxElapsedMs: 50_000,
+    maxRetries: 0,
+    maxProviderDispatches: 1,
+    maxDeliveredCitations: 8,
+    searchEnabled: false,
+  },
+  topic_discovery: {
+    researchProfile: "full_hybrid_per_subject_v2",
+    researchStage: "topic_discovery",
+    maxSelectedEvidenceBytes: 12 * 1024,
+    maxSerializedRequestBytes: 12 * 1024,
+    maxOutputTokens: 2_500,
+    maxElapsedMs: 50_000,
+    maxRetries: 0,
+    maxProviderDispatches: 1,
+    maxDeliveredCitations: 15,
+    searchEnabled: true,
+    maxTotalResults: 15,
+  },
+  influence_discovery: {
+    researchProfile: "full_hybrid_per_subject_v2",
+    researchStage: "influence_discovery",
+    maxSelectedEvidenceBytes: 12 * 1024,
+    maxSerializedRequestBytes: 12 * 1024,
+    maxOutputTokens: 3_000,
+    maxElapsedMs: 55_000,
+    maxRetries: 0,
+    maxProviderDispatches: 1,
+    maxDeliveredCitations: 30,
+    searchEnabled: true,
+    maxTotalResults: 30,
+  },
+  influence_challenge: {
+    researchProfile: "full_hybrid_per_subject_v2",
+    researchStage: "influence_challenge",
+    maxSelectedEvidenceBytes: 24 * 1024,
+    maxSerializedRequestBytes: 24 * 1024,
+    maxOutputTokens: 2_500,
+    maxElapsedMs: 50_000,
+    maxRetries: 0,
+    maxProviderDispatches: 1,
+    maxDeliveredCitations: 10,
+    searchEnabled: false,
+  },
+  format_analysis: {
+    researchProfile: "full_hybrid_per_subject_v2",
+    researchStage: "format_analysis",
+    maxSelectedEvidenceBytes: 24 * 1024,
+    maxSerializedRequestBytes: 24 * 1024,
+    maxOutputTokens: 2_500,
+    maxElapsedMs: 50_000,
+    maxRetries: 0,
+    maxProviderDispatches: 1,
+    maxDeliveredCitations: 10,
+    searchEnabled: false,
+  },
+};
+
+const REDUCED_PROBE_V2_POLICIES: Partial<
+  Record<XaiXSearchResearchStage, XaiXSearchResearchPolicy>
+> = {
+  question_discovery: {
+    researchProfile: "reduced_probe_v2",
+    researchStage: "question_discovery",
+    maxSelectedEvidenceBytes: 8 * 1024,
+    maxSerializedRequestBytes: 8 * 1024,
+    maxOutputTokens: 1_500,
+    maxElapsedMs: 50_000,
+    maxRetries: 0,
+    maxProviderDispatches: 1,
+    maxDeliveredCitations: 8,
+    searchEnabled: true,
+    maxTotalResults: 8,
+  },
+  topic_discovery: {
+    researchProfile: "reduced_probe_v2",
+    researchStage: "topic_discovery",
+    maxSelectedEvidenceBytes: 8 * 1024,
+    maxSerializedRequestBytes: 8 * 1024,
+    maxOutputTokens: 1_500,
+    maxElapsedMs: 50_000,
+    maxRetries: 0,
+    maxProviderDispatches: 1,
+    maxDeliveredCitations: 8,
+    searchEnabled: true,
+    maxTotalResults: 8,
+  },
+  influence_discovery: {
+    researchProfile: "reduced_probe_v2",
+    researchStage: "influence_discovery",
+    maxSelectedEvidenceBytes: 8 * 1024,
+    maxSerializedRequestBytes: 8 * 1024,
+    maxOutputTokens: 2_000,
+    maxElapsedMs: 55_000,
+    maxRetries: 0,
+    maxProviderDispatches: 1,
+    maxDeliveredCitations: 12,
+    searchEnabled: true,
+    maxTotalResults: 12,
+  },
+};
+
+export function resolveXaiXSearchResearchPolicy(params: {
+  researchProfile?: string;
+  researchStage?: string;
+}): XaiXSearchResearchPolicy | undefined {
+  if (!params.researchProfile && !params.researchStage) {
+    return undefined;
+  }
+  if (!params.researchProfile || !params.researchStage) {
+    throw new Error(
+      "research_profile and research_stage must be provided together for v2 x_search",
+    );
+  }
+  if (
+    !XAI_X_SEARCH_RESEARCH_PROFILES.includes(params.researchProfile as XaiXSearchResearchProfile)
+  ) {
+    throw new Error("research_profile must select a closed v2 profile");
+  }
+  if (!XAI_X_SEARCH_RESEARCH_STAGES.includes(params.researchStage as XaiXSearchResearchStage)) {
+    throw new Error("research_stage must select a closed v2 stage");
+  }
+  const policy =
+    params.researchProfile === "full_hybrid_per_subject_v2"
+      ? FULL_HYBRID_V2_POLICIES[params.researchStage as XaiXSearchResearchStage]
+      : REDUCED_PROBE_V2_POLICIES[params.researchStage as XaiXSearchResearchStage];
+  if (!policy) {
+    throw new Error("research_stage is not authorized by the selected research_profile");
+  }
+  return policy;
+}
+
 const MAX_X_SEARCH_EVIDENCE_ITEMS = 20;
 const MAX_X_SEARCH_CITATIONS = 100;
 const MAX_X_SEARCH_PROVIDER_ERRORS = 10;
@@ -147,7 +347,86 @@ type XaiXSearchResult = {
   mediaUnderstandingCallsTruncated: boolean;
   providerErrors: XaiProviderError[];
   providerErrorsTruncated: boolean;
+  localRequestReceipt?: {
+    selectedEvidenceBytes: number;
+    serializedRequestBytes: number;
+    elapsedMs: number;
+  };
 };
+
+export type XaiXSearchTerminalReceipt = {
+  sourceLayer: "configuration" | "provider" | "transport";
+  status: "failed" | "timed_out";
+  code: string;
+  retryable: false;
+  elapsedMs: number;
+  dispatches: 0 | 1;
+  maxRetries: 0;
+  providerRequestId: string | "unknown";
+  providerResponseStatus: string | "unknown";
+  observedResults: number | "unknown";
+  outputTokens: number | "unknown";
+  providerCostUsd: number | "unknown";
+};
+
+export class XaiXSearchTerminalError extends Error {
+  readonly receipt: XaiXSearchTerminalReceipt;
+
+  constructor(message: string, receipt: XaiXSearchTerminalReceipt) {
+    super(redactProviderErrorMessage(message));
+    this.name = "XaiXSearchTerminalError";
+    this.receipt = receipt;
+  }
+}
+
+function terminalError(params: {
+  message: string;
+  sourceLayer: XaiXSearchTerminalReceipt["sourceLayer"];
+  status?: XaiXSearchTerminalReceipt["status"];
+  code: string;
+  elapsedMs: number;
+  dispatches: 0 | 1;
+  result?: XaiXSearchResult;
+  response?: XaiWebSearchResponse;
+}): XaiXSearchTerminalError {
+  const responseUsage = params.response ? projectXaiXSearchUsage(params.response.usage) : undefined;
+  const usage = params.result?.usage ?? responseUsage;
+  const providerRequestId =
+    params.result?.responseId ??
+    readBoundedString(params.response?.request_id) ??
+    readBoundedString(params.response?.id);
+  const providerResponseStatus =
+    params.result?.responseStatus ?? readBoundedString(params.response?.status);
+  return new XaiXSearchTerminalError(params.message, {
+    sourceLayer: params.sourceLayer,
+    status: params.status ?? "failed",
+    code: params.code,
+    retryable: false,
+    elapsedMs: params.elapsedMs,
+    dispatches: params.dispatches,
+    maxRetries: 0,
+    providerRequestId: providerRequestId ?? "unknown",
+    providerResponseStatus: providerResponseStatus ?? "unknown",
+    observedResults: "unknown",
+    outputTokens: usage?.outputTokens ?? "unknown",
+    providerCostUsd: usage?.costUsd ?? "unknown",
+  });
+}
+
+function isTransportTimeout(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return (
+    [
+      "AbortError",
+      "TimeoutError",
+      "ConnectTimeoutError",
+      "HeadersTimeoutError",
+      "BodyTimeoutError",
+    ].includes(error.name) || error.message === "This operation was aborted"
+  );
+}
 
 function resolveXaiXSearchConfig(config?: Record<string, unknown>): XaiXSearchConfig {
   return coerceXaiToolConfig(config) as XaiXSearchConfig;
@@ -406,14 +685,51 @@ function projectRequestedXSearchFilters(options: XaiXSearchOptions): XaiXSearchF
   };
 }
 
+function redactCredentialValueAfterMarker(value: string, marker: string): string {
+  let output = value;
+  let searchFrom = 0;
+  while (searchFrom < output.length) {
+    const start = output.toLowerCase().indexOf(marker, searchFrom);
+    if (start < 0) {
+      break;
+    }
+    let valueStart = start + marker.length;
+    while (valueStart < output.length && output[valueStart]?.trim().length === 0) {
+      valueStart += 1;
+    }
+    let valueEnd = valueStart;
+    while (valueEnd < output.length) {
+      const character = output[valueEnd];
+      if (!character || character.trim().length === 0 || character === "," || character === ";") {
+        break;
+      }
+      valueEnd += 1;
+    }
+    if (valueEnd === valueStart) {
+      searchFrom = valueStart;
+      continue;
+    }
+    output = `${output.slice(0, valueStart)}[REDACTED]${output.slice(valueEnd)}`;
+    searchFrom = valueStart + "[REDACTED]".length;
+  }
+  return output;
+}
+
 function redactProviderErrorMessage(value: string): string {
-  return redactToolPayloadText(value)
-    .replace(/\bbearer\s+[^\s,;]+/gi, "Bearer [REDACTED]")
-    .replace(
-      /\b(authorization|api[_-]?key|access[_-]?token)\s*([=:])\s*[^\s,;]+/gi,
-      "$1$2[REDACTED]",
-    )
-    .slice(0, MAX_X_SEARCH_ERROR_MESSAGE_CHARS);
+  let redacted = redactToolPayloadText(value);
+  for (const marker of [
+    "bearer ",
+    "authorization=",
+    "authorization:",
+    "api_key=",
+    "api-key=",
+    "apikey=",
+    "access_token=",
+    "access-token=",
+  ]) {
+    redacted = redactCredentialValueAfterMarker(redacted, marker);
+  }
+  return redacted.slice(0, MAX_X_SEARCH_ERROR_MESSAGE_CHARS);
 }
 
 function projectProviderError(
@@ -586,6 +902,7 @@ function projectXaiXSearchResponse(
   data: XaiWebSearchResponse,
   inlineCitationsEnabled: boolean,
   providerLabel = "xAI",
+  deliveredCitationLimit = MAX_X_SEARCH_CITATIONS,
 ): XaiXSearchResult {
   const xSearchCallItems = (data.output ?? []).filter(isXSearchCallOutput);
   const xSearchCalls = xSearchCallItems
@@ -628,7 +945,7 @@ function projectXaiXSearchResponse(
       typeof url === "string" && url.length > 0 && url.length <= MAX_X_SEARCH_CITATION_URL_LENGTH,
   );
   const inline = projectInlineCitations(data);
-  const responseId = readBoundedString(data.id);
+  const responseId = readBoundedString(data.request_id) ?? readBoundedString(data.id);
   const responseModel = readBoundedString(data.model);
   const incompleteReason = readBoundedString(data.incomplete_details?.reason);
   const explicitTermination =
@@ -638,12 +955,14 @@ function projectXaiXSearchResponse(
   const projectedUsage = projectXaiXSearchUsage(data.usage);
   return {
     content,
-    citations: citationUrls.slice(0, MAX_X_SEARCH_CITATIONS),
+    citations: citationUrls.slice(0, deliveredCitationLimit),
     citationCount: citationUrls.length,
-    citationsTruncated: citationUrls.length > MAX_X_SEARCH_CITATIONS,
-    ...(inlineCitationsEnabled && inline.values.length ? { inlineCitations: inline.values } : {}),
+    citationsTruncated: citationUrls.length > deliveredCitationLimit,
+    ...(inlineCitationsEnabled && inline.values.length
+      ? { inlineCitations: inline.values.slice(0, deliveredCitationLimit) }
+      : {}),
     inlineCitationCount: inline.count,
-    inlineCitationsTruncated: inline.truncated,
+    inlineCitationsTruncated: inline.truncated || inline.values.length > deliveredCitationLimit,
     ...(responseId ? { responseId } : {}),
     ...(responseModel ? { responseModel } : {}),
     ...(responseStatus ? { responseStatus } : {}),
@@ -671,6 +990,7 @@ export function buildXaiXSearchPayload(params: {
   result: XaiXSearchResult;
   options?: XaiXSearchOptions;
   serviceTier?: "default" | "priority";
+  researchPolicy?: XaiXSearchResearchPolicy;
 }): Record<string, unknown> {
   const provider = params.provider ?? "xai";
   const appliedFilters = params.result.xSearchCalls.flatMap((call) =>
@@ -717,6 +1037,37 @@ export function buildXaiXSearchPayload(params: {
         }
       : {}),
     ...(params.result.usage ? { usage: params.result.usage } : {}),
+    ...(params.researchPolicy
+      ? {
+          requestPolicy: params.researchPolicy,
+          providerReceipt: {
+            dispatches: 1,
+            maxRetries: 0,
+            elapsedMs: params.result.localRequestReceipt?.elapsedMs ?? params.tookMs,
+            selectedEvidenceBytes:
+              params.result.localRequestReceipt?.selectedEvidenceBytes ?? "unknown",
+            serializedRequestBytes:
+              params.result.localRequestReceipt?.serializedRequestBytes ?? "unknown",
+            outputTokens: params.result.usage?.outputTokens ?? "unknown",
+            providerCostUsd: params.result.usage?.costUsd ?? "unknown",
+            providerRequestId: params.result.responseId ?? "unknown",
+            providerResponseStatus: params.result.responseStatus ?? "unknown",
+            observedSearchActions: {
+              responseToolCalls: params.result.xSearchCallCount,
+              providerWebSearchRequests: params.result.usage?.webSearchRequests ?? "unknown",
+            },
+            observedResults: "unknown",
+            delivered: {
+              citations: params.result.citations.length,
+              citationCount: params.result.citationCount,
+              citationsTruncated: params.result.citationsTruncated,
+              inlineCitations: params.result.inlineCitations?.length ?? 0,
+              inlineCitationCount: params.result.inlineCitationCount,
+              inlineCitationsTruncated: params.result.inlineCitationsTruncated,
+            },
+          },
+        }
+      : {}),
     xFilters: {
       requested: projectRequestedXSearchFilters(params.options ?? { query: params.query }),
       applied: appliedFilters,
@@ -757,24 +1108,51 @@ export async function requestXaiXSearch(params: {
   maxTotalResults?: number;
   serviceTier?: "default" | "priority";
   options: XaiXSearchOptions;
+  researchPolicy?: XaiXSearchResearchPolicy;
 }): Promise<XaiXSearchResult> {
   const provider = params.provider ?? "xai";
   const providerLabel = provider === "openrouter" ? "OpenRouter" : "xAI";
+  const startedAt = Date.now();
+  if (params.researchPolicy && provider !== "openrouter") {
+    throw terminalError({
+      message: "v2 x_search requires the OpenRouter xAI route with no fallback",
+      sourceLayer: "configuration",
+      code: "v2_route_required",
+      elapsedMs: Date.now() - startedAt,
+      dispatches: 0,
+    });
+  }
+  if (params.researchPolicy && !params.model.startsWith("x-ai/grok-")) {
+    throw terminalError({
+      message: "v2 x_search requires an OpenRouter xAI/Grok model with no fallback",
+      sourceLayer: "configuration",
+      code: "v2_model_required",
+      elapsedMs: Date.now() - startedAt,
+      dispatches: 0,
+    });
+  }
   const body =
     provider === "openrouter"
       ? {
           model: params.model,
           input: [{ role: "user", content: params.options.query }],
-          tools: [
-            {
-              type: "openrouter:web_search",
-              parameters: {
-                engine: "native",
-                max_total_results: params.maxTotalResults ?? 20,
-              },
-            },
-          ],
-          x_search_filter: buildOpenRouterXSearchFilter(params.options),
+          ...(params.researchPolicy?.searchEnabled === false
+            ? {}
+            : {
+                tools: [
+                  {
+                    type: "openrouter:web_search",
+                    parameters: {
+                      engine: "native",
+                      max_total_results: params.maxTotalResults ?? 20,
+                    },
+                  },
+                ],
+                x_search_filter: buildOpenRouterXSearchFilter(params.options),
+              }),
+          ...(params.researchPolicy
+            ? { max_output_tokens: params.researchPolicy.maxOutputTokens }
+            : {}),
           provider: {
             order: ["xai/zdr"],
             allow_fallbacks: false,
@@ -788,26 +1166,131 @@ export async function requestXaiXSearch(params: {
           maxTurns: params.maxTurns,
           serviceTier: params.serviceTier,
         });
-  return await postTrustedWebToolsJson(
-    {
-      url: params.endpoint,
-      timeoutSeconds: params.timeoutSeconds,
-      apiKey: params.apiKey,
-      body,
-      errorLabel: providerLabel,
-      maxErrorBytes: MAX_X_SEARCH_HTTP_ERROR_BYTES,
-    },
-    async (response) => {
-      const data = (await readProviderJsonObjectResponse(
-        response,
-        `${providerLabel} X search failed`,
-      )) as XaiWebSearchResponse;
-      return projectXaiXSearchResponse(data, params.inlineCitations, providerLabel);
-    },
-  ).catch((error: unknown) => {
+  const selectedEvidenceBytes = new TextEncoder().encode(params.options.query).byteLength;
+  const serializedRequestBytes = new TextEncoder().encode(JSON.stringify(body)).byteLength;
+  if (params.researchPolicy) {
+    if (selectedEvidenceBytes > params.researchPolicy.maxSelectedEvidenceBytes) {
+      throw terminalError({
+        message: "v2 x_search selected evidence exceeds the closed stage byte limit",
+        sourceLayer: "configuration",
+        code: "selected_evidence_limit_exceeded",
+        elapsedMs: Date.now() - startedAt,
+        dispatches: 0,
+      });
+    }
+    if (serializedRequestBytes > params.researchPolicy.maxSerializedRequestBytes) {
+      throw terminalError({
+        message: "v2 x_search serialized request exceeds the closed stage byte limit",
+        sourceLayer: "configuration",
+        code: "serialized_request_limit_exceeded",
+        elapsedMs: Date.now() - startedAt,
+        dispatches: 0,
+      });
+    }
+  }
+  try {
+    return await postTrustedWebToolsJson(
+      {
+        url: params.endpoint,
+        timeoutSeconds: params.timeoutSeconds,
+        apiKey: params.apiKey,
+        body,
+        errorLabel: providerLabel,
+        maxErrorBytes: MAX_X_SEARCH_HTTP_ERROR_BYTES,
+      },
+      async (response) => {
+        const data = (await readProviderJsonObjectResponse(
+          response,
+          `${providerLabel} X search failed`,
+        )) as XaiWebSearchResponse;
+        let result: XaiXSearchResult;
+        try {
+          result = projectXaiXSearchResponse(
+            data,
+            params.inlineCitations,
+            providerLabel,
+            params.researchPolicy?.maxDeliveredCitations,
+          );
+        } catch (error) {
+          throw terminalError({
+            message: error instanceof Error ? error.message : String(error),
+            sourceLayer: "provider",
+            code: "provider_response_failed",
+            elapsedMs: Date.now() - startedAt,
+            dispatches: 1,
+            response: data,
+          });
+        }
+        if (
+          params.researchPolicy?.searchEnabled === false &&
+          (result.xSearchCallCount > 0 ||
+            (result.usage?.webSearchRequests ?? 0) > 0 ||
+            result.citationCount > 0 ||
+            result.inlineCitationCount > 0)
+        ) {
+          throw terminalError({
+            message:
+              "v2 x_search configuration failure: search activity or citations returned for a search-disabled stage",
+            sourceLayer: "configuration",
+            code: "search_disabled_activity_or_citations",
+            elapsedMs: Date.now() - startedAt,
+            dispatches: 1,
+            result,
+          });
+        }
+        if (
+          params.researchPolicy &&
+          result.usage?.outputTokens !== undefined &&
+          result.usage.outputTokens > params.researchPolicy.maxOutputTokens
+        ) {
+          throw terminalError({
+            message: "v2 x_search provider exceeded the closed stage output token limit",
+            sourceLayer: "configuration",
+            code: "output_token_limit_exceeded",
+            elapsedMs: Date.now() - startedAt,
+            dispatches: 1,
+            result,
+          });
+        }
+        const elapsedMs = Date.now() - startedAt;
+        if (params.researchPolicy && elapsedMs > params.researchPolicy.maxElapsedMs) {
+          throw terminalError({
+            message: "v2 x_search provider exceeded the closed stage elapsed time limit",
+            sourceLayer: "transport",
+            status: "timed_out",
+            code: "stage_elapsed_limit_exceeded",
+            elapsedMs,
+            dispatches: 1,
+            result,
+          });
+        }
+        return {
+          ...result,
+          ...(params.researchPolicy
+            ? {
+                localRequestReceipt: {
+                  selectedEvidenceBytes,
+                  serializedRequestBytes,
+                  elapsedMs,
+                },
+              }
+            : {}),
+        };
+      },
+    );
+  } catch (error) {
+    if (error instanceof XaiXSearchTerminalError) {
+      throw error;
+    }
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(redactProviderErrorMessage(message), {
-      cause: error instanceof Error ? error : undefined,
+    const isTimeout = isTransportTimeout(error);
+    throw terminalError({
+      message,
+      sourceLayer: isTimeout ? "transport" : "provider",
+      status: isTimeout ? "timed_out" : "failed",
+      code: isTimeout ? "provider_timeout" : "provider_request_failed",
+      elapsedMs: Date.now() - startedAt,
+      dispatches: 1,
     });
-  });
+  }
 }

@@ -23,8 +23,8 @@ describe("owned X CSV import", () => {
   it("prevalidates and idempotently appends normalized metrics and linkages", async () => {
     const { root, filePath } = await fixture(
       [
-        "post_id,observed_at,metric_definition_id,metric_family,metric_name,numerator,denominator,unit,completeness,distribution,observation_window,published_at,content_hash,content_format,topic_ids,campaign_id,variant_id,experiment_id,topic_id,audience_id,assignment_basis,utm_id,utm_source,utm_medium,utm_campaign,utm_content",
-        "123,2026-07-16T12:00:00.000Z,x.public.like_count,x_public_engagement,like_count,12,1000,ratio,1,organic,24h,2026-07-15T12:00:00.000Z,sha256:abc,short-post,nuclear;energy,campaign-a,variant-a,experiment-a,topic-a,investor,pre_publication,utm-123,x,social,campaign-a,variant-a",
+        "post_id,observed_at,metric_definition_id,metric_family,metric_name,numerator,denominator,unit,completeness,distribution,observation_window,channel_profile_version,metric_profile_version,metric_mapping_version,provider_metric_class,bucket_granularity,published_at,content_hash,content_format,topic_ids,campaign_id,variant_id,experiment_id,topic_id,audience_id,assignment_basis,utm_id,utm_source,utm_medium,utm_campaign,utm_content",
+        "123,2026-07-16T12:00:00.000Z,x.public.like_count,x_public_engagement,like_count,12,1000,ratio,1,organic,24h,x-public.v1,owned-csv.v2,x-csv-mapping.v1,public,aggregate,2026-07-15T12:00:00.000Z,sha256:abc,short-post,nuclear;energy,campaign-a,variant-a,experiment-a,topic-a,investor,pre_publication,utm-123,x,social,campaign-a,variant-a",
       ].join("\n"),
     );
     const input = {
@@ -59,6 +59,9 @@ describe("owned X CSV import", () => {
       source: { provider: "x-csv", auth_mode: "import" },
       observation_window: "24h",
       distribution: "organic",
+      schema_version: "agency-data/v2",
+      analytical_sample_id: expect.any(String),
+      comparison_signature: expect.any(String),
     });
     expect(read.records[1]).toMatchObject({
       utm_id: "utm-123",

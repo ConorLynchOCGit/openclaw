@@ -1,5 +1,6 @@
+import { resolveMetricIdentity } from "./src/schema.js";
 import { AgencyDataStore, resolveAgencyDataStateDir } from "./src/store.js";
-import type { CanonicalRecord } from "./src/types.js";
+import type { CanonicalRecord, MetricComparisonProfile } from "./src/types.js";
 
 /**
  * Trusted ingestion surface for source adapters and tests. It is intentionally
@@ -27,7 +28,8 @@ export function createTrustedAgencyDataIngestion(params: { stateDir: string }) {
   };
 }
 
-export type { CanonicalRecord };
+export type { CanonicalRecord, MetricComparisonProfile };
+export { resolveMetricIdentity };
 export { queryMarketingMetrics } from "./src/queries.js";
 export {
   AgencyDataStore,

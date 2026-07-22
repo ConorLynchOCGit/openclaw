@@ -1,11 +1,13 @@
 import { Type, type Static, type TSchema } from "typebox";
 import { Check, Errors } from "typebox/value";
+import { deriveComparisonSignature, resolveMetricIdentity } from "./schema.js";
 import { materializeVisibleRecords, type AgencyDataStore } from "./store.js";
 import {
   CANONICAL_OBJECT_TYPES,
   type CanonicalObjectType,
   type CanonicalRecord,
   type Distribution,
+  type MetricComparisonProfile,
 } from "./types.js";
 
 const DEFAULT_RESULT_LIMIT = 100;
@@ -24,6 +26,25 @@ const distribution = Type.Union([
   Type.Literal("combined"),
   Type.Literal("provider_total"),
 ]);
+const comparisonProfile = Type.Object(
+  {
+    channel: identifier,
+    channel_profile_version: identifier,
+    metric_definition_id: identifier,
+    metric_family: identifier,
+    metric_name: identifier,
+    unit: identifier,
+    method_version: identifier,
+    metric_profile_version: identifier,
+    metric_mapping_version: identifier,
+    provider_metric_class: identifier,
+    distribution,
+    observation_window: identifier,
+    bucket_granularity: identifier,
+    request_window_class: Type.Optional(identifier),
+  },
+  { additionalProperties: false },
+);
 
 export const marketingDataCatalogParameters = Type.Object(
   {
@@ -52,6 +73,11 @@ export const marketingMetricsParameters = Type.Object(
     metric_family: Type.Optional(identifier),
     metric_name: Type.Optional(identifier),
     distribution,
+    comparison_profile: Type.Optional(comparisonProfile),
+    // v2 aggregates intentionally accept one exact profile only. This field is
+    // accepted solely to return a typed fail-closed error rather than silently
+    // treating a requested cross-profile normalization as an exact aggregate.
+    normalization_method_ref: Type.Optional(identifier),
     from: Type.Optional(dateBoundary),
     to: Type.Optional(dateBoundary),
     trend: Type.Optional(Type.Boolean()),
@@ -76,6 +102,19 @@ type MarketingMetricsInput = Static<typeof marketingMetricsParameters>;
 type MarketingExperimentsInput = Static<typeof marketingExperimentsParameters>;
 type DateRange = { from?: number; to?: number };
 type JsonBudget = { remaining: number };
+
+export class AgencyDataComparisonError extends Error {
+  constructor(
+    readonly code:
+      | "comparison_profile_required"
+      | "comparison_signature_mismatch"
+      | "analytical_sample_identity_unresolved"
+      | "normalization_method_unsupported",
+  ) {
+    super(code);
+    this.name = "AgencyDataComparisonError";
+  }
+}
 
 function parseInput<Schema extends TSchema>(
   schema: Schema,
@@ -224,6 +263,12 @@ type NumericMetric = CanonicalRecord & {
   distribution: Distribution;
 };
 
+type ResolvedNumericMetric = NumericMetric & {
+  analytical_sample_id: string;
+  comparison_signature: string;
+  comparison_profile: MetricComparisonProfile;
+};
+
 function percentile(sortedValues: number[], fraction: number): number | null {
   if (sortedValues.length === 0) {
     return null;
@@ -284,22 +329,45 @@ function metricSummary(records: NumericMetric[]) {
   };
 }
 
-function assertConsistentMetricDefinition(records: NumericMetric[]): void {
-  const signatures = new Set(
-    records.map((record) =>
-      JSON.stringify([
-        record.metric_family,
-        record.metric_name,
-        record.unit,
-        record.method_version,
-      ]),
-    ),
+function sameProfile(left: MetricComparisonProfile, right: MetricComparisonProfile): boolean {
+  return (
+    left.channel === right.channel &&
+    left.channel_profile_version === right.channel_profile_version &&
+    left.metric_definition_id === right.metric_definition_id &&
+    left.metric_family === right.metric_family &&
+    left.metric_name === right.metric_name &&
+    left.unit === right.unit &&
+    left.method_version === right.method_version &&
+    left.metric_profile_version === right.metric_profile_version &&
+    left.metric_mapping_version === right.metric_mapping_version &&
+    left.provider_metric_class === right.provider_metric_class &&
+    left.distribution === right.distribution &&
+    left.observation_window === right.observation_window &&
+    left.bucket_granularity === right.bucket_granularity &&
+    left.request_window_class === right.request_window_class
   );
-  if (signatures.size > 1) {
-    throw new Error(
-      "metric_definition_id resolves to inconsistent family, name, unit, or method metadata.",
-    );
+}
+
+function latestPerAnalyticalSampleAndSignature(
+  records: ResolvedNumericMetric[],
+): ResolvedNumericMetric[] {
+  const latest = new Map<string, ResolvedNumericMetric>();
+  for (const record of records) {
+    const key = `${record.analytical_sample_id}\u0000${record.comparison_signature}`;
+    const current = latest.get(key);
+    if (!current) {
+      latest.set(key, record);
+      continue;
+    }
+    const compare =
+      timestampEpoch(record.observation_at) - timestampEpoch(current.observation_at) ||
+      timestampEpoch(record.recorded_at) - timestampEpoch(current.recorded_at) ||
+      record.object_id.localeCompare(current.object_id);
+    if (compare > 0) {
+      latest.set(key, record);
+    }
   }
+  return [...latest.values()];
 }
 
 export async function queryMarketingMetrics(store: AgencyDataStore, rawInput: unknown) {
@@ -308,34 +376,74 @@ export async function queryMarketingMetrics(store: AgencyDataStore, rawInput: un
     rawInput,
     "marketing_metrics",
   );
+  if (!input.comparison_profile) {
+    throw new AgencyDataComparisonError("comparison_profile_required");
+  }
+  if (input.normalization_method_ref !== undefined) {
+    throw new AgencyDataComparisonError("normalization_method_unsupported");
+  }
+  const profile = input.comparison_profile as MetricComparisonProfile;
+  if (
+    input.metric_definition_id !== profile.metric_definition_id ||
+    input.distribution !== profile.distribution ||
+    (input.metric_family !== undefined && input.metric_family !== profile.metric_family) ||
+    (input.metric_name !== undefined && input.metric_name !== profile.metric_name)
+  ) {
+    throw new AgencyDataComparisonError("comparison_signature_mismatch");
+  }
   const range = parseDateRange(input.from, input.to);
-  const read = await visibleForTenant(store, input.tenant_id);
+  const rawRead = await store.read({ tenantId: input.tenant_id });
+  const visibleRecords = materializeVisibleRecords(rawRead.records);
   const contentIds = input.content_ids ? new Set(input.content_ids) : undefined;
+  const isCandidate = (record: CanonicalRecord): record is NumericMetric =>
+    record.object_type === "metric_observation" &&
+    record.metric_definition_id === input.metric_definition_id &&
+    record.distribution === input.distribution &&
+    (input.account_id === undefined || record.account_id === input.account_id) &&
+    (contentIds === undefined ||
+      (typeof record.content_id === "string" && contentIds.has(record.content_id))) &&
+    typeof record.account_id === "string" &&
+    typeof record.metric_family === "string" &&
+    typeof record.metric_name === "string" &&
+    typeof record.numerator === "number" &&
+    typeof record.denominator === "number" &&
+    typeof record.unit === "string" &&
+    typeof record.completeness === "number" &&
+    typeof record.method_version === "string" &&
+    typeof record.observation_at === "string";
+  const resolve = (record: NumericMetric): ResolvedNumericMetric => {
+    const identity = resolveMetricIdentity(record);
+    if (!identity) {
+      throw new AgencyDataComparisonError("analytical_sample_identity_unresolved");
+    }
+    return { ...record, ...identity };
+  };
+  // History remains inspectable, but corrected/tombstoned records cannot make an
+  // otherwise visible comparison fail. Identity/profile admission follows the
+  // materialized visibility step.
+  const history = rawRead.records.filter(isCandidate);
+  const resolvedVisible = visibleRecords.filter(isCandidate).map(resolve);
+  const requestedSignature = deriveComparisonSignature(profile);
+  if (
+    resolvedVisible.some(
+      (record) =>
+        record.comparison_signature !== requestedSignature ||
+        !sameProfile(record.comparison_profile, profile),
+    )
+  ) {
+    throw new AgencyDataComparisonError("comparison_signature_mismatch");
+  }
+  const visible = resolvedVisible.filter(
+    (record) =>
+      record.comparison_signature === requestedSignature &&
+      sameProfile(record.comparison_profile, profile),
+  );
   const observations = sortedByTimestamp(
-    read.records.filter(
-      (record): record is NumericMetric =>
-        record.object_type === "metric_observation" &&
-        record.metric_definition_id === input.metric_definition_id &&
-        record.distribution === input.distribution &&
-        (input.account_id === undefined || record.account_id === input.account_id) &&
-        (contentIds === undefined ||
-          (typeof record.content_id === "string" && contentIds.has(record.content_id))) &&
-        (input.metric_family === undefined || record.metric_family === input.metric_family) &&
-        (input.metric_name === undefined || record.metric_name === input.metric_name) &&
-        timestampInRange(record.observation_at, range) &&
-        typeof record.account_id === "string" &&
-        typeof record.metric_family === "string" &&
-        typeof record.metric_name === "string" &&
-        typeof record.numerator === "number" &&
-        typeof record.denominator === "number" &&
-        typeof record.unit === "string" &&
-        typeof record.completeness === "number" &&
-        typeof record.method_version === "string" &&
-        typeof record.observation_at === "string",
+    latestPerAnalyticalSampleAndSignature(visible).filter((record) =>
+      timestampInRange(record.observation_at, range),
     ),
     (record) => record.observation_at,
   );
-  assertConsistentMetricDefinition(observations);
 
   const first = observations[0];
   const metric = first
@@ -351,10 +459,16 @@ export async function queryMarketingMetrics(store: AgencyDataStore, rawInput: un
   const result = {
     metric,
     distribution: input.distribution,
+    comparison_profile: profile,
+    comparison_signature: requestedSignature,
+    history_observation_count: history.length,
+    visible_observation_count: visible.length,
+    excluded_comparison_profile_count: 0,
+    analytical_sample_count: observations.length,
     summary,
-    scanned: read.scanned,
-    malformed_rows: read.malformed_rows,
-    truncated: read.truncated,
+    scanned: rawRead.scanned,
+    malformed_rows: rawRead.malformed_rows,
+    truncated: rawRead.truncated,
   };
   if (input.trend !== true) {
     return result;

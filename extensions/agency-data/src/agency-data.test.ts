@@ -10,6 +10,7 @@ import {
   queryMarketingDataCatalog,
   queryMarketingMetrics,
 } from "./queries.js";
+import { resolveMetricIdentity } from "./schema.js";
 import { AgencyDataStore, materializeVisibleRecords, resolveAgencyDataStateDir } from "./store.js";
 
 const tempDirs: string[] = [];
@@ -33,6 +34,59 @@ function base(type: string, id: string) {
   };
 }
 
+function v2Metric(record: Record<string, unknown>) {
+  const metric = {
+    observation_window: "24h",
+    channel_profile_version: "linkedin-public.v1",
+    metric_profile_version: "marketing-metrics.v2",
+    metric_mapping_version: "adapter-mapping.v1",
+    provider_metric_class: "public",
+    bucket_granularity: "aggregate",
+    ...record,
+  };
+  const identity = resolveMetricIdentity(metric);
+  if (!identity) {
+    throw new Error("test metric must have a resolvable v2 identity");
+  }
+  return {
+    ...metric,
+    analytical_sample_id: identity.analytical_sample_id,
+    comparison_signature: identity.comparison_signature,
+  };
+}
+
+function metricQuery(record: Record<string, unknown>) {
+  const identity = resolveMetricIdentity(record);
+  if (!identity) {
+    throw new Error("test metric must have a resolvable comparison profile");
+  }
+  return {
+    tenant_id: "tenant-a",
+    metric_definition_id: String(record.metric_definition_id),
+    distribution: record.distribution as "organic" | "promoted" | "combined" | "provider_total",
+    comparison_profile: identity.comparison_profile,
+    trend: false,
+  };
+}
+
+async function expectNoSummaryComparisonFailure(
+  operation: Promise<unknown>,
+  code:
+    | "comparison_profile_required"
+    | "comparison_signature_mismatch"
+    | "analytical_sample_identity_unresolved"
+    | "normalization_method_unsupported",
+) {
+  const error = await operation.then(
+    () => {
+      throw new Error("expected comparison query to fail");
+    },
+    (reason: unknown) => reason,
+  );
+  expect(error).toMatchObject({ code });
+  expect(error).not.toHaveProperty("summary");
+}
+
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => fs.rm(dir, { recursive: true, force: true })));
 });
@@ -41,7 +95,7 @@ describe("agency-data canonical JSONL", () => {
   it("appends metric observations and preserves organic/promoted separation", async () => {
     const root = await tempStateDir();
     const ingestor = createTrustedAgencyDataIngestion({ stateDir: root });
-    await ingestor.append({
+    const organic = v2Metric({
       ...base("metric_observation", "organic-1"),
       account_id: "account-a",
       content_id: "content-a",
@@ -58,31 +112,29 @@ describe("agency-data canonical JSONL", () => {
       observation_at: "2026-07-16T00:00:00.000Z",
       distribution: "organic",
     });
-    await ingestor.append({
-      ...base("metric_observation", "promoted-1"),
-      account_id: "account-a",
-      content_id: "content-a",
-      metric_definition_id: "engagement-rate",
-      metric_family: "engagement",
-      metric_name: "rate",
-      numerator: 90,
-      denominator: 100,
-      unit: "ratio",
-      completeness: 1,
-      stabilization: { state: "stabilized", as_of: "2026-07-16T00:00:00.000Z" },
-      privacy: { classification: "aggregate" },
-      method_version: "v1",
-      observation_at: "2026-07-16T00:00:00.000Z",
-      distribution: "promoted",
-    });
+    await ingestor.append(organic);
+    await ingestor.append(
+      v2Metric({
+        ...base("metric_observation", "promoted-1"),
+        account_id: "account-a",
+        content_id: "content-a",
+        metric_definition_id: "engagement-rate",
+        metric_family: "engagement",
+        metric_name: "rate",
+        numerator: 90,
+        denominator: 100,
+        unit: "ratio",
+        completeness: 1,
+        stabilization: { state: "stabilized", as_of: "2026-07-16T00:00:00.000Z" },
+        privacy: { classification: "aggregate" },
+        method_version: "v1",
+        observation_at: "2026-07-16T00:00:00.000Z",
+        distribution: "promoted",
+      }),
+    );
     const result = await queryMarketingMetrics(
       new AgencyDataStore(resolveAgencyDataStateDir(root)),
-      {
-        tenant_id: "tenant-a",
-        metric_definition_id: "engagement-rate",
-        distribution: "organic",
-        trend: false,
-      },
+      metricQuery(organic),
     );
     expect(result.summary).toMatchObject({ sample_size: 1, aggregate_rate: 0.1 });
     expect(result.summary.warnings).toContain("sample_size_below_30");
@@ -91,7 +143,7 @@ describe("agency-data canonical JSONL", () => {
   it("materializes the latest duplicate object once per tenant for metric totals", async () => {
     const root = await tempStateDir();
     const ingestor = createTrustedAgencyDataIngestion({ stateDir: root });
-    const metric = {
+    const metric = v2Metric({
       ...base("metric_observation", "x-impressions-post-1-at-noon"),
       account_id: "account-a",
       content_id: "post-1",
@@ -107,14 +159,16 @@ describe("agency-data canonical JSONL", () => {
       method_version: "owned-performance.v1",
       observation_at: "2026-07-16T12:00:00.000Z",
       distribution: "combined",
-    };
+    });
     await ingestor.append({ ...metric, recorded_at: "2026-07-16T12:01:00.000Z" });
     await ingestor.append({ ...metric, recorded_at: "2026-07-16T12:02:00.000Z" });
-    await ingestor.append({
-      ...metric,
-      tenant_id: "tenant-b",
-      recorded_at: "2026-07-16T12:03:00.000Z",
-    });
+    await ingestor.append(
+      v2Metric({
+        ...metric,
+        tenant_id: "tenant-b",
+        recorded_at: "2026-07-16T12:03:00.000Z",
+      }),
+    );
 
     const store = new AgencyDataStore(resolveAgencyDataStateDir(root));
     const raw = await store.read();
@@ -126,17 +180,357 @@ describe("agency-data canonical JSONL", () => {
       recorded_at: "2026-07-16T12:02:00.000Z",
     });
 
-    const result = await queryMarketingMetrics(store, {
-      tenant_id: "tenant-a",
-      metric_definition_id: "x.owned.impressions",
-      distribution: "combined",
-      trend: false,
-    });
+    const result = await queryMarketingMetrics(store, metricQuery(metric));
     expect(result.summary).toMatchObject({
       sample_size: 1,
       numerator_total: 886,
       denominator_total: 1,
     });
+  });
+
+  it("selects one latest v2 observation per sample before applying dates", async () => {
+    const root = await tempStateDir();
+    const ingestor = createTrustedAgencyDataIngestion({ stateDir: root });
+    const first = v2Metric({
+      ...base("metric_observation", "recapture-a"),
+      account_id: "account-a",
+      content_id: "post-a",
+      metric_definition_id: "x.public.impressions",
+      metric_family: "x_public",
+      metric_name: "impressions",
+      numerator: 886,
+      denominator: 1,
+      unit: "count",
+      completeness: 1,
+      stabilization: { state: "provisional", as_of: "2026-07-16T12:01:00.000Z" },
+      privacy: { classification: "aggregate" },
+      method_version: "x-public.v1",
+      observation_at: "2026-07-16T12:00:00.000Z",
+      distribution: "combined",
+    });
+    const latest = v2Metric({
+      ...first,
+      object_id: "recapture-b",
+      recorded_at: "2026-07-16T13:01:00.000Z",
+      observation_at: "2026-07-16T13:00:00.000Z",
+      numerator: 900,
+    });
+    await ingestor.append(first);
+    await ingestor.append(latest);
+    await ingestor.appendCorrection({
+      ...base("correction_tombstone", "recapture-a-correction"),
+      target_object_id: "recapture-a",
+      replacement_object_id: "recapture-b",
+      reason_code: "recaptured_metric",
+    });
+    const store = new AgencyDataStore(resolveAgencyDataStateDir(root));
+
+    await expect(queryMarketingMetrics(store, metricQuery(latest))).resolves.toMatchObject({
+      history_observation_count: 2,
+      visible_observation_count: 1,
+      analytical_sample_count: 1,
+      summary: { sample_size: 1, numerator_total: 900 },
+    });
+    await expect(
+      queryMarketingMetrics(store, {
+        ...metricQuery(latest),
+        from: "2026-07-16T12:00:00.000Z",
+        to: "2026-07-16T12:30:00.000Z",
+      }),
+    ).resolves.toMatchObject({ analytical_sample_count: 0, summary: { sample_size: 0 } });
+  });
+
+  it("keeps distinct time buckets as samples while collapsing recaptures within one bucket", async () => {
+    const root = await tempStateDir();
+    const ingestor = createTrustedAgencyDataIngestion({ stateDir: root });
+    const hourly = (objectId: string, bucketStart: string, numerator: number, recordedAt: string) =>
+      v2Metric({
+        ...base("metric_observation", objectId),
+        account_id: "account-a",
+        content_id: "post-a",
+        metric_definition_id: "x.owned.impressions",
+        metric_family: "x_owned_analytics",
+        metric_name: "impressions",
+        numerator,
+        denominator: 1,
+        unit: "count",
+        completeness: 1,
+        stabilization: { state: "stabilized", as_of: recordedAt },
+        privacy: { classification: "restricted", restrictions: "owned_account_user_context" },
+        method_version: "owned-performance.v1",
+        observation_at: bucketStart,
+        observation_window: "24h",
+        distribution: "provider_total",
+        channel_profile_version: "x.v2",
+        metric_profile_version: "x-owned-metric.v2",
+        metric_mapping_version: "x-owned-metric-definitions.v1",
+        provider_metric_class: "analytics",
+        bucket_granularity: "hourly",
+        bucket_start: bucketStart,
+        request_window_start: "2026-07-16T00:00:00.000Z",
+        request_window_end: "2026-07-17T00:00:00.000Z",
+        request_window_class: "provider_requested_window",
+        recorded_at: recordedAt,
+      });
+    const firstBucket = hourly(
+      "hour-1-first",
+      "2026-07-16T01:00:00.000Z",
+      10,
+      "2026-07-16T01:01:00.000Z",
+    );
+    const firstBucketRecapture = hourly(
+      "hour-1-recapture",
+      "2026-07-16T01:00:00.000Z",
+      12,
+      "2026-07-16T01:02:00.000Z",
+    );
+    const secondBucket = hourly(
+      "hour-2",
+      "2026-07-16T02:00:00.000Z",
+      20,
+      "2026-07-16T02:01:00.000Z",
+    );
+    expect(firstBucket.analytical_sample_id).toBe(firstBucketRecapture.analytical_sample_id);
+    expect(secondBucket.analytical_sample_id).not.toBe(firstBucket.analytical_sample_id);
+    await ingestor.appendBatch([firstBucket, firstBucketRecapture, secondBucket]);
+
+    await expect(
+      queryMarketingMetrics(
+        new AgencyDataStore(resolveAgencyDataStateDir(root)),
+        metricQuery(firstBucket),
+      ),
+    ).resolves.toMatchObject({
+      history_observation_count: 3,
+      visible_observation_count: 3,
+      analytical_sample_count: 2,
+      summary: { sample_size: 2, numerator_total: 32 },
+    });
+  });
+
+  it("rejects incomplete and reversed provider request windows", async () => {
+    const root = await tempStateDir();
+    const ingestor = createTrustedAgencyDataIngestion({ stateDir: root });
+    const metric = v2Metric({
+      ...base("metric_observation", "request-window"),
+      account_id: "account-a",
+      content_id: "post-a",
+      metric_definition_id: "x.owned.impressions",
+      metric_family: "x_owned_analytics",
+      metric_name: "impressions",
+      numerator: 10,
+      denominator: 1,
+      unit: "count",
+      completeness: 1,
+      stabilization: { state: "stabilized", as_of: "2026-07-16T01:00:00.000Z" },
+      privacy: { classification: "restricted", restrictions: "owned_account_user_context" },
+      method_version: "owned-performance.v1",
+      observation_at: "2026-07-16T01:00:00.000Z",
+      distribution: "provider_total",
+    });
+
+    await expect(
+      ingestor.append({ ...metric, request_window_start: "2026-07-16T00:00:00.000Z" }),
+    ).rejects.toThrow(
+      "request_window_start, request_window_end, and request_window_class must be provided together",
+    );
+
+    const reversed = v2Metric({
+      ...metric,
+      request_window_start: "2026-07-17T00:00:00.000Z",
+      request_window_end: "2026-07-16T00:00:00.000Z",
+      request_window_class: "provider_requested_window",
+    });
+    await expect(ingestor.append(reversed)).rejects.toThrow(
+      "request_window_start must precede request_window_end",
+    );
+  });
+
+  it("breaks equal observation timestamps by recorded_at, then object_id", async () => {
+    const root = await tempStateDir();
+    const ingestor = createTrustedAgencyDataIngestion({ stateDir: root });
+    const baseMetric = {
+      ...base("metric_observation", "tie-a"),
+      account_id: "account-a",
+      content_id: "post-a",
+      metric_definition_id: "x.public.likes",
+      metric_family: "x_public",
+      metric_name: "likes",
+      denominator: 1,
+      unit: "count",
+      completeness: 1,
+      stabilization: { state: "stabilized", as_of: "2026-07-16T12:00:00.000Z" },
+      privacy: { classification: "aggregate" },
+      method_version: "x-public.v1",
+      observation_at: "2026-07-16T12:00:00.000Z",
+      distribution: "combined",
+    };
+    const earlierRecorded = v2Metric({
+      ...baseMetric,
+      object_id: "tie-recorded-z",
+      recorded_at: "2026-07-16T12:01:00.000Z",
+      numerator: 1,
+    });
+    const laterRecorded = v2Metric({
+      ...baseMetric,
+      object_id: "tie-recorded-a",
+      recorded_at: "2026-07-16T12:02:00.000Z",
+      numerator: 2,
+    });
+    await ingestor.append(earlierRecorded);
+    await ingestor.append(laterRecorded);
+    const store = new AgencyDataStore(resolveAgencyDataStateDir(root));
+    await expect(queryMarketingMetrics(store, metricQuery(laterRecorded))).resolves.toMatchObject({
+      summary: { numerator_total: 2 },
+    });
+
+    const lowerObjectId = v2Metric({
+      ...baseMetric,
+      object_id: "tie-object-a",
+      recorded_at: "2026-07-16T12:03:00.000Z",
+      numerator: 3,
+    });
+    const higherObjectId = v2Metric({
+      ...baseMetric,
+      object_id: "tie-object-z",
+      recorded_at: "2026-07-16T12:03:00.000Z",
+      numerator: 4,
+    });
+    await ingestor.append(lowerObjectId);
+    await ingestor.append(higherObjectId);
+    await expect(queryMarketingMetrics(store, metricQuery(higherObjectId))).resolves.toMatchObject({
+      summary: { numerator_total: 4 },
+    });
+  });
+
+  it("returns exact no-summary failures for omitted profiles and normalization requests", async () => {
+    const root = await tempStateDir();
+    const ingestor = createTrustedAgencyDataIngestion({ stateDir: root });
+    const metric = v2Metric({
+      ...base("metric_observation", "failure-codes"),
+      account_id: "account-a",
+      content_id: "post-a",
+      metric_definition_id: "x.public.likes",
+      metric_family: "x_public",
+      metric_name: "likes",
+      numerator: 5,
+      denominator: 1,
+      unit: "count",
+      completeness: 1,
+      stabilization: { state: "stabilized", as_of: "2026-07-16T12:00:00.000Z" },
+      privacy: { classification: "aggregate" },
+      method_version: "x-public.v1",
+      observation_at: "2026-07-16T12:00:00.000Z",
+      distribution: "combined",
+    });
+    await ingestor.append(metric);
+    const store = new AgencyDataStore(resolveAgencyDataStateDir(root));
+    await expectNoSummaryComparisonFailure(
+      queryMarketingMetrics(store, {
+        tenant_id: "tenant-a",
+        metric_definition_id: "x.public.likes",
+        distribution: "combined",
+        trend: false,
+      }),
+      "comparison_profile_required",
+    );
+    await expectNoSummaryComparisonFailure(
+      queryMarketingMetrics(store, {
+        ...metricQuery(metric),
+        normalization_method_ref: "normalization.v1",
+      }),
+      "normalization_method_unsupported",
+    );
+  });
+
+  it("rejects new v1 metric writes and only dual-reads legacy metrics with derivable identity", async () => {
+    const root = await tempStateDir();
+    const metric = v2Metric({
+      ...base("metric_observation", "legacy-compatible"),
+      account_id: "account-a",
+      content_id: "post-a",
+      metric_definition_id: "x.public.likes",
+      metric_family: "x_public",
+      metric_name: "likes",
+      numerator: 5,
+      denominator: 1,
+      unit: "count",
+      completeness: 1,
+      stabilization: { state: "stabilized", as_of: "2026-07-16T12:00:00.000Z" },
+      privacy: { classification: "aggregate" },
+      method_version: "x-public.v1",
+      observation_at: "2026-07-16T12:00:00.000Z",
+      distribution: "combined",
+    });
+    const ingestor = createTrustedAgencyDataIngestion({ stateDir: root });
+    await expect(ingestor.append({ ...metric, schema_version: "agency-data/v1" })).rejects.toThrow(
+      "new_v1_metric_write_rejected_at_cutover",
+    );
+
+    const store = new AgencyDataStore(resolveAgencyDataStateDir(root));
+    const {
+      analytical_sample_id: _sample,
+      comparison_signature: _signature,
+      ...legacyBase
+    } = metric;
+    const legacy = { ...legacyBase, recorded_at: "2026-07-16T12:00:00.000Z" };
+    await fs.mkdir(store.stateDir, { recursive: true });
+    await fs.writeFile(
+      store.logPath,
+      `${JSON.stringify({ ...legacy, schema_version: "agency-data/v1" })}\n`,
+      "utf8",
+    );
+    await expect(queryMarketingMetrics(store, metricQuery(metric))).resolves.toMatchObject({
+      analytical_sample_count: 1,
+      summary: { numerator_total: 5 },
+    });
+
+    const { metric_profile_version: _profile, ...unresolved } = legacy;
+    await fs.writeFile(
+      store.logPath,
+      `${JSON.stringify({ ...unresolved, schema_version: "agency-data/v1" })}\n`,
+      "utf8",
+    );
+    await expectNoSummaryComparisonFailure(
+      queryMarketingMetrics(store, metricQuery(metric)),
+      "analytical_sample_identity_unresolved",
+    );
+  });
+
+  it("fails closed when a visible metric cohort contains multiple comparison signatures", async () => {
+    const root = await tempStateDir();
+    const ingestor = createTrustedAgencyDataIngestion({ stateDir: root });
+    const metric = v2Metric({
+      ...base("metric_observation", "profile-a"),
+      account_id: "account-a",
+      content_id: "post-a",
+      metric_definition_id: "x.public.likes",
+      metric_family: "x_public",
+      metric_name: "likes",
+      numerator: 5,
+      denominator: 1,
+      unit: "count",
+      completeness: 1,
+      stabilization: { state: "stabilized", as_of: "2026-07-16T12:00:00.000Z" },
+      privacy: { classification: "aggregate" },
+      method_version: "x-public.v1",
+      observation_at: "2026-07-16T12:00:00.000Z",
+      distribution: "combined",
+    });
+    await ingestor.append(metric);
+    await ingestor.append(
+      v2Metric({
+        ...metric,
+        object_id: "profile-b",
+        provider_metric_class: "provider_total",
+      }),
+    );
+    await expectNoSummaryComparisonFailure(
+      queryMarketingMetrics(
+        new AgencyDataStore(resolveAgencyDataStateDir(root)),
+        metricQuery(metric),
+      ),
+      "comparison_signature_mismatch",
+    );
   });
 
   it("rejects raw content and uses a tombstone rather than mutation", async () => {
@@ -259,11 +653,12 @@ describe("agency-data canonical JSONL", () => {
     const registered: string[] = [];
     const cliDescriptors: string[] = [];
     plugin.register({
-      registerTool: (_tool, options) => registered.push(String(options?.name)),
-      registerCli: (_registrar, options) => {
+      registerTool: (_tool: unknown, options?: { name?: string }) =>
+        registered.push(String(options?.name)),
+      registerCli: (_registrar: unknown, options?: { descriptors?: Array<{ name: string }> }) => {
         cliDescriptors.push(...(options?.descriptors ?? []).map((entry) => entry.name));
       },
-    } as OpenClawPluginApi);
+    } as unknown as OpenClawPluginApi);
     expect(registered).toEqual([
       "marketing_data_catalog",
       "marketing_metrics",

@@ -144,7 +144,7 @@ export class AgencyDataStore {
           continue;
         }
         try {
-          const parsed = validateCanonicalRecord(JSON.parse(line));
+          const parsed = validateCanonicalRecord(JSON.parse(line), { mode: "read" });
           if (!options.tenantId || parsed.tenant_id === options.tenantId) {
             records.push(parsed);
           }

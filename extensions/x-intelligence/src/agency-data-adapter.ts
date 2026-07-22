@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
-import { createTrustedAgencyDataIngestion } from "@openclaw/agency-data/api.js";
+import {
+  createTrustedAgencyDataIngestion,
+  resolveMetricIdentity,
+} from "@openclaw/agency-data/api.js";
 import {
   requireXOwnedMetricDefinition,
   X_OWNED_METRIC_DEFINITIONS_VERSION,
@@ -66,7 +69,34 @@ function digest(...parts: string[]): string {
 
 function boundedError(error: unknown): string {
   const message = error instanceof Error ? error.message : "agency_data_ingestion_failed";
-  return message.replace(/\s+/g, " ").slice(0, 240);
+  let normalized = "";
+  let previousWasWhitespace = false;
+  for (const character of message) {
+    const isWhitespace = character.trim().length === 0;
+    if (!isWhitespace) {
+      normalized += character;
+      previousWasWhitespace = false;
+    } else if (!previousWasWhitespace && normalized.length > 0) {
+      normalized += " ";
+      previousWasWhitespace = true;
+    }
+    if (normalized.length >= 240) {
+      break;
+    }
+  }
+  return normalized.trimEnd();
+}
+
+function withMetricIdentity(record: Record<string, unknown>): Record<string, unknown> {
+  const identity = resolveMetricIdentity(record);
+  if (!identity) {
+    throw new Error("Agency Data rejected a metric without an explicit v2 comparison identity");
+  }
+  return {
+    ...record,
+    analytical_sample_id: identity.analytical_sample_id,
+    comparison_signature: identity.comparison_signature,
+  };
 }
 
 function ownedTimestampedMetricRecords(params: {
@@ -118,7 +148,7 @@ function ownedTimestampedMetricRecords(params: {
         throw new Error(`owned X analytics returned an unrequested field: ${metricName}`);
       }
       return [
-        {
+        withMetricIdentity({
           ...params.base,
           object_type: "metric_observation",
           object_id: `x-owned-metric-${digest(
@@ -150,14 +180,17 @@ function ownedTimestampedMetricRecords(params: {
           method_version: params.methodVersion,
           metric_mapping_version: X_OWNED_METRIC_DEFINITIONS_VERSION,
           provider_metric_class: definition.providerMetricClass,
+          channel_profile_version: "x.v2",
+          metric_profile_version: "x-owned-metric.v2",
           observation_at: timestamp,
           observation_window: observationWindow,
           bucket_granularity: trustedAnalytics.granularity,
           bucket_start: timestamp,
           request_window_start: trustedAnalytics.startTime,
           request_window_end: trustedAnalytics.endTime,
+          request_window_class: "provider_requested_window",
           distribution: definition.distribution,
-        },
+        }),
       ];
     });
   });
@@ -176,6 +209,43 @@ function observationWindowFor(
     return "7d";
   }
   return "custom";
+}
+
+function publicMetricWindow(item: Record<string, unknown>, observedAt: string) {
+  const createdAt = valueString(item.created_at);
+  const createdEpoch = createdAt ? Date.parse(createdAt) : Number.NaN;
+  const observedEpoch = Date.parse(observedAt);
+  if (
+    !createdAt ||
+    !Number.isFinite(createdEpoch) ||
+    !Number.isFinite(observedEpoch) ||
+    observedEpoch < createdEpoch
+  ) {
+    return undefined;
+  }
+  const ageMs = observedEpoch - createdEpoch;
+  const hourMs = 60 * 60 * 1_000;
+  const dayMs = 24 * hourMs;
+  const ageBand =
+    ageMs < hourMs
+      ? "lt_1h"
+      : ageMs < 6 * hourMs
+        ? "1h_to_6h"
+        : ageMs < dayMs
+          ? "6h_to_24h"
+          : ageMs < 3 * dayMs
+            ? "1d_to_3d"
+            : ageMs < 7 * dayMs
+              ? "3d_to_7d"
+              : ageMs < 30 * dayMs
+                ? "7d_to_30d"
+                : ageMs < 90 * dayMs
+                  ? "30d_to_90d"
+                  : "gte_90d";
+  return {
+    observationWindow: "custom",
+    bucketGranularity: `post_age_band_${ageBand}`,
+  } as const;
 }
 
 export function createXAgencyDataAdapter(params: { stateDir: string; now?: () => string }) {
@@ -266,42 +336,52 @@ export function createXAgencyDataAdapter(params: { stateDir: string; now?: () =>
           );
 
           const publicMetrics = asRecord(item.public_metrics);
-          if (publicMetrics && observedAccountId) {
+          const metricWindow = publicMetricWindow(item, observedAt);
+          if (publicMetrics && sourceObjectKind === "post" && observedAccountId && metricWindow) {
             for (const [metricName, rawValue] of Object.entries(publicMetrics)) {
               const metricValue = finiteNumber(rawValue);
               if (metricValue === undefined) {
                 continue;
               }
-              records.push({
-                ...base,
-                object_type: "metric_observation",
-                object_id: `x-metric-${digest(
-                  ...subjectIdentity,
-                  observedAccountId,
-                  id,
-                  metricName,
-                  String(metricValue),
-                  input.methodVersion,
-                  "combined",
-                ).slice(0, 40)}`,
-                source_ref: { source_id: id, ...(uri ? { uri } : {}), captured_at: observedAt },
-                account_id: observedAccountId,
-                ...(text ? { content_id: id } : {}),
-                metric_definition_id: `x.public.${metricName}`,
-                metric_family: "x_public_engagement",
-                metric_name: metricName,
-                numerator: metricValue,
-                denominator: 1,
-                unit: "count",
-                completeness: 1,
-                stabilization: { state: "provisional", as_of: observedAt },
-                privacy: { classification: "aggregate" },
-                method_version: input.methodVersion,
-                observation_at: observedAt,
-                // Public metrics can combine organic and promoted activity.
-                // Only separately authorized sources may split them.
-                distribution: "combined",
-              });
+              records.push(
+                withMetricIdentity({
+                  ...base,
+                  object_type: "metric_observation",
+                  object_id: `x-metric-${digest(
+                    ...subjectIdentity,
+                    observedAccountId,
+                    id,
+                    metricName,
+                    String(metricValue),
+                    input.methodVersion,
+                    metricWindow.bucketGranularity,
+                    "combined",
+                  ).slice(0, 40)}`,
+                  source_ref: { source_id: id, ...(uri ? { uri } : {}), captured_at: observedAt },
+                  account_id: observedAccountId,
+                  ...(text ? { content_id: id } : {}),
+                  metric_definition_id: `x.public.${metricName}`,
+                  metric_family: "x_public_engagement",
+                  metric_name: metricName,
+                  numerator: metricValue,
+                  denominator: 1,
+                  unit: "count",
+                  completeness: 1,
+                  stabilization: { state: "provisional", as_of: observedAt },
+                  privacy: { classification: "aggregate" },
+                  method_version: input.methodVersion,
+                  channel_profile_version: "x.v2",
+                  metric_profile_version: "x-public-metric.v2",
+                  metric_mapping_version: "x-public-metric.v2",
+                  provider_metric_class: "public_post_metric",
+                  observation_at: observedAt,
+                  observation_window: metricWindow.observationWindow,
+                  bucket_granularity: metricWindow.bucketGranularity,
+                  // Public metrics can combine organic and promoted activity.
+                  // Only separately authorized sources may split them.
+                  distribution: "combined",
+                }),
+              );
             }
           }
 

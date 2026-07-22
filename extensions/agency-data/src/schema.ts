@@ -1,7 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   AGENCY_DATA_SCHEMA_VERSION,
+  AGENCY_DATA_SCHEMA_VERSIONS,
   CANONICAL_OBJECT_TYPES,
+  LEGACY_AGENCY_DATA_SCHEMA_VERSION,
+  type Distribution,
+  type MetricComparisonProfile,
   type CanonicalObjectType,
   type CanonicalRecord,
 } from "./types.js";
@@ -92,6 +96,11 @@ const TYPE_KEYS: Record<CanonicalObjectType, readonly string[]> = {
     "bucket_start",
     "request_window_start",
     "request_window_end",
+    "request_window_class",
+    "channel_profile_version",
+    "metric_profile_version",
+    "analytical_sample_id",
+    "comparison_signature",
   ],
   campaign_variant_association: [
     "account_id",
@@ -243,8 +252,12 @@ function validateBase(record: Record<string, unknown>): asserts record is Canoni
     [...COMMON_KEYS, ...(TYPE_KEYS[record.object_type as CanonicalObjectType] ?? [])],
     "record",
   );
-  if (record.schema_version !== AGENCY_DATA_SCHEMA_VERSION) {
-    throw new Error(`schema_version must equal ${AGENCY_DATA_SCHEMA_VERSION}.`);
+  if (
+    !AGENCY_DATA_SCHEMA_VERSIONS.includes(
+      record.schema_version as CanonicalRecord["schema_version"],
+    )
+  ) {
+    throw new Error(`schema_version must equal ${AGENCY_DATA_SCHEMA_VERSIONS.join(" or ")}.`);
   }
   if (!CANONICAL_OBJECT_TYPES.includes(record.object_type as CanonicalObjectType)) {
     throw new Error("object_type is not a supported canonical agency-data object.");
@@ -299,6 +312,146 @@ function validateUtmFields(record: Record<string, unknown>): void {
   for (const field of ["utm_id", "utm_source", "utm_medium", "utm_campaign", "utm_content"]) {
     requireOptionalString(record[field], field);
   }
+}
+
+function metricIdentityPart(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function identityDigest(prefix: string, values: readonly unknown[]): string {
+  return `${prefix}:${createHash("sha256").update(JSON.stringify(values)).digest("hex")}`;
+}
+
+export function comparisonProfileFromMetric(
+  record: Record<string, unknown>,
+): MetricComparisonProfile | undefined {
+  const required = [
+    "channel",
+    "channel_profile_version",
+    "metric_definition_id",
+    "metric_family",
+    "metric_name",
+    "unit",
+    "method_version",
+    "metric_profile_version",
+    "metric_mapping_version",
+    "provider_metric_class",
+    "observation_window",
+    "bucket_granularity",
+  ] as const;
+  const values = Object.fromEntries(
+    required.map((field) => [field, metricIdentityPart(record[field])]),
+  );
+  if (Object.values(values).some((value) => value === undefined)) {
+    return undefined;
+  }
+  const distribution = record.distribution;
+  if (
+    distribution !== "organic" &&
+    distribution !== "promoted" &&
+    distribution !== "combined" &&
+    distribution !== "provider_total"
+  ) {
+    return undefined;
+  }
+  const hasRequestWindowStart = record.request_window_start !== undefined;
+  const hasRequestWindowEnd = record.request_window_end !== undefined;
+  const requestWindowClass = metricIdentityPart(record.request_window_class);
+  if (
+    (hasRequestWindowStart || hasRequestWindowEnd || requestWindowClass !== undefined) &&
+    !(hasRequestWindowStart && hasRequestWindowEnd && requestWindowClass)
+  ) {
+    return undefined;
+  }
+  return {
+    channel: values.channel!,
+    channel_profile_version: values.channel_profile_version!,
+    metric_definition_id: values.metric_definition_id!,
+    metric_family: values.metric_family!,
+    metric_name: values.metric_name!,
+    unit: values.unit!,
+    method_version: values.method_version!,
+    metric_profile_version: values.metric_profile_version!,
+    metric_mapping_version: values.metric_mapping_version!,
+    provider_metric_class: values.provider_metric_class!,
+    distribution: distribution as Distribution,
+    observation_window: values.observation_window!,
+    bucket_granularity: values.bucket_granularity!,
+    ...(requestWindowClass ? { request_window_class: requestWindowClass } : {}),
+  };
+}
+
+export function deriveComparisonSignature(profile: MetricComparisonProfile): string {
+  return identityDigest("agency-data/v2/comparison", [
+    profile.channel,
+    profile.channel_profile_version,
+    profile.metric_definition_id,
+    profile.metric_family,
+    profile.metric_name,
+    profile.unit,
+    profile.method_version,
+    profile.metric_profile_version,
+    profile.metric_mapping_version,
+    profile.provider_metric_class,
+    profile.distribution,
+    profile.observation_window,
+    profile.bucket_granularity,
+    profile.request_window_class ?? null,
+  ]);
+}
+
+export function deriveAnalyticalSampleId(
+  record: Record<string, unknown>,
+  profile: MetricComparisonProfile,
+): string | undefined {
+  const tenantId = metricIdentityPart(record.tenant_id);
+  const subject = isRecord(record.subject) ? record.subject : undefined;
+  const subjectType = subject && metricIdentityPart(subject.entity_type);
+  const subjectId = subject && metricIdentityPart(subject.entity_id);
+  const accountId = metricIdentityPart(record.account_id);
+  const contentId = metricIdentityPart(record.content_id) ?? null;
+  const bucketStart = metricIdentityPart(record.bucket_start) ?? null;
+  const requestWindowStart = metricIdentityPart(record.request_window_start) ?? null;
+  const requestWindowEnd = metricIdentityPart(record.request_window_end) ?? null;
+  if (!tenantId || !subjectType || !subjectId || !accountId) {
+    return undefined;
+  }
+  return identityDigest("agency-data/v2/sample", [
+    tenantId,
+    subjectType,
+    subjectId,
+    profile.channel,
+    accountId,
+    contentId,
+    profile.metric_definition_id,
+    profile.distribution,
+    profile.observation_window,
+    bucketStart,
+    requestWindowStart,
+    requestWindowEnd,
+  ]);
+}
+
+export function resolveMetricIdentity(record: Record<string, unknown>):
+  | {
+      analytical_sample_id: string;
+      comparison_signature: string;
+      comparison_profile: MetricComparisonProfile;
+    }
+  | undefined {
+  const comparisonProfile = comparisonProfileFromMetric(record);
+  if (!comparisonProfile) {
+    return undefined;
+  }
+  const analyticalSampleId = deriveAnalyticalSampleId(record, comparisonProfile);
+  if (!analyticalSampleId) {
+    return undefined;
+  }
+  return {
+    analytical_sample_id: analyticalSampleId,
+    comparison_signature: deriveComparisonSignature(comparisonProfile),
+    comparison_profile: comparisonProfile,
+  };
 }
 
 function validateMetric(record: Record<string, unknown>): void {
@@ -359,6 +512,44 @@ function validateMetric(record: Record<string, unknown>): void {
   }
   if (record.request_window_end !== undefined) {
     requireTimestamp(record.request_window_end, "request_window_end");
+  }
+  requireOptionalString(record.request_window_class, "request_window_class");
+  const hasRequestWindowStart = record.request_window_start !== undefined;
+  const hasRequestWindowEnd = record.request_window_end !== undefined;
+  const hasRequestWindowClass = record.request_window_class !== undefined;
+  if (
+    (hasRequestWindowStart || hasRequestWindowEnd || hasRequestWindowClass) &&
+    !(hasRequestWindowStart && hasRequestWindowEnd && hasRequestWindowClass)
+  ) {
+    throw new Error(
+      "request_window_start, request_window_end, and request_window_class must be provided together.",
+    );
+  }
+  if (
+    hasRequestWindowStart &&
+    Date.parse(record.request_window_start as string) >=
+      Date.parse(record.request_window_end as string)
+  ) {
+    throw new Error("request_window_start must precede request_window_end.");
+  }
+  requireOptionalString(record.channel_profile_version, "channel_profile_version");
+  requireOptionalString(record.metric_profile_version, "metric_profile_version");
+
+  if (record.schema_version === AGENCY_DATA_SCHEMA_VERSION) {
+    const identity = resolveMetricIdentity(record);
+    if (!identity) {
+      throw new Error(
+        "v2 metric_observation has unresolved analytical sample identity or comparison signature.",
+      );
+    }
+    requireString(record.analytical_sample_id, "analytical_sample_id");
+    requireString(record.comparison_signature, "comparison_signature");
+    if (record.analytical_sample_id !== identity.analytical_sample_id) {
+      throw new Error("analytical_sample_id does not bind the required v2 sample identity.");
+    }
+    if (record.comparison_signature !== identity.comparison_signature) {
+      throw new Error("comparison_signature does not bind the required v2 comparison profile.");
+    }
   }
 }
 
@@ -483,13 +674,23 @@ function validateByType(record: Record<string, unknown>): void {
   }
 }
 
-export function validateCanonicalRecord(input: unknown): CanonicalRecord {
+export function validateCanonicalRecord(
+  input: unknown,
+  options: { mode?: "read" | "write" } = {},
+): CanonicalRecord {
   if (!isRecord(input)) {
     throw new Error("Canonical record must be an object.");
   }
   assertNoRawContent(input);
   validateBase(input);
   validateByType(input);
+  if (
+    options.mode !== "read" &&
+    input.object_type === "metric_observation" &&
+    input.schema_version !== AGENCY_DATA_SCHEMA_VERSION
+  ) {
+    throw new Error("new_v1_metric_write_rejected_at_cutover");
+  }
   return input;
 }
 
@@ -497,7 +698,11 @@ export function createCanonicalRecord(input: Record<string, unknown>): Canonical
   const now = new Date().toISOString();
   const record: Record<string, unknown> = {
     ...input,
-    schema_version: input.schema_version ?? AGENCY_DATA_SCHEMA_VERSION,
+    schema_version:
+      input.schema_version ??
+      (input.object_type === "metric_observation"
+        ? AGENCY_DATA_SCHEMA_VERSION
+        : LEGACY_AGENCY_DATA_SCHEMA_VERSION),
     object_id: input.object_id ?? randomUUID(),
     recorded_at: input.recorded_at ?? now,
   };

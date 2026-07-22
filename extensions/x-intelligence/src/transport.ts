@@ -1,3 +1,4 @@
+import { readResponseWithLimit } from "@openclaw/media-core/read-response-with-limit";
 import {
   Client,
   type PostsClient,
@@ -10,7 +11,6 @@ import { requireOwnedMetricsCredential, requirePublicCredential } from "./auth.j
 import { requireXOwnedMetricDefinition } from "./owned-metric-definitions.js";
 
 export const X_API_BASE_URL = "https://api.x.com";
-export const X_USER_SEARCH_QUERY_PATTERN = "^[A-Za-z0-9_' ]{1,50}$";
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 const MAX_TIMEOUT_MS = 120_000;
@@ -26,6 +26,7 @@ export type XJson = JsonPrimitive | XJson[] | { [key: string]: XJson };
 
 export type XReceipt = {
   status: number;
+  serializedBytes?: number;
   rateLimit: {
     limit?: string;
     remaining?: string;
@@ -125,6 +126,7 @@ export class XTransportError extends Error {
 export type XRequestOptions = {
   signal?: AbortSignal;
   timeoutMs?: number;
+  maxResponseBytes?: number;
 };
 
 export type XPageOptions = XRequestOptions & {
@@ -161,6 +163,21 @@ export type XPostByIdInput = XRequestOptions & {
   placeFields?: string[];
 };
 
+/**
+ * The XDK exposes PostsClient.getByIds as the supported multi-post read seam.
+ * Keep the caller's exact, already-bounded batch intact: billing and admission
+ * count the requested primary posts before any analytical deduplication.
+ */
+export type XPostBatchInput = XRequestOptions & {
+  ids: string[];
+  tweetFields?: string[];
+  expansions?: string[];
+  userFields?: string[];
+  mediaFields?: string[];
+  pollFields?: string[];
+  placeFields?: string[];
+};
+
 export type XPostCollectionInput = XPageOptions & {
   id: string;
   tweetFields?: string[];
@@ -181,6 +198,14 @@ export type XUserSearchInput = XPageOptions & {
 export type XUserIdentityInput = XRequestOptions & {
   id?: string;
   username?: string;
+  userFields?: string[];
+  expansions?: string[];
+  tweetFields?: string[];
+};
+
+export type XUserBatchInput = XRequestOptions & {
+  ids?: string[];
+  usernames?: string[];
   userFields?: string[];
   expansions?: string[];
   tweetFields?: string[];
@@ -256,7 +281,9 @@ type XdkReadClient = {
   readonly users: Pick<
     UsersClient,
     | "getById"
+    | "getByIds"
     | "getByUsername"
+    | "getByUsernames"
     | "getFollowers"
     | "getFollowing"
     | "getPosts"
@@ -277,6 +304,7 @@ export class XReadTransport {
     recent: (input: XPostSearchInput) => Promise<XReadResult>;
     archive: (input: XPostSearchInput) => Promise<XReadResult>;
     exact: (input: XPostByIdInput) => Promise<XReadResult>;
+    batch: (input: XPostBatchInput) => Promise<XReadResult>;
     thread: (input: XPostCollectionInput) => Promise<XReadResult>;
     quotes: (input: XPostCollectionInput) => Promise<XReadResult>;
     replies: (input: XPostCollectionInput) => Promise<XReadResult>;
@@ -288,6 +316,7 @@ export class XReadTransport {
   readonly users: {
     search: (input: XUserSearchInput) => Promise<XReadResult>;
     identity: (input: XUserIdentityInput) => Promise<XReadResult>;
+    identityBatch: (input: XUserBatchInput) => Promise<XReadResult>;
     followers: (input: XRelationshipInput) => Promise<XReadResult>;
     following: (input: XRelationshipInput) => Promise<XReadResult>;
   };
@@ -332,6 +361,7 @@ export class XReadTransport {
       recent: (input) => this.search("recent", input),
       archive: (input) => this.search("archive", input),
       exact: (input) => this.readPostById(input),
+      batch: (input) => this.readPostsByIds(input),
       thread: (input) =>
         this.search("recent", {
           ...input,
@@ -353,6 +383,7 @@ export class XReadTransport {
     this.users = {
       search: (input) => this.userSearch(input),
       identity: (input) => this.userIdentity(input),
+      identityBatch: (input) => this.userIdentityBatch(input),
       followers: (input) => this.relationship("followers", input),
       following: (input) => this.relationship("following", input),
     };
@@ -399,6 +430,20 @@ export class XReadTransport {
     );
   }
 
+  private readPostsByIds(input: XPostBatchInput): Promise<XReadResult> {
+    if (input.ids.length < 1 || input.ids.length > MAX_PAGE_SIZE) {
+      throw new XTransportError("bad_request");
+    }
+    const ids = input.ids.map(boundedId);
+    if (new Set(ids).size !== ids.length) {
+      throw new XTransportError("bad_request");
+    }
+    const options = postFieldOptions(input);
+    return this.readPublic(input, (requestOptions) =>
+      this.publicClient.posts.getByIds(ids, { ...options, requestOptions }),
+    );
+  }
+
   private readPostCollection(input: XPostCollectionInput): Promise<XReadResult> {
     const id = boundedId(input.id);
     const options = collectionOptions(input);
@@ -409,9 +454,6 @@ export class XReadTransport {
 
   private userSearch(input: XUserSearchInput): Promise<XReadResult> {
     const query = boundedString(input.query, "user search query", 50);
-    if (!new RegExp(X_USER_SEARCH_QUERY_PATTERN, "u").test(query)) {
-      throw new XTransportError("bad_request");
-    }
     const options = userSearchOptions(input);
     const params = new URLSearchParams({ query, max_results: String(options.maxResults) });
     if (options.paginationToken) {
@@ -443,6 +485,26 @@ export class XReadTransport {
             ...options,
             requestOptions,
           }),
+    );
+  }
+
+  private userIdentityBatch(input: XUserBatchInput): Promise<XReadResult> {
+    if (Boolean(input.ids) === Boolean(input.usernames)) {
+      throw new XTransportError("bad_request");
+    }
+    const values = (input.ids ?? input.usernames ?? []).map(boundedId);
+    if (
+      values.length < 1 ||
+      values.length > MAX_PAGE_SIZE ||
+      new Set(values).size !== values.length
+    ) {
+      throw new XTransportError("bad_request");
+    }
+    const options = userFieldOptions(input);
+    return this.readPublic(input, (requestOptions) =>
+      input.ids
+        ? this.publicClient.users.getByIds(values, { ...options, requestOptions })
+        : this.publicClient.users.getByUsernames(values, { ...options, requestOptions }),
     );
   }
 
@@ -496,7 +558,7 @@ export class XReadTransport {
     const ids = input.ids.map(boundedId);
     return this.readPublic(input, (requestOptions) =>
       this.publicClient.posts.getByIds(ids, {
-        tweetFields: ["public_metrics"],
+        tweetFields: ["author_id", "created_at", "public_metrics"],
         requestOptions,
       }),
     );
@@ -547,12 +609,32 @@ export class XReadTransport {
       retry: false,
     });
     const receipts: XReceipt[] = [];
+    let remainingResponseBytes = input.maxResponseBytes;
     const readOwned = async (
       request: (requestOptions: XdkRawRequestOptions) => Promise<Response>,
     ): Promise<XReadResult> => {
+      if (remainingResponseBytes !== undefined && remainingResponseBytes < 1) {
+        throw new XTransportError("unexpected_response", {
+          category: "provider",
+          receipts: [...receipts],
+          requestCount: receipts.length,
+        });
+      }
       try {
-        const result = await this.read(request, input, [ownedCredential]);
+        const result = await this.read(
+          request,
+          {
+            ...input,
+            ...(remainingResponseBytes !== undefined
+              ? { maxResponseBytes: remainingResponseBytes }
+              : {}),
+          },
+          [ownedCredential],
+        );
         receipts.push(result.receipt);
+        if (remainingResponseBytes !== undefined) {
+          remainingResponseBytes -= result.receipt.serializedBytes ?? 0;
+        }
         return result;
       } catch (error) {
         if (error instanceof XTransportError) {
@@ -652,21 +734,44 @@ export class XReadTransport {
           requestCount: 1,
         });
       }
-      let data: XJson;
+      let body: Buffer;
       try {
-        data = (await response.json()) as XJson;
-      } catch {
+        body = options.maxResponseBytes
+          ? await readResponseWithLimit(response, options.maxResponseBytes, {
+              onOverflow: ({ size }) =>
+                new XTransportError("unexpected_response", {
+                  category: "provider",
+                  receipt: { ...receipt, serializedBytes: size },
+                  requestCount: 1,
+                }),
+            })
+          : Buffer.from(await response.arrayBuffer());
+      } catch (error) {
+        if (error instanceof XTransportError) {
+          throw error;
+        }
         throw new XTransportError("malformed_response", {
           category: "provider",
           receipt,
           requestCount: 1,
         });
       }
+      const receivedReceipt: XReceipt = { ...receipt, serializedBytes: body.byteLength };
+      let data: XJson;
+      try {
+        data = JSON.parse(body.toString("utf8")) as XJson;
+      } catch {
+        throw new XTransportError("malformed_response", {
+          category: "provider",
+          receipt: receivedReceipt,
+          requestCount: 1,
+        });
+      }
       const redactedData = redactJson(data, [...this.secretValues, ...additionalSecrets]);
       return {
         data: redactedData,
-        receipt,
-        receipts: [receipt],
+        receipt: receivedReceipt,
+        receipts: [receivedReceipt],
         nextToken: readNextToken(redactedData),
       };
     } catch (error) {
@@ -700,8 +805,15 @@ function isXdkAuthenticationConfigurationError(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false;
   }
-  return /^Authentication required for .+\. Required: .+\. Available: .+\.$/.test(
-    error.message.replace(/ Please configure the appropriate authentication method\.$/, "."),
+  const configurationSuffix = " Please configure the appropriate authentication method.";
+  const message = error.message.endsWith(configurationSuffix)
+    ? `${error.message.slice(0, -configurationSuffix.length)}.`
+    : error.message;
+  return (
+    message.startsWith("Authentication required for ") &&
+    message.includes(". Required: ") &&
+    message.includes(". Available: ") &&
+    message.endsWith(".")
   );
 }
 
@@ -842,7 +954,10 @@ function verifyPostOwnership(
 }
 
 function normalizeBaseUrl(baseUrl: string | undefined): string {
-  const value = (baseUrl ?? X_API_BASE_URL).trim().replace(/\/+$/, "");
+  let value = (baseUrl ?? X_API_BASE_URL).trim();
+  while (value.endsWith("/")) {
+    value = value.slice(0, -1);
+  }
   try {
     const parsed = new URL(value);
     if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
@@ -894,9 +1009,9 @@ function boundedFields(values: string[] | undefined): string[] {
   return values.map((value) => boundedString(value, "field", 128));
 }
 
-function pageOptions(input: XPageOptions) {
+function pageOptions(input: XPageOptions, minimum = 1) {
   const maxResults = input.maxResults ?? DEFAULT_PAGE_SIZE;
-  if (!Number.isSafeInteger(maxResults) || maxResults < 1 || maxResults > MAX_PAGE_SIZE) {
+  if (!Number.isSafeInteger(maxResults) || maxResults < minimum || maxResults > MAX_PAGE_SIZE) {
     throw new XTransportError("bad_request");
   }
   return {
@@ -931,7 +1046,7 @@ function fieldOptions(input: {
 
 function postSearchOptions(input: XPostSearchInput) {
   return {
-    ...pageOptions(input),
+    ...pageOptions(input, 10),
     ...fieldOptions(input),
     startTime: optionalBounded(input.startTime, "start time"),
     endTime: optionalBounded(input.endTime, "end time"),
@@ -952,12 +1067,17 @@ function countOptions(input: XCountInput) {
   };
 }
 
-function postFieldOptions(input: XPostByIdInput) {
+function postFieldOptions(
+  input: Pick<
+    XPostByIdInput,
+    "tweetFields" | "expansions" | "userFields" | "mediaFields" | "pollFields" | "placeFields"
+  >,
+) {
   return fieldOptions(input);
 }
 
 function collectionOptions(input: XPostCollectionInput) {
-  return { ...pageOptions(input), ...fieldOptions(input) };
+  return { ...pageOptions(input, 10), ...fieldOptions(input) };
 }
 
 function userSearchOptions(input: XUserSearchInput) {
@@ -975,7 +1095,7 @@ function appendFields(params: URLSearchParams, key: string, values: string[]): v
   }
 }
 
-function userFieldOptions(input: XUserIdentityInput) {
+function userFieldOptions(input: XUserIdentityInput | XUserBatchInput) {
   return {
     userFields: boundedFields(input.userFields),
     expansions: boundedFields(input.expansions),
@@ -994,7 +1114,7 @@ function relationshipOptions(input: XRelationshipInput) {
 
 function timelineOptions(input: XTimelineInput) {
   return {
-    ...pageOptions(input),
+    ...pageOptions(input, 5),
     ...fieldOptions(input),
     startTime: optionalBounded(input.startTime, "start time"),
     endTime: optionalBounded(input.endTime, "end time"),
@@ -1082,7 +1202,11 @@ function isRawResponse(value: unknown): value is Response {
 }
 
 function isTimeoutError(error: unknown): boolean {
-  return error instanceof Error && /timeout/i.test(error.message);
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const message = error.message.toLowerCase();
+  return message.includes("timeout") || message.includes("timed out");
 }
 
 function readNextToken(data: XJson): string | undefined {

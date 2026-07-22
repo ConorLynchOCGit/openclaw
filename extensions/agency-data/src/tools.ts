@@ -1,3 +1,4 @@
+import type { AnyAgentTool } from "openclaw/plugin-sdk/plugin-entry";
 import { jsonResult } from "openclaw/plugin-sdk/provider-web-search";
 import {
   marketingDataCatalogParameters,
@@ -9,7 +10,7 @@ import {
 } from "./queries.js";
 import { AgencyDataStore } from "./store.js";
 
-export function createAgencyDataTools(stateDir: string) {
+export function createAgencyDataTools(stateDir: string): AnyAgentTool[] {
   const store = new AgencyDataStore(stateDir);
   return [
     {
@@ -25,7 +26,7 @@ export function createAgencyDataTools(stateDir: string) {
       name: "marketing_metrics",
       label: "Marketing Metrics",
       description:
-        "Calculate one metric definition's bounded cohort summary and optional daily trend. Distribution modes are never merged.",
+        "Calculate one exact comparison profile's bounded cohort summary and optional daily trend. Distribution modes are never merged; cross-profile normalization is unsupported.",
       parameters: marketingMetricsParameters,
       execute: async (_toolCallId: string, params: unknown) =>
         jsonResult(await queryMarketingMetrics(store, params)),

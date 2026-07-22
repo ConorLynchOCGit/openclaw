@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { parse } from "csv-parse/sync";
 import { createTrustedAgencyDataIngestion } from "../api.js";
+import { resolveMetricIdentity } from "./schema.js";
 import { AgencyDataStore, resolveAgencyDataStateDir } from "./store.js";
 
 const MAX_CSV_BYTES = 2 * 1024 * 1024;
@@ -20,12 +21,17 @@ const REQUIRED_COLUMNS = [
   "unit",
   "completeness",
   "distribution",
+  "observation_window",
+  "channel_profile_version",
+  "metric_profile_version",
+  "metric_mapping_version",
+  "provider_metric_class",
+  "bucket_granularity",
 ] as const;
 
 const OPTIONAL_COLUMNS = [
   "event_at",
   "method_version",
-  "observation_window",
   "published_at",
   "content_hash",
   "content_format",
@@ -197,49 +203,60 @@ function recordsForRow(
   if (!new Set(["organic", "promoted", "combined"]).has(distribution)) {
     throw new Error(`CSV row ${rowNumber} has an invalid distribution value.`);
   }
-  const observationWindow = optionalValue(row, "observation_window");
-  if (
-    observationWindow &&
-    !new Set(["1h", "24h", "72h", "7d", "28d", "custom"]).has(observationWindow)
-  ) {
+  const observationWindow = requireValue(row, "observation_window", rowNumber);
+  if (!new Set(["1h", "24h", "72h", "7d", "28d", "custom"]).has(observationWindow)) {
     throw new Error(`CSV row ${rowNumber} has an invalid observation_window value.`);
   }
   const identity = sha256(
     JSON.stringify({ fileDigest, rowNumber, postId, metric: row.metric_definition_id }),
   ).slice(7, 47);
   const common = { ...commonRecord(input, row, postId, observedAt), event_at: eventAt };
+  const metric = {
+    ...common,
+    object_type: "metric_observation",
+    object_id: `x-csv-metric-${identity}`,
+    account_id: input.accountId,
+    content_id: postId,
+    metric_definition_id: requireValue(row, "metric_definition_id", rowNumber),
+    metric_family: requireValue(row, "metric_family", rowNumber),
+    metric_name: requireValue(row, "metric_name", rowNumber),
+    numerator: requireNumber(requireValue(row, "numerator", rowNumber), "numerator", rowNumber, {
+      minimum: 0,
+    }),
+    denominator: requireNumber(
+      requireValue(row, "denominator", rowNumber),
+      "denominator",
+      rowNumber,
+      { minimum: 0 },
+    ),
+    unit: requireValue(row, "unit", rowNumber),
+    completeness: requireNumber(
+      requireValue(row, "completeness", rowNumber),
+      "completeness",
+      rowNumber,
+      { minimum: 0, maximum: 1 },
+    ),
+    stabilization: { state: "provisional", as_of: observedAt },
+    privacy: { classification: "aggregate" },
+    method_version: methodVersion,
+    observation_at: observedAt,
+    observation_window: observationWindow,
+    distribution,
+    channel_profile_version: requireValue(row, "channel_profile_version", rowNumber),
+    metric_profile_version: requireValue(row, "metric_profile_version", rowNumber),
+    metric_mapping_version: requireValue(row, "metric_mapping_version", rowNumber),
+    provider_metric_class: requireValue(row, "provider_metric_class", rowNumber),
+    bucket_granularity: requireValue(row, "bucket_granularity", rowNumber),
+  };
+  const metricIdentity = resolveMetricIdentity(metric);
+  if (!metricIdentity) {
+    throw new Error(`CSV row ${rowNumber} has unresolved v2 metric identity.`);
+  }
   const records: Record<string, unknown>[] = [
     {
-      ...common,
-      object_type: "metric_observation",
-      object_id: `x-csv-metric-${identity}`,
-      account_id: input.accountId,
-      content_id: postId,
-      metric_definition_id: requireValue(row, "metric_definition_id", rowNumber),
-      metric_family: requireValue(row, "metric_family", rowNumber),
-      metric_name: requireValue(row, "metric_name", rowNumber),
-      numerator: requireNumber(requireValue(row, "numerator", rowNumber), "numerator", rowNumber, {
-        minimum: 0,
-      }),
-      denominator: requireNumber(
-        requireValue(row, "denominator", rowNumber),
-        "denominator",
-        rowNumber,
-        { minimum: 0 },
-      ),
-      unit: requireValue(row, "unit", rowNumber),
-      completeness: requireNumber(
-        requireValue(row, "completeness", rowNumber),
-        "completeness",
-        rowNumber,
-        { minimum: 0, maximum: 1 },
-      ),
-      stabilization: { state: "provisional", as_of: observedAt },
-      privacy: { classification: "aggregate" },
-      method_version: methodVersion,
-      observation_at: observedAt,
-      ...(observationWindow ? { observation_window: observationWindow } : {}),
-      distribution,
+      ...metric,
+      analytical_sample_id: metricIdentity.analytical_sample_id,
+      comparison_signature: metricIdentity.comparison_signature,
     },
   ];
 

@@ -12,6 +12,7 @@ export type XaiWebSearchResponse = {
   created_at?: number;
   completed_at?: number | null;
   model?: string;
+  request_id?: string;
   service_tier?: string;
   status?: string;
   termination?: string;

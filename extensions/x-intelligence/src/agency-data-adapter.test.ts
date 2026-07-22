@@ -4,7 +4,6 @@ import path from "node:path";
 import {
   AgencyDataStore,
   materializeVisibleRecords,
-  queryMarketingMetrics,
   resolveAgencyDataStateDir,
 } from "@openclaw/agency-data/api.js";
 import { afterEach, describe, expect, it } from "vitest";
@@ -36,6 +35,7 @@ describe("X to Agency Data trusted adapter", () => {
             {
               id: "post-1",
               author_id: "aa-account",
+              created_at: "2026-07-16T04:00:00.000Z",
               text: "Transient source text",
               public_metrics: { like_count: 12, reply_count: 3 },
             },
@@ -99,6 +99,7 @@ describe("X to Agency Data trusted adapter", () => {
             data: {
               id: "post-public-8",
               author_id: "account-conor",
+              created_at: "2026-07-16T19:04:39.000Z",
               text: "Transient post body",
               public_metrics: { impression_count: impressions, like_count: 1 },
             },
@@ -135,20 +136,15 @@ describe("X to Agency Data trusted adapter", () => {
           record.metric_definition_id === "x.public.impression_count",
       ),
     ).toHaveLength(1);
-    const metrics = await queryMarketingMetrics(store, {
-      tenant_id: "operator",
-      metric_definition_id: "x.public.impression_count",
-      distribution: "combined",
-      trend: false,
-    });
-    expect(metrics.summary).toMatchObject({
-      sample_size: 1,
-      numerator_total: 8,
-      denominator_total: 1,
-    });
+    const visibleMetric = materializeVisibleRecords(raw.records).find(
+      (record) =>
+        record.object_type === "metric_observation" &&
+        record.metric_definition_id === "x.public.impression_count",
+    );
+    expect(visibleMetric).toMatchObject({ numerator: 8, denominator: 1 });
   });
 
-  it("keeps an unchanged public metric deduplicated when a sibling metric changes", async () => {
+  it("keeps public metric snapshots that cross an age band in separate exact profiles", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "x-agency-data-public-partial-change-"));
     roots.push(root);
     const adapter = createXAgencyDataAdapter({ stateDir: root });
@@ -164,6 +160,7 @@ describe("X to Agency Data trusted adapter", () => {
             data: {
               id: "post-partial-change",
               author_id: "account-conor",
+              created_at: "2026-07-16T11:00:00.000Z",
               text: "Same transient post body",
               public_metrics: { impression_count: 8, like_count: likeCount },
             },
@@ -177,27 +174,116 @@ describe("X to Agency Data trusted adapter", () => {
         observedAt,
       });
 
-    await ingest("2026-07-16T12:00:00.000Z", 1);
-    await ingest("2026-07-16T13:00:00.000Z", 2);
+    await ingest("2026-07-16T11:30:00.000Z", 1);
+    await ingest("2026-07-16T12:30:00.000Z", 2);
 
     const store = new AgencyDataStore(resolveAgencyDataStateDir(root));
-    const impressions = await queryMarketingMetrics(store, {
-      tenant_id: "operator",
-      metric_definition_id: "x.public.impression_count",
-      distribution: "combined",
-      trend: false,
-    });
-    const likes = await queryMarketingMetrics(store, {
-      tenant_id: "operator",
-      metric_definition_id: "x.public.like_count",
-      distribution: "combined",
-      trend: false,
-    });
-    expect(impressions.summary).toMatchObject({ sample_size: 1, numerator_total: 8 });
-    expect(likes.summary).toMatchObject({ sample_size: 2, numerator_total: 3 });
+    const read = await store.read({ tenantId: "operator" });
+    const metrics = read.records.filter((record) => record.object_type === "metric_observation");
+    const underOneHourLikes = metrics.find(
+      (record) =>
+        record.metric_definition_id === "x.public.like_count" &&
+        record.bucket_granularity === "post_age_band_lt_1h",
+    )!;
+    const oneToSixHourLikes = metrics.find(
+      (record) =>
+        record.metric_definition_id === "x.public.like_count" &&
+        record.bucket_granularity === "post_age_band_1h_to_6h",
+    )!;
+    expect(underOneHourLikes).toMatchObject({ numerator: 1 });
+    expect(oneToSixHourLikes).toMatchObject({ numerator: 2 });
+    expect(underOneHourLikes.comparison_signature).not.toBe(oneToSixHourLikes.comparison_signature);
+    expect(underOneHourLikes.analytical_sample_id).toBe(oneToSixHourLikes.analytical_sample_id);
   });
 
-  it("attributes profile metrics to the returned stable profile id", async () => {
+  it("places comparable posts from one author in the same age-adjusted profile", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "x-agency-data-public-age-band-"));
+    roots.push(root);
+    const adapter = createXAgencyDataAdapter({ stateDir: root });
+    const context = {
+      tenantId: "operator",
+      subject: { entityType: "company" as const, entityId: "subject-fixture" },
+    };
+    for (const [id, createdAt, impressions] of [
+      ["post-a", "2026-07-16T10:00:00.000Z", 10],
+      ["post-b", "2026-07-16T09:00:00.000Z", 20],
+    ] as const) {
+      await adapter.ingest({
+        context,
+        result: {
+          data: {
+            data: {
+              id,
+              author_id: "account-fixture",
+              created_at: createdAt,
+              text: `Transient ${id}`,
+              public_metrics: { impression_count: impressions },
+            },
+          },
+          receipt: { status: 200, rateLimit: {} },
+        },
+        manifestRef: `artifacts/business-ops/x-acquisition-manifests-v4/${id}.json`,
+        toolName: "x_metrics",
+        operation: "public",
+        methodVersion: "format-study.v1",
+        observedAt: "2026-07-16T12:00:00.000Z",
+      });
+    }
+
+    const read = await new AgencyDataStore(resolveAgencyDataStateDir(root)).read({
+      tenantId: "operator",
+    });
+    const metrics = read.records.filter((record) => record.object_type === "metric_observation");
+    expect(metrics).toHaveLength(2);
+    expect(metrics.map((record) => record.bucket_granularity)).toEqual([
+      "post_age_band_1h_to_6h",
+      "post_age_band_1h_to_6h",
+    ]);
+    expect(new Set(metrics.map((record) => record.comparison_signature)).size).toBe(1);
+    expect(new Set(metrics.map((record) => record.analytical_sample_id)).size).toBe(2);
+  });
+
+  it("does not create comparison metrics when a public post has no creation time", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "x-agency-data-public-no-age-"));
+    roots.push(root);
+    const adapter = createXAgencyDataAdapter({ stateDir: root });
+
+    await expect(
+      adapter.ingest({
+        context: {
+          tenantId: "operator",
+          subject: { entityType: "company", entityId: "subject-fixture" },
+        },
+        result: {
+          data: {
+            data: {
+              id: "post-without-created-at",
+              author_id: "account-fixture",
+              text: "Transient post body",
+              public_metrics: { impression_count: 8 },
+            },
+          },
+          receipt: { status: 200, rateLimit: {} },
+        },
+        manifestRef: "artifacts/business-ops/x-acquisition-manifests-v4/no-age.json",
+        toolName: "x_metrics",
+        operation: "public",
+        methodVersion: "format-study.v1",
+      }),
+    ).resolves.toEqual({ status: "recorded", records: 1 });
+
+    const read = await new AgencyDataStore(resolveAgencyDataStateDir(root)).read({
+      tenantId: "operator",
+    });
+    expect(read.records).toEqual([
+      expect.objectContaining({
+        object_type: "source_observation",
+        content_id: "post-without-created-at",
+      }),
+    ]);
+  });
+
+  it("keeps profile follower counts in account snapshots rather than comparison metrics", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "x-agency-data-profile-"));
     roots.push(root);
     const adapter = createXAgencyDataAdapter({
@@ -227,7 +313,7 @@ describe("X to Agency Data trusted adapter", () => {
       methodVersion: "influence-map.v1",
     });
 
-    expect(result).toEqual({ status: "recorded", records: 4 });
+    expect(result).toEqual({ status: "recorded", records: 2 });
     const read = await new AgencyDataStore(resolveAgencyDataStateDir(root)).read({
       tenantId: "operator",
     });
@@ -238,15 +324,13 @@ describe("X to Agency Data trusted adapter", () => {
           account_id: "returned-profile-id",
         }),
         expect.objectContaining({
-          object_type: "metric_observation",
-          account_id: "returned-profile-id",
-          metric_definition_id: "x.public.followers_count",
-        }),
-        expect.objectContaining({
           object_type: "account_snapshot",
           account_id: "returned-profile-id",
         }),
       ]),
+    );
+    expect(read.records).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ object_type: "metric_observation" })]),
     );
     expect(JSON.stringify(read.records)).not.toContain("request-context-account");
     expect(JSON.stringify(read.records)).not.toContain("Transient profile description");
@@ -307,6 +391,7 @@ describe("X to Agency Data trusted adapter", () => {
             {
               id: "post-1",
               author_id: "conor-account",
+              created_at: "2026-07-16T11:00:00.000Z",
               text: "Transient source text",
               public_metrics: { like_count: 12, ["x".repeat(513)]: 1 },
             },

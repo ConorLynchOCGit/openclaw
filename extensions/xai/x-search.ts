@@ -21,12 +21,15 @@ import {
 import {
   buildXaiXSearchPayload,
   requestXaiXSearch,
+  resolveXaiXSearchCacheControl,
+  resolveXaiXSearchResearchPolicy,
   resolveOpenRouterXSearchMaxTotalResults,
   resolveXaiXSearchEndpoint,
   resolveXaiXSearchInlineCitations,
   resolveXaiXSearchMaxTurns,
   resolveXaiXSearchModel,
   resolveXaiXSearchServiceTier,
+  XaiXSearchTerminalError,
   type XaiXSearchOptions,
 } from "./src/x-search-shared.js";
 import {
@@ -99,7 +102,15 @@ function normalizeOptionalIsoDate(value: string | undefined, label: string): str
   if (!trimmed) {
     return undefined;
   }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+  let hasIsoShape = trimmed.length === 10 && trimmed[4] === "-" && trimmed[7] === "-";
+  for (let index = 0; hasIsoShape && index < trimmed.length; index += 1) {
+    if (index === 4 || index === 7) {
+      continue;
+    }
+    const code = trimmed.charCodeAt(index);
+    hasIsoShape = code >= 48 && code <= 57;
+  }
+  if (!hasIsoShape) {
     throw new PluginToolInputError(`${label} must use YYYY-MM-DD`);
   }
   const [year, month, day] = trimmed.split("-").map((entry) => Number.parseInt(entry, 10));
@@ -123,6 +134,9 @@ function buildXSearchCacheKey(params: {
   maxTurns?: number;
   maxTotalResults?: number;
   serviceTier?: "default" | "priority";
+  researchPolicy?: ReturnType<typeof resolveXaiXSearchResearchPolicy>;
+  cacheControl: ReturnType<typeof resolveXaiXSearchCacheControl>;
+  subjectKey?: string;
   options: Omit<XaiXSearchOptions, "query">;
 }) {
   return JSON.stringify([
@@ -135,6 +149,9 @@ function buildXSearchCacheKey(params: {
     params.maxTurns ?? null,
     params.maxTotalResults ?? null,
     params.serviceTier ?? null,
+    params.researchPolicy ?? null,
+    params.cacheControl,
+    params.subjectKey ?? null,
     params.options.allowedXHandles ?? null,
     params.options.excludedXHandles ?? null,
     params.options.fromDate ?? null,
@@ -207,13 +224,45 @@ export function createXSearchTool(options?: {
       enableImageUnderstanding: args.enable_image_understanding === true,
       enableVideoUnderstanding: args.enable_video_understanding === true,
     };
+    const researchProfile = readStringParam(args, "research_profile");
+    const researchStage = readStringParam(args, "research_stage");
+    const subjectKey = readStringParam(args, "subject_key");
+    let researchPolicy: ReturnType<typeof resolveXaiXSearchResearchPolicy>;
+    try {
+      researchPolicy = resolveXaiXSearchResearchPolicy({ researchProfile, researchStage });
+    } catch (error) {
+      throw new PluginToolInputError(error instanceof Error ? error.message : String(error));
+    }
+    let cacheControl: ReturnType<typeof resolveXaiXSearchCacheControl>;
+    try {
+      cacheControl = resolveXaiXSearchCacheControl(args.research_cache_control);
+    } catch (error) {
+      throw new PluginToolInputError(error instanceof Error ? error.message : String(error));
+    }
+    if (cacheControl.mode !== "ordinary" && !researchPolicy) {
+      throw new PluginToolInputError(
+        "research_cache_control requires a closed v2 research profile and stage",
+      );
+    }
+    if (researchPolicy && cacheControl.mode === "ordinary" && !subjectKey) {
+      throw new PluginToolInputError(
+        "v2 research using ordinary cache requires one immutable subject_key",
+      );
+    }
     const xSearchConfigRecord = xSearchConfig;
     const model = resolveXaiXSearchModel(xSearchConfigRecord, provider);
     const endpoint = resolveXaiXSearchEndpoint(xSearchConfigRecord, provider);
     const inlineCitations = resolveXaiXSearchInlineCitations(xSearchConfigRecord);
     const maxTurns = resolveXaiXSearchMaxTurns(xSearchConfigRecord);
     const serviceTier = resolveXaiXSearchServiceTier(xSearchConfigRecord);
-    const maxTotalResults = resolveOpenRouterXSearchMaxTotalResults(xSearchConfigRecord);
+    if (researchPolicy && provider !== "openrouter") {
+      throw new PluginToolInputError(
+        "v2 research_profile/research_stage requires the OpenRouter xAI route with no fallback",
+      );
+    }
+    const maxTotalResults =
+      researchPolicy?.maxTotalResults ??
+      resolveOpenRouterXSearchMaxTotalResults(xSearchConfigRecord);
     const cacheKey = buildXSearchCacheKey({
       provider,
       query,
@@ -223,6 +272,9 @@ export function createXSearchTool(options?: {
       maxTurns,
       maxTotalResults,
       serviceTier,
+      researchPolicy,
+      cacheControl,
+      subjectKey,
       options: {
         allowedXHandles,
         excludedXHandles,
@@ -232,24 +284,85 @@ export function createXSearchTool(options?: {
         enableVideoUnderstanding: xSearchOptions.enableVideoUnderstanding,
       },
     });
-    const cached = readCache(X_SEARCH_CACHE, cacheKey);
+    const cacheLookupStartedAt = Date.now();
+    const cached = cacheControl.mode === "bypass" ? undefined : readCache(X_SEARCH_CACHE, cacheKey);
     if (cached) {
-      return jsonResult(Object.assign({}, cached.value, { cached: true, cacheStatus: "hit" }));
+      const providerReceipt = cached.value.providerReceipt;
+      return jsonResult({
+        ...cached.value,
+        ...(providerReceipt &&
+        typeof providerReceipt === "object" &&
+        !Array.isArray(providerReceipt)
+          ? {
+              providerReceipt: {
+                ...providerReceipt,
+                dispatches: 0,
+                elapsedMs: Date.now() - cacheLookupStartedAt,
+                selectedEvidenceBytes: 0,
+                serializedRequestBytes: 0,
+                outputTokens: 0,
+                providerCostUsd: 0,
+                providerRequestId: "cache",
+                providerResponseStatus: "cache_hit",
+                observedSearchActions: {
+                  responseToolCalls: 0,
+                  providerWebSearchRequests: 0,
+                },
+                observedResults: 0,
+                cache: {
+                  mode: cacheControl.mode,
+                  scope: cacheControl.scope,
+                  status: "hit",
+                  originProviderRequestId:
+                    "providerRequestId" in providerReceipt &&
+                    typeof providerReceipt.providerRequestId === "string"
+                      ? providerReceipt.providerRequestId
+                      : "unknown",
+                },
+              },
+            }
+          : {}),
+        cached: true,
+        cacheStatus: "hit",
+        cacheScope: cacheControl.scope,
+      });
     }
 
     const startedAt = Date.now();
-    const result = await requestXaiXSearch({
-      provider,
-      apiKey,
-      endpoint,
-      model,
-      timeoutSeconds: resolveTimeoutSeconds(xSearchConfig?.timeoutSeconds, 30),
-      inlineCitations,
-      maxTurns,
-      maxTotalResults,
-      serviceTier,
-      options: xSearchOptions,
-    });
+    let result: Awaited<ReturnType<typeof requestXaiXSearch>>;
+    try {
+      result = await requestXaiXSearch({
+        provider,
+        apiKey,
+        endpoint,
+        model,
+        timeoutSeconds: researchPolicy
+          ? Math.ceil(researchPolicy.maxElapsedMs / 1_000)
+          : resolveTimeoutSeconds(xSearchConfig?.timeoutSeconds, 30),
+        inlineCitations,
+        maxTurns,
+        maxTotalResults,
+        serviceTier,
+        options: xSearchOptions,
+        researchPolicy,
+      });
+    } catch (error) {
+      if (!(error instanceof XaiXSearchTerminalError)) {
+        throw error;
+      }
+      return jsonResult({
+        status: error.receipt.status,
+        error: {
+          code: error.receipt.code,
+          source_layer: error.receipt.sourceLayer,
+          retryable: false,
+          message: error.message,
+        },
+        providerReceipt: error.receipt,
+        cacheStatus: cacheControl.mode === "bypass" ? "bypass" : "miss",
+        cacheScope: cacheControl.scope,
+      });
+    }
     const payload = buildXaiXSearchPayload({
       provider,
       query,
@@ -259,14 +372,29 @@ export function createXSearchTool(options?: {
       result,
       options: xSearchOptions,
       serviceTier,
+      researchPolicy,
     });
-    payload.cacheStatus = "miss";
-    writeCache(
-      X_SEARCH_CACHE,
-      cacheKey,
-      payload,
-      resolveCacheTtlMs(xSearchConfig?.cacheTtlMinutes, 15),
-    );
+    payload.cacheStatus = cacheControl.mode === "bypass" ? "bypass" : "miss";
+    payload.cacheScope = cacheControl.scope;
+    const providerReceipt = payload.providerReceipt;
+    if (providerReceipt && typeof providerReceipt === "object" && !Array.isArray(providerReceipt)) {
+      payload.providerReceipt = {
+        ...providerReceipt,
+        cache: {
+          mode: cacheControl.mode,
+          scope: cacheControl.scope,
+          status: cacheControl.mode === "bypass" ? "bypass" : "miss",
+        },
+      };
+    }
+    if (cacheControl.mode !== "bypass") {
+      writeCache(
+        X_SEARCH_CACHE,
+        cacheKey,
+        payload,
+        resolveCacheTtlMs(xSearchConfig?.cacheTtlMinutes, 15),
+      );
+    }
     return jsonResult(payload);
   });
 }

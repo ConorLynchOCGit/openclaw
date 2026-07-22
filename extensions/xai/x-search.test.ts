@@ -68,6 +68,12 @@ function parseFirstRequestBody(mockFetch: ReturnType<typeof installXSearchFetch>
   >;
 }
 
+const openRouterAuth = {
+  hasAuthForProvider: (providerId: string) => providerId === "openrouter",
+  resolveApiKeyForProvider: async (providerId: string) =>
+    providerId === "openrouter" ? "openrouter-test-profile-key" : undefined, // pragma: allowlist secret
+};
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -99,6 +105,7 @@ describe("xai x_search tool", () => {
     expect(queryDescription).toContain("Grok X-search agent");
     expect(queryDescription).toContain("meaningful and non-empty");
     expect(queryDescription).not.toContain("allowed_x_handles");
+    expect(JSON.stringify(tool?.parameters)).not.toContain("research_cache_control");
   });
 
   it("enables x_search when runtime config carries the shared xAI key", () => {
@@ -256,6 +263,448 @@ describe("xai x_search tool", () => {
       ],
       citations: ["https://x.com/example/status/123"],
     });
+  });
+
+  it("derives the closed full v2 discovery policy and receipt from profile and stage", async () => {
+    const mockFetch = installXSearchFetch({
+      id: "resp_v2_question",
+      status: "completed",
+      usage: { input_tokens: 80, output_tokens: 20, total_tokens: 100, cost: 0.01 },
+      output: [
+        { type: "web_search_call", id: "search_1", status: "completed" },
+        { type: "message", content: [{ type: "output_text", text: "Grounded question." }] },
+      ],
+      citations: Array.from({ length: 21 }, (_, index) => `https://x.com/example/status/${index}`),
+    });
+    const tool = createXSearchTool({
+      config: {
+        plugins: {
+          entries: {
+            xai: {
+              config: {
+                webSearch: { apiKey: "openrouter-v2-key" }, // pragma: allowlist secret
+                xSearch: { provider: "openrouter", maxTotalResults: 50 },
+              },
+            },
+          },
+        },
+      },
+      auth: openRouterAuth,
+    });
+
+    const result = await tool?.execute?.("x-search:v2-question", {
+      query: "Find recurring questions about a bounded territory",
+      research_profile: "full_hybrid_per_subject_v2",
+      research_stage: "question_discovery",
+      subject_key: "subject-a",
+    });
+    const body = parseFirstRequestBody(mockFetch);
+    const details = result?.details as Record<string, unknown>;
+
+    expect(body).toMatchObject({
+      tools: [
+        {
+          type: "openrouter:web_search",
+          parameters: { engine: "native", max_total_results: 20 },
+        },
+      ],
+      max_output_tokens: 2500,
+      provider: { order: ["xai/zdr"], allow_fallbacks: false },
+    });
+    expect(details).toMatchObject({
+      requestPolicy: {
+        researchProfile: "full_hybrid_per_subject_v2",
+        researchStage: "question_discovery",
+        maxSelectedEvidenceBytes: 12 * 1024,
+        maxSerializedRequestBytes: 12 * 1024,
+        maxOutputTokens: 2500,
+        maxElapsedMs: 50_000,
+        maxRetries: 0,
+        maxProviderDispatches: 1,
+        maxDeliveredCitations: 20,
+        searchEnabled: true,
+        maxTotalResults: 20,
+      },
+      providerReceipt: {
+        dispatches: 1,
+        maxRetries: 0,
+        outputTokens: 20,
+        providerCostUsd: 0.01,
+        providerRequestId: "resp_v2_question",
+        observedSearchActions: { responseToolCalls: 1, providerWebSearchRequests: "unknown" },
+        delivered: { citations: 20, citationCount: 21, citationsTruncated: true },
+      },
+    });
+    expect(
+      (details.providerReceipt as { selectedEvidenceBytes?: number }).selectedEvidenceBytes,
+    ).toBeGreaterThan(0);
+    expect(
+      (details.providerReceipt as { serializedRequestBytes?: number }).serializedRequestBytes,
+    ).toBeGreaterThan(0);
+
+    const cached = await tool?.execute?.("x-search:v2-question-cache", {
+      query: "Find recurring questions about a bounded territory",
+      research_profile: "full_hybrid_per_subject_v2",
+      research_stage: "question_discovery",
+      subject_key: "subject-a",
+    });
+    await tool?.execute?.("x-search:v2-topic", {
+      query: "Find recurring questions about a bounded territory",
+      research_profile: "full_hybrid_per_subject_v2",
+      research_stage: "topic_discovery",
+      subject_key: "subject-a",
+    });
+    const cachedDetails = cached?.details as
+      | { providerReceipt?: { dispatches?: number } }
+      | undefined;
+    expect(cachedDetails?.providerReceipt?.dispatches).toBe(0);
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    const topicRequest = mockFetch.mock.calls[1]?.[1] as RequestInit | undefined;
+    const topicBody = JSON.parse(
+      typeof topicRequest?.body === "string" ? topicRequest.body : "{}",
+    ) as Record<string, unknown>;
+    expect(topicBody.tools).toEqual([
+      { type: "openrouter:web_search", parameters: { engine: "native", max_total_results: 15 } },
+    ]);
+  });
+
+  it("lets only trusted callers bypass ordinary cache entries", async () => {
+    const mockFetch = installXSearchFetch();
+    const tool = createXSearchTool({
+      config: {
+        plugins: {
+          entries: {
+            xai: {
+              config: {
+                webSearch: { apiKey: "openrouter-proof-cache-key" }, // pragma: allowlist secret
+                xSearch: { provider: "openrouter" },
+              },
+            },
+          },
+        },
+      },
+      auth: openRouterAuth,
+    });
+    const shared = {
+      query: "proof cache isolation",
+      research_profile: "reduced_probe_v2",
+      research_stage: "question_discovery",
+      subject_key: "subject-a",
+    };
+    await expect(
+      tool?.execute?.("x-search:subjectless", {
+        query: shared.query,
+        research_profile: shared.research_profile,
+        research_stage: shared.research_stage,
+      }),
+    ).rejects.toThrow("requires one immutable subject_key");
+    await tool?.execute?.("x-search:ordinary-1", shared);
+    const cached = await tool?.execute?.("x-search:ordinary-2", shared);
+    await tool?.execute?.("x-search:ordinary-other-subject", {
+      ...shared,
+      subject_key: "subject-b",
+    });
+    await tool?.execute?.("x-search:proof-bypass-1", {
+      ...shared,
+      research_cache_control: { mode: "bypass" },
+    });
+    const bypass = await tool?.execute?.("x-search:proof-bypass-2", {
+      ...shared,
+      research_cache_control: { mode: "bypass" },
+    });
+
+    expect(mockFetch).toHaveBeenCalledTimes(4);
+    expect(cached?.details).toMatchObject({
+      cacheStatus: "hit",
+      cacheScope: "ordinary",
+      providerReceipt: {
+        dispatches: 0,
+        providerCostUsd: 0,
+        outputTokens: 0,
+        providerRequestId: "cache",
+        providerResponseStatus: "cache_hit",
+        observedSearchActions: { responseToolCalls: 0, providerWebSearchRequests: 0 },
+        cache: { mode: "ordinary", scope: "ordinary", status: "hit" },
+      },
+    });
+    expect(bypass?.details).toMatchObject({
+      cacheStatus: "bypass",
+      cacheScope: "bypass",
+      providerReceipt: { dispatches: 1, cache: { mode: "bypass", status: "bypass" } },
+    });
+    await expect(
+      tool?.execute?.("x-search:invalid-cache-mode", {
+        ...shared,
+        research_cache_control: { mode: "isolated" },
+      }),
+    ).rejects.toThrow("explicit bypass");
+    expect(mockFetch).toHaveBeenCalledTimes(4);
+  });
+
+  it("omits OpenRouter search for a closed analysis stage and rejects returned search activity", async () => {
+    const mockFetch = installXSearchFetch({
+      status: "completed",
+      output: [
+        { type: "web_search_call", id: "unexpected_search", status: "completed" },
+        { type: "message", content: [{ type: "output_text", text: "Unexpected search." }] },
+      ],
+    });
+    const tool = createXSearchTool({
+      config: {
+        plugins: {
+          entries: {
+            xai: {
+              config: {
+                webSearch: { apiKey: "openrouter-analysis-key" }, // pragma: allowlist secret
+                xSearch: { provider: "openrouter" },
+              },
+            },
+          },
+        },
+      },
+      auth: openRouterAuth,
+    });
+
+    const result = await tool?.execute?.("x-search:v2-analysis", {
+      query: "Analyze only verified evidence.",
+      research_profile: "full_hybrid_per_subject_v2",
+      research_stage: "question_verified_analysis",
+      subject_key: "subject-a",
+    });
+
+    expect(result?.details).toMatchObject({
+      status: "failed",
+      error: {
+        code: "search_disabled_activity_or_citations",
+        source_layer: "configuration",
+        retryable: false,
+      },
+      providerReceipt: {
+        status: "failed",
+        code: "search_disabled_activity_or_citations",
+        dispatches: 1,
+      },
+    });
+    expect(parseFirstRequestBody(mockFetch)).not.toHaveProperty("tools");
+    expect(parseFirstRequestBody(mockFetch)).not.toHaveProperty("x_search_filter");
+  });
+
+  it("rejects citation-only output for a search-disabled analysis stage with a redacted terminal receipt", async () => {
+    const mockFetch = installXSearchFetch({
+      id: "resp_v2_citation_only",
+      status: "completed",
+      usage: { output_tokens: 17, cost: 0.021 },
+      citations: ["https://x.com/example/status/citation-only"],
+      output: [
+        {
+          type: "message",
+          content: [
+            {
+              type: "output_text",
+              text: "Citation-only output.",
+              annotations: [
+                { type: "url_citation", url: "https://x.com/example/status/citation-only" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const tool = createXSearchTool({
+      config: {
+        plugins: {
+          entries: {
+            xai: {
+              config: {
+                webSearch: { apiKey: "openrouter-citation-only-key" }, // pragma: allowlist secret
+                xSearch: { provider: "openrouter", inlineCitations: true },
+              },
+            },
+          },
+        },
+      },
+      auth: openRouterAuth,
+    });
+
+    const result = await tool?.execute?.("x-search:v2-citation-only", {
+      query: "Analyze verified evidence only.",
+      research_profile: "full_hybrid_per_subject_v2",
+      research_stage: "question_verified_analysis",
+      subject_key: "subject-a",
+    });
+
+    expect(result?.details).toMatchObject({
+      status: "failed",
+      error: {
+        code: "search_disabled_activity_or_citations",
+        source_layer: "configuration",
+        retryable: false,
+      },
+      providerReceipt: {
+        sourceLayer: "configuration",
+        status: "failed",
+        code: "search_disabled_activity_or_citations",
+        dispatches: 1,
+        maxRetries: 0,
+        providerRequestId: "resp_v2_citation_only",
+        providerResponseStatus: "completed",
+        observedResults: "unknown",
+        outputTokens: 17,
+        providerCostUsd: 0.021,
+      },
+    });
+    expect(parseFirstRequestBody(mockFetch)).not.toHaveProperty("tools");
+  });
+
+  it("returns a typed, redacted timeout terminal receipt without converting failure into a result", async () => {
+    const timeoutError = Object.assign(new Error("Bearer provider-secret"), {
+      name: "TimeoutError",
+    });
+    const mockFetch = vi.fn(() => Promise.reject(timeoutError));
+    global.fetch = withFetchPreconnect(mockFetch);
+    const tool = createXSearchTool({
+      config: {
+        plugins: {
+          entries: {
+            xai: {
+              config: {
+                webSearch: { apiKey: "openrouter-timeout-key" }, // pragma: allowlist secret
+                xSearch: { provider: "openrouter" },
+              },
+            },
+          },
+        },
+      },
+      auth: openRouterAuth,
+    });
+
+    const result = await tool?.execute?.("x-search:v2-timeout", {
+      query: "Find bounded current questions.",
+      research_profile: "reduced_probe_v2",
+      research_stage: "question_discovery",
+      subject_key: "subject-a",
+    });
+
+    expect(result?.details).toMatchObject({
+      status: "timed_out",
+      error: { code: "provider_timeout", source_layer: "transport", retryable: false },
+      providerReceipt: {
+        sourceLayer: "transport",
+        status: "timed_out",
+        code: "provider_timeout",
+        dispatches: 1,
+        maxRetries: 0,
+        observedResults: "unknown",
+        providerRequestId: "unknown",
+        providerResponseStatus: "unknown",
+        outputTokens: "unknown",
+        providerCostUsd: "unknown",
+      },
+    });
+    expect(JSON.stringify(result?.details)).not.toContain("provider-secret");
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not infer transport timeout from provider error prose", async () => {
+    const mockFetch = vi.fn(() => Promise.reject(new Error("provider timeout quota exhausted")));
+    global.fetch = withFetchPreconnect(mockFetch);
+    const tool = createXSearchTool({
+      config: {
+        plugins: {
+          entries: {
+            xai: {
+              config: {
+                webSearch: { apiKey: "openrouter-provider-error-key" }, // pragma: allowlist secret
+                xSearch: { provider: "openrouter" },
+              },
+            },
+          },
+        },
+      },
+      auth: openRouterAuth,
+    });
+
+    const result = await tool?.execute?.("x-search:v2-provider-error", {
+      query: "Find bounded current questions.",
+      research_profile: "reduced_probe_v2",
+      research_stage: "question_discovery",
+      subject_key: "subject-a",
+    });
+
+    expect(result?.details).toMatchObject({
+      status: "failed",
+      error: { code: "provider_request_failed", source_layer: "provider", retryable: false },
+      providerReceipt: {
+        sourceLayer: "provider",
+        status: "failed",
+        code: "provider_request_failed",
+        dispatches: 1,
+      },
+    });
+  });
+
+  it("fails closed for incompatible or incomplete v2 stage selection before dispatch", async () => {
+    const mockFetch = installXSearchFetch();
+    const directTool = createXSearchTool({
+      config: {
+        plugins: { entries: { xai: { config: { webSearch: { apiKey: "xai-v2-key" } } } } }, // pragma: allowlist secret
+      },
+    });
+
+    await expect(
+      directTool?.execute?.("x-search:v2-direct", {
+        query: "question discovery",
+        research_profile: "full_hybrid_per_subject_v2",
+        research_stage: "question_discovery",
+        subject_key: "subject-a",
+      }),
+    ).rejects.toThrow("requires the OpenRouter xAI route");
+    await expect(
+      directTool?.execute?.("x-search:v2-incomplete", {
+        query: "question discovery",
+        research_profile: "reduced_probe_v2",
+      }),
+    ).rejects.toThrow("must be provided together");
+    await expect(
+      directTool?.execute?.("x-search:v2-reduced-analysis", {
+        query: "analysis",
+        research_profile: "reduced_probe_v2",
+        research_stage: "format_analysis",
+      }),
+    ).rejects.toThrow("not authorized by the selected research_profile");
+
+    const incompatibleModelTool = createXSearchTool({
+      config: {
+        plugins: {
+          entries: {
+            xai: {
+              config: {
+                webSearch: { apiKey: "openrouter-v2-key" }, // pragma: allowlist secret
+                xSearch: { provider: "openrouter", model: "openai/gpt-5" },
+              },
+            },
+          },
+        },
+      },
+      auth: openRouterAuth,
+    });
+    const modelResult = await incompatibleModelTool?.execute?.("x-search:v2-incompatible-model", {
+      query: "question discovery",
+      research_profile: "full_hybrid_per_subject_v2",
+      research_stage: "question_discovery",
+      subject_key: "subject-a",
+    });
+    expect(modelResult?.details).toMatchObject({
+      status: "failed",
+      error: { code: "v2_model_required", source_layer: "configuration", retryable: false },
+      providerReceipt: {
+        sourceLayer: "configuration",
+        code: "v2_model_required",
+        dispatches: 0,
+        maxRetries: 0,
+      },
+    });
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it("enables x_search when the xAI plugin web search key is configured", () => {
@@ -730,11 +1179,21 @@ describe("xai x_search tool", () => {
       },
     });
 
-    await expect(
-      tool?.execute?.("x-search:malformed-json", {
-        query: "malformed x_search response probe",
-      }),
-    ).rejects.toThrow("xAI X search failed: malformed JSON response");
+    const result = await tool?.execute?.("x-search:malformed-json", {
+      query: "malformed x_search response probe",
+    });
+
+    expect(result?.details).toMatchObject({
+      status: "failed",
+      error: {
+        code: "provider_request_failed",
+        source_layer: "provider",
+        retryable: false,
+      },
+      providerReceipt: { status: "failed", code: "provider_request_failed", dispatches: 1 },
+    });
+    const details = result?.details as { error?: { message?: string } } | undefined;
+    expect(details?.error?.message).toContain("malformed JSON response");
   });
 
   it("rejects x_search success JSON without answer text", async () => {
@@ -764,11 +1223,21 @@ describe("xai x_search tool", () => {
       },
     });
 
-    await expect(
-      tool?.execute?.("x-search:missing-text", {
-        query: "malformed x_search missing text probe",
-      }),
-    ).rejects.toThrow("xAI X search failed: malformed JSON response");
+    const result = await tool?.execute?.("x-search:missing-text", {
+      query: "malformed x_search missing text probe",
+    });
+
+    expect(result?.details).toMatchObject({
+      status: "failed",
+      error: {
+        code: "provider_response_failed",
+        source_layer: "provider",
+        retryable: false,
+      },
+      providerReceipt: { status: "failed", code: "provider_response_failed", dispatches: 1 },
+    });
+    const details = result?.details as { error?: { message?: string } } | undefined;
+    expect(details?.error?.message).toContain("malformed JSON response");
   });
 
   it("surfaces bounded redacted provider failure details when xAI returns no answer", async () => {
@@ -791,13 +1260,11 @@ describe("xai x_search tool", () => {
       },
     });
 
-    let failure: unknown;
-    try {
-      await tool?.execute?.("x-search:failed-response", { query: "provider failure" });
-    } catch (error) {
-      failure = error;
-    }
-    const message = failure instanceof Error ? failure.message : String(failure);
+    const result = await tool?.execute?.("x-search:failed-response", {
+      query: "provider failure",
+    });
+    const details = result?.details as { error?: { message?: string } } | undefined;
+    const message = details?.error?.message ?? "";
 
     expect(message).toContain("status=failed");
     expect(message).toContain("code=server_error");

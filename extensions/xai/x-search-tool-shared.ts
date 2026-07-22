@@ -1,6 +1,10 @@
 // Xai plugin module implements x search tool shared behavior.
 import type { AgentToolResult } from "openclaw/plugin-sdk/agent-core";
 import { Type } from "typebox";
+import {
+  XAI_X_SEARCH_RESEARCH_PROFILES,
+  XAI_X_SEARCH_RESEARCH_STAGES,
+} from "./src/x-search-shared.js";
 
 export function buildMissingXSearchApiKeyPayload(provider: "xai" | "openrouter" = "xai") {
   if (provider === "openrouter") {
@@ -53,6 +57,32 @@ export function createXSearchToolDefinition(
       ),
       enable_video_understanding: Type.Optional(
         Type.Boolean({ description: "Allow xAI to inspect videos attached to matching posts." }),
+      ),
+      research_profile: Type.Optional(
+        Type.Union(
+          XAI_X_SEARCH_RESEARCH_PROFILES.map((profile) => Type.Literal(profile)),
+          {
+            description:
+              "Closed v2 research profile. Provide together with research_stage; it can only select the built-in provider limits.",
+          },
+        ),
+      ),
+      research_stage: Type.Optional(
+        Type.Union(
+          XAI_X_SEARCH_RESEARCH_STAGES.map((stage) => Type.Literal(stage)),
+          {
+            description:
+              "Closed v2 research stage. It selects fixed search, output, and timeout controls and cannot widen them.",
+          },
+        ),
+      ),
+      subject_key: Type.Optional(
+        Type.String({
+          minLength: 1,
+          maxLength: 128,
+          description:
+            "Immutable normalized subject key used to isolate ordinary research cache entries.",
+        }),
       ),
     }),
     execute,
