@@ -328,6 +328,7 @@ describe("resolveBuildAllSteps", () => {
     expect(step.cache?.restore).toBe("always");
     expect(step.cache?.inputs).toEqual(
       expect.arrayContaining([
+        "dist/build-info.json",
         "scripts/write-cli-startup-metadata.ts",
         "src/cli/program/root-help.ts",
         "src/cli/program/help.ts",

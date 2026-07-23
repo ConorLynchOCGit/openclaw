@@ -1,5 +1,6 @@
 // Xai API module exposes the plugin public contract.
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
+import { migrateRetiredXSearchTimeout } from "./src/config-migration.js";
 import { isRecord } from "./src/tool-config-shared.js";
 
 export default definePluginEntry({
@@ -7,6 +8,7 @@ export default definePluginEntry({
   name: "xAI Setup",
   description: "Lightweight xAI setup hooks",
   register(api) {
+    api.registerConfigMigration((config) => migrateRetiredXSearchTimeout(config));
     api.registerAutoEnableProbe(({ config }) => {
       const pluginConfig = config.plugins?.entries?.xai?.config;
       const web = config.tools?.web as Record<string, unknown> | undefined;

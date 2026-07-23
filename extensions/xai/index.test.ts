@@ -67,6 +67,7 @@ function createProviderModel(overrides: {
 }
 
 type XaiAutoEnableProbe = Parameters<OpenClawPluginApi["registerAutoEnableProbe"]>[0];
+type XaiConfigMigration = Parameters<OpenClawPluginApi["registerConfigMigration"]>[0];
 
 function registerXaiAutoEnableProbe(): XaiAutoEnableProbe {
   const probes: XaiAutoEnableProbe[] = [];
@@ -82,6 +83,22 @@ function registerXaiAutoEnableProbe(): XaiAutoEnableProbe {
     throw new Error("expected xAI setup plugin to register an auto-enable probe");
   }
   return probe;
+}
+
+function registerXaiConfigMigration(): XaiConfigMigration {
+  const migrations: XaiConfigMigration[] = [];
+  setupPlugin.register(
+    createTestPluginApi({
+      registerConfigMigration(migration) {
+        migrations.push(migration);
+      },
+    }),
+  );
+  const migration = migrations[0];
+  if (!migration) {
+    throw new Error("expected xAI setup plugin to register a config migration");
+  }
+  return migration;
 }
 
 function requireEntry<T extends { id?: string }>(entries: T[], id: string): T {
@@ -445,6 +462,38 @@ describe("xai provider plugin", () => {
       }),
     ).toBe("xai tool configured");
     expect(probe({ config: {}, env: {} })).toBeNull();
+  });
+
+  it("registers the retired X-search timeout migration", () => {
+    const migration = registerXaiConfigMigration();
+    const result = migration({
+      plugins: {
+        entries: {
+          xai: {
+            enabled: true,
+            config: {
+              xSearch: {
+                enabled: true,
+                provider: "openrouter",
+                model: "x-ai/grok-4.5",
+                timeoutSeconds: 90,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    expect(result?.config.plugins?.entries?.xai).toEqual({
+      enabled: true,
+      config: {
+        xSearch: {
+          enabled: true,
+          provider: "openrouter",
+          model: "x-ai/grok-4.5",
+        },
+      },
+    });
   });
 
   it("owns replay policy for xAI OpenAI-compatible transports", async () => {

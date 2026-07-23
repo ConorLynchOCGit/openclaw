@@ -343,4 +343,61 @@ describe("write-cli-startup-metadata", () => {
     expect(nodesRenderCount).toBe(3);
     expect(written.nodesHelpText).toContain("openclaw nodes 3");
   });
+
+  it("regenerates cached help when the embedded build identity changes", async () => {
+    const tempRoot = createTempDir("openclaw-startup-metadata-build-info-");
+    const distDir = path.join(tempRoot, "dist");
+    const extensionsDir = path.join(tempRoot, "extensions");
+    const outputPath = path.join(distDir, "cli-startup-metadata.json");
+    let renderCount = 0;
+
+    writeStartupMetadataSourceSignatureFixture(tempRoot);
+    writeFixtureFile(distDir, "root-help-fixture.js", "export function outputRootHelp() {}\n");
+    writeFixtureFile(
+      distDir,
+      "build-info.json",
+      '{"version":"2026.6.6","commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}\n',
+    );
+
+    const writeMetadata = async (): Promise<void> => {
+      await writeCliStartupMetadata({
+        distDir,
+        outputPath,
+        extensionsDir,
+        sourceRootDir: tempRoot,
+        renderBundledRootHelpText: async () => {
+          renderCount += 1;
+          return `Usage: openclaw ${renderCount}\n`;
+        },
+        renderSourceBrowserHelpText: () => "Usage: openclaw browser\n",
+        renderSourceSecretsHelpText: () => "Usage: openclaw secrets\n",
+        renderSourceNodesHelpText: () => "Usage: openclaw nodes\n",
+        renderSourceSubcommandHelpTextRecord: () => ({
+          doctor: "Usage: openclaw doctor\n",
+          gateway: "Usage: openclaw gateway\n",
+          models: "Usage: openclaw models\n",
+          plugins: "Usage: openclaw plugins\n",
+        }),
+      });
+    };
+
+    await writeMetadata();
+    await writeMetadata();
+    expect(renderCount).toBe(1);
+
+    writeFixtureFile(
+      distDir,
+      "build-info.json",
+      '{"version":"2026.6.6","commit":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}\n',
+    );
+    await writeMetadata();
+
+    const written = JSON.parse(readFileSync(outputPath, "utf8")) as {
+      buildInfoSignature: string;
+      rootHelpText: string;
+    };
+    expect(renderCount).toBe(2);
+    expect(written.buildInfoSignature).toMatch(/^[a-f0-9]{40}$/u);
+    expect(written.rootHelpText).toContain("openclaw 2");
+  });
 });

@@ -83,6 +83,16 @@ function resolveRootHelpBundleIdentity(
   };
 }
 
+function resolveBuildInfoSignature(distDirOverride: string = distDir): string | null {
+  try {
+    return createHash("sha1")
+      .update(readFileSync(path.join(distDirOverride, "build-info.json")))
+      .digest("hex");
+  } catch {
+    return null;
+  }
+}
+
 function updateHashFromFiles(
   hash: ReturnType<typeof createHash>,
   files: string[],
@@ -656,6 +666,7 @@ export async function writeCliStartupMetadata(options?: {
   const resolvedSourceRootDir = options?.sourceRootDir ?? rootDir;
   const channelCatalog = readBundledChannelCatalog(resolvedExtensionsDir);
   const bundleIdentity = resolveRootHelpBundleIdentity(resolvedDistDir);
+  const buildInfoSignature = resolveBuildInfoSignature(resolvedDistDir);
   const browserHelpSourceSignature = resolveBrowserHelpSourceSignature(resolvedSourceRootDir);
   const secretsHelpSourceSignature = resolveSecretsHelpSourceSignature(resolvedSourceRootDir);
   const nodesHelpSourceSignature = resolveNodesHelpSourceSignature(resolvedSourceRootDir);
@@ -669,6 +680,7 @@ export async function writeCliStartupMetadata(options?: {
   try {
     const existing = JSON.parse(readFileSync(resolvedOutputPath, "utf8")) as {
       rootHelpBundleSignature?: unknown;
+      buildInfoSignature?: unknown;
       generatorSignature?: unknown;
       browserHelpSourceSignature?: unknown;
       secretsHelpSourceSignature?: unknown;
@@ -683,6 +695,7 @@ export async function writeCliStartupMetadata(options?: {
     if (
       bundleIdentity &&
       existing.rootHelpBundleSignature === bundleIdentity.signature &&
+      existing.buildInfoSignature === buildInfoSignature &&
       existing.generatorSignature === generatorSignature &&
       existing.browserHelpSourceSignature === browserHelpSourceSignature &&
       existing.secretsHelpSourceSignature === secretsHelpSourceSignature &&
@@ -764,6 +777,7 @@ export async function writeCliStartupMetadata(options?: {
       {
         generatedBy: "scripts/write-cli-startup-metadata.ts",
         generatorSignature,
+        buildInfoSignature,
         channelOptions,
         channelCatalogSignature: channelCatalog.signature,
         rootHelpBundleSignature: bundleIdentity?.signature ?? null,

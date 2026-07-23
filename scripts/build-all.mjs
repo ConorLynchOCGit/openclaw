@@ -79,6 +79,7 @@ const PLUGIN_SDK_ENTRY_DTS_CACHE_OUTPUTS = [
 ];
 const CLI_STARTUP_METADATA_CACHE_INPUTS = [
   "package.json",
+  "dist/build-info.json",
   "scripts/write-cli-startup-metadata.ts",
   "src/cli/program/root-help.ts",
   "src/cli/program/help.ts",
