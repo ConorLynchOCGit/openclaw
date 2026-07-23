@@ -195,26 +195,6 @@ describe("XReadTransport", () => {
     expect((dispatchedAt[2] ?? 0) - (dispatchedAt[1] ?? 0)).toBeGreaterThanOrEqual(900);
   });
 
-  it("stops reading an X response at the caller-owned byte ceiling", async () => {
-    const mock = await startServer((_request, response) => {
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ data: [{ id: "1", text: "x".repeat(512) }] }));
-    });
-
-    const error = await transport(mock.baseUrl)
-      .posts.exact({ id: "1", maxResponseBytes: 64 })
-      .catch((cause: unknown) => cause);
-
-    expect(error).toBeInstanceOf(XTransportError);
-    expect(error).toMatchObject({
-      kind: "unexpected_response",
-      category: "provider",
-      requestCount: 1,
-      receipt: { status: 200, serializedBytes: expect.any(Number) },
-    });
-    expect((error as XTransportError).receipt?.serializedBytes).toBeGreaterThan(64);
-  });
-
   it("uses the official XDK transport with bearer auth for current user search", async () => {
     const mock = await startServer((request, response) => {
       expect(request.method).toBe("GET");
@@ -376,70 +356,6 @@ describe("XReadTransport", () => {
     expect(result.receipts?.map((receipt) => receipt.resourceId)).toEqual(requests);
     expect(result.receipts?.every((receipt) => (receipt.serializedBytes ?? 0) > 0)).toBe(true);
     expect(result.data).not.toHaveProperty("trustedOwnership");
-  });
-
-  it("enforces one cumulative byte ceiling across all owned analytics requests", async () => {
-    const identityBody = JSON.stringify({ data: { id: "provider-account" } });
-    const postsBody = JSON.stringify({
-      data: [{ id: "post-1", author_id: "provider-account" }],
-    });
-    const analyticsBody = JSON.stringify({
-      data: [
-        {
-          id: "post-1",
-          timestamped_metrics: [
-            { timestamp: "2026-07-16T11:00:00Z", metrics: { impressions: 886 } },
-          ],
-        },
-      ],
-    });
-    const requests: string[] = [];
-    const mock = await startServer((request, response) => {
-      const pathname = new URL(request.url ?? "", "http://x.invalid").pathname;
-      requests.push(pathname);
-      response.writeHead(200, { "content-type": "application/json", "x-resource-id": pathname });
-      response.end(
-        pathname === "/2/users/me"
-          ? identityBody
-          : pathname === "/2/tweets"
-            ? postsBody
-            : analyticsBody,
-      );
-    });
-    const client = createXReadTransport({
-      apiKey: TOKEN,
-      ownedMetricsApiKey: OWNED_TOKEN,
-      baseUrl: mock.baseUrl,
-      timeoutMs: 1_000,
-    });
-    const aggregateLimit = Buffer.byteLength(identityBody) + Buffer.byteLength(postsBody) + 16;
-
-    const error = await client.metrics
-      .owned({
-        tweetIds: ["post-1"],
-        startTime: "2026-07-16T00:00:00Z",
-        endTime: "2026-07-17T00:00:00Z",
-        granularity: "hourly",
-        requestedMetrics: ["impressions"],
-        maxResponseBytes: aggregateLimit,
-      })
-      .catch((value: unknown) => value);
-
-    expect(error).toBeInstanceOf(XTransportError);
-    expect(error).toMatchObject({
-      kind: "unexpected_response",
-      category: "provider",
-      requestCount: 3,
-    });
-    expect((error as XTransportError).receipts).toHaveLength(3);
-    expect(requests).toEqual(["/2/users/me", "/2/tweets", "/2/tweets/analytics"]);
-    expect(
-      (error as XTransportError).receipts.reduce(
-        (total: number, receipt: { serializedBytes?: number }) =>
-          total + (receipt.serializedBytes ?? 0),
-        0,
-      ),
-    ).toBeGreaterThan(aggregateLimit);
   });
 
   it("fails owned analytics before the analytics request when a post author mismatches", async () => {

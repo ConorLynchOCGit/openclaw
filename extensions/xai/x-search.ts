@@ -20,8 +20,6 @@ import {
 import {
   buildXaiXSearchPayload,
   requestXaiXSearch,
-  resolveXaiXSearchCacheControl,
-  resolveXaiXSearchResearchPolicy,
   resolveOpenRouterXSearchMaxTotalResults,
   resolveXaiXSearchEndpoint,
   resolveXaiXSearchInlineCitations,
@@ -133,9 +131,6 @@ function buildXSearchCacheKey(params: {
   maxTurns?: number;
   maxTotalResults?: number;
   serviceTier?: "default" | "priority";
-  researchPolicy?: ReturnType<typeof resolveXaiXSearchResearchPolicy>;
-  cacheControl: ReturnType<typeof resolveXaiXSearchCacheControl>;
-  subjectKey?: string;
   options: Omit<XaiXSearchOptions, "query">;
 }) {
   return JSON.stringify([
@@ -148,9 +143,6 @@ function buildXSearchCacheKey(params: {
     params.maxTurns ?? null,
     params.maxTotalResults ?? null,
     params.serviceTier ?? null,
-    params.researchPolicy ?? null,
-    params.cacheControl,
-    params.subjectKey ?? null,
     params.options.allowedXHandles ?? null,
     params.options.excludedXHandles ?? null,
     params.options.fromDate ?? null,
@@ -223,45 +215,13 @@ export function createXSearchTool(options?: {
       enableImageUnderstanding: args.enable_image_understanding === true,
       enableVideoUnderstanding: args.enable_video_understanding === true,
     };
-    const researchProfile = readStringParam(args, "research_profile");
-    const researchStage = readStringParam(args, "research_stage");
-    const subjectKey = readStringParam(args, "subject_key");
-    let researchPolicy: ReturnType<typeof resolveXaiXSearchResearchPolicy>;
-    try {
-      researchPolicy = resolveXaiXSearchResearchPolicy({ researchProfile, researchStage });
-    } catch (error) {
-      throw new PluginToolInputError(error instanceof Error ? error.message : String(error));
-    }
-    let cacheControl: ReturnType<typeof resolveXaiXSearchCacheControl>;
-    try {
-      cacheControl = resolveXaiXSearchCacheControl(args.research_cache_control);
-    } catch (error) {
-      throw new PluginToolInputError(error instanceof Error ? error.message : String(error));
-    }
-    if (cacheControl.mode !== "ordinary" && !researchPolicy) {
-      throw new PluginToolInputError(
-        "research_cache_control requires a closed v2 research profile and stage",
-      );
-    }
-    if (researchPolicy && cacheControl.mode === "ordinary" && !subjectKey) {
-      throw new PluginToolInputError(
-        "v2 research using ordinary cache requires one immutable subject_key",
-      );
-    }
     const xSearchConfigRecord = xSearchConfig;
     const model = resolveXaiXSearchModel(xSearchConfigRecord, provider);
     const endpoint = resolveXaiXSearchEndpoint(xSearchConfigRecord, provider);
     const inlineCitations = resolveXaiXSearchInlineCitations(xSearchConfigRecord);
     const maxTurns = resolveXaiXSearchMaxTurns(xSearchConfigRecord);
     const serviceTier = resolveXaiXSearchServiceTier(xSearchConfigRecord);
-    if (researchPolicy && provider !== "openrouter") {
-      throw new PluginToolInputError(
-        "v2 research_profile/research_stage requires the OpenRouter xAI route with no fallback",
-      );
-    }
-    const maxTotalResults =
-      researchPolicy?.maxTotalResults ??
-      resolveOpenRouterXSearchMaxTotalResults(xSearchConfigRecord);
+    const maxTotalResults = resolveOpenRouterXSearchMaxTotalResults(xSearchConfigRecord);
     const cacheKey = buildXSearchCacheKey({
       provider,
       query,
@@ -271,9 +231,6 @@ export function createXSearchTool(options?: {
       maxTurns,
       maxTotalResults,
       serviceTier,
-      researchPolicy,
-      cacheControl,
-      subjectKey,
       options: {
         allowedXHandles,
         excludedXHandles,
@@ -284,7 +241,7 @@ export function createXSearchTool(options?: {
       },
     });
     const cacheLookupStartedAt = Date.now();
-    const cached = cacheControl.mode === "bypass" ? undefined : readCache(X_SEARCH_CACHE, cacheKey);
+    const cached = readCache(X_SEARCH_CACHE, cacheKey);
     if (cached) {
       const providerReceipt = cached.value.providerReceipt;
       return jsonResult({
@@ -309,8 +266,8 @@ export function createXSearchTool(options?: {
                 },
                 observedResults: 0,
                 cache: {
-                  mode: cacheControl.mode,
-                  scope: cacheControl.scope,
+                  mode: "ordinary",
+                  scope: "ordinary",
                   status: "hit",
                   originProviderRequestId:
                     "providerRequestId" in providerReceipt &&
@@ -323,7 +280,7 @@ export function createXSearchTool(options?: {
           : {}),
         cached: true,
         cacheStatus: "hit",
-        cacheScope: cacheControl.scope,
+        cacheScope: "ordinary",
       });
     }
 
@@ -341,7 +298,6 @@ export function createXSearchTool(options?: {
         maxTotalResults,
         serviceTier,
         options: xSearchOptions,
-        researchPolicy,
       });
     } catch (error) {
       if (!(error instanceof XaiXSearchTerminalError)) {
@@ -356,8 +312,8 @@ export function createXSearchTool(options?: {
           message: error.message,
         },
         providerReceipt: error.receipt,
-        cacheStatus: cacheControl.mode === "bypass" ? "bypass" : "miss",
-        cacheScope: cacheControl.scope,
+        cacheStatus: "miss",
+        cacheScope: "ordinary",
       });
     }
     const payload = buildXaiXSearchPayload({
@@ -369,29 +325,26 @@ export function createXSearchTool(options?: {
       result,
       options: xSearchOptions,
       serviceTier,
-      researchPolicy,
     });
-    payload.cacheStatus = cacheControl.mode === "bypass" ? "bypass" : "miss";
-    payload.cacheScope = cacheControl.scope;
+    payload.cacheStatus = "miss";
+    payload.cacheScope = "ordinary";
     const providerReceipt = payload.providerReceipt;
     if (providerReceipt && typeof providerReceipt === "object" && !Array.isArray(providerReceipt)) {
       payload.providerReceipt = {
         ...providerReceipt,
         cache: {
-          mode: cacheControl.mode,
-          scope: cacheControl.scope,
-          status: cacheControl.mode === "bypass" ? "bypass" : "miss",
+          mode: "ordinary",
+          scope: "ordinary",
+          status: "miss",
         },
       };
     }
-    if (cacheControl.mode !== "bypass") {
-      writeCache(
-        X_SEARCH_CACHE,
-        cacheKey,
-        payload,
-        resolveCacheTtlMs(xSearchConfig?.cacheTtlMinutes, 15),
-      );
-    }
+    writeCache(
+      X_SEARCH_CACHE,
+      cacheKey,
+      payload,
+      resolveCacheTtlMs(xSearchConfig?.cacheTtlMinutes, 15),
+    );
     return jsonResult(payload);
   });
 }

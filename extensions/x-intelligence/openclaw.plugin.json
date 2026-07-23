@@ -27,21 +27,9 @@
       "help": "Separate SecretRef or X_OWNED_METRICS_TOKEN user-context credential for explicitly approved owned-account metrics. Never falls back to X_BEARER_TOKEN.",
       "sensitive": true
     },
-    "timeoutSeconds": {
-      "label": "X Request Timeout",
-      "help": "Per-request timeout for bounded read-only X operations."
-    },
     "cacheTtlMinutes": {
       "label": "X Content Cache TTL",
       "help": "Mutable content cache lifetime, capped at 24 hours."
-    },
-    "researcherAgentId": {
-      "label": "X Researcher Agent ID",
-      "help": "Exact native X Researcher identity permitted to activate a product admission row."
-    },
-    "researchPriceAuthority": {
-      "label": "X Research Price Authority",
-      "help": "Versioned operator-approved OpenRouter and direct-X price identity. Missing or stale authority blocks research activation."
     },
     "complianceRefresh": {
       "label": "X Content Compliance Refresh",
@@ -49,9 +37,6 @@
     }
   },
   "contracts": {
-    "trustedToolPolicies": [
-      "research-admission"
-    ],
     "tools": [
       "x_posts",
       "x_counts",
@@ -100,58 +85,10 @@
           "object"
         ]
       },
-      "timeoutSeconds": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 120
-      },
       "cacheTtlMinutes": {
         "type": "integer",
         "minimum": 1,
         "maximum": 1440
-      },
-      "researcherAgentId": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 128
-      },
-      "researchPriceAuthority": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["version", "source", "asOf", "expiresAt", "postUsd", "userUsd", "recentCountUsd", "allCountUsd", "fullGrokStageUsd", "reducedGrokStageUsd"],
-        "properties": {
-          "version": { "type": "string", "minLength": 1, "maxLength": 128 },
-          "source": { "type": "string", "minLength": 1, "maxLength": 512 },
-          "asOf": { "type": "string", "format": "date-time" },
-          "expiresAt": { "type": "string", "format": "date-time" },
-          "postUsd": { "type": "number", "exclusiveMinimum": 0 },
-          "userUsd": { "type": "number", "exclusiveMinimum": 0 },
-          "recentCountUsd": { "type": "number", "exclusiveMinimum": 0 },
-          "allCountUsd": { "type": "number", "exclusiveMinimum": 0 },
-          "fullGrokStageUsd": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["question_discovery", "question_verified_analysis", "topic_discovery", "influence_discovery", "influence_challenge", "format_analysis"],
-            "properties": {
-              "question_discovery": { "type": "number", "exclusiveMinimum": 0 },
-              "question_verified_analysis": { "type": "number", "exclusiveMinimum": 0 },
-              "topic_discovery": { "type": "number", "exclusiveMinimum": 0 },
-              "influence_discovery": { "type": "number", "exclusiveMinimum": 0 },
-              "influence_challenge": { "type": "number", "exclusiveMinimum": 0 },
-              "format_analysis": { "type": "number", "exclusiveMinimum": 0 }
-            }
-          },
-          "reducedGrokStageUsd": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["question_discovery", "topic_discovery", "influence_discovery"],
-            "properties": {
-              "question_discovery": { "type": "number", "exclusiveMinimum": 0 },
-              "topic_discovery": { "type": "number", "exclusiveMinimum": 0 },
-              "influence_discovery": { "type": "number", "exclusiveMinimum": 0 }
-            }
-          }
-        }
       },
       "complianceRefresh": {
         "type": "object",

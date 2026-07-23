@@ -1,4 +1,3 @@
-import { readResponseWithLimit } from "@openclaw/media-core/read-response-with-limit";
 import {
   Client,
   type PostsClient,
@@ -12,8 +11,6 @@ import { requireXOwnedMetricDefinition } from "./owned-metric-definitions.js";
 
 export const X_API_BASE_URL = "https://api.x.com";
 
-const DEFAULT_TIMEOUT_MS = 20_000;
-const MAX_TIMEOUT_MS = 120_000;
 const MAX_PAGE_SIZE = 100;
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_QUERY_LENGTH = 1_024;
@@ -129,7 +126,6 @@ export class XTransportError extends Error {
 export type XRequestOptions = {
   signal?: AbortSignal;
   timeoutMs?: number;
-  maxResponseBytes?: number;
 };
 
 export type XPageOptions = XRequestOptions & {
@@ -356,7 +352,7 @@ type XdkReadClient = {
 type XdkRawRequestOptions = {
   raw: true;
   signal?: AbortSignal;
-  timeout: number;
+  timeout?: number;
 };
 
 export class XReadTransport {
@@ -400,12 +396,12 @@ export class XReadTransport {
   private readonly resolveOwnedMetricsApiKey: (() => Promise<string>) | undefined;
   private readonly baseUrl: string;
   private readonly env: Readonly<Record<string, string | undefined>>;
-  private readonly timeoutMs: number;
+  private readonly timeoutMs: number | undefined;
 
   constructor(options: XReadTransportOptions = {}) {
     this.baseUrl = normalizeBaseUrl(options.baseUrl);
     this.env = options.env ?? process.env;
-    this.timeoutMs = normalizeTimeout(options.timeoutMs);
+    this.timeoutMs = normalizeOptionalTimeout(options.timeoutMs);
     this.ownedMetricsApiKey = options.ownedMetricsApiKey;
     this.resolveOwnedMetricsApiKey = options.resolveOwnedMetricsApiKey;
     const publicCredential = requirePublicCredential(options.apiKey, this.env);
@@ -413,7 +409,7 @@ export class XReadTransport {
     this.publicClient = new Client({
       baseUrl: this.baseUrl,
       bearerToken: publicCredential,
-      timeout: this.timeoutMs,
+      ...(this.timeoutMs !== undefined ? { timeout: this.timeoutMs } : {}),
       retry: false,
     });
 
@@ -708,36 +704,16 @@ export class XReadTransport {
     const client: XdkReadClient = new Client({
       baseUrl: this.baseUrl,
       accessToken: ownedCredential,
-      timeout: this.timeoutMs,
+      ...(this.timeoutMs !== undefined ? { timeout: this.timeoutMs } : {}),
       retry: false,
     });
     const receipts: XReceipt[] = [];
-    let remainingResponseBytes = input.maxResponseBytes;
     const readOwned = async (
       request: (requestOptions: XdkRawRequestOptions) => Promise<Response>,
     ): Promise<XReadResult> => {
-      if (remainingResponseBytes !== undefined && remainingResponseBytes < 1) {
-        throw new XTransportError("unexpected_response", {
-          category: "provider",
-          receipts: [...receipts],
-          requestCount: receipts.length,
-        });
-      }
       try {
-        const result = await this.read(
-          request,
-          {
-            ...input,
-            ...(remainingResponseBytes !== undefined
-              ? { maxResponseBytes: remainingResponseBytes }
-              : {}),
-          },
-          [ownedCredential],
-        );
+        const result = await this.read(request, input, [ownedCredential]);
         receipts.push(result.receipt);
-        if (remainingResponseBytes !== undefined) {
-          remainingResponseBytes -= result.receipt.serializedBytes ?? 0;
-        }
         return result;
       } catch (error) {
         if (error instanceof XTransportError) {
@@ -815,11 +791,11 @@ export class XReadTransport {
     additionalSecrets: readonly string[] = [],
   ): Promise<XReadResult> {
     const signal = options.signal;
-    const timeout = normalizeTimeout(options.timeoutMs ?? this.timeoutMs);
+    const timeout = normalizeOptionalTimeout(options.timeoutMs ?? this.timeoutMs);
     try {
       const requestOptions: XdkRawRequestOptions = {
         raw: true,
-        timeout,
+        ...(timeout !== undefined ? { timeout } : {}),
         ...(signal ? { signal } : {}),
       };
       const response = await request(requestOptions);
@@ -839,16 +815,7 @@ export class XReadTransport {
       }
       let body: Buffer;
       try {
-        body = options.maxResponseBytes
-          ? await readResponseWithLimit(response, options.maxResponseBytes, {
-              onOverflow: ({ size }) =>
-                new XTransportError("unexpected_response", {
-                  category: "provider",
-                  receipt: { ...receipt, serializedBytes: size },
-                  requestCount: 1,
-                }),
-            })
-          : Buffer.from(await response.arrayBuffer());
+        body = Buffer.from(await response.arrayBuffer());
       } catch (error) {
         if (error instanceof XTransportError) {
           throw error;
@@ -1075,14 +1042,14 @@ function normalizeBaseUrl(baseUrl: string | undefined): string {
   }
 }
 
-function normalizeTimeout(value: number | undefined): number {
+function normalizeOptionalTimeout(value: number | undefined): number | undefined {
   if (value === undefined) {
-    return DEFAULT_TIMEOUT_MS;
+    return undefined;
   }
   if (!Number.isFinite(value) || value < 1) {
     throw new XTransportError("bad_request");
   }
-  return Math.min(Math.floor(value), MAX_TIMEOUT_MS);
+  return Math.floor(value);
 }
 
 function boundedQuery(value: string): string {

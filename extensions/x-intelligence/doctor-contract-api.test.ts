@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import { legacyConfigRules, normalizeCompatibilityConfig } from "./doctor-contract-api.js";
 
 describe("x-intelligence doctor contract", () => {
-  it("identifies only the retired episode budget config", () => {
+  it("identifies retired admission config only", () => {
     expect(legacyConfigRules[0]?.match({ episodeBudgets: { topic_pulse: 3 } })).toBe(true);
-    expect(legacyConfigRules[0]?.match({ researcherAgentId: "x-researcher" })).toBe(false);
+    expect(legacyConfigRules[0]?.match({ researcherAgentId: "x-researcher" })).toBe(true);
+    expect(legacyConfigRules[0]?.match({ researchPriceAuthority: {} })).toBe(true);
+    expect(legacyConfigRules[0]?.match({ cacheTtlMinutes: 60 })).toBe(false);
   });
 
-  it("removes the retired key without changing current or unrelated config", () => {
+  it("removes retired admission keys without changing current or unrelated config", () => {
     const original = {
       plugins: {
         entries: {
@@ -16,6 +18,8 @@ describe("x-intelligence doctor contract", () => {
             config: {
               episodeBudgets: { topic_pulse: 3 },
               researcherAgentId: "x-researcher",
+              researchPriceAuthority: { version: "old" },
+              cacheTtlMinutes: 60,
             },
           },
           unrelated: { enabled: true },
@@ -28,7 +32,7 @@ describe("x-intelligence doctor contract", () => {
     expect(result.changes).toHaveLength(1);
     expect(result.config).not.toBe(original);
     expect(result.config.plugins?.entries?.["x-intelligence"]?.config).toEqual({
-      researcherAgentId: "x-researcher",
+      cacheTtlMinutes: 60,
     });
     expect(result.config.plugins?.entries?.unrelated).toEqual({ enabled: true });
     expect(original.plugins?.entries?.["x-intelligence"]?.config).toHaveProperty("episodeBudgets");
@@ -38,7 +42,7 @@ describe("x-intelligence doctor contract", () => {
     const config = {
       plugins: {
         entries: {
-          "x-intelligence": { config: { researcherAgentId: "x-researcher" } },
+          "x-intelligence": { config: { cacheTtlMinutes: 60 } },
         },
       },
     } as Parameters<typeof normalizeCompatibilityConfig>[0]["cfg"];

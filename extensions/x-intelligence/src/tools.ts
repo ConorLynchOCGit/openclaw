@@ -22,13 +22,8 @@ import {
   type XJson,
   type XReadResult,
 } from "./transport.js";
-import {
-  estimateXDirectResponseBytes,
-  type XResearchPriceAuthority,
-} from "./x-research-admission.js";
 
 const TOOL_VERSION = "x-intelligence.v1";
-const MAX_MODEL_RESULT_BYTES = 48 * 1024;
 const MAX_CACHE_ENTRIES = 25_000;
 
 const POST_CORE_FIELDS = [
@@ -75,15 +70,6 @@ const PURPOSES = [
   "source_verification",
   "owned_performance",
 ] as const;
-const RESEARCH_PROFILES = ["full_hybrid_per_subject_v2", "reduced_probe_v2"] as const;
-const RESEARCH_STAGES = [
-  "question_discovery",
-  "question_verified_analysis",
-  "topic_discovery",
-  "influence_discovery",
-  "influence_challenge",
-  "format_analysis",
-] as const;
 
 const PurposeSchema = Type.Union(PURPOSES.map((value) => Type.Literal(value)));
 const CommonSchema = {
@@ -116,17 +102,6 @@ const CommonSchema = {
       },
     ),
   ),
-  research_profile: Type.Optional(
-    Type.Union(RESEARCH_PROFILES.map((value) => Type.Literal(value))),
-  ),
-  research_stage: Type.Optional(Type.Union(RESEARCH_STAGES.map((value) => Type.Literal(value)))),
-  subject_key: Type.Optional(
-    Type.String({
-      minLength: 1,
-      maxLength: 128,
-      description: "One immutable normalized research subject key for the admitted run.",
-    }),
-  ),
 };
 const PageSchema = {
   max_results: Type.Optional(Type.Integer({ minimum: 10, maximum: 100, default: 25 })),
@@ -141,12 +116,7 @@ export type XIntelligencePluginConfig = {
   enabled?: boolean;
   apiKey?: SecretInput;
   ownedMetricsApiKey?: SecretInput;
-  timeoutSeconds?: number;
   cacheTtlMinutes?: number;
-  /** Exact X Researcher identity admitted by the outer lifecycle owner. */
-  researcherAgentId?: string;
-  /** Versioned operator-approved prices; stale or missing authority blocks research activation. */
-  researchPriceAuthority?: XResearchPriceAuthority;
   complianceRefresh?: {
     enabled?: boolean;
     intervalMinutes?: number;
@@ -196,9 +166,6 @@ type ToolCommon = {
     subject_type: "company" | "person";
     subject_id: string;
   };
-  research_profile?: (typeof RESEARCH_PROFILES)[number];
-  research_stage?: (typeof RESEARCH_STAGES)[number];
-  subject_key?: string;
 };
 
 type ExecuteParams = {
@@ -217,8 +184,6 @@ type ExecuteParams = {
   maxPosts?: number;
   maxUsers?: number;
   maxMedia?: number;
-  maxSerializedBytes?: number;
-  priceAuthority?: XResearchPriceAuthority;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -340,46 +305,6 @@ async function cacheSourceObjects(cache: XContentCache, objects: Record<string, 
   return keys;
 }
 
-function boundedProjection(value: XJson): { value: XJson; truncated: boolean } {
-  const project = (candidate: XJson, itemLimit: number, stringLimit: number, depth = 0): XJson => {
-    if (depth > 10) {
-      return "[depth capped]";
-    }
-    if (typeof candidate === "string") {
-      return candidate.length > stringLimit
-        ? `${candidate.slice(0, stringLimit)}...[truncated]`
-        : candidate;
-    }
-    if (candidate === null || typeof candidate === "number" || typeof candidate === "boolean") {
-      return candidate;
-    }
-    if (Array.isArray(candidate)) {
-      return candidate
-        .slice(0, itemLimit)
-        .map((item) => project(item, itemLimit, stringLimit, depth + 1));
-    }
-    return Object.fromEntries(
-      Object.entries(candidate)
-        .slice(0, 64)
-        .map(([key, child]) => [key, project(child, itemLimit, stringLimit, depth + 1)]),
-    );
-  };
-
-  for (const [itemLimit, stringLimit] of [
-    [100, 4_096],
-    [50, 2_048],
-    [20, 1_024],
-    [8, 512],
-    [2, 256],
-  ] as const) {
-    const projected = project(value, itemLimit, stringLimit);
-    if (Buffer.byteLength(JSON.stringify(projected), "utf8") <= MAX_MODEL_RESULT_BYTES) {
-      return { value: projected, truncated: itemLimit < 100 };
-    }
-  }
-  return { value: { error: "provider_result_exceeded_model_output_cap" }, truncated: true };
-}
-
 function manifestFilters(args: Record<string, unknown>): Record<string, XJson> {
   const allowed = [
     "operation",
@@ -440,7 +365,6 @@ function responseEnvelope(params: ResponseEnvelope) {
     ...(params.posts !== undefined ? { maxPosts: params.posts } : {}),
     ...(params.users !== undefined ? { maxUsers: params.users } : {}),
     ...(params.media !== undefined ? { maxMedia: params.media } : {}),
-    maxSerializedBytes: estimateXDirectResponseBytes(params),
   };
 }
 
@@ -490,35 +414,6 @@ function resourceReceipt(execution: ExecuteParams, result: XReadResult): Resourc
     media: media.length,
     serialized_bytes: exactResponseBytes,
   };
-}
-
-function observedCost(execution: ExecuteParams, receipt: ResourceReceipt): Record<string, unknown> {
-  const authority = execution.priceAuthority;
-  if (!authority) {
-    return { status: "price_authority_unavailable" };
-  }
-  const countRate =
-    execution.operation === "all" ? authority.allCountUsd : authority.recentCountUsd;
-  return {
-    status: "calculated_from_returned_resources",
-    provider_cost_usd:
-      receipt.posts * authority.postUsd +
-      receipt.users * authority.userUsd +
-      receipt.counts * countRate,
-    price_identity: {
-      version: authority.version,
-      source: authority.source,
-      as_of: authority.asOf,
-      expires_at: authority.expiresAt,
-    },
-  };
-}
-
-function manifestCost(execution: ExecuteParams, receipt: ResourceReceipt) {
-  const observed = observedCost(execution, receipt);
-  return typeof observed.provider_cost_usd === "number"
-    ? { currency: "USD", amount: observed.provider_cost_usd }
-    : {};
 }
 
 class XProfileResponseError extends Error {
@@ -603,9 +498,7 @@ function validateProfileResponse(execution: ExecuteParams, result: XReadResult):
     (execution.profile !== "format_media_v1" && hasUnexpectedIncludes([])) ||
     (execution.maxPosts !== undefined && receipt.posts > execution.maxPosts) ||
     (execution.maxUsers !== undefined && receipt.users > execution.maxUsers) ||
-    (execution.maxMedia !== undefined && receipt.media > execution.maxMedia) ||
-    (execution.maxSerializedBytes !== undefined &&
-      receipt.serialized_bytes > execution.maxSerializedBytes);
+    (execution.maxMedia !== undefined && receipt.media > execution.maxMedia);
   if (invalid) {
     throw new XProfileResponseError(result, receipt, formatMedia);
   }
@@ -687,7 +580,7 @@ async function writeManifest(params: {
             : {}),
         durationMs: params.durationMs,
       },
-      cost: receipt ? manifestCost(execution, receipt) : {},
+      cost: {},
       errors: params.error ? [params.error] : [],
       pagination: {
         pageSize: execution.pageSize,
@@ -747,7 +640,6 @@ async function executeSourceOperation(params: ExecuteParams) {
       methodVersion: params.args.method_version ?? "x-research-method.v1",
       authMode: params.toolName === "x_metrics" && params.operation === "owned" ? "oauth" : "token",
     });
-    const projection = boundedProjection(result.data);
     return {
       status: analytics.status === "failed" ? "partial" : "complete",
       tool: params.toolName,
@@ -755,8 +647,7 @@ async function executeSourceOperation(params: ExecuteParams) {
       purpose: params.args.purpose,
       method_version: params.args.method_version ?? "x-research-method.v1",
       provider_status: result.receipt.status,
-      provider: projection.value,
-      result_truncated: projection.truncated,
+      provider: result.data,
       continuation: result.nextToken
         ? { available: true, pagination_token: result.nextToken }
         : { available: false },
@@ -772,7 +663,7 @@ async function executeSourceOperation(params: ExecuteParams) {
       media: receipt.media,
       serialized_bytes: receipt.serialized_bytes,
       resources: { ...receipt, duration_ms: Date.now() - startedAt },
-      cost: observedCost(params, receipt),
+      cost: { status: "provider_not_reported" },
     };
   } catch (error) {
     const transport = error instanceof XTransportError ? error : undefined;
@@ -833,9 +724,7 @@ async function executeSourceOperation(params: ExecuteParams) {
               : {}),
             duration_ms: Date.now() - startedAt,
           },
-      cost: consumedResources
-        ? observedCost(params, consumedResources)
-        : { status: "provider_not_reported" },
+      cost: { status: "provider_not_reported" },
     };
   }
 }
@@ -848,11 +737,7 @@ function requireString(args: Record<string, unknown>, key: string): string {
   return value;
 }
 
-function ownedMetricsInput(
-  args: Record<string, unknown>,
-  signal: AbortSignal | undefined,
-  maxResponseBytes: number,
-) {
+function ownedMetricsInput(args: Record<string, unknown>, signal: AbortSignal | undefined) {
   const tweetIds = Array.isArray(args.post_ids)
     ? args.post_ids.filter((id): id is string => typeof id === "string" && id.trim().length > 0)
     : [];
@@ -880,7 +765,6 @@ function ownedMetricsInput(
   return {
     tweetIds,
     signal,
-    maxResponseBytes,
     startTime,
     endTime,
     granularity: stringValue(args.granularity) ?? "total",
@@ -911,7 +795,6 @@ export function createConfiguredXReadTransport(
             }),
         }
       : {}),
-    timeoutMs: Math.min(Math.max(config.timeoutSeconds ?? 20, 1), 120) * 1_000,
   });
 }
 
@@ -951,7 +834,6 @@ export function createXIntelligenceTools(params: {
       | "maxPosts"
       | "maxUsers"
       | "maxMedia"
-      | "maxSerializedBytes"
     >,
   ) =>
     jsonResult(
@@ -963,7 +845,6 @@ export function createXIntelligenceTools(params: {
         toolCallId,
         invoke,
         runtime,
-        priceAuthority: params.config.researchPriceAuthority,
         ...options,
       }),
     );
@@ -1054,7 +935,6 @@ export function createXIntelligenceTools(params: {
         const common = {
           ...page,
           signal,
-          maxResponseBytes: envelope.maxSerializedBytes,
           startTime: stringValue(args.start_time),
           endTime: stringValue(args.end_time),
           sortOrder: args.sort_order as "recency" | "relevancy" | undefined,
@@ -1129,7 +1009,6 @@ export function createXIntelligenceTools(params: {
         const input = {
           query,
           signal,
-          maxResponseBytes: envelope.maxSerializedBytes,
           startTime: stringValue(args.start_time),
           endTime: stringValue(args.end_time),
           granularity: args.granularity as "minute" | "hour" | "day" | undefined,
@@ -1252,7 +1131,6 @@ export function createXIntelligenceTools(params: {
         const common = {
           ...page,
           signal,
-          maxResponseBytes: envelope.maxSerializedBytes,
           userFields: USER_IDENTITY_FIELDS,
         };
         const invoke = () => {
@@ -1317,7 +1195,6 @@ export function createXIntelligenceTools(params: {
           ...page,
           id,
           signal,
-          maxResponseBytes: envelope.maxSerializedBytes,
           startTime: stringValue(args.start_time),
           endTime: stringValue(args.end_time),
           tweetFields: POST_CORE_FIELDS,
@@ -1456,10 +1333,7 @@ export function createXIntelligenceTools(params: {
           users: operation === "owned" ? 1 : 0,
           media: 0,
         });
-        const ownedInput =
-          operation === "owned"
-            ? ownedMetricsInput(args, signal, envelope.maxSerializedBytes)
-            : undefined;
+        const ownedInput = operation === "owned" ? ownedMetricsInput(args, signal) : undefined;
         const invoke = () =>
           operation === "usage"
             ? getTransport().metrics.usage({
@@ -1470,7 +1344,6 @@ export function createXIntelligenceTools(params: {
               ? getTransport().metrics.public({
                   ids,
                   signal,
-                  maxResponseBytes: envelope.maxSerializedBytes,
                 })
               : operation === "owned"
                 ? getTransport().metrics.owned(ownedInput!)

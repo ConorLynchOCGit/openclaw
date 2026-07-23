@@ -129,8 +129,8 @@
       "help": "Optional max internal tool turns xAI may use per x_search request."
     },
     "xSearch.maxTotalResults": {
-      "label": "X Search Result Budget",
-      "help": "Maximum cumulative native-search results for OpenRouter-backed x_search requests."
+      "label": "X Search Results",
+      "help": "Optional provider-supported result count for an OpenRouter-backed x_search request."
     },
     "xSearch.serviceTier": {
       "label": "X Search Service Tier",
