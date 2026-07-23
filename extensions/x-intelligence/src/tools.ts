@@ -973,7 +973,7 @@ export function createXIntelligenceTools(params: {
       name: "x_posts",
       label: "X Posts",
       description:
-        "Read bounded recent/archive X posts or hydrate one post, conversation, quote set, or reply set. Use focused queries and continuation tokens rather than broad post dumps.",
+        "Read bounded X posts or hydrate one post, conversation, quote set, or reply set. Use recent only for a window that begins within X's current rolling seven-day horizon; use archive for frozen or older windows. Use focused queries and continuation tokens rather than broad post dumps.",
       parameters: Type.Union([
         Type.Object(
           {
@@ -1106,7 +1106,7 @@ export function createXIntelligenceTools(params: {
       name: "x_counts",
       label: "X Counts",
       description:
-        "Read equivalent-window X post counts for a focused query. Use matching query families, granularity, and windows for comparisons.",
+        "Read equivalent-window X post counts for a focused query. Use recent only for a window that begins within X's current rolling seven-day horizon; use all for frozen or older windows. Use matching query families, granularity, and windows for comparisons.",
       parameters: Type.Object(
         {
           ...CommonSchema,

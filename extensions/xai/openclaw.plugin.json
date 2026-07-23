@@ -136,10 +136,6 @@
       "label": "X Search Service Tier",
       "help": "Optional xAI service tier for x_search requests: default or priority."
     },
-    "xSearch.timeoutSeconds": {
-      "label": "X Search Timeout",
-      "help": "Timeout in seconds for x_search requests."
-    },
     "xSearch.cacheTtlMinutes": {
       "label": "X Search Cache TTL",
       "help": "Cache TTL in minutes for x_search results."
@@ -275,9 +271,6 @@
           "serviceTier": {
             "type": "string",
             "enum": ["default", "priority"]
-          },
-          "timeoutSeconds": {
-            "type": "number"
           },
           "cacheTtlMinutes": {
             "type": "number"

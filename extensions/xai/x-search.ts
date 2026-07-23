@@ -5,7 +5,6 @@ import {
   readStringArrayParam,
   readStringParam,
   resolveCacheTtlMs,
-  resolveTimeoutSeconds,
   writeCache,
 } from "openclaw/plugin-sdk/provider-web-search";
 import { getRuntimeConfigSnapshot } from "openclaw/plugin-sdk/runtime-config-snapshot";
@@ -179,7 +178,7 @@ export function createXSearchTool(options?: {
     return null;
   }
 
-  return createXSearchToolDefinition(async (_toolCallId: string, args: Record<string, unknown>) => {
+  return createXSearchToolDefinition(async (_toolCallId, args, signal) => {
     const provider = resolveXSearchToolProvider(xSearchConfig);
     const apiKey = await resolveXSearchApiKey({
       provider,
@@ -336,9 +335,7 @@ export function createXSearchTool(options?: {
         apiKey,
         endpoint,
         model,
-        timeoutSeconds: researchPolicy
-          ? Math.ceil(researchPolicy.maxElapsedMs / 1_000)
-          : resolveTimeoutSeconds(xSearchConfig?.timeoutSeconds, 30),
+        signal,
         inlineCitations,
         maxTurns,
         maxTotalResults,

@@ -132,7 +132,7 @@ export async function withSelfHostedWebSearchEndpoint<T>(
 export async function postTrustedWebToolsJson<T>(
   params: {
     url: string;
-    timeoutSeconds: number;
+    timeoutSeconds?: number;
     apiKey: string;
     body: Record<string, unknown>;
     errorLabel: string;

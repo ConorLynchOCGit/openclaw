@@ -143,8 +143,7 @@ describe("X research admission", () => {
       users: 91,
       counts: 13,
       media: 40,
-      dollars: 3.64,
-      acquisitionSeconds: 625,
+      dollars: 3.705,
       grokCalls: 6,
       grokDollars: 4.5,
     });
@@ -152,7 +151,7 @@ describe("X research admission", () => {
       admission.reserve({
         ...identity,
         toolName: "x_counts",
-        toolCallId: "unsupported-all-count",
+        toolCallId: "all-count",
         params: {
           research_profile: "full_hybrid_per_subject_v2",
           research_stage: "topic_discovery",
@@ -160,7 +159,7 @@ describe("X research admission", () => {
           query: "a",
         },
       }),
-    ).resolves.toEqual({ allowed: false, code: "admission_request_invalid" });
+    ).resolves.toMatchObject({ allowed: true });
     const first = await admission.reserve({
       ...identity,
       toolName: "x_search",
@@ -514,8 +513,7 @@ describe("X research admission", () => {
         users: 40,
         counts: 10,
         media: 40,
-        dollars: 3.4,
-        acquisitionSeconds: 465,
+        dollars: 3.45,
       },
       stageCeilings: {
         question_discovery: { requests: 17, pages: 15, posts: 180, users: 40 },
@@ -946,7 +944,7 @@ describe("X research admission", () => {
     ).resolves.toEqual({ allowed: false, code: "admission_inner_overrun" });
   });
 
-  it("enforces observed stage wall time rather than only reserving a nominal ceiling", async () => {
+  it("keeps elapsed acquisition time observational instead of rejecting completed work", async () => {
     let now = 1_000;
     const admission = new XResearchAdmission({
       store: memoryStore(),
@@ -977,8 +975,8 @@ describe("X research admission", () => {
     });
 
     const row = await admission.store.lookup(`row:${identity.runId}`);
-    expect(row?.kind === "row" ? row.resourceOverrun : undefined).toBe(true);
-    expect(row?.kind === "row" ? Object.values(row.stages)[0]?.state : undefined).toBe("error");
+    expect(row?.kind === "row" ? row.resourceOverrun : undefined).toBeUndefined();
+    expect(row?.kind === "row" ? Object.values(row.stages)[0]?.state : undefined).toBe("complete");
   });
 
   it("reserves all three owned-metrics requests and the verified account identity", async () => {
@@ -1009,7 +1007,6 @@ describe("X research admission", () => {
       media: 0,
       bytes: 94_208,
       dollars: 0.02,
-      acquisitionSeconds: 85,
     });
   });
 
@@ -1136,7 +1133,7 @@ describe("X research admission", () => {
       });
     }
     expect(latest?.allowed && latest.row.grok).toEqual({ calls: 3, dollars: 1.45 });
-    expect(latest?.allowed && latest.row.direct.acquisitionSeconds).toBe(230);
+    expect(latest?.allowed && latest.row.direct).not.toHaveProperty("acquisitionSeconds");
   });
 
   it("reserves the exact reduced hybrid direct-X envelope with endpoint-valid calls", async () => {
@@ -1231,7 +1228,6 @@ describe("X research admission", () => {
       media: 0,
       bytes: 3_354_624,
       dollars: 0.685,
-      acquisitionSeconds: 230,
     });
   });
 
@@ -1292,10 +1288,6 @@ describe("X research admission", () => {
       operation: "batch",
       ids: Array.from({ length: 8 }, (_, index) => `rp${index}`),
     });
-    await reserve("question_discovery", "x_users", {
-      operation: "identity",
-      ids: Array.from({ length: 12 }, (_, index) => `ru${index}`),
-    });
     await reserve("question_discovery", "x_posts", {
       operation: "recent",
       query: "question-context",
@@ -1319,6 +1311,10 @@ describe("X research admission", () => {
         pagination_token: `raw-${index}`,
       });
     }
+    await reserve("influence_discovery", "x_users", {
+      operation: "identity",
+      ids: Array.from({ length: 12 }, (_, index) => `ru${index}`),
+    });
     const row = await admission.store.lookup(`row:${rawIdentity.runId}`);
     expect(row?.kind === "row" ? row.grok : undefined).toEqual({ calls: 0, dollars: 0 });
     expect(row?.kind === "row" ? row.direct : undefined).toEqual({
@@ -1330,8 +1326,49 @@ describe("X research admission", () => {
       media: 0,
       bytes: 2_908_160,
       dollars: 0.505,
-      acquisitionSeconds: 120,
     });
+  });
+
+  it("blocks stale recent windows before reservation and admits the archive equivalent", async () => {
+    const now = Date.parse("2026-07-23T12:00:00.000Z");
+    const admission = new XResearchAdmission({
+      store: memoryStore(),
+      now: () => now,
+      priceAuthority,
+    });
+    await admission.activateProduct({ ...identity, researcherAgentId: "x-researcher" });
+    const window = {
+      query: "bounded territory",
+      start_time: "2026-07-16T12:00:00.000Z",
+      end_time: "2026-07-23T11:00:00.000Z",
+      max_results: 10,
+      research_profile: "full_hybrid_per_subject_v2",
+      research_stage: "question_discovery",
+    };
+
+    await expect(
+      admission.reserve({
+        ...identity,
+        toolName: "x_posts",
+        toolCallId: "stale-recent",
+        params: { ...window, operation: "recent" },
+      }),
+    ).resolves.toEqual({
+      allowed: false,
+      code: "admission_recent_window_outside_horizon",
+    });
+    const afterBlocked = await admission.store.lookup(`row:${identity.runId}`);
+    expect(afterBlocked?.kind === "row" ? afterBlocked.direct.requests : undefined).toBe(0);
+    expect(afterBlocked?.kind === "row" ? Object.keys(afterBlocked.stages) : undefined).toEqual([]);
+
+    await expect(
+      admission.reserve({
+        ...identity,
+        toolName: "x_posts",
+        toolCallId: "archive-window",
+        params: { ...window, operation: "archive" },
+      }),
+    ).resolves.toMatchObject({ allowed: true });
   });
 
   it("leaves a changed proof manifest held and refuses byte-different reprovisioning", async () => {

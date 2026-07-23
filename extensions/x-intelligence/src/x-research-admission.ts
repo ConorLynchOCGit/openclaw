@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { PluginStateKeyedStore } from "openclaw/plugin-sdk/plugin-state-runtime";
 import { redactSensitiveText } from "openclaw/plugin-sdk/security-runtime";
+import { assertXRecentWindow, XTransportError } from "./transport.js";
 
 export const X_RESEARCH_ADMISSION_NAMESPACE = "x-research-admission-v1";
 export const X_RESEARCH_LEGACY_BUDGET_NAMESPACE = "x-episode-request-budget-v1";
@@ -53,7 +54,6 @@ type DirectResources = {
   media: number;
   bytes: number;
   dollars: number;
-  acquisitionSeconds: number;
 };
 type GrokResources = { calls: number; dollars: number };
 type ResourceCeiling = DirectResources & { grokCalls: number; grokDollars: number };
@@ -160,7 +160,6 @@ const EMPTY_DIRECT: DirectResources = {
   media: 0,
   bytes: 0,
   dollars: 0,
-  acquisitionSeconds: 0,
 };
 
 const DIRECT_REQUEST_ENVELOPE_BYTES = 4 * 1024;
@@ -186,34 +185,34 @@ export function estimateXDirectResponseBytes(params: {
 }
 
 const FULL_STAGE_CEILINGS: Record<XResearchStage, StageCeiling> = {
-  question_discovery: ceiling(8, 2, 60, 20, 3, 0, 85),
-  question_verified_analysis: ceiling(2, 0, 8, 8, 0, 0, 65),
-  topic_discovery: ceiling(12, 0, 15, 15, 10, 0, 90),
-  influence_discovery: ceiling(14, 12, 150, 30, 0, 0, 130),
-  influence_challenge: ceiling(2, 0, 10, 10, 0, 0, 70),
-  format_analysis: ceiling(10, 8, 290, 8, 0, 40, 185),
+  question_discovery: ceiling(8, 2, 60, 20, 3, 0),
+  question_verified_analysis: ceiling(2, 0, 8, 8, 0, 0),
+  topic_discovery: ceiling(12, 0, 15, 15, 10, 0),
+  influence_discovery: ceiling(14, 12, 150, 30, 0, 0),
+  influence_challenge: ceiling(2, 0, 10, 10, 0, 0),
+  format_analysis: ceiling(10, 8, 290, 8, 0, 40),
 };
 const REDUCED_STAGE_CEILINGS: Partial<Record<XResearchStage, StageCeiling>> = {
-  question_discovery: ceiling(5, 1, 26, 8, 1, 0, 70),
-  topic_discovery: ceiling(6, 0, 8, 8, 4, 0, 70),
-  influence_discovery: ceiling(8, 6, 42, 12, 0, 0, 90),
+  question_discovery: ceiling(5, 1, 26, 8, 1, 0),
+  topic_discovery: ceiling(6, 0, 10, 8, 4, 0),
+  influence_discovery: ceiling(8, 6, 42, 12, 0, 0),
 };
 const FULL_RAW_STAGE_CEILINGS: Partial<Record<XResearchStage, StageCeiling>> = {
-  question_discovery: ceiling(17, 15, 180, 40, 0, 0, 140),
-  topic_discovery: ceiling(18, 8, 80, 0, 10, 0, 120),
-  influence_discovery: ceiling(9, 8, 110, 0, 0, 0, 100),
-  format_analysis: ceiling(7, 6, 220, 0, 0, 40, 105),
+  question_discovery: ceiling(17, 15, 180, 40, 0, 0),
+  topic_discovery: ceiling(18, 8, 80, 0, 10, 0),
+  influence_discovery: ceiling(9, 8, 110, 40, 0, 0),
+  format_analysis: ceiling(7, 6, 220, 0, 0, 40),
 };
 const REDUCED_RAW_STAGE_CEILINGS: Partial<Record<XResearchStage, StageCeiling>> = {
-  question_discovery: ceiling(6, 4, 48, 12, 0, 0, 50),
-  topic_discovery: ceiling(5, 1, 10, 0, 4, 0, 30),
-  influence_discovery: ceiling(3, 3, 15, 0, 0, 0, 40),
+  question_discovery: ceiling(6, 4, 48, 12, 0, 0),
+  topic_discovery: ceiling(5, 1, 10, 0, 4, 0),
+  influence_discovery: ceiling(4, 3, 15, 12, 0, 0),
 };
-const FULL_HYBRID_CEILING = ceiling(48, 22, 533, 91, 13, 40, 625);
-const REDUCED_HYBRID_CEILING = ceiling(19, 7, 76, 28, 5, 0, 230);
-const FULL_RAW_CEILING = ceiling(51, 37, 590, 40, 10, 40, 465);
-const REDUCED_RAW_CEILING = ceiling(14, 8, 73, 12, 4, 0, 120);
-const FULL_GROK_ONLY_CEILING = ceiling(0, 0, 0, 0, 0, 0, 155);
+const FULL_HYBRID_CEILING = ceiling(48, 22, 533, 91, 13, 40);
+const REDUCED_HYBRID_CEILING = ceiling(19, 7, 76, 28, 5, 0);
+const FULL_RAW_CEILING = ceiling(51, 37, 590, 40, 10, 40);
+const REDUCED_RAW_CEILING = ceiling(14, 8, 73, 12, 4, 0);
+const FULL_GROK_ONLY_CEILING = ceiling(0, 0, 0, 0, 0, 0);
 const DEPENDENCY: Partial<Record<XResearchStage, XResearchStage>> = {
   question_verified_analysis: "question_discovery",
   influence_challenge: "influence_discovery",
@@ -235,7 +234,6 @@ function ceiling(
   users: number,
   counts: number,
   media: number,
-  acquisitionSeconds: number,
 ): ResourceCeiling {
   return {
     grokCalls: 0,
@@ -248,7 +246,6 @@ function ceiling(
     media,
     bytes: estimateXDirectResponseBytes({ requests, posts, users, counts, media }),
     dollars: 0,
-    acquisitionSeconds,
   };
 }
 
@@ -342,7 +339,7 @@ function pricedCeiling(
     dollars: money(
       template.posts * authority.postUsd +
         template.users * authority.userUsd +
-        template.counts * authority.recentCountUsd,
+        template.counts * Math.max(authority.recentCountUsd, authority.allCountUsd),
     ),
   };
 }
@@ -369,7 +366,6 @@ function addDirect(left: DirectResources, right: DirectResources): DirectResourc
     media: left.media + right.media,
     bytes: left.bytes + right.bytes,
     dollars: money(left.dollars + right.dollars),
-    acquisitionSeconds: left.acquisitionSeconds + right.acquisitionSeconds,
   };
 }
 function exceedsDirect(value: DirectResources, limit: DirectResources): boolean {
@@ -381,15 +377,11 @@ function exceedsDirect(value: DirectResources, limit: DirectResources): boolean 
     value.counts > limit.counts ||
     value.media > limit.media ||
     value.bytes > limit.bytes ||
-    value.dollars > limit.dollars + 1e-9 ||
-    value.acquisitionSeconds > limit.acquisitionSeconds
+    value.dollars > limit.dollars + 1e-9
   );
 }
 function stageSlots(row: XResearchAdmissionRow, stage: XResearchStage): StageSlot[] {
   return Object.values(row.stages).filter((slot) => slot.stage === stage);
-}
-function earliestReservedAt(slots: readonly StageSlot[]): number | undefined {
-  return slots.length > 0 ? Math.min(...slots.map((slot) => slot.reservedAt)) : undefined;
 }
 function aggregateStageDirect(row: XResearchAdmissionRow, stage: XResearchStage): DirectResources {
   return stageSlots(row, stage).reduce((total, slot) => addDirect(total, slot.reservation.direct), {
@@ -491,11 +483,11 @@ function directEstimate(
     posts = maxResults;
     dollars = posts * authority.postUsd;
   } else if (toolName === "x_counts") {
-    if (operation !== "recent" || !asString(params.query)) {
+    if (!["recent", "all"].includes(operation ?? "") || !asString(params.query)) {
       return undefined;
     }
     counts = 1;
-    dollars = authority.recentCountUsd;
+    dollars = operation === "all" ? authority.allCountUsd : authority.recentCountUsd;
   } else if (toolName === "x_metrics") {
     if (operation !== "public" && operation !== "owned") {
       return undefined;
@@ -522,7 +514,6 @@ function directEstimate(
     media,
     bytes: estimateXDirectResponseBytes({ requests, posts, users, counts, media }),
     dollars,
-    acquisitionSeconds: 0,
   };
 }
 
@@ -602,13 +593,7 @@ function receiptProjection(value: unknown, error?: string): Record<string, unkno
 function observedOverrun(receipt: Record<string, unknown>, slot: StageSlot): boolean {
   if (slot.toolName === "x_search") {
     const providerCost = receipt.providerCost;
-    const elapsedMs = receipt.elapsedMs;
-    return (
-      (typeof providerCost === "number" && providerCost > slot.reservation.grok.dollars + 1e-9) ||
-      (slot.reservation.direct.acquisitionSeconds > 0 &&
-        typeof elapsedMs === "number" &&
-        elapsedMs > slot.reservation.direct.acquisitionSeconds * 1_000)
-    );
+    return typeof providerCost === "number" && providerCost > slot.reservation.grok.dollars + 1e-9;
   }
   const resources = receipt.resources as Record<string, unknown> | undefined;
   if (resources) {
@@ -630,12 +615,7 @@ function observedOverrun(receipt: Record<string, unknown>, slot: StageSlot): boo
   const providerCost = receipt.providerCost;
   const costOverrun =
     typeof providerCost === "number" && providerCost > slot.reservation.direct.dollars + 1e-9;
-  const elapsedMs = receipt.elapsedMs;
-  const elapsedOverrun =
-    slot.reservation.direct.acquisitionSeconds > 0 &&
-    typeof elapsedMs === "number" &&
-    elapsedMs > slot.reservation.direct.acquisitionSeconds * 1_000;
-  return costOverrun || elapsedOverrun;
+  return costOverrun;
 }
 
 function profileAuthority(
@@ -707,7 +687,7 @@ function profileAuthority(
       grokOnlyStages.map((stage) => [
         stage,
         pricedCeiling(
-          ceiling(0, 0, 0, 0, 0, 0, stage === "influence_discovery" ? 55 : 50),
+          ceiling(0, 0, 0, 0, 0, 0),
           priceAuthority,
           priceAuthority.fullGrokStageUsd[stage],
         ),
@@ -1166,20 +1146,26 @@ export class XResearchAdmission {
 
       const stageCeiling = current.stageCeilings[stage];
       const now = this.now();
-      const stageStartedAt = earliestReservedAt(stageSlots(current, stage));
-      const rowStartedAt = earliestReservedAt(Object.values(current.stages));
       if (
-        (stageCeiling &&
-          stageStartedAt !== undefined &&
-          now - stageStartedAt > stageCeiling.acquisitionSeconds * 1_000) ||
-        (rowStartedAt !== undefined &&
-          now - rowStartedAt > current.ceiling.acquisitionSeconds * 1_000)
+        (input.toolName === "x_posts" || input.toolName === "x_counts") &&
+        input.params.operation === "recent"
       ) {
-        return {
-          result: { allowed: false, code: "admission_acquisition_deadline_exceeded" },
-        };
+        try {
+          assertXRecentWindow(
+            {
+              startTime: asString(input.params.start_time),
+              endTime: asString(input.params.end_time),
+            },
+            now,
+          );
+        } catch (error) {
+          const code =
+            error instanceof XTransportError && error.kind === "recent_window_outside_horizon"
+              ? "admission_recent_window_outside_horizon"
+              : "admission_request_invalid";
+          return { result: { allowed: false, code } as AdmissionResult };
+        }
       }
-      const firstStageReservation = stageSlots(current, stage).length === 0;
       const grok: GrokResources =
         input.toolName === "x_search"
           ? { calls: 1, dollars: stageCeiling?.grokDollars ?? 0 }
@@ -1191,16 +1177,7 @@ export class XResearchAdmission {
       if (!direct || (input.toolName === "x_search" && grok.dollars <= 0)) {
         return { result: { allowed: false, code: "admission_request_invalid" } as AdmissionResult };
       }
-      const reservationDirect = {
-        ...direct,
-        acquisitionSeconds: stageCeiling
-          ? firstStageReservation
-            ? stageCeiling.acquisitionSeconds
-            : 0
-          : Object.keys(current.stages).length === 0
-            ? current.ceiling.acquisitionSeconds
-            : 0,
-      };
+      const reservationDirect = direct;
       const nextDirect = addDirect(current.direct, reservationDirect);
       const nextGrok = {
         calls: current.grok.calls + grok.calls,
@@ -1289,31 +1266,18 @@ export class XResearchAdmission {
       const [key, slot] = slotEntry;
       const receipt = receiptProjection(input.result, input.error);
       const status = receipt.status;
-      const stageCeiling = current.stageCeilings[stage];
-      const stageStartedAt = earliestReservedAt(stageSlots(current, stage));
-      const rowStartedAt = earliestReservedAt(Object.values(current.stages));
-      const deadlineOverrun =
-        (stageCeiling !== undefined &&
-          stageStartedAt !== undefined &&
-          now - stageStartedAt > stageCeiling.acquisitionSeconds * 1_000) ||
-        (rowStartedAt !== undefined &&
-          now - rowStartedAt > current.ceiling.acquisitionSeconds * 1_000);
       const state: StageState =
         status === "timeout" || status === "timed_out"
           ? "timed_out"
           : status === "cancelled"
             ? "cancelled"
-            : input.error ||
-                status === "failed" ||
-                status === "error" ||
-                status === "partial" ||
-                deadlineOverrun
+            : input.error || status === "failed" || status === "error" || status === "partial"
               ? "error"
               : "complete";
       return {
         next: {
           ...current,
-          ...(observedOverrun(receipt, slot) || deadlineOverrun ? { resourceOverrun: true } : {}),
+          ...(observedOverrun(receipt, slot) ? { resourceOverrun: true } : {}),
           stages: {
             ...current.stages,
             [key]: { ...slot, state, settledAt: now, receipt },

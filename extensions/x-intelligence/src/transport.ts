@@ -20,6 +20,8 @@ const MAX_QUERY_LENGTH = 1_024;
 const MAX_TOKEN_LENGTH = 1_024;
 const MAX_ID_LENGTH = 256;
 const MAX_OWNED_METRICS_WINDOW_MS = 30 * 24 * 60 * 60 * 1_000;
+const X_RECENT_SEARCH_WINDOW_MS = 7 * 24 * 60 * 60 * 1_000;
+const X_ARCHIVE_SEARCH_MIN_INTERVAL_MS = 1_000;
 
 type JsonPrimitive = boolean | number | string | null;
 export type XJson = JsonPrimitive | XJson[] | { [key: string]: XJson };
@@ -63,6 +65,7 @@ export type XTrustedOwnedAnalytics = Readonly<{
 
 export type XTransportErrorKind =
   | "bad_request"
+  | "recent_window_outside_horizon"
   | "authentication"
   | "rate_limited"
   | "server"
@@ -133,6 +136,63 @@ export type XPageOptions = XRequestOptions & {
   maxResults?: number;
   paginationToken?: string;
 };
+
+type XArchiveSearchGate = {
+  tail: Promise<void>;
+  nextDispatchAt: number;
+};
+const ARCHIVE_SEARCH_GATES = new Map<string, XArchiveSearchGate>();
+
+function archiveSearchGate(baseUrl: string): XArchiveSearchGate {
+  const existing = ARCHIVE_SEARCH_GATES.get(baseUrl);
+  if (existing) {
+    return existing;
+  }
+  const gate = { tail: Promise.resolve(), nextDispatchAt: 0 };
+  ARCHIVE_SEARCH_GATES.set(baseUrl, gate);
+  return gate;
+}
+
+async function waitForArchiveDispatch(delayMs: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) {
+    throw new XTransportError("aborted", { category: "provider", requestCount: 0 });
+  }
+  if (delayMs <= 0) {
+    return;
+  }
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMs);
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reject(new XTransportError("aborted", { category: "provider", requestCount: 0 }));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+export function assertXRecentWindow(
+  input: Pick<XPostSearchInput, "startTime" | "endTime">,
+  now = Date.now(),
+): void {
+  if (input.startTime === undefined) {
+    return;
+  }
+  const startTime = Date.parse(input.startTime);
+  const endTime = input.endTime === undefined ? undefined : Date.parse(input.endTime);
+  if (
+    !Number.isFinite(startTime) ||
+    (endTime !== undefined && (!Number.isFinite(endTime) || startTime >= endTime))
+  ) {
+    throw new XTransportError("bad_request");
+  }
+  if (startTime <= now - X_RECENT_SEARCH_WINDOW_MS) {
+    throw new XTransportError("recent_window_outside_horizon");
+  }
+}
 
 export type XPostSearchInput = XPageOptions & {
   query: string;
@@ -405,21 +465,64 @@ export class XReadTransport {
   private search(kind: "recent" | "archive", input: XPostSearchInput): Promise<XReadResult> {
     const query = boundedQuery(input.query);
     const options = postSearchOptions(input);
-    return this.readPublic(input, (requestOptions) =>
-      kind === "recent"
-        ? this.publicClient.posts.searchRecent(query, { ...options, requestOptions })
-        : this.publicClient.posts.searchAll(query, { ...options, requestOptions }),
+    if (kind === "recent") {
+      assertXRecentWindow(input);
+      return this.readPublic(input, (requestOptions) =>
+        this.publicClient.posts.searchRecent(query, { ...options, requestOptions }),
+      );
+    }
+    return this.scheduleArchiveSearch(input, () =>
+      this.readPublic(input, (requestOptions) =>
+        this.publicClient.posts.searchAll(query, { ...options, requestOptions }),
+      ),
     );
   }
 
   private count(kind: "recent" | "all", input: XCountInput): Promise<XReadResult> {
     const query = boundedQuery(input.query);
     const options = countOptions(input);
+    if (kind === "recent") {
+      assertXRecentWindow(input);
+    }
     return this.readPublic(input, (requestOptions) =>
       kind === "recent"
         ? this.publicClient.posts.getCountsRecent(query, { ...options, requestOptions })
         : this.publicClient.posts.getCountsAll(query, { ...options, requestOptions }),
     );
+  }
+
+  private async scheduleArchiveSearch(
+    input: XRequestOptions,
+    dispatch: () => Promise<XReadResult>,
+  ): Promise<XReadResult> {
+    const gate = archiveSearchGate(this.baseUrl);
+    const preceding = gate.tail;
+    let release = () => {};
+    gate.tail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await preceding;
+    let request: Promise<XReadResult>;
+    try {
+      while (gate.nextDispatchAt > Date.now()) {
+        await waitForArchiveDispatch(gate.nextDispatchAt - Date.now(), input.signal);
+      }
+      gate.nextDispatchAt = Date.now() + X_ARCHIVE_SEARCH_MIN_INTERVAL_MS;
+      request = dispatch();
+    } finally {
+      release();
+    }
+    try {
+      return await request;
+    } catch (error) {
+      if (error instanceof XTransportError && error.kind === "rate_limited") {
+        const resetSeconds = Number(error.receipt?.rateLimit.reset);
+        if (Number.isFinite(resetSeconds) && resetSeconds > 0) {
+          gate.nextDispatchAt = Math.max(gate.nextDispatchAt, resetSeconds * 1_000 + 1);
+        }
+      }
+      throw error;
+    }
   }
 
   private readPostById(input: XPostByIdInput): Promise<XReadResult> {
@@ -825,6 +928,8 @@ function messageFor(kind: XTransportErrorKind): string {
   switch (kind) {
     case "bad_request":
       return "X rejected the read request.";
+    case "recent_window_outside_horizon":
+      return "X recent search cannot read a window outside the rolling seven-day horizon.";
     case "authentication":
       return "X rejected the configured credential.";
     case "rate_limited":
@@ -867,6 +972,7 @@ function messageFor(kind: XTransportErrorKind): string {
 function categoryFor(kind: XTransportErrorKind): XTransportErrorCategory {
   switch (kind) {
     case "bad_request":
+    case "recent_window_outside_horizon":
     case "owned_metrics_post_ids_required":
     case "owned_metrics_window_required":
     case "owned_metrics_fields_required":

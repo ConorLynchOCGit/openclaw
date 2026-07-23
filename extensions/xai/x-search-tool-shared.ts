@@ -24,7 +24,11 @@ export function buildMissingXSearchApiKeyPayload(provider: "xai" | "openrouter" 
 }
 
 export function createXSearchToolDefinition(
-  execute: (toolCallId: string, args: Record<string, unknown>) => Promise<AgentToolResult<unknown>>,
+  execute: (
+    toolCallId: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ) => Promise<AgentToolResult<unknown>>,
 ) {
   return {
     label: "X Search",
@@ -72,7 +76,7 @@ export function createXSearchToolDefinition(
           XAI_X_SEARCH_RESEARCH_STAGES.map((stage) => Type.Literal(stage)),
           {
             description:
-              "Closed v2 research stage. It selects fixed search, output, and timeout controls and cannot widen them.",
+              "Closed v2 research stage. It selects fixed request, search-result, and cost controls and cannot widen them.",
           },
         ),
       ),

@@ -137,6 +137,64 @@ describe("XReadTransport", () => {
     });
   });
 
+  it("rejects a stale recent window before dispatch while allowing archive reads", async () => {
+    let requests = 0;
+    const mock = await startServer((request, response) => {
+      requests += 1;
+      const url = new URL(request.url ?? "", "http://x.invalid");
+      expect(url.pathname).toBe("/2/tweets/search/all");
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ data: [], meta: { result_count: 0 } }));
+    });
+    const client = transport(mock.baseUrl);
+    const window = {
+      query: "openclaw",
+      startTime: "2020-01-01T00:00:00.000Z",
+      endTime: "2020-01-02T00:00:00.000Z",
+      maxResults: 10,
+    };
+
+    const recentError = (() => {
+      try {
+        void client.posts.recent(window);
+        return undefined;
+      } catch (error) {
+        return error;
+      }
+    })();
+    expect(recentError).toMatchObject({
+      kind: "recent_window_outside_horizon",
+      category: "request",
+      requestCount: 0,
+    });
+    expect(requests).toBe(0);
+
+    await expect(client.posts.archive(window)).resolves.toMatchObject({
+      receipt: { status: 200 },
+    });
+    expect(requests).toBe(1);
+  });
+
+  it("paces concurrent archive-search dispatches at X's native one-per-second limit", async () => {
+    const dispatchedAt: number[] = [];
+    const mock = await startServer((request, response) => {
+      const url = new URL(request.url ?? "", "http://x.invalid");
+      expect(url.pathname).toBe("/2/tweets/search/all");
+      dispatchedAt.push(Date.now());
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ data: [], meta: { result_count: 0 } }));
+    });
+    const client = transport(mock.baseUrl);
+
+    await Promise.all(
+      ["first", "second", "third"].map((query) => client.posts.archive({ query, maxResults: 10 })),
+    );
+
+    expect(dispatchedAt).toHaveLength(3);
+    expect((dispatchedAt[1] ?? 0) - (dispatchedAt[0] ?? 0)).toBeGreaterThanOrEqual(900);
+    expect((dispatchedAt[2] ?? 0) - (dispatchedAt[1] ?? 0)).toBeGreaterThanOrEqual(900);
+  });
+
   it("stops reading an X response at the caller-owned byte ceiling", async () => {
     const mock = await startServer((_request, response) => {
       response.writeHead(200, { "content-type": "application/json" });

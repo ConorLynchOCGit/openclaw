@@ -106,6 +106,7 @@ describe("xai x_search tool", () => {
     expect(queryDescription).toContain("meaningful and non-empty");
     expect(queryDescription).not.toContain("allowed_x_handles");
     expect(JSON.stringify(tool?.parameters)).not.toContain("research_cache_control");
+    expect(JSON.stringify(tool?.parameters)).not.toContain("timeoutSeconds");
   });
 
   it("enables x_search when runtime config carries the shared xAI key", () => {
@@ -317,8 +318,7 @@ describe("xai x_search tool", () => {
         researchStage: "question_discovery",
         maxSelectedEvidenceBytes: 12 * 1024,
         maxSerializedRequestBytes: 12 * 1024,
-        maxOutputTokens: 2500,
-        maxElapsedMs: 50_000,
+        requestedMaxOutputTokens: 2500,
         maxRetries: 0,
         maxProviderDispatches: 1,
         maxDeliveredCitations: 20,
@@ -328,6 +328,8 @@ describe("xai x_search tool", () => {
       providerReceipt: {
         dispatches: 1,
         maxRetries: 0,
+        requestedMaxOutputTokens: 2500,
+        outputTokenRequestExceeded: false,
         outputTokens: 20,
         providerCostUsd: 0.01,
         providerRequestId: "resp_v2_question",
@@ -366,6 +368,54 @@ describe("xai x_search tool", () => {
     expect(topicBody.tools).toEqual([
       { type: "openrouter:web_search", parameters: { engine: "native", max_total_results: 15 } },
     ]);
+  });
+
+  it("preserves a completed paid response when provider usage exceeds the output request", async () => {
+    const mockFetch = installXSearchFetch({
+      id: "resp_v2_output_request_exceeded",
+      status: "completed",
+      usage: { input_tokens: 80, output_tokens: 4_360, total_tokens: 4_440, cost: 0.144 },
+      output: [
+        {
+          type: "message",
+          content: [{ type: "output_text", text: "Completed discovery prose." }],
+        },
+      ],
+    });
+    const tool = createXSearchTool({
+      config: {
+        plugins: {
+          entries: {
+            xai: {
+              config: {
+                webSearch: { apiKey: "openrouter-output-request-key" }, // pragma: allowlist secret
+                xSearch: { provider: "openrouter" },
+              },
+            },
+          },
+        },
+      },
+      auth: openRouterAuth,
+    });
+
+    const result = await tool?.execute?.("x-search:v2-output-request", {
+      query: "Discover bounded current questions without structured output.",
+      research_profile: "reduced_probe_v2",
+      research_stage: "question_discovery",
+      subject_key: "subject-output-request",
+    });
+
+    expect(parseFirstRequestBody(mockFetch)).toMatchObject({ max_output_tokens: 1500 });
+    expect(result?.details).toMatchObject({
+      content: expect.stringContaining("Completed discovery prose."),
+      providerReceipt: {
+        dispatches: 1,
+        requestedMaxOutputTokens: 1500,
+        outputTokenRequestExceeded: true,
+        outputTokens: 4_360,
+        providerCostUsd: 0.144,
+      },
+    });
   });
 
   it("lets only trusted callers bypass ordinary cache entries", async () => {
@@ -556,6 +606,60 @@ describe("xai x_search tool", () => {
     expect(parseFirstRequestBody(mockFetch)).not.toHaveProperty("tools");
   });
 
+  it("forwards native tool cancellation to the provider request", async () => {
+    const mockFetch = vi.fn((_input?: unknown, init?: RequestInit) => {
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener(
+          "abort",
+          () => reject(init.signal?.reason ?? new DOMException("Aborted", "AbortError")),
+          { once: true },
+        );
+      });
+    });
+    global.fetch = withFetchPreconnect(mockFetch);
+    const controller = new AbortController();
+    const tool = createXSearchTool({
+      config: {
+        plugins: {
+          entries: {
+            xai: {
+              config: {
+                webSearch: { apiKey: "openrouter-cancellation-key" }, // pragma: allowlist secret
+                xSearch: { provider: "openrouter" },
+              },
+            },
+          },
+        },
+      },
+      auth: openRouterAuth,
+    });
+
+    const execution = tool?.execute?.(
+      "x-search:native-cancellation",
+      {
+        query: "Find bounded current questions.",
+        research_profile: "reduced_probe_v2",
+        research_stage: "question_discovery",
+        subject_key: "subject-cancellation",
+      },
+      controller.signal,
+    );
+
+    await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledOnce());
+    const forwardedSignal = firstFetchInit(mockFetch).signal;
+    expect(forwardedSignal?.aborted).toBe(false);
+    controller.abort();
+    expect(forwardedSignal?.aborted).toBe(true);
+    await expect(execution).resolves.toMatchObject({
+      details: {
+        status: "cancelled",
+        error: {
+          code: "provider_cancelled",
+        },
+      },
+    });
+  });
+
   it("returns a typed, redacted timeout terminal receipt without converting failure into a result", async () => {
     const timeoutError = Object.assign(new Error("Bearer provider-secret"), {
       name: "TimeoutError",
@@ -603,6 +707,56 @@ describe("xai x_search tool", () => {
     });
     expect(JSON.stringify(result?.details)).not.toContain("provider-secret");
     expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("retains timeout classification and generation identity when response body reading aborts", async () => {
+    const bodyTimeout = Object.assign(new Error("body read exceeded transport timeout"), {
+      name: "BodyTimeoutError",
+    });
+    const mockFetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        headers: new Headers({ "x-generation-id": "gen_timeout_body_1" }),
+        json: () => Promise.reject(bodyTimeout),
+      } as Response),
+    );
+    global.fetch = withFetchPreconnect(mockFetch);
+    const tool = createXSearchTool({
+      config: {
+        plugins: {
+          entries: {
+            xai: {
+              config: {
+                webSearch: { apiKey: "openrouter-body-timeout-key" }, // pragma: allowlist secret
+                xSearch: { provider: "openrouter" },
+              },
+            },
+          },
+        },
+      },
+      auth: openRouterAuth,
+    });
+
+    const result = await tool?.execute?.("x-search:v2-body-timeout", {
+      query: "Find bounded current questions.",
+      research_profile: "reduced_probe_v2",
+      research_stage: "question_discovery",
+      subject_key: "subject-body-timeout",
+    });
+
+    expect(result?.details).toMatchObject({
+      status: "timed_out",
+      error: {
+        code: "provider_timeout",
+        source_layer: "transport",
+        message: "provider request timed out before its response body completed",
+      },
+      providerReceipt: {
+        status: "timed_out",
+        code: "provider_timeout",
+        providerRequestId: "gen_timeout_body_1",
+      },
+    });
   });
 
   it("does not infer transport timeout from provider error prose", async () => {

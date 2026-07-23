@@ -63,8 +63,7 @@ export type XaiXSearchResearchPolicy = {
   researchStage: XaiXSearchResearchStage;
   maxSelectedEvidenceBytes: number;
   maxSerializedRequestBytes: number;
-  maxOutputTokens: number;
-  maxElapsedMs: number;
+  requestedMaxOutputTokens: number;
   maxRetries: 0;
   maxProviderDispatches: 1;
   maxDeliveredCitations: number;
@@ -95,8 +94,7 @@ const FULL_HYBRID_V2_POLICIES: Record<XaiXSearchResearchStage, XaiXSearchResearc
     researchStage: "question_discovery",
     maxSelectedEvidenceBytes: 12 * 1024,
     maxSerializedRequestBytes: 12 * 1024,
-    maxOutputTokens: 2_500,
-    maxElapsedMs: 50_000,
+    requestedMaxOutputTokens: 2_500,
     maxRetries: 0,
     maxProviderDispatches: 1,
     maxDeliveredCitations: 20,
@@ -108,8 +106,7 @@ const FULL_HYBRID_V2_POLICIES: Record<XaiXSearchResearchStage, XaiXSearchResearc
     researchStage: "question_verified_analysis",
     maxSelectedEvidenceBytes: 24 * 1024,
     maxSerializedRequestBytes: 24 * 1024,
-    maxOutputTokens: 2_500,
-    maxElapsedMs: 50_000,
+    requestedMaxOutputTokens: 2_500,
     maxRetries: 0,
     maxProviderDispatches: 1,
     maxDeliveredCitations: 8,
@@ -120,8 +117,7 @@ const FULL_HYBRID_V2_POLICIES: Record<XaiXSearchResearchStage, XaiXSearchResearc
     researchStage: "topic_discovery",
     maxSelectedEvidenceBytes: 12 * 1024,
     maxSerializedRequestBytes: 12 * 1024,
-    maxOutputTokens: 2_500,
-    maxElapsedMs: 50_000,
+    requestedMaxOutputTokens: 2_500,
     maxRetries: 0,
     maxProviderDispatches: 1,
     maxDeliveredCitations: 15,
@@ -133,8 +129,7 @@ const FULL_HYBRID_V2_POLICIES: Record<XaiXSearchResearchStage, XaiXSearchResearc
     researchStage: "influence_discovery",
     maxSelectedEvidenceBytes: 12 * 1024,
     maxSerializedRequestBytes: 12 * 1024,
-    maxOutputTokens: 3_000,
-    maxElapsedMs: 55_000,
+    requestedMaxOutputTokens: 3_000,
     maxRetries: 0,
     maxProviderDispatches: 1,
     maxDeliveredCitations: 30,
@@ -146,8 +141,7 @@ const FULL_HYBRID_V2_POLICIES: Record<XaiXSearchResearchStage, XaiXSearchResearc
     researchStage: "influence_challenge",
     maxSelectedEvidenceBytes: 24 * 1024,
     maxSerializedRequestBytes: 24 * 1024,
-    maxOutputTokens: 2_500,
-    maxElapsedMs: 50_000,
+    requestedMaxOutputTokens: 2_500,
     maxRetries: 0,
     maxProviderDispatches: 1,
     maxDeliveredCitations: 10,
@@ -158,8 +152,7 @@ const FULL_HYBRID_V2_POLICIES: Record<XaiXSearchResearchStage, XaiXSearchResearc
     researchStage: "format_analysis",
     maxSelectedEvidenceBytes: 24 * 1024,
     maxSerializedRequestBytes: 24 * 1024,
-    maxOutputTokens: 2_500,
-    maxElapsedMs: 50_000,
+    requestedMaxOutputTokens: 2_500,
     maxRetries: 0,
     maxProviderDispatches: 1,
     maxDeliveredCitations: 10,
@@ -175,8 +168,7 @@ const REDUCED_PROBE_V2_POLICIES: Partial<
     researchStage: "question_discovery",
     maxSelectedEvidenceBytes: 8 * 1024,
     maxSerializedRequestBytes: 8 * 1024,
-    maxOutputTokens: 1_500,
-    maxElapsedMs: 50_000,
+    requestedMaxOutputTokens: 1_500,
     maxRetries: 0,
     maxProviderDispatches: 1,
     maxDeliveredCitations: 8,
@@ -188,8 +180,7 @@ const REDUCED_PROBE_V2_POLICIES: Partial<
     researchStage: "topic_discovery",
     maxSelectedEvidenceBytes: 8 * 1024,
     maxSerializedRequestBytes: 8 * 1024,
-    maxOutputTokens: 1_500,
-    maxElapsedMs: 50_000,
+    requestedMaxOutputTokens: 1_500,
     maxRetries: 0,
     maxProviderDispatches: 1,
     maxDeliveredCitations: 8,
@@ -201,8 +192,7 @@ const REDUCED_PROBE_V2_POLICIES: Partial<
     researchStage: "influence_discovery",
     maxSelectedEvidenceBytes: 8 * 1024,
     maxSerializedRequestBytes: 8 * 1024,
-    maxOutputTokens: 2_000,
-    maxElapsedMs: 55_000,
+    requestedMaxOutputTokens: 2_000,
     maxRetries: 0,
     maxProviderDispatches: 1,
     maxDeliveredCitations: 12,
@@ -351,19 +341,21 @@ type XaiXSearchResult = {
     selectedEvidenceBytes: number;
     serializedRequestBytes: number;
     elapsedMs: number;
+    requestedMaxOutputTokens: number;
+    outputTokenRequestExceeded: boolean | "unknown";
   };
 };
 
 export type XaiXSearchTerminalReceipt = {
   sourceLayer: "configuration" | "provider" | "transport";
-  status: "failed" | "timed_out";
+  status: "failed" | "timed_out" | "cancelled";
   code: string;
   retryable: false;
   elapsedMs: number;
   dispatches: 0 | 1;
   maxRetries: 0;
-  providerRequestId: string | "unknown";
-  providerResponseStatus: string | "unknown";
+  providerRequestId: string;
+  providerResponseStatus: string;
   observedResults: number | "unknown";
   outputTokens: number | "unknown";
   providerCostUsd: number | "unknown";
@@ -388,11 +380,13 @@ function terminalError(params: {
   dispatches: 0 | 1;
   result?: XaiXSearchResult;
   response?: XaiWebSearchResponse;
+  providerRequestId?: string;
 }): XaiXSearchTerminalError {
   const responseUsage = params.response ? projectXaiXSearchUsage(params.response.usage) : undefined;
   const usage = params.result?.usage ?? responseUsage;
   const providerRequestId =
     params.result?.responseId ??
+    params.providerRequestId ??
     readBoundedString(params.response?.request_id) ??
     readBoundedString(params.response?.id);
   const providerResponseStatus =
@@ -414,18 +408,26 @@ function terminalError(params: {
 }
 
 function isTransportTimeout(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false;
+  let current = error;
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (!(current instanceof Error)) {
+      return false;
+    }
+    if (
+      [
+        "AbortError",
+        "TimeoutError",
+        "ConnectTimeoutError",
+        "HeadersTimeoutError",
+        "BodyTimeoutError",
+      ].includes(current.name) ||
+      current.message === "This operation was aborted"
+    ) {
+      return true;
+    }
+    current = current.cause;
   }
-  return (
-    [
-      "AbortError",
-      "TimeoutError",
-      "ConnectTimeoutError",
-      "HeadersTimeoutError",
-      "BodyTimeoutError",
-    ].includes(error.name) || error.message === "This operation was aborted"
-  );
+  return false;
 }
 
 function resolveXaiXSearchConfig(config?: Record<string, unknown>): XaiXSearchConfig {
@@ -1048,6 +1050,10 @@ export function buildXaiXSearchPayload(params: {
               params.result.localRequestReceipt?.selectedEvidenceBytes ?? "unknown",
             serializedRequestBytes:
               params.result.localRequestReceipt?.serializedRequestBytes ?? "unknown",
+            requestedMaxOutputTokens:
+              params.result.localRequestReceipt?.requestedMaxOutputTokens ?? "unknown",
+            outputTokenRequestExceeded:
+              params.result.localRequestReceipt?.outputTokenRequestExceeded ?? "unknown",
             outputTokens: params.result.usage?.outputTokens ?? "unknown",
             providerCostUsd: params.result.usage?.costUsd ?? "unknown",
             providerRequestId: params.result.responseId ?? "unknown",
@@ -1102,7 +1108,7 @@ export async function requestXaiXSearch(params: {
   apiKey: string;
   endpoint: string;
   model: string;
-  timeoutSeconds: number;
+  signal?: AbortSignal;
   inlineCitations: boolean;
   maxTurns?: number;
   maxTotalResults?: number;
@@ -1151,7 +1157,7 @@ export async function requestXaiXSearch(params: {
                 x_search_filter: buildOpenRouterXSearchFilter(params.options),
               }),
           ...(params.researchPolicy
-            ? { max_output_tokens: params.researchPolicy.maxOutputTokens }
+            ? { max_output_tokens: params.researchPolicy.requestedMaxOutputTokens }
             : {}),
           provider: {
             order: ["xai/zdr"],
@@ -1188,17 +1194,21 @@ export async function requestXaiXSearch(params: {
       });
     }
   }
+  let providerRequestId: string | undefined;
   try {
     return await postTrustedWebToolsJson(
       {
         url: params.endpoint,
-        timeoutSeconds: params.timeoutSeconds,
+        signal: params.signal,
         apiKey: params.apiKey,
         body,
         errorLabel: providerLabel,
         maxErrorBytes: MAX_X_SEARCH_HTTP_ERROR_BYTES,
       },
       async (response) => {
+        providerRequestId =
+          readBoundedString(response.headers?.get("x-generation-id")) ??
+          readBoundedString(response.headers?.get("x-request-id"));
         const data = (await readProviderJsonObjectResponse(
           response,
           `${providerLabel} X search failed`,
@@ -1219,6 +1229,7 @@ export async function requestXaiXSearch(params: {
             elapsedMs: Date.now() - startedAt,
             dispatches: 1,
             response: data,
+            providerRequestId,
           });
         }
         if (
@@ -1236,42 +1247,24 @@ export async function requestXaiXSearch(params: {
             elapsedMs: Date.now() - startedAt,
             dispatches: 1,
             result,
-          });
-        }
-        if (
-          params.researchPolicy &&
-          result.usage?.outputTokens !== undefined &&
-          result.usage.outputTokens > params.researchPolicy.maxOutputTokens
-        ) {
-          throw terminalError({
-            message: "v2 x_search provider exceeded the closed stage output token limit",
-            sourceLayer: "configuration",
-            code: "output_token_limit_exceeded",
-            elapsedMs: Date.now() - startedAt,
-            dispatches: 1,
-            result,
+            providerRequestId,
           });
         }
         const elapsedMs = Date.now() - startedAt;
-        if (params.researchPolicy && elapsedMs > params.researchPolicy.maxElapsedMs) {
-          throw terminalError({
-            message: "v2 x_search provider exceeded the closed stage elapsed time limit",
-            sourceLayer: "transport",
-            status: "timed_out",
-            code: "stage_elapsed_limit_exceeded",
-            elapsedMs,
-            dispatches: 1,
-            result,
-          });
-        }
         return {
           ...result,
+          ...(!result.responseId && providerRequestId ? { responseId: providerRequestId } : {}),
           ...(params.researchPolicy
             ? {
                 localRequestReceipt: {
                   selectedEvidenceBytes,
                   serializedRequestBytes,
                   elapsedMs,
+                  requestedMaxOutputTokens: params.researchPolicy.requestedMaxOutputTokens,
+                  outputTokenRequestExceeded:
+                    result.usage?.outputTokens === undefined
+                      ? "unknown"
+                      : result.usage.outputTokens > params.researchPolicy.requestedMaxOutputTokens,
                 },
               }
             : {}),
@@ -1282,15 +1275,26 @@ export async function requestXaiXSearch(params: {
     if (error instanceof XaiXSearchTerminalError) {
       throw error;
     }
-    const message = error instanceof Error ? error.message : String(error);
-    const isTimeout = isTransportTimeout(error);
+    const isCancelled = params.signal?.aborted === true;
+    const isTimeout = !isCancelled && isTransportTimeout(error);
     throw terminalError({
-      message,
-      sourceLayer: isTimeout ? "transport" : "provider",
-      status: isTimeout ? "timed_out" : "failed",
-      code: isTimeout ? "provider_timeout" : "provider_request_failed",
+      message: isCancelled
+        ? "provider request was cancelled"
+        : isTimeout
+          ? "provider request timed out before its response body completed"
+          : error instanceof Error
+            ? error.message
+            : String(error),
+      sourceLayer: isCancelled || isTimeout ? "transport" : "provider",
+      status: isCancelled ? "cancelled" : isTimeout ? "timed_out" : "failed",
+      code: isCancelled
+        ? "provider_cancelled"
+        : isTimeout
+          ? "provider_timeout"
+          : "provider_request_failed",
       elapsedMs: Date.now() - startedAt,
       dispatches: 1,
+      providerRequestId,
     });
   }
 }

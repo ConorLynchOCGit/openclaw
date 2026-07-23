@@ -142,7 +142,7 @@ function createLazyXSearchTool(ctx: {
     return null;
   }
 
-  return createXSearchToolDefinition(async (toolCallId: string, args: Record<string, unknown>) => {
+  return createXSearchToolDefinition(async (toolCallId, args, signal) => {
     const { createXSearchTool } = await loadXSearchModule();
     const tool = createXSearchTool({
       config: ctx.config as never,
@@ -156,7 +156,7 @@ function createLazyXSearchTool(ctx: {
         ),
       );
     }
-    return await tool.execute(toolCallId, args);
+    return await tool.execute(toolCallId, args, signal);
   });
 }
 
