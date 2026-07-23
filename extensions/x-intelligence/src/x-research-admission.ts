@@ -82,6 +82,7 @@ export type XResearchAdmissionRow = Readonly<{
   modelId: string;
   workspaceDir: string;
   promptDigest: string;
+  runtimePromptDigest?: string;
   profile: XResearchProfile;
   arm: XResearchArm;
   allowedStages: readonly XResearchStage[];
@@ -981,7 +982,6 @@ export class XResearchAdmission {
         current.modelProviderId !== input.modelProviderId ||
         current.modelId !== input.modelId ||
         current.workspaceDir !== input.workspaceDir ||
-        current.promptDigest !== digest(input.prompt) ||
         current.expiresAt <= this.now() ||
         root.rowDigests[current.runId] !== current.rowDigest
       ) {
@@ -989,7 +989,14 @@ export class XResearchAdmission {
           result: { allowed: false, code: "admission_proof_identity_mismatch" } as AdmissionResult,
         };
       }
-      const row = { ...current, state: "active" as const, sessionId };
+      // Raw task bytes are authorized at launch; native context assembly produces
+      // a distinct model prompt whose digest is evidence, not a second authority.
+      const row = {
+        ...current,
+        state: "active" as const,
+        sessionId,
+        runtimePromptDigest: digest(input.prompt),
+      };
       return { next: row, result: { allowed: true, row } };
     });
   }

@@ -232,7 +232,7 @@ describe("X research admission", () => {
     ).toEqual({ allowed: false, code: "admission_legacy_budget_migrated_unknown" });
   });
 
-  it("holds proof rows until root-ready provisioning and requires exact launch identity", async () => {
+  it("binds the exact launch message while observing the assembled runtime prompt", async () => {
     const admission = new XResearchAdmission({
       store: memoryStore(),
       now: () => 1_000,
@@ -260,7 +260,14 @@ describe("X research admission", () => {
       run: async (params) => {
         expect(params.provider).toBe(identity.modelProviderId);
         expect(params.model).toBe(identity.modelId);
-        expect((await admission.activateProof(identity)).allowed).toBe(true);
+        expect(
+          (
+            await admission.activateProof({
+              ...identity,
+              prompt: "runtime context\n\nresearch",
+            })
+          ).allowed,
+        ).toBe(true);
         return { runId: params.idempotencyKey, sessionKey: params.sessionKey };
       },
     });
@@ -268,7 +275,78 @@ describe("X research admission", () => {
     await expect(admission.store.lookup(`row:${identity.runId}`)).resolves.toMatchObject({
       state: "active",
       launchedAt: 1_000,
+      promptDigest: "5f8368d643022c015855422d0a88d1968b456809d58389653f8fc970701b8870",
+      runtimePromptDigest: "c1ee7f29a6dbffc1b4481d6de6c884424a7333c67390353fa1fcc77e3858f110",
     });
+  });
+
+  it("rejects a changed raw launch message before native dispatch", async () => {
+    const admission = new XResearchAdmission({
+      store: memoryStore(),
+      now: () => 1_000,
+      priceAuthority,
+    });
+    await admission.provision({
+      manifestDigest: "manifest-launch-message",
+      notBefore: 1_000,
+      expiresAt: 86_401_000,
+      priceAuthority,
+      ...proofAuthority,
+      rows: completeProofRows({
+        ...identity,
+        promptDigest: "5f8368d643022c015855422d0a88d1968b456809d58389653f8fc970701b8870",
+        profile: "reduced_probe_v2",
+        caseId: "H0-05",
+        arm: "hybrid",
+      }),
+    });
+    let dispatched = false;
+    await expect(
+      admission.launch({
+        manifestDigest: "manifest-launch-message",
+        runId: identity.runId,
+        message: "changed research",
+        run: async () => {
+          dispatched = true;
+          return { runId: identity.runId, sessionKey: identity.sessionKey };
+        },
+      }),
+    ).resolves.toEqual({ ok: false, code: "admission_launch_not_ready" });
+    expect(dispatched).toBe(false);
+  });
+
+  it.each([
+    ["sessionKey", "agent:x:subagent:other"],
+    ["agentId", "other-researcher"],
+    ["modelProviderId", "other-provider"],
+    ["modelId", "other-model"],
+    ["workspaceDir", "/tmp/other"],
+  ] as const)("rejects proof activation when trusted %s differs", async (field, value) => {
+    const admission = new XResearchAdmission({
+      store: memoryStore(),
+      now: () => 1_000,
+      priceAuthority,
+    });
+    await admission.provision({
+      manifestDigest: `manifest-mismatch-${field}`,
+      notBefore: 1_000,
+      expiresAt: 86_401_000,
+      priceAuthority,
+      ...proofAuthority,
+      rows: completeProofRows({
+        ...identity,
+        promptDigest: "5f8368d643022c015855422d0a88d1968b456809d58389653f8fc970701b8870",
+        profile: "reduced_probe_v2",
+        caseId: "H0-05",
+        arm: "hybrid",
+      }),
+    });
+    await expect(
+      admission.activateProof({
+        ...identity,
+        [field]: value,
+      }),
+    ).resolves.toEqual({ allowed: false, code: "admission_proof_identity_mismatch" });
   });
 
   it("rejects a late launch transition when the row terminalizes before run returns", async () => {
