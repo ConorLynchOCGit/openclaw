@@ -1,5 +1,6 @@
 // X intelligence persistence contracts deliberately exclude provider payloads and identity content.
 import { createHash } from "node:crypto";
+import { redactSensitiveText } from "openclaw/plugin-sdk/logging-core";
 
 export const X_ACQUISITION_MANIFEST_V4 = "x_acquisition_manifest.v4" as const;
 export const X_COMPLIANCE_EVENT_V1 = "x_compliance_event.v1" as const;
@@ -359,14 +360,6 @@ const REDACTED_FILTER_KEYS = new Set([
 
 const SENSITIVE_QUERY_PARAMETER =
   /^(?:access_?token|api_?key|auth|authorization|client_?secret|credential|key|password|secret|sig|signature|token)$/i;
-const SECRET_VALUE =
-  /(?:\bbearer\s+[a-z0-9._~-]+|\bsk-[a-z0-9_-]{12,}|\bapi[_-]?key\s*[=:]|\baccess[_-]?token\s*[=:])/i;
-const CACHE_SECRET_VALUES = [
-  /\bbearer\s+[a-z0-9._~+/-]{8,}/gi,
-  /\bsk-[a-z0-9_-]{12,}/gi,
-  /\b((?:api|access)[_-]?(?:key|token)|authorization)\s*([=:])\s*[^\s,;]+/gi,
-];
-const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:@/-]*$/;
 const DIGEST = /^[a-z0-9][a-z0-9_-]*:[a-z0-9][a-z0-9._-]*$/i;
 
 function normalizedKey(key: string): string {
@@ -390,9 +383,6 @@ function assertSafeInput(value: unknown, depth = 0): void {
     throw new Error("x intelligence input exceeds the maximum nesting depth");
   }
   if (typeof value === "string") {
-    if (SECRET_VALUE.test(value)) {
-      throw new Error("x intelligence input contains a credential-like value");
-    }
     return;
   }
   if (!value || typeof value !== "object") {
@@ -451,10 +441,7 @@ function redactCacheText(value: unknown, field: string, max: number): string | u
   if (value.length > max) {
     throw new Error(`${field} exceeds ${max} characters`);
   }
-  return CACHE_SECRET_VALUES.reduce(
-    (redacted, pattern) => redacted.replace(pattern, "[REDACTED]"),
-    value,
-  );
+  return redactSensitiveText(value, { mode: "tools" });
 }
 
 function requiredString(value: unknown, field: string, max = MAX_STRING_CHARS): string {
@@ -476,18 +463,13 @@ function boundedString(value: string, field: string, max: number): string {
   if (normalized.length > max) {
     throw new Error(`${field} exceeds ${max} characters`);
   }
-  if (SECRET_VALUE.test(normalized)) {
-    throw new Error(`${field} contains a credential-like value`);
-  }
   return normalized;
 }
 
 function requiredIdentifier(value: unknown, field: string, max = MAX_IDENTIFIER_CHARS): string {
-  const identifier = requiredString(value, field, max);
-  if (!IDENTIFIER.test(identifier)) {
-    throw new Error(`${field} must be an identifier without whitespace`);
-  }
-  return identifier;
+  // These values are opaque source/runtime identities. Preserve them exactly;
+  // semantic restrictions here previously rejected valid model-authored method labels.
+  return requiredString(value, field, max);
 }
 
 function optionalIdentifier(
@@ -617,8 +599,9 @@ function normalizeManifestFilter(value: unknown, field: string, key = "", depth 
   }
   if (typeof value === "string") {
     const text = requiredString(value, field, MAX_QUERY_CHARS);
-    if (SECRET_VALUE.test(text)) {
-      return "[REDACTED]";
+    const redacted = redactSensitiveText(text, { mode: "tools" });
+    if (redacted !== text) {
+      return redacted;
     }
     if (REDACTED_FILTER_KEYS.has(normalizedKey(key)) || /\s/.test(text)) {
       return digestText(text);

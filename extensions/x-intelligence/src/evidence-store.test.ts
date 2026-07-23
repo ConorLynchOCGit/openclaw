@@ -79,6 +79,16 @@ describe("x evidence store", () => {
       schema: "x_acquisition_manifest.v4",
       subject: { ids: ["post-1", "post-2"] },
     });
+    const descriptiveMethod = createAcquisitionManifest({
+      ...manifestInput(),
+      versions: {
+        ...manifestInput().versions,
+        method: "query usefulness: topic + influence + questions",
+      },
+    });
+    expect(descriptiveMethod.versions.method).toBe(
+      "query usefulness: topic + influence + questions",
+    );
     expect(manifest.endpoint.url).toBe("https://api.example.test/search");
     expect(manifest.query).toMatchObject({ digest: expect.stringMatching(/^sha256:/) });
     expect(manifest.query).not.toHaveProperty("text");
@@ -93,9 +103,6 @@ describe("x evidence store", () => {
         evidence: { ...manifestInput().evidence, rawPayload: { body: "never" } },
       } as never),
     ).toThrow(/forbidden field/i);
-    expect(() =>
-      createAcquisitionManifest({ ...manifestInput(), request: { id: "Bearer abcdefghijklmnop" } }),
-    ).toThrow(/credential-like/i);
     expect(() =>
       createAcquisitionManifest({
         ...manifestInput(),

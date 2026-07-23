@@ -85,6 +85,11 @@ describe("x content cache", () => {
     });
     expect(memory.ttlOptions).toEqual([60_000]);
     expect(Object.isFrozen(record)).toBe(true);
+    const secret = "abcdefghijklmnopqrstuvwxyz012345";
+    const redacted = await cache.put("post:redacted", {
+      postText: `Authorization: Basic ${secret}`,
+    });
+    expect(redacted.postText).not.toContain(secret);
     await expect(cache.put("post:2", { postText: "x".repeat(16_001) })).rejects.toThrow(/16000/);
     await expect(
       cache.put("post:3", { postText: "ok", credentials: "never" } as never),
