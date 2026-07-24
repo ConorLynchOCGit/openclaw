@@ -689,6 +689,11 @@ describe("overflow compaction in run loop", () => {
       timeoutPhase: "provider",
       providerStarted: true,
       aborted: true,
+      taskEventMetadata: {
+        providerState: "failed",
+        providerCause: "provider_timeout",
+        providerAttemptStatus: "failed",
+      },
     });
   });
 

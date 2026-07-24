@@ -16,6 +16,7 @@ import type {
   PluginHookBeforeModelResolveResult,
   PluginHookBeforePromptBuildResult,
 } from "../../plugins/types.js";
+import type { ProviderRuntimeFailureKind } from "../embedded-agent-helpers/errors.js";
 import type { FailoverReason } from "../embedded-agent-helpers/types.js";
 import { clearAgentHarnesses, registerAgentHarness } from "../harness/registry.js";
 import type { buildEmbeddedRunPayloads } from "./run/payloads.js";
@@ -211,6 +212,9 @@ export const mockedFormatBillingErrorMessage = vi.fn(() => "");
 export const mockedClassifyFailoverReason = vi.fn<(raw: string) => FailoverReason | null>(
   () => null,
 );
+export const mockedClassifyProviderRuntimeFailureKind = vi.fn<
+  (_input: unknown) => ProviderRuntimeFailureKind
+>(() => "unknown");
 export const mockedClassifyAssistantFailoverReason = vi.fn(
   (assistant?: { errorMessage?: string | null }): FailoverReason | null =>
     mockedClassifyFailoverReason(assistant?.errorMessage ?? ""),
@@ -388,6 +392,8 @@ export function resetRunOverflowCompactionHarnessMocks(): void {
 
   mockedClassifyFailoverReason.mockReset();
   mockedClassifyFailoverReason.mockReturnValue(null);
+  mockedClassifyProviderRuntimeFailureKind.mockReset();
+  mockedClassifyProviderRuntimeFailureKind.mockReturnValue("unknown");
   mockedClassifyAssistantFailoverReason.mockReset();
   mockedClassifyAssistantFailoverReason.mockImplementation(
     (assistant?: { errorMessage?: string | null }): FailoverReason | null =>
@@ -633,6 +639,7 @@ export async function loadRunOverflowCompactionHarness(): Promise<{
   vi.doMock("../embedded-agent-helpers.js", () => ({
     formatBillingErrorMessage: mockedFormatBillingErrorMessage,
     classifyFailoverReason: mockedClassifyFailoverReason,
+    classifyProviderRuntimeFailureKind: mockedClassifyProviderRuntimeFailureKind,
     classifyAssistantFailoverReason: mockedClassifyAssistantFailoverReason,
     extractObservedOverflowTokenCount: mockedExtractObservedOverflowTokenCount,
     formatAssistantErrorText: mockedFormatAssistantErrorText,
