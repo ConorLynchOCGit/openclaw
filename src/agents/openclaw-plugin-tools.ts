@@ -12,8 +12,12 @@ import {
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { resolvePluginTools } from "../plugins/tools.js";
 import { normalizeDeliveryContext } from "../utils/delivery-context.js";
-import { resolveApiKeyForProfile, resolveAuthProfileOrder } from "./auth-profiles.js";
+import { resolveAuthProfileOrder } from "./auth-profiles.js";
 import type { AuthProfileStore } from "./auth-profiles/types.js";
+import {
+  hasRuntimeAvailableProviderAuth,
+  resolveApiKeyForProvider as resolveProviderApiKey,
+} from "./model-auth.js";
 import {
   resolveOpenClawPluginToolInputs,
   type OpenClawPluginToolOptions,
@@ -91,25 +95,26 @@ export function resolveOpenClawPluginToolsForOptions(params: {
           provider: providerId,
         })
     : undefined;
-  const hasAuthForProvider = authProfileStore
-    ? (providerId: string) => (resolveAuthProfileIdsForProvider?.(providerId) ?? []).length > 0
-    : undefined;
-  const resolveApiKeyForProvider = authProfileStore
-    ? async (providerId: string): Promise<string | undefined> => {
-        for (const profileId of resolveAuthProfileIdsForProvider?.(providerId) ?? []) {
-          const resolved = await resolveApiKeyForProfile({
-            cfg: resolveCurrentRuntimeConfig(),
-            store: authProfileStore,
-            profileId,
-            agentDir: params.options?.agentDir,
-          });
-          if (resolved?.apiKey) {
-            return resolved.apiKey;
-          }
-        }
-        return undefined;
-      }
-    : undefined;
+  const hasAuthForProvider = (providerId: string): boolean => {
+    if ((resolveAuthProfileIdsForProvider?.(providerId) ?? []).length > 0) {
+      return true;
+    }
+    return hasRuntimeAvailableProviderAuth({
+      provider: providerId,
+      cfg: resolveCurrentRuntimeConfig(),
+      workspaceDir: params.options?.workspaceDir,
+    });
+  };
+  const resolveApiKeyForProvider = async (providerId: string): Promise<string | undefined> => {
+    const resolved = await resolveProviderApiKey({
+      provider: providerId,
+      cfg: resolveCurrentRuntimeConfig(),
+      store: authProfileStore,
+      agentDir: params.options?.agentDir,
+      workspaceDir: params.options?.workspaceDir,
+    });
+    return resolved.apiKey;
+  };
   const pluginToolInputs = resolveOpenClawPluginToolInputs({
     options: params.options,
     resolvedConfig: params.resolvedConfig,
@@ -120,14 +125,14 @@ export function resolveOpenClawPluginToolsForOptions(params: {
     ...pluginToolInputs,
     context: {
       ...pluginToolInputs.context,
-      ...(hasAuthForProvider ? { hasAuthForProvider } : {}),
-      ...(resolveApiKeyForProvider ? { resolveApiKeyForProvider } : {}),
+      hasAuthForProvider,
+      resolveApiKeyForProvider,
     },
     existingToolNames: params.existingToolNames ?? new Set<string>(),
     toolAllowlist: params.options?.pluginToolAllowlist,
     toolDenylist: params.options?.pluginToolDenylist,
     allowGatewaySubagentBinding: params.options?.allowGatewaySubagentBinding,
-    ...(hasAuthForProvider ? { hasAuthForProvider } : {}),
+    hasAuthForProvider,
   });
 
   return applyPluginToolDeliveryDefaults({

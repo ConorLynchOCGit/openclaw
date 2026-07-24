@@ -202,6 +202,46 @@ describe("createOpenClawTools browser plugin integration", () => {
     );
   });
 
+  it("forwards configured runtime provider auth to plugin resolution", async () => {
+    let capturedParams:
+      | {
+          hasAuthForProvider?: (providerId: string) => boolean;
+          context?: {
+            hasAuthForProvider?: (providerId: string) => boolean;
+            resolveApiKeyForProvider?: (providerId: string) => Promise<string | undefined>;
+          };
+        }
+      | undefined;
+    hoisted.resolvePluginTools.mockImplementation((params: unknown) => {
+      capturedParams = params as typeof capturedParams;
+      return [];
+    });
+    const config = {
+      models: {
+        providers: {
+          openrouter: {
+            apiKey: "openrouter-runtime-key", // pragma: allowlist secret
+            models: [],
+          },
+        },
+      },
+      plugins: {
+        allow: ["xai"],
+      },
+    } as OpenClawConfig;
+
+    resolveOpenClawPluginToolsForOptions({
+      options: { config },
+      resolvedConfig: config,
+    });
+
+    expect(capturedParams?.hasAuthForProvider?.("openrouter")).toBe(true);
+    expect(capturedParams?.context?.hasAuthForProvider?.("openrouter")).toBe(true);
+    await expect(capturedParams?.context?.resolveApiKeyForProvider?.("openrouter")).resolves.toBe(
+      "openrouter-runtime-key",
+    );
+  });
+
   it("forwards plugin tool deny policy to plugin resolution", () => {
     hoisted.resolvePluginTools.mockReturnValue([]);
     const config = {
