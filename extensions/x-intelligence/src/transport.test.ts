@@ -37,6 +37,7 @@ function transport(baseUrl: string) {
     baseUrl,
     env: { [X_BEARER_TOKEN_ENV]: TOKEN },
     timeoutMs: 1_000,
+    retrySleep: async () => undefined,
   });
 }
 
@@ -131,6 +132,7 @@ describe("XReadTransport", () => {
     expect(result.receipt).toEqual({
       status: 200,
       rateLimit: { limit: "300", remaining: "299", reset: "123456" },
+      retryAfter: undefined,
       resourceId: "tweets.search.recent",
       requestId: undefined,
       serializedBytes: expect.any(Number),
@@ -193,6 +195,137 @@ describe("XReadTransport", () => {
     expect(dispatchedAt).toHaveLength(3);
     expect((dispatchedAt[1] ?? 0) - (dispatchedAt[0] ?? 0)).toBeGreaterThanOrEqual(900);
     expect((dispatchedAt[2] ?? 0) - (dispatchedAt[1] ?? 0)).toBeGreaterThanOrEqual(900);
+  });
+
+  it("retries transient responses from provider metadata and exposes retry telemetry", async () => {
+    let requests = 0;
+    const retryDelays: number[] = [];
+    const mock = await startServer((_request, response) => {
+      requests += 1;
+      if (requests === 1) {
+        response.writeHead(429, {
+          "content-type": "application/json",
+          "retry-after": "7",
+          "x-rate-limit-remaining": "0",
+          "x-rate-limit-reset": String(Math.ceil(Date.now() / 1_000) + 2),
+        });
+        response.end(JSON.stringify({ title: "rate limited" }));
+        return;
+      }
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ data: [{ id: "recovered" }] }));
+    });
+    const client = createXReadTransport({
+      baseUrl: mock.baseUrl,
+      env: { [X_BEARER_TOKEN_ENV]: TOKEN },
+      retrySleep: async (delayMs) => {
+        retryDelays.push(delayMs);
+      },
+    });
+
+    const result = await client.posts.recent({ query: "openclaw" });
+
+    expect(requests).toBe(2);
+    expect(retryDelays).toEqual([7_000]);
+    expect(result.data).toEqual({ data: [{ id: "recovered" }] });
+    expect(result.receipts?.map((receipt) => receipt.status)).toEqual([429, 200]);
+    expect(result.retry).toEqual({
+      attempts: 2,
+      retries: [
+        expect.objectContaining({
+          attempt: 1,
+          kind: "rate_limited",
+          delayMs: 7_000,
+          status: 429,
+          retryAfter: "7",
+        }),
+      ],
+      totalDelayMs: 7_000,
+    });
+  });
+
+  it("deduplicates exact in-flight hydration and count reads while retaining partial data", async () => {
+    const requestsByPath = new Map<string, number>();
+    const mock = await startServer((request, response) => {
+      const path = new URL(request.url ?? "", "http://x.invalid").pathname;
+      requestsByPath.set(path, (requestsByPath.get(path) ?? 0) + 1);
+      setTimeout(() => {
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(
+          JSON.stringify(
+            path === "/2/tweets"
+              ? {
+                  data: [{ id: "post-1" }],
+                  errors: [{ value: "post-2", detail: "not found" }],
+                }
+              : { data: [{ start: "2026-07-24T00:00:00Z", tweet_count: 3 }] },
+          ),
+        );
+      }, 10);
+    });
+    const client = transport(mock.baseUrl);
+
+    const [firstHydration, secondHydration] = await Promise.all([
+      client.posts.batch({ ids: ["post-1", "post-2"] }),
+      client.posts.batch({ ids: ["post-1", "post-2"] }),
+    ]);
+    await Promise.all([
+      client.counts.recent({ query: "nuclear energy" }),
+      client.counts.recent({ query: "nuclear energy" }),
+    ]);
+
+    expect(requestsByPath.get("/2/tweets")).toBe(1);
+    expect(requestsByPath.get("/2/tweets/counts/recent")).toBe(1);
+    expect(firstHydration).toBe(secondHydration);
+    expect(firstHydration.data).toEqual({
+      data: [{ id: "post-1" }],
+      errors: [{ value: "post-2", detail: "not found" }],
+    });
+  });
+
+  it("serializes concurrent reads within one provider endpoint lane", async () => {
+    let active = 0;
+    let maxActive = 0;
+    const mock = await startServer((_request, response) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      setTimeout(() => {
+        active -= 1;
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ data: [] }));
+      }, 10);
+    });
+    const client = transport(mock.baseUrl);
+
+    await Promise.all(["first", "second", "third"].map((query) => client.posts.recent({ query })));
+
+    expect(maxActive).toBe(1);
+  });
+
+  it("does not retry terminal client failures", async () => {
+    let requests = 0;
+    const retryDelays: number[] = [];
+    const mock = await startServer((_request, response) => {
+      requests += 1;
+      response.writeHead(400, {
+        "content-type": "application/json",
+        "retry-after": "1",
+      });
+      response.end(JSON.stringify({ title: "bad request" }));
+    });
+    const client = createXReadTransport({
+      baseUrl: mock.baseUrl,
+      env: { [X_BEARER_TOKEN_ENV]: TOKEN },
+      retrySleep: async (delayMs) => {
+        retryDelays.push(delayMs);
+      },
+    });
+
+    const error = await client.posts.recent({ query: "invalid" }).catch((value: unknown) => value);
+
+    expect(error).toMatchObject({ kind: "bad_request", requestCount: 1 });
+    expect(requests).toBe(1);
+    expect(retryDelays).toEqual([]);
   });
 
   it("uses the official XDK transport with bearer auth for current user search", async () => {
@@ -328,6 +461,7 @@ describe("XReadTransport", () => {
       ownedMetricsApiKey: OWNED_TOKEN,
       baseUrl: mock.baseUrl,
       timeoutMs: 1_000,
+      retrySleep: async () => undefined,
     });
 
     const result = await client.metrics.owned({
@@ -376,6 +510,7 @@ describe("XReadTransport", () => {
       ownedMetricsApiKey: OWNED_TOKEN,
       baseUrl: mock.baseUrl,
       timeoutMs: 1_000,
+      retrySleep: async () => undefined,
     });
 
     const error = await client.metrics
@@ -408,6 +543,7 @@ describe("XReadTransport", () => {
       ownedMetricsApiKey: OWNED_TOKEN,
       baseUrl: mock.baseUrl,
       timeoutMs: 1_000,
+      retrySleep: async () => undefined,
     });
 
     const error = await client.metrics
@@ -441,6 +577,7 @@ describe("XReadTransport", () => {
       ownedMetricsApiKey: OWNED_TOKEN,
       baseUrl: mock.baseUrl,
       timeoutMs: 1_000,
+      retrySleep: async () => undefined,
     });
 
     const error = await client.metrics
@@ -453,8 +590,15 @@ describe("XReadTransport", () => {
       })
       .catch((value: unknown) => value);
 
-    expect(error).toMatchObject({ kind, category, requestCount: 1 });
-    expect(error.receipts).toHaveLength(1);
+    const expectedRequests = kind === "server" ? 2 : 1;
+    expect(error).toMatchObject({ kind, category, requestCount: expectedRequests });
+    expect(error.receipts).toHaveLength(expectedRequests);
+    if (kind === "server") {
+      expect(error.retry).toMatchObject({
+        attempts: 2,
+        retries: [{ attempt: 1, kind: "server", status: 503 }],
+      });
+    }
   });
 
   it("propagates a supplied pagination token and reports a terminal response", async () => {

@@ -49,7 +49,7 @@ function manifestInput(): XAcquisitionManifestV4Input {
       citations: [{ id: "result-1", url: "https://example.test/1", hash: "sha256:aaa" }],
       publicMetrics: { reposts: 3, likes: 10 },
     },
-    resources: { requests: 1, bytes: 512, durationMs: 20 },
+    resources: { requests: 2, retries: 1, retryDelayMs: 250, bytes: 512, durationMs: 20 },
     cost: { currency: "USD", amount: 0.01 },
     errors: [{ code: "RATE_LIMIT", category: "provider", retryable: true }],
     pagination: { page: 1, pageSize: 20, cursorHash: "sha256:cursor", hasMore: true },
@@ -78,6 +78,7 @@ describe("x evidence store", () => {
     expect(manifest).toMatchObject({
       schema: "x_acquisition_manifest.v4",
       subject: { ids: ["post-1", "post-2"] },
+      resources: { requests: 2, retries: 1, retryDelayMs: 250 },
     });
     const descriptiveMethod = createAcquisitionManifest({
       ...manifestInput(),

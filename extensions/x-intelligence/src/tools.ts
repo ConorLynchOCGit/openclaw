@@ -21,6 +21,7 @@ import {
   XTransportError,
   type XJson,
   type XReadResult,
+  type XRetryTelemetry,
 } from "./transport.js";
 
 const TOOL_VERSION = "x-intelligence.v1";
@@ -514,8 +515,10 @@ async function writeManifest(params: {
   requestCount?: number;
   observedSerializedBytes?: number;
   formatMedia?: FormatMediaReceipt;
+  retry?: XRetryTelemetry;
 }) {
   const { execution, result } = params;
+  const retry = result?.retry ?? params.retry;
   const receipt =
     params.resourceReceipt ?? (result ? resourceReceipt(execution, result) : undefined);
   const evidence = result
@@ -573,6 +576,12 @@ async function writeManifest(params: {
       },
       resources: {
         requests: params.requestCount ?? receipt?.requests ?? 0,
+        ...(retry
+          ? {
+              retries: retry.retries.length,
+              retryDelayMs: retry.totalDelayMs,
+            }
+          : {}),
         ...(receipt
           ? { bytes: receipt.serialized_bytes }
           : params.observedSerializedBytes !== undefined
@@ -664,6 +673,7 @@ async function executeSourceOperation(params: ExecuteParams) {
       serialized_bytes: receipt.serialized_bytes,
       resources: { ...receipt, duration_ms: Date.now() - startedAt },
       cost: { status: "provider_not_reported" },
+      ...(result.retry ? { retry: result.retry } : {}),
     };
   } catch (error) {
     const transport = error instanceof XTransportError ? error : undefined;
@@ -696,6 +706,7 @@ async function executeSourceOperation(params: ExecuteParams) {
       },
       requestCount,
       formatMedia: profileResponse?.formatMedia,
+      retry: transport?.retry,
     });
     return {
       status: "failed",
@@ -725,6 +736,7 @@ async function executeSourceOperation(params: ExecuteParams) {
             duration_ms: Date.now() - startedAt,
           },
       cost: { status: "provider_not_reported" },
+      ...(transport?.retry ? { retry: transport.retry } : {}),
     };
   }
 }

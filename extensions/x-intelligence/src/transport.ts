@@ -5,6 +5,11 @@ import {
   type UsageClient,
   type UsersClient,
 } from "@xdevplatform/xdk";
+import { KeyedAsyncQueue } from "openclaw/plugin-sdk/keyed-async-queue";
+import {
+  executeProviderOperationWithRetry,
+  type ProviderOperationRetryEvent,
+} from "openclaw/plugin-sdk/provider-http";
 import type { SecretInput } from "openclaw/plugin-sdk/secret-input";
 import { requireOwnedMetricsCredential, requirePublicCredential } from "./auth.js";
 import { requireXOwnedMetricDefinition } from "./owned-metric-definitions.js";
@@ -19,6 +24,8 @@ const MAX_ID_LENGTH = 256;
 const MAX_OWNED_METRICS_WINDOW_MS = 30 * 24 * 60 * 60 * 1_000;
 const X_RECENT_SEARCH_WINDOW_MS = 7 * 24 * 60 * 60 * 1_000;
 const X_ARCHIVE_SEARCH_MIN_INTERVAL_MS = 1_000;
+const X_PROVIDER_RETRY_ATTEMPTS = 2;
+const X_PROVIDER_RETRY_BASE_DELAY_MS = 5_000;
 
 type JsonPrimitive = boolean | number | string | null;
 export type XJson = JsonPrimitive | XJson[] | { [key: string]: XJson };
@@ -31,14 +38,31 @@ export type XReceipt = {
     remaining?: string;
     reset?: string;
   };
+  retryAfter?: string;
   resourceId?: string;
   requestId?: string;
 };
+
+export type XRetryEvent = Readonly<{
+  attempt: number;
+  kind: "rate_limited" | "server";
+  delayMs: number;
+  status?: number;
+  retryAfter?: string;
+  reset?: string;
+}>;
+
+export type XRetryTelemetry = Readonly<{
+  attempts: number;
+  retries: readonly XRetryEvent[];
+  totalDelayMs: number;
+}>;
 
 export type XReadResult<T extends XJson = XJson> = {
   data: T;
   receipt: XReceipt;
   receipts?: readonly XReceipt[];
+  retry?: XRetryTelemetry;
   nextToken?: string;
   trustedOwnership?: XTrustedOwnership;
   trustedOwnedAnalytics?: XTrustedOwnedAnalytics;
@@ -92,6 +116,7 @@ type XTransportErrorOptions = Readonly<{
   category?: XTransportErrorCategory;
   receipt?: XReceipt;
   receipts?: readonly XReceipt[];
+  retry?: XRetryTelemetry;
   requestCount?: number;
 }>;
 
@@ -100,6 +125,7 @@ export class XTransportError extends Error {
   readonly category: XTransportErrorCategory;
   readonly receipt?: XReceipt;
   readonly receipts: readonly XReceipt[];
+  readonly retry?: XRetryTelemetry;
   readonly requestCount: number;
 
   constructor(kind: XTransportErrorKind, options: XTransportErrorOptions = {}) {
@@ -109,6 +135,7 @@ export class XTransportError extends Error {
     this.category = options.category ?? categoryFor(kind);
     this.receipt = options.receipt;
     this.receipts = options.receipts ?? (options.receipt ? [options.receipt] : []);
+    this.retry = options.retry;
     this.requestCount = options.requestCount ?? this.receipts.length;
   }
 
@@ -118,6 +145,7 @@ export class XTransportError extends Error {
       category: this.category,
       message: this.message,
       receipt: this.receipt,
+      retry: this.retry,
       requestCount: this.requestCount,
     };
   }
@@ -317,6 +345,7 @@ export type XReadTransportOptions = {
   env?: Readonly<Record<string, string | undefined>>;
   baseUrl?: string;
   timeoutMs?: number;
+  retrySleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 };
 
 type XdkReadClient = {
@@ -397,11 +426,17 @@ export class XReadTransport {
   private readonly baseUrl: string;
   private readonly env: Readonly<Record<string, string | undefined>>;
   private readonly timeoutMs: number | undefined;
+  private readonly retrySleep: ((ms: number, signal?: AbortSignal) => Promise<void>) | undefined;
+  private readonly requestQueue = new KeyedAsyncQueue();
+  private readonly inFlightPublicReads = new Map<string, Promise<XReadResult>>();
+  private readonly signalIds = new WeakMap<AbortSignal, number>();
+  private nextSignalId = 1;
 
   constructor(options: XReadTransportOptions = {}) {
     this.baseUrl = normalizeBaseUrl(options.baseUrl);
     this.env = options.env ?? process.env;
     this.timeoutMs = normalizeOptionalTimeout(options.timeoutMs);
+    this.retrySleep = options.retrySleep;
     this.ownedMetricsApiKey = options.ownedMetricsApiKey;
     this.resolveOwnedMetricsApiKey = options.resolveOwnedMetricsApiKey;
     const publicCredential = requirePublicCredential(options.apiKey, this.env);
@@ -453,7 +488,7 @@ export class XReadTransport {
     };
     this.metrics = {
       public: (input) => this.publicMetrics(input),
-      owned: (input) => this.ownedMetrics(input),
+      owned: (input) => this.requestQueue.enqueue("metrics.owned", () => this.ownedMetrics(input)),
       usage: (input = {}) => this.usage(input),
     };
   }
@@ -463,12 +498,12 @@ export class XReadTransport {
     const options = postSearchOptions(input);
     if (kind === "recent") {
       assertXRecentWindow(input);
-      return this.readPublic(input, (requestOptions) =>
+      return this.readPublic(input, "posts.search.recent", (requestOptions) =>
         this.publicClient.posts.searchRecent(query, { ...options, requestOptions }),
       );
     }
     return this.scheduleArchiveSearch(input, () =>
-      this.readPublic(input, (requestOptions) =>
+      this.readPublic(input, "posts.search.archive", (requestOptions) =>
         this.publicClient.posts.searchAll(query, { ...options, requestOptions }),
       ),
     );
@@ -480,10 +515,15 @@ export class XReadTransport {
     if (kind === "recent") {
       assertXRecentWindow(input);
     }
-    return this.readPublic(input, (requestOptions) =>
-      kind === "recent"
-        ? this.publicClient.posts.getCountsRecent(query, { ...options, requestOptions })
-        : this.publicClient.posts.getCountsAll(query, { ...options, requestOptions }),
+    return this.dedupePublicRead(
+      input.signal,
+      `counts:${kind}:${query}:${JSON.stringify(options)}`,
+      () =>
+        this.readPublic(input, `posts.counts.${kind}`, (requestOptions) =>
+          kind === "recent"
+            ? this.publicClient.posts.getCountsRecent(query, { ...options, requestOptions })
+            : this.publicClient.posts.getCountsAll(query, { ...options, requestOptions }),
+        ),
     );
   }
 
@@ -524,7 +564,7 @@ export class XReadTransport {
   private readPostById(input: XPostByIdInput): Promise<XReadResult> {
     const id = boundedId(input.id);
     const options = postFieldOptions(input);
-    return this.readPublic(input, (requestOptions) =>
+    return this.readPublic(input, "posts.lookup", (requestOptions) =>
       this.publicClient.posts.getById(id, { ...options, requestOptions }),
     );
   }
@@ -538,15 +578,20 @@ export class XReadTransport {
       throw new XTransportError("bad_request");
     }
     const options = postFieldOptions(input);
-    return this.readPublic(input, (requestOptions) =>
-      this.publicClient.posts.getByIds(ids, { ...options, requestOptions }),
+    return this.dedupePublicRead(
+      input.signal,
+      `posts.batch:${ids.join(",")}:${JSON.stringify(options)}`,
+      () =>
+        this.readPublic(input, "posts.lookup", (requestOptions) =>
+          this.publicClient.posts.getByIds(ids, { ...options, requestOptions }),
+        ),
     );
   }
 
   private readPostCollection(input: XPostCollectionInput): Promise<XReadResult> {
     const id = boundedId(input.id);
     const options = collectionOptions(input);
-    return this.readPublic(input, (requestOptions) =>
+    return this.readPublic(input, "posts.quoted", (requestOptions) =>
       this.publicClient.posts.getQuoted(id, { ...options, requestOptions }),
     );
   }
@@ -564,7 +609,7 @@ export class XReadTransport {
     // XDK 0.5's generated users.search metadata omits current app-only Bearer
     // auth. Keep the official XDK client/HTTP path and supply the endpoint's
     // documented security requirement through its generic request method.
-    return this.readPublic(input, (requestOptions) =>
+    return this.readPublic(input, "users.search", (requestOptions) =>
       this.publicClient.request<Response>("GET", `/2/users/search?${params.toString()}`, {
         ...requestOptions,
         security: [{ BearerToken: [] }],
@@ -577,7 +622,7 @@ export class XReadTransport {
       throw new XTransportError("bad_request");
     }
     const options = userFieldOptions(input);
-    return this.readPublic(input, (requestOptions) =>
+    return this.readPublic(input, "users.lookup", (requestOptions) =>
       input.id
         ? this.publicClient.users.getById(boundedId(input.id), { ...options, requestOptions })
         : this.publicClient.users.getByUsername(boundedId(input.username as string), {
@@ -600,7 +645,7 @@ export class XReadTransport {
       throw new XTransportError("bad_request");
     }
     const options = userFieldOptions(input);
-    return this.readPublic(input, (requestOptions) =>
+    return this.readPublic(input, "users.lookup", (requestOptions) =>
       input.ids
         ? this.publicClient.users.getByIds(values, { ...options, requestOptions })
         : this.publicClient.users.getByUsernames(values, { ...options, requestOptions }),
@@ -613,7 +658,7 @@ export class XReadTransport {
   ): Promise<XReadResult> {
     const id = boundedId(input.id);
     const options = relationshipOptions(input);
-    return this.readPublic(input, (requestOptions) =>
+    return this.readPublic(input, `users.relationship.${kind}`, (requestOptions) =>
       kind === "followers"
         ? this.publicClient.users.getFollowers(id, { ...options, requestOptions })
         : this.publicClient.users.getFollowing(id, { ...options, requestOptions }),
@@ -626,7 +671,7 @@ export class XReadTransport {
   ): Promise<XReadResult> {
     const id = boundedId(input.id);
     const options = timelineOptions(input);
-    return this.readPublic(input, (requestOptions) =>
+    return this.readPublic(input, `users.timeline.${kind}`, (requestOptions) =>
       kind === "authored"
         ? this.publicClient.users.getPosts(id, { ...options, requestOptions })
         : this.publicClient.users.getTimeline(id, { ...options, requestOptions }),
@@ -638,14 +683,14 @@ export class XReadTransport {
       throw new XTransportError("bad_request");
     }
     const options = trendOptions(input);
-    return this.readPublic(input, (requestOptions) =>
+    return this.readPublic(input, "trends.location", (requestOptions) =>
       this.publicClient.trends.getByWoeid(input.woeid, { ...options, requestOptions }),
     );
   }
 
   private personalizedTrends(input: XTrendInput): Promise<XReadResult> {
     const personalizedTrendFields = boundedFields(input.trendFields);
-    return this.readPublic(input, (requestOptions) =>
+    return this.readPublic(input, "trends.personalized", (requestOptions) =>
       this.publicClient.trends.getPersonalized({ personalizedTrendFields, requestOptions }),
     );
   }
@@ -655,11 +700,13 @@ export class XReadTransport {
       throw new XTransportError("bad_request");
     }
     const ids = input.ids.map(boundedId);
-    return this.readPublic(input, (requestOptions) =>
-      this.publicClient.posts.getByIds(ids, {
-        tweetFields: ["author_id", "created_at", "public_metrics"],
-        requestOptions,
-      }),
+    return this.dedupePublicRead(input.signal, `metrics.public:${ids.join(",")}`, () =>
+      this.readPublic(input, "posts.lookup", (requestOptions) =>
+        this.publicClient.posts.getByIds(ids, {
+          tweetFields: ["author_id", "created_at", "public_metrics"],
+          requestOptions,
+        }),
+      ),
     );
   }
 
@@ -708,16 +755,20 @@ export class XReadTransport {
       retry: false,
     });
     const receipts: XReceipt[] = [];
+    const retryEvents: XRetryEvent[] = [];
     const readOwned = async (
       request: (requestOptions: XdkRawRequestOptions) => Promise<Response>,
     ): Promise<XReadResult> => {
       try {
         const result = await this.read(request, input, [ownedCredential]);
-        receipts.push(result.receipt);
+        receipts.push(...(result.receipts ?? [result.receipt]));
+        if (result.retry) {
+          retryEvents.push(...result.retry.retries);
+        }
         return result;
       } catch (error) {
         if (error instanceof XTransportError) {
-          throw classifyOwnedRequestError(error, receipts);
+          throw classifyOwnedRequestError(error, receipts, retryEvents);
         }
         throw error;
       }
@@ -748,9 +799,11 @@ export class XReadTransport {
         requestOptions,
       }),
     );
+    const retry = xRetryTelemetry(receipts.length, retryEvents);
     return {
       ...analytics,
       receipts,
+      ...(retry ? { retry } : {}),
       trustedOwnership: {
         provider: "x",
         accountId,
@@ -773,19 +826,128 @@ export class XReadTransport {
     if (!Number.isInteger(days) || days < 1 || days > 90) {
       throw new XTransportError("bad_request");
     }
-    return this.readPublic(input, (requestOptions) =>
+    return this.readPublic(input, "usage", (requestOptions) =>
       this.publicClient.usage.get({ days, requestOptions }),
     );
   }
 
   private readPublic(
     options: XRequestOptions,
+    lane: string,
     request: (requestOptions: XdkRawRequestOptions) => Promise<Response>,
   ): Promise<XReadResult> {
-    return this.read(request, options);
+    return this.requestQueue.enqueue(lane, () => this.read(request, options));
+  }
+
+  private signalScope(signal: AbortSignal | undefined): string {
+    if (!signal) {
+      return "none";
+    }
+    const existing = this.signalIds.get(signal);
+    if (existing !== undefined) {
+      return String(existing);
+    }
+    const id = this.nextSignalId++;
+    this.signalIds.set(signal, id);
+    return String(id);
+  }
+
+  private dedupePublicRead(
+    signal: AbortSignal | undefined,
+    key: string,
+    read: () => Promise<XReadResult>,
+  ): Promise<XReadResult> {
+    const scopedKey = `${this.signalScope(signal)}:${key}`;
+    const existing = this.inFlightPublicReads.get(scopedKey);
+    if (existing) {
+      return existing;
+    }
+    const current = read();
+    this.inFlightPublicReads.set(scopedKey, current);
+    const cleanup = () => {
+      if (this.inFlightPublicReads.get(scopedKey) === current) {
+        this.inFlightPublicReads.delete(scopedKey);
+      }
+    };
+    void current.then(cleanup, cleanup);
+    return current;
   }
 
   private async read(
+    request: (requestOptions: XdkRawRequestOptions) => Promise<Response>,
+    options: XRequestOptions,
+    additionalSecrets: readonly string[] = [],
+  ): Promise<XReadResult> {
+    const signal = options.signal;
+    const receipts: XReceipt[] = [];
+    const retryEvents: XRetryEvent[] = [];
+    let attempts = 0;
+    try {
+      const result = await executeProviderOperationWithRetry({
+        provider: "x",
+        stage: "read",
+        operation: async () => {
+          attempts += 1;
+          try {
+            const attemptResult = await this.readOnce(request, options, additionalSecrets);
+            receipts.push(attemptResult.receipt);
+            return attemptResult;
+          } catch (error) {
+            if (error instanceof XTransportError && error.receipt) {
+              receipts.push(error.receipt);
+            }
+            throw error;
+          }
+        },
+        retry: {
+          attempts: X_PROVIDER_RETRY_ATTEMPTS,
+          baseDelayMs: X_PROVIDER_RETRY_BASE_DELAY_MS,
+          maxDelayMs: Number.MAX_SAFE_INTEGER,
+          signal,
+          ...(this.retrySleep ? { sleep: this.retrySleep } : {}),
+          shouldRetry: ({ error }) =>
+            error instanceof XTransportError &&
+            (error.kind === "rate_limited" || error.kind === "server"),
+          retryAfterMs: ({ error }) =>
+            error instanceof XTransportError ? xProviderRetryDelayMs(error) : undefined,
+          onRetry: (event) => {
+            const retryEvent = xRetryEvent(event);
+            if (retryEvent) {
+              retryEvents.push(retryEvent);
+            }
+          },
+        },
+      });
+      const retry = xRetryTelemetry(attempts, retryEvents);
+      return {
+        ...result,
+        receipts,
+        ...(retry ? { retry } : {}),
+      };
+    } catch (error) {
+      const retry = xRetryTelemetry(attempts, retryEvents);
+      if (error instanceof XTransportError) {
+        throw new XTransportError(error.kind, {
+          category: error.category,
+          receipt: error.receipt,
+          receipts,
+          requestCount: attempts,
+          ...(retry ? { retry } : {}),
+        });
+      }
+      if (signal?.aborted) {
+        throw new XTransportError("aborted", {
+          category: "provider",
+          receipts,
+          requestCount: attempts,
+          ...(retry ? { retry } : {}),
+        });
+      }
+      throw error;
+    }
+  }
+
+  private async readOnce(
     request: (requestOptions: XdkRawRequestOptions) => Promise<Response>,
     options: XRequestOptions,
     additionalSecrets: readonly string[] = [],
@@ -869,6 +1031,63 @@ export class XReadTransport {
       throw new XTransportError("network", { category: "provider", requestCount: 1 });
     }
   }
+}
+
+function xProviderRetryDelayMs(error: XTransportError, now = Date.now()): number | undefined {
+  const receipt = error.receipt;
+  if (!receipt) {
+    return undefined;
+  }
+  const candidates: number[] = [];
+  const retryAfter = receipt.retryAfter?.trim();
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      candidates.push(seconds * 1_000);
+    } else {
+      const timestamp = Date.parse(retryAfter);
+      if (Number.isFinite(timestamp)) {
+        candidates.push(Math.max(0, timestamp - now));
+      }
+    }
+  }
+  const resetSeconds = Number(receipt.rateLimit.reset);
+  if (Number.isFinite(resetSeconds) && resetSeconds > 0) {
+    candidates.push(Math.max(0, resetSeconds * 1_000 - now));
+  }
+  return candidates.length > 0 ? Math.max(...candidates) : undefined;
+}
+
+function xRetryEvent(event: ProviderOperationRetryEvent): XRetryEvent | undefined {
+  if (!(event.error instanceof XTransportError)) {
+    return undefined;
+  }
+  const error = event.error;
+  if (error.kind !== "rate_limited" && error.kind !== "server") {
+    return undefined;
+  }
+  return {
+    attempt: event.attemptNumber,
+    kind: error.kind,
+    delayMs: event.delayMs,
+    ...(error.receipt?.status !== undefined ? { status: error.receipt.status } : {}),
+    ...(error.receipt?.retryAfter ? { retryAfter: error.receipt.retryAfter } : {}),
+    ...(error.receipt?.rateLimit.reset ? { reset: error.receipt.rateLimit.reset } : {}),
+  };
+}
+
+function xRetryTelemetry(
+  attempts: number,
+  retryEvents: readonly XRetryEvent[],
+): XRetryTelemetry | undefined {
+  if (retryEvents.length === 0) {
+    return undefined;
+  }
+  return {
+    attempts,
+    retries: [...retryEvents],
+    totalDelayMs: retryEvents.reduce((total, event) => total + event.delayMs, 0),
+  };
 }
 
 function isXdkAuthenticationConfigurationError(error: unknown): boolean {
@@ -961,12 +1180,17 @@ function categoryFor(kind: XTransportErrorKind): XTransportErrorCategory {
 function classifyOwnedRequestError(
   error: XTransportError,
   completedReceipts: readonly XReceipt[],
+  completedRetryEvents: readonly XRetryEvent[],
 ): XTransportError {
   const receipts = [...completedReceipts, ...error.receipts];
+  const retryEvents = [...completedRetryEvents, ...(error.retry?.retries ?? [])];
+  const requestCount = completedReceipts.length + error.requestCount;
+  const retry = xRetryTelemetry(requestCount, retryEvents);
   const options = {
     receipt: error.receipt,
     receipts,
-    requestCount: completedReceipts.length + error.requestCount,
+    requestCount,
+    ...(retry ? { retry } : {}),
   };
   if (error.receipt?.status === 403) {
     return new XTransportError("owned_metrics_entitlement", options);
@@ -1237,6 +1461,7 @@ function receiptFrom(status: number, headers: unknown): XReceipt {
       remaining: get("x-rate-limit-remaining"),
       reset: get("x-rate-limit-reset"),
     },
+    retryAfter: get("retry-after"),
     resourceId: get("x-resource-id"),
     requestId: get("x-request-id"),
   };

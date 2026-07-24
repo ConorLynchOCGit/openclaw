@@ -77,7 +77,14 @@ describe("x intelligence model tools", () => {
     const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "x-tools-workspace-"));
     const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "x-tools-state-"));
     tempDirs.push(workspaceDir, stateDir);
+    let requests = 0;
     const baseUrl = await startServer((_request, response) => {
+      requests += 1;
+      if (requests === 1) {
+        response.writeHead(503, { "content-type": "application/json", "retry-after": "7" });
+        response.end(JSON.stringify({ error: "transient" }));
+        return;
+      }
       response.writeHead(200, {
         "content-type": "application/json",
         "x-rate-limit-remaining": "99",
@@ -102,7 +109,13 @@ describe("x intelligence model tools", () => {
       config: { apiKey: TOKEN },
       ctx: { workspaceDir, sessionKey: "agent:x-researcher:test" },
       analyticsStateDir: stateDir,
-      createTransport: () => createXReadTransport({ apiKey: TOKEN, baseUrl, timeoutMs: 1_000 }),
+      createTransport: () =>
+        createXReadTransport({
+          apiKey: TOKEN,
+          baseUrl,
+          timeoutMs: 1_000,
+          retrySleep: async () => undefined,
+        }),
     });
     const tool = tools.find((candidate) => candidate.name === "x_posts");
     expect(tool).toBeDefined();
@@ -121,6 +134,7 @@ describe("x intelligence model tools", () => {
     });
     const details = result.details as Record<string, unknown>;
     expect(details.status, JSON.stringify(details)).toBe("complete");
+    expect(details.retry).toMatchObject({ attempts: 2, totalDelayMs: 7_000 });
     expect(JSON.stringify(details)).not.toContain(TOKEN);
     expect(details.continuation).toEqual({ available: true, pagination_token: "next-page" });
     expect(details.analytics).toEqual({ status: "recorded", records: 3 });
@@ -133,6 +147,11 @@ describe("x intelligence model tools", () => {
     expect(manifest).toContain("toolcall:sha256:");
     expect(manifest).not.toContain(opaqueToolCallId);
     expect(manifest).not.toContain("bounded source post");
+    expect(JSON.parse(manifest).resources).toMatchObject({
+      requests: 2,
+      retries: 1,
+      retryDelayMs: 7_000,
+    });
     expect(
       await fs.stat(
         path.join(workspaceDir, "artifacts", "business-ops", "x-acquisition-manifests-v4"),
@@ -821,6 +840,11 @@ describe("x intelligence model tools", () => {
                   { status: 200, rateLimit: {}, serializedBytes: 120 },
                   { status: 503, rateLimit: {}, serializedBytes: 80 },
                 ],
+                retry: {
+                  attempts: 2,
+                  retries: [{ attempt: 1, kind: "server", delayMs: 500, status: 503 }],
+                  totalDelayMs: 500,
+                },
               });
             },
           },
@@ -838,6 +862,10 @@ describe("x intelligence model tools", () => {
       status: "failed",
       requests: 2,
       resources: { requests: 2, serialized_bytes: 200 },
+      retry: { attempts: 2, totalDelayMs: 500 },
     });
+    const evidence = (result.details as { evidence: { ref: string } }).evidence;
+    const manifest = JSON.parse(await fs.readFile(path.join(workspaceDir, evidence.ref), "utf8"));
+    expect(manifest.resources).toMatchObject({ requests: 2, retries: 1, retryDelayMs: 500 });
   });
 });

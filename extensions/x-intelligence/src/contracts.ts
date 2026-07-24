@@ -61,7 +61,13 @@ export type XAcquisitionManifestV4 = Readonly<{
     citations: readonly Readonly<{ id?: string; url?: string; hash?: string }>[];
     publicMetrics: Readonly<Record<string, number>>;
   }>;
-  resources: Readonly<{ requests?: number; bytes?: number; durationMs?: number }>;
+  resources: Readonly<{
+    requests?: number;
+    retries?: number;
+    retryDelayMs?: number;
+    bytes?: number;
+    durationMs?: number;
+  }>;
   cost: Readonly<{ currency?: string; amount?: number; units?: number }>;
   errors: readonly Readonly<{ code: string; category?: string; retryable?: boolean }>[];
   pagination: Readonly<{
@@ -786,7 +792,11 @@ export function createAcquisitionManifest(
     ["ids", "urls", "hashes", "citations", "publicMetrics"],
     "evidence",
   );
-  assertAllowedKeys(input.resources, ["requests", "bytes", "durationMs"], "resources");
+  assertAllowedKeys(
+    input.resources,
+    ["requests", "retries", "retryDelayMs", "bytes", "durationMs"],
+    "resources",
+  );
   assertAllowedKeys(input.cost, ["currency", "amount", "units"], "cost");
   assertAllowedKeys(input.pagination, ["page", "pageSize", "cursorHash", "hasMore"], "pagination");
   assertAllowedKeys(input.provenance, ["model", "toolCall", "toolCalls"], "provenance");
@@ -932,6 +942,8 @@ export function createAcquisitionManifest(
     },
     resources: compact({
       requests: boundedInteger(input.resources.requests, "resources.requests"),
+      retries: boundedInteger(input.resources.retries, "resources.retries"),
+      retryDelayMs: boundedInteger(input.resources.retryDelayMs, "resources.retryDelayMs"),
       bytes: boundedInteger(input.resources.bytes, "resources.bytes"),
       durationMs: boundedInteger(input.resources.durationMs, "resources.durationMs"),
     }),
