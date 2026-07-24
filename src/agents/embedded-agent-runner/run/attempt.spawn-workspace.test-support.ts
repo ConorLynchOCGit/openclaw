@@ -31,8 +31,6 @@ type SubscribeEmbeddedAgentSessionFn =
   typeof import("../../embedded-agent-subscribe.js").subscribeEmbeddedAgentSession;
 type AcquireSessionWriteLockFn =
   typeof import("../../session-write-lock.js").acquireSessionWriteLock;
-type ShouldPreemptivelyCompactBeforePromptFn =
-  typeof import("./preemptive-compaction.js").shouldPreemptivelyCompactBeforePrompt;
 
 type SubscriptionMock = ReturnType<SubscribeEmbeddedAgentSessionFn>;
 type UnknownMock = Mock<(...args: unknown[]) => unknown>;
@@ -93,7 +91,6 @@ type AttemptSpawnWorkspaceHoisted = {
     (sessionKey: string | undefined, config: unknown) => number | undefined
   >;
   limitHistoryTurnsMock: Mock<<T>(messages: T, limit: number | undefined) => T>;
-  preemptiveCompactionCalls: Parameters<ShouldPreemptivelyCompactBeforePromptFn>[0][];
   systemPromptTexts: string[];
   embeddedSystemPromptInputs: unknown[];
   sessionManager: SessionManagerMocks;
@@ -198,7 +195,6 @@ const hoisted = vi.hoisted((): AttemptSpawnWorkspaceHoisted => {
   const limitHistoryTurnsMock = vi.fn<<T>(messages: T, limit: number | undefined) => T>(
     (messages) => messages,
   );
-  const preemptiveCompactionCalls: Parameters<ShouldPreemptivelyCompactBeforePromptFn>[0][] = [];
   const systemPromptTexts: string[] = [];
   const embeddedSystemPromptInputs: unknown[] = [];
   const sessionManager = {
@@ -241,7 +237,6 @@ const hoisted = vi.hoisted((): AttemptSpawnWorkspaceHoisted => {
     detectAndLoadPromptImagesMock,
     getHistoryLimitFromSessionKeyMock,
     limitHistoryTurnsMock,
-    preemptiveCompactionCalls,
     systemPromptTexts,
     embeddedSystemPromptInputs,
     sessionManager,
@@ -748,19 +743,6 @@ vi.mock("../compaction-runtime-context.js", () => ({
   buildEmbeddedCompactionRuntimeContext: () => ({}),
 }));
 
-vi.mock("./preemptive-compaction.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./preemptive-compaction.js")>();
-  return {
-    ...actual,
-    shouldPreemptivelyCompactBeforePrompt: (
-      params: Parameters<typeof actual.shouldPreemptivelyCompactBeforePrompt>[0],
-    ) => {
-      hoisted.preemptiveCompactionCalls.push(params);
-      return actual.shouldPreemptivelyCompactBeforePrompt(params);
-    },
-  };
-});
-
 vi.mock("../compaction-safety-timeout.js", () => ({
   resolveCompactionTimeoutMs: () => undefined,
 }));
@@ -1014,7 +996,6 @@ export function resetEmbeddedAttemptHarness(
   hoisted.runContextEngineMaintenanceMock.mockReset().mockResolvedValue(undefined);
   hoisted.getHistoryLimitFromSessionKeyMock.mockReset().mockReturnValue(undefined);
   hoisted.limitHistoryTurnsMock.mockReset().mockImplementation((messages) => messages);
-  hoisted.preemptiveCompactionCalls.length = 0;
   hoisted.systemPromptTexts.length = 0;
   hoisted.embeddedSystemPromptInputs.length = 0;
   hoisted.sessionManager.getLeafEntry.mockReset().mockReturnValue(null);

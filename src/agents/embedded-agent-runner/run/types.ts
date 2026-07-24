@@ -5,7 +5,6 @@ import type { HeartbeatToolResponse } from "../../../auto-reply/heartbeat-tool-r
 import type { ThinkLevel } from "../../../auto-reply/thinking.js";
 import type {
   SessionCodexThreadUsage,
-  SessionContextBudgetStatus,
   SessionSystemPromptReport,
 } from "../../../config/sessions/types.js";
 import type { ContextEngine, ContextEnginePromptCacheInfo } from "../../../context-engine/types.js";
@@ -120,13 +119,13 @@ export type EmbeddedRunAttemptResult = {
   preflightRecovery?:
     | {
         route: Exclude<PreemptiveCompactionRoute, "fits">;
-        source?: "pre-prompt" | "mid-turn";
+        source: "mid-turn";
         handled: true;
         truncatedCount?: number;
       }
     | {
         route: Exclude<PreemptiveCompactionRoute, "fits">;
-        source?: "pre-prompt" | "mid-turn";
+        source: "mid-turn";
         handled?: false;
       };
   sessionIdUsed: string;
@@ -207,7 +206,6 @@ export type EmbeddedRunAttemptResult = {
   /** Cumulative usage for the native Codex thread, when app-server reports it. */
   codexThreadUsage?: SessionCodexThreadUsage;
   promptCache?: ContextEnginePromptCacheInfo;
-  contextBudgetStatus?: SessionContextBudgetStatus;
   compactionCount?: number;
   compactionTokensAfter?: number;
   /**

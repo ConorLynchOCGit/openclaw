@@ -2046,7 +2046,7 @@ describe("runEmbeddedAgent overflow compaction trigger routing", () => {
     expect(result.meta.agentMeta?.compactionTokensAfter).toBe(80_000);
   });
 
-  it("recovers preflight compaction when stale tokens point at an empty transcript", async () => {
+  it("recovers opt-in mid-turn compaction when stale tokens point at an empty transcript", async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-empty-preflight-"));
     const storePath = path.join(dir, "sessions.json");
     await fs.writeFile(
@@ -2090,26 +2090,7 @@ describe("runEmbeddedAgent overflow compaction trigger routing", () => {
         makeAttemptResult({
           promptError: makeOverflowError(),
           promptErrorSource: "prompt",
-          preflightRecovery: { route: "compact_only" },
-          contextBudgetStatus: {
-            schemaVersion: 1,
-            source: "pre-prompt-estimate",
-            updatedAt: 1,
-            provider: "claude-cli",
-            model: "claude-opus-4-7",
-            route: "compact_only",
-            shouldCompact: true,
-            estimatedPromptTokens: 1_794_391,
-            contextTokenBudget: 1_048_576,
-            promptBudgetBeforeReserve: 1_044_480,
-            reserveTokens: 4_096,
-            effectiveReserveTokens: 4_096,
-            remainingPromptBudgetTokens: 0,
-            overflowTokens: 749_911,
-            toolResultReducibleChars: 0,
-            messageCount: 0,
-            unwindowedMessageCount: 0,
-          },
+          preflightRecovery: { route: "compact_only", source: "mid-turn" },
           assistantTexts: [],
         }),
       )

@@ -27,7 +27,6 @@ import {
   OPENCLAW_EMBEDDED_CONTEXT_ENGINE_HOST,
 } from "../../../context-engine/host-compat.js";
 import { resolveContextEngineOwnerPluginId } from "../../../context-engine/registry.js";
-import type { AssembleResult } from "../../../context-engine/types.js";
 import { emitTrustedDiagnosticEvent } from "../../../infra/diagnostic-events.js";
 import { resolveDiagnosticModelContentCapturePolicy } from "../../../infra/diagnostic-llm-content.js";
 import {
@@ -472,12 +471,6 @@ import {
   isMidTurnPrecheckSignal,
   type MidTurnPrecheckRequest,
 } from "./midturn-precheck.js";
-import {
-  buildPrePromptContextBudgetStatus,
-  estimateLlmBoundaryTokenPressure,
-  formatPrePromptPrecheckLog,
-  shouldPreemptivelyCompactBeforePrompt,
-} from "./preemptive-compaction.js";
 import {
   buildCurrentInboundPrompt,
   buildRuntimeContextCustomMessage,
@@ -2428,9 +2421,6 @@ export async function runEmbeddedAttempt(
       }
       let prePromptMessageCount = activeSession.messages.length;
       let contextEngineAfterTurnCheckpoint: number | null = null;
-      let unwindowedContextEngineMessagesForPrecheck: AgentMessage[] | undefined;
-      let contextEnginePromptAuthority: NonNullable<AssembleResult["promptAuthority"]> =
-        "assembled";
       const inFlightPromptSettlePromises = new Set<Promise<void>>();
       const inFlightAbortSettlePromises = new Set<Promise<void>>();
       const trackSettlePromise = (
@@ -3117,11 +3107,6 @@ export async function runEmbeddedAttempt(
 
         if (activeContextEngine) {
           try {
-            // Snapshot before assemble: the assemble contract does not require
-            // the input array to be treated immutably, so an engine that windows
-            // history in place would otherwise leave the precheck reading
-            // already-windowed messages instead of the true pre-assembly state.
-            const preassemblyContextEngineMessagesForPrecheck = activeSession.messages.slice();
             const assembled = await assembleAttemptContextEngine({
               contextEngine: activeContextEngine,
               sessionId: params.sessionId,
@@ -3141,11 +3126,6 @@ export async function runEmbeddedAttempt(
               : assembled.messages;
             if (assembledMessages !== activeSession.messages) {
               activeSession.agent.state.messages = assembledMessages;
-            }
-            contextEnginePromptAuthority = assembled.promptAuthority ?? "assembled";
-            if (contextEnginePromptAuthority === "preassembly_may_overflow") {
-              unwindowedContextEngineMessagesForPrecheck =
-                preassemblyContextEngineMessagesForPrecheck;
             }
             if (assembled.systemPromptAddition) {
               setActiveSessionSystemPrompt(
@@ -3523,7 +3503,6 @@ export async function runEmbeddedAttempt(
       let cacheBreak: PromptCacheBreak | null = null;
       let promptCache: EmbeddedRunAttemptResult["promptCache"];
       let lastCallUsage: NormalizedUsage | undefined;
-      let contextBudgetStatus: EmbeddedRunAttemptResult["contextBudgetStatus"];
       let compactionOccurredThisAttempt = false;
       let finalPromptText: string | undefined;
       if (params.replyOperation) {
@@ -4315,7 +4294,7 @@ export async function runEmbeddedAttempt(
             );
           }
 
-          const llmBoundaryPromptForPrecheck = normalizeCurrentPromptTextForLlmBoundary({
+          const llmBoundaryPrompt = normalizeCurrentPromptTextForLlmBoundary({
             prompt: promptForModel,
             ...(boundaryTimezone ? { timezone: boundaryTimezone } : {}),
             ...(typeof preparedUserTurnMessage?.timestamp === "number"
@@ -4332,7 +4311,7 @@ export async function runEmbeddedAttempt(
                   provider: params.provider,
                   model: params.modelId,
                   systemPrompt: systemPromptForHook,
-                  prompt: llmBoundaryPromptForPrecheck,
+                  prompt: llmBoundaryPrompt,
                   historyMessages: cloneHookMessages(hookMessagesForCurrentPrompt),
                   imagesCount: imageResult.images.length,
                   tools,
@@ -4351,106 +4330,6 @@ export async function runEmbeddedAttempt(
               .catch((err: unknown) => {
                 log.warn(`llm_input hook failed: ${String(err)}`);
               });
-          }
-
-          const llmBoundaryOptionsForPrecheck = boundaryTimezone
-            ? { timezone: boundaryTimezone }
-            : undefined;
-          const unwindowedLlmBoundaryMessagesForPrecheck =
-            contextEnginePromptAuthority === "preassembly_may_overflow" &&
-            unwindowedContextEngineMessagesForPrecheck
-              ? normalizeMessagesForLlmBoundary(
-                  unwindowedContextEngineMessagesForPrecheck,
-                  llmBoundaryOptionsForPrecheck,
-                )
-              : undefined;
-          const llmBoundaryTokenPressure = estimateLlmBoundaryTokenPressure({
-            messages: hookMessagesForCurrentPrompt,
-            systemPrompt: systemPromptForHook,
-            prompt: llmBoundaryPromptForPrecheck,
-          });
-          const preemptiveCompaction = skipPromptSubmission
-            ? null
-            : shouldPreemptivelyCompactBeforePrompt({
-                messages: hookMessagesForCurrentPrompt,
-                ...(unwindowedLlmBoundaryMessagesForPrecheck
-                  ? { unwindowedMessages: unwindowedLlmBoundaryMessagesForPrecheck }
-                  : {}),
-                systemPrompt: systemPromptForHook,
-                prompt: llmBoundaryPromptForPrecheck,
-                contextTokenBudget,
-                reserveTokens,
-                toolResultMaxChars: promptToolResultMaxChars,
-                llmBoundaryTokenPressure: {
-                  estimatedPromptTokens: llmBoundaryTokenPressure,
-                  source: "llm_boundary_normalized_prompt",
-                  renderedChars: llmBoundaryPromptForPrecheck.length,
-                },
-              });
-          if (preemptiveCompaction) {
-            contextBudgetStatus = buildPrePromptContextBudgetStatus({
-              result: preemptiveCompaction,
-              provider: params.provider,
-              modelId: params.modelId,
-              messageCount: activeSession.messages.length,
-              contextTokenBudget,
-              reserveTokens,
-              ...(params.sessionId ? { sessionId: params.sessionId } : {}),
-              ...(contextEnginePromptAuthority === "preassembly_may_overflow" &&
-              unwindowedContextEngineMessagesForPrecheck
-                ? { unwindowedMessageCount: unwindowedContextEngineMessagesForPrecheck.length }
-                : {}),
-            });
-            log.debug(
-              formatPrePromptPrecheckLog({
-                result: preemptiveCompaction,
-                provider: params.provider,
-                modelId: params.modelId,
-                messageCount: activeSession.messages.length,
-                contextTokenBudget,
-                reserveTokens,
-                ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
-                ...(params.sessionId ? { sessionId: params.sessionId } : {}),
-                ...(contextEnginePromptAuthority === "preassembly_may_overflow" &&
-                unwindowedContextEngineMessagesForPrecheck
-                  ? { unwindowedMessageCount: unwindowedContextEngineMessagesForPrecheck.length }
-                  : {}),
-                ...(params.sessionFile ? { sessionFile: params.sessionFile } : {}),
-              }),
-            );
-          }
-          if (preemptiveCompaction?.route === "truncate_tool_results_only") {
-            log.info(
-              `[context-pressure-advisory] request-local tool-result projection selected for ` +
-                `${params.provider}/${params.modelId} route=${preemptiveCompaction.route} ` +
-                `truncatedCount=${promptToolResultTruncation.truncatedCount} ` +
-                `estimatedPromptTokens=${preemptiveCompaction.estimatedPromptTokens} ` +
-                `promptBudgetBeforeReserve=${preemptiveCompaction.promptBudgetBeforeReserve} ` +
-                `overflowTokens=${preemptiveCompaction.overflowTokens} ` +
-                `toolResultReducibleChars=${preemptiveCompaction.toolResultReducibleChars} ` +
-                `effectiveReserveTokens=${preemptiveCompaction.effectiveReserveTokens} ` +
-                `continuingToNativeProviderBoundary=true sessionFile=${params.sessionFile}`,
-            );
-          }
-          if (!skipPromptSubmission && preemptiveCompaction?.shouldCompact) {
-            preflightRecovery =
-              preemptiveCompaction.route === "compact_then_truncate"
-                ? { route: "compact_then_truncate", source: "pre-prompt", handled: false }
-                : { route: "compact_only", source: "pre-prompt", handled: false };
-            skipPromptSubmission = true;
-            log.warn(
-              `[context-pressure-advisory] sessionKey=${params.sessionKey ?? params.sessionId} ` +
-                `provider=${params.provider}/${params.modelId} ` +
-                `route=${preemptiveCompaction.route} ` +
-                `estimatedPromptTokens=${preemptiveCompaction.estimatedPromptTokens} ` +
-                `promptBudgetBeforeReserve=${preemptiveCompaction.promptBudgetBeforeReserve} ` +
-                `overflowTokens=${preemptiveCompaction.overflowTokens} ` +
-                `toolResultReducibleChars=${preemptiveCompaction.toolResultReducibleChars} ` +
-                `reserveTokens=${reserveTokens} ` +
-                `effectiveReserveTokens=${preemptiveCompaction.effectiveReserveTokens} ` +
-                `providerCallSkipped=true routingToNativeCompaction=true ` +
-                `sessionFile=${params.sessionFile}`,
-            );
           }
 
           if (!skipPromptSubmission) {
@@ -5368,7 +5247,6 @@ export async function runEmbeddedAttempt(
         ),
         attemptUsage,
         promptCache,
-        contextBudgetStatus,
         compactionCount: getCompactionCount(),
         compactionTokensAfter: getLastCompactionTokensAfter(),
         // Client tool calls detected (OpenResponses hosted tools).

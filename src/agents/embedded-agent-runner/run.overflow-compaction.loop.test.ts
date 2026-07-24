@@ -173,9 +173,9 @@ describe("overflow compaction in run loop", () => {
     expect(result.meta.error).toBeUndefined();
   });
 
-  it("does not suppress the next user turn when precheck overflow never persisted it", async () => {
-    // Precheck overflow happens before the inbound message enters the transcript,
-    // so the retry should still persist the original prompt.
+  it("does not suppress the next user turn when provider overflow never persisted it", async () => {
+    // If the inbound message never entered the transcript, the retry should
+    // still persist the original prompt.
     const overflowError = makeOverflowError("Context overflow: prompt too large for the model.");
 
     mockedRunEmbeddedAttempt
@@ -183,7 +183,6 @@ describe("overflow compaction in run loop", () => {
         makeAttemptResult({
           promptError: overflowError,
           promptErrorSource: "prompt",
-          preflightRecovery: { route: "compact_only" },
         }),
       )
       .mockResolvedValueOnce(makeAttemptResult({ promptError: null }));
@@ -206,41 +205,6 @@ describe("overflow compaction in run loop", () => {
     const retryParams = requireMockCallArg(mockedRunEmbeddedAttempt, 1);
     expect(retryParams.prompt).toBe(baseParams.prompt);
     expect(retryParams.suppressNextUserMessagePersistence).toBe(false);
-    expect(result.meta.error).toBeUndefined();
-  });
-
-  it("compacts and retries when pre-prompt pressure skips the provider call", async () => {
-    mockedRunEmbeddedAttempt
-      .mockResolvedValueOnce(
-        makeAttemptResult({
-          promptError: null,
-          promptErrorSource: null,
-          preflightRecovery: {
-            route: "compact_only",
-            source: "pre-prompt",
-            handled: false,
-          },
-          assistantTexts: [],
-        }),
-      )
-      .mockResolvedValueOnce(makeAttemptResult({ promptError: null }));
-
-    mockedCompactDirect.mockResolvedValueOnce(
-      makeCompactionSuccess({
-        summary: "Compacted before provider submission",
-        firstKeptEntryId: "entry-5",
-        tokensBefore: 150000,
-      }),
-    );
-
-    const result = await runEmbeddedAgent(baseParams);
-
-    expect(mockedCompactDirect).toHaveBeenCalledTimes(1);
-    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(2);
-    const retryParams = requireMockCallArg(mockedRunEmbeddedAttempt, 1);
-    expect(retryParams.prompt).toBe(baseParams.prompt);
-    expect(retryParams.suppressNextUserMessagePersistence).toBe(false);
-    expectLogIncludes(mockedLog.warn, "source=prePromptPreflight");
     expect(result.meta.error).toBeUndefined();
   });
 
@@ -364,29 +328,6 @@ describe("overflow compaction in run loop", () => {
     expect(result.meta.error).toBeUndefined();
   });
 
-  it("retries without hitting compaction when attempt-level preflight truncation already handled the overflow", async () => {
-    mockedRunEmbeddedAttempt
-      .mockResolvedValueOnce(
-        makeAttemptResult({
-          promptError: null,
-          preflightRecovery: {
-            route: "truncate_tool_results_only",
-            handled: true,
-            truncatedCount: 2,
-          },
-        }),
-      )
-      .mockResolvedValueOnce(makeAttemptResult({ promptError: null }));
-
-    const result = await runEmbeddedAgent(baseParams);
-
-    expect(mockedCompactDirect).not.toHaveBeenCalled();
-    expect(mockedTruncateOversizedToolResultsInSession).not.toHaveBeenCalled();
-    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(2);
-    expectLogIncludes(mockedLog.info, "early recovery route=truncate_tool_results_only");
-    expect(result.meta.error).toBeUndefined();
-  });
-
   it("continues from the transcript after mid-turn precheck truncation handled the overflow", async () => {
     mockedRunEmbeddedAttempt
       .mockResolvedValueOnce(
@@ -408,36 +349,6 @@ describe("overflow compaction in run loop", () => {
     expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(2);
     expectRetryContinuesFromTranscript();
     expectLogIncludes(mockedLog.info, "retrying from current transcript");
-    expect(result.meta.error).toBeUndefined();
-  });
-
-  it("falls back to compaction when early truncate-only recovery does not help", async () => {
-    mockedRunEmbeddedAttempt
-      .mockResolvedValueOnce(
-        makeAttemptResult({
-          promptError: makeOverflowError("Context overflow: prompt too large for the model."),
-          preflightRecovery: { route: "compact_only" },
-        }),
-      )
-      .mockResolvedValueOnce(makeAttemptResult({ promptError: null }));
-
-    mockedCompactDirect.mockResolvedValueOnce(
-      makeCompactionSuccess({
-        summary: "Compacted after failed early truncation",
-        firstKeptEntryId: "entry-7",
-        tokensBefore: 155000,
-      }),
-    );
-
-    const result = await runEmbeddedAgent(baseParams);
-
-    expect(mockedCompactDirect).toHaveBeenCalledTimes(1);
-    expect(mockedTruncateOversizedToolResultsInSession).not.toHaveBeenCalled();
-    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(2);
-    expectLogIncludes(
-      mockedLog.warn,
-      "context overflow detected (attempt 1/3); attempting auto-compaction",
-    );
     expect(result.meta.error).toBeUndefined();
   });
 
@@ -560,7 +471,10 @@ describe("overflow compaction in run loop", () => {
       .mockResolvedValueOnce(
         makeAttemptResult({
           promptError: makeOverflowError("Context overflow: prompt too large for the model."),
-          preflightRecovery: { route: "compact_then_truncate" },
+          preflightRecovery: {
+            route: "compact_then_truncate",
+            source: "mid-turn",
+          },
         }),
       )
       .mockResolvedValueOnce(makeAttemptResult({ promptError: null }));

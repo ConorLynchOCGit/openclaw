@@ -312,7 +312,7 @@ async function resetNoRealConversationTokenSnapshot(params: {
     });
   } catch (err) {
     log.warn(
-      `[context-pressure-advisory] failed to reset stale context snapshot for ` +
+      `[mid-turn-context-precheck] failed to reset stale context snapshot for ` +
         `${params.sessionKey}: ${String(err)}`,
     );
   }
@@ -1344,7 +1344,6 @@ async function runEmbeddedAgentInternal(
       let latestCodexThreadUsage: EmbeddedAgentMeta["codexThreadUsage"];
       let autoCompactionCount = 0;
       let lastCompactionTokensAfter: number | undefined;
-      let lastContextBudgetStatus: EmbeddedAgentMeta["contextBudgetStatus"];
       let runLoopIterations = 0;
       let overloadProfileRotations = 0;
       let consecutiveSameModelRateLimitRetries = 0;
@@ -2028,9 +2027,6 @@ async function runEmbeddedAgentInternal(
           ) {
             lastCompactionTokensAfter = Math.floor(attempt.compactionTokensAfter);
           }
-          if (attempt.contextBudgetStatus) {
-            lastContextBudgetStatus = attempt.contextBudgetStatus;
-          }
           const sessionAssistantForCandidate =
             !currentAttemptAssistant &&
             !isAssistantForModelRef(sessionLastAssistant, {
@@ -2077,15 +2073,11 @@ async function runEmbeddedAgentInternal(
             (attempt.toolMetas?.length ?? 0) === 0 &&
             (attempt.assistantTexts?.length ?? 0) === 0;
           if (preflightRecovery?.handled) {
-            const retryingFromTranscript = preflightRecovery.source === "mid-turn";
             log.info(
-              `[context-pressure-advisory] early recovery route=${preflightRecovery.route} ` +
-                `completed for ${provider}/${modelId}; ` +
-                (retryingFromTranscript ? "retrying from current transcript" : "retrying prompt"),
+              `[mid-turn-context-precheck] early recovery route=${preflightRecovery.route} ` +
+                `completed for ${provider}/${modelId}; retrying from current transcript`,
             );
-            if (retryingFromTranscript) {
-              continueFromCurrentTranscript();
-            }
+            continueFromCurrentTranscript();
             continue;
           }
           const requestedSelection = shouldSwitchToLiveModel({
@@ -2251,20 +2243,13 @@ async function runEmbeddedAgentInternal(
             }
           }
 
-          const preflightCompactionRequired =
-            preflightRecovery?.source === "pre-prompt" || preflightRecovery?.source === "mid-turn";
+          const preflightCompactionRequired = preflightRecovery !== undefined;
           const contextOverflowError = !aborted
             ? (() => {
                 if (preflightCompactionRequired) {
                   return {
-                    text:
-                      preflightRecovery.source === "mid-turn"
-                        ? `Mid-turn context precheck requires ${preflightRecovery.route}.`
-                        : `Pre-prompt context precheck requires ${preflightRecovery.route}.`,
-                    source:
-                      preflightRecovery.source === "mid-turn"
-                        ? ("midTurnPreflight" as const)
-                        : ("prePromptPreflight" as const),
+                    text: `Mid-turn context precheck requires ${preflightRecovery.route}.`,
+                    source: "midTurnPreflight" as const,
                   };
                 }
                 if (promptError) {
@@ -2320,7 +2305,7 @@ async function runEmbeddedAgentInternal(
               log.warn(
                 `context overflow persisted after in-attempt compaction (attempt ${overflowCompactionAttempts}/${MAX_OVERFLOW_COMPACTION_ATTEMPTS}); retrying prompt without additional compaction for ${provider}/${modelId}`,
               );
-              if (preflightRecovery?.source === "mid-turn") {
+              if (preflightRecovery) {
                 continueFromCurrentTranscript();
               }
               continue;
@@ -2446,19 +2431,16 @@ async function runEmbeddedAgentInternal(
               await runOwnsCompactionAfterHook("overflow recovery", compactResult);
               if (preflightRecovery && isNoRealConversationCompactionNoop(compactResult)) {
                 lastCompactionTokensAfter = undefined;
-                lastContextBudgetStatus = undefined;
                 await resetNoRealConversationTokenSnapshot({
                   config: params.config,
                   sessionKey: params.sessionKey,
                   agentId: sessionAgentId,
                 });
                 log.info(
-                  `[context-pressure-advisory] stale token state had no real conversation messages for ` +
+                  `[mid-turn-context-precheck] stale token state had no real conversation messages for ` +
                     `${provider}/${modelId}; resetting the context snapshot and retrying prompt`,
                 );
-                if (preflightRecovery.source === "mid-turn") {
-                  continueFromCurrentTranscript();
-                }
+                continueFromCurrentTranscript();
                 continue;
               }
               if (compactResult.compacted) {
@@ -2486,12 +2468,12 @@ async function runEmbeddedAgentInternal(
                   });
                   if (truncResult.truncated) {
                     log.info(
-                      `[context-pressure-advisory] post-compaction tool-result truncation succeeded for ` +
+                      `[mid-turn-context-precheck] post-compaction tool-result truncation succeeded for ` +
                         `${provider}/${modelId}; truncated ${truncResult.truncatedCount} tool result(s)`,
                     );
                   } else {
                     log.warn(
-                      `[context-pressure-advisory] post-compaction tool-result truncation did not help for ` +
+                      `[mid-turn-context-precheck] post-compaction tool-result truncation did not help for ` +
                         `${provider}/${modelId}: ${truncResult.reason ?? "unknown"}`,
                     );
                   }
@@ -2499,7 +2481,7 @@ async function runEmbeddedAgentInternal(
                 autoCompactionCount += 1;
                 log.info(`auto-compaction succeeded for ${provider}/${modelId}; retrying prompt`);
                 postCompactionGuard.armPostCompaction();
-                if (preflightRecovery?.source === "mid-turn") {
+                if (preflightRecovery) {
                   continueFromCurrentTranscript();
                 } else if (
                   params.currentMessageId !== undefined &&
@@ -2551,7 +2533,7 @@ async function runEmbeddedAgentInternal(
                   log.info(
                     `[context-overflow-recovery] Truncated ${truncResult.truncatedCount} tool result(s); retrying prompt`,
                   );
-                  if (preflightRecovery?.source === "mid-turn") {
+                  if (preflightRecovery) {
                     continueFromCurrentTranscript();
                   }
                   continue;
@@ -3200,7 +3182,6 @@ async function runEmbeddedAgentInternal(
             lastCallUsage: usageMeta.lastCallUsage,
             codexThreadUsage: latestCodexThreadUsage,
             promptTokens: usageMeta.promptTokens,
-            ...(lastContextBudgetStatus ? { contextBudgetStatus: lastContextBudgetStatus } : {}),
             compactionCount: autoCompactionCount > 0 ? autoCompactionCount : undefined,
             compactionTokensAfter: lastCompactionTokensAfter,
           };

@@ -143,7 +143,7 @@ describe("normalizeMessagesForLlmBoundary", () => {
     expect(output[0]?.content).toBe(`${expectedPrefix}Current ask`);
   });
 
-  it("normalizes current prompt text for pre-prompt token pressure", () => {
+  it("normalizes current prompt text for the provider boundary", () => {
     const preparedTimestamp = 1717570800000;
     const output = normalizeCurrentPromptTextForLlmBoundary({
       prompt: "Current ask",
