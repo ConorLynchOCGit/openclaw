@@ -244,12 +244,25 @@ async function canResetFailedWorktreeAdd(
   return branchExists.code === 1;
 }
 
-async function runSetupScript(repoRoot: string, worktreePath: string): Promise<void> {
+async function runSetupScript(
+  repoRoot: string,
+  worktreePath: string,
+  serviceEnv: NodeJS.ProcessEnv,
+): Promise<void> {
   const setupScript = path.join(repoRoot, ".openclaw", "worktree-setup.sh");
   const stat = await fs.stat(setupScript).catch(() => undefined);
   if (!stat?.isFile() || (stat.mode & 0o111) === 0) {
     return;
   }
+  const stateDir = resolveStateDir(serviceEnv);
+  const corepackHome =
+    serviceEnv.COREPACK_HOME?.trim() ||
+    (serviceEnv.HOME?.trim()
+      ? path.join(serviceEnv.HOME, ".cache", "node", "corepack")
+      : path.join(stateDir, ".corepack"));
+  const pnpmStorePath = path.join(stateDir, ".pnpm-store");
+  await fs.mkdir(corepackHome, { recursive: true });
+  await fs.mkdir(pnpmStorePath, { recursive: true });
   const setupHome = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-worktree-setup-home-"));
   await fs.chmod(setupHome, 0o700);
   try {
@@ -260,8 +273,11 @@ async function runSetupScript(repoRoot: string, worktreePath: string): Promise<v
       env: {
         PATH: DEFAULT_WORKTREE_SETUP_PATH,
         HOME: setupHome,
+        COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
+        COREPACK_HOME: corepackHome,
         OPENCLAW_SOURCE_TREE_PATH: repoRoot,
         OPENCLAW_WORKTREE_PATH: worktreePath,
+        OPENCLAW_WORKTREE_PNPM_STORE_PATH: pnpmStorePath,
       },
     });
     if (result.code !== 0) {
@@ -593,6 +609,7 @@ export class ManagedWorktreeService {
         await runSetupScript(
           params.systemChange ? worktreePath : repository.sourceRoot,
           worktreePath,
+          this.env,
         );
       }
     } catch (error) {

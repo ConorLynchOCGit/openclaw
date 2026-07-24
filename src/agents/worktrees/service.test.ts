@@ -419,7 +419,7 @@ describe("ManagedWorktreeService", () => {
       [
         "#!/bin/sh",
         'printf "setup-only" > "$HOME/setup-marker"',
-        'printf "%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n" "$PATH" "$HOME" "$OPENCLAW_SOURCE_TREE_PATH" "$OPENCLAW_WORKTREE_PATH" "${OPENAI_API_KEY-unset}" "${OPENROUTER_API_KEY-unset}" "${OPENCLAW_GATEWAY_TOKEN-unset}" "${DATABASE_URL-unset}" > setup-env.txt',
+        'printf "%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n" "$PATH" "$HOME" "$COREPACK_HOME" "$OPENCLAW_WORKTREE_PNPM_STORE_PATH" "$OPENCLAW_SOURCE_TREE_PATH" "$OPENCLAW_WORKTREE_PATH" "${OPENAI_API_KEY-unset}" "${OPENROUTER_API_KEY-unset}" "${OPENCLAW_GATEWAY_TOKEN-unset}" "${DATABASE_URL-unset}" > setup-env.txt',
         "",
       ].join("\n"),
       { mode: 0o755 },
@@ -453,6 +453,8 @@ describe("ManagedWorktreeService", () => {
     const [
       setupPath,
       setupHome,
+      corepackHome,
+      pnpmStorePath,
       sourcePath,
       worktreePath,
       providerSecret,
@@ -465,6 +467,8 @@ describe("ManagedWorktreeService", () => {
     expect(setupPath).not.toBe(callerPath);
     expect(setupHome).not.toBe(fixedHome);
     expect(path.basename(setupHome)).toMatch(/^openclaw-worktree-setup-home-/u);
+    expect(corepackHome).toBe(path.join(fixedHome, ".cache", "node", "corepack"));
+    expect(pnpmStorePath).toBe(path.join(env.OPENCLAW_STATE_DIR!, ".pnpm-store"));
     expect([
       sourcePath,
       worktreePath,
@@ -475,6 +479,8 @@ describe("ManagedWorktreeService", () => {
       tail,
     ]).toEqual([created.path, created.path, "unset", "unset", "unset", "unset", ""]);
     await expect(fs.stat(setupHome)).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await fs.stat(corepackHome)).isDirectory()).toBe(true);
+    expect((await fs.stat(pnpmStorePath)).isDirectory()).toBe(true);
   });
 
   it("removes the worktree and branch when setup fails", async () => {
