@@ -61,7 +61,48 @@ function addOxlintFormatArg(args, value) {
  * Returns whether oxlint args need package-boundary declaration artifacts first.
  */
 export function shouldPrepareExtensionPackageBoundaryArtifacts(args) {
-  return !args.some((arg) => OXLINT_PREPARE_SKIP_FLAGS.has(arg));
+  if (args.some((arg) => OXLINT_PREPARE_SKIP_FLAGS.has(arg))) {
+    return false;
+  }
+  const explicitTargets = collectExplicitOxlintTargets(args);
+  if (explicitTargets.length === 0) {
+    return true;
+  }
+  return explicitTargets.some(targetNeedsExtensionPackageBoundary);
+}
+
+function collectExplicitOxlintTargets(args) {
+  const targets = [];
+  let consumeNextValue = false;
+  for (const arg of args) {
+    if (consumeNextValue) {
+      consumeNextValue = false;
+      continue;
+    }
+    if (arg === "--") {
+      continue;
+    }
+    if (arg.startsWith("--")) {
+      if (!arg.includes("=") && OXLINT_VALUE_FLAGS.has(arg)) {
+        consumeNextValue = true;
+      }
+      continue;
+    }
+    if (arg.startsWith("-")) {
+      continue;
+    }
+    targets.push(arg);
+  }
+  return targets;
+}
+
+function targetNeedsExtensionPackageBoundary(target) {
+  const normalized = target.replaceAll("\\", "/").replace(/^\.\/+/, "");
+  if (normalized === "." || normalized === "extensions" || normalized.startsWith("extensions/")) {
+    return true;
+  }
+  // An unscoped glob can include extensions. Scoped core/package/test globs do not.
+  return /[*?[\]{}]/u.test(normalized) && !/^(?:src|packages|test|scripts|ui)\//u.test(normalized);
 }
 
 /**

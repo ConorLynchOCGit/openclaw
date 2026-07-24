@@ -24,10 +24,32 @@ import {
 } from "../../scripts/run-oxlint.mjs";
 
 describe("run-oxlint", () => {
-  it("prepares extension package boundary artifacts for normal lint runs", () => {
+  it("prepares extension package boundary artifacts for broad and extension lint runs", () => {
     expect(shouldPrepareExtensionPackageBoundaryArtifacts([])).toBe(true);
-    expect(shouldPrepareExtensionPackageBoundaryArtifacts(["src/index.ts"])).toBe(true);
+    expect(shouldPrepareExtensionPackageBoundaryArtifacts(["extensions/codex/index.ts"])).toBe(
+      true,
+    );
+    expect(shouldPrepareExtensionPackageBoundaryArtifacts(["extensions/**/*.ts"])).toBe(true);
+    expect(shouldPrepareExtensionPackageBoundaryArtifacts(["**/*.ts"])).toBe(true);
     expect(shouldPrepareExtensionPackageBoundaryArtifacts(["--type-aware"])).toBe(true);
+  });
+
+  it("skips extension package preparation for explicit non-extension targets", () => {
+    expect(shouldPrepareExtensionPackageBoundaryArtifacts(["src/index.ts"])).toBe(false);
+    expect(
+      shouldPrepareExtensionPackageBoundaryArtifacts([
+        "--type-aware",
+        "--tsconfig",
+        "tsconfig.core.json",
+        "src/**/*.ts",
+      ]),
+    ).toBe(false);
+    expect(shouldPrepareExtensionPackageBoundaryArtifacts(["packages/foo/src/index.ts"])).toBe(
+      false,
+    );
+    expect(
+      shouldPrepareExtensionPackageBoundaryArtifacts(["test/scripts/run-oxlint.test.ts"]),
+    ).toBe(false);
   });
 
   it("skips artifact preparation for metadata-only oxlint commands", () => {
