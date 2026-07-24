@@ -809,6 +809,7 @@ export function createTaskTool(
           workspaceDir: opts?.workspaceDir,
           loadedSystemSource,
           loadedSystemSourceMode,
+          signal,
         },
       );
 

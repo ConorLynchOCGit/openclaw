@@ -380,6 +380,7 @@ describe("spawnSubagentDirect seam flow", () => {
       ownerKind: "session",
       ownerId: result.childSessionKey,
       systemChange: true,
+      signal: undefined,
       runSetupScript: true,
     });
     expect(removeSystemChangeWorktreeIfLossless).not.toHaveBeenCalled();
@@ -394,6 +395,53 @@ describe("spawnSubagentDirect seam flow", () => {
         baseRef: source.sourceCommit,
       },
     });
+  });
+
+  it("does not dispatch Coding when native worktree setup fails or is cancelled", async () => {
+    const source = createLoadedSystemSource();
+    const controller = new AbortController();
+    controller.abort("operator-cancelled");
+    const createSystemChangeWorktree = vi
+      .fn()
+      .mockRejectedValue(new Error("worktree setup failed"));
+    subagentSpawnTesting.setDepsForTest({ createSystemChangeWorktree });
+    hoisted.configOverride = createConfigOverride({
+      agents: {
+        defaults: { workspace: os.tmpdir() },
+        list: [
+          {
+            id: "main",
+            workspace: "/tmp/workspace-main",
+            subagents: { allowAgents: ["coding"] },
+          },
+          { id: "coding", workspace: "/tmp/workspace-coding" },
+        ],
+      },
+    });
+
+    const result = await spawnSubagentDirect(
+      {
+        task: "implement the loaded system change",
+        agentId: "coding",
+        context: "isolated",
+      },
+      {
+        agentSessionKey: "agent:main:main",
+        loadedSystemSource: source,
+        loadedSystemSourceMode: "modify",
+        signal: controller.signal,
+      },
+    );
+
+    expect(result).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("managed system-change worktree creation failed"),
+    });
+    expect(createSystemChangeWorktree).toHaveBeenCalledWith(
+      expect.objectContaining({ signal: controller.signal, runSetupScript: true }),
+    );
+    expect(gatewayRequestRecords().some((request) => request.method === "agent")).toBe(false);
+    expect(hoisted.registerSubagentRunMock).not.toHaveBeenCalled();
   });
 
   it("creates source inspection from the same loaded source authority without setup", async () => {
@@ -452,6 +500,7 @@ describe("spawnSubagentDirect seam flow", () => {
       ownerKind: "session",
       ownerId: result.childSessionKey,
       systemChange: true,
+      signal: undefined,
       runSetupScript: false,
     });
     expect(persistedStore?.[result.childSessionKey!]).toMatchObject({

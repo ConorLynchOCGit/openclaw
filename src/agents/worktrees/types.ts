@@ -38,6 +38,8 @@ export type CreateManagedWorktreeParams = {
   ownerId?: string;
   /** Restricts creation to the loaded-generation source store and exact local object. */
   systemChange?: boolean;
+  /** Cancels repository setup before the worktree is admitted. */
+  signal?: AbortSignal;
   // Repository checkout hooks and .openclaw/worktree-setup.sh execute repo-local code, so
   // callers reachable from less-privileged surfaces opt out; admin paths keep them on.
   runSetupScript?: boolean;

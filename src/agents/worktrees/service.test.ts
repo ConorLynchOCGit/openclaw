@@ -31,6 +31,19 @@ async function gitWithInput(cwd: string, args: string[], input: string): Promise
   });
 }
 
+async function waitForPath(filePath: string, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      await fs.access(filePath);
+      return;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+  throw new Error(`timed out waiting for ${filePath}`);
+}
+
 async function initializeRepository(root: string, name = "repo"): Promise<string> {
   const repo = path.join(root, name);
   await fs.mkdir(repo, { recursive: true });
@@ -506,6 +519,37 @@ describe("ManagedWorktreeService", () => {
     await expect(fs.stat(setupHome)).rejects.toMatchObject({ code: "ENOENT" });
     expect(await git(repo, "worktree", "list", "--porcelain")).not.toContain("broken-setup");
     expect(await git(repo, "branch", "--list", "openclaw/broken-setup")).toBe("");
+  });
+
+  it("cancels setup and removes the unadmitted worktree without deleting shared caches", async () => {
+    await fs.mkdir(path.join(repo, ".openclaw"));
+    const script = path.join(repo, ".openclaw", "worktree-setup.sh");
+    const started = path.join(root, "setup-started");
+    await fs.writeFile(
+      script,
+      [
+        "#!/bin/sh",
+        `printf started > ${JSON.stringify(started)}`,
+        "while :; do sleep 1; done",
+        "",
+      ].join("\n"),
+      { mode: 0o755 },
+    );
+    const controller = new AbortController();
+    const creating = service.create({
+      repoRoot: repo,
+      name: "cancelled-setup",
+      signal: controller.signal,
+    });
+    await waitForPath(started);
+    controller.abort("test-cancel");
+
+    await expect(creating).rejects.toThrow("worktree setup failed");
+    expect(await git(repo, "worktree", "list", "--porcelain")).not.toContain("cancelled-setup");
+    expect(await git(repo, "branch", "--list", "openclaw/cancelled-setup")).toBe("");
+    expect((await fs.stat(path.join(env.OPENCLAW_STATE_DIR!, ".pnpm-store"))).isDirectory()).toBe(
+      true,
+    );
   });
 
   it("restores tracked and untracked state while reprovisioning ignored files", async () => {

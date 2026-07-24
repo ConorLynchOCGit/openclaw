@@ -217,6 +217,8 @@ export type SpawnSubagentContext = {
   /** Trusted loaded-generation source; never populated from model path arguments. */
   loadedSystemSource?: LoadedSystemSource;
   loadedSystemSourceMode?: LoadedSystemSourceMode;
+  /** Native tool-call cancellation propagated through pre-inference admission. */
+  signal?: AbortSignal;
 };
 
 function resolveSpawnedCwd(params: {
@@ -1625,6 +1627,7 @@ export async function spawnSubagentDirect(
         ownerKind: "session",
         ownerId: childSessionKey,
         systemChange: true,
+        signal: ctx.signal,
         runSetupScript: loadedSystemSourceMode === "modify",
       });
       spawnedCwd = loadedSystemWorktree.path;

@@ -248,6 +248,7 @@ async function runSetupScript(
   repoRoot: string,
   worktreePath: string,
   serviceEnv: NodeJS.ProcessEnv,
+  signal?: AbortSignal,
 ): Promise<void> {
   const setupScript = path.join(repoRoot, ".openclaw", "worktree-setup.sh");
   const stat = await fs.stat(setupScript).catch(() => undefined);
@@ -270,6 +271,7 @@ async function runSetupScript(
       timeoutMs: 120_000,
       cwd: worktreePath,
       baseEnv: {},
+      signal,
       env: {
         PATH: DEFAULT_WORKTREE_SETUP_PATH,
         HOME: setupHome,
@@ -610,6 +612,7 @@ export class ManagedWorktreeService {
           params.systemChange ? worktreePath : repository.sourceRoot,
           worktreePath,
           this.env,
+          params.signal,
         );
       }
     } catch (error) {
