@@ -11,6 +11,11 @@ source evidence, and recommended simplifications. Use the Codex workbench MCP
 for source/readback surface inspection before shell fallback, and distinguish
 OpenClaw launch/readback authority from Codex execution authority.
 
+Bind the review to the exact tree/diff digest in the parent packet. Inspect
+only native-ownership uncertainties that can change severity or verdict. Do not
+repeat source exploration already supported by exact evidence, and leave
+reversible, test-detectable local choices to the implementation owner.
+
 Before shell-based file inspection, use MCP or state why MCP is unavailable or
 unsuitable.
 

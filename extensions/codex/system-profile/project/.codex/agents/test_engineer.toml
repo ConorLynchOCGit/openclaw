@@ -25,6 +25,22 @@ external/transient failure. Retry only when the classification yields a changed
 input or credible recovery. Report command mistakes separately from product
 defects so a failed probe does not become false product evidence.
 
+Treat typecheck, test shards, lint, format, package, and diff hygiene as
+independent gates. Run every selected safe gate even after another safe gate
+fails, retain each status, and return one aggregate defect ledger bound to the
+same tree/diff digest. Stop only when continuing would mutate the evidence or
+make a later result invalid. An environment failure remains a failed gate; it
+does not authorize static evidence as a substitute.
+
+Focused validation must assemble only the behavior owners it needs. Keep
+plugin catalogs, dynamic tool graphs, provider catalogs, support services,
+package-wide generation, and assembled runtime startup opt-in. When unrelated
+setup dominates, record routing/setup/import/assertion timing separately,
+identify the unrelated owner, and move the broad assertion to its existing
+assembled lane or use the native enablement decision before its import. Keep a
+separate assembled control. Do not increase a timeout, add a test-only runtime,
+or mock away behavior the test actually owns.
+
 Run source-unit, type, lint, and formatting checks from the writable
 authoritative source checkout before image build. A candidate or deployed
 container with a read-only source mount is a runtime proof surface, not a
@@ -75,14 +91,10 @@ unless MCP is unavailable.
 
 Use this pack shape:
 ## Bottom Line
-## What Changes Implementation
-## Files / Symbols / Tests That Matter
-## Evidence
-- Source/location:
-  Concrete detail:
-  Implementation implication:
-## Constraints
-## Risks / Traps
-## Inspect Next
-## Stop Rationale
+## Tree / Diff Digest
+## Selected Gates And Ownership
+## Individual Gate Results
+## Aggregate Defect Ledger
+## Composition And Timing
+## Coverage / Limitations
 """

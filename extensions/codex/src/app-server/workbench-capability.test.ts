@@ -3,8 +3,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { CodexAppServerRpcError, type CodexAppServerClient } from "./client.js";
+import type { CodexAppServerClient } from "./client.js";
 import type { JsonObject } from "./protocol.js";
+import { CodexAppServerRpcError } from "./rpc-error.js";
 import { buildCodexWorkbenchCapabilityReport } from "./workbench-capability.js";
 
 describe("Codex workbench capability report", () => {
@@ -45,6 +46,8 @@ describe("Codex workbench capability report", () => {
         };
       }
       if (method === "config/read") {
+        const requestedCwd =
+          typeof requestParams?.cwd === "string" ? requestParams.cwd : workspaceDir;
         return {
           config: profileConfig,
           layers: [
@@ -52,7 +55,7 @@ describe("Codex workbench capability report", () => {
             {
               name: {
                 type: "project",
-                dotCodexFolder: path.join(String(requestParams?.cwd), ".codex"),
+                dotCodexFolder: path.join(requestedCwd, ".codex"),
               },
               version: "sha256:profile",
               config: profileConfig,

@@ -2692,6 +2692,7 @@ export function createVitestRunSpecs(args, params = {}) {
       : null;
     return {
       config: plan.config,
+      continueOnFailure: plans.length > 1 && !plan.watchMode,
       env: includeFilePath
         ? {
             ...baseEnv,
@@ -2704,6 +2705,29 @@ export function createVitestRunSpecs(args, params = {}) {
       watchMode: plan.watchMode,
     };
   });
+}
+
+export function createValidationResultLedger(params) {
+  const failures = params.results.filter((result) => result.exitCode !== 0);
+  const gates = params.results.map((result) => ({
+    ...result,
+    worktreeBefore: params.worktreeBefore,
+    worktreeAfter: params.worktreeAfter,
+  }));
+  return {
+    schema: "openclaw.validation.result_ledger.v1",
+    startedAt: new Date(params.startedAtMs).toISOString(),
+    endedAt: new Date(params.endedAtMs).toISOString(),
+    worktreeBefore: params.worktreeBefore,
+    worktreeAfter: params.worktreeAfter,
+    evidenceStable:
+      params.worktreeBefore.status === "available" &&
+      params.worktreeAfter.status === "available" &&
+      params.worktreeBefore.diffSha256 === params.worktreeAfter.diffSha256,
+    selectedGateCount: params.results.length,
+    failedGateCount: failures.length,
+    gates,
+  };
 }
 
 function loadIncludePatternsForSpecFilter(env) {

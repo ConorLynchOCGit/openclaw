@@ -1,6 +1,7 @@
 // Codex tests cover native subagent task mirror plugin behavior.
 import { describe, expect, it, vi } from "vitest";
 import {
+  codexNativeSubagentFollowUpRunId,
   codexNativeSubagentRunId,
   CodexNativeSubagentTaskMirror,
   type TaskLifecycleRuntime,
@@ -1141,6 +1142,138 @@ describe("CodexNativeSubagentTaskMirror", () => {
         lastEventAt: 48_000,
         progressSummary: "Codex native subagent is idle: Inspecting task registry readback.",
         terminalSummary: "Codex native subagent finished: Inspecting task registry readback.",
+      }),
+    );
+  });
+
+  it("mirrors a reopened native child as a linked active follow-up attempt", () => {
+    const runtime = createRuntime();
+    const mirror = new CodexNativeSubagentTaskMirror(
+      {
+        parentThreadId: "parent-thread",
+        requesterSessionKey: "agent:main:main",
+        agentId: "coding",
+        now: () => 49_000,
+      },
+      runtime,
+    );
+
+    mirror.handleNotification({
+      method: "thread/started",
+      params: {
+        thread: {
+          id: "child-thread",
+          preview: "implement the bounded slice",
+          createdAt: 10,
+          status: { type: "active", activeFlags: [] },
+          source: {
+            subagent: {
+              thread_spawn: {
+                parent_thread_id: "parent-thread",
+                depth: 1,
+                agent_path: "agents/implementer.toml",
+                agent_nickname: "Curie",
+                agent_role: "implementer",
+              },
+            },
+          },
+        },
+      },
+    });
+    mirror.handleNotification({
+      method: "thread/status/changed",
+      params: {
+        threadId: "child-thread",
+        status: { type: "idle" },
+      },
+    });
+    vi.mocked(runtime.listTaskRecords).mockReturnValue([
+      {
+        taskId: "task-native-subagent",
+        runId: codexNativeSubagentRunId("child-thread"),
+        status: "succeeded",
+      } as ReturnType<TaskLifecycleRuntime["listTaskRecords"]>[number],
+    ]);
+    mirror.handleNotification({
+      method: "item/started",
+      params: {
+        threadId: "parent-thread",
+        turnId: "parent-turn-2",
+        item: {
+          id: "follow-up-call",
+          type: "collabAgentToolCall",
+          tool: "sendInput",
+          status: "inProgress",
+          senderThreadId: "parent-thread",
+          receiverThreadIds: ["child-thread"],
+          prompt: "Resolve the reviewer finding and rerun the focused test.",
+          agentsStates: {
+            "child-thread": {
+              status: "running",
+              message: "Applying the focused repair.",
+            },
+          },
+        },
+      },
+    });
+    mirror.handleNotification({
+      method: "thread/status/changed",
+      params: {
+        threadId: "child-thread",
+        status: { type: "active", activeFlags: ["tool"] },
+      },
+    });
+    mirror.handleNotification({
+      method: "thread/status/changed",
+      params: {
+        threadId: "child-thread",
+        status: { type: "idle" },
+      },
+    });
+
+    const followUpRunId = codexNativeSubagentFollowUpRunId("child-thread", "follow-up-call");
+    expect(runtime.tryCreateRunningTaskRun).toHaveBeenCalledTimes(2);
+    expect(runtime.tryCreateRunningTaskRun).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        sourceId: followUpRunId,
+        runId: followUpRunId,
+        parentTaskId: "task-native-subagent",
+        agentId: "coding",
+        task: "Resolve the reviewer finding and rerun the focused test.",
+        progressSummary:
+          "Codex native subagent follow-up started: Resolve the reviewer finding and rerun the focused test.",
+        eventMetadata: expect.objectContaining({
+          parentThreadId: "parent-thread",
+          parentTurnId: "parent-turn-2",
+          childThreadId: "child-thread",
+          childPhase: "child_follow_up_started",
+          childAttemptKind: "follow_up",
+          childOperationId: "follow-up-call",
+          childRole: "implementer",
+        }),
+      }),
+    );
+    expect(runtime.recordTaskRunProgressByRunId).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: followUpRunId,
+        progressSummary: "Codex native subagent is active: Applying the focused repair.",
+        eventMetadata: expect.objectContaining({
+          childAttemptKind: "follow_up",
+          childOperationId: "follow-up-call",
+          childPhase: "child_active",
+        }),
+      }),
+    );
+    expect(runtime.finalizeTaskRunByRunId).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        runId: followUpRunId,
+        status: "succeeded",
+        eventMetadata: expect.objectContaining({
+          childAttemptKind: "follow_up",
+          childOperationId: "follow-up-call",
+          childPhase: "child_completed",
+        }),
       }),
     );
   });

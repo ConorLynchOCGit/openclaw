@@ -15,6 +15,8 @@ import {
   buildValidationPerformanceProfile,
   buildVitestArgs,
   buildVitestRunPlans,
+  createValidationResultLedger,
+  createVitestRunSpecs,
   findUnmatchedExplicitTestTargets,
   formatFailedShardDigest,
   listFullExtensionVitestProjectConfigs,
@@ -2026,6 +2028,64 @@ describe("scripts/test-projects validation performance profile", () => {
       "known-bad direct Vitest path applies",
     );
     expect(profile.actionableSummaries.join("\n")).toContain("configure only if");
+  });
+});
+
+describe("scripts/test-projects aggregate gate finality", () => {
+  it("keeps every safe targeted shard eligible after an earlier shard fails", () => {
+    const specs = createVitestRunSpecs(
+      [
+        "test/scripts/test-projects.test.ts",
+        "extensions/codex/src/app-server/native-subagent-task-mirror.test.ts",
+      ],
+      {
+        baseEnv: {},
+        cwd: process.cwd(),
+        tempDir: os.tmpdir(),
+      },
+    );
+
+    expect(specs).toHaveLength(2);
+    expect(specs.map((spec) => spec.config)).toEqual([
+      "test/vitest/vitest.tooling.config.ts",
+      "test/vitest/vitest.extension-codex.config.ts",
+    ]);
+    expect(specs.every((spec) => spec.continueOnFailure === true)).toBe(true);
+  });
+
+  it("retains the first failure and every later safe shard in one stable ledger", () => {
+    const worktree = {
+      schema: "openclaw.validation.worktree_identity.v1" as const,
+      status: "available" as const,
+      head: "a".repeat(40),
+      diffSha256: "b".repeat(64),
+      untrackedPathCount: 0,
+    };
+    const ledger = createValidationResultLedger({
+      startedAtMs: 1_000,
+      endedAtMs: 2_000,
+      worktreeBefore: worktree,
+      worktreeAfter: worktree,
+      results: [
+        { order: 0, gateId: "1:failing", exitCode: 1 },
+        { order: 1, gateId: "2:later-a", exitCode: 0 },
+        { order: 2, gateId: "3:later-b", exitCode: 0 },
+      ],
+    });
+
+    expect(ledger).toMatchObject({
+      schema: "openclaw.validation.result_ledger.v1",
+      evidenceStable: true,
+      selectedGateCount: 3,
+      failedGateCount: 1,
+    });
+    expect(ledger.gates.map((gate) => [gate.gateId, gate.exitCode])).toEqual([
+      ["1:failing", 1],
+      ["2:later-a", 0],
+      ["3:later-b", 0],
+    ]);
+    expect(ledger.gates.every((gate) => gate.worktreeBefore === worktree)).toBe(true);
+    expect(ledger.gates.every((gate) => gate.worktreeAfter === worktree)).toBe(true);
   });
 });
 

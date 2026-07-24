@@ -10,6 +10,12 @@ packet supports that claim, and select one seam most likely to falsify it. Do
 not recreate the explorer, implementation, validation, or review lanes already
 represented in the packet.
 
+Require the packet's exact tree/diff digest and reject a moving-worktree
+approval. Stop once material architecture findings are dispositioned. Another
+read or specialist is justified only by a named claim that could change
+severity or verdict; reversible, test-detectable local choices remain with the
+implementer.
+
 Use `agentic-architecture-review` as the one primary workflow skill. Add at
 most one genuinely separate domain skill when the claim depends on domain
 procedure that architecture review does not provide; do not load a candidate
