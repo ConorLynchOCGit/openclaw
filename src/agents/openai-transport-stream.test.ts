@@ -604,6 +604,87 @@ describe("openai transport stream", () => {
     });
   });
 
+  it("keeps native ChatGPT Responses turns on one backend session", () => {
+    const model = {
+      id: "gpt-5.6-sol",
+      name: "GPT-5.6 Sol",
+      api: "openai-chatgpt-responses",
+      provider: "openai",
+      baseUrl: "https://chatgpt.com/backend-api",
+      headers: {},
+      reasoning: true,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 372000,
+      maxTokens: 128000,
+    } satisfies Model<"openai-chatgpt-responses">;
+
+    expect(
+      testing.buildOpenAIClientHeaders(
+        model,
+        { systemPrompt: "", messages: [] } as never,
+        undefined,
+        undefined,
+        "session-abc-123",
+      ).session_id,
+    ).toBe("session-abc-123");
+    expect(
+      testing.buildOpenAIClientHeaders(
+        model,
+        { systemPrompt: "", messages: [] } as never,
+        { Session_ID: "caller-session" },
+        undefined,
+        "session-abc-123",
+      ),
+    ).toMatchObject({ Session_ID: "caller-session" });
+  });
+
+  it("does not add ChatGPT session affinity to the public Responses API", () => {
+    const headers = testing.buildOpenAIClientHeaders(
+      {
+        id: "gpt-5.6-sol",
+        name: "GPT-5.6 Sol",
+        api: "openai-responses",
+        provider: "openai",
+        baseUrl: "https://api.openai.com/v1",
+        headers: {},
+        reasoning: true,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 372000,
+        maxTokens: 128000,
+      } satisfies Model<"openai-responses">,
+      { systemPrompt: "", messages: [] } as never,
+      undefined,
+      undefined,
+      "session-abc-123",
+    );
+
+    expect(headers.session_id).toBeUndefined();
+  });
+
+  it("requests SSE explicitly for native ChatGPT Responses streams", () => {
+    expect(
+      testing.buildOpenAISdkRequestOptions(
+        {
+          id: "gpt-5.6-sol",
+          name: "GPT-5.6 Sol",
+          api: "openai-chatgpt-responses",
+          provider: "openai",
+          baseUrl: "https://chatgpt.com/backend-api",
+          headers: {},
+          reasoning: true,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 372000,
+          maxTokens: 128000,
+        } satisfies Model<"openai-chatgpt-responses">,
+        undefined,
+        { stream: true },
+      ),
+    ).toMatchObject({ headers: { Accept: "text/event-stream" } });
+  });
+
   it("moves Azure OpenAI completions api-version headers into default query params", () => {
     const config = testing.buildOpenAICompletionsClientConfig(
       {

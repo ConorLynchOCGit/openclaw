@@ -140,6 +140,15 @@ describe("formatAssistantErrorText", () => {
       ),
     ).toBe("server_error");
   });
+  it("does not relabel a structured provider server error as a timeout", () => {
+    const msg = makeAssistantMessageFixture({
+      errorMessage: "An error occurred while processing your request. You can retry your request.",
+      errorCode: "server_error",
+      errorType: "server_error",
+    });
+
+    expect(classifyAssistantFailoverReason(msg, { provider: "openai" })).toBe("server_error");
+  });
   it("uses generic user-facing copy for escaped structured provider messages", () => {
     // The internal formatter keeps detail for logs, while user-facing text must
     // not expose arbitrary provider-controlled structured payload content.

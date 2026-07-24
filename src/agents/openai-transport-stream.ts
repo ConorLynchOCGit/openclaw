@@ -6,6 +6,7 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
+import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { uniqueStrings } from "@openclaw/normalization-core/string-normalization";
 import OpenAI, { AzureOpenAI } from "openai";
 import type { ChatCompletionChunk } from "openai/resources/chat/completions.js";
@@ -783,10 +784,14 @@ function isInvalidEncryptedContentError(error: unknown): boolean {
     return false;
   }
   const record = error as { code?: unknown; message?: unknown };
-  if (record.code === "invalid_encrypted_content") {
+  if (record.code === "invalid_encrypted_content" || record.code === "thinking_signature_invalid") {
     return true;
   }
-  return typeof record.message === "string" && record.message.includes("invalid_encrypted_content");
+  return (
+    typeof record.message === "string" &&
+    (record.message.includes("invalid_encrypted_content") ||
+      record.message.includes("thinking_signature_invalid"))
+  );
 }
 
 function stripEncryptedContentFields(value: unknown): { value: unknown; changed: boolean } {
@@ -1782,6 +1787,7 @@ function buildOpenAIClientHeaders(
   context: Context,
   optionHeaders?: Record<string, string>,
   turnHeaders?: Record<string, string>,
+  sessionId?: string,
 ): Record<string, string> {
   const providerHeaders = { ...model.headers };
   if (model.provider === "github-copilot") {
@@ -1804,7 +1810,17 @@ function buildOpenAIClientHeaders(
     callerHeaders: Object.keys(callerHeaders).length > 0 ? callerHeaders : undefined,
     precedence: "caller-wins",
   }).headers;
-  return headers ?? {};
+  const resolvedHeaders = headers ?? {};
+  if (
+    sessionId &&
+    !Object.keys(resolvedHeaders).some(
+      (key) => normalizeLowercaseStringOrEmpty(key) === "session_id",
+    ) &&
+    usesNativeOpenAICodexResponsesBackend(model)
+  ) {
+    resolvedHeaders.session_id = sessionId;
+  }
+  return resolvedHeaders;
 }
 
 function resolveProviderTransportTurnState(
@@ -1849,12 +1865,18 @@ function buildOpenAISdkClientOptions(model: Model): { timeout?: number } {
 function buildOpenAISdkRequestOptions(
   model: Model,
   signal?: AbortSignal,
-): { signal?: AbortSignal; timeout?: number } | undefined {
+  options?: { stream?: boolean },
+): { signal?: AbortSignal; timeout?: number; headers?: Record<string, string> } | undefined {
   const timeout = resolveOpenAISdkTimeoutMs(model);
-  if (timeout === undefined && !signal) {
+  const headers =
+    options?.stream === true && usesNativeOpenAICodexResponsesBackend(model)
+      ? { Accept: "text/event-stream" }
+      : undefined;
+  if (timeout === undefined && !signal && !headers) {
     return undefined;
   }
   return {
+    ...(headers ? { headers } : {}),
     ...(signal ? { signal } : {}),
     ...(timeout !== undefined ? { timeout } : {}),
   };
@@ -1866,12 +1888,13 @@ function createOpenAIResponsesClient(
   apiKey: string,
   optionHeaders?: Record<string, string>,
   turnHeaders?: Record<string, string>,
+  sessionId?: string,
 ) {
   return new OpenAI({
     apiKey,
     baseURL: model.baseUrl,
     dangerouslyAllowBrowser: true,
-    defaultHeaders: buildOpenAIClientHeaders(model, context, optionHeaders, turnHeaders),
+    defaultHeaders: buildOpenAIClientHeaders(model, context, optionHeaders, turnHeaders, sessionId),
     fetch: buildGuardedModelFetch(model),
     ...buildOpenAISdkClientOptions(model),
   });
@@ -1914,6 +1937,7 @@ export function createOpenAIResponsesTransportStreamFn(): StreamFn {
           apiKey,
           options?.headers,
           turnState?.headers,
+          options?.sessionId,
         );
         let params = buildOpenAIResponsesParams(
           model,
@@ -1941,7 +1965,9 @@ export function createOpenAIResponsesTransportStreamFn(): StreamFn {
           assertCodeModeResponsesToolSurface(params);
         }
         const requestStartedAt = Date.now();
-        const requestOptions = buildOpenAISdkRequestOptions(model, options?.signal);
+        const requestOptions = buildOpenAISdkRequestOptions(model, options?.signal, {
+          stream: true,
+        });
         emitModelTransportDebug(
           log,
           `[responses] start provider=${model.provider} api=${model.api} model=${model.id} ` +
@@ -2208,7 +2234,8 @@ export function buildOpenAIResponsesParams(
   const payloadPolicy = resolveOpenAIResponsesPayloadPolicy(model, {
     storeMode: "disable",
   });
-  const policyAllowsReplayIds = payloadPolicy.explicitStore !== false;
+  const policyAllowsReplayIds =
+    payloadPolicy.explicitStore !== false && !payloadPolicy.shouldStripStore;
   const replayResponsesItemIds =
     !isNativeCodexResponses && (options?.replayResponsesItemIds ?? policyAllowsReplayIds);
   const messages = convertResponsesMessages(

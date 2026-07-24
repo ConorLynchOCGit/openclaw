@@ -1239,7 +1239,7 @@ export function classifyFailoverSignal(signal: FailoverSignal): FailoverClassifi
   const errorTypeClassification = classifyFailoverClassificationFromErrorType(signal.errorType);
   const effectiveMessageClassification = providerPluginReason
     ? toReasonClassification(providerPluginReason)
-    : (messageOrDetailClassification ?? errorTypeClassification);
+    : (errorTypeClassification ?? messageOrDetailClassification);
   const codeReason = classifyFailoverReasonFromCode(signal.code);
   if (codeReason === "auth_permanent") {
     return toReasonClassification(codeReason);
