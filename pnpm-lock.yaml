@@ -1757,9 +1757,6 @@ importers:
 
   extensions/x-intelligence:
     dependencies:
-      '@openclaw/media-core':
-        specifier: workspace:*
-        version: link:../../packages/media-core
       '@xdevplatform/xdk':
         specifier: 0.5.0
         version: 0.5.0(node-fetch@3.3.2)

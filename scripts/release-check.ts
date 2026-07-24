@@ -52,6 +52,7 @@ import {
   resolveInstalledBinaryCommandInvocation,
   resolveInstalledBinaryPath,
 } from "./openclaw-npm-postpublish-verify.ts";
+import { collectRootPackagedBundledRuntimeDependencyErrors } from "./root-dependency-ownership-audit.mjs";
 import { listStaticExtensionAssetOutputs } from "./runtime-postbuild.mjs";
 import { sparkleBuildFloorsFromShortVersion, type SparkleBuildFloors } from "./sparkle-build.ts";
 import { buildCmdExeCommandLine } from "./windows-cmd-helpers.mjs";
@@ -295,6 +296,7 @@ function collectBundledExtensions(): BundledExtension[] {
 function checkBundledExtensionMetadata() {
   const extensions = collectBundledExtensions();
   const manifestErrors = collectBundledExtensionManifestErrors(extensions);
+  const localRuntimeDependencyErrors = collectRootPackagedBundledRuntimeDependencyErrors();
   const bundledPackageDependencySpecs = collectBundledPluginPackageDependencySpecs(
     resolve("extensions"),
   );
@@ -306,7 +308,7 @@ function checkBundledExtensionMetadata() {
       ),
     )
     .toSorted((left, right) => left.localeCompare(right));
-  const errors = [...manifestErrors, ...dependencyConflictErrors];
+  const errors = [...manifestErrors, ...localRuntimeDependencyErrors, ...dependencyConflictErrors];
   if (errors.length > 0) {
     console.error("release-check: bundled extension manifest validation failed:");
     for (const error of errors) {

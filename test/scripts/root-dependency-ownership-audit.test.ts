@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   classifyRootDependencyOwnership,
+  collectRootPackagedBundledRuntimeDependencyErrors,
   collectRootDependencyOwnershipAudit,
   collectRootDependencyOwnershipCheckErrors,
   collectModuleSpecifiers,
@@ -369,5 +370,39 @@ describe("collectRootDependencyOwnershipCheckErrors", () => {
         spec: "^1.0.0",
       },
     ]);
+  });
+});
+
+describe("collectRootPackagedBundledRuntimeDependencyErrors", () => {
+  it("rejects local-only runtime specs from root-packaged extensions", () => {
+    const repoRoot = makeTempRepo();
+    writeRepoFile(repoRoot, "package.json", JSON.stringify({ files: ["dist/"] }));
+    writeRepoFile(
+      repoRoot,
+      "extensions/broken/package.json",
+      JSON.stringify({ dependencies: { "@openclaw/media-core": "workspace:*" } }),
+    );
+    writeRepoFile(repoRoot, "extensions/broken/openclaw.plugin.json", JSON.stringify({}));
+
+    expect(collectRootPackagedBundledRuntimeDependencyErrors({ repoRoot })).toEqual([
+      "root-packaged extension 'broken' dependencies.@openclaw/media-core cannot use local-only spec 'workspace:*'",
+    ]);
+  });
+
+  it("allows local-only specs for extensions excluded from the root package", () => {
+    const repoRoot = makeTempRepo();
+    writeRepoFile(
+      repoRoot,
+      "package.json",
+      JSON.stringify({ files: ["dist/", "!dist/extensions/external/**"] }),
+    );
+    writeRepoFile(
+      repoRoot,
+      "extensions/external/package.json",
+      JSON.stringify({ dependencies: { "@openclaw/external-runtime": "workspace:*" } }),
+    );
+    writeRepoFile(repoRoot, "extensions/external/openclaw.plugin.json", JSON.stringify({}));
+
+    expect(collectRootPackagedBundledRuntimeDependencyErrors({ repoRoot })).toStrictEqual([]);
   });
 });

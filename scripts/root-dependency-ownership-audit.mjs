@@ -34,6 +34,7 @@ const ROOT_OWNED_EXTENSION_RUNTIME_DEPENDENCIES = new Map([
     "keep at root; the internal browser runtime is shipped with core even though downloadable browser-adjacent plugins also declare it",
   ],
 ]);
+const LOCAL_ONLY_RUNTIME_SPEC_PREFIXES = ["workspace:", "file:", "link:"];
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -166,6 +167,46 @@ function collectExcludedPackagedExtensionDirs(rootPackageJson) {
     }
   }
   return excluded;
+}
+
+/**
+ * Rejects local-workspace specs that cannot resolve from an installed root
+ * package's bundled plugin tree.
+ */
+export function collectRootPackagedBundledRuntimeDependencyErrors(params = {}) {
+  const repoRoot = path.resolve(params.repoRoot ?? process.cwd());
+  const rootPackageJson = readJson(path.join(repoRoot, "package.json"));
+  const excluded = collectExcludedPackagedExtensionDirs(rootPackageJson);
+  const extensionsRoot = path.join(repoRoot, "extensions");
+  if (!fs.existsSync(extensionsRoot)) {
+    return [];
+  }
+
+  const errors = [];
+  for (const entry of fs.readdirSync(extensionsRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory() || excluded.has(entry.name)) {
+      continue;
+    }
+    const packageJsonPath = path.join(extensionsRoot, entry.name, "package.json");
+    const manifestPath = path.join(extensionsRoot, entry.name, "openclaw.plugin.json");
+    if (!fs.existsSync(packageJsonPath) || !fs.existsSync(manifestPath)) {
+      continue;
+    }
+    const packageJson = readJson(packageJsonPath);
+    for (const section of ["dependencies", "optionalDependencies"]) {
+      for (const [name, spec] of Object.entries(packageJson[section] ?? {})) {
+        if (
+          typeof spec === "string" &&
+          LOCAL_ONLY_RUNTIME_SPEC_PREFIXES.some((prefix) => spec.startsWith(prefix))
+        ) {
+          errors.push(
+            `root-packaged extension '${entry.name}' ${section}.${name} cannot use local-only spec '${spec}'`,
+          );
+        }
+      }
+    }
+  }
+  return errors.toSorted((left, right) => left.localeCompare(right));
 }
 
 function collectInternalizedBundledExtensionRuntimeDependencies(repoRoot, rootPackageJson) {
@@ -412,7 +453,10 @@ function main(argv = process.argv.slice(2)) {
   const check = argv.includes("--check");
   const records = collectRootDependencyOwnershipAudit();
   if (check) {
-    const errors = collectRootDependencyOwnershipCheckErrors(records);
+    const errors = [
+      ...collectRootDependencyOwnershipCheckErrors(records),
+      ...collectRootPackagedBundledRuntimeDependencyErrors(),
+    ];
     if (errors.length > 0) {
       for (const error of errors) {
         console.error(`[root-dependency-ownership] ${error}`);
