@@ -846,6 +846,97 @@ describe("session MCP runtime", () => {
     }
   });
 
+  it("reports duplicate tool names from the native MCP catalog and exposes only one", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "bundle-mcp-duplicate-tool-"));
+    const serverPath = path.join(tempDir, "duplicate-tool.mjs");
+    const logPath = path.join(tempDir, "server.log");
+    await writeListToolsMcpServer({
+      filePath: serverPath,
+      logPath,
+      tools: [
+        { name: "search_docs", inputSchema: { type: "object", properties: {} } },
+        { name: "search_docs", inputSchema: { type: "object", properties: {} } },
+      ],
+    });
+
+    const runtime = await getOrCreateSessionMcpRuntime({
+      sessionId: "session-duplicate-tool",
+      sessionKey: "agent:test:session-duplicate-tool",
+      workspaceDir: "/workspace",
+      cfg: {
+        mcp: {
+          servers: {
+            docs: {
+              command: process.execPath,
+              args: [serverPath],
+            },
+          },
+        },
+      },
+    });
+
+    try {
+      const catalog = await runtime.getCatalog();
+
+      expect(catalog.tools.map((tool) => tool.toolName)).toEqual(["search_docs"]);
+      expect(catalog.diagnostics).toContainEqual(
+        expect.objectContaining({
+          serverName: "docs",
+          message: 'MCP tools/list returned duplicate tool name "search_docs".',
+        }),
+      );
+    } finally {
+      await runtime.dispose();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("reports exact configured tools missing from the native MCP catalog", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "bundle-mcp-missing-tool-"));
+    const serverPath = path.join(tempDir, "missing-tool.mjs");
+    const logPath = path.join(tempDir, "server.log");
+    await writeListToolsMcpServer({
+      filePath: serverPath,
+      logPath,
+      tools: [{ name: "read_docs", inputSchema: { type: "object", properties: {} } }],
+    });
+
+    const runtime = await getOrCreateSessionMcpRuntime({
+      sessionId: "session-missing-tool",
+      sessionKey: "agent:test:session-missing-tool",
+      workspaceDir: "/workspace",
+      cfg: {
+        mcp: {
+          servers: {
+            docs: {
+              command: process.execPath,
+              args: [serverPath],
+              toolFilter: {
+                include: ["read_docs", "search_docs"],
+              },
+            },
+          },
+        },
+      },
+    });
+
+    try {
+      const catalog = await runtime.getCatalog();
+
+      expect(catalog.tools.map((tool) => tool.toolName)).toEqual(["read_docs"]);
+      expect(catalog.diagnostics).toContainEqual(
+        expect.objectContaining({
+          serverName: "docs",
+          message:
+            'Configured toolFilter.include entry "search_docs" was not returned by MCP tools/list.',
+        }),
+      );
+    } finally {
+      await runtime.dispose();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("lists MCP tools from servers that omit the tools capability", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "bundle-mcp-unadvertised-tools-"));
     const serverPath = path.join(tempDir, "unadvertised-tools.mjs");
