@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyAgentHarnessTerminalOutcome,
   type AgentHarnessTerminalOutcomeClassification,
+  loadCodexBundleMcpThreadConfig,
 } from "./agent-harness-runtime.js";
 
 describe("classifyAgentHarnessTerminalOutcome", () => {
@@ -127,5 +128,24 @@ describe("classifyAgentHarnessTerminalOutcome", () => {
       }) ?? "empty";
 
     expect(classification).toBe("empty");
+  });
+});
+
+describe("loadCodexBundleMcpThreadConfig", () => {
+  it.each([
+    { disableTools: true },
+    { toolsEnabled: false },
+    { toolsAllow: [] },
+    { toolsAllow: ["memory_search"] },
+  ])("stays on the lightweight path for case %#", async (params) => {
+    await expect(
+      loadCodexBundleMcpThreadConfig({
+        workspaceDir: "/workspace",
+        ...params,
+      }),
+    ).resolves.toEqual({
+      diagnostics: [],
+      evaluated: true,
+    });
   });
 });

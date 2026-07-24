@@ -6,6 +6,7 @@ import type {
   CodexBundleMcpThreadConfig,
   LoadCodexBundleMcpThreadConfigParams,
 } from "../agents/codex-mcp-config.types.js";
+import { shouldCreateBundleMcpRuntimeForAttempt } from "../agents/embedded-agent-runner/run/attempt-tool-construction-plan.js";
 import type { EmbeddedRunAttemptResult } from "../agents/embedded-agent-runner/run/types.js";
 import {
   abortAndDrainEmbeddedAgentRun,
@@ -236,6 +237,18 @@ export async function detectAndLoadAgentHarnessPromptImages(params: {
 export async function loadCodexBundleMcpThreadConfig(
   params: LoadCodexBundleMcpThreadConfigParams,
 ): Promise<CodexBundleMcpThreadConfig> {
+  if (
+    !shouldCreateBundleMcpRuntimeForAttempt({
+      toolsEnabled: params.toolsEnabled ?? true,
+      disableTools: params.disableTools,
+      toolsAllow: params.toolsAllow,
+    })
+  ) {
+    return {
+      diagnostics: [],
+      evaluated: true,
+    };
+  }
   const { loadCodexBundleMcpThreadConfig: load } = await import("../agents/codex-mcp-config.js");
   return load(params);
 }

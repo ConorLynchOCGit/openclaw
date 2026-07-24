@@ -543,11 +543,6 @@ describe("runCodexAppServerAttempt", () => {
         config_file: path.join(systemProfileDir, "project/.codex/agents/codex_reviewer.toml"),
       },
     };
-    testing.setOpenClawCodingToolsFactoryForTests(() => [
-      createRuntimeDynamicTool("message"),
-      createRuntimeDynamicTool("sessions_history"),
-      createRuntimeDynamicTool("task"),
-    ]);
     const events: Array<{ stream: string; data: Record<string, unknown> }> = [];
     const { requests, waitForMethod, completeTurn } = createStartedThreadHarness(
       async (method, requestParams) => {
@@ -570,7 +565,7 @@ describe("runCodexAppServerAttempt", () => {
     const params = createParams(sessionFile, workspaceDir);
     params.agentId = "coding";
     params.sessionKey = "agent:coding:session-workbench";
-    params.disableTools = false;
+    params.disableTools = true;
     params.runtimePlan = createCodexRuntimePlanFixture();
     params.onAgentEvent = (event) => {
       events.push(event);

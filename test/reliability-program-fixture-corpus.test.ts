@@ -7,7 +7,7 @@ import { z } from "zod";
 const SOURCE_COMMIT = "41ec19868b13c463cfdcde264fa1857c3e05d29c";
 const SCHEMA_VERSION = "openclaw.reliability.fixture-corpus.v1";
 const CORRECTED_SPEC_CONTENT_SHA256 =
-  "4054b07070ba51ec10e8649d9bc1d02ee9df4ed6558acab12fc013f55d5a94a3";
+  "61c73a55f1f604964479423fdb901af8bc206b4064745dda225ef13546532d43";
 
 const RUNTIME_IDS = [
   "FX-LIFE-01",
@@ -39,6 +39,7 @@ const CODING_IDS = [
   "FX-CODE-02",
   "FX-CODE-03",
   "FX-VALID-01",
+  "FX-VALID-02",
   "FX-DIFF-01",
   "FX-CHILD-01",
   "FX-CREVIEW-01",
@@ -150,7 +151,7 @@ describe("reliability program fixture corpus", () => {
     expect(runtime.corpus.corpus).toBe("runtime");
     expect(coding.corpus.corpus).toBe("coding");
     expect(runtime.corpus.entries).toHaveLength(22);
-    expect(coding.corpus.entries).toHaveLength(8);
+    expect(coding.corpus.entries).toHaveLength(9);
     expect(sorted(runtime.corpus.entries.map((entry) => entry.id))).toEqual(sorted(RUNTIME_IDS));
     expect(sorted(coding.corpus.entries.map((entry) => entry.id))).toEqual(sorted(CODING_IDS));
 

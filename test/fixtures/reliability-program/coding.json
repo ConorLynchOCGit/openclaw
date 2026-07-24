@@ -5,7 +5,7 @@
     "sourceCommit": "41ec19868b13c463cfdcde264fa1857c3e05d29c",
     "sourceTree": "bc768005ffef524407f66041752c502076b8fa9e",
     "baselineProgramSpecCommit": "cdc3c11e575eb6067de18333ee88133ba9b903dd",
-    "correctedProgramSpecContentSha256": "4054b07070ba51ec10e8649d9bc1d02ee9df4ed6558acab12fc013f55d5a94a3",
+    "correctedProgramSpecContentSha256": "61c73a55f1f604964479423fdb901af8bc206b4064745dda225ef13546532d43",
     "programSpecSection": "12",
     "proofLockGate": "G0"
   },
@@ -435,6 +435,64 @@
       "baselineState": {
         "classification": "missing_exact_fixture",
         "gap": "Review contracts exist, but there is no clean control proving that no specialist is the correct native decision."
+      }
+    },
+    {
+      "id": "FX-VALID-02",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "native focused-validation routing and minimal agent-harness composition",
+        "surfaces": [
+          "scripts/test-projects.mjs",
+          "test/vitest",
+          "src/plugin-sdk/agent-harness-runtime.ts",
+          "extensions/codex/src/app-server/run-attempt-test-harness.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 4C",
+        "focusedGate": "G4C",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "One Codex startup-capability assertion whose behavior requires no OpenClaw dynamic tools, one file-scoped lint whose files do not change SDK exports, and separate assembled controls for the full plugin/tool graph and generated package-boundary declarations.",
+        "steps": [
+          "Run the focused assertion through the existing narrow Vitest project with minimal harness defaults and record transform/import/setup separately from assertion execution.",
+          "Run file-scoped lint without generating package-wide SDK declarations when no exported boundary changed.",
+          "Run broad controls through their existing plugin/runtime and package-boundary projects with explicit enablement.",
+          "Compare loaded owners and gate receipts to confirm that each validation assembled only its declared surface."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "The focused test does not load the plugin catalog or bundle-MCP graph when the native construction decision says those tools are disabled or unneeded.",
+        "The file-scoped lint does not run package-wide SDK declaration generation for unrelated files.",
+        "The assembled control still loads and validates the broad catalog through the existing integration project.",
+        "The native validation router reports focused and assembled outcomes as separate gates."
+      ],
+      "negativeAssertions": [
+        "No timeout increase, second test runner, test-only plugin registry, or mocked owned behavior hides the composition defect.",
+        "A helper cannot silently activate production-wide catalogs for an unrelated focused assertion.",
+        "Focused success cannot substitute for the assembled control."
+      ],
+      "existingPassingControlTestPaths": [
+        "src/plugin-sdk/agent-harness-runtime.test.ts",
+        "src/agents/codex-mcp-config.test.ts",
+        "extensions/codex/src/app-server/run-attempt.test.ts",
+        "test/scripts/test-projects.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "src/plugin-sdk/agent-harness-runtime.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs src/plugin-sdk/agent-harness-runtime.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-VALID-02.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-VALID-02.json"
+      },
+      "baselineState": {
+        "classification": "partial",
+        "gap": "The native router and minimal harness defaults exist, but focused tests can still explicitly enable unrelated production-wide catalogs and pay assembled startup cost."
       }
     }
   ]

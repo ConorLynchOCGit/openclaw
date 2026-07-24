@@ -12,6 +12,7 @@ describe("Codex workbench capability report", () => {
     const workspaceDir = await makeWorkspace({ sourceRoot: true });
     const systemProfileDir = path.join(workspaceDir, "system-profile");
     const profileProjectDir = path.join(systemProfileDir, "project");
+    await fs.mkdir(profileProjectDir, { recursive: true });
     const profileConfig = {
       features: {
         code_mode: true,
@@ -158,17 +159,8 @@ describe("Codex workbench capability report", () => {
     expect(report.codexWorkbench).toEqual({
       executionCwd: workspaceDir,
       workspaceRoot: workspaceDir,
-      sourceRoot: path.join(workspaceDir, "src", "openclaw"),
       workbenchRoot: workspaceDir,
-      pluginRoot: path.join(
-        workspaceDir,
-        "src",
-        "openclaw",
-        ".agents",
-        "plugins",
-        "plugins",
-        "openclaw-coding-workbench",
-      ),
+      packageProfileRoot: systemProfileDir,
       mcpServers: ["openai-docs", "openclaw_repo_workbench"],
     });
     expect(report.openclawDynamicTools).toEqual({ count: 0, names: [] });
