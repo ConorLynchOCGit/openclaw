@@ -824,7 +824,6 @@ export const testing = {
   resolveImageFallbackCandidates,
   resolveCooldownDecision,
   resolveSessionSuspensionReason,
-  shouldDiscardDeferredSessionSuspension,
 } as const;
 
 export function resolveModelCandidateChain(

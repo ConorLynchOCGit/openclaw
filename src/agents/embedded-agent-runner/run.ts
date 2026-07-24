@@ -2983,14 +2983,14 @@ async function runEmbeddedAgentInternal(
             continue;
           }
 
-          const authFailure = isAuthAssistantError(assistantForFailover);
-          const rateLimitFailure = isRateLimitAssistantError(assistantForFailover);
-          const billingFailure = isBillingAssistantError(assistantForFailover);
-          const failoverFailure = isFailoverAssistantError(assistantForFailover);
+          const authFailure = isAuthAssistantError(attemptAssistant);
+          const rateLimitFailure = isRateLimitAssistantError(attemptAssistant);
+          const billingFailure = isBillingAssistantError(attemptAssistant);
+          const failoverFailure = isFailoverAssistantError(attemptAssistant);
           const assistantFailoverReason = classifyFailoverReason(
-            assistantForFailover?.errorMessage ?? "",
+            attemptAssistant?.errorMessage ?? "",
             {
-              provider: assistantForFailover?.provider,
+              provider: attemptAssistant?.provider,
             },
           );
           const assistantProviderStarted =
@@ -3190,7 +3190,7 @@ async function runEmbeddedAgentInternal(
               : resolveReportedModelRef({
                   provider,
                   model: model.id,
-                  assistant: sessionLastAssistant,
+                  assistant: attemptAssistant,
                 });
           const agentMeta: EmbeddedAgentMeta = {
             sessionId: sessionIdUsed,
@@ -3728,14 +3728,14 @@ async function runEmbeddedAgentInternal(
           // duplicate those actions. Mirror the gate the other retry resolvers
           // use (resolveEmptyResponseRetryInstruction, reasoning-only, planning-
           // only), which short-circuit on attempt.replayMetadata.hadPotentialSideEffects.
-          const silentErrorContent = sessionLastAssistant?.content as Array<unknown> | undefined;
+          const silentErrorContent = attemptAssistant?.content as Array<unknown> | undefined;
           if (
             incompleteTurnText &&
             !aborted &&
             !promptError &&
             !timedOut &&
-            sessionLastAssistant?.stopReason === "error" &&
-            ((sessionLastAssistant?.usage as { output?: number } | undefined)?.output ?? 0) === 0 &&
+            attemptAssistant?.stopReason === "error" &&
+            ((attemptAssistant?.usage as { output?: number } | undefined)?.output ?? 0) === 0 &&
             (silentErrorContent?.length ?? 0) === 0 &&
             (attempt.replayMetadata ? !attempt.replayMetadata.hadPotentialSideEffects : false) &&
             emptyErrorRetries < MAX_EMPTY_ERROR_RETRIES
@@ -3744,8 +3744,8 @@ async function runEmbeddedAgentInternal(
             log.warn(
               `[empty-error-retry] stopReason=error output=0; resubmitting ` +
                 `attempt=${emptyErrorRetries}/${MAX_EMPTY_ERROR_RETRIES} ` +
-                `provider=${sessionLastAssistant?.provider ?? provider} ` +
-                `model=${sessionLastAssistant?.model ?? model.id} ` +
+                `provider=${attemptAssistant?.provider ?? provider} ` +
+                `model=${attemptAssistant?.model ?? model.id} ` +
                 `sessionKey=${params.sessionKey ?? params.sessionId}`,
             );
             continue;

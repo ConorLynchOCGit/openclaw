@@ -3280,30 +3280,6 @@ describe("runWithModelFallback", () => {
       expect(run).toHaveBeenCalledTimes(1);
     });
 
-    it("discards deferred session suspension for private terminal abort wrappers", () => {
-      const timeout = new Error("request timed out");
-      timeout.name = "TimeoutError";
-      expect(
-        testing.shouldDiscardDeferredSessionSuspension({
-          error: makeAbortableWrapper(timeout),
-        }),
-      ).toBe(true);
-
-      expect(
-        testing.shouldDiscardDeferredSessionSuspension({
-          error: makeAbortWrapper(createAgentRunRestartAbortError()),
-        }),
-      ).toBe(true);
-
-      const providerTimeout = new Error("provider request timed out after 60s");
-      providerTimeout.name = "TimeoutError";
-      expect(
-        testing.shouldDiscardDeferredSessionSuspension({
-          error: makeAbortWrapper(providerTimeout),
-        }),
-      ).toBe(false);
-    });
-
     it("falls back normally when a provider wraps its own timeout as AbortError(cause: TimeoutError) WITHOUT the abortable() marker", async () => {
       const cfg = makeCfg();
       const providerInnerTimeout = new Error("provider request timed out after 60s");

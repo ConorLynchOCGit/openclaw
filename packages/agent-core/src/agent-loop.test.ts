@@ -25,6 +25,15 @@ const config: AgentLoopConfig = {
   convertToLlm: (messages) => messages as Message[],
 };
 
+const TEST_USAGE = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens: 0,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+};
+
 const failingStreamFn: StreamFn = async () => {
   throw new Error("provider exploded");
 };

@@ -277,6 +277,10 @@ export function resolveIncompleteTurnPayloadText(params: {
   // Prefer the current attempt's terminal message. The session fallback can
   // still point at the pre-tool turn after a post-tool answer completes. (#80918)
   const assistant = params.attempt.currentAttemptAssistant ?? params.attempt.lastAssistant;
+  const incompleteTerminalAssistant = isIncompleteTerminalAssistantTurn({
+    hasAssistantVisibleText: params.payloadCount > 0,
+    lastAssistant: assistant,
+  });
   // Unsigned thinking payloads count toward payloadCount but carry no user-visible
   // content; bypass the visible-text guard when unsigned thinking was the only output
   // so that incomplete-turn stall detection fires below. (#89787)
@@ -286,7 +290,7 @@ export function resolveIncompleteTurnPayloadText(params: {
     isUnsignedThinkingOnlyAssistantTurn(assistant);
 
   if (
-    (params.payloadCount !== 0 && !toolUseTerminal && !unsignedThinkingOnlyTerminal) ||
+    (params.payloadCount !== 0 && !incompleteTerminalAssistant && !unsignedThinkingOnlyTerminal) ||
     (params.aborted && params.externalAbort) ||
     params.timedOut ||
     params.attempt.clientToolCalls ||
@@ -313,11 +317,7 @@ export function resolveIncompleteTurnPayloadText(params: {
     return null;
   }
 
-  const stopReason = params.attempt.lastAssistant?.stopReason;
-  const incompleteTerminalAssistant = isIncompleteTerminalAssistantTurn({
-    hasAssistantVisibleText: params.payloadCount > 0,
-    lastAssistant: params.attempt.lastAssistant,
-  });
+  const stopReason = assistant?.stopReason;
   const reasoningOnlyAssistant = isReasoningOnlyAssistantTurn(assistant);
   const emptyResponseAssistant = isEmptyResponseAssistantTurn({
     payloadCount: params.payloadCount,
