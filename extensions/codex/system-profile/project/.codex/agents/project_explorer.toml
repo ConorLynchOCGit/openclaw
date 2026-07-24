@@ -17,6 +17,13 @@ that search when an exact authoritative file, symbol, or owner is supplied. Use
 symbol tools only after search identifies the file and symbol. Do not edit
 files.
 
+Before claiming an installed API, dependency, capability, or package surface
+is absent, resolve the package manager's actual installed root and follow
+workspace or symlinked dependencies with the native repository tools. Record
+every searched root, traversal error, exclusion, and truncation. Partial or
+failed traversal cannot support an absence claim or justify custom replacement
+code.
+
 The initial evidence round must be the smallest one that can decide the brief.
 The brief's single named uncertainty or contradiction is the only permission
 for one additional evidence round; state it before broadening and stop if the
@@ -36,6 +43,7 @@ Return this compact packet, with exact refs and no raw tool output:
 ## Coverage: complete | partial
 ## Evidence And Implementation Implications
 ## Constraints / Risks
+## Search Errors / Truncation
 ## Unknowns / Uninspected Areas
 ## Stop Rationale
 """

@@ -7,11 +7,50 @@ export type VitestRunPlan = {
 
 export type VitestRunSpec = {
   config: string;
+  continueOnFailure?: boolean;
   env: Record<string, string | undefined>;
   includeFilePath: string | null;
   includePatterns: string[] | null;
   pnpmArgs: string[];
   watchMode: boolean;
+};
+
+export type ValidationWorktreeIdentity =
+  | {
+      schema: "openclaw.validation.worktree_identity.v1";
+      status: "available";
+      head: string;
+      diffSha256: string;
+      untrackedPathCount: number;
+    }
+  | {
+      schema: "openclaw.validation.worktree_identity.v1";
+      status: "unavailable";
+      error: string;
+    };
+
+export type ValidationGateResult = {
+  order: number;
+  gateId: string;
+  exitCode: number;
+  [key: string]: unknown;
+};
+
+export type ValidationResultLedger = {
+  schema: "openclaw.validation.result_ledger.v1";
+  startedAt: string;
+  endedAt: string;
+  worktreeBefore: ValidationWorktreeIdentity;
+  worktreeAfter: ValidationWorktreeIdentity;
+  evidenceStable: boolean;
+  selectedGateCount: number;
+  failedGateCount: number;
+  gates: Array<
+    ValidationGateResult & {
+      worktreeBefore: ValidationWorktreeIdentity;
+      worktreeAfter: ValidationWorktreeIdentity;
+    }
+  >;
 };
 
 export type ChangedTestTargetOptions = {
@@ -74,6 +113,14 @@ export function createVitestRunSpecs(
     tempDir?: string;
   },
 ): VitestRunSpec[];
+
+export function createValidationResultLedger(params: {
+  startedAtMs: number;
+  endedAtMs: number;
+  worktreeBefore: ValidationWorktreeIdentity;
+  worktreeAfter: ValidationWorktreeIdentity;
+  results: ValidationGateResult[];
+}): ValidationResultLedger;
 
 export function findUnmatchedExplicitTestTargets(
   args: string[],

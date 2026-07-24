@@ -1,6 +1,6 @@
 // Codex tests cover command rpc plugin behavior.
 import { describe, expect, it } from "vitest";
-import { CodexAppServerRpcError } from "./app-server/client.js";
+import { CodexAppServerRpcError } from "./app-server/rpc-error.js";
 import { safeValue } from "./command-rpc.js";
 
 describe("Codex command RPC helpers", () => {

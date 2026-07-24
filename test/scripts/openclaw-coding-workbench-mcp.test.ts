@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 const execFileAsync = promisify(execFile);
 const workbenchModulePath = path.resolve(
-  ".agents/plugins/plugins/openclaw-coding-workbench/mcp/openclaw-repo-workbench.mjs",
+  "extensions/codex/system-profile/tools/openclaw-repo-workbench.mjs",
 );
 const workbenchModuleUrl = pathToFileURL(workbenchModulePath).href;
 const imageFixturePath = path.resolve(
@@ -263,32 +263,6 @@ async function makeRepo(): Promise<string> {
   return tempDir;
 }
 
-async function makeWorkspaceWithNestedSource(): Promise<string> {
-  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-workbench-ws-"));
-  tempDirs.push(workspace);
-  await fs.mkdir(path.join(workspace, "business-ops"), { recursive: true });
-  await fs.writeFile(
-    path.join(workspace, "business-ops", "brief.md"),
-    "American Atomics proof surface\n",
-    "utf8",
-  );
-  await fs.mkdir(path.join(workspace, "artifacts"), { recursive: true });
-  await fs.writeFile(path.join(workspace, "artifacts", "trace.jsonl"), "{}\n", "utf8");
-  const source = path.join(workspace, "src", "openclaw");
-  await fs.mkdir(path.join(source, "src", "agents"), { recursive: true });
-  await fs.writeFile(path.join(source, "package.json"), '{"name":"openclaw"}\n', "utf8");
-  await fs.writeFile(path.join(source, "openclaw.mjs"), "#!/usr/bin/env node\n", "utf8");
-  await fs.writeFile(
-    path.join(source, "src", "agents", "task-tool.ts"),
-    "export const task = 1;\n",
-  );
-  await execFileAsync("git", ["init"], { cwd: workspace });
-  await execFileAsync("git", ["add", "business-ops/brief.md"], { cwd: workspace });
-  await execFileAsync("git", ["init"], { cwd: source });
-  await execFileAsync("git", ["add", "."], { cwd: source });
-  return workspace;
-}
-
 async function writeImageFixture(destination: string) {
   const encoded = await fs.readFile(imageFixturePath, "utf8");
   await fs.writeFile(destination, Buffer.from(encoded.trim(), "base64"));
@@ -300,17 +274,6 @@ function optionsFor(repo: string) {
     env: {
       ...process.env,
       OPENCLAW_REPO_WORKBENCH_ROOT: repo,
-    },
-  };
-}
-
-function workspaceOptionsFor(workspace: string) {
-  return {
-    cwd: workspace,
-    env: {
-      ...process.env,
-      OPENCLAW_REPO_WORKBENCH_ROOT: workspace,
-      OPENCLAW_REPO_WORKBENCH_SOURCE_ROOT: path.join(workspace, "src", "openclaw"),
     },
   };
 }
@@ -355,6 +318,59 @@ describe("openclaw-coding-workbench MCP helpers", () => {
       path: "src/missing.ts",
       status: "error",
       error: expect.stringContaining("ENOENT"),
+    });
+  });
+
+  it("reads an installed API through an in-root workspace symlink", async () => {
+    const repo = await makeRepo();
+    const packageRoot = path.join(repo, "packages", "native-api");
+    const installedRoot = path.join(repo, "node_modules", "native-api");
+    await fs.mkdir(packageRoot, { recursive: true });
+    await fs.mkdir(path.dirname(installedRoot), { recursive: true });
+    await fs.writeFile(
+      path.join(packageRoot, "index.ts"),
+      "export const nativeExistingSurface = true;\n",
+      "utf8",
+    );
+    await fs.symlink(packageRoot, installedRoot, "dir");
+    const workbench = await loadWorkbench();
+
+    const result = await workbench.repoReadMany(
+      {
+        files: [{ path: "node_modules/native-api/index.ts", startLine: 1, endLine: 1 }],
+      },
+      optionsFor(repo),
+    );
+
+    expect(result.coverage).toEqual({
+      requested: 1,
+      returned: 1,
+      truncated: 0,
+      errors: 0,
+      omitted: 0,
+    });
+    expect(result.results[0]).toMatchObject({
+      status: "ok",
+      path: "node_modules/native-api/index.ts",
+      resolvedPath: "packages/native-api/index.ts",
+      text: "1: export const nativeExistingSurface = true;",
+    });
+
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-workbench-api-"));
+    tempDirs.push(outside);
+    await fs.writeFile(path.join(outside, "outside.ts"), "export const outside = true;\n", "utf8");
+    await fs.symlink(path.join(outside, "outside.ts"), path.join(installedRoot, "outside.ts"));
+
+    const escaped = await workbench.repoReadMany(
+      {
+        files: [{ path: "node_modules/native-api/outside.ts" }],
+      },
+      optionsFor(repo),
+    );
+
+    expect(escaped.results[0]).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("escapes repository root through symlink"),
     });
   });
 
@@ -1024,30 +1040,6 @@ describe("openclaw-coding-workbench MCP helpers", () => {
     });
   });
 
-  it("searches the live workspace root while preserving nested source access", async () => {
-    const workspace = await makeWorkspaceWithNestedSource();
-    const workbench = await loadWorkbench();
-
-    const search = await workbench.repoSearchMany(
-      {
-        queries: [
-          { pattern: "American Atomics", path: "business-ops", maxMatches: 5 },
-          { pattern: "task", path: "src/openclaw/src/agents", maxMatches: 5 },
-        ],
-      },
-      workspaceOptionsFor(workspace),
-    );
-
-    expect(search.results[0].status).toBe("matched");
-    expect(search.results[0].items).toContainEqual(
-      expect.objectContaining({ path: "business-ops/brief.md" }),
-    );
-    expect(search.results[1].status).toBe("matched");
-    expect(search.results[1].items).toContainEqual(
-      expect.objectContaining({ path: "src/openclaw/src/agents/task-tool.ts" }),
-    );
-  });
-
   it("caps aggregate search output without duplicating match bodies", async () => {
     const repo = await makeRepo();
     const workbench = await loadWorkbench();
@@ -1112,20 +1104,22 @@ describe("openclaw-coding-workbench MCP helpers", () => {
   });
 
   it("excludes runtime artifacts from read/search by default", async () => {
-    const workspace = await makeWorkspaceWithNestedSource();
+    const repo = await makeRepo();
+    await fs.mkdir(path.join(repo, "artifacts"), { recursive: true });
+    await fs.writeFile(path.join(repo, "artifacts", "trace.jsonl"), "{}\n", "utf8");
     const workbench = await loadWorkbench();
 
     const read = await workbench.repoReadMany(
       {
         files: [{ path: "artifacts/trace.jsonl" }],
       },
-      workspaceOptionsFor(workspace),
+      optionsFor(repo),
     );
     const search = await workbench.repoSearchMany(
       {
         queries: [{ pattern: "{}", path: "artifacts", maxMatches: 5 }],
       },
-      workspaceOptionsFor(workspace),
+      optionsFor(repo),
     );
 
     expect(read.results[0]).toMatchObject({
@@ -1133,32 +1127,6 @@ describe("openclaw-coding-workbench MCP helpers", () => {
       error: expect.stringContaining("excluded from workbench access"),
     });
     expect(search.results[0].status).toBe("error");
-  });
-
-  it("reports both workspace and nested source git roots by default", async () => {
-    const workspace = await makeWorkspaceWithNestedSource();
-    await fs.writeFile(path.join(workspace, "business-ops", "new.md"), "new\n", "utf8");
-    await fs.writeFile(
-      path.join(workspace, "src", "openclaw", "src", "agents", "new.ts"),
-      "export const next = 2;\n",
-      "utf8",
-    );
-    const workbench = await loadWorkbench();
-
-    const result = await workbench.gitInspectMany(
-      {
-        requests: [{ kind: "status", maxBytes: 2000 }],
-      },
-      workspaceOptionsFor(workspace),
-    );
-
-    expect(result.gitRoots).toEqual([".", "src/openclaw"]);
-    expect(result.results).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ repoRoot: ".", status: "ok" }),
-        expect.objectContaining({ repoRoot: "src/openclaw", status: "ok" }),
-      ]),
-    );
   });
 
   it("returns TypeScript hover, definition, and references through read-only LSP helpers", async () => {

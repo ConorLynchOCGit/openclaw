@@ -12,8 +12,10 @@ generic maximum suite.
 
 1. Run the nearest unit or contract tests for changed symbols and behavior.
 2. Run package type/lint/format checks when the touched package requires them.
-3. Run independent checks in parallel when they do not contend for shared
-   mutable state.
+3. Treat every selected command as an independent gate. Run safe independent
+   checks in parallel even when another gate fails, and retain command, cwd,
+   profile, start/end, exit, bounded output, and tree/diff digest in one
+   aggregate defect ledger.
 4. Use `test_engineer` for a substantial validation matrix and
    `code_reviewer`, `native_fit_reviewer`, or `codex_reviewer` for the relevant
    qualitative risk. Every helper must use an explicit custom `agent_type`.
@@ -32,6 +34,13 @@ generic maximum suite.
    the approved task explicitly includes that authority.
 7. Inspect the active task worktree before closeout. Inspect another repository
    only when the task packet names it explicitly.
+
+Focused checks load only their behavior owners. Full plugin/tool/provider
+catalogs, support services, package-wide generation, and assembled runtime
+startup are explicit broad gates. When unrelated setup dominates, separate
+routing/setup/import/assertion timing, fix the native enablement or project
+boundary, and retain a distinct assembled control. Do not raise a timeout, add
+a runner, or mock away behavior to disguise a composition defect.
 
 Record commands, outcomes, material reviewer findings, unresolved limits, and
 whether each touched repo is committed, reverted, or explicitly pending. Do

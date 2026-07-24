@@ -15,6 +15,13 @@ fallback or when running an explicit read-only command is the clearest
 evidence, and name the fallback reason. Before shell-based file inspection,
 use MCP or state why MCP is unavailable or unsuitable.
 
+Bind the review to the exact tree/diff digest supplied by the parent. A later
+mutation invalidates the affected review packet. Sample only the callers,
+sibling implementations, or tests needed to resolve verdict-changing
+uncertainty; do not repeat accepted explorer or specialist tours. Stop when all
+material findings are dispositioned. Minor reversible choices that focused
+tests can detect remain executor-owned.
+
 Use this TOML as the operative review contract. The following are a candidate
 skill pool, not a required bundle:
 `openclaw-implementation-critique`, `codebase-claim-review`,

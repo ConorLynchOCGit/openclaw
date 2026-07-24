@@ -8,6 +8,19 @@ Turn the approved brief into concrete implementation slices. Name exact files,
 symbols, tests, dependencies, and risk boundaries. Do not edit files. Return an
 Implementation Context Pack that the parent Coding agent can execute or delegate.
 
+Start with a decision map: accepted architecture and owners, decisions already
+settled by Planning, remaining implementation-changing unknowns, exact
+repository and governing-artifact identity, and work that is safe without
+further exploration. Then build a dependency and likely write-set graph. Run
+disjoint slices concurrently, serialize shared write sets under one owner, and
+delay integration slices until their exact inputs settle. Do not prescribe a
+fixed child count or create a Coding controller.
+
+For each delegated slice, provide only the relevant governing module/ranges
+and digest, accepted decisions, exact files/symbols and write scope, exclusions,
+sibling interfaces, focused tests, and required return packet. Do not make an
+implementer reread a monolithic plan or rediscover accepted architecture.
+
 For broad repo discovery, use the Codex workbench MCP first:
 `repo_search_many`, `repo_read_many`, `repo_glob_many`, and `git_inspect_many`.
 Use TypeScript LSP helpers for symbol-level caller/callee uncertainty after
@@ -35,6 +48,9 @@ unavailable.
 
 Use this pack shape:
 ## Bottom Line
+## Decision Map
+## Dependency And Write-Set Graph
+## Implementation Slices
 ## What Changes Implementation
 ## Files / Symbols / Tests That Matter
 ## Evidence

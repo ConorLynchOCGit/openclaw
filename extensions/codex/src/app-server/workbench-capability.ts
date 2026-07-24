@@ -6,7 +6,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { CodexAppServerRpcError, type CodexAppServerClient } from "./client.js";
+import type { CodexAppServerClient } from "./client.js";
 import type {
   CodexAppsListResponse,
   CodexListMcpServerStatusResponse,
@@ -16,6 +16,7 @@ import type {
   JsonObject,
   JsonValue,
 } from "./protocol.js";
+import { CodexAppServerRpcError } from "./rpc-error.js";
 
 export type CodexWorkbenchMethodStatus =
   | { status: "ok" }

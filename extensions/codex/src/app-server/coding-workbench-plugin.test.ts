@@ -5,33 +5,33 @@ import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../../../..");
-const PLUGIN_ROOT = path.join(REPO_ROOT, ".agents/plugins/plugins/openclaw-coding-workbench");
 const CODEX_PROFILE_ROOT = path.join(REPO_ROOT, "extensions/codex/system-profile/project/.codex");
 const CODEX_PROFILE_CONFIG = "extensions/codex/system-profile/project/.codex/config.toml";
 const CODEX_PROFILE_AGENTS = "extensions/codex/system-profile/project/.codex/agents";
-const MCP_SERVER = path.join(PLUGIN_ROOT, "mcp/openclaw-repo-workbench.mjs");
+const MCP_SERVER = path.join(
+  REPO_ROOT,
+  "extensions/codex/system-profile/tools/openclaw-repo-workbench.mjs",
+);
 const WORKBENCH_OPTIONS = { cwd: REPO_ROOT, env: {} };
+const ENABLED_WORKBENCH_TOOLS = [
+  "artifact_view_image",
+  "git_inspect_many",
+  "lsp_definition_typescript",
+  "lsp_hover_typescript",
+  "lsp_references_typescript",
+  "repo_glob_many",
+  "repo_read_many",
+  "repo_search_many",
+];
 
 function sha256(value: string | Buffer): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-describe("OpenClaw Codex repo workbench plugin", () => {
+describe("OpenClaw package-owned Codex repo workbench", () => {
   it("is declared as a project Codex MCP server with only read-only batched repo tools", async () => {
     const configToml = await fs.readFile(path.join(CODEX_PROFILE_ROOT, "config.toml"), "utf8");
     const serverSource = await fs.readFile(MCP_SERVER, "utf8");
-    const mcpJson = JSON.parse(await fs.readFile(path.join(PLUGIN_ROOT, ".mcp.json"), "utf8")) as {
-      mcpServers: Record<
-        string,
-        {
-          enabled_tools?: string[];
-          required?: boolean;
-          supports_parallel_tool_calls?: boolean;
-        }
-      >;
-    };
-    const workbenchServer = mcpJson.mcpServers.openclaw_repo_workbench;
-    const enabledTools = workbenchServer?.enabled_tools ?? [];
 
     expect(configToml).toContain("[mcp_servers.openclaw_repo_workbench]");
     expect(configToml).toContain(
@@ -44,15 +44,9 @@ describe("OpenClaw Codex repo workbench plugin", () => {
         .map((file) => fs.readFile(path.join(CODEX_PROFILE_ROOT, "agents", file), "utf8")),
     );
     expect(agentConfigs.every((config) => !config.includes("features.code_mode"))).toBe(true);
-    expect(configToml).toContain(
-      '"src/openclaw/.agents/plugins/plugins/openclaw-coding-workbench/mcp/openclaw-repo-workbench.mjs"',
-    );
+    expect(configToml).toContain('args = ["tools/openclaw-repo-workbench.mjs"]');
     expect(configToml).toContain("required = true");
     expect(configToml).toContain("supports_parallel_tool_calls = true");
-    expect(workbenchServer).toMatchObject({
-      required: true,
-      supports_parallel_tool_calls: true,
-    });
     expect(configToml).toContain('  "artifact_view_image",');
     expect(serverSource).toContain(
       "Prefer these read-only batched tools for broad repository discovery",
@@ -62,17 +56,10 @@ describe("OpenClaw Codex repo workbench plugin", () => {
     expect(serverSource).toContain("destructiveHint: false");
     expect(serverSource).toContain("idempotentHint: true");
     expect(serverSource).toContain("openWorldHint: false");
-    expect(enabledTools.toSorted()).toEqual([
-      "artifact_view_image",
-      "git_inspect_many",
-      "lsp_definition_typescript",
-      "lsp_hover_typescript",
-      "lsp_references_typescript",
-      "repo_glob_many",
-      "repo_read_many",
-      "repo_search_many",
-    ]);
-    expect(enabledTools).not.toContain("validation_run_many");
+    for (const toolName of ENABLED_WORKBENCH_TOOLS) {
+      expect(configToml).toContain(`  "${toolName}",`);
+    }
+    expect(configToml).not.toContain('"validation_run_many"');
   });
 
   it("exposes bounded read-only repo helpers without mutating source", async () => {

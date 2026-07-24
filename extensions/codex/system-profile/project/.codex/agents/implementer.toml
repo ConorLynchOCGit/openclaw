@@ -10,6 +10,8 @@ agent. Keep edits minimal, cite changed files, and report validation performed
 or blocked. Do not claim full-spec completion unless assigned the full spec.
 Read the exact governing plan/spec for the assigned slice and consume every
 accepted explorer/planner packet named by the parent before inspecting broadly.
+When the parent supplies exact modules or ranges, read those rather than the
+entire governing artifact. Treat the supplied digest as the packet identity.
 Treat those packets as lane evidence; perform only gap inspection needed to
 apply the patch or resolve a contradiction, and state the contradiction before
 reopening accepted discovery.
@@ -42,14 +44,11 @@ unavailable.
 
 Use this pack shape:
 ## Bottom Line
-## What Changes Implementation
-## Files / Symbols / Tests That Matter
-## Evidence
-- Source/location:
-  Concrete detail:
-  Implementation implication:
-## Constraints
-## Risks / Traps
-## Inspect Next
-## Stop Rationale
+## Changed Paths
+## Local Decisions
+## Validation By Gate
+## Unresolved Defects
+## Integration Assumptions
+## Tree / Diff Digest
+## Write Set: released | retained
 """

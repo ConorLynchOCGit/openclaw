@@ -20,6 +20,10 @@ task runner, or substitute for source inspection.
 5. Record contradictions, unknowns, and confidence limits.
 6. Stop when the receiver can act without repeating broad discovery. Put
    optional follow-ups under `Inspect Next`.
+7. For implementation packets, include the relevant governing module/ranges
+   and digest, accepted decisions, write scope, sibling interfaces, focused
+   tests, and the exact result packet expected. Do not hand the child a
+   monolithic artifact when bounded ranges are already settled.
 
 ## Pack Shape
 

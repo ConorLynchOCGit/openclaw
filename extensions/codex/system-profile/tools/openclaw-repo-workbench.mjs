@@ -28,9 +28,10 @@ const MAX_SEARCH_CONTEXT_LINES = 5;
 const DEFAULT_LSP_MAX_LOADED_FILES = 24;
 const PositiveIntSchema = z.number().int().min(1);
 const DEFAULT_SEARCH_EXCLUSION_POLICY = "default";
+const NODE_MODULES_EXCLUDE_GLOB = "**/node_modules/**";
 const DEFAULT_EXCLUDE_GLOBS = [
   "**/.git/**",
-  "**/node_modules/**",
+  NODE_MODULES_EXCLUDE_GLOB,
   "**/generated/**",
   "**/.cache/**",
   "**/.artifacts/**",
@@ -252,6 +253,7 @@ const SelectedRangeIdentityOutputSchema = z.object({
 });
 const ReadResultOutputSchema = z.object({
   path: z.string(),
+  resolvedPath: z.string().optional(),
   status: z.enum(["ok", "error"]),
   requestedStartLine: z.number().int().optional(),
   requestedEndLine: z.number().int().optional(),
@@ -1115,7 +1117,13 @@ function buildSearchManyResponse(root, requestedQueries, results, omittedByResul
 
 async function readFileRequest(root, request) {
   try {
-    const file = safeResolve(root, request.path);
+    const requested = safeResolve(root, request.path, { allowExcluded: true });
+    assertExactReadAllowed(root, requested);
+    const file = await fs.realpath(requested);
+    if (!isInside(root, file)) {
+      throw new Error(`path escapes repository root through symlink: ${request.path}`);
+    }
+    assertExactReadAllowed(root, file);
     const stat = await fs.stat(file);
     if (!stat.isFile()) {
       throw new Error("path is not a file");
@@ -1144,8 +1152,13 @@ async function readFileRequest(root, request) {
     const selectedByteLength = Buffer.byteLength(selected, "utf8");
     const selectedSha256 = sha256(selected);
     const truncated = numbered.returnedEndLine < effectiveEndLine;
+    const requestedRelativePath = relative(root, requested);
+    const resolvedRelativePath = relative(root, file);
     return {
-      path: relative(root, file),
+      path: requestedRelativePath,
+      ...(resolvedRelativePath === requestedRelativePath
+        ? {}
+        : { resolvedPath: resolvedRelativePath }),
       status: "ok",
       requestedStartLine,
       requestedEndLine,
@@ -1679,6 +1692,16 @@ function safeResolve(root, requestedPath, options = {}) {
 function assertNotExcluded(root, resolved) {
   if (isPathExcluded(root, resolved)) {
     const rel = toPosix(relative(root, resolved));
+    throw new Error(`path is excluded from workbench access by default: ${rel}`);
+  }
+}
+
+function assertExactReadAllowed(root, resolved) {
+  const rel = toPosix(relative(root, resolved));
+  const disallowed = DEFAULT_EXCLUDE_GLOBS.filter(
+    (glob) => glob !== NODE_MODULES_EXCLUDE_GLOB && matchesExcludedGlob(rel, glob),
+  );
+  if (disallowed.length > 0) {
     throw new Error(`path is excluded from workbench access by default: ${rel}`);
   }
 }

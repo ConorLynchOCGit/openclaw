@@ -34,6 +34,13 @@ Inspect:
 7. architecture boundary: OpenClaw launched, observed, mirrored, and receipted;
    Codex performed implementation and native delegation.
 
+Bind every review to the parent-provided frozen tree/diff digest. Dispatch only
+existing specialists whose independent uncertainty can change severity or
+verdict. The parent reviewer adjudicates; specialists do not vote. Once
+material findings are dispositioned, further reads or specialists require one
+named verdict-changing claim. A narrow reversible change may correctly use no
+helper.
+
 For designated proofs and serious Planning handoffs, absence of an independent
 `codex_reviewer` is a team-execution defect even if the final implementation is
 small. For changed Business Ops creative/campaign artifacts, require a
