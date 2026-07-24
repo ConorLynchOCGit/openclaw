@@ -11,6 +11,7 @@ import {
   stripLeadingSilentToken,
   stripSilentToken,
 } from "../auto-reply/tokens.js";
+import { logWarn } from "../logger.js";
 import { defaultRuntime } from "../runtime.js";
 import { isCronSessionKey } from "../sessions/session-key-utils.js";
 import { createLazyImportLoader } from "../shared/lazy-promise.js";
@@ -257,6 +258,7 @@ export async function runSubagentAnnounceFlow(params: {
   signal?: AbortSignal;
   bestEffortDeliver?: boolean;
   onDeliveryResult?: (delivery: SubagentAnnounceDeliveryResult) => void;
+  onBeforeDeleteChildSession?: () => boolean;
 }): Promise<boolean> {
   let didAnnounce = false;
   const expectsCompletionMessage = params.expectsCompletionMessage === true;
@@ -437,10 +439,24 @@ export async function runSubagentAnnounceFlow(params: {
         if (fallbackReply && !fallbackIsSilent) {
           const cleaned = stripAndClassifyReply(fallbackReply);
           if (cleaned === null) {
+            if (isAnnounceSkip(reply) && isCronSessionKey(targetRequesterSessionKey)) {
+              logWarn(
+                `cron job completion for session=${targetRequesterSessionKey} ` +
+                  `run=${params.childRunId} suppressed by ANNOUNCE_SKIP; ` +
+                  `the agent replied with the skip sentinel instead of delivering a result`,
+              );
+            }
             return true;
           }
           reply = cleaned;
         } else {
+          if (isAnnounceSkip(reply) && isCronSessionKey(targetRequesterSessionKey)) {
+            logWarn(
+              `cron job completion for session=${targetRequesterSessionKey} ` +
+                `run=${params.childRunId} suppressed by ANNOUNCE_SKIP; ` +
+                `the agent replied with the skip sentinel instead of delivering a result`,
+            );
+          }
           return true;
         }
       } else if (reply) {
@@ -601,7 +617,7 @@ export async function runSubagentAnnounceFlow(params: {
         // Best-effort
       }
     }
-    if (shouldDeleteChildSession) {
+    if (shouldDeleteChildSession && (params.onBeforeDeleteChildSession?.() ?? true)) {
       await deleteSubagentSessionForCleanup({
         callGateway: subagentAnnounceDeps.callGateway,
         childSessionKey: params.childSessionKey,

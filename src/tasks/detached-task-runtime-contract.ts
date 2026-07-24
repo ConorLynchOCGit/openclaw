@@ -12,6 +12,10 @@ import type {
   TaskTerminalOutcome,
 } from "./task-registry.types.js";
 
+// A killed subagent can still report a completion that raced the kill marker.
+// Task cancellation replaces this marker once the operator request is accepted.
+export const SUBAGENT_KILL_TASK_ERROR = "Subagent run killed.";
+
 export type DetachedTaskCreateParams = {
   runtime: TaskRuntime;
   taskKind?: string;
@@ -70,6 +74,7 @@ export type DetachedTaskCompleteParams = {
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
   eventMetadata?: TaskEventMetadata | null;
+  suppressDelivery?: boolean;
 };
 
 export type DetachedTaskFailParams = {
@@ -83,6 +88,7 @@ export type DetachedTaskFailParams = {
   progressSummary?: string | null;
   terminalSummary?: string | null;
   eventMetadata?: TaskEventMetadata | null;
+  suppressDelivery?: boolean;
 };
 
 export type DetachedTaskFinalizeParams = {
@@ -97,7 +103,13 @@ export type DetachedTaskFinalizeParams = {
   terminalSummary?: string | null;
   terminalOutcome?: TaskTerminalOutcome | null;
   eventMetadata?: TaskEventMetadata | null;
+  suppressDelivery?: boolean;
 };
+
+export type DetachedTaskTerminalState = Omit<
+  DetachedTaskFinalizeParams,
+  "runId" | "runtime" | "sessionKey"
+>;
 
 export type DetachedTaskDeliveryStatusParams = {
   runId: string;
@@ -131,6 +143,19 @@ export type DetachedTaskRecoveryAttemptResult = {
   recovered: boolean;
 };
 
+export type DetachedTaskFindParams = {
+  runId: string;
+  runtime: TaskRuntime;
+  sessionKey: string;
+  createdAtOrAfter: number;
+  createdBefore?: number;
+  allowSessionFallback?: boolean;
+};
+
+export type DetachedTaskFindResult =
+  | { lookup: "available"; task?: TaskRecord }
+  | { lookup: "unavailable"; task?: undefined };
+
 export type DetachedTaskLifecycleRuntime = {
   createQueuedTaskRun: (params: DetachedTaskCreateParams) => TaskRecord | null;
   createRunningTaskRun: (params: DetachedRunningTaskCreateParams) => TaskRecord | null;
@@ -140,6 +165,11 @@ export type DetachedTaskLifecycleRuntime = {
   completeTaskRunByRunId: (params: DetachedTaskCompleteParams) => TaskRecord[];
   failTaskRunByRunId: (params: DetachedTaskFailParams) => TaskRecord[];
   setDetachedTaskDeliveryStatusByRunId: (params: DetachedTaskDeliveryStatusParams) => TaskRecord[];
+  /**
+   * Resolve the task owned by one run generation. Custom runtimes should
+   * implement this when their records are not mirrored into core task state.
+   */
+  findTaskRun?: (params: DetachedTaskFindParams) => TaskRecord | undefined;
   /**
    * Return `found: false` when this runtime does not own the task so core can
    * fall back to the legacy detached-task cancel path.

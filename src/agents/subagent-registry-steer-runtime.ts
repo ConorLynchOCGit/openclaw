@@ -12,6 +12,12 @@ type ReplaceSubagentRunAfterSteerParams = {
   runTimeoutSeconds?: number;
   preserveFrozenResultFallback?: boolean;
   transcriptFile?: string;
+  /**
+   * The exact instruction dispatched for the replacement run. Persisting it
+   * lets native restart recovery resume the steered task instead of the stale
+   * pre-steer instruction.
+   */
+  task?: string;
 };
 
 type ReplaceSubagentRunAfterSteerFn = (params: ReplaceSubagentRunAfterSteerParams) => boolean;

@@ -3,6 +3,7 @@ export * from "./sessions/combined-store-gateway.js";
 export * from "./sessions/group.js";
 export * from "./sessions/goals.js";
 export * from "./sessions/artifacts.js";
+export * from "./sessions/abort-target.js";
 export * from "./sessions/metadata.js";
 export * from "./sessions/main-session.js";
 export * from "./sessions/main-session.runtime.js";

@@ -19,7 +19,10 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { defaultRuntime } from "../runtime.js";
 import { withSubagentOutcomeTiming } from "./subagent-announce-output.js";
 import { getDeliveryAttemptCount, getDeliveryLastError } from "./subagent-delivery-state.js";
-import { SUBAGENT_ENDED_REASON_ERROR } from "./subagent-lifecycle-events.js";
+import {
+  SUBAGENT_ENDED_REASON_ERROR,
+  SUBAGENT_ENDED_REASON_KILLED,
+} from "./subagent-lifecycle-events.js";
 import { shouldUpdateRunOutcome } from "./subagent-registry-completion.js";
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
 import { isStaleUnendedSubagentRun } from "./subagent-run-liveness.js";
@@ -28,6 +31,7 @@ import {
   getSubagentSessionStartedAt,
   resolveSubagentSessionStatus,
 } from "./subagent-session-metrics.js";
+import { resolveCompletionFromSessionEntry } from "./subagent-session-reconciliation.js";
 
 export {
   getSubagentSessionRuntimeMs,
@@ -35,6 +39,7 @@ export {
   resolveSubagentSessionStatus,
 } from "./subagent-session-metrics.js";
 
+export const PROVISIONAL_KILL_RECONCILIATION_MS = 5 * 60_000;
 export const MIN_ANNOUNCE_RETRY_DELAY_MS = 1_000;
 const MAX_ANNOUNCE_RETRY_DELAY_MS = 8_000;
 export const MAX_ANNOUNCE_RETRY_COUNT = 3;
@@ -127,7 +132,10 @@ function findSessionEntryByKey(store: Record<string, SessionEntry>, sessionKey: 
 }
 
 /** Persists child session timing/status derived from the subagent registry row. */
-export async function persistSubagentSessionTiming(entry: SubagentRunRecord) {
+export async function persistSubagentSessionTiming(
+  entry: SubagentRunRecord,
+  options?: { isCurrentGeneration?: () => boolean },
+) {
   const childSessionKey = entry.childSessionKey?.trim();
   if (!childSessionKey) {
     return;
@@ -149,6 +157,23 @@ export async function persistSubagentSessionTiming(entry: SubagentRunRecord) {
     const sessionEntry = findSessionEntryByKey(store, childSessionKey);
     if (!sessionEntry) {
       return;
+    }
+
+    // Recheck under the session-store write lock. A completion may have waited
+    // behind a steer/restart that transferred this session's ownership.
+    if (options?.isCurrentGeneration && !options.isCurrentGeneration()) {
+      return;
+    }
+    if (status === "killed") {
+      const existingCompletion = resolveCompletionFromSessionEntry(sessionEntry, Date.now(), {
+        notBeforeMs: entry.startedAt ?? entry.createdAt,
+      });
+      if (existingCompletion && existingCompletion.reason !== SUBAGENT_ENDED_REASON_KILLED) {
+        // A provider result already reached durable session state. The kill
+        // marker is provisional and must not erase the winning completion.
+        delete sessionEntry.abortedLastRun;
+        return;
+      }
     }
 
     if (typeof startedAt === "number" && Number.isFinite(startedAt)) {
@@ -173,6 +198,9 @@ export async function persistSubagentSessionTiming(entry: SubagentRunRecord) {
       sessionEntry.status = status;
     } else {
       delete sessionEntry.status;
+    }
+    if (status && status !== "killed") {
+      delete sessionEntry.abortedLastRun;
     }
   });
 }
@@ -363,6 +391,11 @@ export function reconcileOrphanedRestoredRuns(params: {
   const now = Date.now();
   let changed = false;
   for (const [runId, entry] of params.runs.entries()) {
+    if (entry.killReconciliation) {
+      // Provider completion may still repair this provisional kill. The
+      // sweeper owns its bounded reconciliation even when the session vanished.
+      continue;
+    }
     const orphanReason = resolveSubagentRunOrphanReason({
       entry,
       storeCache,

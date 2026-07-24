@@ -7,27 +7,33 @@ import { registerBundledHealthChecks } from "./bundled-health-checks.js";
 import { clearHealthChecksForTest, listHealthChecks } from "./health-check-registry.js";
 import type { HealthCheckContext } from "./health-checks.js";
 
-const mocks = vi.hoisted(() => ({
-  registerPolicyDoctorChecks: vi.fn(),
-  registerCodexDoctorChecks: vi.fn(),
-  tryLoadActivatedBundledPluginPublicSurfaceModuleSync: vi.fn(() => ({
-    registerCodexDoctorChecks: mocks.registerCodexDoctorChecks,
-  })),
-  resolveBundledPluginPublicArtifactPath: vi.fn(
-    (params: { dirName: string; artifactBasename: string }) =>
-      `/bundled/${params.dirName}/${params.artifactBasename}`,
-  ),
-  loadBundledPluginPublicArtifactModuleSync: vi.fn(
-    (params: { dirName: string; artifactBasename: string }) =>
-      params.dirName === "codex"
-        ? {
-            registerCodexDoctorChecks: mocks.registerCodexDoctorChecks,
-          }
-        : {
-            registerPolicyDoctorChecks: mocks.registerPolicyDoctorChecks,
-          },
-  ),
-}));
+const mocks = vi.hoisted(() => {
+  const registerPolicyDoctorChecks = vi.fn();
+  const registerCodexDoctorChecks = vi.fn();
+  return {
+    registerPolicyDoctorChecks,
+    registerCodexDoctorChecks,
+    tryLoadActivatedBundledPluginPublicSurfaceModuleSync: vi.fn<
+      () => { registerCodexDoctorChecks: typeof registerCodexDoctorChecks } | null
+    >(() => ({
+      registerCodexDoctorChecks,
+    })),
+    resolveBundledPluginPublicArtifactPath: vi.fn(
+      (params: { dirName: string; artifactBasename: string }) =>
+        `/bundled/${params.dirName}/${params.artifactBasename}`,
+    ),
+    loadBundledPluginPublicArtifactModuleSync: vi.fn(
+      (params: { dirName: string; artifactBasename: string }) =>
+        params.dirName === "codex"
+          ? {
+              registerCodexDoctorChecks,
+            }
+          : {
+              registerPolicyDoctorChecks,
+            },
+    ),
+  };
+});
 
 vi.mock("../plugins/public-surface-loader.js", () => ({
   loadBundledPluginPublicArtifactModuleSync: mocks.loadBundledPluginPublicArtifactModuleSync,
