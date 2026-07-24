@@ -91,6 +91,7 @@ import {
 } from "./tool-description-presets.js";
 import { createToolFsPolicy, resolveToolFsConfig } from "./tool-fs-policy.js";
 import { resolveToolLoopDetectionConfig } from "./tool-loop-detection-config.js";
+import { buildDeclaredToolAllowlistContext } from "./tool-policy-declared-context.js";
 import {
   applyToolPolicyPipeline,
   buildDefaultToolPolicyPipelineSteps,
@@ -1196,6 +1197,11 @@ export function createOpenClawCodingTools(options?: {
       { policy: inheritedToolPolicy, label: "inherited tools", unavailableCoreToolReason },
     ],
     auditLogLevel: options?.toolPolicyAuditLogLevel,
+    declaredToolAllowlist: buildDeclaredToolAllowlistContext({
+      config: options?.config,
+      workspaceDir: workspaceRoot,
+      toolDenylist: pluginToolDenylist,
+    }),
   });
   options?.recordToolPrepStage?.("authorization-policy");
   // Always normalize tool JSON Schemas before handing them to OpenClaw model runtime.

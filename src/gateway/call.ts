@@ -412,29 +412,32 @@ function isLoopbackGatewayUrl(rawUrl: string): boolean {
 function shouldOmitDeviceIdentityForGatewayCall(params: {
   opts: CallGatewayBaseOptions;
   url: string;
+  authMode: ReturnType<typeof resolveGatewayAuth>["mode"];
   token?: string;
   password?: string;
 }): boolean {
   const mode = params.opts.mode ?? GATEWAY_CLIENT_MODES.CLI;
   const clientName = params.opts.clientName ?? GATEWAY_CLIENT_NAMES.CLI;
-  const hasSharedAuth = Boolean(params.token || params.password);
-  return (
+  // Inactive ambient credentials must not turn an auth-none CLI call device-less.
+  // Omit identity only when the Gateway will actually authenticate the supplied secret.
+  const hasSharedSecretAuth =
+    (params.authMode === "token" && Boolean(params.token)) ||
+    (params.authMode === "password" && Boolean(params.password));
+  const isLoopback = isLoopbackGatewayUrl(params.url);
+  const isLocalBackendSharedAuth =
     mode === GATEWAY_CLIENT_MODES.BACKEND &&
     clientName === GATEWAY_CLIENT_NAMES.GATEWAY_CLIENT &&
-    hasSharedAuth &&
-    isLoopbackGatewayUrl(params.url)
-  );
+    hasSharedSecretAuth &&
+    isLoopback;
+  const isLocalCliSharedAuth =
+    mode === GATEWAY_CLIENT_MODES.CLI &&
+    clientName === GATEWAY_CLIENT_NAMES.CLI &&
+    hasSharedSecretAuth &&
+    isLoopback;
+  return isLocalBackendSharedAuth || isLocalCliSharedAuth;
 }
 
-function resolveDeviceIdentityForGatewayCall(params: {
-  opts: CallGatewayBaseOptions;
-  url: string;
-  token?: string;
-  password?: string;
-}): ReturnType<typeof loadOrCreateDeviceIdentity> | null {
-  if (shouldOmitDeviceIdentityForGatewayCall(params)) {
-    return null;
-  }
+function resolveDeviceIdentityForGatewayCall(): DeviceIdentity | null {
   try {
     return gatewayCallDeps.loadOrCreateDeviceIdentity();
   } catch {
@@ -1040,9 +1043,19 @@ async function callGatewayWithScopes<T = Record<string, unknown>>(
   const url = connectionDetails.url;
   const tlsFingerprint = await resolveGatewayTlsFingerprint({ opts, context, url });
   const { token, password } = resolvedCredentials;
+  const authMode = resolveGatewayCallAuth(context.config).mode;
+  const omitDeviceIdentity = shouldOmitDeviceIdentityForGatewayCall({
+    opts,
+    url,
+    authMode,
+    token,
+    password,
+  });
   const deviceIdentity =
     opts.deviceIdentity === undefined
-      ? resolveDeviceIdentityForGatewayCall({ opts, url, token, password })
+      ? omitDeviceIdentity
+        ? null
+        : resolveDeviceIdentityForGatewayCall()
       : opts.deviceIdentity;
   ensureGatewayCallCanAuthenticate({
     opts,
