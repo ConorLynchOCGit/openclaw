@@ -20,7 +20,7 @@ import {
   isTransientHttpError,
   parseImageDimensionError,
   parseImageSizeError,
-} from "./embedded-agent-helpers.js";
+} from "./embedded-agent-helpers/errors.js";
 
 // OpenAI 429 example shape: https://help.openai.com/en/articles/5955604-how-can-i-solve-429-too-many-requests-errors
 const OPENAI_RATE_LIMIT_MESSAGE =
@@ -1579,12 +1579,13 @@ describe("classifyProviderRuntimeFailureKind", () => {
     ).toBe("auth_html");
   });
 
-  it("classifies proxy, dns, timeout, schema, sandbox, and replay failures", () => {
+  it("classifies proxy, transport, schema, sandbox, and replay failures", () => {
     expect(classifyProviderRuntimeFailureKind("407 Proxy Authentication Required")).toBe("proxy");
     expect(
       classifyProviderRuntimeFailureKind("dial tcp: lookup api.example.com: no such host"),
     ).toBe("dns");
-    expect(classifyProviderRuntimeFailureKind("socket hang up")).toBe("timeout");
+    expect(classifyProviderRuntimeFailureKind("connection refused")).toBe("connection");
+    expect(classifyProviderRuntimeFailureKind("socket hang up")).toBe("disconnect");
     expect(
       classifyProviderRuntimeFailureKind("INVALID_REQUEST_ERROR: string should match pattern"),
     ).toBe("schema");

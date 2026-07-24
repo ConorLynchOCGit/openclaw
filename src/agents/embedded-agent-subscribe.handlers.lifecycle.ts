@@ -7,6 +7,7 @@ import { hasAcceptedSessionSpawn } from "./accepted-session-spawn.js";
 import {
   buildApiErrorObservationFields,
   buildTextObservationFields,
+  resolveProviderLifecycleCause,
   sanitizeForConsole,
   shouldSuppressRawErrorConsoleSuffix,
 } from "./embedded-agent-error-observation.js";
@@ -14,7 +15,7 @@ import {
   classifyFailoverReason,
   formatUserFacingAssistantErrorText,
   GENERIC_ASSISTANT_ERROR_TEXT,
-} from "./embedded-agent-helpers.js";
+} from "./embedded-agent-helpers/errors.js";
 import { hasCommittedMessagingToolDeliveryEvidence } from "./embedded-agent-runner/delivery-evidence.js";
 import { isIncompleteTerminalAssistantTurn } from "./embedded-agent-runner/run/incomplete-turn.js";
 import {
@@ -61,6 +62,7 @@ export function handleAgentEnd(
   const lastAssistant = ctx.state.lastAssistant;
   const isError = isAssistantMessage(lastAssistant) && lastAssistant.stopReason === "error";
   let lifecycleErrorText: string | undefined;
+  let inferredProviderTaskMetadata: Record<string, string | number | boolean | null> | undefined;
   const hasAssistantVisibleText =
     Array.isArray(ctx.state.assistantTexts) &&
     ctx.state.assistantTexts.some((text) => hasAssistantVisibleReply({ text }));
@@ -105,6 +107,14 @@ export function handleAgentEnd(
     const observedError = buildApiErrorObservationFields(rawError, {
       provider: lastAssistant.provider,
     });
+    inferredProviderTaskMetadata = {
+      providerState: "failed",
+      providerCause: resolveProviderLifecycleCause({
+        failoverReason,
+        runtimeFailureKind: observedError.providerRuntimeFailureKind,
+      }),
+      providerAttemptStatus: "failed",
+    };
     const safeErrorText =
       buildTextObservationFields(errorText, {
         provider: lastAssistant.provider,
@@ -144,6 +154,20 @@ export function handleAgentEnd(
       typeof ctx.state.terminalAborted === "boolean"
         ? ctx.state.terminalAborted
         : ctx.params.isTerminalAborted?.();
+    const cancellationTaskMetadata =
+      !isError &&
+      (terminalAborted === true || terminalStopReason === "aborted" || terminalStopReason === "rpc")
+        ? {
+            providerState: "cancelled",
+            providerCause: "local_cancellation",
+            providerAttemptStatus: "cancelled",
+          }
+        : undefined;
+    const taskEventMetadata = {
+      ...inferredProviderTaskMetadata,
+      ...cancellationTaskMetadata,
+      ...ctx.state.terminalTaskEventMetadata,
+    };
     const terminalMeta = {
       ...(terminalStopReason ? { stopReason: terminalStopReason } : {}),
       ...(ctx.state.yielded === true ? { yielded: true } : {}),
@@ -152,9 +176,7 @@ export function handleAgentEnd(
         ? { providerStarted: ctx.state.providerStarted }
         : {}),
       ...(typeof terminalAborted === "boolean" ? { aborted: terminalAborted } : {}),
-      ...(ctx.state.terminalTaskEventMetadata
-        ? { taskEventMetadata: ctx.state.terminalTaskEventMetadata }
-        : {}),
+      ...(Object.keys(taskEventMetadata).length > 0 ? { taskEventMetadata } : {}),
     };
     // Fresh planned runs defer finality to agent-command. Inner attempt errors
     // remain observable but must not settle agent.wait before retry/compaction.

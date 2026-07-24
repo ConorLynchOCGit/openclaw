@@ -386,6 +386,9 @@ export type ProviderRuntimeFailureKind =
   | "upstream_html"
   | "proxy"
   | "rate_limit"
+  | "connection"
+  | "disconnect"
+  | "overloaded"
   | "dns"
   | "timeout"
   | "model_not_found"
@@ -441,6 +444,15 @@ const TIMEOUT_ERROR_CODES = new Set([
   "EPIPE",
   "EAI_AGAIN",
 ]);
+const CONNECTION_ESTABLISHMENT_ERROR_CODES = new Set([
+  "ECONNREFUSED",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+  "EHOSTDOWN",
+  "EAI_AGAIN",
+  "ENOTFOUND",
+]);
+const SOCKET_DISCONNECT_ERROR_CODES = new Set(["ECONNRESET", "ECONNABORTED", "ENETRESET", "EPIPE"]);
 const AUTH_SCOPE_HINT_RE =
   /\b(?:missing|required|requires|insufficient)\s+(?:the\s+following\s+)?scopes?\b|\bmissing\s+scope\b/i;
 const AUTH_SCOPE_NAME_RE = /\b(?:api\.responses\.write|model\.request)\b/i;
@@ -453,6 +465,10 @@ const PROXY_ERROR_RE =
 const DNS_ERROR_RE = /\benotfound\b|\beai_again\b|\bgetaddrinfo\b|\bno such host\b|\bdns\b/i;
 const INTERRUPTED_NETWORK_ERROR_RE =
   /\beconnrefused\b|\beconnreset\b|\beconnaborted\b|\benetreset\b|\behostunreach\b|\behostdown\b|\benetunreach\b|\bepipe\b|\bsocket hang up\b|\bconnection refused\b|\bconnection reset\b|\bconnection aborted\b|\bnetwork is unreachable\b|\bhost is unreachable\b|\bfetch failed\b|\bconnection error\b|\bnetwork request failed\b/i;
+const CONNECTION_ESTABLISHMENT_ERROR_RE =
+  /\beconnrefused\b|\benetunreach\b|\behostunreach\b|\behostdown\b|\benotfound\b|\beai_again\b|\bconnection refused\b|\bnetwork is unreachable\b|\bhost is unreachable\b|\bno such host\b|\bgetaddrinfo\b/i;
+const SOCKET_DISCONNECT_ERROR_RE =
+  /\beconnreset\b|\beconnaborted\b|\benetreset\b|\bepipe\b|\bsocket hang up\b|\bconnection reset\b|\bconnection aborted\b/i;
 const REPLAY_INVALID_RE =
   /\bprevious_response_id\b.*\b(?:invalid|unknown|not found|does not exist|expired|mismatch)\b|\btool_(?:use|call)\.(?:input|arguments)\b.*\b(?:missing|required)\b|\bincorrect role information\b|\broles must alternate\b|\binput item id does not belong to this connection\b/i;
 const THINKING_SIGNATURE_ERROR_RE =
@@ -569,6 +585,26 @@ function isProxyErrorMessage(raw: string, status?: number): boolean {
 
 function isDnsTransportErrorMessage(raw: string): boolean {
   return DNS_ERROR_RE.test(raw);
+}
+
+function classifyTransportFailureKind(
+  signal: FailoverSignal,
+  message: string,
+): "connection" | "disconnect" | undefined {
+  const code = signal.code?.trim().toUpperCase();
+  if (code && CONNECTION_ESTABLISHMENT_ERROR_CODES.has(code)) {
+    return "connection";
+  }
+  if (code && SOCKET_DISCONNECT_ERROR_CODES.has(code)) {
+    return "disconnect";
+  }
+  if (CONNECTION_ESTABLISHMENT_ERROR_RE.test(message)) {
+    return "connection";
+  }
+  if (SOCKET_DISCONNECT_ERROR_RE.test(message)) {
+    return "disconnect";
+  }
+  return undefined;
 }
 
 function isReplayInvalidErrorMessage(raw: string): boolean {
@@ -1262,6 +1298,13 @@ export function classifyProviderRuntimeFailureKind(
   if (message && isHtmlErrorResponse(message, status)) {
     return status === 401 || status === 403 ? "auth_html" : "upstream_html";
   }
+  if (message && isDnsTransportErrorMessage(message)) {
+    return "dns";
+  }
+  const transportFailureKind = classifyTransportFailureKind(normalizedSignal, message);
+  if (transportFailureKind) {
+    return transportFailureKind;
+  }
   const failoverClassification = classifyFailoverSignal({
     ...normalizedSignal,
     status,
@@ -1275,9 +1318,6 @@ export function classifyProviderRuntimeFailureKind(
     failoverClassification.reason === "model_not_found"
   ) {
     return "model_not_found";
-  }
-  if (message && isDnsTransportErrorMessage(message)) {
-    return "dns";
   }
   if (message && isSandboxBlockedErrorMessage(message)) {
     return "sandbox_blocked";
@@ -1306,10 +1346,10 @@ export function classifyProviderRuntimeFailureKind(
   ) {
     return "auth_invalid_token";
   }
-  if (
-    failoverClassification?.kind === "reason" &&
-    (failoverClassification.reason === "timeout" || failoverClassification.reason === "overloaded")
-  ) {
+  if (failoverClassification?.kind === "reason" && failoverClassification.reason === "overloaded") {
+    return "overloaded";
+  }
+  if (failoverClassification?.kind === "reason" && failoverClassification.reason === "timeout") {
     return "timeout";
   }
   if (message && isTimeoutTransportErrorMessage(message, status)) {

@@ -63,9 +63,11 @@ import {
   resolveStoredSessionKeyForSessionId,
 } from "../command/session.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../defaults.js";
+import { resolveProviderLifecycleCause } from "../embedded-agent-error-observation.js";
 import {
   classifyAssistantFailoverReason,
   classifyFailoverReason,
+  classifyProviderRuntimeFailureKind,
   extractObservedOverflowTokenCount,
   type FailoverReason,
   formatAssistantErrorText,
@@ -1383,6 +1385,7 @@ async function runEmbeddedAgentInternal(
         }
       };
       let lastRetryFailoverReason: FailoverReason | null = null;
+      let lastRetryProviderCause: string | undefined;
       let planningOnlyRetryInstruction: string | null = null;
       let reasoningOnlyRetryInstruction: string | null = null;
       let emptyResponseRetryInstruction: string | null = null;
@@ -2873,6 +2876,13 @@ async function runEmbeddedAgentInternal(
                 previous: lastRetryFailoverReason,
                 failoverReason: promptFailoverReason,
               });
+              lastRetryProviderCause ??= resolveProviderLifecycleCause({
+                failoverReason: promptFailoverReason,
+                runtimeFailureKind: classifyProviderRuntimeFailureKind({
+                  message: errorText,
+                  provider,
+                }),
+              });
               logPromptFailoverDecision("rotate_profile");
               await maybeBackoffBeforeOverloadFailover(promptFailoverReason);
               continue;
@@ -3121,6 +3131,13 @@ async function runEmbeddedAgentInternal(
               });
             }
             lastRetryFailoverReason = assistantFailoverOutcome.lastRetryFailoverReason;
+            lastRetryProviderCause ??= resolveProviderLifecycleCause({
+              failoverReason: assistantFailoverReason,
+              runtimeFailureKind: classifyProviderRuntimeFailureKind({
+                message: attemptAssistant?.errorMessage,
+                provider: activeErrorContext.provider,
+              }),
+            });
             continue;
           }
           consecutiveSameModelRateLimitRetries = resolveNextSameModelRateLimitRetryCount({
@@ -3306,6 +3323,11 @@ async function runEmbeddedAgentInternal(
               livenessState,
               timeoutPhase,
               providerStarted,
+              taskEventMetadata: {
+                providerState: "failed",
+                providerCause: timedOutByRunBudget ? "outer_deadline" : "provider_timeout",
+                providerAttemptStatus: "failed",
+              },
             });
             return {
               payloads: [
@@ -3864,6 +3886,19 @@ async function runEmbeddedAgentInternal(
             livenessState,
             stopReason,
             yielded: attempt.yieldDetected === true,
+            ...(lastRetryFailoverReason
+              ? {
+                  taskEventMetadata: {
+                    providerState: "fallback_recovered",
+                    providerCause:
+                      lastRetryProviderCause ??
+                      resolveProviderLifecycleCause({
+                        failoverReason: lastRetryFailoverReason,
+                      }),
+                    providerAttemptStatus: "succeeded",
+                  },
+                }
+              : {}),
           });
           return {
             payloads: terminalPayloads?.length ? terminalPayloads : undefined,

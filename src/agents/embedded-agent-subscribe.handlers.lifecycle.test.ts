@@ -125,6 +125,11 @@ describe("handleAgentEnd", () => {
       data: {
         phase: "error",
         error: "LLM request failed.",
+        taskEventMetadata: {
+          providerAttemptStatus: "failed",
+          providerCause: "unclassified",
+          providerState: "failed",
+        },
       },
     });
   });
@@ -155,6 +160,11 @@ describe("handleAgentEnd", () => {
       data: {
         phase: "error",
         error: "LLM request failed.",
+        taskEventMetadata: {
+          providerAttemptStatus: "failed",
+          providerCause: "unclassified",
+          providerState: "failed",
+        },
       },
     });
   });
@@ -174,21 +184,33 @@ describe("handleAgentEnd", () => {
 
     await handleAgentEnd(ctx);
 
-    expect(emitAgentEventMock).toHaveBeenCalledWith({
-      runId: "run-1",
-      stream: "lifecycle",
-      data: expect.objectContaining({
-        phase: "finishing",
-        attemptStatus: "error",
-        attemptError: "LLM request failed.",
+    expect(emitAgentEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "run-1",
+        stream: "lifecycle",
+        data: expect.objectContaining({
+          phase: "finishing",
+          attemptStatus: "error",
+          attemptError: "LLM request failed.",
+          taskEventMetadata: {
+            providerAttemptStatus: "failed",
+            providerCause: "unclassified",
+            providerState: "failed",
+          },
+        }),
       }),
-    });
+    );
     expect(onAgentEvent).toHaveBeenCalledWith({
       stream: "lifecycle",
       data: {
         phase: "finishing",
         attemptStatus: "error",
         attemptError: "LLM request failed.",
+        taskEventMetadata: {
+          providerAttemptStatus: "failed",
+          providerCause: "unclassified",
+          providerState: "failed",
+        },
       },
     });
     expect(
@@ -218,7 +240,7 @@ describe("handleAgentEnd", () => {
     expect(warnMeta.event).toBe("embedded_run_agent_end");
     expect(warnMeta.runId).toBe("run-1");
     expect(warnMeta.error).toBe("LLM request failed: connection refused by the provider endpoint.");
-    expect(warnMeta.providerRuntimeFailureKind).toBe("timeout");
+    expect(warnMeta.providerRuntimeFailureKind).toBe("connection");
     expect(warnMeta.rawErrorPreview).toBe("connection refused");
     expect(warnMeta.consoleMessage).toBe(
       "embedded run agent end: runId=run-1 isError=true model=unknown provider=unknown error=LLM request failed: connection refused by the provider endpoint. rawError=connection refused",
@@ -228,6 +250,11 @@ describe("handleAgentEnd", () => {
       data: {
         phase: "error",
         error: "LLM request failed: connection refused by the provider endpoint.",
+        taskEventMetadata: {
+          providerAttemptStatus: "failed",
+          providerCause: "connection",
+          providerState: "failed",
+        },
         livenessState: "blocked",
       },
     });
@@ -241,19 +268,26 @@ describe("handleAgentEnd", () => {
 
     await handleAgentEnd(ctx);
 
-    expect(emitAgentEventMock).toHaveBeenCalledWith({
-      runId: "run-1",
-      stream: "lifecycle",
-      data: expect.objectContaining({
-        phase: "end",
-        stopReason: "aborted",
+    expect(emitAgentEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "run-1",
+        stream: "lifecycle",
+        data: expect.objectContaining({
+          phase: "end",
+          stopReason: "aborted",
+        }),
       }),
-    });
+    );
     expect(onAgentEvent).toHaveBeenCalledWith({
       stream: "lifecycle",
       data: {
         phase: "end",
         stopReason: "aborted",
+        taskEventMetadata: {
+          providerAttemptStatus: "cancelled",
+          providerCause: "local_cancellation",
+          providerState: "cancelled",
+        },
       },
     });
   });
@@ -267,21 +301,28 @@ describe("handleAgentEnd", () => {
 
     await handleAgentEnd(ctx);
 
-    expect(emitAgentEventMock).toHaveBeenCalledWith({
-      runId: "run-1",
-      stream: "lifecycle",
-      data: expect.objectContaining({
-        phase: "end",
-        stopReason: "end_turn",
-        aborted: true,
+    expect(emitAgentEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "run-1",
+        stream: "lifecycle",
+        data: expect.objectContaining({
+          phase: "end",
+          stopReason: "end_turn",
+          aborted: true,
+        }),
       }),
-    });
+    );
     expect(onAgentEvent).toHaveBeenCalledWith({
       stream: "lifecycle",
       data: {
         phase: "end",
         stopReason: "end_turn",
         aborted: true,
+        taskEventMetadata: {
+          providerAttemptStatus: "cancelled",
+          providerCause: "local_cancellation",
+          providerState: "cancelled",
+        },
       },
     });
   });
@@ -321,7 +362,7 @@ describe("handleAgentEnd", () => {
       "The AI service is temporarily overloaded. Please try again in a moment.",
     );
     expect(warnMeta.failoverReason).toBe("overloaded");
-    expect(warnMeta.providerRuntimeFailureKind).toBe("timeout");
+    expect(warnMeta.providerRuntimeFailureKind).toBe("overloaded");
     expect(warnMeta.providerErrorType).toBe("overloaded_error");
     expect(warnMeta.consoleMessage).toBe(
       'embedded run agent end: runId=run-1 isError=true model=claude-test provider=anthropic error=The AI service is temporarily overloaded. Please try again in a moment. rawError={"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}',
@@ -373,6 +414,11 @@ describe("handleAgentEnd", () => {
       data: {
         phase: "error",
         error: "LLM request failed.",
+        taskEventMetadata: {
+          providerAttemptStatus: "failed",
+          providerCause: "unclassified",
+          providerState: "failed",
+        },
       },
     });
   });
@@ -820,6 +866,11 @@ describe("handleAgentEnd", () => {
       data: {
         phase: "error",
         error: "LLM request failed: connection refused by the provider endpoint.",
+        taskEventMetadata: {
+          providerAttemptStatus: "failed",
+          providerCause: "connection",
+          providerState: "failed",
+        },
       },
     });
   });

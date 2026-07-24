@@ -26,7 +26,7 @@ describe("buildApiErrorObservationFields", () => {
     expect(observed.rawErrorPreview).toContain('"request_id":"sha256:');
     expect(observed.rawErrorHash?.startsWith("sha256:")).toBe(true);
     expect(observed.rawErrorFingerprint?.startsWith("sha256:")).toBe(true);
-    expect(observed.providerRuntimeFailureKind).toBe("timeout");
+    expect(observed.providerRuntimeFailureKind).toBe("overloaded");
     expect(observed.providerErrorType).toBe("overloaded_error");
     expect(observed.providerErrorMessagePreview).toBe("Overloaded");
     expect(observed.requestIdHash?.startsWith("sha256:")).toBe(true);
@@ -71,7 +71,7 @@ describe("buildApiErrorObservationFields", () => {
     expect(observed.textPreview).toContain('"request_id":"sha256:');
     expect(observed.textHash?.startsWith("sha256:")).toBe(true);
     expect(observed.textFingerprint?.startsWith("sha256:")).toBe(true);
-    expect(observed.providerRuntimeFailureKind).toBe("timeout");
+    expect(observed.providerRuntimeFailureKind).toBe("overloaded");
     expect(observed.providerErrorType).toBe("overloaded_error");
     expect(observed.providerErrorMessagePreview).toBe("Overloaded");
     expect(observed.requestIdHash?.startsWith("sha256:")).toBe(true);
