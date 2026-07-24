@@ -76,7 +76,6 @@ describe("resolveRunFailoverDecision", () => {
         fallbackConfigured: true,
         failoverFailure: true,
         failoverReason: "timeout",
-        promptTimeoutFallbackSafe: true,
         timedOutByRunBudget: true,
         profileRotated: true,
       }),

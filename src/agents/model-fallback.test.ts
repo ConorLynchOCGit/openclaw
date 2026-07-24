@@ -2605,6 +2605,8 @@ describe("runWithModelFallback", () => {
 
   it("does not fall back on user aborts", async () => {
     const cfg = makeCfg();
+    const controller = new AbortController();
+    controller.abort(Object.assign(new Error("timeout"), { name: "TimeoutError" }));
     const run = vi
       .fn()
       .mockRejectedValueOnce(Object.assign(new Error("aborted"), { name: "AbortError" }))
@@ -2615,6 +2617,7 @@ describe("runWithModelFallback", () => {
         cfg,
         provider: "openai",
         model: "gpt-4.1-mini",
+        abortSignal: controller.signal,
         run,
       }),
     ).rejects.toThrow("aborted");

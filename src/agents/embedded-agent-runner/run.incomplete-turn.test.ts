@@ -2061,7 +2061,7 @@ describe("runEmbeddedAgent incomplete-turn safety", () => {
     mockedRunEmbeddedAttempt.mockResolvedValueOnce(
       makeAttemptResult({
         assistantTexts: [finalText],
-        toolMetas: [{ toolName: "update_plan", replaySafe: true }],
+        toolMetas: [{ toolName: "update_plan" }],
         lastAssistant: {
           role: "assistant",
           stopReason: "toolUse",

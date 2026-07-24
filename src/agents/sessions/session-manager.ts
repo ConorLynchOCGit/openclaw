@@ -894,6 +894,82 @@ export class SessionManager {
     return this.sessionFile;
   }
 
+  /**
+   * Remove matching entries immediately before any declared trailing metadata.
+   * Surviving entries are reparented to the retained branch and the file is
+   * rewritten once.
+   */
+  removeTrailingEntries(
+    predicate: (entry: SessionEntry) => boolean,
+    options?: { preserveTrailing?: (entry: SessionEntry) => boolean },
+  ): number {
+    let preservedStart = this.fileEntries.length;
+    while (preservedStart > 1) {
+      const entry = this.fileEntries[preservedStart - 1];
+      if (entry.type === "session" || !options?.preserveTrailing?.(entry)) {
+        break;
+      }
+      preservedStart -= 1;
+    }
+
+    let removeStart = preservedStart;
+    while (removeStart > 1) {
+      const entry = this.fileEntries[removeStart - 1];
+      if (entry.type === "session" || !predicate(entry)) {
+        break;
+      }
+      removeStart -= 1;
+    }
+    if (removeStart === preservedStart) {
+      return 0;
+    }
+
+    const removedEntries = this.fileEntries.splice(
+      removeStart,
+      preservedStart - removeStart,
+    ) as SessionEntry[];
+    const removedParentById = new Map(
+      removedEntries.map((entry) => [entry.id, entry.parentId] as const),
+    );
+    for (let index = removeStart; index < this.fileEntries.length; ) {
+      const entry = this.fileEntries[index];
+      if (
+        entry.type !== "session" &&
+        entry.type === "label" &&
+        removedParentById.has(entry.targetId)
+      ) {
+        removedParentById.set(entry.id, entry.parentId);
+        this.fileEntries.splice(index, 1);
+        continue;
+      }
+      index += 1;
+    }
+
+    const resolveRetainedParentId = (parentId: string | null): string | null => {
+      const seen = new Set<string>();
+      let currentId = parentId;
+      while (currentId && removedParentById.has(currentId) && !seen.has(currentId)) {
+        seen.add(currentId);
+        currentId = removedParentById.get(currentId) ?? null;
+      }
+      return currentId;
+    };
+    const replacementParentId = resolveRetainedParentId(removedEntries[0]?.parentId ?? null);
+    this.fileEntries = this.fileEntries.map((entry) => {
+      if (entry.type === "session") {
+        return entry;
+      }
+      const parentId = resolveRetainedParentId(entry.parentId);
+      return parentId === entry.parentId ? entry : ({ ...entry, parentId } as SessionEntry);
+    });
+
+    this.buildIndex();
+    this.leafId =
+      replacementParentId && this.byId.has(replacementParentId) ? replacementParentId : null;
+    this.rewriteFile();
+    return removedEntries.length;
+  }
+
   persist(entry: SessionEntry): void {
     if (!this.shouldPersist || !this.sessionFile) {
       return;

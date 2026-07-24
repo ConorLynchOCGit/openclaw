@@ -110,4 +110,69 @@ describe("SessionManager.open", () => {
     expect(entries.map((entry) => entry.type)).toEqual(["session", "message", "message"]);
     expect(entries.filter((entry) => entry.type === "session")).toHaveLength(1);
   });
+
+  it("removes a matching tail before preserved metadata and rewrites once", async () => {
+    const dir = await makeTempDir();
+    const sessionManager = SessionManager.create(dir, dir);
+    const userId = sessionManager.appendMessage({
+      role: "user",
+      content: "question",
+      timestamp: 1,
+    });
+    const baseAssistantId = sessionManager.appendMessage({
+      role: "assistant",
+      content: [{ type: "text", text: "base answer" }],
+      api: "messages",
+      provider: "anthropic",
+      model: "sonnet-4.6",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "stop",
+      timestamp: 2,
+    });
+    const temporaryErrorId = sessionManager.appendMessage({
+      role: "assistant",
+      content: [],
+      api: "messages",
+      provider: "anthropic",
+      model: "sonnet-4.6",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "error",
+      errorMessage: "temporary compaction error",
+      timestamp: 3,
+    });
+    const metadataId = sessionManager.appendCustomEntry("test-metadata", { retained: true });
+
+    expect(
+      sessionManager.removeTrailingEntries((entry) => entry.id === temporaryErrorId, {
+        preserveTrailing: (entry) => entry.type === "custom",
+      }),
+    ).toBe(1);
+    expect(sessionManager.getLeafId()).toBe(baseAssistantId);
+    expect(sessionManager.getEntry(temporaryErrorId)).toBeUndefined();
+    expect(sessionManager.getEntry(metadataId)).toMatchObject({ parentId: baseAssistantId });
+    expect(sessionManager.getBranch().map((entry) => entry.id)).toEqual([userId, baseAssistantId]);
+
+    const sessionFile = sessionManager.getSessionFile();
+    expect(sessionFile).toBeDefined();
+    const persisted = (await fs.readFile(sessionFile!, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { id?: string; parentId?: string | null });
+    expect(persisted.some((entry) => entry.id === temporaryErrorId)).toBe(false);
+    expect(persisted.find((entry) => entry.id === metadataId)?.parentId).toBe(baseAssistantId);
+  });
 });
