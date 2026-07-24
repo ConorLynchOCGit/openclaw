@@ -87,9 +87,12 @@ describe("provider finality", () => {
   it.each(PROVIDER_CASES)(
     "preserves $label as a distinct native cause",
     ({ signal, expectedCause }) => {
-      const failoverReason = classifyFailoverReason(signal.message ?? "", {
-        provider: signal.provider,
-      });
+      const failoverReason = classifyFailoverReason(
+        typeof signal === "string" ? signal : (signal.message ?? ""),
+        {
+          provider: typeof signal === "string" ? undefined : signal.provider,
+        },
+      );
       const runtimeFailureKind = classifyProviderRuntimeFailureKind(signal);
 
       expect(
@@ -148,7 +151,7 @@ describe("provider finality", () => {
       state: fixture.state,
       cause: fixture.cause,
     });
-    expect(readback.physical.attemptStatus).toBe(fixture.attemptStatus);
+    expect(readback.physical?.attemptStatus).toBe(fixture.attemptStatus);
     expect(readback.logicalStatus).toBe(
       fixture.status === "succeeded"
         ? "completed"

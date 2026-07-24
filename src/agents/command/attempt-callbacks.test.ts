@@ -3,11 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   buildAgentAttemptTerminalTaskEventMetadata,
   createAgentAttemptLifecycleCallbacks,
+  type AgentAttemptLifecycleState,
 } from "./attempt-callbacks.js";
 
 describe("createAgentAttemptLifecycleCallbacks", () => {
   it("tracks user-message persistence without closing over the agent command scope", () => {
-    const state = {
+    const state: AgentAttemptLifecycleState = {
       currentTurnUserMessagePersisted: false,
       lifecycleFinishing: false,
       lifecycleEnded: false,
@@ -27,7 +28,7 @@ describe("createAgentAttemptLifecycleCallbacks", () => {
   });
 
   it("tracks terminal lifecycle phases", () => {
-    const state = {
+    const state: AgentAttemptLifecycleState = {
       currentTurnUserMessagePersisted: false,
       lifecycleFinishing: false,
       lifecycleEnded: false,
