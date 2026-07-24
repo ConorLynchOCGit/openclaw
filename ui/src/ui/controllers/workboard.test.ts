@@ -165,6 +165,24 @@ describe("workboard controller", () => {
               derivedBy: "resolveTaskReadbackProgressProjection",
               bounded: true,
             },
+            readback: {
+              schema: "openclaw.task.lifecycle_readback.v1",
+              logicalStatus: "running",
+              nativeTaskStatus: "running",
+              lastActivityAt: 2,
+              physical: {
+                runId: "run-1",
+                sessionKey: sampleTaskSessionKey,
+                active: true,
+              },
+              children: [],
+              activeChildCount: 0,
+              queuedChildCount: 0,
+              terminalChildCount: 0,
+              followupActive: false,
+              deliveryStatus: "pending",
+              mismatches: [],
+            },
           },
         ],
       },
@@ -182,6 +200,13 @@ describe("workboard controller", () => {
         source: "task-receipt",
         note: "Running Workboard parity proof",
         bounded: true,
+      },
+      readback: {
+        schema: "openclaw.task.lifecycle_readback.v1",
+        logicalStatus: "running",
+        physical: {
+          active: true,
+        },
       },
     });
   });

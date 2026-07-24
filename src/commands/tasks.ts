@@ -610,6 +610,7 @@ export async function tasksShowCommand(
 
   const summary = mapTaskSummary(task);
   const activeProgress = summary.activeProgress;
+  const lifecycle = summary.readback;
   const resultSession = resolveTaskResultSessionEvidence(task);
   const readback = buildTaskReadbackProjection({
     taskId: task.taskId,
@@ -651,6 +652,25 @@ export async function tasksShowCommand(
     `lastEventAt: ${formatTaskTimestamp(task.lastEventAt)}`,
     `cleanupAfter: ${formatTaskTimestamp(task.cleanupAfter)}`,
     `activeProgress: ${formatTaskReadbackProgress(activeProgress)}`,
+    `physical: ${lifecycle?.physical?.active ? "active" : "settled"}${
+      lifecycle?.physical?.attemptStatus ? ` attempt=${lifecycle.physical.attemptStatus}` : ""
+    }`,
+    `children: active=${lifecycle?.activeChildCount ?? 0} queued=${
+      lifecycle?.queuedChildCount ?? 0
+    } terminal=${lifecycle?.terminalChildCount ?? 0} followup=${
+      lifecycle?.followupActive === true ? "active" : "inactive"
+    }`,
+    ...(lifecycle?.worktree
+      ? [`worktree: ${lifecycle.worktree.id} owner=${lifecycle.worktree.writeOwnerTaskId ?? "n/a"}`]
+      : []),
+    ...(lifecycle?.taskFlow
+      ? [
+          `taskFlow: ${lifecycle.taskFlow.flowId} revision=${lifecycle.taskFlow.revision} status=${lifecycle.taskFlow.status}`,
+        ]
+      : []),
+    ...(lifecycle?.mismatches.length
+      ? [`mismatches: ${lifecycle.mismatches.map((entry) => entry.code).join(", ")}`]
+      : []),
     ...(task.error ? [`error: ${task.error}`] : []),
     ...(task.terminalSummary ? [`terminalSummary: ${task.terminalSummary}`] : []),
   ];

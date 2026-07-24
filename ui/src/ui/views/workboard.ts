@@ -1390,6 +1390,10 @@ function formatLifecycle(lifecycle: WorkboardLifecycle): {
 }
 
 function taskDetail(task: WorkboardTaskSummary): string {
+  const mismatch = task.readback?.mismatches[0];
+  if (mismatch) {
+    return `Task readback mismatch: ${mismatch.code}`;
+  }
   if (task.status === "queued" || task.status === "running") {
     const activeProgress = task.activeProgress;
     const activeParts = activeProgress
@@ -1397,7 +1401,15 @@ function taskDetail(task: WorkboardTaskSummary): string {
           (part): part is string => typeof part === "string" && part.trim().length > 0,
         )
       : [];
-    return activeParts.length > 0 ? activeParts.join(" ") : (task.title ?? task.taskId);
+    if (activeParts.length > 0) {
+      return activeParts.join(" ");
+    }
+    if ((task.readback?.activeChildCount ?? 0) > 0) {
+      return `${task.readback?.activeChildCount} active child task${
+        task.readback?.activeChildCount === 1 ? "" : "s"
+      }`;
+    }
+    return task.title ?? task.taskId;
   }
   return task.terminalSummary ?? task.error ?? task.title ?? task.taskId;
 }

@@ -119,6 +119,7 @@ export type BoundTaskFlowRuntime = {
   finish: (params: {
     flowId: string;
     expectedRevision: number;
+    currentStep?: string | null;
     stateJson?: JsonValue | null;
     updatedAt?: number;
     endedAt?: number;

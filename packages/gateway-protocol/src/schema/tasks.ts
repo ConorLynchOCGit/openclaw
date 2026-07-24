@@ -87,6 +87,128 @@ const TaskReadbackProgressProjectionSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const TaskLifecycleChildSchema = Type.Object(
+  {
+    taskId: NonEmptyString,
+    status: TaskLedgerStatusSchema,
+    active: Type.Boolean(),
+    kind: Type.Optional(Type.String()),
+    runId: Type.Optional(Type.String()),
+    sessionKey: Type.Optional(Type.String()),
+    phase: Type.Optional(Type.String()),
+    role: Type.Optional(Type.String()),
+    model: Type.Optional(Type.String()),
+    reasoning: Type.Optional(Type.String()),
+    startedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+    endedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+    lastActivityAt: Type.Optional(Type.Integer({ minimum: 0 })),
+  },
+  { additionalProperties: false },
+);
+
+const TaskLifecycleMismatchSchema = Type.Object(
+  {
+    code: NonEmptyString,
+    owners: Type.Array(NonEmptyString, { minItems: 1 }),
+    evidence: Type.Array(NonEmptyString),
+  },
+  { additionalProperties: false },
+);
+
+const TaskLifecycleReadbackSchema = Type.Object(
+  {
+    schema: Type.Literal("openclaw.task.lifecycle_readback.v1"),
+    logicalStatus: TaskLedgerStatusSchema,
+    nativeTaskStatus: NonEmptyString,
+    lastActivityAt: Type.Integer({ minimum: 0 }),
+    physical: Type.Optional(
+      Type.Object(
+        {
+          runId: Type.Optional(Type.String()),
+          sessionKey: Type.Optional(Type.String()),
+          sessionStatus: Type.Optional(Type.String()),
+          active: Type.Boolean(),
+          attemptId: Type.Optional(Type.String()),
+          attemptStatus: Type.Optional(Type.String()),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    children: Type.Array(TaskLifecycleChildSchema),
+    activeChildCount: Type.Integer({ minimum: 0 }),
+    queuedChildCount: Type.Integer({ minimum: 0 }),
+    terminalChildCount: Type.Integer({ minimum: 0 }),
+    followupActive: Type.Boolean(),
+    worktree: Type.Optional(
+      Type.Object(
+        {
+          id: NonEmptyString,
+          kind: Type.Optional(
+            Type.Union([Type.Literal("source-inspection"), Type.Literal("system-change")]),
+          ),
+          baseRef: Type.Optional(Type.String()),
+          writeOwnerTaskId: Type.Optional(Type.String()),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    execution: Type.Optional(
+      Type.Object(
+        {
+          provider: Type.Optional(Type.String()),
+          model: Type.Optional(Type.String()),
+          reasoning: Type.Optional(Type.String()),
+          profile: Type.Optional(Type.String()),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    artifact: Type.Optional(
+      Type.Object(
+        {
+          governingRef: Type.Optional(Type.String()),
+          governingDigest: Type.Optional(Type.String()),
+          observedDigest: Type.Optional(Type.String()),
+          validationDigest: Type.Optional(Type.String()),
+          reviewReceiptRef: Type.Optional(Type.String()),
+          reviewedDigest: Type.Optional(Type.String()),
+          reviewVerdict: Type.Optional(Type.String()),
+          handoffTarget: Type.Optional(Type.String()),
+          handoffDigest: Type.Optional(Type.String()),
+          stale: Type.Boolean(),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    provider: Type.Optional(
+      Type.Object(
+        {
+          state: Type.Optional(Type.String()),
+          cause: Type.Optional(Type.String()),
+          attemptId: Type.Optional(Type.String()),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    taskFlow: Type.Optional(
+      Type.Object(
+        {
+          flowId: NonEmptyString,
+          revision: Type.Integer({ minimum: 0 }),
+          status: NonEmptyString,
+          terminal: Type.Boolean(),
+          currentStep: Type.Optional(Type.String()),
+          stateLabel: Type.Optional(Type.String()),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    deliveryStatus: TaskDeliveryStatusSchema,
+    mismatches: Type.Array(TaskLifecycleMismatchSchema),
+  },
+  { additionalProperties: false },
+);
+
 /** Public task summary returned by task list/get/cancel responses. */
 export const TaskSummarySchema = Type.Object(
   {
@@ -110,6 +232,7 @@ export const TaskSummarySchema = Type.Object(
     startedAt: Type.Optional(TimestampSchema),
     endedAt: Type.Optional(TimestampSchema),
     activeProgress: Type.Optional(TaskReadbackProgressProjectionSchema),
+    readback: Type.Optional(TaskLifecycleReadbackSchema),
     terminalSummary: Type.Optional(Type.String()),
     error: Type.Optional(Type.String()),
   },

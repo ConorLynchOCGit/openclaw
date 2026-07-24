@@ -1,5 +1,5 @@
 // Shared public task readback projection for gateway APIs and CLI JSON.
-import { type TaskSummary } from "../../packages/gateway-protocol/src/index.js";
+import type { TaskSummary } from "../../packages/gateway-protocol/src/index.js";
 import {
   createTaskReadbackProgressProjectionContext,
   resolveTaskReadbackProgressProjection,
@@ -12,24 +12,19 @@ import {
   formatTaskStatusTitle,
   sanitizeTaskStatusText,
 } from "../tasks/task-status.js";
+import {
+  buildTaskLifecycleReadback,
+  createTaskLifecycleReadbackContext,
+  type TaskLifecycleReadbackContext,
+  TASK_STATUS_TO_LEDGER_STATUS,
+} from "./task-lifecycle-readback.js";
 
 const TASK_LIST_SUMMARY_LIMIT = 20;
 
 type TaskLedgerStatus = TaskSummary["status"];
 type TaskSummaryProjectionOptions = {
   readbackContext?: TaskReadbackProgressProjectionContext;
-};
-
-// Public task readback preserves the older ledger status vocabulary while the
-// runtime registry tracks finer-grained task states such as `lost`.
-export const TASK_STATUS_TO_LEDGER_STATUS: Record<TaskStatus, TaskLedgerStatus> = {
-  queued: "queued",
-  running: "running",
-  succeeded: "completed",
-  failed: "failed",
-  timed_out: "timed_out",
-  cancelled: "cancelled",
-  lost: "failed",
+  lifecycleContext?: TaskLifecycleReadbackContext;
 };
 
 export const LEDGER_STATUS_TO_TASK_STATUSES: Record<TaskLedgerStatus, TaskStatus[]> = {
@@ -86,6 +81,10 @@ export function mapTaskSummary(
     ...(task.startedAt !== undefined ? { startedAt: task.startedAt } : {}),
     ...(task.endedAt !== undefined ? { endedAt: task.endedAt } : {}),
     ...(activeProgress ? { activeProgress } : {}),
+    readback: buildTaskLifecycleReadback(
+      task,
+      opts.lifecycleContext ?? createTaskLifecycleReadbackContext(),
+    ),
     ...(terminalSummary ? { terminalSummary } : {}),
     ...(error ? { error } : {}),
   };
@@ -115,9 +114,9 @@ function selectTaskSummarySample(tasks: readonly TaskRecord[], limit: number): T
     }
   };
   const newestFirst = (a: TaskRecord, b: TaskRecord) => taskUpdatedAt(b) - taskUpdatedAt(a);
-  append(tasks.filter(isActiveTask).sort(newestFirst));
-  append(tasks.filter(isIssueTask).sort(newestFirst));
-  append([...tasks].sort(newestFirst));
+  append(tasks.filter(isActiveTask).toSorted(newestFirst));
+  append(tasks.filter(isIssueTask).toSorted(newestFirst));
+  append(tasks.toSorted(newestFirst));
   return sample;
 }
 
@@ -146,9 +145,11 @@ export function buildTasksListSummaryPayload(
       ? Math.min(Math.floor(opts.limit), TASK_LIST_SUMMARY_LIMIT)
       : TASK_LIST_SUMMARY_LIMIT;
   const readbackContext = createTaskReadbackProgressProjectionContext();
+  const lifecycleContext = createTaskLifecycleReadbackContext();
   const sample = selectTaskSummarySample(tasks, limit).map((task) =>
     mapTaskSummary(task, {
       readbackContext,
+      lifecycleContext,
     }),
   );
   return {
@@ -175,5 +176,6 @@ export function buildTasksListSummaryPayload(
 
 export function mapTaskSummaries(tasks: readonly TaskRecord[]): TaskSummary[] {
   const readbackContext = createTaskReadbackProgressProjectionContext();
-  return tasks.map((task) => mapTaskSummary(task, { readbackContext }));
+  const lifecycleContext = createTaskLifecycleReadbackContext();
+  return tasks.map((task) => mapTaskSummary(task, { readbackContext, lifecycleContext }));
 }

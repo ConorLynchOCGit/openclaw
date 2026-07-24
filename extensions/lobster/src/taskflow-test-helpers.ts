@@ -41,7 +41,7 @@ export function createFakeTaskFlow(overrides?: Partial<BoundTaskFlow>): BoundTas
     })),
     finish: vi.fn().mockImplementation((input) => ({
       applied: true,
-      flow: { ...baseFlow, revision: input.expectedRevision + 1, status: "completed" as const },
+      flow: { ...baseFlow, revision: input.expectedRevision + 1, status: "succeeded" as const },
     })),
     fail: vi.fn().mockImplementation((input) => ({
       applied: true,

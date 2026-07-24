@@ -73,6 +73,13 @@ type ManagedFlowCheckpointParams =
       waitingStep?: string;
     };
 
+type ManagedFlowFinishParams = {
+  flowId: string;
+  expectedRevision: number;
+  stateJson?: JsonLike;
+  currentStep?: string;
+};
+
 type ManagedFlowSuccessResult = {
   ok: true;
   envelope: unknown;
@@ -264,6 +271,33 @@ function parseCheckpointFlowParams(params: Record<string, unknown>): ManagedFlow
   };
 }
 
+function parseFinishFlowParams(params: Record<string, unknown>): ManagedFlowFinishParams {
+  const flowId = readOptionalTrimmedString(params.flowId, "flowId");
+  const expectedRevision = readOptionalNumber(params.flowExpectedRevision, "flowExpectedRevision");
+  const currentStep = readOptionalTrimmedString(params.flowCurrentStep, "flowCurrentStep");
+  const stateJson = parseOptionalFlowStateJson(params.flowStateJson);
+  const controllerId = readOptionalTrimmedString(params.flowControllerId, "flowControllerId");
+  const goal = readOptionalTrimmedString(params.flowGoal, "flowGoal");
+  const waitingStep = readOptionalTrimmedString(params.flowWaitingStep, "flowWaitingStep");
+
+  if (!flowId || expectedRevision === undefined) {
+    throw new Error(
+      "flowId and flowExpectedRevision are required for managed TaskFlow finish mode",
+    );
+  }
+  if (controllerId !== undefined || goal !== undefined || waitingStep !== undefined) {
+    throw new Error(
+      "TaskFlow finish does not accept flowControllerId, flowGoal, or flowWaitingStep",
+    );
+  }
+  return {
+    flowId,
+    expectedRevision,
+    ...(currentStep ? { currentStep } : {}),
+    ...(stateJson !== undefined ? { stateJson } : {}),
+  };
+}
+
 function isLinkedCorrectionState(value: JsonLike): boolean {
   return Boolean(
     value &&
@@ -301,9 +335,21 @@ function formatManagedCheckpointResult(flow: unknown) {
   };
 }
 
+function formatManagedTerminalResult(flow: unknown) {
+  const details = {
+    ok: true,
+    status: "succeeded",
+    flow,
+  };
+  return {
+    content: [{ type: "text", text: JSON.stringify(details, null, 2) }],
+    details,
+  };
+}
+
 function requireTaskFlowRuntime(
   taskFlow: BoundTaskFlow | undefined,
-  action: "run" | "resume" | "checkpoint",
+  action: "run" | "resume" | "checkpoint" | "finish",
 ) {
   if (!taskFlow) {
     throw new Error(`Managed TaskFlow ${action} mode requires a bound taskFlow runtime`);
@@ -324,14 +370,14 @@ export function createLobsterTool(api: OpenClawPluginApi, options?: LobsterToolO
     name: "lobster",
     label: "Lobster Workflow",
     description:
-      "Run Lobster pipelines as a local-first workflow runtime, resume approvals, or atomically checkpoint the bound managed TaskFlow state.",
+      "Run Lobster pipelines as a local-first workflow runtime or revision-safely checkpoint, finish, and resume the bound managed TaskFlow.",
     parameters: Type.Object({
       // NOTE: Prefer string enums in tool schemas; some providers reject unions/anyOf.
-      action: Type.Unsafe<"run" | "resume" | "checkpoint">({
+      action: Type.Unsafe<"run" | "resume" | "checkpoint" | "finish">({
         type: "string",
-        enum: ["run", "resume", "checkpoint"],
+        enum: ["run", "resume", "checkpoint", "finish"],
         description:
-          "run executes a Lobster pipeline; resume continues a Lobster approval; checkpoint creates or revision-safely updates managed TaskFlow continuation state without running a pipeline.",
+          "run executes a Lobster pipeline; resume continues an approval; checkpoint creates or updates waiting state; finish commits one terminal native TaskFlow revision.",
       }),
       pipeline: Type.Optional(Type.String()),
       argsJson: Type.Optional(Type.String()),
@@ -351,17 +397,18 @@ export function createLobsterTool(api: OpenClawPluginApi, options?: LobsterToolO
       flowStateJson: Type.Optional(
         Type.String({
           description:
-            "JSON state for managed TaskFlow run or checkpoint. Required for checkpoint.",
+            "JSON state for managed TaskFlow run, checkpoint, or finish. Required for checkpoint.",
         }),
       ),
       flowId: Type.Optional(
         Type.String({
-          description: "Existing managed TaskFlow id for checkpoint update or approval resume.",
+          description:
+            "Existing managed TaskFlow id for checkpoint update, finish, or approval resume.",
         }),
       ),
       flowExpectedRevision: optionalNonNegativeIntegerSchema({
         description:
-          "Expected current revision for checkpoint update or approval resume; stale revisions fail without mutation.",
+          "Expected current revision for checkpoint update, finish, or approval resume; stale revisions fail without mutation.",
       }),
       flowCurrentStep: Type.Optional(Type.String()),
       flowWaitingStep: Type.Optional(Type.String()),
@@ -371,11 +418,35 @@ export function createLobsterTool(api: OpenClawPluginApi, options?: LobsterToolO
       if (!action) {
         throw new Error("action required");
       }
-      if (action !== "run" && action !== "resume" && action !== "checkpoint") {
+      if (
+        action !== "run" &&
+        action !== "resume" &&
+        action !== "checkpoint" &&
+        action !== "finish"
+      ) {
         throw new Error(`Unknown action: ${action}`);
       }
 
       const taskFlow = options?.taskFlow;
+      if (action === "finish") {
+        for (const field of ["pipeline", "argsJson", "token", "approvalId", "approve"] as const) {
+          if (params[field] !== undefined) {
+            throw new Error(`finish action does not accept ${field}`);
+          }
+        }
+        const flowParams = parseFinishFlowParams(params);
+        const runtime = requireTaskFlowRuntime(taskFlow, "finish");
+        const mutation = runtime.finish({
+          flowId: flowParams.flowId,
+          expectedRevision: flowParams.expectedRevision,
+          ...(flowParams.currentStep ? { currentStep: flowParams.currentStep } : {}),
+          ...(flowParams.stateJson !== undefined ? { stateJson: flowParams.stateJson } : {}),
+        });
+        if (!mutation.applied) {
+          throw new Error(`TaskFlow finish failed: ${mutation.code}`);
+        }
+        return formatManagedTerminalResult(mutation.flow);
+      }
       if (action === "checkpoint") {
         for (const field of ["pipeline", "argsJson", "token", "approvalId", "approve"] as const) {
           if (params[field] !== undefined) {

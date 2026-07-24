@@ -54,6 +54,76 @@ describe("TaskSummarySchema", () => {
     ).toBe(true);
   });
 
+  it("accepts the shared native lifecycle readback DTO", () => {
+    expect(
+      validateTaskSummary.Check({
+        id: "task-parent",
+        status: "running",
+        deliveryStatus: "pending",
+        readback: {
+          schema: "openclaw.task.lifecycle_readback.v1",
+          logicalStatus: "running",
+          nativeTaskStatus: "running",
+          lastActivityAt: 100,
+          physical: {
+            runId: "run-parent",
+            sessionKey: "agent:coding:subagent:parent",
+            sessionStatus: "running",
+            active: true,
+            attemptId: "attempt-2",
+            attemptStatus: "running",
+          },
+          children: [
+            {
+              taskId: "task-child",
+              status: "running",
+              active: true,
+              kind: "codex-native-subagent",
+              phase: "followup_task",
+              lastActivityAt: 99,
+            },
+          ],
+          activeChildCount: 1,
+          queuedChildCount: 0,
+          terminalChildCount: 0,
+          followupActive: true,
+          worktree: {
+            id: "wt-1",
+            kind: "system-change",
+            baseRef: "abc123",
+            writeOwnerTaskId: "task-child",
+          },
+          execution: {
+            provider: "openai",
+            model: "gpt-5.6-codex",
+            reasoning: "high",
+            profile: "coding",
+          },
+          artifact: {
+            governingRef: "plans/example.md",
+            governingDigest: "a".repeat(64),
+            observedDigest: "a".repeat(64),
+            reviewedDigest: "a".repeat(64),
+            handoffDigest: "a".repeat(64),
+            stale: false,
+          },
+          provider: {
+            state: "running",
+            attemptId: "attempt-2",
+          },
+          taskFlow: {
+            flowId: "flow-1",
+            revision: 2,
+            status: "running",
+            terminal: false,
+          },
+          deliveryStatus: "pending",
+          mismatches: [],
+        },
+      }),
+    ).toBe(true);
+  });
+
   it("accepts bounded native receipt-derived active progress projections", () => {
     expect(
       validateTaskSummary.Check({

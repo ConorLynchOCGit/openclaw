@@ -1,3 +1,4 @@
+import type { TaskSummary as GatewayTaskSummary } from "../../../../packages/gateway-protocol/src/index.js";
 // Control UI controller manages workboard gateway state.
 import { normalizeReadbackProgressProjection } from "../../../../src/shared/readback-progress.js";
 import type { GatewayBrowserClient } from "../gateway.ts";
@@ -338,6 +339,7 @@ export type WorkboardTaskSummary = {
   sourceId?: string;
   updatedAt?: number | string;
   activeProgress?: ReadbackProgressProjection;
+  readback?: GatewayTaskSummary["readback"];
   terminalSummary?: string;
   error?: string;
 };
@@ -1050,6 +1052,10 @@ function normalizeTaskSummary(value: unknown): WorkboardTaskSummary | null {
     return null;
   }
   const activeProgress = normalizeReadbackProgressProjection(value.activeProgress);
+  const readback =
+    isRecord(value.readback) && value.readback.schema === "openclaw.task.lifecycle_readback.v1"
+      ? (value.readback as GatewayTaskSummary["readback"])
+      : undefined;
   return {
     id,
     taskId,
@@ -1067,6 +1073,7 @@ function normalizeTaskSummary(value: unknown): WorkboardTaskSummary | null {
       ? { updatedAt: value.updatedAt }
       : {}),
     ...(activeProgress ? { activeProgress } : {}),
+    ...(readback ? { readback } : {}),
     ...(typeof value.terminalSummary === "string"
       ? { terminalSummary: value.terminalSummary }
       : {}),

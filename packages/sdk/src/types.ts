@@ -172,6 +172,83 @@ export type ReadbackProgressProjection = {
   bounded: true;
 };
 
+export type TaskLifecycleReadback = {
+  schema: "openclaw.task.lifecycle_readback.v1";
+  logicalStatus: TaskStatus;
+  nativeTaskStatus: string;
+  lastActivityAt: number;
+  physical?: {
+    runId?: string;
+    sessionKey?: string;
+    sessionStatus?: string;
+    active: boolean;
+    attemptId?: string;
+    attemptStatus?: string;
+  };
+  children: Array<{
+    taskId: string;
+    status: TaskStatus;
+    active: boolean;
+    kind?: string;
+    runId?: string;
+    sessionKey?: string;
+    phase?: string;
+    role?: string;
+    model?: string;
+    reasoning?: string;
+    startedAt?: number;
+    endedAt?: number;
+    lastActivityAt?: number;
+  }>;
+  activeChildCount: number;
+  queuedChildCount: number;
+  terminalChildCount: number;
+  followupActive: boolean;
+  worktree?: {
+    id: string;
+    kind?: "source-inspection" | "system-change";
+    baseRef?: string;
+    writeOwnerTaskId?: string;
+  };
+  execution?: {
+    provider?: string;
+    model?: string;
+    reasoning?: string;
+    profile?: string;
+  };
+  artifact?: {
+    governingRef?: string;
+    governingDigest?: string;
+    observedDigest?: string;
+    validationDigest?: string;
+    reviewReceiptRef?: string;
+    reviewedDigest?: string;
+    reviewVerdict?: string;
+    handoffTarget?: string;
+    handoffDigest?: string;
+    stale: boolean;
+  };
+  provider?: {
+    state?: string;
+    cause?: string;
+    attemptId?: string;
+  };
+  taskFlow?: {
+    flowId: string;
+    revision: number;
+    status: string;
+    terminal: boolean;
+    currentStep?: string;
+    stateLabel?: string;
+  };
+  deliveryStatus: TaskDeliveryStatus;
+  mismatches: Array<{
+    code: string;
+    owners: string[];
+    evidence: string[];
+  }>;
+};
+
 /** Gateway task summary returned by task list/get calls. */
 export type TaskSummary = {
   id: string;
@@ -194,6 +271,7 @@ export type TaskSummary = {
   startedAt?: RunTimestamp;
   endedAt?: RunTimestamp;
   activeProgress?: ReadbackProgressProjection;
+  readback?: TaskLifecycleReadback;
   terminalSummary?: string;
   error?: string;
 };

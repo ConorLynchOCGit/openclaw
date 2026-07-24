@@ -245,6 +245,7 @@ function createBoundTaskFlowRuntime(params: {
         finishFlow({
           flowId: flow.flow.flowId,
           expectedRevision: input.expectedRevision,
+          currentStep: input.currentStep,
           stateJson: input.stateJson,
           updatedAt: input.updatedAt,
           endedAt: input.endedAt,

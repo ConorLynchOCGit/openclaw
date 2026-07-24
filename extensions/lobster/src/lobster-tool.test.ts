@@ -372,6 +372,69 @@ describe("lobster plugin tool", () => {
     expect(flow.revision).toBe(2);
   });
 
+  it("revision-safely finishes a managed TaskFlow without inferring from state labels", async () => {
+    const runner = { run: vi.fn() };
+    const taskFlow = createFakeTaskFlow();
+    const tool = createLobsterTool(fakeApi(), { runner, taskFlow });
+    const stateJson = {
+      schemaVersion: "example.workflow.v1",
+      state: "domain_specific_complete",
+    };
+
+    const res = await tool.execute("call-managed-finish", {
+      action: "finish",
+      flowId: "flow-1",
+      flowExpectedRevision: 1,
+      flowCurrentStep: "closed_candidate_complete",
+      flowStateJson: JSON.stringify(stateJson),
+    });
+
+    expect(taskFlow.finish).toHaveBeenCalledWith({
+      flowId: "flow-1",
+      expectedRevision: 1,
+      currentStep: "closed_candidate_complete",
+      stateJson,
+    });
+    expect(runner.run).not.toHaveBeenCalled();
+    const details = requireRecord(res.details, "finish details");
+    const flow = requireRecord(details.flow, "finished flow");
+    expect(details.status).toBe("succeeded");
+    expect(flow.status).toBe("succeeded");
+    expect(flow.revision).toBe(2);
+  });
+
+  it("fails a stale or ambiguous managed TaskFlow finish without mutation", async () => {
+    const finish = vi.fn().mockReturnValue({
+      applied: false,
+      code: "revision_conflict",
+    });
+    const taskFlow = createFakeTaskFlow({ finish });
+    const tool = createLobsterTool(fakeApi(), { runner: { run: vi.fn() }, taskFlow });
+
+    await expect(
+      tool.execute("call-finish-missing-revision", {
+        action: "finish",
+        flowId: "flow-1",
+      }),
+    ).rejects.toThrow(/flowId and flowExpectedRevision are required/);
+    await expect(
+      tool.execute("call-finish-ambiguous-wait", {
+        action: "finish",
+        flowId: "flow-1",
+        flowExpectedRevision: 1,
+        flowWaitingStep: "still_waiting",
+      }),
+    ).rejects.toThrow(/does not accept flowControllerId, flowGoal, or flowWaitingStep/);
+    await expect(
+      tool.execute("call-finish-stale", {
+        action: "finish",
+        flowId: "flow-1",
+        flowExpectedRevision: 1,
+      }),
+    ).rejects.toThrow(/revision_conflict/);
+    expect(finish).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects ambiguous or stale managed TaskFlow checkpoint inputs", async () => {
     const taskFlow = createFakeTaskFlow({
       setWaiting: vi.fn().mockReturnValue({
