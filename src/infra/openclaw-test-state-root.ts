@@ -17,5 +17,5 @@ export function resolveOpenClawTestStateRoot(env: NodeJS.ProcessEnv = process.en
     uid !== undefined
       ? `uid-${uid}`
       : normalizeOwnerLabel(env.USER ?? env.USERNAME ?? env.LOGNAME ?? "unknown");
-  return path.join(os.tmpdir(), `openclaw-test-state-${owner}`);
+  return path.join(os.tmpdir(), "openclaw-test-state", owner);
 }
