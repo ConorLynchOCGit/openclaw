@@ -251,6 +251,75 @@ describe("workspace path resolution", () => {
     });
   });
 
+  it("guards native ls, find, and grep discovery paths under workspaceOnly", async () => {
+    await withTempDir("openclaw-discovery-root-", async (rootDir) => {
+      const workspaceDir = path.join(rootDir, "workspace");
+      const outsideDir = path.join(rootDir, "outside");
+      await fs.mkdir(path.join(workspaceDir, "docs"), { recursive: true });
+      await fs.mkdir(outsideDir, { recursive: true });
+      await fs.writeFile(path.join(workspaceDir, "docs", "inside.txt"), "inside needle\n", "utf8");
+      await fs.writeFile(path.join(outsideDir, "secret.txt"), "outside needle\n", "utf8");
+      if (process.platform !== "win32") {
+        await fs.symlink(outsideDir, path.join(workspaceDir, "escape"));
+      }
+
+      const tools = createOpenClawCodingTools({
+        workspaceDir,
+        config: { tools: { fs: { workspaceOnly: true } } },
+        toolConstructionPlan: {
+          includeBaseCodingTools: true,
+          includeShellTools: false,
+          includeChannelTools: false,
+          includeOpenClawTools: false,
+          includePluginTools: false,
+        },
+      });
+      const discoveryTools = new Map(
+        tools
+          .filter((tool) => tool.name === "ls" || tool.name === "find" || tool.name === "grep")
+          .map((tool) => [tool.name, tool]),
+      );
+      const cases = [
+        { name: "ls", inside: { path: "docs" }, outside: { path: outsideDir } },
+        {
+          name: "find",
+          inside: { pattern: "*.txt", path: "docs" },
+          outside: { pattern: "*.txt", path: outsideDir },
+        },
+        {
+          name: "grep",
+          inside: { pattern: "needle", path: "docs" },
+          outside: { pattern: "needle", path: outsideDir },
+        },
+      ] as const;
+
+      for (const testCase of cases) {
+        const tool = discoveryTools.get(testCase.name);
+        expect(tool, `${testCase.name} tool`).toBeDefined();
+        await expect(
+          tool!.execute(`${testCase.name}-inside`, testCase.inside),
+        ).resolves.toBeDefined();
+        await expect(
+          tool!.execute(`${testCase.name}-absolute-escape`, testCase.outside),
+        ).rejects.toThrow(/Path escapes sandbox root/i);
+        await expect(
+          tool!.execute(`${testCase.name}-traversal-escape`, {
+            ...testCase.outside,
+            path: "../outside",
+          }),
+        ).rejects.toThrow(/Path escapes sandbox root/i);
+        if (process.platform !== "win32") {
+          await expect(
+            tool!.execute(`${testCase.name}-symlink-escape`, {
+              ...testCase.outside,
+              path: "escape",
+            }),
+          ).rejects.toThrow(/Path escapes sandbox root|symlink|sandbox/i);
+        }
+      }
+    });
+  });
+
   it("rejects hardlinked file aliases when workspaceOnly is enabled", async () => {
     if (process.platform === "win32") {
       return;

@@ -845,6 +845,15 @@ export function createOpenClawCodingTools(options?: {
         base.push(workspaceOnly ? wrapToolWorkspaceRootGuard(wrapped, codingRoot) : wrapped);
         continue;
       }
+      if (workspaceOnly && (tool.name === "grep" || tool.name === "find" || tool.name === "ls")) {
+        base.push(
+          wrapToolWorkspaceRootGuardWithOptions(tool, codingRoot, {
+            containerWorkdir: sandbox?.containerWorkdir,
+            normalizeGuardedPathParams: true,
+          }),
+        );
+        continue;
+      }
       base.push(tool);
     }
   }
