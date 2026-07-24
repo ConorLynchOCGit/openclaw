@@ -183,6 +183,7 @@ describe("subagent-orphan-recovery", () => {
     expect(replaceParams.previousRunId).toBe("run-1");
     expect(replaceParams.nextRunId).toBe("test-run-id");
     expect(replaceParams.fallback).toBe(run);
+    expect(replaceParams.task).toBe(run.task);
     expect(replaceParams.transcriptFile).toBe(
       resolveInternalSessionEffectsTranscriptPath("test-run-id"),
     );

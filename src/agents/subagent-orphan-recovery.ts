@@ -153,6 +153,8 @@ async function resumeOrphanedSession(params: {
       nextRunId: result.runId,
       fallback: params.originalRun,
       transcriptFile: resolveInternalSessionEffectsTranscriptPath(result.runId),
+      // Keep the canonical task stable across repeated restart recovery.
+      task: params.task,
     });
     if (!remapped) {
       log.warn(
