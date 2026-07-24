@@ -244,7 +244,11 @@ function validateLoadedSystemSource(params: {
   targetAgentId: string;
   requestedCwd?: string;
 }): string | undefined {
-  const inspectionAgentIds = new Set(["codebase-researcher", "docs-standards-researcher"]);
+  const inspectionAgentIds = new Set([
+    "codebase-researcher",
+    "docs-standards-researcher",
+    "review-specialist",
+  ]);
   const validTarget =
     params.mode === "modify"
       ? params.targetAgentId === "coding" || params.targetAgentId === "execution-coding"
@@ -252,7 +256,7 @@ function validateLoadedSystemSource(params: {
   if (!validTarget) {
     return params.mode === "modify"
       ? "loaded-system modification worktrees may only be assigned to the Coding agent"
-      : "loaded-system inspection worktrees may only be assigned to a source-research agent";
+      : "loaded-system inspection worktrees may only be assigned to a source-research agent or review-specialist";
   }
   if (params.requestedCwd) {
     return "loaded-system cwd is assigned by the native managed-worktree service";

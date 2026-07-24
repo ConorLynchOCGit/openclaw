@@ -50,11 +50,15 @@ const CODEX_CODING_AGENT_IDS = new Set(["coding", "execution-coding"]);
 const LOADED_SYSTEM_INSPECTION_AGENT_IDS = new Set([
   "codebase-researcher",
   "docs-standards-researcher",
+  "review-specialist",
 ]);
+const FIXED_TASK_CWD_REQUESTER_AGENT_IDS = new Set(["planning", "reviewer"]);
 const DEFAULT_LIGHT_CONTEXT_AGENT_IDS = new Set([
   "codebase-researcher",
   "docs-standards-researcher",
+  "operator-intent-researcher",
   "researcher",
+  "review-specialist",
   "reviewer",
   "web-researcher",
   "x-researcher",
@@ -118,7 +122,7 @@ function createTaskToolSchema(params: {
     checkout: Type.Optional(
       Type.Literal("loaded_system", {
         description:
-          "Bind a source-research agent to a native managed worktree of the exact source commit embedded in the running OpenClaw package. The runtime owns the source store, commit, and cwd.",
+          "Bind an approved source-inspection role to a native managed worktree of the exact source commit embedded in the running OpenClaw package. The runtime owns the source store, commit, and cwd.",
       }),
     ),
     lightContext: Type.Optional(
@@ -677,14 +681,16 @@ export function createTaskTool(
       "When multiple independent child tasks are useful, call `task` multiple times in the same assistant turn so the runtime can execute them in parallel.",
       "Use one `task` call per independent specialist; do not pack unrelated work into one child prompt just to avoid multiple calls.",
       "For narrow source-scout or reviewer packets that do not need root workspace memory or parent transcript, set `lightContext: true` and include the needed objective/output instructions in the child task.",
-      "For current OpenClaw source evidence, target codebase-researcher or docs-standards-researcher with `checkout: loaded_system`; never provide a host source path. The runtime selects the exact commit embedded in the loaded package.",
+      "For current OpenClaw source evidence, target codebase-researcher, docs-standards-researcher, or a Reviewer-owned review-specialist with `checkout: loaded_system`; never provide a host source path. The runtime selects the exact commit embedded in the loaded package.",
       "For Coding handoffs that depend on a full prompt/spec/artifact, pass the workspace-relative file path and chars/digest; do not summarize that artifact into the operative scope.",
       "Do not set `thinking` unless you intentionally need to override the target agent's role profile for this specific task; ordinary specialist tasks should omit it.",
     ],
     executionMode: "parallel",
     parameters: createTaskToolSchema({
       allowedAgentIds,
-      allowArbitraryCwd: requesterAgentId !== "planning",
+      allowArbitraryCwd: !FIXED_TASK_CWD_REQUESTER_AGENT_IDS.has(
+        requesterAgentId?.trim().toLowerCase() ?? "",
+      ),
     }),
     execute: async (_toolCallId, args, signal) => {
       const params = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
@@ -728,7 +734,8 @@ export function createTaskTool(
       if (requestsLoadedSystemInspection && !LOADED_SYSTEM_INSPECTION_AGENT_IDS.has(agentId)) {
         return jsonResult({
           status: "error",
-          error: "loaded-system inspection may only target a source-research agent",
+          error:
+            "loaded-system inspection may only target a source-research agent or review-specialist",
         });
       }
       if (requestsLoadedSystemInspection && requestsSystemChange) {

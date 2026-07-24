@@ -444,74 +444,90 @@ describe("spawnSubagentDirect seam flow", () => {
     expect(hoisted.registerSubagentRunMock).not.toHaveBeenCalled();
   });
 
-  it("creates source inspection from the same loaded source authority without setup", async () => {
-    const source = createLoadedSystemSource();
-    const worktreePath = "/tmp/openclaw-state/worktrees/source-inspection-a";
-    const createSystemChangeWorktree = vi.fn().mockResolvedValue({
-      id: "worktree-inspect-a",
-      name: "source-inspection-a",
-      repoFingerprint: "repo-a",
-      repoRoot: source.sourceAnchorPath,
-      path: worktreePath,
-      branch: "openclaw/source-inspection-a",
-      baseRef: source.sourceCommit,
-      ownerKind: "session",
-      createdAt: 1,
-      lastActiveAt: 1,
-    });
-    let persistedStore: Record<string, Record<string, unknown>> | undefined;
-    subagentSpawnTesting.setDepsForTest({ createSystemChangeWorktree });
-    hoisted.configOverride = createConfigOverride({
-      agents: {
-        defaults: { workspace: os.tmpdir() },
-        list: [
-          {
-            id: "planning",
-            workspace: "/tmp/workspace-planning",
-            subagents: { allowAgents: ["codebase-researcher"] },
-          },
-          { id: "codebase-researcher", workspace: "/tmp/workspace-researcher" },
-        ],
-      },
-    });
-    installSessionStoreCaptureMock(hoisted.updateSessionStoreMock, {
-      onStore: (store) => {
-        persistedStore = store;
-      },
-    });
-
-    const result = await spawnSubagentDirect(
-      {
-        task: "inspect the loaded source",
-        agentId: "codebase-researcher",
-        context: "isolated",
-      },
-      {
-        agentSessionKey: "agent:planning:main",
-        loadedSystemSource: source,
-        loadedSystemSourceMode: "inspect",
-      },
-    );
-
-    expect(result.status).toBe("accepted");
-    expect(createSystemChangeWorktree).toHaveBeenCalledWith({
-      repoRoot: source.sourceAnchorPath,
-      baseRef: source.sourceCommit,
-      ownerKind: "session",
-      ownerId: result.childSessionKey,
-      systemChange: true,
-      signal: undefined,
-      runSetupScript: false,
-    });
-    expect(persistedStore?.[result.childSessionKey!]).toMatchObject({
-      spawnedCwd: worktreePath,
-      worktree: {
-        id: "worktree-inspect-a",
-        kind: "source-inspection",
+  it.each([
+    {
+      requesterAgentId: "planning",
+      targetAgentId: "codebase-researcher",
+      requesterWorkspace: "/tmp/workspace-planning",
+      targetWorkspace: "/tmp/workspace-researcher",
+    },
+    {
+      requesterAgentId: "reviewer",
+      targetAgentId: "review-specialist",
+      requesterWorkspace: "/tmp/workspace-reviewer",
+      targetWorkspace: "/tmp/workspace-review-specialist",
+    },
+  ])(
+    "creates loaded-source inspection for $targetAgentId without running editable setup",
+    async ({ requesterAgentId, targetAgentId, requesterWorkspace, targetWorkspace }) => {
+      const source = createLoadedSystemSource();
+      const worktreePath = `/tmp/openclaw-state/worktrees/source-inspection-${targetAgentId}`;
+      const createSystemChangeWorktree = vi.fn().mockResolvedValue({
+        id: `worktree-inspect-${targetAgentId}`,
+        name: `source-inspection-${targetAgentId}`,
+        repoFingerprint: "repo-a",
+        repoRoot: source.sourceAnchorPath,
+        path: worktreePath,
+        branch: `openclaw/source-inspection-${targetAgentId}`,
         baseRef: source.sourceCommit,
-      },
-    });
-  });
+        ownerKind: "session",
+        createdAt: 1,
+        lastActiveAt: 1,
+      });
+      let persistedStore: Record<string, Record<string, unknown>> | undefined;
+      subagentSpawnTesting.setDepsForTest({ createSystemChangeWorktree });
+      hoisted.configOverride = createConfigOverride({
+        agents: {
+          defaults: { workspace: os.tmpdir() },
+          list: [
+            {
+              id: requesterAgentId,
+              workspace: requesterWorkspace,
+              subagents: { allowAgents: [targetAgentId] },
+            },
+            { id: targetAgentId, workspace: targetWorkspace },
+          ],
+        },
+      });
+      installSessionStoreCaptureMock(hoisted.updateSessionStoreMock, {
+        onStore: (store) => {
+          persistedStore = store;
+        },
+      });
+
+      const result = await spawnSubagentDirect(
+        {
+          task: "inspect the loaded source",
+          agentId: targetAgentId,
+          context: "isolated",
+        },
+        {
+          agentSessionKey: `agent:${requesterAgentId}:main`,
+          loadedSystemSource: source,
+          loadedSystemSourceMode: "inspect",
+        },
+      );
+
+      expect(result.status).toBe("accepted");
+      expect(createSystemChangeWorktree).toHaveBeenCalledWith({
+        repoRoot: source.sourceAnchorPath,
+        baseRef: source.sourceCommit,
+        ownerKind: "session",
+        ownerId: result.childSessionKey,
+        systemChange: true,
+        signal: undefined,
+        runSetupScript: false,
+      });
+      expect(persistedStore?.[result.childSessionKey!]).toMatchObject({
+        spawnedCwd: worktreePath,
+        worktree: {
+          id: `worktree-inspect-${targetAgentId}`,
+          kind: "source-inspection",
+          baseRef: source.sourceCommit,
+        },
+      });
+    },
+  );
 
   it("dispatches spawned agent runs in process when a gateway context is available", async () => {
     hoisted.hasInProcessGatewayContextMock.mockReturnValue(true);

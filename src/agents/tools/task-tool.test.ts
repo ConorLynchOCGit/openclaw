@@ -216,6 +216,38 @@ describe("task tool", () => {
     expect(JSON.stringify(tool.promptGuidelines)).toContain("never provide a host source path");
   });
 
+  it("gives Reviewer only its configured specialist and no arbitrary cwd", () => {
+    const tool = createTaskTool({
+      agentSessionKey: "agent:reviewer:operator",
+      requesterAgentIdOverride: "reviewer",
+      config: {
+        agents: {
+          list: [
+            {
+              id: "reviewer",
+              subagents: { allowAgents: ["review-specialist", "missing"] },
+            },
+            { id: "review-specialist" },
+            { id: "coding" },
+          ],
+        },
+      },
+    });
+    const properties = (
+      tool.parameters as {
+        properties?: {
+          agentId?: { enum?: string[] };
+          checkout?: { const?: string };
+          cwd?: unknown;
+        };
+      }
+    ).properties;
+
+    expect(properties?.agentId?.enum).toEqual(["review-specialist"]);
+    expect(properties?.checkout?.const).toBe("loaded_system");
+    expect(properties).not.toHaveProperty("cwd");
+  });
+
   it("runs a native foreground child and returns the final assistant text", async () => {
     const tool = createTaskTool({
       agentSessionKey: "agent:planning:main",
@@ -864,6 +896,44 @@ describe("task tool", () => {
       expect(result.details).toMatchObject({ status: "ok" });
     },
   );
+
+  it("binds a Reviewer specialist to the exact runtime-owned loaded source", async () => {
+    const source: LoadedSystemSource = {
+      sourceAnchorPath: "/srv/openclaw-next/source-anchor",
+      sourceCommit: "c".repeat(40),
+    };
+    hoisted.spawnSubagentDirectMock.mockResolvedValueOnce({
+      status: "accepted",
+      childSessionKey: "agent:review-specialist:subagent:loaded-source",
+      childSessionId: "session-review-loaded-source",
+      runId: "run-review-loaded-source",
+      resolvedProvider: "openai",
+      resolvedModel: "gpt-5.6-sol",
+    });
+
+    const result = await createTaskTool({
+      agentSessionKey: "agent:reviewer:operator",
+      requesterAgentIdOverride: "reviewer",
+      resolveLoadedSystemSource: () => source,
+    }).execute("call-review", {
+      agentId: "review-specialist",
+      task: "Challenge one current-source ownership claim.",
+      checkout: "loaded_system",
+    });
+
+    expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "review-specialist",
+        cwd: undefined,
+        lightContext: true,
+      }),
+      expect.objectContaining({
+        loadedSystemSource: source,
+        loadedSystemSourceMode: "inspect",
+      }),
+    );
+    expect(result.details).toMatchObject({ status: "ok" });
+  });
 
   it("returns native child transcript pointers instead of large child finals as parent context", async () => {
     const largePlanningResult = `# Approval Packet\n\n${"substantive planning evidence\n".repeat(360)}`;
