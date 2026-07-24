@@ -3889,7 +3889,7 @@ async function runEmbeddedAgentInternal(
             ...(lastRetryFailoverReason
               ? {
                   taskEventMetadata: {
-                    providerState: "fallback_recovered",
+                    providerState: "retry_recovered",
                     providerCause:
                       lastRetryProviderCause ??
                       resolveProviderLifecycleCause({

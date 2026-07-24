@@ -86,7 +86,11 @@ import {
 import { isStoredCredentialCompatibleWithAuthProvider } from "./auth-profiles/order.js";
 import { clearSessionAuthProfileOverride } from "./auth-profiles/session-override.js";
 import { ensureAuthProfileStore } from "./auth-profiles/store.js";
-import { createAgentAttemptLifecycleCallbacks } from "./command/attempt-callbacks.js";
+import {
+  buildAgentAttemptTerminalTaskEventMetadata,
+  createAgentAttemptLifecycleCallbacks,
+  type AgentAttemptLifecycleState,
+} from "./command/attempt-callbacks.js";
 import {
   persistSessionEntry as persistSessionEntryBase,
   prependInternalEventContext,
@@ -97,6 +101,7 @@ import { resolveAgentRunContext } from "./command/run-context.js";
 import { resolveSession } from "./command/session.js";
 import type { AgentCommandIngressOpts, AgentCommandOpts } from "./command/types.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "./defaults.js";
+import { resolveProviderLifecycleCause } from "./embedded-agent-error-observation.js";
 import { classifyEmbeddedAgentRunResultForModelFallback } from "./embedded-agent-runner/result-fallback-classifier.js";
 import {
   assertFreshExecutionPlanBinding,
@@ -1844,12 +1849,13 @@ async function agentCommandInternal(
       : sessionFile;
 
     const startedAt = Date.now();
-    const attemptLifecycleState = {
+    const attemptLifecycleState: AgentAttemptLifecycleState = {
       currentTurnUserMessagePersisted: false,
       lifecycleFinishing: false,
       lifecycleEnded: false,
     };
     const attemptLifecycleCallbacks = createAgentAttemptLifecycleCallbacks(attemptLifecycleState);
+    let fallbackTaskEventMetadata: Record<string, unknown> | undefined;
     let lifecycleFinishingEmitted = false;
     const emitLifecycleFinishing = (runResult: AgentAttemptResult) => {
       if (
@@ -1884,6 +1890,10 @@ async function agentCommandInternal(
       if (stopReason && stopReason !== "end_turn") {
         console.error(`[agent] run ${runId} ended with stopReason=${stopReason}`);
       }
+      const taskEventMetadata = buildAgentAttemptTerminalTaskEventMetadata({
+        attemptMetadata: attemptLifecycleState.terminalTaskEventMetadata,
+        fallbackMetadata: fallbackTaskEventMetadata,
+      });
       emitAgentEvent({
         runId,
         lifecycleGeneration,
@@ -1894,6 +1904,7 @@ async function agentCommandInternal(
           endedAt: Date.now(),
           aborted: runResult.meta.aborted ?? false,
           stopReason,
+          ...(taskEventMetadata ? { taskEventMetadata } : {}),
           ...resolveAgentRunAbortLifecycleFields(opts.abortSignal),
         },
       });
@@ -1903,6 +1914,11 @@ async function agentCommandInternal(
         return;
       }
       attemptLifecycleState.lifecycleEnded = true;
+      const taskEventMetadata = buildAgentAttemptTerminalTaskEventMetadata({
+        attemptMetadata: attemptLifecycleState.terminalTaskEventMetadata,
+        fallbackMetadata: fallbackTaskEventMetadata,
+        postprocessingFailed: true,
+      });
       emitAgentEvent({
         runId,
         lifecycleGeneration,
@@ -1912,6 +1928,7 @@ async function agentCommandInternal(
           startedAt,
           endedAt: Date.now(),
           error: error instanceof Error ? error.message : "Agent run failed",
+          ...(taskEventMetadata ? { taskEventMetadata } : {}),
           ...resolveAgentRunAbortLifecycleFields(opts.abortSignal),
         },
       });
@@ -2053,6 +2070,7 @@ async function agentCommandInternal(
 
         let fallbackAttemptIndex = 0;
         attemptLifecycleState.currentTurnUserMessagePersisted = false;
+        attemptLifecycleState.terminalTaskEventMetadata = undefined;
         const fallbackResult = await runWithModelFallback<AgentAttemptResult>({
           cfg,
           provider,
@@ -2198,6 +2216,17 @@ async function agentCommandInternal(
         fallbackProvider = fallbackResult.provider;
         fallbackModel = fallbackResult.model;
         fallbackAttemptCount = fallbackResult.attempts.length;
+        const primaryFallbackFailure = fallbackResult.attempts[0];
+        fallbackTaskEventMetadata =
+          primaryFallbackFailure && fallbackResult.attempts.length > 0
+            ? {
+                providerState: "fallback_recovered",
+                providerCause: resolveProviderLifecycleCause({
+                  failoverReason: primaryFallbackFailure.reason ?? null,
+                }),
+                providerAttemptStatus: "succeeded",
+              }
+            : undefined;
         if (hasLaunchExecutionPlan && result.meta.agentMeta) {
           result = {
             ...result,
@@ -2276,6 +2305,7 @@ async function agentCommandInternal(
             err.provider && err.model ? `${err.provider}/${err.model}` : "unknown";
           throw new Error(
             `Fresh launch plan rejected live model switch to "${sanitizeForLog(requestedRef)}". Fresh planned runs may only switch through RunPlan fallbacks.`,
+            { cause: err },
           );
         }
         if (err instanceof LiveSessionModelSwitchError) {

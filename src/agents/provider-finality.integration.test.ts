@@ -124,6 +124,13 @@ describe("provider finality", () => {
       attemptStatus: "succeeded",
     },
     {
+      label: "successful same-candidate retry after disconnect",
+      status: "succeeded" as const,
+      state: "retry_recovered",
+      cause: "disconnect",
+      attemptStatus: "succeeded",
+    },
+    {
       label: "successful provider output with local postprocessing failure",
       status: "failed" as const,
       state: "postprocessing_failed",
