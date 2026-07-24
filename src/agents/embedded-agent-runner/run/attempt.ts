@@ -212,7 +212,6 @@ import {
   appendModelIdentitySystemPrompt,
   buildModelIdentityPromptLine,
 } from "../../system-prompt.js";
-import { resolveAgentTimeoutMs } from "../../timeout.js";
 import {
   buildEmptyExplicitToolAllowlistError,
   collectExplicitToolAllowlistSources,
@@ -462,7 +461,6 @@ import {
   resolveSilentToolResultReplyPayload,
   shouldTreatEmptyAssistantReplyAsSilent,
 } from "./incomplete-turn.js";
-import { resolveLlmIdleTimeoutMs, streamWithIdleTimeout } from "./llm-idle-timeout.js";
 import { resolveMessageMergeStrategy } from "./message-merge-strategy.js";
 import { installMessageToolOnlyTerminalHook } from "./message-tool-terminal.js";
 import { wrapStreamFnWithMessageTransform } from "./message-transform-stream-wrapper.js";
@@ -960,7 +958,7 @@ export async function runEmbeddedAttempt(
   let aborted = Boolean(params.abortSignal?.aborted);
   let externalAbort = false;
   let timedOut = false;
-  let idleTimedOut = false;
+  const idleTimedOut = false;
   let timedOutDuringCompaction = false;
   let timedOutDuringToolExecution = false;
   let timedOutByRunBudget = false;
@@ -2926,33 +2924,6 @@ export async function runEmbeddedAttempt(
         activeSession.agent.streamFn,
       );
 
-      // Wrap stream with idle timeout detection.
-      //
-      // Prefer the caller's explicit `runTimeoutOverrideMs` when provided —
-      // it carries the "this run was launched with a deliberate per-run
-      // timeout" signal without losing it when the value numerically equals
-      // `agents.defaults.timeoutSeconds`. Fall back to the value-equality
-      // heuristic for callers that haven't been migrated to plumb the flag.
-      const configuredRunTimeoutMs = resolveAgentTimeoutMs({
-        cfg: params.config,
-      });
-      const resolvedRunTimeoutMs =
-        params.runTimeoutOverrideMs ??
-        (params.timeoutMs !== configuredRunTimeoutMs ? params.timeoutMs : undefined);
-      const idleTimeoutMs = resolveLlmIdleTimeoutMs({
-        cfg: params.config,
-        trigger: params.trigger,
-        runTimeoutMs: resolvedRunTimeoutMs,
-        modelRequestTimeoutMs: (params.model as { requestTimeoutMs?: number }).requestTimeoutMs,
-        model: params.model as { baseUrl?: string },
-      });
-      if (idleTimeoutMs > 0) {
-        activeSession.agent.streamFn = streamWithIdleTimeout(
-          activeSession.agent.streamFn,
-          idleTimeoutMs,
-          (error) => idleTimeoutTrigger?.(error),
-        );
-      }
       let diagnosticModelCallSeq = 0;
       activeSession.agent.streamFn = wrapStreamFnWithDiagnosticModelCallEvents(
         activeSession.agent.streamFn,
@@ -3200,10 +3171,6 @@ export async function runEmbeddedAttempt(
         });
       };
       abortRunForExternalSignal = abortRun;
-      const idleTimeoutTrigger: ((error: Error) => void) | undefined = (error) => {
-        idleTimedOut = true;
-        abortRun(true, error);
-      };
       const abortable = <T>(promise: Promise<T>): Promise<T> =>
         abortableWithSignal(runAbortController.signal, promise);
       const ownedTranscriptWriteContext = {

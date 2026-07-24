@@ -99,6 +99,55 @@ describe("runEmbeddedAttempt native context boundary", () => {
     });
   });
 
+  it("allows a valid silent reasoning interval until the explicit outer deadline", async () => {
+    vi.useFakeTimers();
+    let markProviderStarted = () => {};
+    let finishProvider = () => {};
+    const providerStarted = new Promise<void>((resolve) => {
+      markProviderStarted = resolve;
+    });
+    const providerFinished = new Promise<void>((resolve) => {
+      finishProvider = resolve;
+    });
+
+    try {
+      const run = createContextEngineAttemptRunner({
+        contextEngine: createContextEngineBootstrapAndAssemble(),
+        sessionKey,
+        tempPaths,
+        attemptOverrides: {
+          timeoutMs: 10 * 60_000,
+        },
+        sessionPrompt: async (session) => {
+          markProviderStarted();
+          await providerFinished;
+          session.messages = [...session.messages, doneMessage];
+        },
+      });
+      let settled = false;
+      void run.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+
+      await providerStarted;
+      await vi.advanceTimersByTimeAsync(3 * 60_000);
+      expect(settled).toBe(false);
+
+      finishProvider();
+      const result = await run;
+      expect(result.timedOut).toBe(false);
+      expect(result.idleTimedOut).toBe(false);
+      expect(result.promptError).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("projects aggregate tool-result pressure without rewriting the transcript or compacting", async () => {
     const toolText = "process output ".repeat(70);
     const sessionMessages: AgentMessage[] = [{ role: "user", content: "seed", timestamp: 1 }];
