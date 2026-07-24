@@ -46,6 +46,7 @@ export {
   providerOperationRetryConfig,
 } from "../provider-runtime/operation-retry.js";
 export type {
+  ProviderOperationRetryEvent,
   ProviderOperationRetryStage,
   TransientProviderRetryConfig,
   TransientProviderRetryOptions,
