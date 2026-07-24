@@ -50,8 +50,10 @@ import type {
   ManagedWorktreeBranch,
   ManagedWorktreeBranchesResult,
   ManagedWorktreeGcResult,
+  ManagedWorktreeListRecord,
   ManagedWorktreeOwnerKind,
   ManagedWorktreeRecord,
+  ManagedWorktreeTelemetry,
   RemoveManagedWorktreeResult,
 } from "./types.js";
 
@@ -641,7 +643,12 @@ export class ManagedWorktreeService {
     return record;
   }
 
-  async list(): Promise<ManagedWorktreeRecord[]> {
+  async list(
+    options: {
+      includeTelemetry?: boolean;
+      includeSize?: boolean;
+    } = {},
+  ): Promise<ManagedWorktreeListRecord[]> {
     const records = listRegistryWorktrees(this.env);
     for (const record of records) {
       if (record.removedAt === undefined && !(await pathExists(record.path))) {
@@ -650,7 +657,110 @@ export class ManagedWorktreeService {
         record.removedAt = removedAt;
       }
     }
-    return records.filter((record) => record.removedAt === undefined || record.snapshotRef);
+    const visible = records.filter(
+      (record) => record.removedAt === undefined || record.snapshotRef,
+    );
+    if (!options.includeTelemetry && !options.includeSize) {
+      return visible;
+    }
+    const result: ManagedWorktreeListRecord[] = [];
+    for (const record of visible) {
+      result.push({
+        ...record,
+        telemetry: await this.readTelemetry(record, options.includeSize === true),
+      });
+    }
+    return result;
+  }
+
+  private async readTelemetry(
+    record: ManagedWorktreeRecord,
+    includeSize: boolean,
+  ): Promise<ManagedWorktreeTelemetry> {
+    const measuredAt = this.now();
+    const removed = record.removedAt !== undefined;
+    const cleanupKind = removed
+      ? "snapshot_prune"
+      : record.ownerKind === "manual"
+        ? "manual_only"
+        : "idle_gc";
+    const cleanupEligibleAt =
+      cleanupKind === "snapshot_prune"
+        ? record.removedAt! + SNAPSHOT_RETENTION_MS
+        : cleanupKind === "idle_gc"
+          ? record.lastActiveAt + IDLE_GC_MS
+          : undefined;
+
+    if (removed) {
+      return {
+        measuredAt,
+        ageMs: Math.max(0, measuredAt - record.createdAt),
+        idleMs: Math.max(0, measuredAt - record.lastActiveAt),
+        sizeStatus: "not_live",
+        lockState: "none",
+        activityState: "snapshot_retained",
+        runLeaseActive: false,
+        cleanupKind,
+        ...(cleanupEligibleAt !== undefined ? { cleanupEligibleAt } : {}),
+        cleanupEligibleNow: cleanupEligibleAt !== undefined && measuredAt >= cleanupEligibleAt,
+      };
+    }
+
+    let runLeaseActive = false;
+    let activityUnavailable = false;
+    try {
+      runLeaseActive = hasLiveWorktreeRunLease(this.env, record.id);
+    } catch {
+      activityUnavailable = true;
+    }
+
+    let currentLockState: ManagedWorktreeTelemetry["lockState"] = "unavailable";
+    try {
+      currentLockState = (await lockState(record)).kind;
+    } catch {
+      activityUnavailable = true;
+    }
+
+    let sizeBytes: number | undefined;
+    let sizeStatus: ManagedWorktreeTelemetry["sizeStatus"] = "not_requested";
+    if (includeSize) {
+      try {
+        sizeBytes = await directorySizeBytes(record.path);
+        sizeStatus = "measured";
+      } catch {
+        sizeStatus = "unavailable";
+      }
+    }
+
+    const gitLocked =
+      currentLockState === "live" || currentLockState === "dead" || currentLockState === "foreign";
+    const activityState: ManagedWorktreeTelemetry["activityState"] = activityUnavailable
+      ? "unavailable"
+      : runLeaseActive
+        ? "active_run"
+        : gitLocked
+          ? "git_locked"
+          : "idle";
+    const cleanupBlocked =
+      cleanupKind === "manual_only" ||
+      runLeaseActive ||
+      currentLockState !== "none" ||
+      activityUnavailable;
+
+    return {
+      measuredAt,
+      ageMs: Math.max(0, measuredAt - record.createdAt),
+      idleMs: Math.max(0, measuredAt - record.lastActiveAt),
+      ...(sizeBytes !== undefined ? { sizeBytes } : {}),
+      sizeStatus,
+      lockState: currentLockState,
+      activityState,
+      runLeaseActive,
+      cleanupKind,
+      ...(cleanupEligibleAt !== undefined ? { cleanupEligibleAt } : {}),
+      cleanupEligibleNow:
+        !cleanupBlocked && cleanupEligibleAt !== undefined && measuredAt >= cleanupEligibleAt,
+    };
   }
 
   findLiveByOwner(

@@ -38,7 +38,16 @@ export function createWorktreesHandlers(service: WorktreeService): GatewayReques
         return;
       }
       try {
-        respond(true, { worktrees: await service.list() }, undefined);
+        respond(
+          true,
+          {
+            worktrees: await service.list({
+              includeTelemetry: params.includeTelemetry,
+              includeSize: params.includeSize,
+            }),
+          },
+          undefined,
+        );
       } catch (error) {
         respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(error)));
       }

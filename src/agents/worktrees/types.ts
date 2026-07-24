@@ -30,6 +30,35 @@ export type ManagedWorktreeRecord = {
   removedAt?: number;
 };
 
+export type ManagedWorktreeLockState = "none" | "live" | "dead" | "foreign" | "unavailable";
+
+export type ManagedWorktreeActivityState =
+  | "idle"
+  | "active_run"
+  | "git_locked"
+  | "snapshot_retained"
+  | "unavailable";
+
+export type ManagedWorktreeCleanupKind = "manual_only" | "idle_gc" | "snapshot_prune";
+
+export type ManagedWorktreeTelemetry = {
+  measuredAt: number;
+  ageMs: number;
+  idleMs: number;
+  sizeBytes?: number;
+  sizeStatus: "not_requested" | "measured" | "not_live" | "unavailable";
+  lockState: ManagedWorktreeLockState;
+  activityState: ManagedWorktreeActivityState;
+  runLeaseActive: boolean;
+  cleanupKind: ManagedWorktreeCleanupKind;
+  cleanupEligibleAt?: number;
+  cleanupEligibleNow: boolean;
+};
+
+export type ManagedWorktreeListRecord = ManagedWorktreeRecord & {
+  telemetry?: ManagedWorktreeTelemetry;
+};
+
 export type CreateManagedWorktreeParams = {
   repoRoot: string;
   name?: string;
