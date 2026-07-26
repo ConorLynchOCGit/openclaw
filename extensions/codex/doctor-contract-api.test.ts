@@ -133,15 +133,21 @@ describe("codex doctor contract", () => {
     expect(legacyConfigRules[0]?.match({ codexDynamicToolsLoading: "direct" })).toBe(false);
   });
 
+  it("reports retired dynamic tool timeout config keys", () => {
+    expect(legacyConfigRules[1]?.match({ codexDynamicToolTimeouts: { task: 0 } })).toBe(true);
+    expect(legacyConfigRules[1]?.match({ codexDynamicToolTimeoutMs: 600_000 })).toBe(true);
+    expect(legacyConfigRules[1]?.match({ codexDynamicToolsLoading: "direct" })).toBe(false);
+  });
+
   it("reports old approval-routed destructive plugin policy values", () => {
     expect(
-      legacyConfigRules[1]?.match({
+      legacyConfigRules[2]?.match({
         allow_destructive_actions: "on-request",
         plugins: {},
       }),
     ).toBe(true);
     expect(
-      legacyConfigRules[1]?.match({
+      legacyConfigRules[2]?.match({
         allow_destructive_actions: true,
         plugins: {
           "google-calendar": { allow_destructive_actions: "on-request" },
@@ -149,7 +155,7 @@ describe("codex doctor contract", () => {
       }),
     ).toBe(true);
     expect(
-      legacyConfigRules[1]?.match({
+      legacyConfigRules[2]?.match({
         allow_destructive_actions: "auto",
         plugins: {
           "google-calendar": { allow_destructive_actions: true },
@@ -157,7 +163,7 @@ describe("codex doctor contract", () => {
       }),
     ).toBe(false);
     expect(
-      legacyConfigRules[1]?.match({
+      legacyConfigRules[2]?.match({
         allow_destructive_actions: "ask",
         plugins: {
           "google-calendar": { allow_destructive_actions: "ask" },
@@ -165,7 +171,7 @@ describe("codex doctor contract", () => {
       }),
     ).toBe(false);
     expect(
-      legacyConfigRules[1]?.match({
+      legacyConfigRules[2]?.match({
         allow_destructive_actions: "always",
         plugins: {
           "google-calendar": { allow_destructive_actions: "always" },
@@ -175,11 +181,11 @@ describe("codex doctor contract", () => {
   });
 
   it("reports the retired on-failure app-server approval policy", () => {
-    expect(legacyConfigRules[2]?.match({ approvalPolicy: "on-failure" })).toBe(true);
-    expect(legacyConfigRules[2]?.match({ approvalPolicy: "on-request" })).toBe(false);
+    expect(legacyConfigRules[3]?.match({ approvalPolicy: "on-failure" })).toBe(true);
+    expect(legacyConfigRules[3]?.match({ approvalPolicy: "on-request" })).toBe(false);
   });
 
-  it("removes the retired dynamic tools profile without dropping other Codex config", () => {
+  it("removes retired dynamic tool controls without dropping other Codex config", () => {
     const original = {
       plugins: {
         entries: {
@@ -187,6 +193,8 @@ describe("codex doctor contract", () => {
             enabled: true,
             config: {
               codexDynamicToolsProfile: "openclaw-compat",
+              codexDynamicToolTimeoutMs: 600_000,
+              codexDynamicToolTimeouts: { task: 0 },
               codexDynamicToolsLoading: "direct",
               codexDynamicToolsExclude: ["custom_tool"],
               appServer: { mode: "guardian" },
@@ -200,6 +208,7 @@ describe("codex doctor contract", () => {
 
     expect(result.changes).toEqual([
       "Removed retired plugins.entries.codex.config.codexDynamicToolsProfile; Codex app-server always keeps Codex-native workspace tools native.",
+      "Removed retired plugins.entries.codex.config dynamic-tool timeout overrides; native per-call and tool budgets own finality.",
     ]);
     expect(result.config.plugins?.entries?.codex?.config).toEqual({
       codexDynamicToolsLoading: "direct",

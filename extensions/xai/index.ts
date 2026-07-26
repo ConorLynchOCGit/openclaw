@@ -32,11 +32,14 @@ import {
   resolveCodeExecutionEnabled,
 } from "./src/code-execution-config.js";
 import {
-  isXaiToolEnabled,
+  isXSearchToolEnabled,
   resolveFallbackXaiAuth,
   type XaiToolAuthContext,
 } from "./src/tool-auth-shared.js";
-import { resolveEffectiveXSearchConfig } from "./src/x-search-config.js";
+import {
+  resolveEffectiveXSearchConfig,
+  resolveXSearchToolProvider,
+} from "./src/x-search-config.js";
 import { wrapXaiProviderStream } from "./stream.js";
 import { buildXaiMediaUnderstandingProvider } from "./stt.js";
 import { buildXaiVideoGenerationProvider } from "./video-generation-provider.js";
@@ -71,10 +74,6 @@ function classifyXaiFailoverReason(errorMessage: string) {
   return undefined;
 }
 
-function hasResolvableXaiApiKey(config: unknown, auth?: XaiToolAuthContext): boolean {
-  return isXaiToolEnabled({ sourceConfig: config as never, auth });
-}
-
 function isCodeExecutionEnabled(config: unknown, auth?: XaiToolAuthContext): boolean {
   return resolveCodeExecutionEnabled({
     sourceConfig: config,
@@ -89,10 +88,13 @@ function isXSearchEnabled(config: unknown, auth?: XaiToolAuthContext): boolean {
     config && typeof config === "object"
       ? resolveEffectiveXSearchConfig(config as never)
       : undefined;
-  if (resolved?.enabled === false) {
-    return false;
-  }
-  return hasResolvableXaiApiKey(config, auth);
+  return isXSearchToolEnabled({
+    provider: resolveXSearchToolProvider(resolved),
+    enabled: resolved?.enabled as boolean | undefined,
+    sourceConfig: config as never,
+    runtimeConfig: config as never,
+    auth,
+  });
 }
 
 function shouldExposeXaiBilledTool(params: {
@@ -154,18 +156,24 @@ function createLazyXSearchTool(ctx: OpenClawPluginToolContext) {
     return null;
   }
 
-  return createXSearchToolDefinition(async (toolCallId: string, args: Record<string, unknown>) => {
-    const { createXSearchTool } = await loadXSearchModule();
-    const tool = createXSearchTool({
-      config: ctx.config as never,
-      runtimeConfig: (ctx.runtimeConfig as never) ?? null,
-      auth: ctx,
-    });
-    if (!tool) {
-      return jsonResult(buildMissingXSearchApiKeyPayload());
-    }
-    return await tool.execute(toolCallId, args);
-  });
+  return createXSearchToolDefinition(
+    async (toolCallId: string, args: Record<string, unknown>, signal?: AbortSignal) => {
+      const { createXSearchTool } = await loadXSearchModule();
+      const tool = createXSearchTool({
+        config: ctx.config as never,
+        runtimeConfig: (ctx.runtimeConfig as never) ?? null,
+        auth: ctx,
+      });
+      if (!tool) {
+        return jsonResult(
+          buildMissingXSearchApiKeyPayload(
+            resolveXSearchToolProvider(resolveEffectiveXSearchConfig(effectiveConfig as never)),
+          ),
+        );
+      }
+      return await tool.execute(toolCallId, args, signal);
+    },
+  );
 }
 
 export default defineSingleProviderPluginEntry({

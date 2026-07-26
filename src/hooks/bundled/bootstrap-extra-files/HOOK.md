@@ -34,7 +34,11 @@ workspace root.
       "entries": {
         "bootstrap-extra-files": {
           "enabled": true,
-          "paths": ["packages/*/AGENTS.md", "packages/*/TOOLS.md"]
+          "paths": ["packages/*/AGENTS.md", "packages/*/TOOLS.md"],
+          "agentPaths": {
+            "planning": ["docs/agents/planning/AGENTS.md", "docs/agents/planning/TOOLS.md"],
+            "reviewer": ["docs/agents/reviewer/AGENTS.md", "docs/agents/reviewer/TOOLS.md"]
+          }
         }
       }
     }
@@ -47,6 +51,7 @@ workspace root.
 - `paths` (string[]): preferred list of glob/path patterns.
 - `patterns` (string[]): alias of `paths`.
 - `files` (string[]): alias of `paths`.
+- `agentPaths`, `agentPatterns`, or `agentFiles` (object): patterns keyed by agent ID.
 
 All paths are resolved from the workspace and must stay inside it (including realpath checks).
 Only recognized bootstrap basenames are loaded (`AGENTS.md`, `SOUL.md`, `TOOLS.md`,

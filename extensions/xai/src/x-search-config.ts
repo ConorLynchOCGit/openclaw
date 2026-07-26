@@ -1,5 +1,6 @@
 // Xai helper module supports x search config behavior.
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
+import type { XSearchToolProvider } from "./tool-auth-shared.js";
 import { isRecord } from "./tool-config-shared.js";
 
 type JsonRecord = Record<string, unknown>;
@@ -44,6 +45,10 @@ export function resolveEffectiveXSearchConfig(config?: OpenClawConfig): JsonReco
     return undefined;
   }
   return merged;
+}
+
+export function resolveXSearchToolProvider(config?: JsonRecord): XSearchToolProvider {
+  return config?.provider === "openrouter" ? "openrouter" : "xai";
 }
 
 export function setPluginXSearchConfigValue(

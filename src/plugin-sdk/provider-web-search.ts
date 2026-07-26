@@ -67,6 +67,10 @@ export {
   resolveTimeoutSeconds,
   writeCache,
 } from "../agents/tools/web-shared.js";
+export {
+  normalizeWebSearchOutput,
+  WebSearchOutputSchema,
+} from "../agents/tools/web-search-output.js";
 export { enablePluginInConfig } from "../plugins/enable.js";
 export { formatCliCommand } from "../cli/command-format.js";
 export { wrapWebContent } from "../security/external-content.js";

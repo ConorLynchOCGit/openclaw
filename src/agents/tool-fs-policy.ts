@@ -20,6 +20,7 @@ export function createToolFsPolicy(params: { workspaceOnly?: boolean }): ToolFsP
 
 export function resolveToolFsConfig(params: { cfg?: OpenClawConfig; agentId?: string }): {
   workspaceOnly?: boolean;
+  writeEditRoots?: string[];
 } {
   const cfg = params.cfg;
   const globalFs = cfg?.tools?.fs;
@@ -27,6 +28,7 @@ export function resolveToolFsConfig(params: { cfg?: OpenClawConfig; agentId?: st
     cfg && params.agentId ? resolveAgentConfig(cfg, params.agentId)?.tools?.fs : undefined;
   return {
     workspaceOnly: agentFs?.workspaceOnly ?? globalFs?.workspaceOnly,
+    writeEditRoots: agentFs?.writeEditRoots ?? globalFs?.writeEditRoots,
   };
 }
 

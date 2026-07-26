@@ -81,6 +81,10 @@
       {
         "id": "xai",
         "envVars": ["XAI_API_KEY"]
+      },
+      {
+        "id": "openrouter",
+        "envVars": ["OPENROUTER_API_KEY"]
       }
     ]
   },
@@ -153,7 +157,11 @@
     },
     "xSearch.model": {
       "label": "X Search Model",
-      "help": "xAI model override for x_search."
+      "help": "Pinned model override for x_search. Use an x-ai/* model when provider is OpenRouter."
+    },
+    "xSearch.provider": {
+      "label": "X Search Provider",
+      "help": "Credential and transport owner for the single x_search tool: direct xAI or OpenRouter."
     },
     "xSearch.baseUrl": {
       "label": "X Search Base URL",
@@ -166,6 +174,14 @@
     "xSearch.maxTurns": {
       "label": "X Search Max Turns",
       "help": "Optional max internal tool turns xAI may use per x_search request."
+    },
+    "xSearch.maxTotalResults": {
+      "label": "X Search Result Budget",
+      "help": "Maximum cumulative native-search results for OpenRouter-backed x_search requests."
+    },
+    "xSearch.serviceTier": {
+      "label": "X Search Service Tier",
+      "help": "Optional xAI service tier for x_search requests: default or priority."
     },
     "xSearch.timeoutSeconds": {
       "label": "X Search Timeout",
@@ -226,6 +242,9 @@
       "authSignals": [
         {
           "provider": "xai"
+        },
+        {
+          "provider": "openrouter"
         }
       ],
       "configSignals": [
@@ -266,6 +285,10 @@
           "enabled": {
             "type": "boolean"
           },
+          "provider": {
+            "type": "string",
+            "enum": ["xai", "openrouter"]
+          },
           "model": {
             "type": "string"
           },
@@ -277,6 +300,13 @@
           },
           "maxTurns": {
             "type": "number"
+          },
+          "maxTotalResults": {
+            "type": "number"
+          },
+          "serviceTier": {
+            "type": "string",
+            "enum": ["default", "priority"]
           },
           "timeoutSeconds": {
             "type": "number"

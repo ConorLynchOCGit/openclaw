@@ -498,6 +498,47 @@ export function wrapToolWorkspaceRootGuard(tool: AnyAgentTool, root: string): An
   return wrapToolWorkspaceRootGuardWithOptions(tool, root);
 }
 
+/** Restrict write/edit path parameters to configured roots within a workspace. */
+export function wrapToolWriteEditRootGuard(
+  tool: AnyAgentTool,
+  workspaceRoot: string,
+  allowedRoots: readonly string[],
+  options?: { containerWorkdir?: string },
+): AnyAgentTool {
+  const roots = allowedRoots.map((root) => path.resolve(root));
+  return {
+    ...tool,
+    execute: async (toolCallId, args, signal, onUpdate) => {
+      const record = getToolParamsRecord(args);
+      const rawFilePath = record?.path;
+      if (typeof rawFilePath === "string" && rawFilePath.trim()) {
+        const filePath = normalizeFileToolPathParam(rawFilePath);
+        if (!filePath.trim()) {
+          throw malformedXmlArgValuePathError("path");
+        }
+        const mappedPath = mapContainerPathToWorkspaceRoot({
+          filePath,
+          root: workspaceRoot,
+          containerWorkdir: options?.containerWorkdir,
+        });
+        const resolvedPath = resolveToolPathAgainstWorkspaceRoot({
+          filePath: mappedPath,
+          root: workspaceRoot,
+        });
+        try {
+          await assertSandboxPathWithinAnyRoot({ filePath: resolvedPath, roots });
+        } catch (error) {
+          throw new Error(
+            `Write/edit path is outside configured tools.fs.writeEditRoots: ${filePath}`,
+            { cause: error },
+          );
+        }
+      }
+      return tool.execute(toolCallId, args, signal, onUpdate);
+    },
+  };
+}
+
 function mapContainerPathToWorkspaceRoot(params: {
   filePath: string;
   root: string;

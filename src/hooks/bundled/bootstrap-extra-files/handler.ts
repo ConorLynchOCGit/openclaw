@@ -11,8 +11,8 @@ import { isAgentBootstrapEvent, type HookHandler } from "../../hooks.js";
 const HOOK_KEY = "bootstrap-extra-files";
 const log = createSubsystemLogger("bootstrap-extra-files");
 
-/** Resolve legacy and current config keys for extra bootstrap file patterns. */
-function resolveExtraBootstrapPatterns(hookConfig: Record<string, unknown>): string[] {
+/** Resolve legacy and current config keys for global extra bootstrap file patterns. */
+function resolveGlobalExtraBootstrapPatterns(hookConfig: Record<string, unknown>): string[] {
   const fromPaths = normalizeTrimmedStringList(hookConfig.paths);
   if (fromPaths.length > 0) {
     return fromPaths;
@@ -22,6 +22,34 @@ function resolveExtraBootstrapPatterns(hookConfig: Record<string, unknown>): str
     return fromPatterns;
   }
   return normalizeTrimmedStringList(hookConfig.files);
+}
+
+function readAgentPatternMap(raw: unknown): Record<string, unknown> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return undefined;
+  }
+  return raw as Record<string, unknown>;
+}
+
+function resolveAgentExtraBootstrapPatterns(
+  hookConfig: Record<string, unknown>,
+  agentId?: string,
+): string[] {
+  const normalizedAgentId = typeof agentId === "string" ? agentId.trim() : "";
+  if (!normalizedAgentId) {
+    return [];
+  }
+  for (const rawMap of [hookConfig.agentPaths, hookConfig.agentPatterns, hookConfig.agentFiles]) {
+    const map = readAgentPatternMap(rawMap);
+    if (!map) {
+      continue;
+    }
+    const patterns = normalizeTrimmedStringList(map[normalizedAgentId]);
+    if (patterns.length > 0) {
+      return patterns;
+    }
+  }
+  return [];
 }
 
 /** Agent-bootstrap hook that appends configured extra files to the session bootstrap set. */
@@ -36,7 +64,11 @@ const bootstrapExtraFilesHook: HookHandler = async (event) => {
     return;
   }
 
-  const patterns = resolveExtraBootstrapPatterns(hookConfig as Record<string, unknown>);
+  const rawHookConfig = hookConfig as Record<string, unknown>;
+  const patterns = [
+    ...resolveGlobalExtraBootstrapPatterns(rawHookConfig),
+    ...resolveAgentExtraBootstrapPatterns(rawHookConfig, context.agentId),
+  ];
   if (patterns.length === 0) {
     return;
   }

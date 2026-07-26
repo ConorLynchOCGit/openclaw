@@ -118,6 +118,55 @@ describe("workspace path resolution", () => {
     });
   });
 
+  it("restricts write and edit without narrowing read access", async () => {
+    await withTempDir("openclaw-write-roots-", async (workspaceDir) => {
+      const plansDir = path.join(workspaceDir, "plans");
+      await fs.mkdir(plansDir);
+      await fs.writeFile(path.join(workspaceDir, "shared.txt"), "shared", "utf8");
+      await fs.writeFile(path.join(plansDir, "plan.md"), "draft", "utf8");
+      const cfg: OpenClawConfig = {
+        agents: {
+          entries: {
+            planning: {
+              tools: {
+                fs: {
+                  workspaceOnly: true,
+                  writeEditRoots: ["plans"],
+                },
+              },
+            },
+          },
+        },
+      };
+      const tools = createOpenClawCodingTools({
+        workspaceDir,
+        config: cfg,
+        agentId: "planning",
+      });
+      const { readTool, writeTool, editTool } = expectReadWriteEditTools(tools);
+
+      await expect(readTool.execute("read-shared", { path: "shared.txt" })).resolves.toBeDefined();
+      await expect(
+        writeTool.execute("write-plan", { path: "plans/new.md", content: "new" }),
+      ).resolves.toBeDefined();
+      await expect(
+        editTool.execute("edit-plan", {
+          path: "plans/plan.md",
+          edits: [{ oldText: "draft", newText: "final" }],
+        }),
+      ).resolves.toBeDefined();
+      await expect(
+        writeTool.execute("write-shared", { path: "shared.txt", content: "blocked" }),
+      ).rejects.toThrow("outside configured tools.fs.writeEditRoots");
+      await expect(
+        editTool.execute("edit-shared", {
+          path: "shared.txt",
+          edits: [{ oldText: "shared", newText: "blocked" }],
+        }),
+      ).rejects.toThrow("outside configured tools.fs.writeEditRoots");
+    });
+  });
+
   it.runIf(process.platform === "win32")(
     "preserves mixed-case and Unicode names for workspace-only writes on Windows",
     async () => {
@@ -509,6 +558,63 @@ describe("sandboxed workspace paths", () => {
         });
         const edited = await fs.readFile(path.join(sandboxDir, "new.txt"), "utf8");
         expect(edited).toBe("sandbox edit");
+      });
+    });
+  });
+
+  it("enforces agent write/edit roots inside a sandbox workspace", async () => {
+    await withTempDir("openclaw-sandbox-roots-", async (sandboxDir) => {
+      await withTempDir("openclaw-workspace-", async (workspaceDir) => {
+        await fs.mkdir(path.join(sandboxDir, "plans"));
+        await fs.writeFile(path.join(sandboxDir, "shared.txt"), "shared", "utf8");
+        const sandbox = createAgentToolsSandboxContext({
+          workspaceDir: sandboxDir,
+          agentWorkspaceDir: workspaceDir,
+          workspaceAccess: "rw",
+          fsBridge: createHostSandboxFsBridge(sandboxDir),
+          tools: { allow: [], deny: [] },
+        });
+        const config: OpenClawConfig = {
+          agents: {
+            entries: {
+              planning: {
+                tools: {
+                  fs: {
+                    workspaceOnly: true,
+                    writeEditRoots: ["plans"],
+                  },
+                },
+              },
+            },
+          },
+        };
+        const tools = createOpenClawCodingTools({
+          workspaceDir,
+          sandbox,
+          config,
+          agentId: "planning",
+        });
+        const { writeTool, editTool } = expectReadWriteEditTools(tools);
+
+        await expect(
+          writeTool.execute("sandbox-write-plan", {
+            path: "plans/new.md",
+            content: "new",
+          }),
+        ).resolves.toBeDefined();
+        await expect(
+          writeTool.execute("sandbox-write-shared", {
+            path: "shared.txt",
+            content: "blocked",
+          }),
+        ).rejects.toThrow("outside configured tools.fs.writeEditRoots");
+        await expect(
+          editTool.execute("sandbox-edit-shared", {
+            path: "shared.txt",
+            edits: [{ oldText: "shared", newText: "blocked" }],
+          }),
+        ).rejects.toThrow("outside configured tools.fs.writeEditRoots");
+        expect(await fs.readFile(path.join(sandboxDir, "shared.txt"), "utf8")).toBe("shared");
       });
     });
   });

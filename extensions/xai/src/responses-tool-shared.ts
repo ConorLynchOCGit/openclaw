@@ -23,6 +23,12 @@ function extractUrlCitations(annotations: unknown): string[] {
     .map((annotation) => annotation.url as string);
 }
 
+function extractCitationStrings(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
+    : [];
+}
+
 const XAI_RESPONSES_BASE_URL = "https://api.x.ai/v1";
 export const XAI_RESPONSES_ENDPOINT = `${XAI_RESPONSES_BASE_URL}/responses`;
 
@@ -36,6 +42,7 @@ export function buildXaiResponsesToolBody(params: {
   tools: Array<Record<string, unknown>>;
   maxTurns?: number;
   reasoningEffort?: "none" | "low" | "medium" | "high";
+  serviceTier?: "default" | "priority";
 }): Record<string, unknown> {
   return {
     model: params.model,
@@ -44,6 +51,7 @@ export function buildXaiResponsesToolBody(params: {
     store: false,
     ...(params.reasoningEffort ? { reasoning: { effort: params.reasoningEffort } } : {}),
     ...(params.maxTurns ? { max_turns: params.maxTurns } : {}),
+    ...(params.serviceTier ? { service_tier: params.serviceTier } : {}),
   };
 }
 
@@ -51,6 +59,8 @@ export function extractXaiWebSearchContent(data: XaiWebSearchResponse): {
   text: string | undefined;
   annotationCitations: string[];
 } {
+  let text: string | undefined;
+  const annotationCitations: string[] = [];
   for (const output of data.output ?? []) {
     if (!isRecord(output)) {
       continue;
@@ -61,22 +71,37 @@ export function extractXaiWebSearchContent(data: XaiWebSearchResponse): {
         if (!isRecord(block)) {
           continue;
         }
-        if (block.type === "output_text" && typeof block.text === "string" && block.text) {
-          const urls = extractUrlCitations(block.annotations);
-          return { text: block.text, annotationCitations: uniqueStrings(urls) };
+        if (block.type === "output_text") {
+          annotationCitations.push(...extractUrlCitations(block.annotations));
+          if (!text && typeof block.text === "string" && block.text) {
+            text = block.text;
+          }
         }
       }
     }
 
-    if (output.type === "output_text" && typeof output.text === "string" && output.text) {
-      const urls = extractUrlCitations(output.annotations);
-      return { text: output.text, annotationCitations: uniqueStrings(urls) };
+    if (output.type === "output_text") {
+      annotationCitations.push(...extractUrlCitations(output.annotations));
+      if (!text && typeof output.text === "string" && output.text) {
+        text = output.text;
+      }
     }
   }
 
   return {
-    text: typeof data.output_text === "string" ? data.output_text : undefined,
-    annotationCitations: [],
+    text: text ?? (typeof data.output_text === "string" ? data.output_text : undefined),
+    annotationCitations: uniqueStrings(annotationCitations),
+  };
+}
+
+export function resolveXaiResponseTextAndCitations(data: XaiWebSearchResponse): {
+  content: string;
+  citations: string[];
+} {
+  const { text, annotationCitations } = extractXaiWebSearchContent(data);
+  return {
+    content: text ?? "No response",
+    citations: uniqueStrings([...extractCitationStrings(data.citations), ...annotationCitations]),
   };
 }
 
@@ -93,10 +118,7 @@ export function requireXaiResponseTextAndCitations(
   }
   return {
     content: text,
-    citations:
-      Array.isArray(data.citations) && data.citations.length > 0
-        ? data.citations
-        : annotationCitations,
+    citations: uniqueStrings([...extractCitationStrings(data.citations), ...annotationCitations]),
   };
 }
 

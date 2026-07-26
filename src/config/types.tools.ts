@@ -349,10 +349,15 @@ export type ExecToolConfig = {
 
 export type FsToolsConfig = {
   /**
-   * Restrict filesystem tools (read/write/edit/apply_patch) to the agent workspace directory.
+   * Restrict filesystem tools (read/write/edit) to the agent workspace directory.
    * Default: false (unrestricted, matches legacy behavior).
    */
   workspaceOnly?: boolean;
+  /**
+   * Optional workspace-relative or absolute roots allowed for write/edit mutations.
+   * Read access is unchanged. apply_patch is governed separately by tools.exec.applyPatch.
+   */
+  writeEditRoots?: string[];
 };
 
 export type SessionsSpawnToolsConfig = {

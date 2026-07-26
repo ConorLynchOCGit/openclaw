@@ -1,4 +1,5 @@
 // Xai tests cover index plugin behavior.
+import { readFileSync } from "node:fs";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/plugin-entry";
 import { createTestPluginApi } from "openclaw/plugin-sdk/plugin-test-api";
 import { createCapturedPluginRegistration } from "openclaw/plugin-sdk/plugin-test-runtime";
@@ -27,6 +28,28 @@ import {
   expectXaiFastToolStreamShaping,
   runXaiGrok4ResponseStream,
 } from "./test-helpers.js";
+
+const manifest = JSON.parse(
+  readFileSync(new URL("./openclaw.plugin.json", import.meta.url), "utf8"),
+) as {
+  setup?: { providers?: Array<{ id?: string; envVars?: string[] }> };
+  toolMetadata?: Record<string, { authSignals?: Array<{ provider?: string }> }>;
+};
+
+describe("xai manifest tool auth", () => {
+  it("admits native x_search when OpenRouter auth is supplied by the runtime", () => {
+    expect(manifest.setup?.providers).toContainEqual({
+      id: "openrouter",
+      envVars: ["OPENROUTER_API_KEY"],
+    });
+    expect(manifest.toolMetadata?.x_search?.authSignals).toContainEqual({
+      provider: "openrouter",
+    });
+    expect(manifest.toolMetadata?.code_execution?.authSignals).not.toContainEqual({
+      provider: "openrouter",
+    });
+  });
+});
 
 function createProviderModel(overrides: {
   id: string;

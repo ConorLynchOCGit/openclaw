@@ -20,6 +20,10 @@ type XaiFallbackAuth = {
 };
 const XAI_API_KEY_ENV_VAR = "XAI_API_KEY";
 const XAI_PROVIDER_ID = "xai";
+const OPENROUTER_API_KEY_ENV_VAR = "OPENROUTER_API_KEY";
+const OPENROUTER_PROVIDER_ID = "openrouter";
+
+export type XSearchToolProvider = "xai" | "openrouter";
 
 export type XaiToolAuthContext = {
   hasAuthForProvider?: (providerId: string) => boolean;
@@ -158,4 +162,39 @@ export function isXaiToolEnabled(params: {
     return false;
   }
   return hasXaiAuthProfile(params.auth) || Boolean(readProviderEnvValue([XAI_API_KEY_ENV_VAR]));
+}
+
+export async function resolveXSearchToolApiKey(params: {
+  provider: XSearchToolProvider;
+  runtimeConfig?: OpenClawConfig;
+  sourceConfig?: OpenClawConfig;
+  auth?: XaiToolAuthContext;
+}): Promise<string | undefined> {
+  if (params.provider === "xai") {
+    return await resolveXaiToolApiKeyWithAuth(params);
+  }
+  return (
+    normalizeSecretInputString(
+      await params.auth?.resolveApiKeyForProvider?.(OPENROUTER_PROVIDER_ID),
+    ) ?? readProviderEnvValue([OPENROUTER_API_KEY_ENV_VAR])
+  );
+}
+
+export function isXSearchToolEnabled(params: {
+  provider: XSearchToolProvider;
+  enabled?: boolean;
+  runtimeConfig?: OpenClawConfig;
+  sourceConfig?: OpenClawConfig;
+  auth?: XaiToolAuthContext;
+}): boolean {
+  if (params.enabled === false) {
+    return false;
+  }
+  if (params.provider === "xai") {
+    return isXaiToolEnabled(params);
+  }
+  return (
+    params.auth?.hasAuthForProvider?.(OPENROUTER_PROVIDER_ID) === true ||
+    Boolean(readProviderEnvValue([OPENROUTER_API_KEY_ENV_VAR]))
+  );
 }

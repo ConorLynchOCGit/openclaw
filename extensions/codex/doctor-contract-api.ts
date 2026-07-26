@@ -21,6 +21,14 @@ function hasRetiredDynamicToolsProfile(value: unknown): boolean {
   return Object.hasOwn(asRecord(value) ?? {}, "codexDynamicToolsProfile");
 }
 
+function hasRetiredDynamicToolTimeouts(value: unknown): boolean {
+  const config = asRecord(value);
+  return (
+    Object.hasOwn(config ?? {}, "codexDynamicToolTimeoutMs") ||
+    Object.hasOwn(config ?? {}, "codexDynamicToolTimeouts")
+  );
+}
+
 function hasLegacyPluginDestructivePolicy(value: unknown): boolean {
   const codexPlugins = asRecord(value);
   if (!codexPlugins) {
@@ -46,6 +54,12 @@ export const legacyConfigRules: LegacyConfigRule[] = [
     message:
       'plugins.entries.codex.config.codexDynamicToolsProfile is retired; Codex app-server always keeps Codex-native workspace tools native. Run "openclaw doctor --fix".',
     match: hasRetiredDynamicToolsProfile,
+  },
+  {
+    path: ["plugins", "entries", "codex", "config"],
+    message:
+      'plugins.entries.codex.config Codex dynamic-tool timeout overrides are retired; native per-call and tool budgets own finality. Run "openclaw doctor --fix".',
+    match: hasRetiredDynamicToolTimeouts,
   },
   {
     path: ["plugins", "entries", "codex", "config", "codexPlugins"],
@@ -74,11 +88,14 @@ export function normalizeCompatibilityConfig({ cfg }: { cfg: OpenClawConfig }): 
   const rawAppServer = asRecord(rawPluginConfig?.appServer);
   const shouldRemoveDynamicToolsProfile =
     rawPluginConfig !== null && hasRetiredDynamicToolsProfile(rawPluginConfig);
+  const shouldRemoveDynamicToolTimeouts =
+    rawPluginConfig !== null && hasRetiredDynamicToolTimeouts(rawPluginConfig);
   const shouldRewriteDestructivePolicy = hasLegacyPluginDestructivePolicy(rawCodexPlugins);
   const shouldRewriteApprovalPolicy = hasRetiredOnFailureApprovalPolicy(rawAppServer);
   if (
     !rawPluginConfig ||
     (!shouldRemoveDynamicToolsProfile &&
+      !shouldRemoveDynamicToolTimeouts &&
       !shouldRewriteDestructivePolicy &&
       !shouldRewriteApprovalPolicy)
   ) {
@@ -101,6 +118,14 @@ export function normalizeCompatibilityConfig({ cfg }: { cfg: OpenClawConfig }): 
     delete nextPluginConfig.codexDynamicToolsProfile;
     changes.push(
       "Removed retired plugins.entries.codex.config.codexDynamicToolsProfile; Codex app-server always keeps Codex-native workspace tools native.",
+    );
+  }
+
+  if (shouldRemoveDynamicToolTimeouts) {
+    delete nextPluginConfig.codexDynamicToolTimeoutMs;
+    delete nextPluginConfig.codexDynamicToolTimeouts;
+    changes.push(
+      "Removed retired plugins.entries.codex.config dynamic-tool timeout overrides; native per-call and tool budgets own finality.",
     );
   }
 

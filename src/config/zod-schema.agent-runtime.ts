@@ -568,6 +568,7 @@ const ToolExecSchema = z
 const ToolFsSchema = z
   .object({
     workspaceOnly: z.boolean().optional(),
+    writeEditRoots: z.array(z.string().min(1)).optional(),
   })
   .strict()
   .optional();
