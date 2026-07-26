@@ -204,6 +204,48 @@ describe("runCommandWithTimeout", () => {
     },
   );
 
+  it.runIf(process.platform !== "win32")(
+    "settles an owned process tree after the direct child exits",
+    async () => {
+      const descendantSource = "setInterval(() => {}, 1_000)";
+      const parentSource = [
+        "const { spawn } = require('node:child_process')",
+        `const child = spawn(${JSON.stringify(process.execPath)}, ['-e', ${JSON.stringify(descendantSource)}], { stdio: 'ignore' })`,
+        "child.unref()",
+        "process.stdout.write(String(child.pid))",
+      ].join(";");
+      const result = await runCommandWithTimeout([process.execPath, "-e", parentSource], {
+        killProcessTree: true,
+        killProcessTreeOnExit: true,
+        timeoutMs: 2_000,
+      });
+      const descendantPid = Number.parseInt(result.stdout, 10);
+
+      try {
+        expect(result).toMatchObject({ code: 0, termination: "exit" });
+        let descendantExited = false;
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          try {
+            process.kill(descendantPid, 0);
+          } catch {
+            descendantExited = true;
+            break;
+          }
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 25);
+          });
+        }
+        expect(descendantExited).toBe(true);
+      } finally {
+        try {
+          process.kill(descendantPid, "SIGKILL");
+        } catch {
+          // Already gone.
+        }
+      }
+    },
+  );
+
   it.runIf(process.platform === "win32")(
     "rejects unresolved commands before Execa can fall through to ambient ComSpec",
     async () => {

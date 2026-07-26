@@ -19,6 +19,7 @@ import {
   insertRegistryWorktreeProvisionedChunk,
   insertRegistryWorktree,
   listRegistryWorktrees,
+  publishRestoredRegistryWorktree,
   updateRegistryWorktree,
 } from "./registry.js";
 import type { ManagedWorktreeRecord } from "./types.js";
@@ -93,6 +94,45 @@ describe("managed worktree registry", () => {
       status: "valid",
       paths: [".env.local"],
     });
+    const stateDb = openOpenClawStateDatabase({ env }).db;
+    stateDb
+      .prepare(
+        `INSERT INTO state_leases
+           (scope, lease_key, owner, expires_at, heartbeat_at, payload_json, created_at, updated_at)
+         VALUES (?, ?, ?, NULL, NULL, NULL, ?, ?)`,
+      )
+      .run("worktree-run:first", "__removing__", "restore-test", 41, 41);
+    stateDb.exec(`
+      CREATE TRIGGER reject_restore_lease_delete
+      BEFORE DELETE ON state_leases
+      BEGIN
+        SELECT RAISE(ABORT, 'restore lease delete failed');
+      END
+    `);
+    expect(() =>
+      publishRestoredRegistryWorktree(env, "first", {
+        lastActiveAt: 50,
+        provisionedPaths: [".env.local"],
+      }),
+    ).toThrow("restore lease delete failed");
+    expect(getRegistryWorktree(env, "first")).toMatchObject({
+      lastActiveAt: 30,
+      removedAt: 40,
+    });
+    stateDb.exec("DROP TRIGGER reject_restore_lease_delete");
+    publishRestoredRegistryWorktree(env, "first", {
+      lastActiveAt: 50,
+      provisionedPaths: [".env.local"],
+    });
+    expect(getRegistryWorktree(env, "first")).toMatchObject({
+      lastActiveAt: 50,
+    });
+    expect(getRegistryWorktree(env, "first")?.removedAt).toBeUndefined();
+    expect(
+      stateDb
+        .prepare("SELECT COUNT(*) AS count FROM state_leases WHERE scope = ?")
+        .get("worktree-run:first"),
+    ).toMatchObject({ count: 0 });
     insertRegistryWorktreeProvisionedChunk(env, {
       worktreeId: "first",
       path: ".env.local",

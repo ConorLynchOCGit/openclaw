@@ -112,6 +112,12 @@ describe("ManagedWorktreeService", () => {
   it("creates from origin HEAD and returns the existing live named worktree", async () => {
     await addRemote(root, repo);
     const created = await service.create({ repoRoot: repo, name: "remote-task" });
+    const fetchMarker = path.join(root, "unexpected-reuse-fetch");
+    const uploadPack = path.join(root, "reject-reuse-fetch.sh");
+    await fs.writeFile(uploadPack, `#!/bin/sh\ntouch "${fetchMarker}"\nexit 1\n`, {
+      mode: 0o755,
+    });
+    await git(repo, "config", "remote.origin.uploadpack", uploadPack);
     const repeated = await service.create({ repoRoot: repo, name: "remote-task" });
 
     expect(created.baseRef).toBe("origin/main");
@@ -119,6 +125,7 @@ describe("ManagedWorktreeService", () => {
     expect(created.path).toContain(path.join("worktrees", created.repoFingerprint, "remote-task"));
     expect(await git(created.path, "branch", "--show-current")).toBe(created.branch);
     expect(repeated).toEqual(created);
+    await expect(fs.stat(fetchMarker)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("does not remove a worktree owned by another caller", async () => {

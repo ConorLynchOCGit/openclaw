@@ -20,7 +20,11 @@ export function createCommandTerminationController(params: {
   killProcessTree?: boolean;
   isChildExited: () => boolean;
   isCommandSettled: () => boolean;
-}): { terminate: () => boolean; settle: () => Promise<void> } {
+}): {
+  terminate: () => boolean;
+  killExitedProcessTree: () => void;
+  settle: () => Promise<void>;
+} {
   let processTreeSettleAt: number | undefined;
   let windowsTerminationPromise: Promise<void> | undefined;
 
@@ -143,5 +147,16 @@ export function createCommandTerminationController(params: {
     }
   };
 
-  return { terminate, settle };
+  const killExitedProcessTree = (): void => {
+    if (
+      !params.killProcessTree ||
+      process.platform === "win32" ||
+      typeof params.child.pid !== "number"
+    ) {
+      return;
+    }
+    terminateProcessTree(params.child.pid, { detached: true, force: true });
+  };
+
+  return { terminate, killExitedProcessTree, settle };
 }

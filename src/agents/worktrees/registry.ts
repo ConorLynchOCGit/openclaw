@@ -325,6 +325,39 @@ export function updateRegistryWorktree(
   });
 }
 
+export function publishRestoredRegistryWorktree(
+  env: NodeJS.ProcessEnv,
+  id: string,
+  params: {
+    lastActiveAt: number;
+    provisionedPaths: readonly string[];
+  },
+): void {
+  const db = dbFor(env);
+  runOpenClawStateWriteTransaction(
+    () => {
+      executeSqliteQuerySync(
+        db,
+        kyselyLeaseFor(db)
+          .updateTable("worktrees")
+          .set({
+            last_active_at: params.lastActiveAt,
+            removed_at: null,
+            provisioned_paths_json: JSON.stringify(params.provisionedPaths),
+          })
+          .where("id", "=", id),
+      );
+      executeSqliteQuerySync(
+        db,
+        kyselyLeaseFor(db)
+          .deleteFrom("state_leases")
+          .where("scope", "=", worktreeRunLeaseScope(id)),
+      );
+    },
+    { env },
+  );
+}
+
 export function deleteRegistryWorktree(env: NodeJS.ProcessEnv, id: string): void {
   const db = dbFor(env);
   runOpenClawStateWriteTransaction(() => {

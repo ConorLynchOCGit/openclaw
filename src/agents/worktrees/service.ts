@@ -4,12 +4,16 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { resolveStateDir } from "../../config/paths.js";
+import { resolveExecutablePath } from "../../infra/executable-path.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { runCommandWithTimeout } from "../../process/exec.js";
+import { acquireSessionWriteLock } from "../session-write-lock.js";
 import { resolveWorktreeBase } from "./base-ref.js";
 import { lockState, lockWorktreeForProcess, unlockWorktree } from "./git-lock.js";
 import {
   commandError,
+  GIT_LOCAL_OBJECT_BASE_ENV,
+  GIT_LOCAL_OBJECT_ENV,
   insideGitCheckout,
   listGitWorktrees,
   pathExists,
@@ -17,6 +21,7 @@ import {
   requireGit,
   requireGitBuffer,
   runGit,
+  type GitEnvironmentOptions,
   type GitResult,
 } from "./git.js";
 import { worktreeOwnerMatches } from "./owner.js";
@@ -38,6 +43,7 @@ import {
   getRegistryWorktreeProvisionedState,
   insertRegistryWorktree,
   listRegistryWorktrees,
+  publishRestoredRegistryWorktree,
   updateRegistryWorktree,
 } from "./registry.js";
 import {
@@ -53,6 +59,7 @@ import type {
   ManagedWorktreeGcResult,
   ManagedWorktreeOwnerKind,
   ManagedWorktreeRecord,
+  ManagedWorktreeSetupMode,
   RemoveManagedWorktreeResult,
 } from "./types.js";
 
@@ -61,6 +68,46 @@ export const SNAPSHOT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000; // Snapshot refs 
 export const WORKTREE_GC_INTERVAL_MS = 60 * 60 * 1000;
 
 const NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const FULL_COMMIT_PATTERN = /^[0-9a-f]{40}$/u;
+const ISOLATED_WORKTREE_BRANCH_PREFIX = "openclaw-system/";
+const ISOLATED_SETUP_BRANCH_PREFIX = `${ISOLATED_WORKTREE_BRANCH_PREFIX}setup/`;
+const ISOLATED_INSPECT_BRANCH_PREFIX = `${ISOLATED_WORKTREE_BRANCH_PREFIX}inspect/`;
+const ISOLATED_GIT_OPTIONS = {
+  baseEnv: GIT_LOCAL_OBJECT_BASE_ENV,
+  env: GIT_LOCAL_OBJECT_ENV,
+  resolveExecutable: true,
+} as const;
+
+function isIsolatedWorktree(record: ManagedWorktreeRecord): boolean {
+  return record.branch.startsWith(ISOLATED_WORKTREE_BRANCH_PREFIX);
+}
+
+function isolatedWorktreeRunsSetup(record: ManagedWorktreeRecord): boolean {
+  return record.branch.startsWith(ISOLATED_SETUP_BRANCH_PREFIX);
+}
+
+function resolveIsolatedSetupPath(serviceEnv: NodeJS.ProcessEnv): string {
+  const sourcePath = serviceEnv.PATH ?? process.env.PATH ?? "";
+  const entries = sourcePath
+    .split(path.delimiter)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0 && path.isAbsolute(entry));
+  const setupPath = [...new Set(entries.map((entry) => path.normalize(entry)))].join(
+    path.delimiter,
+  );
+  const toolEnv = {
+    PATH: setupPath,
+    ...((serviceEnv.PATHEXT ?? process.env.PATHEXT)
+      ? { PATHEXT: serviceEnv.PATHEXT ?? process.env.PATHEXT }
+      : {}),
+  };
+  for (const executable of ["node", "pnpm"]) {
+    if (!resolveExecutablePath(executable, { env: toolEnv })) {
+      throw new Error(`isolated worktree setup requires ${executable} on the service PATH`);
+    }
+  }
+  return setupPath;
+}
 
 /** Non-forced removal aborted because the safety snapshot failed. */
 export class WorktreeSnapshotError extends Error {
@@ -147,10 +194,178 @@ async function resolveRepository(repoRoot: string): Promise<ResolvedRepository> 
   return await resolveRepositoryFromRealPath(requested, repoRoot);
 }
 
-async function cleanupFailedCreate(repoRoot: string, worktreePath: string, branch: string) {
-  const removed = await runGit(repoRoot, ["worktree", "remove", "--force", worktreePath]);
-  const deletedBranch = await runGit(repoRoot, ["branch", "-D", branch]);
-  await runGit(repoRoot, ["worktree", "prune"]);
+async function requireIsolatedBase(params: {
+  repository: ResolvedRepository;
+  baseRef?: string;
+}): Promise<string> {
+  const baseRef = params.baseRef?.trim().toLowerCase();
+  if (!baseRef || !FULL_COMMIT_PATTERN.test(baseRef)) {
+    throw new Error("isolated worktrees require an exact local source commit");
+  }
+  if (params.repository.sourceRoot !== params.repository.repoRoot) {
+    throw new Error("isolated worktrees require the primary source checkout");
+  }
+  await requireSafeIsolatedGitConfig(params.repository.repoRoot);
+  if (await pathExists(path.join(params.repository.sourceRoot, ".worktreeinclude"))) {
+    throw new Error("isolated source checkout does not allow .worktreeinclude");
+  }
+  const resolved = await runGit(
+    params.repository.repoRoot,
+    ["rev-parse", "--verify", "--end-of-options", `${baseRef}^{commit}`],
+    ISOLATED_GIT_OPTIONS,
+  );
+  const resolvedCommit = resolved.stdout.trim().toLowerCase();
+  if (resolved.code !== 0 || resolvedCommit !== baseRef) {
+    throw new Error(`isolated worktree source is not an exact local commit: ${baseRef}`);
+  }
+  const trackedInclude = await runGit(
+    params.repository.repoRoot,
+    ["ls-tree", "--name-only", baseRef, "--", ".worktreeinclude"],
+    ISOLATED_GIT_OPTIONS,
+  );
+  if (trackedInclude.code !== 0) {
+    throw commandError("git ls-tree", trackedInclude);
+  }
+  if (trackedInclude.stdout.trim()) {
+    throw new Error("isolated source commit does not allow .worktreeinclude");
+  }
+  const localTree = await runGit(
+    params.repository.repoRoot,
+    ["rev-list", "--objects", "--missing=error", "--quiet", `${baseRef}^{tree}`],
+    ISOLATED_GIT_OPTIONS,
+  );
+  if (localTree.code !== 0) {
+    throw new Error(`isolated worktree source tree is not fully local: ${baseRef}`);
+  }
+  return baseRef;
+}
+
+async function requireSafeIsolatedGitConfig(checkoutRoot: string): Promise<void> {
+  const executableConfig = await runGit(
+    checkoutRoot,
+    [
+      "config",
+      "--includes",
+      "--get-regexp",
+      "^(filter\\..*\\.(clean|smudge|process)|core\\.fsmonitor)$",
+    ],
+    ISOLATED_GIT_OPTIONS,
+  );
+  if (executableConfig.code === 0) {
+    const key = executableConfig.stdout.trim().split(/\s/u, 1)[0] ?? "unknown";
+    throw new Error(`isolated source anchor contains executable Git configuration: ${key}`);
+  }
+  if (executableConfig.code !== 1) {
+    throw commandError("git config --local --includes --get-regexp", executableConfig);
+  }
+}
+
+async function requireIsolatedLineage(params: {
+  repoRoot: string;
+  baseRef: string;
+  tipRef: string;
+  name: string;
+}): Promise<void> {
+  if (!FULL_COMMIT_PATTERN.test(params.baseRef) || !FULL_COMMIT_PATTERN.test(params.tipRef)) {
+    throw new Error(`isolated worktree generation mismatch: ${params.name}`);
+  }
+  const ancestor = await runGit(
+    params.repoRoot,
+    ["merge-base", "--is-ancestor", params.baseRef, params.tipRef],
+    ISOLATED_GIT_OPTIONS,
+  );
+  if (ancestor.code === 1) {
+    throw new Error(`isolated worktree generation mismatch: ${params.name}`);
+  }
+  if (ancestor.code !== 0) {
+    throw commandError("git merge-base --is-ancestor", ancestor);
+  }
+}
+
+async function requireIsolatedSetupState(params: {
+  worktreePath: string;
+  expectedCommit: string;
+  expectedBranch?: string;
+}): Promise<void> {
+  await requireSafeIsolatedGitConfig(params.worktreePath);
+  const head = await requireGit(
+    params.worktreePath,
+    ["rev-parse", "--verify", "HEAD"],
+    ISOLATED_GIT_OPTIONS,
+  );
+  if (head.toLowerCase() !== params.expectedCommit.toLowerCase()) {
+    throw new Error("isolated worktree setup changed HEAD");
+  }
+  if (params.expectedBranch) {
+    await requireIsolatedBranch(params.worktreePath, params.expectedBranch);
+  } else {
+    const branch = await runGit(
+      params.worktreePath,
+      ["symbolic-ref", "--quiet", "--short", "HEAD"],
+      ISOLATED_GIT_OPTIONS,
+    );
+    if (branch.code === 1) {
+      // Expected detached checkout.
+    } else if (branch.code !== 0) {
+      throw commandError("git symbolic-ref --quiet --short HEAD", branch);
+    } else {
+      throw new Error("isolated worktree setup attached a branch");
+    }
+  }
+  const status = await requireGit(
+    params.worktreePath,
+    ["status", "--porcelain"],
+    ISOLATED_GIT_OPTIONS,
+  );
+  if (status) {
+    throw new Error("isolated worktree setup changed source files");
+  }
+}
+
+async function requireIsolatedBranch(worktreePath: string, expectedBranch: string): Promise<void> {
+  const branch = await runGit(
+    worktreePath,
+    ["symbolic-ref", "--quiet", "--short", "HEAD"],
+    ISOLATED_GIT_OPTIONS,
+  );
+  if (branch.code !== 0 || branch.stdout.trim() !== expectedBranch) {
+    if (branch.code !== 0) {
+      if (branch.code !== 1) {
+        throw commandError("git symbolic-ref --quiet --short HEAD", branch);
+      }
+    }
+    throw new Error("isolated worktree changed branch");
+  }
+}
+
+async function requireIsolatedRecordLineage(record: ManagedWorktreeRecord): Promise<void> {
+  await requireIsolatedBranch(record.path, record.branch);
+  const observedHead = await requireGit(
+    record.path,
+    ["rev-parse", "--verify", "HEAD"],
+    ISOLATED_GIT_OPTIONS,
+  );
+  await requireIsolatedLineage({
+    repoRoot: record.repoRoot,
+    baseRef: record.baseRef,
+    tipRef: observedHead.toLowerCase(),
+    name: record.name,
+  });
+}
+
+async function cleanupFailedCreate(
+  repoRoot: string,
+  worktreePath: string,
+  branch: string,
+  gitOptions: GitEnvironmentOptions = {},
+) {
+  const removed = await runGit(
+    repoRoot,
+    ["worktree", "remove", "--force", worktreePath],
+    gitOptions,
+  );
+  const deletedBranch = await runGit(repoRoot, ["branch", "-D", branch], gitOptions);
+  await runGit(repoRoot, ["worktree", "prune"], gitOptions);
   if (removed.code !== 0 || deletedBranch.code !== 0) {
     throw new Error(
       `failed to clean up worktree creation: ${resultMessage(removed) || resultMessage(deletedBranch)}`,
@@ -162,12 +377,17 @@ async function resetFailedWorktreeAdd(
   repoRoot: string,
   worktreePath: string,
   branch: string,
+  gitOptions: GitEnvironmentOptions = {},
 ): Promise<void> {
-  const listed = (await listGitWorktrees(repoRoot)).some(
+  const listed = (await listGitWorktrees(repoRoot, gitOptions)).some(
     (entry) => path.resolve(entry.path) === path.resolve(worktreePath),
   );
   if (listed) {
-    const removed = await runGit(repoRoot, ["worktree", "remove", "--force", worktreePath]);
+    const removed = await runGit(
+      repoRoot,
+      ["worktree", "remove", "--force", worktreePath],
+      gitOptions,
+    );
     if (removed.code !== 0) {
       throw commandError("git worktree remove", removed);
     }
@@ -175,16 +395,15 @@ async function resetFailedWorktreeAdd(
     // A failed add can leave an unregistered directory; it is safe debris once git omits it.
     await fs.rm(worktreePath, { recursive: true, force: true });
   }
-  const branchExists = await runGit(repoRoot, [
-    "show-ref",
-    "--quiet",
-    "--verify",
-    `refs/heads/${branch}`,
-  ]);
+  const branchExists = await runGit(
+    repoRoot,
+    ["show-ref", "--quiet", "--verify", `refs/heads/${branch}`],
+    gitOptions,
+  );
   if (branchExists.code === 0) {
-    await requireGit(repoRoot, ["branch", "-D", branch]);
+    await requireGit(repoRoot, ["branch", "-D", branch], gitOptions);
   }
-  await requireGit(repoRoot, ["worktree", "prune"]);
+  await requireGit(repoRoot, ["worktree", "prune"], gitOptions);
 }
 
 async function canResetFailedWorktreeAdd(
@@ -192,28 +411,28 @@ async function canResetFailedWorktreeAdd(
   worktreePath: string,
   branch: string,
   failure: GitResult,
+  gitOptions: GitEnvironmentOptions = {},
 ): Promise<boolean> {
   const message = resultMessage(failure);
   const createdBranch = message.includes(`Preparing worktree (new branch '${branch}')`);
   if (message.includes("unable to checkout working tree") || createdBranch) {
     return true;
   }
-  const listed = (await listGitWorktrees(repoRoot)).some(
+  const listed = (await listGitWorktrees(repoRoot, gitOptions)).some(
     (entry) => path.resolve(entry.path) === path.resolve(worktreePath),
   );
   if (listed || (await pathExists(worktreePath))) {
     return false;
   }
-  const branchExists = await runGit(repoRoot, [
-    "show-ref",
-    "--quiet",
-    "--verify",
-    `refs/heads/${branch}`,
-  ]);
+  const branchExists = await runGit(
+    repoRoot,
+    ["show-ref", "--quiet", "--verify", `refs/heads/${branch}`],
+    gitOptions,
+  );
   return branchExists.code === 1;
 }
 
-async function runSetupScript(repoRoot: string, worktreePath: string): Promise<void> {
+async function runRepositorySetupScript(repoRoot: string, worktreePath: string): Promise<void> {
   const setupScript = path.join(repoRoot, ".openclaw", "worktree-setup.sh");
   const stat = await fs.stat(setupScript).catch(() => undefined);
   if (!stat?.isFile() || (stat.mode & 0o111) === 0) {
@@ -231,6 +450,72 @@ async function runSetupScript(repoRoot: string, worktreePath: string): Promise<v
     throw new Error(
       `worktree setup failed${resultMessage(result) ? `:\n${resultMessage(result)}` : ""}`,
     );
+  }
+}
+
+async function runIsolatedSetupScript(params: {
+  worktreePath: string;
+  serviceEnv: NodeJS.ProcessEnv;
+  expectedCommit: string;
+  expectedBranch?: string;
+  signal?: AbortSignal;
+}): Promise<void> {
+  if (process.platform === "win32") {
+    throw new Error("isolated worktree setup requires POSIX process-group isolation");
+  }
+  const setupDir = path.join(params.worktreePath, ".openclaw");
+  const setupScript = path.join(params.worktreePath, ".openclaw", "worktree-setup.sh");
+  const [setupDirStat, setupScriptStat] = await Promise.all([
+    fs.lstat(setupDir).catch(() => undefined),
+    fs.lstat(setupScript).catch(() => undefined),
+  ]);
+  if (
+    !setupDirStat?.isDirectory() ||
+    setupDirStat.isSymbolicLink() ||
+    !setupScriptStat?.isFile() ||
+    setupScriptStat.isSymbolicLink() ||
+    (setupScriptStat.mode & 0o111) === 0
+  ) {
+    throw new Error("isolated worktree setup script is missing or not executable");
+  }
+  const packageCacheRoot = path.join(
+    resolveStateDir(params.serviceEnv),
+    "tools",
+    "worktree-package-cache",
+  );
+  const corepackHome = path.join(packageCacheRoot, "corepack");
+  const pnpmStorePath = path.join(packageCacheRoot, "pnpm-store");
+  await fs.mkdir(corepackHome, { recursive: true });
+  await fs.mkdir(pnpmStorePath, { recursive: true });
+  const setupHome = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-worktree-setup-home-"));
+  await fs.chmod(setupHome, 0o700);
+  try {
+    const result = await runCommandWithTimeout([setupScript], {
+      timeoutMs: 120_000,
+      cwd: params.worktreePath,
+      baseEnv: {},
+      killProcessTree: true,
+      killProcessTreeOnExit: true,
+      signal: params.signal,
+      env: {
+        PATH: resolveIsolatedSetupPath(params.serviceEnv),
+        HOME: setupHome,
+        COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
+        COREPACK_HOME: corepackHome,
+        npm_config_store_dir: pnpmStorePath,
+        ...GIT_LOCAL_OBJECT_ENV,
+        OPENCLAW_SOURCE_TREE_PATH: params.worktreePath,
+        OPENCLAW_WORKTREE_PATH: params.worktreePath,
+      },
+    });
+    if (result.code !== 0) {
+      throw new Error(
+        `worktree setup failed${resultMessage(result) ? `:\n${resultMessage(result)}` : ""}`,
+      );
+    }
+    await requireIsolatedSetupState(params);
+  } finally {
+    await fs.rm(setupHome, { recursive: true, force: true });
   }
 }
 
@@ -341,10 +626,17 @@ async function snapshotWorktree(
   reason: string,
   provisionedPaths: readonly string[],
 ): Promise<string> {
+  if (isIsolatedWorktree(record)) {
+    await requireSafeIsolatedGitConfig(record.path);
+  }
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-worktree-index-"));
   const indexPath = path.join(tempDir, "index");
   const snapshotRef = `${SNAPSHOT_REF_PREFIX}/${record.id}`;
+  const objectGitOptions: GitEnvironmentOptions = isIsolatedWorktree(record)
+    ? ISOLATED_GIT_OPTIONS
+    : {};
   const env: NodeJS.ProcessEnv = {
+    ...objectGitOptions.env,
     GIT_INDEX_FILE: indexPath,
     GIT_AUTHOR_NAME: "OpenClaw",
     GIT_AUTHOR_EMAIL: "openclaw@localhost",
@@ -352,12 +644,19 @@ async function snapshotWorktree(
     GIT_COMMITTER_EMAIL: "openclaw@localhost",
     ...(process.platform === "win32"
       ? {}
-      : {
-          GIT_CONFIG_COUNT: "1",
-          GIT_CONFIG_KEY_0: "core.filemode",
-          GIT_CONFIG_VALUE_0: "true",
-        }),
+      : isIsolatedWorktree(record)
+        ? {
+            GIT_CONFIG_COUNT: "2",
+            GIT_CONFIG_KEY_1: "core.filemode",
+            GIT_CONFIG_VALUE_1: "true",
+          }
+        : {
+            GIT_CONFIG_COUNT: "1",
+            GIT_CONFIG_KEY_0: "core.filemode",
+            GIT_CONFIG_VALUE_0: "true",
+          }),
   };
+  const indexGitOptions = { ...objectGitOptions, env };
   try {
     if (await containsGitMarker(record.path, true)) {
       throw new Error("nested git repositories cannot be snapshotted losslessly");
@@ -370,14 +669,18 @@ async function snapshotWorktree(
         snapshotPaths.set(key, entry);
       }
     };
-    const sparseConfig = await runGit(record.path, ["config", "--bool", "core.sparseCheckout"]);
+    const sparseConfig = await runGit(
+      record.path,
+      ["config", "--bool", "core.sparseCheckout"],
+      objectGitOptions,
+    );
     if (sparseConfig.code !== 0 && sparseConfig.code !== 1) {
       throw commandError("git config --bool core.sparseCheckout", sparseConfig);
     }
     const sparseCheckout = sparseConfig.code === 0 && sparseConfig.stdout.trim() === "true";
     const sparseCandidates: Buffer[] = [];
     for (const entry of splitNullBuffer(
-      await requireGitBuffer(record.path, ["ls-files", "-v", "-z"]),
+      await requireGitBuffer(record.path, ["ls-files", "-v", "-z"], objectGitOptions),
     )) {
       if (entry.length < 3) {
         continue;
@@ -399,6 +702,7 @@ async function snapshotWorktree(
         record.path,
         ["sparse-checkout", "check-rules", "-z"],
         {
+          ...objectGitOptions,
           input: Buffer.concat(sparseCandidates.flatMap((entry) => [entry, Buffer.from([0])])),
         },
       );
@@ -412,47 +716,45 @@ async function snapshotWorktree(
       ["diff-index", "--cached", "--name-only", "-z", "HEAD", "--"],
       ["ls-files", "-z", "--others", "--exclude-standard"],
     ]) {
-      for (const entry of splitNullBuffer(await requireGitBuffer(record.path, args))) {
+      for (const entry of splitNullBuffer(
+        await requireGitBuffer(record.path, args, objectGitOptions),
+      )) {
         addSnapshotPath(entry);
       }
     }
-    await requireGit(record.path, ["read-tree", "HEAD"], { env });
+    await requireGit(record.path, ["read-tree", "HEAD"], indexGitOptions);
     // This index came from a tree, so it has no checkout-local skip-worktree
     // bits and update-index is independent of the source worktree's sparse cone.
     await requireGit(record.path, ["update-index", "--add", "--remove", "-z", "--stdin"], {
-      env,
+      ...indexGitOptions,
       input:
         snapshotPaths.size > 0
           ? Buffer.concat([...snapshotPaths.values()].flatMap((entry) => [entry, Buffer.from([0])]))
           : Buffer.alloc(0),
     });
-    const tree = await requireGit(record.path, ["write-tree"], { env });
+    const tree = await requireGit(record.path, ["write-tree"], indexGitOptions);
     for (const provisionedPath of provisionedPaths) {
-      const overlap = await requireGit(record.path, [
-        "--literal-pathspecs",
-        "ls-tree",
-        "-r",
-        "--name-only",
-        tree,
-        "--",
-        provisionedPath,
-      ]);
+      const overlap = await requireGit(
+        record.path,
+        ["--literal-pathspecs", "ls-tree", "-r", "--name-only", tree, "--", provisionedPath],
+        objectGitOptions,
+      );
       if (overlap) {
         throw new Error(`provisioned path entered Git snapshot: ${provisionedPath}`);
       }
     }
-    const treeEntries = await requireGit(record.path, ["ls-tree", "-r", tree]);
+    const treeEntries = await requireGit(record.path, ["ls-tree", "-r", tree], objectGitOptions);
     // Gitlinks omit nested worktree files, so accepting one would violate the full-tree snapshot.
     if (treeEntries.split("\n").some((entry) => entry.startsWith("160000 "))) {
       throw new Error("nested git repositories cannot be snapshotted losslessly");
     }
-    const parent = await requireGit(record.path, ["rev-parse", "HEAD"]);
+    const parent = await requireGit(record.path, ["rev-parse", "HEAD"], objectGitOptions);
     const commit = await requireGit(
       record.path,
       ["commit-tree", tree, "-p", parent, "-m", `OpenClaw worktree snapshot: ${reason}`],
-      { env },
+      indexGitOptions,
     );
-    await requireGit(record.repoRoot, ["update-ref", snapshotRef, commit]);
+    await requireGit(record.repoRoot, ["update-ref", snapshotRef, commit], objectGitOptions);
     return snapshotRef;
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
@@ -470,9 +772,66 @@ export class ManagedWorktreeService {
 
   async create(params: CreateManagedWorktreeParams): Promise<ManagedWorktreeRecord> {
     const repository = await resolveRepository(params.repoRoot);
+    const setupMode = params.setupMode ?? "repository";
+    const preResolvedBase =
+      setupMode === "repository" &&
+      params.baseRef &&
+      params.baseRef !== "-" &&
+      params.baseRef.startsWith("-")
+        ? await resolveWorktreeBase(repository.repoRoot, params.baseRef)
+        : undefined;
     const name = validateName(params.name ?? generateName());
+    if (setupMode !== "isolated") {
+      return await this.createLocked({ params, repository, setupMode, preResolvedBase, name });
+    }
+    const createLockTarget = path.join(
+      resolveStateDir(this.env),
+      "worktrees",
+      `${repository.fingerprint}-${name}.create`,
+    );
+    const lock = await acquireSessionWriteLock({
+      sessionFile: createLockTarget,
+      allowReentrant: false,
+      timeoutMs: 3 * 60_000,
+      signal: params.signal,
+    });
+    try {
+      return await this.createLocked({ params, repository, setupMode, name });
+    } finally {
+      await lock.release();
+    }
+  }
+
+  private async createLocked(input: {
+    params: CreateManagedWorktreeParams;
+    repository: ResolvedRepository;
+    setupMode: ManagedWorktreeSetupMode;
+    preResolvedBase?: Awaited<ReturnType<typeof resolveWorktreeBase>>;
+    name: string;
+  }): Promise<ManagedWorktreeRecord> {
+    const { params, repository, setupMode, preResolvedBase, name } = input;
+    let resolvedBase = preResolvedBase;
+    const getBase = async () => {
+      if (!resolvedBase) {
+        const baseRef =
+          setupMode === "isolated"
+            ? await requireIsolatedBase({
+                repository,
+                baseRef: params.baseRef,
+              })
+            : params.baseRef;
+        resolvedBase = await resolveWorktreeBase(repository.repoRoot, baseRef);
+      }
+      return resolvedBase;
+    };
     const root = path.join(resolveStateDir(this.env), "worktrees", repository.fingerprint);
     const worktreePath = path.join(root, name);
+    const runRepositorySetup = params.runSetupScript !== false;
+    const branch =
+      setupMode === "isolated"
+        ? `${runRepositorySetup ? ISOLATED_SETUP_BRANCH_PREFIX : ISOLATED_INSPECT_BRANCH_PREFIX}${name}`
+        : `openclaw/${name}`;
+    const isolatedGitOptions = setupMode === "isolated" ? ISOLATED_GIT_OPTIONS : undefined;
     const existing = findRegistryWorktreeByPath(this.env, worktreePath);
     // Name reuse only ever adopts the caller's own record. Without this guard a
     // caller-chosen name could bind a new owner to another session's or a
@@ -482,8 +841,23 @@ export class ManagedWorktreeService {
         `worktree name is already in use by ${existing.ownerKind}${existing.ownerId ? ` ${existing.ownerId}` : ""}: ${name}`,
       );
     }
+    if (
+      existing?.name === name &&
+      (existing.removedAt === undefined || existing.snapshotRef !== undefined) &&
+      isIsolatedWorktree(existing) !== (setupMode === "isolated")
+    ) {
+      throw new Error(`worktree setup mode mismatch: ${name}`);
+    }
     if (existing?.name === name && existing.removedAt === undefined) {
       if (await pathExists(existing.path)) {
+        if (setupMode === "isolated") {
+          const base = await getBase();
+          if (existing.branch !== branch || existing.baseRef !== base.recordRef) {
+            throw new Error(`isolated worktree generation mismatch: ${name}`);
+          }
+          await requireSafeIsolatedGitConfig(existing.path);
+          await requireIsolatedRecordLineage(existing);
+        }
         return existing;
       }
       updateRegistryWorktree(this.env, existing.id, { removedAt: this.now() });
@@ -494,58 +868,121 @@ export class ManagedWorktreeService {
           `worktree name is already in use by ${existing.ownerKind}${existing.ownerId ? ` ${existing.ownerId}` : ""}: ${name}`,
         );
       }
-      return await this.restore({ id: existing.id });
+      if (
+        setupMode === "isolated" &&
+        (existing.branch !== branch || existing.baseRef !== (await getBase()).recordRef)
+      ) {
+        throw new Error(`isolated worktree snapshot generation mismatch: ${name}`);
+      }
+      return await this.restore({ id: existing.id, signal: params.signal });
     }
-    const branch = `openclaw/${name}`;
-    const branchExists = await runGit(repository.repoRoot, [
-      "show-ref",
-      "--quiet",
-      "--verify",
-      `refs/heads/${branch}`,
-    ]);
+    const base = await getBase();
+    const branchExists = await runGit(
+      repository.repoRoot,
+      ["show-ref", "--quiet", "--verify", `refs/heads/${branch}`],
+      isolatedGitOptions,
+    );
     if (branchExists.code === 0) {
       throw new Error(`branch already exists: ${branch}`);
     }
     if (branchExists.code !== 1) {
       throw commandError("git show-ref --verify", branchExists);
     }
-    const base = await resolveWorktreeBase(repository.repoRoot, params.baseRef);
+    if (await pathExists(worktreePath)) {
+      throw new Error(`worktree path already exists: ${worktreePath}`);
+    }
     await fs.mkdir(root, { recursive: true });
     let gitBase = base.gitOperand;
     let recordBase = base.recordRef;
-    const runRepositorySetup = params.runSetupScript !== false;
+    const disableGitHooks = setupMode === "isolated" || !runRepositorySetup;
     const worktreeAddArgs = () => [
-      ...(runRepositorySetup ? [] : ["-c", `core.hooksPath=${os.devNull}`]),
+      ...(disableGitHooks ? ["-c", `core.hooksPath=${os.devNull}`] : []),
       "worktree",
       "add",
+      ...(setupMode === "isolated" ? ["--no-checkout"] : []),
       "-b",
       branch,
       "--",
       worktreePath,
       gitBase,
     ];
-    let added = await runGit(repository.repoRoot, worktreeAddArgs());
+    let added = await runGit(repository.repoRoot, worktreeAddArgs(), isolatedGitOptions);
+    if (added.code !== 0 && setupMode === "isolated") {
+      const addError = commandError("git worktree add", added);
+      if (
+        !(await canResetFailedWorktreeAdd(
+          repository.repoRoot,
+          worktreePath,
+          branch,
+          added,
+          isolatedGitOptions,
+        ))
+      ) {
+        throw addError;
+      }
+      try {
+        await resetFailedWorktreeAdd(repository.repoRoot, worktreePath, branch, isolatedGitOptions);
+      } catch (cleanupError) {
+        throw new Error(`${String(addError)}\n${String(cleanupError)}`, { cause: cleanupError });
+      }
+      throw addError;
+    }
     if (added.code !== 0 && base.remote) {
-      if (!(await canResetFailedWorktreeAdd(repository.repoRoot, worktreePath, branch, added))) {
+      if (
+        !(await canResetFailedWorktreeAdd(
+          repository.repoRoot,
+          worktreePath,
+          branch,
+          added,
+          isolatedGitOptions,
+        ))
+      ) {
         throw commandError("git worktree add", added);
       }
-      await resetFailedWorktreeAdd(repository.repoRoot, worktreePath, branch);
+      await resetFailedWorktreeAdd(repository.repoRoot, worktreePath, branch, isolatedGitOptions);
       gitBase = "HEAD";
       recordBase = "HEAD";
-      added = await runGit(repository.repoRoot, worktreeAddArgs());
+      added = await runGit(repository.repoRoot, worktreeAddArgs(), isolatedGitOptions);
     }
     if (added.code !== 0) {
       throw commandError("git worktree add", added);
     }
     let provisionedPaths: string[];
     try {
-      provisionedPaths = await provisionIncludedFiles(repository.sourceRoot, worktreePath);
+      if (setupMode === "isolated") {
+        // The target branch now exists, but no tracked bytes have been materialized.
+        // Validate worktree and branch-conditional config before checkout can invoke it.
+        await requireSafeIsolatedGitConfig(worktreePath);
+        await requireGit(worktreePath, ["reset", "--hard", recordBase], isolatedGitOptions);
+        await requireIsolatedSetupState({
+          worktreePath,
+          expectedCommit: recordBase,
+          expectedBranch: branch,
+        });
+      }
+      provisionedPaths =
+        setupMode === "isolated"
+          ? []
+          : await provisionIncludedFiles(repository.sourceRoot, worktreePath);
       if (runRepositorySetup) {
-        await runSetupScript(repository.sourceRoot, worktreePath);
+        if (setupMode === "isolated") {
+          await runIsolatedSetupScript({
+            worktreePath,
+            serviceEnv: this.env,
+            expectedCommit: recordBase,
+            expectedBranch: branch,
+            signal: params.signal,
+          });
+        } else {
+          await runRepositorySetupScript(repository.sourceRoot, worktreePath);
+        }
+      }
+      if (setupMode === "isolated") {
+        params.signal?.throwIfAborted();
       }
     } catch (error) {
       try {
-        await cleanupFailedCreate(repository.repoRoot, worktreePath, branch);
+        await cleanupFailedCreate(repository.repoRoot, worktreePath, branch, isolatedGitOptions);
       } catch (cleanupError) {
         throw new Error(`${String(error)}\n${String(cleanupError)}`, { cause: cleanupError });
       }
@@ -565,8 +1002,21 @@ export class ManagedWorktreeService {
       createdAt,
       lastActiveAt: createdAt,
     };
-    insertRegistryWorktree(this.env, record, { provisionedPaths });
-    return record;
+    if (setupMode !== "isolated") {
+      insertRegistryWorktree(this.env, record, { provisionedPaths });
+      return record;
+    }
+    try {
+      insertRegistryWorktree(this.env, record, { provisionedPaths });
+      return record;
+    } catch (error) {
+      try {
+        await cleanupFailedCreate(repository.repoRoot, worktreePath, branch, ISOLATED_GIT_OPTIONS);
+      } catch (cleanupError) {
+        throw new Error(`${String(error)}\n${String(cleanupError)}`, { cause: cleanupError });
+      }
+      throw error;
+    }
   }
 
   async list(): Promise<ManagedWorktreeRecord[]> {
@@ -730,7 +1180,11 @@ export class ManagedWorktreeService {
     claimToken?: string;
   }): Promise<RemoveManagedWorktreeResult> {
     const record = this.requireLiveRecord(params.id);
+    if (isIsolatedWorktree(record)) {
+      await requireSafeIsolatedGitConfig(record.path);
+    }
     const force = params.force ?? false;
+    const gitOptions = isIsolatedWorktree(record) ? ISOLATED_GIT_OPTIONS : {};
     // Claim removal before any cleanliness or snapshot work so a live run lease
     // rejects it and an admitted run cannot start once the claim is held. The
     // opaque token makes the claim exclusive against competing removers; a caller
@@ -747,7 +1201,10 @@ export class ManagedWorktreeService {
         );
       }
       if (state.kind !== "none") {
-        await requireGit(record.repoRoot, ["worktree", "unlock", record.path]);
+        await requireGit(record.repoRoot, ["worktree", "unlock", record.path], gitOptions);
+      }
+      if (isIsolatedWorktree(record)) {
+        await requireIsolatedRecordLineage(record);
       }
       let snapshotRef = record.snapshotRef;
       let snapshotError: string | undefined;
@@ -781,15 +1238,23 @@ export class ManagedWorktreeService {
           throw new WorktreeSnapshotError(snapshotError, { cause: error });
         }
       }
-      const removed = await runGit(record.repoRoot, ["worktree", "remove", "--force", record.path]);
+      const removed = await runGit(
+        record.repoRoot,
+        ["worktree", "remove", "--force", record.path],
+        gitOptions,
+      );
       if (removed.code !== 0) {
         throw commandError("git worktree remove", removed);
       }
-      const branchDelete = await runGit(record.repoRoot, ["branch", "-D", record.branch]);
+      const branchDelete = await runGit(
+        record.repoRoot,
+        ["branch", "-D", record.branch],
+        gitOptions,
+      );
       if (branchDelete.code !== 0) {
         throw commandError("git branch -D", branchDelete);
       }
-      await requireGit(record.repoRoot, ["worktree", "prune"]);
+      await requireGit(record.repoRoot, ["worktree", "prune"], gitOptions);
       await removeEmptyParents(
         path.dirname(record.path),
         path.join(resolveStateDir(this.env), "worktrees"),
@@ -808,7 +1273,7 @@ export class ManagedWorktreeService {
     }
   }
 
-  async restore(params: { id: string }): Promise<ManagedWorktreeRecord> {
+  async restore(params: { id: string; signal?: AbortSignal }): Promise<ManagedWorktreeRecord> {
     const record = getRegistryWorktree(this.env, params.id);
     if (!record?.snapshotRef || record.removedAt === undefined) {
       throw new Error(`worktree ${params.id} is not restorable`);
@@ -816,42 +1281,135 @@ export class ManagedWorktreeService {
     if (!(await pathExists(record.repoRoot))) {
       throw new Error(`source repository no longer exists: ${record.repoRoot}`);
     }
-    const parent = await requireGit(record.repoRoot, ["rev-parse", `${record.snapshotRef}^`]);
+    const isolated = isIsolatedWorktree(record);
+    const gitOptions = isolated ? ISOLATED_GIT_OPTIONS : {};
+    if (isolated) {
+      await requireSafeIsolatedGitConfig(record.repoRoot);
+    }
+    const parent = await requireGit(
+      record.repoRoot,
+      ["rev-parse", `${record.snapshotRef}^`],
+      gitOptions,
+    );
+    if (isolated) {
+      await requireIsolatedLineage({
+        repoRoot: record.repoRoot,
+        baseRef: record.baseRef.toLowerCase(),
+        tipRef: parent.toLowerCase(),
+        name: record.name,
+      });
+      const localSnapshot = await runGit(
+        record.repoRoot,
+        ["rev-list", "--objects", "--missing=error", "--quiet", `${record.snapshotRef}^{tree}`],
+        gitOptions,
+      );
+      if (localSnapshot.code !== 0) {
+        throw new Error(`isolated worktree snapshot is not fully local: ${record.snapshotRef}`);
+      }
+    }
     await fs.mkdir(path.dirname(record.path), { recursive: true });
-    await requireGit(record.repoRoot, [
-      "worktree",
-      "add",
-      "--detach",
-      record.path,
-      record.snapshotRef,
-    ]);
+    await requireGit(
+      record.repoRoot,
+      [
+        ...(isolated ? ["-c", `core.hooksPath=${os.devNull}`] : []),
+        "worktree",
+        "add",
+        ...(isolated ? ["--no-checkout"] : []),
+        "--detach",
+        record.path,
+        isolated ? record.baseRef : record.snapshotRef,
+      ],
+      gitOptions,
+    );
     let branchCreated = false;
     let restoredProvisionedPaths: string[];
     try {
-      // Branch history stays at the original commit; the snapshot is restored as working state.
-      await requireGit(record.repoRoot, ["branch", record.branch, parent]);
-      branchCreated = true;
-      await requireGit(record.path, ["symbolic-ref", "HEAD", `refs/heads/${record.branch}`]);
-      await requireGit(record.path, ["reset"]);
-      const provisionedLedger = getRegistryWorktreeProvisionedLedger(this.env, record.id);
-      if (provisionedLedger.status === "legacy") {
-        // Explicitly removed pre-ledger worktrees retain their historical restore behavior.
-        restoredProvisionedPaths = await provisionIncludedFiles(record.repoRoot, record.path);
-      } else {
-        if (provisionedLedger.status === "invalid") {
-          throw new Error(`worktree ${record.id} has invalid provisioned file metadata`);
-        }
+      if (isolated) {
+        await requireSafeIsolatedGitConfig(record.path);
+        await requireGit(record.path, ["reset", "--hard", record.baseRef], gitOptions);
+        await requireIsolatedSetupState({
+          worktreePath: record.path,
+          expectedCommit: record.baseRef,
+        });
+        const provisionedLedger = getRegistryWorktreeProvisionedLedger(this.env, record.id);
         const provisionedState = getRegistryWorktreeProvisionedState(this.env, record.id);
-        if (provisionedState === undefined) {
-          throw new Error(`worktree ${record.id} snapshot lacks provisioned file metadata`);
+        if (
+          provisionedLedger.status !== "valid" ||
+          provisionedLedger.paths.length !== 0 ||
+          !provisionedState ||
+          provisionedState.length !== 0
+        ) {
+          throw new Error(`isolated worktree ${record.id} has provisioned file state`);
         }
-        await restoreProvisionedFiles(this.env, record.id, record.path, provisionedState);
-        restoredProvisionedPaths = provisionedState.map((state) => state.path);
+        if (isolatedWorktreeRunsSetup(record)) {
+          await runIsolatedSetupScript({
+            worktreePath: record.path,
+            serviceEnv: this.env,
+            expectedCommit: record.baseRef,
+            signal: params.signal,
+          });
+        }
+        params.signal?.throwIfAborted();
+        // Setup runs while detached at immutable generation N. The editable
+        // branch may have advanced, so restore its actual tip only afterward.
+        await requireGit(record.repoRoot, ["branch", record.branch, parent], gitOptions);
+        branchCreated = true;
+        await requireGit(
+          record.path,
+          ["symbolic-ref", "HEAD", `refs/heads/${record.branch}`],
+          gitOptions,
+        );
+        // Attaching the editable branch can activate includeIf.onbranch config.
+        await requireSafeIsolatedGitConfig(record.path);
+        await requireGit(
+          record.path,
+          ["read-tree", "--reset", "-u", record.snapshotRef],
+          gitOptions,
+        );
+        await requireGit(record.path, ["reset"], gitOptions);
+        params.signal?.throwIfAborted();
+        restoredProvisionedPaths = [];
+      } else {
+        // Branch history stays at the original commit; the snapshot is restored as working state.
+        await requireGit(record.repoRoot, ["branch", record.branch, parent]);
+        branchCreated = true;
+        await requireGit(record.path, ["symbolic-ref", "HEAD", `refs/heads/${record.branch}`]);
+        await requireGit(record.path, ["reset"]);
+        const provisionedLedger = getRegistryWorktreeProvisionedLedger(this.env, record.id);
+        if (provisionedLedger.status === "legacy") {
+          // Explicitly removed pre-ledger worktrees retain their historical restore behavior.
+          restoredProvisionedPaths = await provisionIncludedFiles(record.repoRoot, record.path);
+        } else {
+          if (provisionedLedger.status === "invalid") {
+            throw new Error(`worktree ${record.id} has invalid provisioned file metadata`);
+          }
+          const provisionedState = getRegistryWorktreeProvisionedState(this.env, record.id);
+          if (provisionedState === undefined) {
+            throw new Error(`worktree ${record.id} snapshot lacks provisioned file metadata`);
+          }
+          await restoreProvisionedFiles(this.env, record.id, record.path, provisionedState);
+          restoredProvisionedPaths = provisionedState.map((state) => state.path);
+        }
       }
+      if (isolated) {
+        params.signal?.throwIfAborted();
+      }
+      const lastActiveAt = this.now();
+      publishRestoredRegistryWorktree(this.env, params.id, {
+        lastActiveAt,
+        provisionedPaths: restoredProvisionedPaths,
+      });
+      const restored = { ...record, lastActiveAt };
+      delete restored.removedAt;
+      return restored;
     } catch (error) {
-      const removed = await runGit(record.repoRoot, ["worktree", "remove", "--force", record.path]);
+      const removed = await runGit(
+        record.repoRoot,
+        ["worktree", "remove", "--force", record.path],
+        gitOptions,
+      );
       const branchDeleted = branchCreated
-        ? await runGit(record.repoRoot, ["branch", "-D", record.branch])
+        ? await runGit(record.repoRoot, ["branch", "-D", record.branch], gitOptions)
         : undefined;
       if (removed.code !== 0 || (branchDeleted && branchDeleted.code !== 0)) {
         throw new Error(
@@ -861,22 +1419,12 @@ export class ManagedWorktreeService {
       }
       throw error;
     }
-    const lastActiveAt = this.now();
-    updateRegistryWorktree(this.env, params.id, {
-      removedAt: undefined,
-      lastActiveAt,
-      provisionedPaths: restoredProvisionedPaths,
-    });
-    // Clear any lease rows or removal marker stranded by a crash between git removal
-    // and finalize so the restored worktree admits runs again.
-    finalizeWorktreeRemoval(this.env, params.id);
-    const restored = { ...record, lastActiveAt };
-    delete restored.removedAt;
-    return restored;
   }
 
   async removeIfLossless(id: string): Promise<boolean> {
     const record = this.requireLiveRecord(id);
+    const isolated = isIsolatedWorktree(record);
+    const gitOptions = isolated ? ISOLATED_GIT_OPTIONS : {};
     const claimToken = randomUUID();
     try {
       claimWorktreeRemoval(this.env, { worktreeId: id, token: claimToken, force: false });
@@ -886,14 +1434,17 @@ export class ManagedWorktreeService {
       return false;
     }
     try {
-      const status = await requireGit(record.path, ["status", "--porcelain"]);
-      const unpushed = await requireGit(record.path, [
-        "log",
-        "HEAD",
-        "--not",
-        "--remotes",
-        "--oneline",
-      ]);
+      if (isolated) {
+        await requireSafeIsolatedGitConfig(record.path);
+      }
+      const status = await requireGit(record.path, ["status", "--porcelain"], gitOptions);
+      const unpushed = await requireGit(
+        record.path,
+        isolated
+          ? ["log", `${record.baseRef}..HEAD`, "--oneline"]
+          : ["log", "HEAD", "--not", "--remotes", "--oneline"],
+        gitOptions,
+      );
       const ignoredDrift = await hasUnsnapshotableProvisionedFiles(
         record.path,
         getRegistryWorktreeProvisionedPaths(this.env, record.id),

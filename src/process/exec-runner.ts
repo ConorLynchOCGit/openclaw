@@ -61,6 +61,8 @@ export type CommandOptions = {
   maxPreservedOutputLines?: number;
   preserveOutputLine?: PreserveOutputLine;
   killProcessTree?: boolean;
+  /** Kill any descendants still in the owned POSIX process group after direct-child exit. */
+  killProcessTreeOnExit?: boolean;
   /** Signal used when terminating the direct child; tree termination owns its own grace policy. */
   killSignal?: NodeJS.Signals | number;
 };
@@ -96,6 +98,7 @@ async function runCommandWithOutputEncoding(
     noOutputTimeoutMs,
     signal,
     killProcessTree,
+    killProcessTreeOnExit,
     killSignal,
   } = options;
   const resolvedTimeoutMs =
@@ -366,6 +369,9 @@ async function runCommandWithOutputEncoding(
     signal?.removeEventListener("abort", onAbort);
     releaseOutput();
   });
+  if (killProcessTreeOnExit && !termination) {
+    terminationController.killExitedProcessTree();
+  }
   await terminationController.settle();
   if (outputObserverError !== undefined) {
     throw toErrorObject(outputObserverError, "Command output observer failed");

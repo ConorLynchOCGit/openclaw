@@ -2328,7 +2328,7 @@ describe("createBackupArchive", () => {
     );
   });
 
-  it("omits reinstallable runtime trees and plugin dependencies while keeping plugin files", async () => {
+  it("omits reinstallable roots and plugin dependencies while keeping worktree files", async () => {
     await withOpenClawTestState(
       {
         layout: "state-only",
@@ -2346,6 +2346,10 @@ describe("createBackupArchive", () => {
         await fs.mkdir(path.join(stateDir, "npm", "projects", "demo", "node_modules", "dep"), {
           recursive: true,
         });
+        await fs.mkdir(
+          path.join(stateDir, "worktrees", "fingerprint", "task", "node_modules", "dep"),
+          { recursive: true },
+        );
         for (const managedRoot of ["dev", "git", "npm-runtime", "tools"]) {
           await fs.mkdir(path.join(stateDir, managedRoot, "runtime"), { recursive: true });
           await fs.writeFile(
@@ -2389,6 +2393,24 @@ describe("createBackupArchive", () => {
           "managed-package sqlite-named asset\n",
           "utf8",
         );
+        await fs.writeFile(
+          path.join(stateDir, "worktrees", "fingerprint", "task", "source.ts"),
+          "export const retained = true;\n",
+          "utf8",
+        );
+        await fs.writeFile(
+          path.join(
+            stateDir,
+            "worktrees",
+            "fingerprint",
+            "task",
+            "node_modules",
+            "dep",
+            "index.js",
+          ),
+          "module.exports = {}\n",
+          "utf8",
+        );
         await fs.mkdir(outputDir, { recursive: true });
 
         const result = await createBackupArchive({
@@ -2403,6 +2425,10 @@ describe("createBackupArchive", () => {
         expect(entrySuffixes).toContain("/state/extensions/demo/src/index.js");
         expect(entrySuffixes).toContain("/state/node_modules/root-dep/index.js");
         expect(entrySuffixes).toContain("/state/node_modules/root-dep/fixture.sqlite");
+        expect(entrySuffixes).toContain("/state/worktrees/fingerprint/task/source.ts");
+        expect(entrySuffixes).toContain(
+          "/state/worktrees/fingerprint/task/node_modules/dep/index.js",
+        );
         for (const managedRoot of ["dev", "git", "npm", "npm-runtime", "tools"]) {
           expect(
             entrySuffixes.some(
@@ -2416,7 +2442,6 @@ describe("createBackupArchive", () => {
           entry.includes("/state/extensions/demo/node_modules/"),
         );
         expect(pluginNodeModuleEntries).toStrictEqual([]);
-
         const runtime: RuntimeEnv = { log: vi.fn(), error: vi.fn(), exit: vi.fn() };
         const verification = await backupVerifyCommand(runtime, { archive: result.archivePath });
         expect(verification.ok).toBe(true);
