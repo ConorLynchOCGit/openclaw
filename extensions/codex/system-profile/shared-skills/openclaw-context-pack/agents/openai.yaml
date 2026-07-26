@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenClaw Context Pack"
+  short_description: "Return bounded implementation evidence"
+  default_prompt: "Inspect this scope and return a bounded implementation context pack with exact evidence."

@@ -150,6 +150,7 @@ export default definePluginEntry({
     api.registerAgentHarness(
       createCodexAppServerAgentHarness({
         bindingStore,
+        pluginRoot: api.rootDir,
         sessionCatalogControl,
         resolveConfig: resolveCurrentConfig,
         resolvePluginConfig: resolveCurrentPluginConfig,

@@ -121,6 +121,20 @@ export type CodexTurnEnvironmentParams = JsonObject & {
   cwd: string;
 };
 
+export type CodexSelectedCapabilityRoot = JsonObject & {
+  id: string;
+  location: {
+    type: "environment";
+    environmentId: string;
+    path: string;
+  };
+};
+
+export type CodexActivePermissionProfile = JsonObject & {
+  id: string;
+  extends?: string | null;
+};
+
 export type CodexThreadStartParams = JsonObject & {
   input?: CodexUserInput[];
   cwd?: string;
@@ -131,9 +145,11 @@ export type CodexThreadStartParams = JsonObject & {
   approvalPolicy?: CodexApprovalPolicy | null;
   approvalsReviewer?: CodexApprovalsReviewer | null;
   sandbox?: CodexSandboxMode | null;
+  permissions?: string | null;
   serviceTier?: CodexServiceTier | null;
   dynamicTools?: CodexDynamicToolSpec[] | null;
   developerInstructions?: string;
+  selectedCapabilityRoots?: CodexSelectedCapabilityRoot[] | null;
   experimentalRawEvents?: boolean;
   environments?: CodexTurnEnvironmentParams[] | null;
   ephemeral?: boolean;
@@ -147,6 +163,7 @@ export type CodexThreadResumeParams = JsonObject & {
   approvalPolicy?: CodexApprovalPolicy | null;
   approvalsReviewer?: CodexApprovalsReviewer | null;
   sandbox?: CodexSandboxMode | null;
+  permissions?: string | null;
   serviceTier?: CodexServiceTier | null;
   config?: JsonObject;
   developerInstructions?: string;
@@ -162,6 +179,7 @@ export type CodexThreadStartResponse = {
   thread: CodexThread;
   model: string;
   modelProvider?: string | null;
+  activePermissionProfile?: CodexActivePermissionProfile | null;
 };
 
 export type CodexThreadForkParams = JsonObject & {
@@ -267,6 +285,7 @@ export type CodexThreadResumeResponse = {
   thread: CodexThread;
   model: string;
   modelProvider?: string | null;
+  activePermissionProfile?: CodexActivePermissionProfile | null;
   initialTurnsPage?: CodexInitialTurnsPage | null;
 };
 
@@ -324,6 +343,7 @@ export type CodexTurnStartParams = JsonObject & {
   approvalPolicy?: CodexApprovalPolicy | null;
   approvalsReviewer?: CodexApprovalsReviewer | null;
   sandboxPolicy?: CodexSandboxPolicy;
+  permissions?: string | null;
   serviceTier?: CodexServiceTier | null;
   effort?: string | null;
   personality?: CodexPersonality | null;

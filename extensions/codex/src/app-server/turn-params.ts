@@ -22,6 +22,7 @@ export function buildTurnStartParams(
     appServer: CodexAppServerRuntimeOptions;
     promptText?: string;
     sandboxPolicy?: CodexSandboxPolicy;
+    permissionProfile?: string;
     environmentSelection?: CodexTurnEnvironmentParams[];
     model?: string | null;
     modelProvider?: string | null;
@@ -48,13 +49,15 @@ export function buildTurnStartParams(
     cwd: options.cwd,
     approvalPolicy: options.appServer.approvalPolicy,
     approvalsReviewer: options.appServer.approvalsReviewer,
-    ...(useThreadPermissionProfile
-      ? {}
-      : {
-          sandboxPolicy:
-            options.sandboxPolicy ??
-            codexSandboxPolicyForTurn(options.appServer.sandbox, options.cwd),
-        }),
+    ...(options.permissionProfile
+      ? { permissions: options.permissionProfile }
+      : useThreadPermissionProfile
+        ? {}
+        : {
+            sandboxPolicy:
+              options.sandboxPolicy ??
+              codexSandboxPolicyForTurn(options.appServer.sandbox, options.cwd),
+          }),
     ...(modelSelection
       ? { model: modelSelection.model, personality: CODEX_NATIVE_PERSONALITY_NONE }
       : {}),

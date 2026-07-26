@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenClaw Creative Quality Review"
+  short_description: "Review Business Ops quality and safety"
+  default_prompt: "Review this Business Ops artifact for specificity, audience and brand fit, claim discipline, anti-slop quality, and approval safety."

@@ -56,6 +56,44 @@ describe("Codex incognito thread persistence", () => {
   });
 });
 
+describe("Codex selected capability roots", () => {
+  it("projects roots only on native thread/start and lets resume inherit them", () => {
+    const params = createAttemptParams({ provider: "openai" });
+    const appServer = createAppServerOptions() as never;
+    const selectedCapabilityRoots = [
+      {
+        id: "openclaw-codex-product-profile",
+        location: {
+          type: "environment" as const,
+          environmentId: "local",
+          path: "/opt/openclaw/codex/system-profile/shared-skills",
+        },
+      },
+    ];
+
+    const start = buildThreadStartParams(params, {
+      appServer,
+      cwd: "/repo",
+      dynamicTools: [],
+      permissionProfile: ":workspace",
+      selectedCapabilityRoots,
+    });
+    const resume = buildThreadResumeParams(params, {
+      appServer,
+      dynamicTools: [],
+      permissionProfile: ":workspace",
+      threadId: "thread-1",
+    });
+
+    expect(start.selectedCapabilityRoots).toEqual(selectedCapabilityRoots);
+    expect(start.permissions).toBe(":workspace");
+    expect(start).not.toHaveProperty("sandbox");
+    expect(resume.permissions).toBe(":workspace");
+    expect(resume).not.toHaveProperty("sandbox");
+    expect(resume).not.toHaveProperty("selectedCapabilityRoots");
+  });
+});
+
 describe("Codex ring-zero thread config", () => {
   it("applies the restriction to both thread start and resume", () => {
     const params = createAttemptParams({ provider: "openai" });
@@ -845,6 +883,18 @@ describe("Codex app-server native code mode config", () => {
     });
 
     expect(request.personality).toBe("none");
+  });
+
+  it("uses the selected native permission profile on turn/start", () => {
+    const request = buildTurnStartParams(createAttemptParams({ provider: "openai" }), {
+      threadId: "thread-1",
+      cwd: "/repo",
+      appServer: createAppServerOptions() as never,
+      permissionProfile: ":workspace",
+    });
+
+    expect(request.permissions).toBe(":workspace");
+    expect(request).not.toHaveProperty("sandboxPolicy");
   });
 
   it("does not overwrite native supervised turn settings", () => {

@@ -16,6 +16,7 @@ import {
   type CodexConfigReadResponse,
   type CodexConfigRequirementsReadResponse,
   type CodexDynamicToolSpec,
+  type CodexSelectedCapabilityRoot,
   type CodexThreadResumeParams,
   type CodexThreadStartParams,
   type CodexTurnEnvironmentParams,
@@ -129,12 +130,14 @@ export function buildThreadStartParams(
     dynamicTools: CodexDynamicToolSpec[];
     appServer: CodexAppServerRuntimeOptions;
     developerInstructions?: string;
+    permissionProfile?: string;
     config?: JsonObject;
     nativeCodeModeEnabled?: boolean;
     nativeProviderWebSearchSupport?: CodexNativeWebSearchSupport;
     nativeCodeModeOnlyEnabled?: boolean;
     webSearchAllowed?: boolean;
     environmentSelection?: CodexTurnEnvironmentParams[];
+    selectedCapabilityRoots?: CodexSelectedCapabilityRoot[];
     model?: string | null;
     modelProvider?: string | null;
     hostSystemAgentActive?: boolean;
@@ -165,7 +168,7 @@ export function buildThreadStartParams(
     cwd: options.cwd,
     approvalPolicy: options.appServer.approvalPolicy,
     approvalsReviewer: resolveCodexThreadApprovalsReviewer(options.appServer, options.config),
-    ...codexThreadSandboxOrPermissions(options.appServer),
+    ...codexThreadSandboxOrPermissions(options.appServer, options.permissionProfile),
     ...(options.appServer.serviceTier !== undefined
       ? { serviceTier: options.appServer.serviceTier }
       : {}),
@@ -183,6 +186,9 @@ export function buildThreadStartParams(
       ringZeroInheritedMcpServerNames: options.ringZeroInheritedMcpServerNames,
     }),
     ...resolveCodexThreadEnvironmentSelection(options),
+    ...(options.selectedCapabilityRoots
+      ? { selectedCapabilityRoots: options.selectedCapabilityRoots }
+      : {}),
     developerInstructions:
       options.developerInstructions ??
       buildDeveloperInstructions(params, { dynamicTools: options.dynamicTools }),
@@ -206,6 +212,7 @@ export function buildThreadResumeParams(
     appServer: CodexAppServerRuntimeOptions;
     dynamicTools?: CodexDynamicToolSpec[];
     developerInstructions?: string;
+    permissionProfile?: string;
     config?: JsonObject;
     nativeCodeModeEnabled?: boolean;
     nativeProviderWebSearchSupport?: CodexNativeWebSearchSupport;
@@ -253,7 +260,7 @@ export function buildThreadResumeParams(
       : {}),
     approvalPolicy: options.appServer.approvalPolicy,
     approvalsReviewer: resolveCodexThreadApprovalsReviewer(options.appServer, options.config),
-    ...codexThreadSandboxOrPermissions(options.appServer),
+    ...codexThreadSandboxOrPermissions(options.appServer, options.permissionProfile),
     ...(options.appServer.serviceTier !== undefined
       ? { serviceTier: options.appServer.serviceTier }
       : {}),
@@ -576,7 +583,11 @@ export function resolveCodexThreadApprovalsReviewer(
 
 export function codexThreadSandboxOrPermissions(
   appServer: Pick<CodexAppServerRuntimeOptions, "networkProxy" | "sandbox">,
-): Pick<CodexThreadStartParams, "sandbox"> {
+  permissionProfile?: string,
+): Pick<CodexThreadStartParams, "permissions" | "sandbox"> {
+  if (permissionProfile) {
+    return { permissions: permissionProfile };
+  }
   if (appServer.networkProxy) {
     return {};
   }

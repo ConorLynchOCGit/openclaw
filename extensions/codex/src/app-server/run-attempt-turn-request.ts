@@ -105,6 +105,7 @@ export async function prepareCodexAttemptTurnRequest(
       appServer: turnAppServer,
       promptText: turnState.codexTurnPromptText,
       sandboxPolicy: resourceState.codexSandboxPolicy,
+      permissionProfile: resourceState.codexPermissionProfile,
       environmentSelection: resourceState.codexEnvironmentSelection,
       ...(usesSupervisionConnection
         ? {}

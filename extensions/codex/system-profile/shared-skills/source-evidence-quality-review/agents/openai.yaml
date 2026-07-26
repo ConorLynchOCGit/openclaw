@@ -1,0 +1,4 @@
+interface:
+  display_name: "Source Evidence Quality Review"
+  short_description: "Review evidence grounding"
+  default_prompt: "Review whether this artifact's material claims are grounded in exact, current, decision-relevant source evidence."

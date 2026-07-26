@@ -1,0 +1,4 @@
+interface:
+  display_name: "Business Ops Onboarding Review"
+  short_description: "Review Business Ops intake quality"
+  default_prompt: "Review this Business Ops intake or onboarding artifact for completeness, evidence, boundaries, and downstream usability."

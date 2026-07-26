@@ -2,7 +2,12 @@ import type { EmbeddedRunAttemptParams } from "openclaw/plugin-sdk/agent-harness
 import type { CodexAppServerClient } from "./client.js";
 import type { CodexAppServerRuntimeOptions } from "./config.js";
 import type { CodexPluginThreadConfig } from "./plugin-thread-config.js";
-import type { CodexDynamicToolSpec, CodexTurnEnvironmentParams, JsonObject } from "./protocol.js";
+import type {
+  CodexDynamicToolSpec,
+  CodexSelectedCapabilityRoot,
+  CodexTurnEnvironmentParams,
+  JsonObject,
+} from "./protocol.js";
 import type { CodexAppServerBindingStore, CodexAppServerThreadBinding } from "./session-binding.js";
 import type { CodexContextEngineThreadBootstrapProjection } from "./thread-context-engine.js";
 import type { CodexThreadLifecycleTimingOptions } from "./thread-lifecycle-timing.js";
@@ -49,6 +54,7 @@ export type CodexStartOrResumeThreadParams = {
   webSearchAllowed?: boolean;
   appServer: CodexAppServerRuntimeOptions;
   developerInstructions?: string;
+  permissionProfile?: string;
   config?: JsonObject;
   finalConfigPatch?: JsonObject;
   buildFinalConfigPatch?: (
@@ -62,6 +68,7 @@ export type CodexStartOrResumeThreadParams = {
   mcpServersFingerprint?: string;
   mcpServersFingerprintEvaluated?: boolean;
   environmentSelection?: CodexTurnEnvironmentParams[];
+  selectedCapabilityRoots?: CodexSelectedCapabilityRoot[];
   appServerRuntimeFingerprint?: string;
   pluginThreadConfig?: CodexPluginThreadConfigProvider;
   contextEngineProjection?: CodexContextEngineThreadBootstrapProjection;

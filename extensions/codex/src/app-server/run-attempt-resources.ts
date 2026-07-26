@@ -80,6 +80,7 @@ export function prepareCodexAttemptResources(prompt: CodexAttemptPrompt) {
     codexEnvironmentSelection: undefined as CodexTurnEnvironmentParams[] | undefined,
     codexExecutionCwd: effectiveCwd,
     codexSandboxPolicy: undefined as CodexSandboxPolicy | undefined,
+    codexPermissionProfile: undefined as string | undefined,
     restartContextEngineCodexThread: undefined as
       | (() => Promise<CodexAppServerThreadLifecycleBinding>)
       | undefined,

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Useful Proof Design"
+  short_description: "Design useful native proof runs."
+  default_prompt: "Use $useful-proof-design to design a useful native proof that advances real work without prompt-babysat routing."

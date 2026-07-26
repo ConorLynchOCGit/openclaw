@@ -104,6 +104,9 @@ function startThreadWithHarness(
   signal = new AbortController().signal,
   overrides?: {
     pluginConfig?: CodexPluginConfig;
+    pluginRoot?: string;
+    sessionAgentId?: string;
+    developerInstructions?: string;
     startupPreparedAuth?: CodexAppServerPreparedAuth;
     attemptClientFactory?: (harness: ClientHarness) => CodexAppServerClientFactory;
     buildAttemptParams?: () => EmbeddedRunAttemptParams;
@@ -139,13 +142,14 @@ function startThreadWithHarness(
     startupEnvApiKeyCacheKey: undefined,
     agentDir: paths.agentDir,
     config: undefined,
+    pluginRoot: overrides?.pluginRoot,
     buildAttemptParams: overrides?.buildAttemptParams ?? (() => createAttemptParams(paths)),
-    sessionAgentId: "agent-1",
+    sessionAgentId: overrides?.sessionAgentId ?? "agent-1",
     effectiveWorkspace: paths.workspaceDir,
     effectiveCwd: paths.cwd,
     dynamicTools: [],
     webSearchAllowed: false,
-    developerInstructions: undefined,
+    developerInstructions: overrides?.developerInstructions,
     finalConfigPatch: undefined,
     bundleMcpThreadConfig,
     nativeToolSurfaceEnabled: true,
@@ -211,7 +215,7 @@ async function waitForThreadStart(harness: ClientHarness): Promise<{ id?: number
   return waitForRequest(harness, "thread/start");
 }
 
-function threadStartResult(threadId = "thread-1") {
+function threadStartResult(threadId = "thread-1", permissionProfile?: string) {
   return {
     thread: {
       id: threadId,
@@ -243,6 +247,9 @@ function threadStartResult(threadId = "thread-1") {
     sandbox: { type: "dangerFullAccess" },
     permissionProfile: null,
     reasoningEffort: null,
+    ...(permissionProfile
+      ? { activePermissionProfile: { id: permissionProfile, extends: null } }
+      : {}),
   };
 }
 
@@ -334,6 +341,113 @@ describe("startCodexAttemptThread", () => {
     const result = await run;
 
     expect(result.runtimeArtifact).toEqual(expected);
+    result.turnRoute.release();
+    result.releaseSharedClientLease();
+  });
+
+  it("starts Coding from the immutable package profile with an untrusted worktree", async () => {
+    const paths = createAttemptPaths();
+    const pluginRoot = path.join(paths.workspaceDir, "codex-plugin");
+    const profileDir = path.join(pluginRoot, "system-profile");
+    const projectDir = path.join(profileDir, "project");
+    const dotCodexDir = path.join(projectDir, ".codex");
+    const workbenchPath = path.join(profileDir, "tools", "openclaw-repo-workbench.mjs");
+    await fs.mkdir(path.join(profileDir, "shared-skills"), { recursive: true });
+    await fs.mkdir(path.dirname(workbenchPath), { recursive: true });
+    await fs.writeFile(workbenchPath, "#!/usr/bin/env node\n");
+
+    const purposeAgents = [
+      "architect_reviewer",
+      "code_reviewer",
+      "codex_reviewer",
+      "creative_quality_reviewer",
+      "docs_researcher",
+      "implementation_planner",
+      "implementer",
+      "native_fit_reviewer",
+      "project_explorer",
+      "test_engineer",
+    ];
+    const profileDeveloperInstructions = "Use the immutable package-owned Coding contract.";
+    const harness = createClientHarness();
+    const { run } = startThreadWithHarness(5_000, new AbortController().signal, {
+      harness,
+      paths,
+      pluginRoot,
+      sessionAgentId: "coding",
+      developerInstructions: "This mutable workspace instruction must not win.",
+    });
+
+    await answerInitialize(harness);
+    const configRead = await waitForRequest(harness, "config/read");
+    harness.send({
+      id: configRead.id,
+      result: {
+        layers: [
+          {
+            name: { type: "project", dotCodexFolder: dotCodexDir },
+            version: "profile-v1",
+            config: {
+              project_doc_max_bytes: 0,
+              default_permissions: ":workspace",
+              developer_instructions: profileDeveloperInstructions,
+              agents: Object.fromEntries(
+                purposeAgents.map((name) => [
+                  name,
+                  { config_file: path.join(dotCodexDir, "agents", `${name}.toml`) },
+                ]),
+              ),
+              mcp_servers: {
+                openclaw_repo_workbench: {
+                  command: "node",
+                  args: ["tools/openclaw-repo-workbench.mjs"],
+                },
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    const threadStart = await waitForThreadStart(harness);
+    const request = readHarnessMessages(harness.writes).find(
+      (entry) => entry.method === "thread/start",
+    );
+    const threadStartParams = request?.params as
+      | {
+          config?: {
+            project_doc_max_bytes?: number;
+            projects?: Record<string, { trust_level?: string }>;
+          };
+          developerInstructions?: string;
+          permissions?: string;
+          sandbox?: unknown;
+          selectedCapabilityRoots?: Array<{
+            id: string;
+            location: { path: string };
+          }>;
+        }
+      | undefined;
+    expect(threadStartParams?.developerInstructions).toBe(profileDeveloperInstructions);
+    expect(threadStartParams?.permissions).toBe(":workspace");
+    expect(threadStartParams).not.toHaveProperty("sandbox");
+    expect(threadStartParams?.config?.project_doc_max_bytes).toBe(0);
+    expect(threadStartParams?.config?.projects?.[path.resolve(paths.cwd)]?.trust_level).toBe(
+      "untrusted",
+    );
+    expect(threadStartParams?.selectedCapabilityRoots).toEqual([
+      {
+        id: "openclaw-codex-product-profile",
+        location: {
+          type: "environment",
+          environmentId: "local",
+          path: path.join(profileDir, "shared-skills"),
+        },
+      },
+    ]);
+
+    harness.send({ id: threadStart.id, result: threadStartResult("thread-1", ":workspace") });
+    const result = await run;
     result.turnRoute.release();
     result.releaseSharedClientLease();
   });

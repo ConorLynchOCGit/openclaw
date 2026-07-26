@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenClaw Native Implementation"
+  short_description: "Implement OpenClaw changes at native owners"
+  default_prompt: "Implement this change at the existing OpenClaw owner with minimal moving parts."

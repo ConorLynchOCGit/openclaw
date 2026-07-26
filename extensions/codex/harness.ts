@@ -52,6 +52,7 @@ export function createCodexAppServerAgentHarness(options: {
   pluginConfig?: unknown;
   resolvePluginConfig?: () => unknown;
   resolveConfig?: () => OpenClawConfig | undefined;
+  pluginRoot?: string;
   runtime?: PluginRuntime;
   bindingStore: CodexAppServerBindingStore;
   sessionCatalogControl?: CodexSessionCatalogControl;
@@ -175,6 +176,7 @@ export function createCodexAppServerAgentHarness(options: {
       const { runCodexAppServerAttempt } = await import("./src/app-server/run-attempt.js");
       return runCodexAppServerAttempt(params, {
         bindingStore: options.bindingStore,
+        pluginRoot: options.pluginRoot,
         pluginConfig: options?.resolvePluginConfig?.() ?? options?.pluginConfig,
         nativeHookRelay: { enabled: true },
       });

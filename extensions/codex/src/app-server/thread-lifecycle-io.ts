@@ -146,6 +146,7 @@ export async function resumeExistingCodexThread(
         appServer: params.appServer,
         dynamicTools: params.dynamicTools,
         developerInstructions: params.developerInstructions,
+        permissionProfile: params.permissionProfile,
         config: resumeConfig,
         nativeCodeModeEnabled: params.nativeCodeModeEnabled,
         nativeProviderWebSearchSupport: params.nativeProviderWebSearchSupport,
@@ -187,6 +188,7 @@ export async function resumeExistingCodexThread(
         signal: params.signal,
       }),
     );
+    assertCodexPermissionProfile(response.activePermissionProfile?.id, params.permissionProfile);
     if (ringZeroActive) {
       try {
         await lifecycleTiming.measure("ring-zero-mcp-attestation", () =>
@@ -382,12 +384,14 @@ export async function startFreshCodexThread(
       dynamicTools: params.dynamicTools,
       appServer: params.appServer,
       developerInstructions: params.developerInstructions,
+      permissionProfile: params.permissionProfile,
       config,
       nativeCodeModeEnabled: params.nativeCodeModeEnabled,
       nativeProviderWebSearchSupport: params.nativeProviderWebSearchSupport,
       nativeCodeModeOnlyEnabled: params.nativeCodeModeOnlyEnabled,
       webSearchAllowed: params.webSearchAllowed,
       environmentSelection: params.environmentSelection,
+      selectedCapabilityRoots: params.selectedCapabilityRoots,
       model: startModelSelection.model,
       modelProvider: startModelProvider,
       hostSystemAgentActive,
@@ -409,6 +413,7 @@ export async function startFreshCodexThread(
     }
   });
   const response = assertCodexThreadStartResponse(threadStartResponse);
+  assertCodexPermissionProfile(response.activePermissionProfile?.id, params.permissionProfile);
   if (ringZeroActive) {
     try {
       await lifecycleTiming.measure("ring-zero-mcp-attestation", () =>
@@ -514,4 +519,12 @@ export async function startFreshCodexThread(
       ...(rotatedContextEngineBinding ? { rotatedContextEngineBinding } : {}),
     },
   };
+}
+
+function assertCodexPermissionProfile(actual: string | undefined, expected: string | undefined) {
+  if (expected && actual !== expected) {
+    throw new Error(
+      `Codex activated permission profile ${actual ?? "<none>"}; expected ${expected}`,
+    );
+  }
 }

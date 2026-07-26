@@ -78,6 +78,10 @@ import {
   type CodexAppServerClientFactory,
 } from "./shared-client.js";
 import {
+  buildCodexUntrustedProjectConfig,
+  loadCodexSystemProfileForAgent,
+} from "./system-profile.js";
+import {
   startOrResumeThread,
   type CodexAppServerThreadLifecycleBinding,
   type CodexContextEngineThreadBootstrapProjection,
@@ -117,6 +121,7 @@ type StartCodexAttemptThreadResult = {
   environmentSelection: CodexTurnEnvironmentParams[] | undefined;
   executionCwd: string;
   sandboxPolicy: CodexSandboxPolicy | undefined;
+  permissionProfile: string | undefined;
   runtimeArtifact?: AgentHarnessRuntimeArtifactBinding;
   releaseSharedClientLease: () => void;
   restartContextEngineCodexThread: () => Promise<CodexAppServerThreadLifecycleBinding>;
@@ -147,6 +152,7 @@ export async function startCodexAttemptThread(params: {
   sessionAgentId: string;
   effectiveWorkspace: string;
   effectiveCwd: string;
+  pluginRoot?: string;
   dynamicTools: CodexDynamicToolSpec[];
   persistentWebSearchAllowed?: boolean;
   webSearchAllowed: boolean;
@@ -423,6 +429,24 @@ export async function startCodexAttemptThread(params: {
             const startupSandboxPolicy = startupSandboxEnvironment
               ? resolveCodexExternalSandboxPolicyForOpenClawSandbox(params.sandbox)
               : undefined;
+            const systemProfile = await loadCodexSystemProfileForAgent({
+              client: activeStartupClient,
+              pluginRoot: params.pluginRoot,
+              agentId: params.sessionAgentId,
+              timeoutMs: params.appServer.requestTimeoutMs,
+              signal: startupAbandonController.signal,
+            });
+            if (systemProfile && startupSandboxEnvironment) {
+              await releaseStartupSandboxEnvironment();
+              throw new Error(
+                "The immutable Coding profile requires Codex's native local environment",
+              );
+            }
+            const effectiveThreadConfig = mergeCodexThreadConfigs(
+              systemProfile?.config,
+              threadConfig,
+              systemProfile ? buildCodexUntrustedProjectConfig(params.effectiveCwd) : undefined,
+            );
             let startupReservation: CodexThreadRouteReservation | undefined;
             const releaseStartupReservation = () => {
               startupReservation?.release();
@@ -463,8 +487,10 @@ export async function startCodexAttemptThread(params: {
                 persistentWebSearchAllowed: params.persistentWebSearchAllowed,
                 webSearchAllowed: params.webSearchAllowed,
                 appServer: pluginAppServer,
-                developerInstructions: params.developerInstructions,
-                config: threadConfig,
+                developerInstructions:
+                  systemProfile?.developerInstructions ?? params.developerInstructions,
+                permissionProfile: systemProfile?.permissionProfile,
+                config: effectiveThreadConfig,
                 finalConfigPatch: params.finalConfigPatch,
                 buildFinalConfigPatch: params.buildFinalConfigPatch,
                 nativeHookRelayGeneration: params.nativeHookRelayGeneration,
@@ -475,6 +501,7 @@ export async function startCodexAttemptThread(params: {
                 mcpServersFingerprint: params.bundleMcpThreadConfig.fingerprint,
                 mcpServersFingerprintEvaluated: params.bundleMcpThreadConfig.evaluated,
                 environmentSelection: startupEnvironmentSelection,
+                selectedCapabilityRoots: systemProfile?.selectedCapabilityRoots,
                 appServerRuntimeFingerprint,
                 contextEngineProjection: params.contextEngineProjection,
                 signal,
@@ -535,6 +562,7 @@ export async function startCodexAttemptThread(params: {
                 environmentSelection: startupEnvironmentSelection,
                 executionCwd: startupExecutionCwd,
                 sandboxPolicy: startupSandboxPolicy,
+                permissionProfile: systemProfile?.permissionProfile,
                 ...(runtimeArtifact ? { runtimeArtifact } : {}),
                 restartContextEngineCodexThread: async () => {
                   try {

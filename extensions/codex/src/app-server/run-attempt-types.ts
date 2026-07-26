@@ -7,6 +7,7 @@ import type { CodexAppServerClientFactory } from "./shared-client.js";
 
 export type CodexRunAttemptOptions = {
   bindingStore: CodexAppServerBindingStore;
+  pluginRoot?: string;
   pluginConfig?: unknown;
   startupTimeoutFloorMs?: number;
   nativeHookRelay?: {

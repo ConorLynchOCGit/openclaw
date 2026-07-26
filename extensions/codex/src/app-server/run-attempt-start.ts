@@ -44,6 +44,7 @@ export async function startCodexAttemptRuntime(resources: CodexAttemptResources)
   const { toolBridge, toolState } = attemptTools;
   const {
     params,
+    options,
     attemptClientFactory,
     bindingStore,
     appServer,
@@ -90,6 +91,7 @@ export async function startCodexAttemptRuntime(resources: CodexAttemptResources)
       sessionAgentId,
       effectiveWorkspace,
       effectiveCwd,
+      pluginRoot: options.pluginRoot,
       dynamicTools: toolBridge.specs,
       persistentWebSearchAllowed: toolState.persistentWebSearchAllowed,
       webSearchAllowed: toolState.webSearchAllowed,
@@ -157,6 +159,7 @@ export async function startCodexAttemptRuntime(resources: CodexAttemptResources)
     state.codexEnvironmentSelection = startupResult.environmentSelection;
     state.codexExecutionCwd = startupResult.executionCwd;
     state.codexSandboxPolicy = startupResult.sandboxPolicy;
+    state.codexPermissionProfile = startupResult.permissionProfile;
     void emitCodexAppServerEvent(params, {
       stream: "codex_app_server.lifecycle",
       data: {

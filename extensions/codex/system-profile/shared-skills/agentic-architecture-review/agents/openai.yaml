@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agentic Architecture Review"
+  short_description: "Review native agent architecture"
+  default_prompt: "Review this agent-system change for native ownership, simpler architecture, and unnecessary moving parts."
