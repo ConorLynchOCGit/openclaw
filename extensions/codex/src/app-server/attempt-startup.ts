@@ -19,17 +19,13 @@ import {
 } from "./attempt-client-cleanup.js";
 import { buildCodexPluginThreadConfigEligibilityLogData } from "./attempt-diagnostics.js";
 import {
-  CodexAppServerStartupError,
-  isCodexAppServerStartupError,
-  withCodexStartupTimeout,
-} from "./attempt-timeouts.js";
+  shouldClearSharedClientAfterStartupAbandon,
+  shouldClearSharedClientAfterStartupFailure,
+  shouldClearSharedClientAfterStartupRace,
+} from "./attempt-startup-cleanup-policy.js";
+import { CodexAppServerStartupError, withCodexStartupTimeout } from "./attempt-timeouts.js";
 import { ensureCodexAppServerClientRuntime } from "./client-runtime.js";
-import {
-  isCodexAppServerBrokenPipeError,
-  isCodexAppServerConnectionClosedError,
-  isCodexAppServerRequestTimeoutError,
-  type CodexAppServerClient,
-} from "./client.js";
+import { isCodexAppServerConnectionClosedError, type CodexAppServerClient } from "./client.js";
 import { startCodexComputerUseHealthMonitor } from "./computer-use-health.js";
 import { ensureCodexComputerUse } from "./computer-use.js";
 import {
@@ -718,27 +714,4 @@ export async function startCodexAttemptThread(params: {
   } finally {
     params.signal.removeEventListener("abort", abandonStartupAcquire);
   }
-}
-
-function shouldClearSharedClientAfterStartupAbandon(error: unknown): boolean {
-  return isCodexAppServerStartupError(error);
-}
-
-function shouldClearSharedClientAfterStartupRace(error: unknown): boolean {
-  return (
-    shouldClearSharedClientAfterStartupAbandon(error) || isCodexAppServerRequestTimeoutError(error)
-  );
-}
-
-function shouldClearSharedClientAfterStartupFailure(params: {
-  error: unknown;
-  spawnedBy: EmbeddedRunAttemptParams["spawnedBy"];
-}): boolean {
-  if (!(params.error instanceof Error)) {
-    return !params.spawnedBy;
-  }
-  if (isCodexAppServerBrokenPipeError(params.error)) {
-    return true;
-  }
-  return !params.spawnedBy;
 }

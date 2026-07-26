@@ -70,6 +70,10 @@ const EXPECTED_PROFILE_ASSETS = [
   "shared-skills/source-evidence-quality-review/agents/openai.yaml",
   "shared-skills/useful-proof-design/SKILL.md",
   "shared-skills/useful-proof-design/agents/openai.yaml",
+  "tools/openclaw-repo-workbench-artifact.mjs",
+  "tools/openclaw-repo-workbench-core.mjs",
+  "tools/openclaw-repo-workbench-lsp.mjs",
+  "tools/openclaw-repo-workbench-repository.mjs",
   "tools/openclaw-repo-workbench.mjs",
 ] as const;
 
