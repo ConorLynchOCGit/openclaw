@@ -645,9 +645,6 @@
       "@openclaw/markdown-core/ir": [
         "../../dist/plugin-sdk/packages/markdown-core/src/ir.d.ts"
       ],
-      "@openclaw/markdown-core/plan-record": [
-        "../../dist/plugin-sdk/packages/markdown-core/src/plan-record.d.ts"
-      ],
       "@openclaw/markdown-core/render": [
         "../../dist/plugin-sdk/packages/markdown-core/src/render.d.ts"
       ],

@@ -336,9 +336,13 @@ describe("xai x_search tool", () => {
       vi.fn((_url: string | URL | Request, init?: RequestInit) => {
         providerSignal = init?.signal ?? undefined;
         return new Promise<Response>((_resolve, reject) => {
-          providerSignal?.addEventListener(
+          const signal = providerSignal;
+          signal?.addEventListener(
             "abort",
-            () => reject(providerSignal?.reason ?? new DOMException("Aborted", "AbortError")),
+            () => {
+              const reason = signal.reason;
+              reject(reason instanceof Error ? reason : new DOMException("Aborted", "AbortError"));
+            },
             { once: true },
           );
         });
