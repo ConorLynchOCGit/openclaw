@@ -1,0 +1,104 @@
+{
+  "id": "x-intelligence",
+  "activation": {
+    "onStartup": true
+  },
+  "name": "X Intelligence",
+  "description": "Read-only official X source operations with bounded, compliance-aware evidence.",
+  "setup": {
+    "providers": [
+      {
+        "id": "x-intelligence",
+        "envVars": [
+          "X_BEARER_TOKEN",
+          "X_OWNED_METRICS_TOKEN"
+        ]
+      }
+    ]
+  },
+  "uiHints": {
+    "apiKey": {
+      "label": "X Read-only Bearer Token",
+      "help": "Server-side application bearer token for public read-only X operations.",
+      "sensitive": true
+    },
+    "ownedMetricsApiKey": {
+      "label": "X Owned-metrics Credential",
+      "help": "Separate SecretRef or X_OWNED_METRICS_TOKEN user-context credential for explicitly approved owned-account metrics. Never falls back to X_BEARER_TOKEN.",
+      "sensitive": true
+    },
+    "cacheTtlMinutes": {
+      "label": "X Content Cache TTL",
+      "help": "Mutable content cache lifetime, capped at 24 hours."
+    },
+    "complianceRefresh": {
+      "label": "X Content Compliance Refresh",
+      "help": "Bounded native refresh of active cached post/profile IDs. Disabled until developer-use and retention acceptance passes."
+    }
+  },
+  "contracts": {
+    "tools": [
+      "x_posts",
+      "x_counts",
+      "x_users",
+      "x_timelines",
+      "x_trends",
+      "x_metrics"
+    ]
+  },
+  "toolMetadata": {
+    "x_posts": {
+      "optional": true
+    },
+    "x_counts": {
+      "optional": true
+    },
+    "x_users": {
+      "optional": true
+    },
+    "x_timelines": {
+      "optional": true
+    },
+    "x_trends": {
+      "optional": true
+    },
+    "x_metrics": {
+      "optional": true
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "enabled": {
+        "type": "boolean"
+      },
+      "apiKey": {
+        "type": [
+          "string",
+          "object"
+        ]
+      },
+      "ownedMetricsApiKey": {
+        "type": [
+          "string",
+          "object"
+        ]
+      },
+      "cacheTtlMinutes": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 1440
+      },
+      "complianceRefresh": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "intervalMinutes": { "type": "integer", "minimum": 1, "maximum": 1440 },
+          "maxIdsPerPass": { "type": "integer", "minimum": 1, "maximum": 1000 }
+        }
+      }
+    }
+  }
+}
