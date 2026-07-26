@@ -1,6 +1,7 @@
 /** Builds plugin status reports from persisted metadata without importing full plugin runtimes. */
 import { getRuntimeConfig } from "../config/config.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { parsePackagedBundledPluginPath } from "./bundled-load-path-aliases.js";
 import { loadPluginMetadataSnapshot } from "./plugin-metadata-snapshot.js";
 import {
   loadPluginRegistrySnapshotWithMetadata,
@@ -72,6 +73,11 @@ function buildPluginRecordFromInstalledIndex(
 ): PluginRecord {
   const format = plugin.format ?? manifest?.format ?? "openclaw";
   const bundleFormat = plugin.bundleFormat ?? manifest?.bundleFormat;
+  const packageBuild = plugin.packageBuild ?? manifest?.packageManifest?.build;
+  const dependenciesAreBundled =
+    plugin.origin === "bundled" &&
+    packageBuild?.bundledDist !== false &&
+    parsePackagedBundledPluginPath(plugin.rootDir) !== null;
   return {
     id: plugin.pluginId,
     name: manifest?.name ?? plugin.packageName ?? plugin.pluginId,
@@ -120,8 +126,10 @@ function buildPluginRecordFromInstalledIndex(
     contracts: manifest?.contracts,
     dependencyStatus: buildPluginDependencyStatus({
       rootDir: plugin.rootDir,
-      dependencies: manifest?.packageDependencies,
-      optionalDependencies: manifest?.packageOptionalDependencies,
+      dependencies: dependenciesAreBundled ? undefined : manifest?.packageDependencies,
+      optionalDependencies: dependenciesAreBundled
+        ? undefined
+        : manifest?.packageOptionalDependencies,
     }),
   };
 }

@@ -241,6 +241,50 @@ describe("buildPluginRegistrySnapshotReport", () => {
     expect(isColdPluginRuntimeLoaded(fixture)).toBe(false);
   });
 
+  it("does not report source dependencies missing from packaged bundled output", () => {
+    const packageRoot = makeTempDir();
+    const bundledPluginsDir = path.join(packageRoot, "dist", "extensions");
+    const rootDir = path.join(bundledPluginsDir, "bundled-dependency-demo");
+    fs.mkdirSync(rootDir, { recursive: true });
+    const fixture = createColdPluginFixture({
+      rootDir,
+      pluginId: "bundled-dependency-demo",
+      packageJson: {
+        dependencies: {
+          "build-internalized-dependency": "1.0.0",
+        },
+      },
+      manifest: {
+        id: "bundled-dependency-demo",
+        name: "Bundled Dependency Demo",
+      },
+    });
+
+    const report = buildPluginRegistrySnapshotReport({
+      config: {
+        plugins: {
+          entries: {
+            "bundled-dependency-demo": { enabled: true },
+          },
+        },
+      },
+      env: {
+        ...createColdPluginHermeticEnv(packageRoot, { bundledPluginsDir }),
+        OPENCLAW_TEST_TRUST_BUNDLED_PLUGINS_DIR: "1",
+      },
+    });
+
+    const dependencyStatus = requireRecord(
+      requirePlugin(report.plugins, "bundled-dependency-demo").dependencyStatus,
+    );
+    expectFields(dependencyStatus, {
+      hasDependencies: false,
+      installed: true,
+      missing: [],
+    });
+    expect(isColdPluginRuntimeLoaded(fixture)).toBe(false);
+  });
+
   it("replays persisted list metadata without importing plugin runtime", async () => {
     const fixture = createColdPluginFixture({
       rootDir: makeTempDir(),

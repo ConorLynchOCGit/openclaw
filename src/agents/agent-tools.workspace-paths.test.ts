@@ -41,6 +41,14 @@ function createExecTool(workspaceDir: string) {
   return execTool;
 }
 
+function requireTool(tools: ReturnType<typeof createOpenClawCodingTools>, name: string) {
+  const tool = tools.find((candidate) => candidate.name === name);
+  if (!tool) {
+    throw new Error(`expected ${name} tool`);
+  }
+  return tool;
+}
+
 async function expectExecCwdResolvesTo(
   execTool: ReturnType<typeof createExecTool>,
   callId: string,
@@ -273,6 +281,23 @@ describe("workspace path resolution", () => {
       await expect(
         readTool.execute("ws-read-at-prefix", { path: `@${outsideAbsolute}` }),
       ).rejects.toThrow(/Path escapes sandbox root/i);
+    });
+  });
+
+  it("guards native read-only discovery tools to the workspace root", async () => {
+    await withTempDir("openclaw-ws-", async (workspaceDir) => {
+      const cfg: OpenClawConfig = { tools: { fs: { workspaceOnly: true } } };
+      const tools = createOpenClawCodingTools({ workspaceDir, config: cfg });
+      const outsideAbsolute = path.resolve(path.dirname(workspaceDir), "outside-openclaw");
+
+      for (const name of ["grep", "find", "ls"]) {
+        await expect(
+          requireTool(tools, name).execute(`ws-${name}-outside`, {
+            path: outsideAbsolute,
+            pattern: name === "grep" ? "needle" : "*",
+          }),
+        ).rejects.toThrow(/Path escapes sandbox root/i);
+      }
     });
   });
 

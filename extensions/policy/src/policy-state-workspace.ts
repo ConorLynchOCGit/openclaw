@@ -3,6 +3,7 @@ import {
   isRecord,
   normalizeOptionalString as readString,
 } from "openclaw/plugin-sdk/string-coerce-runtime";
+import { listPolicyConfiguredAgents } from "./policy-state-agent-config.js";
 import { AGENT_WORKSPACE_POLICY_TOOLS, readStringArray } from "./policy-state-tool-posture.js";
 import type { PolicyAgentWorkspaceEvidence } from "./policy-state-types.js";
 import { toolListCoversTool } from "./tool-policy-conformance.js";
@@ -28,26 +29,20 @@ export function scanPolicyAgentWorkspace(
     inheritedToolsSourceBase: "oc://openclaw.config/tools",
   });
 
-  const list = Array.isArray(agents.list) ? agents.list : [];
-  list.forEach((agent, index) => {
-    if (!isRecord(agent)) {
-      return;
-    }
-    const agentId =
-      typeof agent.id === "string" && agent.id.trim() !== "" ? agent.id.trim() : undefined;
+  listPolicyConfiguredAgents(agents).forEach(({ agentId, value: agent, sourceBase }) => {
     const sandbox = isRecord(agent.sandbox) ? agent.sandbox : {};
     const tools = isRecord(agent.tools) ? agent.tools : {};
     pushAgentWorkspaceEvidence(entries, {
-      id: agentId ?? `agent-${index}`,
+      id: agentId,
       scope: "agent",
       agentId,
       sandbox,
       inheritedSandbox: defaultSandbox,
       tools,
       inheritedTools: defaultTools,
-      workspaceSourceBase: `oc://openclaw.config/agents/list/#${index}`,
+      workspaceSourceBase: sourceBase,
       inheritedWorkspaceSourceBase: "oc://openclaw.config/agents/defaults",
-      toolsSourceBase: `oc://openclaw.config/agents/list/#${index}/tools`,
+      toolsSourceBase: `${sourceBase}/tools`,
       inheritedToolsSourceBase: "oc://openclaw.config/tools",
     });
   });

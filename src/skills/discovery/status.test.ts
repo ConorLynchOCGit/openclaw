@@ -563,6 +563,46 @@ describe("buildWorkspaceSkillStatus", () => {
     expect(report.skills.find((skill) => skill.name === "beta")?.modelVisible).toBe(false);
   });
 
+  it("reports skills blocked by a keyed agent entry skill filter", () => {
+    const alpha: SkillEntry = {
+      skill: createCanonicalFixtureSkill({
+        name: "alpha",
+        description: "test",
+        filePath: "/tmp/alpha/SKILL.md",
+        baseDir: "/tmp/alpha",
+        source: "test",
+      }),
+      frontmatter: {},
+    };
+    const beta: SkillEntry = {
+      skill: createCanonicalFixtureSkill({
+        name: "beta",
+        description: "test",
+        filePath: "/tmp/beta/SKILL.md",
+        baseDir: "/tmp/beta",
+        source: "test",
+      }),
+      frontmatter: {},
+    };
+
+    const report = buildWorkspaceSkillStatus("/tmp/ws", {
+      entries: [alpha, beta],
+      agentId: "specialist",
+      config: {
+        agents: {
+          entries: {
+            specialist: { skills: ["alpha"] },
+          },
+        },
+      },
+    });
+
+    expect(report.agentSkillFilter).toEqual(["alpha"]);
+    expect(report.skills.find((skill) => skill.name === "alpha")?.modelVisible).toBe(true);
+    expect(report.skills.find((skill) => skill.name === "beta")?.blockedByAgentFilter).toBe(true);
+    expect(report.skills.find((skill) => skill.name === "beta")?.modelVisible).toBe(false);
+  });
+
   it("classifies a mixed broken skill pack without flattening visibility reasons", () => {
     const missingBin = "openclaw-test-definitely-missing-skill-bin";
     const report = buildWorkspaceSkillStatus("/tmp/ws", {

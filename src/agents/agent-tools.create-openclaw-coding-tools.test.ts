@@ -1744,6 +1744,32 @@ describe("createOpenClawCodingTools", () => {
     expect(toolNameList(tools)).toContain("skill_workshop");
   });
 
+  it("keeps native read-only discovery tools available under the coding profile", () => {
+    const tools = createOpenClawCodingTools({
+      config: { tools: { profile: "coding" } },
+    });
+
+    expect(toolNameList(tools)).toEqual(expect.arrayContaining(["read", "grep", "find", "ls"]));
+  });
+
+  it("lets an agent allowlist retain native read-only discovery tools", () => {
+    const tools = createOpenClawCodingTools({
+      sessionKey: "agent:codebase-researcher:main",
+      config: {
+        tools: { profile: "coding" },
+        agents: {
+          entries: {
+            "codebase-researcher": {
+              tools: { allow: ["read", "grep", "find", "ls"] },
+            },
+          },
+        },
+      } as OpenClawConfig,
+    });
+
+    expect(toolNameList(tools)).toEqual(expect.arrayContaining(["read", "grep", "find", "ls"]));
+  });
+
   it("can keep message available when a cron route needs it under a provider coding profile", () => {
     const providerProfileTools = createOpenClawCodingTools({
       config: { tools: { byProvider: { openai: { profile: "coding" } } } },

@@ -1,22 +1,11 @@
 // Agent skill filter helpers select skills that apply to a configured agent.
+import { resolveAgentEntry } from "../../agents/agent-scope-config.js";
 import type { OpenClawConfig } from "../../config/types.js";
-import { normalizeAgentId } from "../../routing/session-key.js";
 import { normalizeSkillFilter } from "./filter.js";
 
 type AgentSkillsLimits = {
   maxSkillsPromptChars?: number;
 };
-
-function resolveAgentEntry(
-  cfg: OpenClawConfig | undefined,
-  agentId: string | undefined,
-): NonNullable<NonNullable<OpenClawConfig["agents"]>["list"]>[number] | undefined {
-  if (!cfg) {
-    return undefined;
-  }
-  const normalizedAgentId = normalizeAgentId(agentId);
-  return cfg.agents?.list?.find((entry) => normalizeAgentId(entry.id) === normalizedAgentId);
-}
 
 /**
  * Explicit per-agent skills win when present; otherwise fall back to shared defaults.
@@ -29,7 +18,7 @@ export function resolveEffectiveAgentSkillFilter(
   if (!cfg) {
     return undefined;
   }
-  const agentEntry = resolveAgentEntry(cfg, agentId);
+  const agentEntry = resolveAgentEntry(cfg, agentId ?? "main");
   if (agentEntry && Object.hasOwn(agentEntry, "skills")) {
     return normalizeSkillFilter(agentEntry.skills);
   }
@@ -40,7 +29,7 @@ export function resolveEffectiveAgentSkillsLimits(
   cfg: OpenClawConfig | undefined,
   agentId: string | undefined,
 ): AgentSkillsLimits | undefined {
-  if (!agentId) {
+  if (!cfg || !agentId) {
     return undefined;
   }
   const agentEntry = resolveAgentEntry(cfg, agentId);

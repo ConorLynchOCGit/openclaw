@@ -91,7 +91,7 @@ import type { SandboxContext } from "./sandbox.js";
 import { SANDBOX_AGENT_WORKSPACE_MOUNT } from "./sandbox/constants.js";
 import { resolveReadOnlyWorkspaceSkillMounts } from "./sandbox/workspace-mounts.js";
 import type { ScheduledToolPolicyContext } from "./scheduled-tool-policy.js";
-import { createCodingTools, createReadTool } from "./sessions/index.js";
+import { createCodingTools, createReadOnlyTools, createReadTool } from "./sessions/index.js";
 import { PROCESS_TOOL_DISPLAY_SUMMARY } from "./tool-description-presets.js";
 import { createToolFsPolicy, resolveToolFsConfig } from "./tool-fs-policy.js";
 import { resolveToolLoopDetectionConfig } from "./tool-loop-detection-config.js";
@@ -648,7 +648,14 @@ function createOpenClawCodingToolsInternal(options?: OpenClawCodingToolsOptions)
 
   const base: AnyAgentTool[] = [];
   if (includeBaseCodingTools) {
-    for (const tool of createCodingTools(codingRoot) as unknown as AnyAgentTool[]) {
+    const baseToolCandidates = new Map<string, AnyAgentTool>();
+    for (const tool of [
+      ...(createCodingTools(codingRoot) as unknown as AnyAgentTool[]),
+      ...(createReadOnlyTools(codingRoot) as unknown as AnyAgentTool[]),
+    ]) {
+      baseToolCandidates.set(tool.name, tool);
+    }
+    for (const tool of baseToolCandidates.values()) {
       if (tool.name === "read") {
         if (sandboxRoot) {
           const sandboxed = createSandboxedReadTool({
@@ -686,6 +693,18 @@ function createOpenClawCodingToolsInternal(options?: OpenClawCodingToolsOptions)
             modelContextWindowTokens: options?.modelContextWindowTokens,
             imageSanitization,
           }),
+        );
+        continue;
+      }
+      if (tool.name === "grep" || tool.name === "find" || tool.name === "ls") {
+        base.push(
+          workspaceOnly
+            ? wrapToolWorkspaceRootGuardWithOptions(tool, codingRoot, {
+                additionalContainerMounts: readOnlySandboxReadMounts(sandbox),
+                containerWorkdir: sandbox?.containerWorkdir,
+                normalizeGuardedPathParams: Boolean(sandboxRoot),
+              })
+            : tool,
         );
         continue;
       }

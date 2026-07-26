@@ -898,6 +898,50 @@ describe("registerPolicyDoctorChecks", () => {
     expect(result.findings).toEqual([]);
   });
 
+  it("applies scoped tool policy to canonical keyed agent entries", async () => {
+    const configPath = join(workspaceDir, "openclaw.jsonc");
+    const cfg = {
+      ...cfgWithPolicy(),
+      tools: {
+        exec: { host: "sandbox" },
+      },
+      agents: {
+        entries: {
+          operations: {
+            tools: {
+              deny: ["exec", "write"],
+              exec: { host: "node" },
+            },
+          },
+        },
+      },
+    } as unknown as OpenClawConfig;
+    await fs.writeFile(configPath, "{}", "utf-8");
+    await fs.writeFile(
+      join(workspaceDir, "policy.jsonc"),
+      JSON.stringify({
+        tools: {
+          exec: { allowHosts: ["sandbox", "node"] },
+        },
+        scopes: {
+          operations: {
+            agentIds: ["operations"],
+            tools: {
+              exec: { allowHosts: ["node"] },
+              denyTools: ["exec", "write"],
+            },
+          },
+        },
+      }),
+      "utf-8",
+    );
+
+    registerPolicyDoctorChecks();
+    const result = await runDoctorLintChecks(ctx(configPath, cfg));
+
+    expect(result.findings).toEqual([]);
+  });
+
   it("reports global and agent-scoped tool claims independently", async () => {
     const configPath = join(workspaceDir, "openclaw.jsonc");
     const cfg = {

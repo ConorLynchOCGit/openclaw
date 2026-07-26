@@ -3,6 +3,7 @@ import {
   asBoolean as readBoolean,
   normalizeOptionalString as readString,
 } from "openclaw/plugin-sdk/string-coerce-runtime";
+import { listPolicyConfiguredAgents } from "./policy-state-agent-config.js";
 import { ocPathSegment } from "./policy-state-helpers.js";
 import type { PolicyToolPostureEvidence } from "./policy-state-types.js";
 
@@ -25,22 +26,16 @@ export function scanPolicyToolPosture(
     inheritedSourceBase: "oc://openclaw.config/tools",
   });
 
-  const list = Array.isArray(agents.list) ? agents.list : [];
-  list.forEach((agent, index) => {
-    if (!isRecord(agent)) {
-      return;
-    }
-    const agentId =
-      typeof agent.id === "string" && agent.id.trim() !== "" ? agent.id.trim() : undefined;
+  listPolicyConfiguredAgents(agents).forEach(({ agentId, value: agent, sourceBase }) => {
     pushToolPostureEvidence(entries, {
-      id: agentId ?? `agent-${index}`,
+      id: agentId,
       scope: "agent",
       agentId,
       tools: isRecord(agent.tools) ? agent.tools : {},
       inheritedTools: globalTools,
       sandbox: isRecord(agent.sandbox) ? agent.sandbox : {},
       inheritedSandbox: defaultSandbox,
-      sourceBase: `oc://openclaw.config/agents/list/#${index}/tools`,
+      sourceBase: `${sourceBase}/tools`,
       inheritedSourceBase: "oc://openclaw.config/tools",
     });
   });

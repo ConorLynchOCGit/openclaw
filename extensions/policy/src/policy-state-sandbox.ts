@@ -4,6 +4,7 @@ import {
   asBoolean as readBoolean,
   normalizeOptionalString as readString,
 } from "openclaw/plugin-sdk/string-coerce-runtime";
+import { listPolicyConfiguredAgents } from "./policy-state-agent-config.js";
 import { readStringArray } from "./policy-state-tool-posture.js";
 import type { PolicySandboxPostureEvidence } from "./policy-state-types.js";
 
@@ -26,22 +27,16 @@ export function scanPolicySandboxPosture(
     inheritedSourceBase: "oc://openclaw.config/agents/defaults/sandbox",
   });
 
-  const list = Array.isArray(agents.list) ? agents.list : [];
-  list.forEach((agent, index) => {
-    if (!isRecord(agent)) {
-      return;
-    }
-    const agentId =
-      typeof agent.id === "string" && agent.id.trim() !== "" ? agent.id.trim() : undefined;
+  listPolicyConfiguredAgents(agents).forEach(({ agentId, value: agent, sourceBase }) => {
     const sandbox = isRecord(agent.sandbox) ? agent.sandbox : {};
     pushSandboxPostureEvidence(entries, {
-      id: agentId ?? `agent-${index}`,
+      id: agentId,
       scope: "agent",
       agentId,
       sandbox,
       inheritedSandbox: defaultSandbox,
       sharedSandboxScope: sandboxScopeIsShared(sandbox, defaultSandbox),
-      sourceBase: `oc://openclaw.config/agents/list/#${index}/sandbox`,
+      sourceBase: `${sourceBase}/sandbox`,
       inheritedSourceBase: "oc://openclaw.config/agents/defaults/sandbox",
     });
   });
