@@ -43,6 +43,11 @@ import { resolveUserPath } from "../utils.js";
 import type { DeliveryContext } from "../utils/delivery-context.types.js";
 import { listAgentIds, resolveAgentDir } from "./agent-scope-config.js";
 import type { BootstrapContextMode } from "./bootstrap-files.js";
+import {
+  materializeAgentExecutionWorkspace,
+  removeAgentExecutionWorkspaceAfterFailedAdmission,
+  type MaterializedAgentExecutionWorkspace,
+} from "./execution-workspace.js";
 import { resolveFastModeState } from "./fast-mode.js";
 import {
   inheritedToolAllowPatch,
@@ -225,6 +230,8 @@ type SpawnSubagentContext = {
   inheritedToolAllowlist?: string[];
   inheritedToolDenylist?: string[];
   requesterRunId?: string;
+  /** Cancellation for pre-admission work such as isolated worktree setup. */
+  abortSignal?: AbortSignal;
 };
 
 type SpawnSubagentResult = {
@@ -412,6 +419,23 @@ function buildDirectChildSessionPatch(patch: Record<string, unknown>): Partial<S
   }
   if (typeof patch.spawnedCwd === "string" && patch.spawnedCwd.trim()) {
     entry.spawnedCwd = patch.spawnedCwd.trim();
+  }
+  if (patch.worktree && typeof patch.worktree === "object" && !Array.isArray(patch.worktree)) {
+    const worktree = patch.worktree as Record<string, unknown>;
+    if (
+      typeof worktree.id === "string" &&
+      worktree.id.trim() &&
+      typeof worktree.branch === "string" &&
+      worktree.branch.trim() &&
+      typeof worktree.repoRoot === "string" &&
+      worktree.repoRoot.trim()
+    ) {
+      entry.worktree = {
+        id: worktree.id.trim(),
+        branch: worktree.branch.trim(),
+        repoRoot: worktree.repoRoot.trim(),
+      };
+    }
   }
   const inheritedToolDeny = normalizeInheritedToolDenylist(patch.inheritedToolDeny);
   if (inheritedToolDeny.length > 0) {
@@ -1239,7 +1263,7 @@ export async function spawnSubagentDirect(
   }
   try {
     const requestedCwd = normalizeOptionalString(params.cwd);
-    const spawnedCwd = requestedCwd ? resolveUserPath(requestedCwd) : undefined;
+    let spawnedCwd = requestedCwd ? resolveUserPath(requestedCwd) : undefined;
     const toolSpawnMetadata = mapToolContextToSpawnedRunMetadata({
       agentGroupId: ctx.agentGroupId,
       agentGroupChannel: ctx.agentGroupChannel,
@@ -1308,6 +1332,29 @@ export async function spawnSubagentDirect(
     const targetAgentDir = resolveAgentDir(cfg, targetAgentId);
     const requesterAgentConfig = resolveAgentConfig(cfg, requesterAgentId);
     const targetAgentConfig = resolveAgentConfig(cfg, targetAgentId);
+    const executionWorkspaceConfig = targetAgentConfig?.executionWorkspace;
+    if (executionWorkspaceConfig) {
+      if (requestedCwd) {
+        return {
+          status: "forbidden",
+          error:
+            "cwd is selected by the target agent executionWorkspace policy; omit the model-authored cwd",
+        };
+      }
+      if (contextMode !== "isolated") {
+        return {
+          status: "forbidden",
+          error: "configured loaded-source execution workspaces require isolated context",
+        };
+      }
+      if (childRuntime.sandboxed) {
+        return {
+          status: "forbidden",
+          error:
+            "configured loaded-source execution workspaces require a target runtime with native workspace confinement",
+        };
+      }
+    }
     const callerThinkingRaw = readRequesterThinkingLevel({
       cfg,
       requesterInternalKey,
@@ -1361,6 +1408,39 @@ export async function spawnSubagentDirect(
       }
     }
     const resolvedModelMetadata = buildResolvedSubagentModelMetadata(resolvedModel);
+    let executionWorkspace: MaterializedAgentExecutionWorkspace | undefined;
+    if (executionWorkspaceConfig) {
+      try {
+        executionWorkspace = await materializeAgentExecutionWorkspace({
+          cfg,
+          agentId: targetAgentId,
+          ownerSessionKey: childSessionKey,
+          signal: ctx.abortSignal,
+        });
+        if (!executionWorkspace) {
+          return {
+            status: "error",
+            error: "target executionWorkspace policy disappeared before materialization",
+            childSessionKey,
+          };
+        }
+        spawnedCwd = executionWorkspace.worktree.path;
+        if (ctx.abortSignal?.aborted) {
+          await removeAgentExecutionWorkspaceAfterFailedAdmission(executionWorkspace.worktree.id);
+          return {
+            status: "error",
+            error: "subagent spawn was canceled during managed workspace admission",
+            childSessionKey,
+          };
+        }
+      } catch (error) {
+        return {
+          status: "error",
+          error: `managed execution workspace creation failed: ${summarizeSpawnError(error)}`,
+          childSessionKey,
+        };
+      }
+    }
     let childCreationEntry: SessionEntry | undefined;
     const patchChildSession = async (
       patch: Record<string, unknown>,
@@ -1402,6 +1482,7 @@ export async function spawnSubagentDirect(
       parentSessionKey: spawnedByKey,
       ...(spawnedWorkspaceDir ? { spawnedWorkspaceDir } : {}),
       ...(spawnedCwd ? { spawnedCwd } : {}),
+      ...(executionWorkspace ? { worktree: executionWorkspace.worktree } : {}),
       ...admission.childSessionPatch,
       inheritedToolPolicyVersion: 1,
       ...inheritedToolAllowPatch(ctx.inheritedToolAllowlist),
@@ -1421,9 +1502,28 @@ export async function spawnSubagentDirect(
       }),
     );
     if (initialPatchError) {
+      let worktreeCleanupError: string | undefined;
+      if (executionWorkspace) {
+        try {
+          await removeAgentExecutionWorkspaceAfterFailedAdmission(executionWorkspace.worktree.id);
+        } catch (error) {
+          worktreeCleanupError = `managed execution workspace cleanup failed: ${summarizeSpawnError(error)}`;
+        }
+      }
       return {
         status: "error",
-        error: initialPatchError,
+        error: [initialPatchError, worktreeCleanupError].filter(Boolean).join("; "),
+        childSessionKey,
+      };
+    }
+    if (ctx.abortSignal?.aborted) {
+      await cleanupProvisionalSession(childSessionKey, {
+        emitLifecycleHooks: false,
+        deleteTranscript: true,
+      });
+      return {
+        status: "error",
+        error: "subagent spawn was canceled before launch",
         childSessionKey,
       };
     }
@@ -1543,9 +1643,10 @@ export async function spawnSubagentDirect(
     const materializedAttachments = await materializeSubagentAttachments({
       config: cfg,
       targetAgentId,
-      workspaceDir: spawnedCwd ?? spawnedWorkspaceDir,
+      workspaceDir: spawnedWorkspaceDir,
       attachments: params.attachments,
       mountPathHint,
+      promptPathMode: executionWorkspace ? "absolute" : "relative",
     });
     if (materializedAttachments && materializedAttachments.status !== "ok") {
       await cleanupProvisionalSession(childSessionKey, {
@@ -1722,6 +1823,7 @@ export async function spawnSubagentDirect(
     type SubagentBackendState = { contextEnginePreparation?: SubagentSpawnPreparation };
     const adapter: SpawnBackendAdapter<SubagentBackendState> = {
       async initialize() {
+        ctx.abortSignal?.throwIfAborted();
         const result =
           params.lightContext && preparedSpawnContext.mode === "isolated"
             ? ({ status: "ok", preparation: undefined } as const)
@@ -1735,9 +1837,11 @@ export async function spawnSubagentDirect(
         if (result.status === "error") {
           throw new Error(result.error);
         }
+        ctx.abortSignal?.throwIfAborted();
         return { contextEnginePreparation: result.preparation };
       },
       async dispatchTurn() {
+        ctx.abortSignal?.throwIfAborted();
         if (params.collect) {
           return { runId: childIdem };
         }

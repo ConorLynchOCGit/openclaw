@@ -39,8 +39,18 @@ const AgentsListOutputSchema = Type.Object(
         {
           id: Type.String(),
           name: Type.Optional(Type.String()),
+          description: Type.Optional(Type.String()),
           configured: Type.Boolean(),
           model: Type.Optional(Type.String()),
+          executionWorkspace: Type.Optional(
+            Type.Object(
+              {
+                type: Type.Literal("loaded-source"),
+                access: Type.Union([Type.Literal("inspect"), Type.Literal("modify")]),
+              },
+              { additionalProperties: false },
+            ),
+          ),
           agentRuntime: Type.Optional(
             Type.Object(
               {
@@ -61,8 +71,13 @@ const AgentsListOutputSchema = Type.Object(
 type AgentListEntry = {
   id: string;
   name?: string;
+  description?: string;
   configured: boolean;
   model?: string;
+  executionWorkspace?: {
+    type: "loaded-source";
+    access: "inspect" | "modify";
+  };
   agentRuntime?: {
     id: string;
     source:
@@ -112,12 +127,17 @@ export function createAgentsListTool(opts?: {
       const configuredAgents = Array.isArray(cfg.agents?.list) ? cfg.agents?.list : [];
       const configuredIds = listAgentIds(cfg);
       const configuredNameMap = new Map<string, string>();
+      const configuredDescriptionMap = new Map<string, string>();
       for (const entry of configuredAgents) {
+        const id = normalizeAgentId(entry.id);
         const name = entry?.name?.trim() ?? "";
-        if (!name) {
-          continue;
+        if (name) {
+          configuredNameMap.set(id, name);
         }
-        configuredNameMap.set(normalizeAgentId(entry.id), name);
+        const description = entry?.description?.trim() ?? "";
+        if (description) {
+          configuredDescriptionMap.set(id, description);
+        }
       }
 
       const allowed = resolveSubagentAllowedTargetIds({
@@ -133,19 +153,28 @@ export function createAgentsListTool(opts?: {
       const agents: AgentListEntry[] = ordered.map((id) => {
         const model = resolveAgentEffectiveModelPrimary(cfg, id);
         const resolvedModel = resolveDefaultModelForAgent({ cfg, agentId: id });
+        const agentConfig = resolveAgentConfig(cfg, id);
         const agentRuntime = resolveModelAgentRuntimeMetadata({
           cfg,
           agentId: id,
           provider: resolvedModel.provider,
           model: resolvedModel.model,
         });
-        return {
+        const entry: AgentListEntry = {
           id,
           name: configuredNameMap.get(id),
           configured: configuredIds.includes(id),
           model,
           agentRuntime,
         };
+        const description = configuredDescriptionMap.get(id);
+        if (description) {
+          entry.description = description;
+        }
+        if (agentConfig?.executionWorkspace) {
+          entry.executionWorkspace = agentConfig.executionWorkspace;
+        }
+        return entry;
       });
 
       return jsonResult({

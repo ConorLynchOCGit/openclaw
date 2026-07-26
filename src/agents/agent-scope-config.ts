@@ -46,6 +46,7 @@ export type ResolvedAgentConfig = {
   embeddedAgent?: AgentEntry["embeddedAgent"];
   sandbox?: AgentEntry["sandbox"];
   tools?: AgentEntry["tools"];
+  executionWorkspace?: AgentEntry["executionWorkspace"];
 };
 
 let defaultAgentWarned = false;
@@ -170,6 +171,7 @@ export function resolveAgentConfig(
         : undefined,
     sandbox: entry.sandbox,
     tools: entry.tools,
+    executionWorkspace: entry.executionWorkspace,
   };
 }
 

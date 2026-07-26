@@ -37,6 +37,17 @@ export type AgentRuntimeConfig =
       acp?: AgentRuntimeAcpConfig;
     };
 
+export type AgentExecutionWorkspaceConfig = {
+  /**
+   * Run delegated work from the exact source commit embedded in the executing
+   * OpenClaw package while retaining this agent's configured workspace for
+   * identity, memory, and skills.
+   */
+  type: "loaded-source";
+  /** Inspect skips repository setup; modify runs trusted isolated setup. */
+  access: "inspect" | "modify";
+};
+
 export type AgentBindingMatch = {
   channel: string;
   /**
@@ -166,6 +177,8 @@ export type AgentConfig = {
   tools?: AgentToolsConfig;
   /** Optional runtime descriptor for this agent. */
   runtime?: AgentRuntimeConfig;
+  /** Optional trusted execution workspace selected by runtime policy, never by model-authored paths. */
+  executionWorkspace?: AgentExecutionWorkspaceConfig;
 };
 
 export type AgentEntryConfig = Omit<AgentConfig, "id">;

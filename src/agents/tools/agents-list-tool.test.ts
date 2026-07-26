@@ -13,8 +13,10 @@ type AgentListDetails = {
   agents?: Array<{
     id?: string;
     name?: string;
+    description?: string;
     configured?: boolean;
     model?: string;
+    executionWorkspace?: { type?: string; access?: string };
     agentRuntime?: { id?: string; source?: string };
   }>;
 };
@@ -47,7 +49,9 @@ describe("agents_list tool", () => {
           {
             id: "codex",
             name: "Codex",
+            description: "Implement changes in the exact loaded source.",
             model: "openai/gpt-5.5",
+            executionWorkspace: { type: "loaded-source", access: "modify" },
             agentRuntime: { id: "openclaw" },
             models: {
               "openai/gpt-5.5": { agentRuntime: { id: "codex" } },
@@ -63,7 +67,7 @@ describe("agents_list tool", () => {
       required: ["requester", "allowAny", "agents"],
     });
     expect(compactToolOutputHint(tool.outputSchema)).toBe(
-      '{ agents: Array<{ configured: boolean; id: string; agentRuntime?: { id: string; source: "env" | "agent" | "defaults" | "model" | "provider" | "implicit" | "session" | "session-key" }; model?: string; name?: string }>; allowAny: boolean; requester: string }',
+      '{ agents: Array<{ configured: boolean; id: string; agentRuntime?: { id: string; source: "env" | "agent" | "defaults" | "model" | "provider" | "implicit" | "session" | "session-key" }; description?: string; executionWorkspace?: { access: "inspect" | "modify"; type: "loaded-source" }; model?: string; name?: string }>; allowAny: boolean; requester: string }',
     );
     const result = await tool.execute("call", {});
     const details = result.details as AgentListDetails;
@@ -75,8 +79,10 @@ describe("agents_list tool", () => {
         {
           id: "codex",
           name: "Codex",
+          description: "Implement changes in the exact loaded source.",
           configured: true,
           model: "openai/gpt-5.5",
+          executionWorkspace: { type: "loaded-source", access: "modify" },
           agentRuntime: { id: "codex", source: "model" },
         },
       ],

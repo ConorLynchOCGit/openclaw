@@ -1000,6 +1000,10 @@ for provider examples and precedence.
             cwd: "/workspace/openclaw",
           },
         },
+        executionWorkspace: {
+          type: "loaded-source",
+          access: "modify",
+        },
         subagents: { allowAgents: ["*"] },
         tools: {
           profile: "coding",
@@ -1025,6 +1029,7 @@ for provider examples and precedence.
 - `fastModeDefault`: optional per-agent default for fast mode (`"auto" | true | false`). Applies when no per-message or session fast-mode override is set.
 - `models`: optional per-agent model catalog/runtime overrides keyed by full `provider/model` ids. Use `models["provider/model"].agentRuntime` for per-agent runtime exceptions.
 - `runtime`: optional per-agent runtime descriptor. Use `type: "acp"` with `runtime.acp` defaults (`agent`, `backend`, `mode`, `cwd`) when the agent should default to ACP harness sessions.
+- `executionWorkspace`: optional trusted task-workspace policy for native hidden sub-agent runs. `{ type: "loaded-source", access: "inspect" }` gives a read-only-tool role an exact-generation checkout without running repository setup. `access: "modify"` runs the trusted isolated worktree setup before inference. The agent's configured `workspace` still owns identity, memory, bootstrap files, and skills; only the task `cwd` changes. OpenClaw derives the source commit from the executing package, owns the managed worktree lifecycle, and rejects model-authored `cwd`, ACP, visible-session, and inherited-sandbox substitutions for this policy.
 - `identity.avatar`: workspace-relative path, `http(s)` URL, or `data:` URI.
 - Local workspace-relative `identity.avatar` image files are limited to 2 MB. `http(s)` URLs and `data:` URIs are not checked against the local file-size limit.
 - `identity` derives defaults: `ackReaction` from `emoji`, `mentionPatterns` from `name`/`emoji`.

@@ -82,6 +82,12 @@ export const AGENT_FIELD_HELP: Record<string, string> = {
     "Optional per-model runtime policy for this agent. Use this for agent-specific model exceptions instead of setting a whole-agent runtime.",
   "agents.entries.*.models.*.agentRuntime.id":
     'Per-agent model runtime id: "openclaw", "auto", a registered plugin harness id such as "codex", or a supported CLI backend alias such as "claude-cli".',
+  "agents.entries.*.executionWorkspace":
+    "Optional trusted task-workspace policy for delegated native sub-agent runs. The runtime selects the workspace; models cannot provide its host path or source ref.",
+  "agents.entries.*.executionWorkspace.type":
+    'Execution workspace source. "loaded-source" materializes the exact source commit embedded in the executing OpenClaw package through native managed worktrees.',
+  "agents.entries.*.executionWorkspace.access":
+    'Execution intent for loaded source. "inspect" skips repository setup and relies on the agent tool policy for read-only access; "modify" runs the trusted isolated worktree setup before inference.',
   "agents.defaults.imageModel.primary":
     "Optional image model (provider/model) used when the primary model lacks image input.",
   "agents.defaults.imageModel.fallbacks": "Ordered fallback image models (provider/model).",

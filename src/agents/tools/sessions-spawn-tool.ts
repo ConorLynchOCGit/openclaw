@@ -12,16 +12,23 @@ import {
 import { getRuntimeConfig } from "../../config/config.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { resolveSnakeCaseParamKey } from "../../param-key.js";
-import { parseAgentSessionKey } from "../../routing/session-key.js";
+import {
+  DEFAULT_AGENT_ID,
+  normalizeAgentId,
+  parseAgentSessionKey,
+} from "../../routing/session-key.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import type { GatewayMessageChannel } from "../../utils/message-channel.js";
+import { listAgentIds } from "../agent-scope-config.js";
+import { resolveAgentConfig } from "../agent-scope.js";
+import { resolveAgentExecutionWorkspaceConfig } from "../execution-workspace.js";
 import {
   findAcpUnsupportedInheritedToolAllow,
   findAcpUnsupportedInheritedToolDeny,
   formatAcpInheritedToolAllowError,
   formatAcpInheritedToolDenyError,
 } from "../inherited-tool-deny.js";
-import { optionalStringEnum } from "../schema/typebox.js";
+import { optionalStringEnum, stringEnum } from "../schema/typebox.js";
 import type { SpawnedToolContext } from "../spawned-context.js";
 import { resolveAcpSessionsSpawnImageAttachments } from "../subagent-attachments.js";
 import {
@@ -29,6 +36,7 @@ import {
   SUBAGENT_SPAWN_MODES,
   spawnSubagentDirect,
 } from "../subagent-spawn.js";
+import { resolveSubagentAllowedTargetIds } from "../subagent-target-policy.js";
 import { normalizeSubagentTaskName } from "../subagent-task-name.js";
 import {
   SWARM_CODE_MODE_IDEMPOTENCY_KEY,
@@ -130,8 +138,19 @@ function createSessionsSpawnToolSchema(params: {
   acpAvailable: boolean;
   threadAvailable: boolean;
   swarmEnabled: boolean;
+  agentIds?: string[];
+  allowUnknownAgentIds?: boolean;
+  requireAgentId: boolean;
 }) {
   const spawnModes = params.threadAvailable ? SUBAGENT_SPAWN_MODES : (["run"] as const);
+  const agentIdDescription = params.acpAvailable
+    ? "Target OpenClaw agent id allowed by the requester role, or configured ACP harness id."
+    : "Target agent id allowed by the requester role.";
+  const agentIdSchema = params.allowUnknownAgentIds
+    ? Type.String({ description: agentIdDescription })
+    : (params.agentIds?.length ?? 0) > 0
+      ? stringEnum(params.agentIds ?? [], { description: agentIdDescription })
+      : Type.Never({ description: "No eligible target agent is configured." });
   const schema = {
     task: Type.String(),
     taskName: Type.Optional(
@@ -145,7 +164,7 @@ function createSessionsSpawnToolSchema(params: {
       params.acpAvailable ? SESSIONS_SPAWN_RUNTIMES : (["subagent"] as const),
       { description: 'Runtime; visible=true requires "subagent".' },
     ),
-    agentId: Type.Optional(Type.String()),
+    agentId: params.requireAgentId ? agentIdSchema : Type.Optional(agentIdSchema),
     model: Type.Optional(Type.String()),
     thinking: Type.Optional(
       Type.String({ description: "Thinking override; unavailable with visible=true." }),
@@ -227,6 +246,37 @@ function createSessionsSpawnToolSchema(params: {
   return Type.Object(schema);
 }
 
+function resolveAcpSchemaTargets(cfg: OpenClawConfig | undefined): {
+  ids: string[];
+  allowUnknown: boolean;
+} {
+  if (!cfg) {
+    return { ids: [], allowUnknown: false };
+  }
+  const ids = new Set<string>();
+  for (const agent of cfg.agents?.list ?? []) {
+    if (agent.runtime?.type !== "acp") {
+      continue;
+    }
+    ids.add(normalizeAgentId(agent.id));
+    if (agent.runtime.acp?.agent) {
+      ids.add(normalizeAgentId(agent.runtime.acp.agent));
+    }
+  }
+  if (cfg.acp?.defaultAgent) {
+    ids.add(normalizeAgentId(cfg.acp.defaultAgent));
+  }
+  let allowUnknown = false;
+  for (const configured of cfg.acp?.allowedAgents ?? []) {
+    if (configured.trim() === "*") {
+      allowUnknown = true;
+      continue;
+    }
+    ids.add(normalizeAgentId(configured));
+  }
+  return { ids: Array.from(ids), allowUnknown };
+}
+
 function resolveAcpUnavailableMessage(opts?: { sandboxed?: boolean; config?: OpenClawConfig }) {
   if (opts?.sandboxed === true) {
     return 'runtime="acp" is unavailable from sandboxed sessions because ACP sessions run on the host. Use runtime="subagent".';
@@ -266,8 +316,33 @@ export function createSessionsSpawnTool(
   });
   const threadAvailability = resolveSessionsSpawnThreadAvailability(opts);
   const threadAvailable = hasAnyThreadAvailability(threadAvailability);
-  const requesterAgentId =
-    opts?.requesterAgentIdOverride ?? parseAgentSessionKey(opts?.agentSessionKey)?.agentId;
+  const requesterAgentId = normalizeAgentId(
+    opts?.requesterAgentIdOverride ??
+      parseAgentSessionKey(opts?.agentSessionKey)?.agentId ??
+      DEFAULT_AGENT_ID,
+  );
+  const cfg = opts?.config;
+  const requesterSubagentConfig = cfg
+    ? resolveAgentConfig(cfg, requesterAgentId)?.subagents
+    : undefined;
+  const allowedAgentIds = cfg
+    ? resolveSubagentAllowedTargetIds({
+        requesterAgentId,
+        allowAgents:
+          requesterSubagentConfig?.allowAgents ?? cfg.agents?.defaults?.subagents?.allowAgents,
+        configuredAgentIds: listAgentIds(cfg),
+      }).allowedIds
+    : undefined;
+  const requireAgentId =
+    requesterSubagentConfig?.requireAgentId ??
+    cfg?.agents?.defaults?.subagents?.requireAgentId ??
+    false;
+  const acpSchemaTargets = acpAvailable
+    ? resolveAcpSchemaTargets(cfg)
+    : { ids: [], allowUnknown: false };
+  const schemaAgentIds = Array.from(
+    new Set([...(allowedAgentIds ?? []), ...acpSchemaTargets.ids]),
+  ).toSorted();
   const swarmConfig = resolveSwarmConfig(opts?.config, requesterAgentId);
   return {
     label: "Sessions",
@@ -280,8 +355,11 @@ export function createSessionsSpawnTool(
       acpAvailable,
       threadAvailable,
       swarmEnabled: swarmConfig.enabled,
+      agentIds: schemaAgentIds,
+      allowUnknownAgentIds: acpSchemaTargets.allowUnknown,
+      requireAgentId,
     }),
-    execute: async (_toolCallId, args) => {
+    execute: async (_toolCallId, args, signal) => {
       const params = args as Record<PropertyKey, unknown>;
       if (opts?.swarmCollector && params.collect !== true) {
         throw new ToolInputError(
@@ -345,6 +423,10 @@ export function createSessionsSpawnTool(
         throw new ToolInputError('sessions_spawn collect=true supports runtime="subagent" only.');
       }
       const requestedAgentId = readStringParam(params, "agentId");
+      const targetAgentId = normalizeAgentId(requestedAgentId ?? requesterAgentId);
+      const executionWorkspaceConfig = cfg
+        ? resolveAgentExecutionWorkspaceConfig(cfg, targetAgentId)
+        : undefined;
       const resumeSessionId = readStringParam(params, "resumeSessionId");
       const modelOverride = normalizeToolModelOverride(readStringParam(params, "model"));
       const thinkingOverrideRaw = readStringParam(params, "thinking");
@@ -359,6 +441,22 @@ export function createSessionsSpawnTool(
       const streamTo = runtime === "acp" && params.streamTo === "parent" ? "parent" : undefined;
       const lightContext = params.lightContext === true;
       const roleContext = requestedAgentId ? { role: requestedAgentId } : {};
+      if (executionWorkspaceConfig && runtime === "acp") {
+        return jsonResult({
+          status: "forbidden",
+          error:
+            'configured loaded-source execution workspaces require runtime="subagent"; ACP cwd remains backend-owned',
+          ...roleContext,
+        });
+      }
+      if (executionWorkspaceConfig && params.visible === true) {
+        return jsonResult({
+          status: "forbidden",
+          error:
+            "configured loaded-source execution workspaces require a hidden native subagent run",
+          ...roleContext,
+        });
+      }
       const visibleResult = await maybeSpawnVisibleSession({
         raw: params,
         task,
@@ -533,6 +631,7 @@ export function createSessionsSpawnTool(
           inheritedToolAllowlist: opts?.inheritedToolAllowlist,
           inheritedToolDenylist: opts?.inheritedToolDenylist,
           requesterRunId: opts?.requesterRunId,
+          abortSignal: signal,
         },
       );
 

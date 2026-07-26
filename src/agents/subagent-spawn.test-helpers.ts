@@ -156,6 +156,8 @@ export async function loadSubagentSpawnModuleForTest(params: {
     cfg?: Record<string, unknown>;
     sessionKey?: string;
   }) => { sandboxed: boolean };
+  materializeAgentExecutionWorkspaceMock?: MockFn;
+  removeAgentExecutionWorkspaceAfterFailedAdmissionMock?: MockFn;
   getSessionBindingService?: () => {
     getCapabilities?: (params: { channel?: string; accountId?: string }) => {
       adapterAvailable: boolean;
@@ -213,6 +215,13 @@ export async function loadSubagentSpawnModuleForTest(params: {
 
   vi.doMock("./provider-model-normalization.runtime.js", () => ({
     normalizeProviderModelIdWithRuntime: () => undefined,
+  }));
+
+  vi.doMock("./execution-workspace.js", () => ({
+    materializeAgentExecutionWorkspace:
+      params.materializeAgentExecutionWorkspaceMock ?? (async () => undefined),
+    removeAgentExecutionWorkspaceAfterFailedAdmission:
+      params.removeAgentExecutionWorkspaceAfterFailedAdmissionMock ?? (async () => undefined),
   }));
 
   vi.doMock("./subagent-spawn.runtime.js", () => ({

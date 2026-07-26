@@ -27,6 +27,27 @@ function expectSchemaFailurePath(result: SchemaParseResult, expectedPathPrefix: 
 }
 
 describe("agent defaults schema", () => {
+  it("accepts only trusted loaded-source execution workspace policies", () => {
+    expect(
+      AgentEntrySchema.parse({
+        id: "coding",
+        executionWorkspace: { type: "loaded-source", access: "modify" },
+      }).executionWorkspace,
+    ).toEqual({ type: "loaded-source", access: "modify" });
+    expect(
+      AgentEntrySchema.safeParse({
+        id: "coding",
+        executionWorkspace: { type: "host-path", access: "modify" },
+      }).success,
+    ).toBe(false);
+    expect(
+      AgentEntrySchema.safeParse({
+        id: "coding",
+        executionWorkspace: { type: "loaded-source", access: "write-anywhere" },
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts utility models on defaults and agent entries", () => {
     const defaults = AgentDefaultsSchema.parse({ utilityModel: "openai/gpt-5.4-mini" })!;
     const agent = AgentEntrySchema.parse({

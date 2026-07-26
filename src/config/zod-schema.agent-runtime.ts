@@ -960,6 +960,13 @@ export const AgentEntrySchema = z
     params: z.record(z.string(), z.unknown()).optional(),
     tools: AgentToolsSchema,
     runtime: AgentRuntimeSchema,
+    executionWorkspace: z
+      .object({
+        type: z.literal("loaded-source"),
+        access: z.enum(["inspect", "modify"]),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 

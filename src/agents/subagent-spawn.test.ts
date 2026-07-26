@@ -28,6 +28,8 @@ const hoisted = vi.hoisted(() => ({
   resolveContextEngineMock: vi.fn(),
   countActiveRunsForSessionMock: vi.fn(),
   listSwarmRunsForGroupMock: vi.fn(),
+  materializeAgentExecutionWorkspaceMock: vi.fn(),
+  removeAgentExecutionWorkspaceAfterFailedAdmissionMock: vi.fn(),
   configOverride: {} as Record<string, unknown>,
 }));
 
@@ -92,6 +94,9 @@ describe("spawnSubagentDirect seam flow", () => {
       resolveContextEngineMock: hoisted.resolveContextEngineMock,
       countActiveRunsForSession: hoisted.countActiveRunsForSessionMock,
       listSwarmRunsForGroup: hoisted.listSwarmRunsForGroupMock,
+      materializeAgentExecutionWorkspaceMock: hoisted.materializeAgentExecutionWorkspaceMock,
+      removeAgentExecutionWorkspaceAfterFailedAdmissionMock:
+        hoisted.removeAgentExecutionWorkspaceAfterFailedAdmissionMock,
       resolveSubagentSpawnModelSelection: () => "openai/gpt-5.4",
       resolveSandboxRuntimeStatus: () => ({ sandboxed: false }),
       sessionStorePath: "/tmp/subagent-spawn-session-store.json",
@@ -116,6 +121,10 @@ describe("spawnSubagentDirect seam flow", () => {
     hoisted.resolveContextEngineMock.mockReset().mockResolvedValue({});
     hoisted.countActiveRunsForSessionMock.mockReset().mockReturnValue(0);
     hoisted.listSwarmRunsForGroupMock.mockReset().mockReturnValue([]);
+    hoisted.materializeAgentExecutionWorkspaceMock.mockReset().mockResolvedValue(undefined);
+    hoisted.removeAgentExecutionWorkspaceAfterFailedAdmissionMock
+      .mockReset()
+      .mockResolvedValue(undefined);
     hoisted.resolveAgentConfigMock.mockImplementation(
       (cfg: { agents?: { list?: Array<{ id?: string }> } }, agentId: string) =>
         cfg.agents?.list?.find((agent) => agent.id === agentId),
@@ -256,6 +265,208 @@ describe("spawnSubagentDirect seam flow", () => {
 
     expect(result.status).toBe("accepted");
     expect(result.childSessionKey).toMatch(/^agent:task-manager:subagent:/);
+  });
+
+  it("binds configured loaded-source work to the native child session", async () => {
+    const store: Record<string, Record<string, unknown>> = {};
+    hoisted.updateSessionStoreMock.mockImplementation(
+      async (
+        _storePath: string,
+        mutator: (entries: Record<string, Record<string, unknown>>) => unknown,
+      ) => {
+        await mutator(store);
+        return store;
+      },
+    );
+    hoisted.configOverride = createConfigOverride({
+      agents: {
+        defaults: { workspace: "/srv/instance/workspace" },
+        list: [
+          {
+            id: "planning",
+            workspace: "/srv/instance/workspace",
+            subagents: { allowAgents: ["codebase-researcher"] },
+          },
+          {
+            id: "codebase-researcher",
+            workspace: "/srv/instance/workspace",
+            executionWorkspace: { type: "loaded-source", access: "inspect" },
+          },
+        ],
+      },
+    });
+    const worktree = {
+      id: "wt-source-1",
+      name: "source-1",
+      repoFingerprint: "source",
+      repoRoot: "/srv/source",
+      path: "/srv/state/worktrees/source-1",
+      branch: "openclaw-system/inspect/source-1",
+      baseRef: "a".repeat(40),
+      ownerKind: "session",
+      createdAt: 1,
+      lastActiveAt: 1,
+    };
+    hoisted.materializeAgentExecutionWorkspaceMock.mockImplementation(
+      async (params: { ownerSessionKey: string }) => ({
+        config: { type: "loaded-source", access: "inspect" },
+        worktree: { ...worktree, ownerId: params.ownerSessionKey },
+      }),
+    );
+    const signal = new AbortController().signal;
+
+    const result = await spawnSubagentDirect(
+      { task: "inspect exact source", agentId: "codebase-researcher" },
+      { agentSessionKey: "agent:planning:main", abortSignal: signal },
+    );
+
+    expect(result.status).toBe("accepted");
+    expect(hoisted.materializeAgentExecutionWorkspaceMock).toHaveBeenCalledWith({
+      cfg: hoisted.configOverride,
+      agentId: "codebase-researcher",
+      ownerSessionKey: result.childSessionKey,
+      signal,
+    });
+    expect(store[result.childSessionKey ?? ""]).toMatchObject({
+      spawnedWorkspaceDir: "/srv/instance/workspace",
+      spawnedCwd: worktree.path,
+      worktree: {
+        id: worktree.id,
+        branch: worktree.branch,
+        repoRoot: worktree.repoRoot,
+      },
+    });
+    expect(firstRegisteredSubagentRun()).toMatchObject({
+      childSessionKey: result.childSessionKey,
+      workspaceDir: "/srv/instance/workspace",
+    });
+  });
+
+  it.each([
+    [{ cwd: "/tmp/model-selected" }, "cwd is selected"],
+    [{ context: "fork" as const }, "isolated context"],
+  ])(
+    "rejects model input that conflicts with configured execution workspace",
+    async (conflict, expectedError) => {
+      hoisted.configOverride = createConfigOverride({
+        agents: {
+          defaults: { workspace: "/srv/instance/workspace" },
+          list: [
+            {
+              id: "main",
+              subagents: { allowAgents: ["coding"] },
+            },
+            {
+              id: "coding",
+              executionWorkspace: { type: "loaded-source", access: "modify" },
+            },
+          ],
+        },
+      });
+
+      const result = await spawnSubagentDirect(
+        { task: "change exact source", agentId: "coding", ...conflict },
+        { agentSessionKey: "agent:main:main" },
+      );
+
+      expect(result).toMatchObject({
+        status: "forbidden",
+        error: expect.stringContaining(expectedError),
+      });
+      expect(hoisted.materializeAgentExecutionWorkspaceMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("removes a newly materialized worktree when initial session persistence fails", async () => {
+    hoisted.configOverride = createConfigOverride({
+      agents: {
+        list: [
+          { id: "main", subagents: { allowAgents: ["coding"] } },
+          {
+            id: "coding",
+            executionWorkspace: { type: "loaded-source", access: "modify" },
+          },
+        ],
+      },
+    });
+    hoisted.materializeAgentExecutionWorkspaceMock.mockResolvedValue({
+      config: { type: "loaded-source", access: "modify" },
+      worktree: {
+        id: "wt-failed",
+        name: "failed",
+        repoFingerprint: "source",
+        repoRoot: "/srv/source",
+        path: "/srv/state/worktrees/failed",
+        branch: "openclaw-system/setup/failed",
+        baseRef: "a".repeat(40),
+        ownerKind: "session",
+        createdAt: 1,
+        lastActiveAt: 1,
+      },
+    });
+    hoisted.updateSessionStoreMock.mockRejectedValueOnce(new Error("store unavailable"));
+
+    const result = await spawnSubagentDirect(
+      { task: "change exact source", agentId: "coding" },
+      { agentSessionKey: "agent:main:main" },
+    );
+
+    expect(result).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("child session patch failed"),
+    });
+    expect(hoisted.removeAgentExecutionWorkspaceAfterFailedAdmissionMock).toHaveBeenCalledWith(
+      "wt-failed",
+    );
+    expect(gatewayRequestRecords()).toEqual([]);
+  });
+
+  it("removes a newly materialized worktree when admission is canceled", async () => {
+    const controller = new AbortController();
+    hoisted.configOverride = createConfigOverride({
+      agents: {
+        list: [
+          { id: "main", subagents: { allowAgents: ["coding"] } },
+          {
+            id: "coding",
+            executionWorkspace: { type: "loaded-source", access: "modify" },
+          },
+        ],
+      },
+    });
+    hoisted.materializeAgentExecutionWorkspaceMock.mockImplementation(async () => {
+      controller.abort();
+      return {
+        config: { type: "loaded-source", access: "modify" },
+        worktree: {
+          id: "wt-canceled",
+          name: "canceled",
+          repoFingerprint: "source",
+          repoRoot: "/srv/source",
+          path: "/srv/state/worktrees/canceled",
+          branch: "openclaw-system/setup/canceled",
+          baseRef: "a".repeat(40),
+          ownerKind: "session",
+          createdAt: 1,
+          lastActiveAt: 1,
+        },
+      };
+    });
+
+    const result = await spawnSubagentDirect(
+      { task: "change exact source", agentId: "coding" },
+      { agentSessionKey: "agent:main:main", abortSignal: controller.signal },
+    );
+
+    expect(result).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("canceled during managed workspace admission"),
+    });
+    expect(hoisted.removeAgentExecutionWorkspaceAfterFailedAdmissionMock).toHaveBeenCalledWith(
+      "wt-canceled",
+    );
+    expect(hoisted.updateSessionStoreMock).not.toHaveBeenCalled();
+    expect(gatewayRequestRecords()).toEqual([]);
   });
 
   it("inherits incognito storage ownership for direct children", async () => {

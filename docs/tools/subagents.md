@@ -386,7 +386,11 @@ that would run unsandboxed.
 Use `agents_list` to see which agent ids are currently allowed for
 `sessions_spawn`. The response includes each listed agent's effective
 model and embedded runtime metadata so callers can distinguish OpenClaw, Codex
-app-server, and other configured native runtimes.
+app-server, and other configured native runtimes. When a target declares
+`agents.entries.*.executionWorkspace`, the response also reports that trusted
+policy. `sessions_spawn` then keeps the target's normal agent workspace for
+identity and bootstrap context while OpenClaw supplies the exact loaded-generation
+managed worktree as the task working directory.
 
 `allowAgents` entries must point at configured agent ids in `agents.entries.*`.
 `["*"]` means any configured target agent plus the requester. If an agent config

@@ -146,6 +146,84 @@ describe("sessions_spawn tool", () => {
     expect(schema.properties?.streamTo).toBeUndefined();
   });
 
+  it("projects the requester allowlist as the native agentId enum", () => {
+    const tool = createSessionsSpawnTool({
+      agentSessionKey: "agent:planning:main",
+      config: {
+        agents: {
+          list: [
+            {
+              id: "planning",
+              subagents: {
+                allowAgents: ["reviewer", "codebase-researcher", "stale"],
+                requireAgentId: true,
+              },
+            },
+            { id: "reviewer" },
+            { id: "codebase-researcher" },
+          ],
+        },
+      },
+    });
+    const schema = tool.parameters as {
+      required?: string[];
+      properties?: { agentId?: { enum?: string[]; type?: string } };
+    };
+
+    expect(schema.properties?.agentId?.enum).toEqual(["codebase-researcher", "reviewer"]);
+    expect(schema.required).toContain("agentId");
+  });
+
+  it("includes configured ACP harnesses beside native subagent targets", () => {
+    registerAcpBackendForTest();
+    const tool = createSessionsSpawnTool({
+      agentSessionKey: "agent:planning:main",
+      config: {
+        acp: { allowedAgents: ["codex"] },
+        agents: {
+          list: [
+            {
+              id: "planning",
+              subagents: { allowAgents: ["reviewer"], requireAgentId: true },
+            },
+            { id: "reviewer" },
+          ],
+        },
+      },
+    });
+    const schema = tool.parameters as {
+      required?: string[];
+      properties?: { agentId?: { enum?: string[] } };
+    };
+
+    expect(schema.properties?.agentId?.enum).toEqual(["codex", "reviewer"]);
+    expect(schema.required).toContain("agentId");
+  });
+
+  it("makes a required empty native target set impossible instead of free-form", () => {
+    const tool = createSessionsSpawnTool({
+      agentSessionKey: "agent:planning:main",
+      config: {
+        agents: {
+          list: [
+            {
+              id: "planning",
+              subagents: { allowAgents: ["stale"], requireAgentId: true },
+            },
+          ],
+        },
+      },
+    });
+    const schema = tool.parameters as {
+      required?: string[];
+      properties?: { agentId?: { not?: Record<string, never>; type?: string } };
+    };
+
+    expect(schema.properties?.agentId?.not).toEqual({});
+    expect(schema.properties?.agentId?.type).toBeUndefined();
+    expect(schema.required).toContain("agentId");
+  });
+
   it("advertises ACP runtime affordances when an ACP backend is loaded", () => {
     registerAcpBackendForTest();
 
@@ -561,6 +639,59 @@ describe("sessions_spawn tool", () => {
         'context="fork" currently requires the same target agent as the requester; use context="isolated" for cross-agent spawns.',
     });
     expect(callGateway).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ visible: true }, "hidden native subagent"],
+    [{ runtime: "acp" as const }, 'runtime="subagent"'],
+  ])("rejects loaded-source targets on unsupported spawn paths", async (extra, error) => {
+    registerAcpBackendForTest();
+    const callGateway = vi.fn();
+    const tool = createSessionsSpawnTool({
+      agentSessionKey: "agent:main:main",
+      config: {
+        agents: {
+          list: [
+            { id: "main", subagents: { allowAgents: ["coding"] } },
+            {
+              id: "coding",
+              executionWorkspace: { type: "loaded-source", access: "modify" },
+            },
+          ],
+        },
+      },
+      callGateway,
+      countActiveRuns: () => 0,
+    });
+
+    const result = await tool.execute("loaded-source-unsupported", {
+      task: "change source",
+      agentId: "coding",
+      ...extra,
+    });
+
+    expect(result.details).toMatchObject({
+      status: "forbidden",
+      error: expect.stringContaining(error),
+    });
+    expect(callGateway).not.toHaveBeenCalled();
+    expect(hoisted.spawnSubagentDirectMock).not.toHaveBeenCalled();
+    expect(hoisted.spawnAcpDirectMock).not.toHaveBeenCalled();
+  });
+
+  it("forwards tool cancellation to native execution-workspace admission", async () => {
+    const signal = new AbortController().signal;
+    const tool = createSessionsSpawnTool({
+      agentSessionKey: "agent:main:main",
+      config: { agents: { list: [{ id: "main" }] } },
+    });
+
+    await tool.execute("spawn-with-signal", { task: "inspect" }, signal);
+
+    expect(hoisted.spawnSubagentDirectMock).toHaveBeenCalledWith(
+      expect.objectContaining({ task: "inspect" }),
+      expect.objectContaining({ abortSignal: signal }),
+    );
   });
 
   it("rejects cwd escape for sandboxed visible sessions", async () => {
