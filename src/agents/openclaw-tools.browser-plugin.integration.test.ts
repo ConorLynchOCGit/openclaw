@@ -203,6 +203,103 @@ describe("createOpenClawTools browser plugin integration", () => {
     );
   });
 
+  it("uses the native runtime provider auth owner without a profile store", async () => {
+    let capturedParams:
+      | {
+          hasAuthForProvider?: (providerId: string) => boolean;
+          context?: {
+            hasAuthForProvider?: (providerId: string) => boolean;
+            resolveApiKeyForProvider?: (providerId: string) => Promise<string | undefined>;
+          };
+        }
+      | undefined;
+    hoisted.resolvePluginTools.mockImplementation((params: unknown) => {
+      capturedParams = params as typeof capturedParams;
+      return [];
+    });
+    const sourceConfig = {
+      models: {
+        providers: {
+          openrouter: {
+            baseUrl: "https://openrouter.ai/api/v1",
+            models: [
+              {
+                id: "x-ai/grok-4.5",
+                name: "Grok 4.5",
+                reasoning: true,
+                input: ["text"],
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                contextWindow: 256_000,
+                maxTokens: 8_192,
+              },
+            ],
+            apiKey: {
+              source: "file",
+              provider: "runtime",
+              id: "/providers/openrouter/apiKey",
+            },
+          },
+        },
+      },
+      plugins: {
+        allow: ["xai"],
+      },
+    } as OpenClawConfig;
+    const runtimeConfig = {
+      models: {
+        providers: {
+          openrouter: {
+            baseUrl: "https://openrouter.ai/api/v1",
+            models: [
+              {
+                id: "x-ai/grok-4.5",
+                name: "Grok 4.5",
+                reasoning: true,
+                input: ["text"],
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                contextWindow: 256_000,
+                maxTokens: 8_192,
+              },
+            ],
+            apiKey: "runtime-openrouter-key", // pragma: allowlist secret
+          },
+        },
+      },
+      plugins: {
+        allow: ["xai"],
+      },
+    } as OpenClawConfig;
+    activateSecretsRuntimeSnapshot({
+      sourceConfig,
+      config: runtimeConfig,
+      authStores: [],
+      authStoreCredentialsRevision: getRuntimeAuthProfileStoreCredentialsRevision(),
+      warnings: [],
+      webTools: {
+        search: {
+          providerSource: "none",
+          diagnostics: [],
+        },
+        fetch: {
+          providerSource: "none",
+          diagnostics: [],
+        },
+        diagnostics: [],
+      },
+    });
+
+    resolveOpenClawPluginToolsForOptions({
+      options: { config: sourceConfig },
+      resolvedConfig: sourceConfig,
+    });
+
+    expect(capturedParams?.hasAuthForProvider?.("openrouter")).toBe(true);
+    expect(capturedParams?.context?.hasAuthForProvider?.("openrouter")).toBe(true);
+    await expect(capturedParams?.context?.resolveApiKeyForProvider?.("openrouter")).resolves.toBe(
+      "runtime-openrouter-key",
+    );
+  });
+
   it("forwards plugin tool deny policy to plugin resolution", () => {
     hoisted.resolvePluginTools.mockReturnValue([]);
     const config = {
