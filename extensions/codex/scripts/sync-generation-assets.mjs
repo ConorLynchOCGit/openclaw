@@ -39,7 +39,7 @@ const guidanceSourcePaths = execFileSync(
     "--",
     "AGENTS.md",
     ":(glob)**/AGENTS.md",
-    ":(exclude)extensions/codex/system-profile/contributor-guidance/**",
+    ":(exclude)extensions/codex/system-profile/**",
     ":(exclude)**/fixtures/**",
   ],
   { cwd: repoRoot },

@@ -7,6 +7,9 @@
     "url": "https://github.com/openclaw/openclaw"
   },
   "type": "module",
+  "scripts": {
+    "prepack": "node scripts/sync-generation-assets.mjs --check"
+  },
   "dependencies": {
     "@openai/codex": "0.145.0",
     "semver": "7.8.5",
