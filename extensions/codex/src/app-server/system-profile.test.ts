@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -97,11 +98,41 @@ afterEach(async () => {
 });
 
 describe("immutable Codex Coding profile", () => {
-  it("ships exactly the 59 accepted product assets", async () => {
+  it("ships the accepted product assets and exact current-generation authorities", async () => {
     const profileDir = fileURLToPath(new URL("../../system-profile/", import.meta.url));
+    const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
+    const systemSkillSourceRoot = path.join(repoRoot, ".agents/skills");
+    const systemSkillPaths = await listFiles(systemSkillSourceRoot);
+    const systemSkillAssets = systemSkillPaths.map((entry) => `skills/${entry}`);
+    const guidanceIndex = JSON.parse(
+      await fs.readFile(path.join(profileDir, "contributor-guidance/index.json"), "utf8"),
+    ) as {
+      entries: Array<{ sourcePath: string; sha256: string; bytes: number }>;
+    };
+    const guidanceAssets = [
+      "contributor-guidance/SKILL.md",
+      "contributor-guidance/index.json",
+      ...guidanceIndex.entries.map((entry) => `contributor-guidance/tree/${entry.sourcePath}`),
+    ];
     expect(await listFiles(profileDir)).toEqual(
-      [...EXPECTED_PROFILE_ASSETS].toSorted((left, right) => left.localeCompare(right)),
+      [...EXPECTED_PROFILE_ASSETS, ...systemSkillAssets, ...guidanceAssets].toSorted(
+        (left, right) => left.localeCompare(right),
+      ),
     );
+    for (const relativePath of systemSkillPaths) {
+      expect(await fs.readFile(path.join(profileDir, "skills", relativePath))).toEqual(
+        await fs.readFile(path.join(systemSkillSourceRoot, relativePath)),
+      );
+    }
+    for (const entry of guidanceIndex.entries) {
+      const source = await fs.readFile(path.join(repoRoot, entry.sourcePath));
+      const packaged = await fs.readFile(
+        path.join(profileDir, "contributor-guidance/tree", entry.sourcePath),
+      );
+      expect(packaged).toEqual(source);
+      expect(entry.bytes).toBe(source.byteLength);
+      expect(entry.sha256).toBe(createHash("sha256").update(source).digest("hex"));
+    }
   });
 
   it("uses the native plugin root and native config/read for Coding only", async () => {
@@ -111,7 +142,9 @@ describe("immutable Codex Coding profile", () => {
     const projectDir = path.join(profileDir, "project");
     const dotCodexDir = path.join(projectDir, ".codex");
     const workbenchPath = path.join(profileDir, "tools", "openclaw-repo-workbench.mjs");
+    await fs.mkdir(path.join(profileDir, "skills"), { recursive: true });
     await fs.mkdir(path.join(profileDir, "shared-skills"), { recursive: true });
+    await fs.mkdir(path.join(profileDir, "contributor-guidance"), { recursive: true });
     await fs.mkdir(path.dirname(workbenchPath), { recursive: true });
     await fs.writeFile(workbenchPath, "#!/usr/bin/env node\n");
 
@@ -161,10 +194,21 @@ describe("immutable Codex Coding profile", () => {
       { cwd: projectDir, includeLayers: true },
       { timeoutMs: 1_000, signal: undefined },
     );
-    expect(profile?.agentNames).toEqual(PURPOSE_AGENTS);
-    expect(profile?.developerInstructions).toBe("Use the immutable Coding contract.");
-    expect(profile?.permissionProfile).toBe(":workspace");
-    expect(profile?.selectedCapabilityRoots).toEqual([
+    if (!profile) {
+      throw new Error("expected Coding to resolve the immutable system profile");
+    }
+    expect(profile.agentNames).toEqual(PURPOSE_AGENTS);
+    expect(profile.developerInstructions).toBe("Use the immutable Coding contract.");
+    expect(profile.permissionProfile).toBe(":workspace");
+    expect(profile.selectedCapabilityRoots).toEqual([
+      {
+        id: "codex-system-skills",
+        location: {
+          type: "environment",
+          environmentId: "local",
+          path: path.join(profileDir, "skills"),
+        },
+      },
       {
         id: "openclaw-codex-product-profile",
         location: {
@@ -173,10 +217,18 @@ describe("immutable Codex Coding profile", () => {
           path: path.join(profileDir, "shared-skills"),
         },
       },
+      {
+        id: "openclaw-contributor-guidance",
+        location: {
+          type: "environment",
+          environmentId: "local",
+          path: path.join(profileDir, "contributor-guidance"),
+        },
+      },
     ]);
     expect(
       (
-        profile?.config.mcp_servers as {
+        profile.config.mcp_servers as {
           openclaw_repo_workbench: { args: string[] };
         }
       ).openclaw_repo_workbench.args,

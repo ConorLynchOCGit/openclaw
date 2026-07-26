@@ -16,6 +16,7 @@
     "**/*test-helpers.ts",
     "**/*test-harness.ts",
     "**/*test-support.ts",
+    "extensions/codex/system-profile/skills/**",
     "extensions/**/test/**",
     "extensions/**/src/test-support/**",
     "test/**"

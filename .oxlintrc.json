@@ -214,6 +214,7 @@
     "extensions/browser/chrome-extension/modules/copilot-runtime.js",
     "extensions/diffs/assets/viewer-runtime.js",
     "extensions/diffs-language-pack/assets/viewer-runtime.js",
+    "extensions/codex/system-profile/skills/**",
     "node_modules/",
     "patches/",
     "pnpm-lock.yaml",

@@ -1,0 +1,149 @@
+{
+  "schema": "openclaw.codex-contributor-guidance.v1",
+  "entries": [
+    {
+      "scope": ".agents/skills/autoreview",
+      "sourcePath": ".agents/skills/autoreview/AGENTS.md",
+      "sha256": "d413df783f69b238904fb2b2428f313c99bcfaae7f5992412506bf09aac9ee2f",
+      "bytes": 437
+    },
+    {
+      "scope": "",
+      "sourcePath": "AGENTS.md",
+      "sha256": "cfe7be6b77073019bdb2c0eaebc45cc09eba75080620cfb7ad61e942bf0a0398",
+      "bytes": 57233
+    },
+    {
+      "scope": "apps/android",
+      "sourcePath": "apps/android/AGENTS.md",
+      "sha256": "b6dcc9ea01cf21ef5ef6dd18660856bf11cb26fbb568bcca2a80913fdcd9c19b",
+      "bytes": 2704
+    },
+    {
+      "scope": "apps/ios",
+      "sourcePath": "apps/ios/AGENTS.md",
+      "sha256": "1c0187b648a129089d6a8ce68ec6b83f1f11d34a5830645f84e7e88016ff55ff",
+      "bytes": 5584
+    },
+    {
+      "scope": "docs",
+      "sourcePath": "docs/AGENTS.md",
+      "sha256": "a8712b1aeb2e605055c22cf308049e5e74fdf33061870026be20bd55cb0c3d1d",
+      "bytes": 3651
+    },
+    {
+      "scope": "docs/reference/templates",
+      "sourcePath": "docs/reference/templates/AGENTS.md",
+      "sha256": "7d340e13e845b8bf7c69c60f5dbcc7b5b0e03b1401496d2a091af7223499bbfc",
+      "bytes": 7327
+    },
+    {
+      "scope": "extensions/acpx",
+      "sourcePath": "extensions/acpx/AGENTS.md",
+      "sha256": "2f9f6f56da696a1aff937a5131cbfcb4736a650491737c11fd155f4bce5cb16f",
+      "bytes": 2957
+    },
+    {
+      "scope": "extensions",
+      "sourcePath": "extensions/AGENTS.md",
+      "sha256": "ba85d81f0649a3d5ba8fdab5b9a939ed624aa984a2bc0fb5e2f996a885d8fa73",
+      "bytes": 4341
+    },
+    {
+      "scope": "extensions/telegram",
+      "sourcePath": "extensions/telegram/AGENTS.md",
+      "sha256": "332ae6bb739aa898fbf53f4fae99aa8057ee50148238ae587f8e2ab53b31a1be",
+      "bytes": 7232
+    },
+    {
+      "scope": "scripts",
+      "sourcePath": "scripts/AGENTS.md",
+      "sha256": "b58a0cecf17db07c92f9766d220817a869f0b2dc76f01613ea88610bbe5ed497",
+      "bytes": 3904
+    },
+    {
+      "scope": "src/agents",
+      "sourcePath": "src/agents/AGENTS.md",
+      "sha256": "7d340cc98f131a885da0a83bb230dd5528d5ff59390820b30c1c409c77977fc0",
+      "bytes": 2008
+    },
+    {
+      "scope": "src/agents/embedded-agent-runner/run",
+      "sourcePath": "src/agents/embedded-agent-runner/run/AGENTS.md",
+      "sha256": "53b697a64d47709f0f3a52db0ad0c3a07c054cab1d40083159028591bcc87042",
+      "bytes": 1309
+    },
+    {
+      "scope": "src/agents/tools",
+      "sourcePath": "src/agents/tools/AGENTS.md",
+      "sha256": "beff74544808f4df9c0bb5f7b9c4b5c7b037c24b0ea1cd879f00a2be47dabfbf",
+      "bytes": 1149
+    },
+    {
+      "scope": "src/channels",
+      "sourcePath": "src/channels/AGENTS.md",
+      "sha256": "a6fbda8b6187d64e2bcf9a108252fa7d7733828154ffc3b9bf8c1071b9c68949",
+      "bytes": 2745
+    },
+    {
+      "scope": "src/channels/plugins/contracts/test-helpers",
+      "sourcePath": "src/channels/plugins/contracts/test-helpers/AGENTS.md",
+      "sha256": "6881359ee6b127054da4fd8956b8765a4bd522f10bd1e55a97b36446c56f4b9c",
+      "bytes": 1557
+    },
+    {
+      "scope": "src/gateway",
+      "sourcePath": "src/gateway/AGENTS.md",
+      "sha256": "59194dbfe4af16d7c35085dafc5e31ca7cdd38ce24085af48a2b611d51a94548",
+      "bytes": 1331
+    },
+    {
+      "scope": "src/gateway/server-methods",
+      "sourcePath": "src/gateway/server-methods/AGENTS.md",
+      "sha256": "51d90efef7dad89c17938fcd78f43075726d538a3c2fe8982d14e34297620f80",
+      "bytes": 325
+    },
+    {
+      "scope": "src/infra/outbound",
+      "sourcePath": "src/infra/outbound/AGENTS.md",
+      "sha256": "c53c4190ee8c806b0f655ae8ba44a280d849911057b0b6051292016340e8ff2a",
+      "bytes": 1022
+    },
+    {
+      "scope": "src/plugin-sdk",
+      "sourcePath": "src/plugin-sdk/AGENTS.md",
+      "sha256": "16e762fc13936680a1ee6cb8f2c77ff6c74c4dda2a1a199dda87410ce1ba22bf",
+      "bytes": 5105
+    },
+    {
+      "scope": "src/plugins",
+      "sourcePath": "src/plugins/AGENTS.md",
+      "sha256": "0f59108efd74ce20e416a343a270b5c47d3a45e3a3303c9fd47dc2b587357e41",
+      "bytes": 4681
+    },
+    {
+      "scope": "src/tui",
+      "sourcePath": "src/tui/AGENTS.md",
+      "sha256": "e7aed667912b330bbb27c84a38deeff75903debafdd633e25e651e575f391529",
+      "bytes": 887
+    },
+    {
+      "scope": "test",
+      "sourcePath": "test/AGENTS.md",
+      "sha256": "63f019200d56ee448f8beb4520d0f49e401e7ef841b02f85311ccf11a063f190",
+      "bytes": 213
+    },
+    {
+      "scope": "test/helpers",
+      "sourcePath": "test/helpers/AGENTS.md",
+      "sha256": "2cdab1e0d02170a5200a3517f3a76afd010db360c144414b4c9dfae29511ee69",
+      "bytes": 1352
+    },
+    {
+      "scope": "ui",
+      "sourcePath": "ui/AGENTS.md",
+      "sha256": "4e8cfa103a578034ce3762a8fd4c7b760d0892d8316e866b6b37fa67f61411df",
+      "bytes": 2166
+    }
+  ]
+}

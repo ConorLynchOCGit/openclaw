@@ -352,7 +352,9 @@ describe("startCodexAttemptThread", () => {
     const projectDir = path.join(profileDir, "project");
     const dotCodexDir = path.join(projectDir, ".codex");
     const workbenchPath = path.join(profileDir, "tools", "openclaw-repo-workbench.mjs");
+    await fs.mkdir(path.join(profileDir, "skills"), { recursive: true });
     await fs.mkdir(path.join(profileDir, "shared-skills"), { recursive: true });
+    await fs.mkdir(path.join(profileDir, "contributor-guidance"), { recursive: true });
     await fs.mkdir(path.dirname(workbenchPath), { recursive: true });
     await fs.writeFile(workbenchPath, "#!/usr/bin/env node\n");
 
@@ -437,11 +439,27 @@ describe("startCodexAttemptThread", () => {
     );
     expect(threadStartParams?.selectedCapabilityRoots).toEqual([
       {
+        id: "codex-system-skills",
+        location: {
+          type: "environment",
+          environmentId: "local",
+          path: path.join(profileDir, "skills"),
+        },
+      },
+      {
         id: "openclaw-codex-product-profile",
         location: {
           type: "environment",
           environmentId: "local",
           path: path.join(profileDir, "shared-skills"),
+        },
+      },
+      {
+        id: "openclaw-contributor-guidance",
+        location: {
+          type: "environment",
+          environmentId: "local",
+          path: path.join(profileDir, "contributor-guidance"),
         },
       },
     ]);

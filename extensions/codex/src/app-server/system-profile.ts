@@ -5,7 +5,9 @@ import { isJsonObject, type CodexSelectedCapabilityRoot, type JsonObject } from 
 
 const CODING_AGENT_ID = "coding";
 const CODEX_LOCAL_ENVIRONMENT_ID = "local";
+const CODEX_SYSTEM_SKILLS_ROOT_ID = "codex-system-skills";
 const CODEX_PRODUCT_CAPABILITY_ROOT_ID = "openclaw-codex-product-profile";
+const CODEX_CONTRIBUTOR_GUIDANCE_ROOT_ID = "openclaw-contributor-guidance";
 const CODEX_WORKSPACE_PERMISSION_PROFILE = ":workspace";
 const EXPECTED_PURPOSE_AGENTS = [
   "architect_reviewer",
@@ -127,10 +129,22 @@ async function loadCodexSystemProfile(params: {
     throw new Error("Codex immutable Coding profile is missing developer instructions");
   }
 
+  const systemSkillsDir = path.join(params.profileDir, "skills");
+  const systemSkillsStat = await fs.stat(systemSkillsDir);
+  if (!systemSkillsStat.isDirectory()) {
+    throw new Error(`Codex system skill root is not a directory: ${systemSkillsDir}`);
+  }
   const sharedSkillsDir = path.join(params.profileDir, "shared-skills");
   const sharedSkillsStat = await fs.stat(sharedSkillsDir);
   if (!sharedSkillsStat.isDirectory()) {
     throw new Error(`Codex product capability root is not a directory: ${sharedSkillsDir}`);
+  }
+  const contributorGuidanceDir = path.join(params.profileDir, "contributor-guidance");
+  const contributorGuidanceStat = await fs.stat(contributorGuidanceDir);
+  if (!contributorGuidanceStat.isDirectory()) {
+    throw new Error(
+      `Codex contributor guidance root is not a directory: ${contributorGuidanceDir}`,
+    );
   }
 
   return {
@@ -143,11 +157,27 @@ async function loadCodexSystemProfile(params: {
     agentNames,
     selectedCapabilityRoots: [
       {
+        id: CODEX_SYSTEM_SKILLS_ROOT_ID,
+        location: {
+          type: "environment",
+          environmentId: CODEX_LOCAL_ENVIRONMENT_ID,
+          path: systemSkillsDir,
+        },
+      },
+      {
         id: CODEX_PRODUCT_CAPABILITY_ROOT_ID,
         location: {
           type: "environment",
           environmentId: CODEX_LOCAL_ENVIRONMENT_ID,
           path: sharedSkillsDir,
+        },
+      },
+      {
+        id: CODEX_CONTRIBUTOR_GUIDANCE_ROOT_ID,
+        location: {
+          type: "environment",
+          environmentId: CODEX_LOCAL_ENVIRONMENT_ID,
+          path: contributorGuidanceDir,
         },
       },
     ],
