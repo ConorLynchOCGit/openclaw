@@ -139,10 +139,9 @@ function ownedTimestampedMetricRecords(params: {
         throw new Error(`owned X analytics returned a malformed value for ${metricName}`);
       }
       const definition = requireXOwnedMetricDefinition(metricName);
-      if (trustedAnalytics.providerMetricClass !== definition.providerMetricClass) {
-        throw new Error(
-          `owned X analytics class ${trustedAnalytics.providerMetricClass} cannot map ${metricName}`,
-        );
+      const providerMetricClass: string = trustedAnalytics.providerMetricClass;
+      if (providerMetricClass !== definition.providerMetricClass) {
+        throw new Error(`owned X analytics class ${providerMetricClass} cannot map ${metricName}`);
       }
       if (!trustedAnalytics.requestedMetrics.includes(metricName)) {
         throw new Error(`owned X analytics returned an unrequested field: ${metricName}`);
