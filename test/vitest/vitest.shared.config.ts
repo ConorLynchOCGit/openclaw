@@ -178,6 +178,10 @@ export const sharedVitestConfig = {
         replacement: path.join(repoRoot, "extensions", "qa-channel", "api.ts"),
       },
       {
+        find: "@openclaw/agency-data/api.js",
+        replacement: path.join(repoRoot, "extensions", "agency-data", "api.ts"),
+      },
+      {
         find: "@openclaw/discord/api.js",
         replacement: path.join(repoRoot, "extensions", "discord", "api.ts"),
       },

@@ -276,7 +276,12 @@ function percentile(sortedValues: number[], fraction: number): number | null {
   const index = (sortedValues.length - 1) * fraction;
   const lower = Math.floor(index);
   const upper = Math.ceil(index);
-  return sortedValues[lower] + (sortedValues[upper] - sortedValues[lower]) * (index - lower);
+  const lowerValue = sortedValues[lower];
+  const upperValue = sortedValues[upper];
+  if (lowerValue === undefined || upperValue === undefined) {
+    return null;
+  }
+  return lowerValue + (upperValue - lowerValue) * (index - lower);
 }
 
 function metricSummary(records: NumericMetric[]) {

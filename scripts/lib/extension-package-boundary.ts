@@ -72,6 +72,7 @@ export const EXTENSION_PACKAGE_BOUNDARY_BASE_PATHS = {
   ],
   "openclaw/plugin-sdk/secret-ref-runtime": ["../dist/plugin-sdk/secret-ref-runtime.d.ts"],
   "openclaw/plugin-sdk/ssrf-runtime": ["../dist/plugin-sdk/ssrf-runtime.d.ts"],
+  "@openclaw/agency-data/api.js": ["../dist/plugin-sdk/extensions/agency-data/api.d.ts"],
   "@openclaw/qa-channel/api.js": ["../dist/plugin-sdk/extensions/qa-channel/api.d.ts"],
   "@openclaw/matrix/test-api.js": ["../dist/plugin-sdk/extensions/matrix/test-api.d.ts"],
   "@openclaw/discord/api.js": ["../dist/plugin-sdk/extensions/discord/api.d.ts"],
@@ -268,6 +269,7 @@ export const EXTENSION_PACKAGE_BOUNDARY_XAI_PATHS = {
     omitExtensionPackageBoundaryPaths(EXTENSION_PACKAGE_BOUNDARY_BASE_PATHS, [
       "openclaw/plugin-sdk/channel-secret-basic-runtime",
       "openclaw/plugin-sdk/channel-secret-tts-runtime",
+      "@openclaw/agency-data/api.js",
       "@openclaw/matrix/test-api.js",
       "@openclaw/discord/api.js",
       "@openclaw/slack/api.js",
