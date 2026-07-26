@@ -166,6 +166,20 @@ describe("resolveBuildAllStep", () => {
     ).toBe("2026-07-10T01:02:03.000Z");
   });
 
+  it("rejects malformed build timestamps before starting build work", () => {
+    for (const timestamp of [
+      "2026-07-10T01:02:03+00:00",
+      "2026-99-99T01:02:03Z",
+      "2026-07-10 01:02:03Z",
+    ]) {
+      expect(() =>
+        resolveBuildAllEnvironment({
+          OPENCLAW_BUILD_TIMESTAMP: timestamp,
+        }),
+      ).toThrow("valid UTC ISO-8601 timestamp ending in Z");
+    }
+  });
+
   it("routes pnpm steps through the npm_execpath pnpm runner on Windows", () => {
     const step = getBuildAllStep("plugins:assets:build");
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-pnpm-runner-"));

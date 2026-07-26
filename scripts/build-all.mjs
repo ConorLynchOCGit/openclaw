@@ -475,6 +475,24 @@ function readCurrentGitCommit() {
   return result.status === 0 ? result.stdout.trim() : null;
 }
 
+function normalizeBuildTimestamp(raw) {
+  const timestamp = raw.trim();
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u.test(timestamp)) {
+    throw new Error("build timestamp must be a valid UTC ISO-8601 timestamp ending in Z");
+  }
+  const parsed = new Date(timestamp);
+  if (!Number.isFinite(parsed.getTime())) {
+    throw new Error("build timestamp must be a valid UTC ISO-8601 timestamp ending in Z");
+  }
+  const normalizedInput = timestamp.replace(/(?:\.(\d{1,3}))?Z$/u, (_match, fraction) => {
+    return `.${String(fraction ?? "").padEnd(3, "0")}Z`;
+  });
+  if (parsed.toISOString() !== normalizedInput) {
+    throw new Error("build timestamp must be a valid UTC ISO-8601 timestamp ending in Z");
+  }
+  return parsed.toISOString();
+}
+
 /** Pin one source identity for every child process that contributes to this build. */
 export function resolveBuildAllEnvironment(
   env = process.env,
@@ -491,7 +509,7 @@ export function resolveBuildAllEnvironment(
   }
   const buildEnv = {
     ...env,
-    OPENCLAW_BUILD_TIMESTAMP: explicitTimestamp || now().toISOString(),
+    OPENCLAW_BUILD_TIMESTAMP: normalizeBuildTimestamp(explicitTimestamp || now().toISOString()),
   };
   if (commit) {
     buildEnv.GIT_COMMIT = commit.toLowerCase();
