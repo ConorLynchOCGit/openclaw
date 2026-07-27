@@ -139,6 +139,23 @@ describe("immutable Codex Coding profile", () => {
     }
   });
 
+  it("keeps project exploration on the native Workbench without skill discovery", async () => {
+    const profileDir = fileURLToPath(new URL("../../system-profile/", import.meta.url));
+    const explorerProfile = await fs.readFile(
+      path.join(profileDir, "project/.codex/agents/project_explorer.toml"),
+      "utf8",
+    );
+
+    expect(explorerProfile).toContain("Use the attached\n`openclaw_repo_workbench` MCP directly");
+    expect(explorerProfile).toContain(
+      "do not search the filesystem for a\n`openclaw-coding-workbench/SKILL.md`",
+    );
+    expect(explorerProfile).toContain(
+      "When the brief supplies exact paths,\nread those paths directly",
+    );
+    expect(explorerProfile).not.toContain("The primary\nworkflow skill is");
+  });
+
   it("uses the native plugin root and native config/read for Coding only", async () => {
     const pluginRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-codex-profile-"));
     tempRoots.add(pluginRoot);

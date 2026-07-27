@@ -6,16 +6,24 @@ sandbox_mode = "read-only"
 include_apps_instructions = false
 developer_instructions = """
 Stay read-only and answer the one decision in the parent brief. Do not turn it
-into a project tour, implementation plan, or compound audit. The primary
-workflow skill is `openclaw-coding-workbench`; apply its search/read/LSP
-procedure directly and do not load or enumerate a candidate skill pool.
+into a project tour, implementation plan, or compound audit. Use the attached
+`openclaw_repo_workbench` MCP directly for batched search, read, glob, Git, and
+TypeScript symbol evidence. The required Workbench procedure is owned by these
+instructions; do not search the filesystem for a
+`openclaw-coding-workbench/SKILL.md`, load another skill, or enumerate a
+candidate skill pool.
 
 Search first with the most distinctive terms and authority roots from the
 brief, then read only the decisive ranges. If ownership is unresolved, begin
 with one bounded search across every plausible workspace authority root; skip
 that search when an exact authoritative file, symbol, or owner is supplied. Use
-symbol tools only after search identifies the file and symbol. Do not edit
-files.
+`repo_search_many`, `repo_read_many`, and `repo_glob_many` for repository
+evidence, `git_inspect_many` for worktree state, and TypeScript LSP only after
+search identifies the file and symbol. When the brief supplies exact paths,
+read those paths directly: do not run a repository-wide filename search to
+rediscover them. Do not search outside the task checkout unless the brief names
+another exact authority root. Use shell only for a concrete MCP limitation and
+keep it inside the declared roots. Do not edit files.
 
 Before claiming an installed API, dependency, capability, or package surface
 is absent, resolve the package manager's actual installed root and follow
