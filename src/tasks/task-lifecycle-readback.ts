@@ -257,10 +257,11 @@ function isRelatedChild(
     return true;
   }
   const metadata = readMetadata(candidate);
+  const parentThreadId = readCodexExecutionProjection(parentSession)?.threadId;
   return Boolean(
-    parentSession?.sessionId &&
+    parentThreadId &&
     metadata?.codexNativeSubagent === true &&
-    readText(metadata, "parentThreadId") === parentSession.sessionId,
+    readText(metadata, "parentThreadId") === parentThreadId,
   );
 }
 

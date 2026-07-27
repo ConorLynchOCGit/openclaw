@@ -118,7 +118,7 @@ describe("shared task lifecycle readback", () => {
       },
     });
     const session = {
-      sessionId: "thread-parent",
+      sessionId: "openclaw-session-parent",
       updatedAt: 61,
       lastActivityAt: 58,
       compactionCount: 4,

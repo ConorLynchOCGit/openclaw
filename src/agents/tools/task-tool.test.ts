@@ -34,7 +34,7 @@ const config = {
   agents: {
     entries: {
       main: {
-        subagents: { allowAgents: ["planning", "coding"] },
+        subagents: { allowAgents: ["planning", "coding"], thinking: "off" as const },
       },
       planning: {
         subagents: {
@@ -43,6 +43,7 @@ const config = {
       },
       reviewer: { subagents: { allowAgents: ["review-specialist"] } },
       coding: {
+        thinkingDefault: "high" as const,
         executionWorkspace: { type: "loaded-source" as const, access: "modify" as const },
       },
       "codebase-researcher": {
@@ -99,6 +100,31 @@ describe("task foreground delegation", () => {
       "reviewer",
     ]);
     expect(tool.executionMode).toBe("parallel");
+  });
+
+  it("uses the target reasoning profile and exposes no model-authored override", async () => {
+    const tool = createTaskTool({
+      config,
+      agentSessionKey: "agent:main:main",
+      requesterAgentIdOverride: "main",
+    });
+    const properties = (tool.parameters as { properties?: Record<string, unknown> }).properties;
+
+    expect(properties).not.toHaveProperty("thinking");
+
+    await tool.execute("call", {
+      agentId: "coding",
+      task: "Implement the accepted plan.",
+      systemChange: true,
+    });
+
+    expect(mocks.spawn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "coding",
+        thinking: "high",
+      }),
+      expect.any(Object),
+    );
   });
 
   it("projects only Reviewer's specialist and withholds model-authored cwd", () => {

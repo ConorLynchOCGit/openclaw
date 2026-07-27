@@ -119,12 +119,6 @@ function createTaskSchema(params: {
           'Cross-agent work is always isolated. "fork" is valid only for same-agent continuation.',
       }),
     ),
-    thinking: Type.Optional(
-      Type.String({
-        description:
-          "Optional explicit reasoning override. Omit to use the target role's configured profile.",
-      }),
-    ),
     ...(params.allowArbitraryCwd
       ? {
           cwd: Type.Optional(
@@ -503,6 +497,9 @@ export function createTaskTool(
           error: "cwd is owned by the target role's configured execution workspace",
         });
       }
+      const targetThinking =
+        (opts?.config ? resolveAgentConfig(opts.config, agentId)?.thinkingDefault : undefined) ??
+        opts?.config?.agents?.defaults?.thinkingDefault;
 
       const spawn = await spawnSubagentDirect(
         {
@@ -519,7 +516,7 @@ export function createTaskTool(
           taskName,
           label,
           agentId,
-          thinking: readStringParam(params, "thinking"),
+          thinking: targetThinking,
           cwd,
           mode: "run",
           cleanup: "keep",
