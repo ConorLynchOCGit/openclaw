@@ -232,6 +232,18 @@ function listToolAuthSignals(metadata: ToolMetadata): ManifestAuthAvailabilitySi
   }));
 }
 
+function hasConfiguredProviderApiKey(params: {
+  config?: OpenClawConfig;
+  env: NodeJS.ProcessEnv;
+  provider: string;
+}): boolean {
+  return hasConfiguredValue({
+    config: params.config,
+    env: params.env,
+    value: params.config?.models?.providers?.[params.provider]?.apiKey,
+  });
+}
+
 function toolMetadataPasses(params: {
   plugin: PluginManifestRecord;
   metadata: ToolMetadata;
@@ -264,6 +276,15 @@ function toolMetadataPasses(params: {
       continue;
     }
     if (params.hasAuthForProvider?.(signal.provider)) {
+      return true;
+    }
+    if (
+      hasConfiguredProviderApiKey({
+        config: params.config,
+        env: params.env,
+        provider: signal.provider,
+      })
+    ) {
       return true;
     }
     if (

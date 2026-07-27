@@ -277,6 +277,58 @@ describe("hasManifestToolAvailability", () => {
     ).toBe(false);
   });
 
+  it("treats a configured managed provider SecretRef as declared auth availability", () => {
+    const plugin = makePlugin({
+      id: "xai",
+      toolMetadata: {
+        x_search: {
+          authSignals: [{ provider: "openrouter" }],
+        },
+      },
+    });
+    const config = makeConfig({
+      models: {
+        providers: {
+          openrouter: {
+            apiKey: {
+              source: "file",
+              provider: "runtime",
+              id: "/providers/openrouter/apiKey",
+            },
+          },
+        },
+      },
+      secrets: {
+        providers: {
+          runtime: {
+            source: "file",
+            path: "/run/openclaw/secrets.json",
+            mode: "json",
+          },
+        },
+      },
+    });
+
+    expect(
+      hasManifestToolAvailability({
+        plugin,
+        toolNames: ["x_search"],
+        config,
+        env: {},
+      }),
+    ).toBe(true);
+    expect(
+      hasManifestToolAvailability({
+        plugin,
+        toolNames: ["x_search"],
+        config: makeConfig({
+          models: config.models,
+        }),
+        env: {},
+      }),
+    ).toBe(false);
+  });
+
   it("lets a provider base-URL guard veto otherwise valid auth", () => {
     const guardedPlugin = makePlugin({
       toolMetadata: {
