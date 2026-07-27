@@ -113,6 +113,7 @@ minimumReleaseAgeExclude:
   - "clawpdf"
 
 nodeLinker: hoisted
+enableGlobalVirtualStore: false
 blockExoticSubdeps: true
 
 overrides:
