@@ -51,9 +51,11 @@ Each entry lists the package, distribution route, and description.
 
 ## Core npm package
 
-70 plugins
+72 plugins
 
 - **[admin-http-rpc](/plugins/reference/admin-http-rpc)** (`@openclaw/admin-http-rpc`) - included in OpenClaw. OpenClaw admin HTTP RPC endpoint.
+
+- **[agency-data](/plugins/reference/agency-data)** (`@openclaw/agency-data`) - included in OpenClaw. Read-only marketing analytics tools backed by canonical JSONL.
 
 - **[alibaba](/plugins/reference/alibaba)** (`@openclaw/alibaba-provider`) - included in OpenClaw. Adds video generation provider support.
 
@@ -186,6 +188,8 @@ Each entry lists the package, distribution route, and description.
 - **[webhooks](/plugins/reference/webhooks)** (`@openclaw/webhooks`) - included in OpenClaw. Authenticated inbound webhooks that bind external automation to OpenClaw TaskFlows.
 
 - **[workboard](/plugins/reference/workboard)** (`@openclaw/workboard`) - included in OpenClaw. Dashboard workboard for agent-owned issues and sessions.
+
+- **[x-intelligence](/plugins/reference/x-intelligence)** (`@openclaw/x-intelligence`) - included in OpenClaw. Read-only official X source operations with bounded, compliance-aware evidence.
 
 - **[xai](/plugins/reference/xai)** (`@openclaw/xai-plugin`) - included in OpenClaw. Adds xAI model provider support to OpenClaw.
 
