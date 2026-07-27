@@ -120,6 +120,99 @@ export function repairLegacyTaskDeliveryStatuses(db: DatabaseSync): void {
   `);
 }
 
+const RETIRED_TASK_READBACK_ERROR_COLUMNS = [
+  "execution_error",
+  "delivery_error",
+  "finality_error",
+  "projection_warning",
+] as const;
+const RETIRED_TASK_READBACK_COLUMNS = [
+  "execution_receipt_json",
+  ...RETIRED_TASK_READBACK_ERROR_COLUMNS,
+] as const;
+
+/**
+ * Collapse the retired task-readback table extension into the native task detail owner.
+ *
+ * The released extension persisted one execution receipt per task but never wrote its four
+ * dedicated error columns. Preserve the exact JSON receipt bytes and fail closed if a database
+ * contains data outside that shipped shape instead of silently discarding it.
+ */
+export function repairLegacyTaskReadbackColumns(db: DatabaseSync): boolean {
+  if (!tableExists(db, "task_runs")) {
+    return false;
+  }
+  const presentColumns = RETIRED_TASK_READBACK_COLUMNS.filter((column) =>
+    tableHasColumn(db, "task_runs", column),
+  );
+  if (presentColumns.length === 0) {
+    return false;
+  }
+  if (!tableHasColumn(db, "task_runs", "detail_json")) {
+    throw new Error("legacy task readback migration requires task_runs.detail_json");
+  }
+
+  const presentErrorColumns = RETIRED_TASK_READBACK_ERROR_COLUMNS.filter((column) =>
+    presentColumns.includes(column),
+  );
+  if (presentErrorColumns.length > 0) {
+    const populatedError = db
+      .prepare(
+        `SELECT task_id
+         FROM task_runs
+         WHERE ${presentErrorColumns.map((column) => `${column} IS NOT NULL`).join(" OR ")}
+         LIMIT 1`,
+      )
+      .get();
+    if (populatedError) {
+      throw new Error(
+        "legacy task readback migration found populated retired error columns; preserve them explicitly before retrying",
+      );
+    }
+  }
+
+  if (presentColumns.includes("execution_receipt_json")) {
+    const invalidReceipt = db
+      .prepare(
+        `SELECT task_id
+         FROM task_runs
+         WHERE execution_receipt_json IS NOT NULL
+           AND json_valid(execution_receipt_json) <> 1
+         LIMIT 1`,
+      )
+      .get();
+    if (invalidReceipt) {
+      throw new Error("legacy task readback migration found an invalid execution receipt");
+    }
+    const conflictingDetail = db
+      .prepare(
+        `SELECT task_id
+         FROM task_runs
+         WHERE execution_receipt_json IS NOT NULL
+           AND detail_json IS NOT NULL
+           AND detail_json <> execution_receipt_json
+         LIMIT 1`,
+      )
+      .get();
+    if (conflictingDetail) {
+      throw new Error(
+        "legacy task readback migration found conflicting native task detail; reconcile it before retrying",
+      );
+    }
+    db.exec(`
+      UPDATE task_runs
+      SET detail_json = execution_receipt_json
+      WHERE execution_receipt_json IS NOT NULL
+        AND detail_json IS NULL;
+    `);
+  }
+
+  for (const column of presentColumns) {
+    db.exec(`ALTER TABLE task_runs DROP COLUMN ${column};`);
+  }
+  return true;
+}
+
 export function backfillAcpReplayEstimatedBytes(db: DatabaseSync): void {
   if (
     !tableExists(db, "acp_replay_events") ||

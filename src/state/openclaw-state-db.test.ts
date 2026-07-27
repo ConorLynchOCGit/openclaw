@@ -3415,6 +3415,216 @@ INSERT INTO macos_port_guardian_records VALUES (4242, 18789, '/usr/bin/ssh', 're
     expect(columns.some((column) => column.name === "detail_json")).toBe(true);
   });
 
+  it("moves retired task execution receipts into native task detail before strict migration", async () => {
+    await withOpenClawTestState(
+      { layout: "state-only", prefix: "openclaw-state-task-readback-migration-" },
+      async ({ stateDir }) => {
+        const database = openOpenClawStateDatabase({
+          env: { OPENCLAW_STATE_DIR: stateDir },
+        });
+        const databasePath = database.path;
+        closeOpenClawStateDatabaseForTest();
+
+        const receipt = {
+          schema: "openclaw.task.execution_receipt.v1",
+          latestEvent: {
+            at: 200,
+            kind: "succeeded",
+            summary: "Completed",
+          },
+          eventCount: 3,
+          updatedAt: 200,
+        };
+        const { DatabaseSync } = requireNodeSqlite();
+        const legacyDb = new DatabaseSync(databasePath);
+        legacyDb.exec(`
+          PRAGMA foreign_keys = OFF;
+          DROP TABLE task_delivery_state;
+          DROP TABLE task_runs;
+          CREATE TABLE task_runs (
+            task_id TEXT NOT NULL PRIMARY KEY,
+            runtime TEXT NOT NULL,
+            task_kind TEXT,
+            source_id TEXT,
+            requester_session_key TEXT,
+            owner_key TEXT NOT NULL,
+            scope_kind TEXT NOT NULL,
+            child_session_key TEXT,
+            parent_flow_id TEXT,
+            parent_task_id TEXT,
+            agent_id TEXT,
+            run_id TEXT,
+            label TEXT,
+            task TEXT NOT NULL,
+            status TEXT NOT NULL,
+            delivery_status TEXT NOT NULL,
+            notify_policy TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            started_at INTEGER,
+            ended_at INTEGER,
+            last_event_at INTEGER,
+            cleanup_after INTEGER,
+            error TEXT,
+            progress_summary TEXT,
+            terminal_summary TEXT,
+            terminal_outcome TEXT,
+            execution_receipt_json TEXT,
+            execution_error TEXT,
+            delivery_error TEXT,
+            finality_error TEXT,
+            projection_warning TEXT
+          );
+          PRAGMA user_version = 1;
+          UPDATE schema_meta SET schema_version = 1 WHERE meta_key = 'primary';
+        `);
+        legacyDb
+          .prepare(
+            `INSERT INTO task_runs (
+              task_id,
+              runtime,
+              requester_session_key,
+              owner_key,
+              scope_kind,
+              task,
+              status,
+              delivery_status,
+              notify_policy,
+              created_at,
+              ended_at,
+              last_event_at,
+              terminal_outcome,
+              execution_receipt_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            "legacy-readback",
+            "cli",
+            "",
+            "system:cli:legacy-readback",
+            "system",
+            "Preserve the historical task receipt",
+            "succeeded",
+            "not_applicable",
+            "silent",
+            100,
+            200,
+            200,
+            "succeeded",
+            JSON.stringify(receipt),
+          );
+        legacyDb.close();
+
+        const reopened = openOpenClawStateDatabase({
+          env: { OPENCLAW_STATE_DIR: stateDir },
+        });
+        const columns = reopened.db.prepare("PRAGMA table_info(task_runs)").all() as Array<{
+          name?: string;
+        }>;
+        expect(columns.map((column) => column.name)).not.toEqual(
+          expect.arrayContaining([
+            "execution_receipt_json",
+            "execution_error",
+            "delivery_error",
+            "finality_error",
+            "projection_warning",
+          ]),
+        );
+        expect(
+          reopened.db
+            .prepare("SELECT detail_json FROM task_runs WHERE task_id = ?")
+            .get("legacy-readback"),
+        ).toEqual({ detail_json: JSON.stringify(receipt) });
+        expect(loadTaskRegistryStateFromSqlite().tasks.get("legacy-readback")?.detail).toEqual(
+          receipt,
+        );
+      },
+    );
+  });
+
+  it("refuses to discard populated retired task readback errors", async () => {
+    await withOpenClawTestState(
+      { layout: "state-only", prefix: "openclaw-state-task-readback-rejection-" },
+      async ({ stateDir }) => {
+        const database = openOpenClawStateDatabase({
+          env: { OPENCLAW_STATE_DIR: stateDir },
+        });
+        const databasePath = database.path;
+        database.db
+          .prepare(
+            `INSERT INTO task_runs (
+              task_id,
+              runtime,
+              requester_session_key,
+              owner_key,
+              scope_kind,
+              task,
+              status,
+              delivery_status,
+              notify_policy,
+              created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            "legacy-readback-error",
+            "cli",
+            "",
+            "system:cli:legacy-readback-error",
+            "system",
+            "Preserve the historical task error",
+            "failed",
+            "not_applicable",
+            "silent",
+            100,
+          );
+        closeOpenClawStateDatabaseForTest();
+
+        const receipt = JSON.stringify({
+          schema: "openclaw.task.execution_receipt.v1",
+          updatedAt: 200,
+        });
+        const { DatabaseSync } = requireNodeSqlite();
+        const legacyDb = new DatabaseSync(databasePath);
+        legacyDb.exec(`
+          ALTER TABLE task_runs ADD COLUMN execution_receipt_json TEXT;
+          ALTER TABLE task_runs ADD COLUMN execution_error TEXT;
+          ALTER TABLE task_runs ADD COLUMN delivery_error TEXT;
+          ALTER TABLE task_runs ADD COLUMN finality_error TEXT;
+          ALTER TABLE task_runs ADD COLUMN projection_warning TEXT;
+        `);
+        legacyDb
+          .prepare(
+            `UPDATE task_runs
+             SET execution_receipt_json = ?, execution_error = ?
+             WHERE task_id = ?`,
+          )
+          .run(receipt, "retained execution failure", "legacy-readback-error");
+        legacyDb.close();
+
+        expect(() =>
+          openOpenClawStateDatabase({
+            env: { OPENCLAW_STATE_DIR: stateDir },
+          }),
+        ).toThrow(/populated retired error columns/);
+
+        const unchanged = new DatabaseSync(databasePath, { readOnly: true });
+        expect(
+          unchanged
+            .prepare(
+              `SELECT detail_json, execution_receipt_json, execution_error
+               FROM task_runs
+               WHERE task_id = ?`,
+            )
+            .get("legacy-readback-error"),
+        ).toEqual({
+          detail_json: null,
+          execution_receipt_json: receipt,
+          execution_error: "retained execution failure",
+        });
+        unchanged.close();
+      },
+    );
+  });
+
   it("rolls back the requester attribution column when its backfill fails", () => {
     const stateDir = createTempStateDir();
     const database = openOpenClawStateDatabase({

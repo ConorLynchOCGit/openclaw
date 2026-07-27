@@ -10,6 +10,7 @@ import {
   migrateLegacyCronDeliveryThreadIds,
   repairLegacyTaskAgentAttribution,
   repairLegacyTaskDeliveryStatuses,
+  repairLegacyTaskReadbackColumns,
 } from "./openclaw-state-db-legacy-backfills.js";
 import { ensureColumn } from "./openclaw-state-db-schema-helpers.js";
 
@@ -326,6 +327,7 @@ export function ensureAdditiveStateColumns(db: DatabaseSync): void {
   ensureColumn(db, "task_runs", "tool_use_count INTEGER");
   ensureColumn(db, "task_runs", "last_tool_name TEXT");
   ensureColumn(db, "task_runs", "detail_json TEXT");
+  repairLegacyTaskReadbackColumns(db);
   ensureColumn(db, "subagent_runs", "task_name TEXT");
   ensureColumn(db, "subagent_runs", "requester_settle_wake_status TEXT");
   ensureColumn(db, "subagent_runs", "requester_settle_wake_attempt_count INTEGER");
