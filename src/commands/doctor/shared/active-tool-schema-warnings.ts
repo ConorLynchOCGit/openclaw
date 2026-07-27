@@ -6,8 +6,17 @@ import {
   resolveAgentWorkspaceDir,
 } from "../../../agents/agent-scope.js";
 import { createOpenClawCodingTools } from "../../../agents/agent-tools.js";
+import { resolveConversationCapabilityProfile } from "../../../agents/conversation-capability-profile.js";
 import { resolveModel } from "../../../agents/embedded-agent-runner/model.js";
 import { normalizeAgentRuntimeTools } from "../../../agents/runtime-plan/tools.js";
+import { isKnownCoreToolId } from "../../../agents/tool-catalog.js";
+import { buildDeclaredToolAllowlistContext } from "../../../agents/tool-policy-declared-context.js";
+import { isToolAllowedByPolicyName } from "../../../agents/tool-policy-match.js";
+import {
+  analyzeAllowlistByToolType,
+  buildPluginToolGroups,
+  normalizeToolName,
+} from "../../../agents/tool-policy.js";
 import {
   filterRuntimeCompatibleTools,
   type RuntimeToolSchemaDiagnostic,
@@ -79,22 +88,93 @@ function readPluginId(tool: AnyAgentTool | undefined): string | undefined {
   }
 }
 
-/** Collect per-agent warnings for active plugin tools rejected by runtime schema projection. */
+function isLiteralRequiredToolName(value: string): boolean {
+  return (
+    value.length > 0 &&
+    value !== "__openclaw_default_plugin_tools__" &&
+    !value.startsWith("group:") &&
+    !value.includes("*") &&
+    !value.includes("?") &&
+    !value.includes("[")
+  );
+}
+
+function resolveRequiredLiteralToolNames(params: {
+  cfg: OpenClawConfig;
+  agentId: string;
+  agentDir: string;
+  workspaceDir: string;
+  provider: string;
+  modelId: string;
+}): string[] {
+  const capability = resolveConversationCapabilityProfile({
+    config: params.cfg,
+    agentId: params.agentId,
+    agentDir: params.agentDir,
+    workspaceDir: params.workspaceDir,
+    cwd: params.workspaceDir,
+    modelProvider: params.provider,
+    modelId: params.modelId,
+  });
+  const denyPolicy = { deny: capability.policy.explicitToolDenylist };
+  return [
+    ...new Set(
+      capability.policy.explicitToolOverrideAllowlist
+        .map((name) => normalizeToolName(name))
+        .filter(isLiteralRequiredToolName)
+        .filter((name) => isToolAllowedByPolicyName(name, denyPolicy)),
+    ),
+  ].toSorted();
+}
+
+function formatMissingRequiredTool(params: { agentId: string; toolName: string }): string {
+  return sanitizeForLog(
+    `- agents.${params.agentId}: explicitly allowlisted tool "${params.toolName}" is absent from the assembled effective runtime tool set. Restore its native owner or remove the stale allowlist entry before release.`,
+  );
+}
+
+function formatUnknownRequiredTool(params: { agentId: string; toolName: string }): string {
+  return sanitizeForLog(
+    `- agents.${params.agentId}: explicitly allowlisted tool "${params.toolName}" has no assembled core owner, enabled plugin owner, or configured MCP namespace. Restore its native owner or remove the stale allowlist entry before release.`,
+  );
+}
+
+/**
+ * Collect per-agent warnings for required tools missing after assembly and for
+ * active tools rejected by runtime schema projection.
+ */
 export function collectActiveToolSchemaProjectionWarnings(params: {
   cfg: OpenClawConfig;
   env?: NodeJS.ProcessEnv;
 }): string[] {
-  if (params.cfg.plugins?.enabled === false) {
-    return [];
-  }
-
   const env = params.env ?? process.env;
+  const validateSchemas = params.cfg.plugins?.enabled !== false;
   const warnings: string[] = [];
   for (const agentId of listAgentIds(params.cfg)) {
     const agentConfig = resolveAgentConfig(params.cfg, agentId);
     const modelRef = resolveDoctorPrimaryModelRef(params.cfg, agentConfig?.model);
     const agentDir = resolveAgentDir(params.cfg, agentId, env);
     const workspaceDir = resolveAgentWorkspaceDir(params.cfg, agentId, env);
+    let requiredToolNames: string[] = [];
+    try {
+      requiredToolNames = resolveRequiredLiteralToolNames({
+        cfg: params.cfg,
+        agentId,
+        agentDir,
+        workspaceDir,
+        provider: modelRef.provider,
+        modelId: modelRef.model,
+      });
+    } catch (error) {
+      warnings.push(
+        sanitizeForLog(
+          `- agents.${agentId}: required tool readiness could not resolve the effective policy (${formatErrorMessage(error)}). Fix tool policy loading errors before relying on assistant startup.`,
+        ),
+      );
+    }
+    if (!validateSchemas && requiredToolNames.length === 0) {
+      continue;
+    }
     let runtimeModelContext: ReturnType<typeof resolveRuntimeModelContext> = {};
     try {
       runtimeModelContext = resolveRuntimeModelContext({
@@ -160,29 +240,73 @@ export function collectActiveToolSchemaProjectionWarnings(params: {
       );
       continue;
     }
-    for (const diagnostic of preNormalizationDiagnostics) {
-      const rawTool = rawToolsByName.get(diagnostic.toolName);
-      const pluginId = readPluginId(rawTool);
-      warnings.push(
-        formatDiagnostic({
-          agentId,
-          diagnostic,
-          ...(pluginId ? { pluginId } : {}),
-        }),
-      );
+    if (validateSchemas) {
+      for (const diagnostic of preNormalizationDiagnostics) {
+        const rawTool = rawToolsByName.get(diagnostic.toolName);
+        const pluginId = readPluginId(rawTool);
+        warnings.push(
+          formatDiagnostic({
+            agentId,
+            diagnostic,
+            ...(pluginId ? { pluginId } : {}),
+          }),
+        );
+      }
     }
     const projection = filterRuntimeCompatibleTools(normalizedTools);
-    for (const diagnostic of projection.diagnostics) {
-      const tool = readToolByIndex(normalizedTools, diagnostic.toolIndex);
-      const rawTool = rawToolsByName.get(diagnostic.toolName);
-      const pluginId = readPluginId(tool) ?? readPluginId(rawTool);
-      warnings.push(
-        formatDiagnostic({
-          agentId,
-          diagnostic,
-          ...(pluginId ? { pluginId } : {}),
+    if (validateSchemas) {
+      for (const diagnostic of projection.diagnostics) {
+        const tool = readToolByIndex(normalizedTools, diagnostic.toolIndex);
+        const rawTool = rawToolsByName.get(diagnostic.toolName);
+        const pluginId = readPluginId(tool) ?? readPluginId(rawTool);
+        warnings.push(
+          formatDiagnostic({
+            agentId,
+            diagnostic,
+            ...(pluginId ? { pluginId } : {}),
+          }),
+        );
+      }
+    }
+    const assembledNames = new Set(
+      projection.tools
+        .map((tool) => {
+          try {
+            return normalizeToolName(tool.name);
+          } catch {
+            return "";
+          }
+        })
+        .filter(Boolean),
+    );
+    const pluginGroups = buildPluginToolGroups({
+      tools: [...projection.tools],
+      toolMeta: (tool) => getPluginToolMeta(tool),
+    });
+    const coreToolNames = new Set(
+      projection.tools
+        .filter((tool) => !getPluginToolMeta(tool))
+        .map((tool) => normalizeToolName(tool.name))
+        .filter(Boolean),
+    );
+    const unresolvedAllowlist = new Set(
+      analyzeAllowlistByToolType(
+        { allow: requiredToolNames },
+        pluginGroups,
+        coreToolNames,
+        buildDeclaredToolAllowlistContext({
+          config: params.cfg,
+          workspaceDir,
+          env,
         }),
-      );
+      ).unknownAllowlist,
+    );
+    for (const toolName of unresolvedAllowlist) {
+      if (isKnownCoreToolId(toolName)) {
+        warnings.push(formatMissingRequiredTool({ agentId, toolName }));
+      } else if (!assembledNames.has(toolName)) {
+        warnings.push(formatUnknownRequiredTool({ agentId, toolName }));
+      }
     }
   }
 

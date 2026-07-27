@@ -251,6 +251,14 @@ const CORE_TOOL_DEFINITIONS: CoreToolDefinition[] = [
     includeInOpenClawGroup: true,
   },
   {
+    id: "task",
+    label: "task",
+    description: "Run one OpenClaw role as a foreground child and return its result",
+    sectionId: "sessions",
+    profiles: ["coding", "messaging"],
+    includeInOpenClawGroup: true,
+  },
+  {
     id: "agents_wait",
     label: "agents_wait",
     description: AGENTS_WAIT_TOOL_DISPLAY_SUMMARY,

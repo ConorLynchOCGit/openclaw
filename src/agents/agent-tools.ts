@@ -378,6 +378,8 @@ type OpenClawCodingToolsOptions = {
   currentThreadTs?: string;
   /** Current inbound message id for action fallbacks (e.g. Telegram react). */
   currentMessageId?: string | number;
+  /** Exact visible inbound turn for foreground OpenClaw role delegation. */
+  currentInboundMessage?: string;
   /** True when the current inbound turn carried audio media. */
   currentInboundAudio?: boolean;
   /** Dynamic audio state for runs that can accept steered input after tool creation. */
@@ -1012,6 +1014,7 @@ function createOpenClawCodingToolsInternal(options?: OpenClawCodingToolsOptions)
             currentMessagingTarget: options?.currentMessagingTarget,
             currentThreadTs: options?.currentThreadTs,
             currentMessageId: options?.currentMessageId,
+            currentInboundMessage: options?.currentInboundMessage,
             currentInboundAudio: options?.currentInboundAudio,
             hasCurrentInboundAudio: options?.hasCurrentInboundAudio,
             modelProvider: options?.modelProvider,

@@ -263,4 +263,94 @@ describe("active tool schema doctor warnings", () => {
       "- agents.main: active tool schema validation could not load the runtime tool set (plugin startup failed). Fix plugin loading errors before relying on assistant tool startup.",
     ]);
   });
+
+  it("reports an explicitly allowlisted tool missing from the assembled runtime", () => {
+    toolState.tools = [tool("read", { type: "object", properties: {} })];
+
+    expect(
+      collectActiveToolSchemaProjectionWarnings({
+        cfg: {
+          agents: {
+            entries: {
+              planning: {
+                tools: { allow: ["read", "task"] },
+              },
+            },
+          },
+        },
+        env: { HOME: "/tmp/openclaw-test" },
+      }),
+    ).toContain(
+      '- agents.planning: explicitly allowlisted tool "task" is absent from the assembled effective runtime tool set. Restore its native owner or remove the stale allowlist entry before release.',
+    );
+  });
+
+  it("accepts explicitly allowlisted tools that survive assembled projection", () => {
+    toolState.tools = [
+      tool("read", { type: "object", properties: {} }),
+      tool("task", { type: "object", properties: {} }),
+    ];
+
+    expect(
+      collectActiveToolSchemaProjectionWarnings({
+        cfg: {
+          agents: {
+            entries: {
+              planning: {
+                tools: { allow: ["read", "task"] },
+              },
+            },
+          },
+        },
+        env: { HOME: "/tmp/openclaw-test" },
+      }),
+    ).toEqual([]);
+  });
+
+  it("accepts configured MCP namespaces as native late-bound owners", () => {
+    toolState.tools = [tool("read", { type: "object", properties: {} })];
+
+    expect(
+      collectActiveToolSchemaProjectionWarnings({
+        cfg: {
+          agents: {
+            entries: {
+              planning: {
+                tools: { allow: ["read", "gbrain__query"] },
+              },
+            },
+          },
+          mcp: {
+            servers: {
+              gbrain: {
+                command: "gbrain-mcp",
+              },
+            },
+          },
+        },
+        env: { HOME: "/tmp/openclaw-test" },
+      }),
+    ).toEqual([]);
+  });
+
+  it("reports stale allowlist names with no native owner", () => {
+    toolState.tools = [tool("read", { type: "object", properties: {} })];
+
+    expect(
+      collectActiveToolSchemaProjectionWarnings({
+        cfg: {
+          agents: {
+            entries: {
+              "business-ops": {
+                tools: { allow: ["read", "business_ops_present_proposal"] },
+              },
+            },
+          },
+        },
+        env: { HOME: "/tmp/openclaw-test" },
+      }),
+    ).toContain(
+      '- agents.business-ops: explicitly allowlisted tool "business_ops_present_proposal" has no assembled core owner, enabled plugin owner, or configured MCP namespace. Restore its native owner or remove the stale allowlist entry before release.',
+    );
+  });
 });

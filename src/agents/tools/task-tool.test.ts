@@ -1,0 +1,230 @@
+import { createHash } from "node:crypto";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  spawn: vi.fn(),
+  wait: vi.fn(),
+  readReply: vi.fn(),
+  latestRun: vi.fn(),
+  resolveController: vi.fn(),
+  kill: vi.fn(),
+}));
+
+vi.mock("../subagent-spawn.js", () => ({
+  spawnSubagentDirect: (...args: unknown[]) => mocks.spawn(...args),
+}));
+
+vi.mock("../run-wait.js", () => ({
+  waitForAgentRun: (...args: unknown[]) => mocks.wait(...args),
+  readLatestAssistantReply: (...args: unknown[]) => mocks.readReply(...args),
+}));
+
+vi.mock("../subagent-registry-read.js", () => ({
+  getLatestSubagentRunByChildSessionKey: (...args: unknown[]) => mocks.latestRun(...args),
+}));
+
+vi.mock("../subagent-control.js", () => ({
+  resolveSubagentController: (...args: unknown[]) => mocks.resolveController(...args),
+  killControlledSubagentRun: (...args: unknown[]) => mocks.kill(...args),
+}));
+
+const { createTaskTool } = await import("./task-tool.js");
+
+const config = {
+  agents: {
+    entries: {
+      main: {
+        subagents: { allowAgents: ["planning", "coding"] },
+      },
+      planning: {
+        subagents: { allowAgents: ["reviewer", "codebase-researcher"] },
+      },
+      reviewer: {},
+      coding: {
+        executionWorkspace: { type: "loaded-source" as const, access: "modify" as const },
+      },
+      "codebase-researcher": {
+        executionWorkspace: { type: "loaded-source" as const, access: "inspect" as const },
+      },
+    },
+  },
+};
+
+function textOf(result: unknown): string {
+  const content = (result as { content?: Array<{ type?: string; text?: string }> }).content ?? [];
+  return content
+    .filter((entry) => entry.type === "text")
+    .map((entry) => entry.text ?? "")
+    .join("\n");
+}
+
+describe("task foreground delegation", () => {
+  beforeEach(() => {
+    mocks.spawn.mockReset().mockResolvedValue({
+      status: "accepted",
+      childSessionKey: "agent:reviewer:subagent:child",
+      runId: "run-child",
+      resolvedModel: "openai/gpt-5.5",
+      resolvedProvider: "openai",
+    });
+    mocks.wait.mockReset().mockResolvedValue({ status: "ok" });
+    mocks.readReply.mockReset().mockResolvedValue("Task status: complete\n\nUseful result.");
+    mocks.latestRun.mockReset().mockReturnValue(null);
+    mocks.resolveController.mockReset().mockReturnValue({
+      controllerSessionKey: "agent:main:main",
+      callerSessionKey: "agent:main:main",
+      callerIsSubagent: false,
+      controlScope: "children",
+    });
+    mocks.kill.mockReset().mockResolvedValue({ status: "ok", killed: 1 });
+  });
+
+  it("projects only configured child roles into the schema", () => {
+    const tool = createTaskTool({
+      config,
+      agentSessionKey: "agent:planning:main",
+      requesterAgentIdOverride: "planning",
+    });
+    const agentId = (tool.parameters as { properties?: { agentId?: { enum?: string[] } } })
+      .properties?.agentId;
+    expect(agentId?.enum).toEqual(["codebase-researcher", "reviewer"]);
+    expect(tool.executionMode).toBe("parallel");
+  });
+
+  it("transports Main's exact operator request without changing child ownership", async () => {
+    const inbound = "Preserve this exact request.\nSecond line.";
+    const tool = createTaskTool({
+      config,
+      agentSessionKey: "agent:main:main",
+      parentRunId: "run-parent",
+      requesterAgentIdOverride: "main",
+      currentInboundMessage: inbound,
+    });
+    await tool.execute("call", { agentId: "planning", task: "Produce the plan." });
+
+    const [spawnParams, spawnContext] = mocks.spawn.mock.calls[0] ?? [];
+    expect(spawnParams.task).toContain(inbound);
+    expect(spawnParams.task).toContain(createHash("sha256").update(inbound).digest("hex"));
+    expect(spawnParams).toMatchObject({
+      agentId: "planning",
+      mode: "run",
+      cleanup: "keep",
+      context: "isolated",
+      expectsCompletionMessage: false,
+    });
+    expect(spawnParams).not.toHaveProperty("runTimeoutSeconds");
+    expect(spawnContext).toMatchObject({
+      requesterTurnRunId: "run-parent",
+      requesterRunId: "run-parent",
+    });
+  });
+
+  it("uses target executionWorkspace policy instead of a model-authored source path", async () => {
+    const tool = createTaskTool({
+      config,
+      agentSessionKey: "agent:planning:main",
+      requesterAgentIdOverride: "planning",
+    });
+    await tool.execute("call", {
+      agentId: "codebase-researcher",
+      task: "Inspect the source.",
+      checkout: "loaded_system",
+    });
+
+    expect(mocks.spawn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "codebase-researcher",
+        cwd: undefined,
+        context: "isolated",
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it("requires configured loaded-source ownership for semantic checkout requests", async () => {
+    const tool = createTaskTool({
+      config: {
+        agents: {
+          entries: {
+            planning: { subagents: { allowAgents: ["codebase-researcher"] } },
+            "codebase-researcher": {},
+          },
+        },
+      },
+      agentSessionKey: "agent:planning:main",
+      requesterAgentIdOverride: "planning",
+    });
+    const result = await tool.execute("call", {
+      agentId: "codebase-researcher",
+      task: "Inspect source.",
+      checkout: "loaded_system",
+    });
+
+    expect((result as { details?: unknown }).details).toMatchObject({
+      status: "error",
+      error: "codebase-researcher is not configured for loaded-source inspection",
+    });
+    expect(mocks.spawn).not.toHaveBeenCalled();
+  });
+
+  it("keeps waiting through bounded wait-RPC timeouts", async () => {
+    mocks.wait
+      .mockResolvedValueOnce({ status: "timeout" })
+      .mockResolvedValueOnce({ status: "pending" })
+      .mockResolvedValueOnce({ status: "ok" });
+    const result = await createTaskTool({
+      config,
+      agentSessionKey: "agent:planning:main",
+      requesterAgentIdOverride: "planning",
+    }).execute("call", { agentId: "reviewer", task: "Review the plan." });
+
+    expect(mocks.wait).toHaveBeenCalledTimes(3);
+    expect(textOf(result)).toContain('state="completed"');
+    expect(textOf(result)).toContain("<task_result>");
+  });
+
+  it("keeps large child output behind native transcript pointers", async () => {
+    mocks.readReply.mockResolvedValue(`Task status: complete\n\n${"x".repeat(13_000)}`);
+    const result = await createTaskTool({
+      config,
+      agentSessionKey: "agent:planning:main",
+      requesterAgentIdOverride: "planning",
+    }).execute("call", { agentId: "reviewer", task: "Review the plan." });
+
+    expect(textOf(result)).toContain('<task_result_ref kind="session"');
+    expect(textOf(result)).toContain('<task_result_ref kind="transcript_final"');
+    expect(textOf(result)).not.toContain("<task_result>");
+  });
+
+  it("cancels the exact owned child when the parent run aborts", async () => {
+    const controller = new AbortController();
+    mocks.latestRun.mockReturnValue({
+      runId: "run-child",
+      childSessionKey: "agent:reviewer:subagent:child",
+    });
+    mocks.spawn.mockImplementationOnce(async () => {
+      controller.abort();
+      return {
+        status: "accepted",
+        childSessionKey: "agent:reviewer:subagent:child",
+        runId: "run-child",
+      };
+    });
+
+    const result = await createTaskTool({
+      config,
+      agentSessionKey: "agent:planning:main",
+      requesterAgentIdOverride: "planning",
+    }).execute("call", { agentId: "reviewer", task: "Review." }, controller.signal);
+
+    expect(mocks.kill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entry: expect.objectContaining({ runId: "run-child" }),
+      }),
+    );
+    expect((result as { details?: unknown }).details).toMatchObject({
+      status: "error",
+      error: "task wait cancelled",
+    });
+  });
+});
