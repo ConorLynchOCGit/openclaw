@@ -7,6 +7,12 @@
 import { createHash } from "node:crypto";
 import { Type } from "typebox";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import {
+  getDiagnosticSessionActivitySnapshot,
+  markDiagnosticRunProgress,
+} from "../../logging/diagnostic-run-activity.js";
+import { buildTaskLifecycleReadback } from "../../tasks/task-lifecycle-readback.js";
+import { findTaskByRunId } from "../../tasks/task-registry.js";
 import type { GatewayMessageChannel } from "../../utils/message-channel.js";
 import { listAgentIds, resolveAgentConfig } from "../agent-scope-config.js";
 import { resolveAgentExecutionWorkspaceConfig } from "../execution-workspace.js";
@@ -261,9 +267,36 @@ function inlineLimit(requesterAgentId?: string): number {
     : TASK_RESULT_INLINE_MAX_CHARS;
 }
 
+function readForegroundChildRealActivityAt(params: {
+  runId: string;
+  sessionKey: string;
+}): number | undefined {
+  let lastRealActivityAt: number | undefined;
+  try {
+    const task = findTaskByRunId(params.runId);
+    if (task) {
+      lastRealActivityAt = buildTaskLifecycleReadback(task).lastRealActivityAt;
+    }
+  } catch {}
+  const now = Date.now();
+  const diagnosticProgressAge = getDiagnosticSessionActivitySnapshot(
+    { sessionKey: params.sessionKey },
+    now,
+  ).lastProgressAgeMs;
+  if (diagnosticProgressAge !== undefined) {
+    const diagnosticProgressAt = now - diagnosticProgressAge;
+    lastRealActivityAt = Math.max(lastRealActivityAt ?? 0, diagnosticProgressAt);
+  }
+  return lastRealActivityAt !== undefined && Number.isFinite(lastRealActivityAt)
+    ? lastRealActivityAt
+    : undefined;
+}
+
 async function waitForForegroundResult(params: {
   runId: string;
   sessionKey: string;
+  parentRunId?: string;
+  parentSessionKey?: string;
   signal?: AbortSignal;
 }): Promise<
   AgentWaitResult & {
@@ -271,6 +304,7 @@ async function waitForForegroundResult(params: {
     recoveryHistory?: Array<{ source: "task_wait"; status: string; error?: string }>;
   }
 > {
+  let lastObservedChildActivityAt = readForegroundChildRealActivityAt(params);
   while (!params.signal?.aborted) {
     const wait = await waitForAgentRun({
       runId: params.runId,
@@ -298,6 +332,20 @@ async function waitForForegroundResult(params: {
         };
       }
       return { ...wait, replyText };
+    }
+    const childActivityAt = readForegroundChildRealActivityAt(params);
+    if (
+      childActivityAt !== undefined &&
+      (lastObservedChildActivityAt === undefined || childActivityAt > lastObservedChildActivityAt)
+    ) {
+      lastObservedChildActivityAt = childActivityAt;
+      if (params.parentRunId || params.parentSessionKey) {
+        markDiagnosticRunProgress({
+          runId: params.parentRunId,
+          sessionKey: params.parentSessionKey,
+          reason: "foreground_task:child_progress",
+        });
+      }
     }
     // Pending/timeout belong to the bounded wait RPC, not to the child run.
     // Native child liveness and explicit cancellation remain authoritative.
@@ -592,6 +640,8 @@ export function createTaskTool(
       const wait = await waitForForegroundResult({
         runId: spawn.runId,
         sessionKey: spawn.childSessionKey,
+        parentRunId: opts?.parentRunId,
+        parentSessionKey: opts?.agentSessionKey,
         signal,
       });
       signal?.removeEventListener("abort", abort);

@@ -8,6 +8,10 @@ const mocks = vi.hoisted(() => ({
   latestRun: vi.fn(),
   resolveController: vi.fn(),
   kill: vi.fn(),
+  findTask: vi.fn(),
+  lifecycleReadback: vi.fn(),
+  markRunProgress: vi.fn(),
+  diagnosticSnapshot: vi.fn(),
 }));
 
 vi.mock("../subagent-spawn.js", () => ({
@@ -26,6 +30,19 @@ vi.mock("../subagent-registry-read.js", () => ({
 vi.mock("../subagent-control.js", () => ({
   resolveSubagentController: (...args: unknown[]) => mocks.resolveController(...args),
   killControlledSubagentRun: (...args: unknown[]) => mocks.kill(...args),
+}));
+
+vi.mock("../../tasks/task-registry.js", () => ({
+  findTaskByRunId: (...args: unknown[]) => mocks.findTask(...args),
+}));
+
+vi.mock("../../tasks/task-lifecycle-readback.js", () => ({
+  buildTaskLifecycleReadback: (...args: unknown[]) => mocks.lifecycleReadback(...args),
+}));
+
+vi.mock("../../logging/diagnostic-run-activity.js", () => ({
+  markDiagnosticRunProgress: (...args: unknown[]) => mocks.markRunProgress(...args),
+  getDiagnosticSessionActivitySnapshot: (...args: unknown[]) => mocks.diagnosticSnapshot(...args),
 }));
 
 const { createTaskTool } = await import("./task-tool.js");
@@ -84,6 +101,10 @@ describe("task foreground delegation", () => {
       controlScope: "children",
     });
     mocks.kill.mockReset().mockResolvedValue({ status: "ok", killed: 1 });
+    mocks.findTask.mockReset().mockReturnValue({ taskId: "task-child" });
+    mocks.lifecycleReadback.mockReset().mockReturnValue({ lastRealActivityAt: 100 });
+    mocks.markRunProgress.mockReset();
+    mocks.diagnosticSnapshot.mockReset().mockReturnValue({});
   });
 
   it("projects only configured child roles into the schema", () => {
@@ -282,6 +303,67 @@ describe("task foreground delegation", () => {
     expect(mocks.wait).toHaveBeenCalledTimes(3);
     expect(textOf(result)).toContain('state="completed"');
     expect(textOf(result)).toContain("<task_result>");
+  });
+
+  it("projects advancing native child activity into parent liveness", async () => {
+    mocks.wait
+      .mockResolvedValueOnce({ status: "timeout" })
+      .mockResolvedValueOnce({ status: "pending" })
+      .mockResolvedValueOnce({ status: "ok" });
+    mocks.lifecycleReadback
+      .mockReturnValueOnce({ lastRealActivityAt: 100 })
+      .mockReturnValueOnce({ lastRealActivityAt: 200 })
+      .mockReturnValueOnce({ lastRealActivityAt: 200 });
+
+    await createTaskTool({
+      config,
+      agentSessionKey: "agent:planning:main",
+      parentRunId: "run-parent",
+      requesterAgentIdOverride: "planning",
+    }).execute("call", { agentId: "reviewer", task: "Review the plan." });
+
+    expect(mocks.findTask).toHaveBeenCalledWith("run-child");
+    expect(mocks.markRunProgress).toHaveBeenCalledTimes(1);
+    expect(mocks.markRunProgress).toHaveBeenCalledWith({
+      runId: "run-parent",
+      sessionKey: "agent:planning:main",
+      reason: "foreground_task:child_progress",
+    });
+  });
+
+  it("propagates nested foreground progress from the child diagnostic owner", async () => {
+    mocks.wait.mockResolvedValueOnce({ status: "timeout" }).mockResolvedValueOnce({ status: "ok" });
+    mocks.lifecycleReadback.mockReturnValue({ lastRealActivityAt: 100 });
+    mocks.diagnosticSnapshot
+      .mockReturnValueOnce({ lastProgressAgeMs: 10_000 })
+      .mockReturnValueOnce({ lastProgressAgeMs: 1_000 });
+
+    await createTaskTool({
+      config,
+      agentSessionKey: "agent:main:main",
+      parentRunId: "run-parent",
+      requesterAgentIdOverride: "main",
+    }).execute("call", { agentId: "planning", task: "Plan through bounded children." });
+
+    expect(mocks.diagnosticSnapshot).toHaveBeenCalledWith(
+      { sessionKey: "agent:reviewer:subagent:child" },
+      expect.any(Number),
+    );
+    expect(mocks.markRunProgress).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not manufacture progress for a stalled foreground child", async () => {
+    mocks.wait.mockResolvedValueOnce({ status: "timeout" }).mockResolvedValueOnce({ status: "ok" });
+    mocks.lifecycleReadback.mockReturnValue({ lastRealActivityAt: 100 });
+
+    await createTaskTool({
+      config,
+      agentSessionKey: "agent:planning:main",
+      parentRunId: "run-parent",
+      requesterAgentIdOverride: "planning",
+    }).execute("call", { agentId: "reviewer", task: "Review the plan." });
+
+    expect(mocks.markRunProgress).not.toHaveBeenCalled();
   });
 
   it("keeps large child output behind native transcript pointers", async () => {
