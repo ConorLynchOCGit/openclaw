@@ -197,6 +197,11 @@ describe("handleAgentEnd", () => {
       data: {
         phase: "error",
         error: "LLM request failed.",
+        taskEventMetadata: {
+          providerState: "failed",
+          providerCause: "unclassified",
+          providerAttemptStatus: "failed",
+        },
       },
     });
   });
@@ -227,6 +232,11 @@ describe("handleAgentEnd", () => {
       data: {
         phase: "error",
         error: "LLM request failed.",
+        taskEventMetadata: {
+          providerState: "failed",
+          providerCause: "unclassified",
+          providerAttemptStatus: "failed",
+        },
       },
     });
   });
@@ -248,7 +258,7 @@ describe("handleAgentEnd", () => {
     expect(warnMeta.event).toBe("embedded_run_agent_end");
     expect(warnMeta.runId).toBe("run-1");
     expect(warnMeta.error).toBe("LLM request failed: connection refused by the provider endpoint.");
-    expect(warnMeta.providerRuntimeFailureKind).toBe("timeout");
+    expect(warnMeta.providerRuntimeFailureKind).toBe("connection");
     expect(warnMeta.rawErrorPreview).toBe("connection refused");
     expect(warnMeta.consoleMessage).toBe(
       "embedded run agent end: runId=run-1 isError=true model=unknown provider=unknown error=LLM request failed: connection refused by the provider endpoint. rawError=connection refused",
@@ -259,6 +269,11 @@ describe("handleAgentEnd", () => {
         phase: "error",
         error: "LLM request failed: connection refused by the provider endpoint.",
         livenessState: "blocked",
+        taskEventMetadata: {
+          providerState: "failed",
+          providerCause: "connection",
+          providerAttemptStatus: "failed",
+        },
       },
     });
   });
@@ -285,6 +300,11 @@ describe("handleAgentEnd", () => {
       data: {
         phase: "end",
         stopReason: "aborted",
+        taskEventMetadata: {
+          providerState: "cancelled",
+          providerCause: "local_cancellation",
+          providerAttemptStatus: "cancelled",
+        },
       },
     });
   });
@@ -317,6 +337,11 @@ describe("handleAgentEnd", () => {
         phase: "end",
         stopReason: "restart",
         aborted: true,
+        taskEventMetadata: {
+          providerState: "cancelled",
+          providerCause: "local_cancellation",
+          providerAttemptStatus: "cancelled",
+        },
       },
     });
   });
@@ -346,6 +371,11 @@ describe("handleAgentEnd", () => {
         phase: "end",
         stopReason: "end_turn",
         aborted: true,
+        taskEventMetadata: {
+          providerState: "cancelled",
+          providerCause: "local_cancellation",
+          providerAttemptStatus: "cancelled",
+        },
       },
     });
   });
@@ -431,7 +461,7 @@ describe("handleAgentEnd", () => {
       "The AI service is temporarily overloaded. Please try again in a moment.",
     );
     expect(warnMeta.failoverReason).toBe("overloaded");
-    expect(warnMeta.providerRuntimeFailureKind).toBe("timeout");
+    expect(warnMeta.providerRuntimeFailureKind).toBe("overloaded");
     expect(warnMeta.providerErrorType).toBe("overloaded_error");
     expect(warnMeta.consoleMessage).toBe(
       'embedded run agent end: runId=run-1 isError=true model=claude-test provider=anthropic error=The AI service is temporarily overloaded. Please try again in a moment. rawError={"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}',
@@ -483,6 +513,11 @@ describe("handleAgentEnd", () => {
       data: {
         phase: "error",
         error: "LLM request failed.",
+        taskEventMetadata: {
+          providerState: "failed",
+          providerCause: "unclassified",
+          providerAttemptStatus: "failed",
+        },
       },
     });
   });
@@ -1112,6 +1147,11 @@ describe("handleAgentEnd", () => {
       data: {
         phase: "error",
         error: "LLM request failed: connection refused by the provider endpoint.",
+        taskEventMetadata: {
+          providerState: "failed",
+          providerCause: "connection",
+          providerAttemptStatus: "failed",
+        },
       },
     });
   });

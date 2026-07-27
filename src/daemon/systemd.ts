@@ -600,7 +600,7 @@ type SystemdServiceInfo = {
   memoryCurrent?: number;
 };
 
-function parseSystemdShow(output: string): SystemdServiceInfo {
+export function parseSystemdShow(output: string): SystemdServiceInfo {
   const entries = parseKeyValueOutput(output, "=");
   const info: SystemdServiceInfo = {};
   const activeState = entries.activestate;

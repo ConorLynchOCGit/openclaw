@@ -31,6 +31,8 @@ type AttemptPromptPreflightParams = Pick<
 type AttemptPromptPreflightState = {
   contextBudgetStatus: EmbeddedRunAttemptResult["contextBudgetStatus"];
   preflightRecovery: EmbeddedRunAttemptResult["preflightRecovery"];
+  requestLocalReductionCount?: number;
+  requestLocalReductionRoute?: EmbeddedRunAttemptResult["requestLocalReductionRoute"];
   promptError: unknown;
   promptErrorSource: AgentRunAttemptFailureSource | null;
   skipPromptSubmission: boolean;

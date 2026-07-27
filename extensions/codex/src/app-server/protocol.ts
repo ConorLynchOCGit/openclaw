@@ -183,9 +183,12 @@ export type CodexThreadResumeParams = JsonObject & {
 
 export type CodexThreadStartResponse = {
   thread: CodexThread;
+  cwd: string;
   model: string;
   modelProvider?: string | null;
   activePermissionProfile?: CodexActivePermissionProfile | null;
+  instructionSources: string[];
+  runtimeWorkspaceRoots: string[];
 };
 
 export type CodexThreadForkParams = JsonObject & {
@@ -289,9 +292,12 @@ type CodexThreadUnarchiveResponse = {
 
 export type CodexThreadResumeResponse = {
   thread: CodexThread;
+  cwd: string;
   model: string;
   modelProvider?: string | null;
   activePermissionProfile?: CodexActivePermissionProfile | null;
+  instructionSources: string[];
+  runtimeWorkspaceRoots: string[];
   initialTurnsPage?: CodexInitialTurnsPage | null;
 };
 

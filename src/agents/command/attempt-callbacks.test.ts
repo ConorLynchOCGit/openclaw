@@ -1,6 +1,7 @@
 // Verifies the small lifecycle callback adapter used during agent attempts.
 import { describe, expect, it } from "vitest";
 import {
+  buildAgentAttemptTerminalTaskEventMetadata,
   createAgentAttemptLifecycleCallbacks,
   type AgentAttemptLifecycleState,
 } from "./attempt-callbacks.js";
@@ -75,6 +76,64 @@ describe("createAgentAttemptLifecycleCallbacks", () => {
       lifecycleError: undefined,
       lifecycleFinishing: false,
       lifecycleEnded: false,
+    });
+  });
+
+  it("retains native provider metadata from a deferred attempt terminal", () => {
+    const state: AgentAttemptLifecycleState = {
+      currentTurnUserMessagePersisted: false,
+      lifecycleFinishing: false,
+      lifecycleEnded: false,
+    };
+    const callbacks = createAgentAttemptLifecycleCallbacks(state);
+
+    callbacks.onAgentEvent({
+      stream: "lifecycle",
+      data: {
+        phase: "finishing",
+        taskEventMetadata: {
+          providerState: "failed",
+          providerCause: "disconnect",
+          providerAttemptStatus: "failed",
+        },
+      },
+    });
+
+    expect(state.terminalTaskEventMetadata).toEqual({
+      providerState: "failed",
+      providerCause: "disconnect",
+      providerAttemptStatus: "failed",
+    });
+  });
+
+  it("lets recovered fallback and local postprocessing facts override attempt metadata", () => {
+    expect(
+      buildAgentAttemptTerminalTaskEventMetadata({
+        attemptMetadata: {
+          providerState: "failed",
+          providerCause: "disconnect",
+          providerAttemptStatus: "failed",
+        },
+        fallbackMetadata: {
+          providerState: "fallback_recovered",
+          providerAttemptStatus: "succeeded",
+        },
+      }),
+    ).toEqual({
+      providerState: "fallback_recovered",
+      providerCause: "disconnect",
+      providerAttemptStatus: "succeeded",
+    });
+
+    expect(
+      buildAgentAttemptTerminalTaskEventMetadata({
+        attemptMetadata: { providerCause: "disconnect" },
+        postprocessingFailed: true,
+      }),
+    ).toEqual({
+      providerState: "postprocessing_failed",
+      providerCause: "local_postprocessing",
+      providerAttemptStatus: "succeeded",
     });
   });
 });

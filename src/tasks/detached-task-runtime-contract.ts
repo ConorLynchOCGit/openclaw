@@ -61,6 +61,7 @@ type DetachedTaskProgressParams = {
   lastEventAt?: number;
   progressSummary?: string | null;
   eventSummary?: string | null;
+  detail?: JsonValue;
 };
 
 type DetachedTaskFinalizeCommonParams = {

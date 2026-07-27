@@ -1,5 +1,5 @@
 import { once } from "node:events";
-import { createServer, type Server } from "node:http";
+import { createServer, type RequestListener, type Server } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   resolveOwnedMetricsCredentialAtRuntime,
@@ -19,9 +19,7 @@ afterEach(async () => {
   server = undefined;
 });
 
-async function startServer(
-  handler: Parameters<typeof createServer>[0],
-): Promise<{ baseUrl: string }> {
+async function startServer(handler: RequestListener): Promise<{ baseUrl: string }> {
   server = createServer(handler);
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -30,6 +28,13 @@ async function startServer(
     throw new Error("mock server did not bind a TCP address");
   }
   return { baseUrl: `http://127.0.0.1:${address.port}` };
+}
+
+function requireTransportError(value: unknown): XTransportError {
+  if (!(value instanceof XTransportError)) {
+    throw new Error("expected XTransportError");
+  }
+  return value;
 }
 
 function transport(baseUrl: string) {
@@ -529,7 +534,7 @@ describe("XReadTransport", () => {
       category: "ownership",
       requestCount: 2,
     });
-    expect(error.receipts).toHaveLength(2);
+    expect(requireTransportError(error).receipts).toHaveLength(2);
     expect(requests).toBe(2);
   });
 
@@ -591,10 +596,11 @@ describe("XReadTransport", () => {
       .catch((value: unknown) => value);
 
     const expectedRequests = kind === "server" ? 2 : 1;
+    const transportError = requireTransportError(error);
     expect(error).toMatchObject({ kind, category, requestCount: expectedRequests });
-    expect(error.receipts).toHaveLength(expectedRequests);
+    expect(transportError.receipts).toHaveLength(expectedRequests);
     if (kind === "server") {
-      expect(error.retry).toMatchObject({
+      expect(transportError.retry).toMatchObject({
         attempts: 2,
         retries: [{ attempt: 1, kind: "server", status: 503 }],
       });
@@ -638,7 +644,7 @@ describe("XReadTransport", () => {
       .catch((value: unknown) => value);
 
     expect(error).toBeInstanceOf(XTransportError);
-    expect(error.kind).toBe(kind);
+    expect(requireTransportError(error).kind).toBe(kind);
     expect(JSON.stringify(error)).not.toContain(TOKEN);
   });
 
@@ -653,7 +659,7 @@ describe("XReadTransport", () => {
       .catch((value: unknown) => value);
 
     expect(error).toBeInstanceOf(XTransportError);
-    expect(error.kind).toBe("malformed_response");
+    expect(requireTransportError(error).kind).toBe("malformed_response");
     expect(JSON.stringify(error)).not.toContain(TOKEN);
   });
 
@@ -670,7 +676,7 @@ describe("XReadTransport", () => {
 
     const error = await pending.catch((value: unknown) => value);
     expect(error).toBeInstanceOf(XTransportError);
-    expect(error.kind).toBe("aborted");
+    expect(requireTransportError(error).kind).toBe("aborted");
   });
 
   it("redacts configured credentials from successful data and never substitutes the public token for owned metrics", async () => {
@@ -714,7 +720,7 @@ describe("XReadTransport", () => {
       .catch((value: unknown) => value);
 
     expect(personalizedTrendsError).toBeInstanceOf(XTransportError);
-    expect(personalizedTrendsError.kind).toBe("authentication");
+    expect(requireTransportError(personalizedTrendsError).kind).toBe("authentication");
   });
 
   it("rejects owned-metric windows longer than 30 days before provider execution", async () => {
@@ -736,7 +742,7 @@ describe("XReadTransport", () => {
       .catch((value: unknown) => value);
 
     expect(error).toBeInstanceOf(XTransportError);
-    expect(error.kind).toBe("bad_request");
+    expect(requireTransportError(error).kind).toBe("bad_request");
     expect(JSON.stringify(error)).not.toContain("owned-token-must-not-leak");
   });
 

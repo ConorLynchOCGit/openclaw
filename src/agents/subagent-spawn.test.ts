@@ -342,6 +342,36 @@ describe("spawnSubagentDirect seam flow", () => {
     });
   });
 
+  it("rejects failed managed-worktree setup before session persistence or inference", async () => {
+    hoisted.configOverride = createConfigOverride({
+      agents: {
+        list: [
+          { id: "main", subagents: { allowAgents: ["coding"] } },
+          {
+            id: "coding",
+            executionWorkspace: { type: "loaded-source", access: "modify" },
+          },
+        ],
+      },
+    });
+    hoisted.materializeAgentExecutionWorkspaceMock.mockRejectedValue(
+      new Error("worktree setup failed: missing node_modules/.bin/vitest"),
+    );
+
+    const result = await spawnSubagentDirect(
+      { task: "change exact source", agentId: "coding" },
+      { agentSessionKey: "agent:main:main" },
+    );
+
+    expect(result).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("missing node_modules/.bin/vitest"),
+    });
+    expect(hoisted.updateSessionStoreMock).not.toHaveBeenCalled();
+    expect(hoisted.registerSubagentRunMock).not.toHaveBeenCalled();
+    expect(gatewayRequestRecords()).toEqual([]);
+  });
+
   it.each([
     [{ cwd: "/tmp/model-selected" }, "cwd is selected"],
     [{ context: "fork" as const }, "isolated context"],

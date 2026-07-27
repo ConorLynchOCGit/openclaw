@@ -80,18 +80,25 @@ export interface ReadToolInput {
   path: string;
   offset?: number;
   limit?: number;
+  includeDigest?: boolean;
 }
 
 export type ReadToolTruncationDetails = Omit<TruncationResult, "content">;
 
+export interface ReadToolFileIdentity {
+  /** SHA-256 of the complete source file bytes, independent of paging/truncation. */
+  sha256?: string;
+  bytes?: number;
+}
+
 export type ReadToolDetails =
-  | { kind: "text"; content: string }
-  | { kind: "image"; content: string; mimeType: string }
-  | {
+  | ({ kind: "text"; content: string } & ReadToolFileIdentity)
+  | ({ kind: "image"; content: string; mimeType: string } & ReadToolFileIdentity)
+  | ({
       kind: "truncated";
       content: string;
       truncation: ReadToolTruncationDetails;
-    }
+    } & ReadToolFileIdentity)
   | {
       kind: "not_found";
       status: "not_found";

@@ -17,6 +17,14 @@ type CodexAppServerThreadLifecycle = {
   action: "started" | "resumed" | "forked";
   rotatedContextEngineBinding?: boolean;
   activeTurnIds?: string[];
+  authorityReadback?: CodexThreadAuthorityReadback;
+};
+
+export type CodexThreadAuthorityReadback = {
+  cwd: string;
+  runtimeWorkspaceRoots: string[];
+  instructionSources: string[];
+  permissionProfile?: string;
 };
 
 export type CodexAppServerThreadLifecycleBinding = CodexAppServerThreadBinding & {
@@ -69,6 +77,7 @@ export type CodexStartOrResumeThreadParams = {
   mcpServersFingerprintEvaluated?: boolean;
   environmentSelection?: CodexTurnEnvironmentParams[];
   selectedCapabilityRoots?: CodexSelectedCapabilityRoot[];
+  requireSystemProfileReadback?: boolean;
   appServerRuntimeFingerprint?: string;
   pluginThreadConfig?: CodexPluginThreadConfigProvider;
   contextEngineProjection?: CodexContextEngineThreadBootstrapProjection;

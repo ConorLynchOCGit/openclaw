@@ -260,7 +260,7 @@ describe("x evidence store", () => {
         ...input,
         claims: [
           {
-            ...input.claims[0],
+            ...input.claims[0]!,
             invalidation: {
               state: "invalidated" as const,
               at: null,

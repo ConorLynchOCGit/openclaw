@@ -457,17 +457,43 @@ export function streamWithIdleTimeout(
       ...options,
       signal: streamAbortController.signal,
     } as typeof options;
-    const createTimeoutPromise = (setTimer: (timer: NodeJS.Timeout) => void): Promise<never> => {
-      return new Promise((_, reject) => {
-        const timer = setTimeout(() => {
+    const createStreamCreationTimeout = (): {
+      cleanup: () => void;
+      promise: Promise<never>;
+    } => {
+      let timer: NodeJS.Timeout | null = null;
+      let rejectTimeout: ((error: Error) => void) | undefined;
+      const clearTimer = () => {
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+      };
+      const armTimer = () => {
+        clearTimer();
+        timer = setTimeout(() => {
+          timer = null;
           const error = createIdleTimeoutError();
           abortStream(error);
           onIdleTimeout?.(error);
-          reject(error);
+          rejectTimeout?.(error);
         }, timeoutMs);
         timer.unref?.();
-        setTimer(timer);
+      };
+      const unsubscribeLlmActivity = onLlmRequestActivity(streamAbortController.signal, armTimer);
+      const unsubscribeToolActivity = runId ? onToolActivity(runId, armTimer) : undefined;
+      const promise = new Promise<never>((_, reject) => {
+        rejectTimeout = reject;
+        armTimer();
       });
+      return {
+        cleanup: () => {
+          clearTimer();
+          unsubscribeLlmActivity();
+          unsubscribeToolActivity?.();
+        },
+        promise,
+      };
     };
 
     let maybeStream: ReturnType<StreamFn>;
@@ -583,28 +609,17 @@ export function streamWithIdleTimeout(
     };
 
     if (maybeStream && typeof maybeStream === "object" && "then" in maybeStream) {
-      let streamPromiseTimer: NodeJS.Timeout | null = null;
-      const clearStreamPromiseTimer = () => {
-        if (streamPromiseTimer) {
-          clearTimeout(streamPromiseTimer);
-          streamPromiseTimer = null;
-        }
-      };
+      const creationTimeout = createStreamCreationTimeout();
 
       // Some providers return a pending Promise before the stream object exists;
-      // protect that creation phase with the same idle watchdog.
-      return Promise.race([
-        Promise.resolve(maybeStream),
-        createTimeoutPromise((timer) => {
-          streamPromiseTimer = timer;
-        }),
-      ]).then(
+      // protect that creation phase with the same progress-aware idle watchdog.
+      return Promise.race([Promise.resolve(maybeStream), creationTimeout.promise]).then(
         (stream) => {
-          clearStreamPromiseTimer();
+          creationTimeout.cleanup();
           return wrapStream(stream);
         },
         (error: unknown) => {
-          clearStreamPromiseTimer();
+          creationTimeout.cleanup();
           cleanupSourceSignal();
           throw error;
         },

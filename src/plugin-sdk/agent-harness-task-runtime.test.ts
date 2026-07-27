@@ -4,7 +4,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { deliverSubagentAnnouncement } from "../agents/subagent-announce-delivery.js";
 import { createAgentHarnessTaskRuntimeScope } from "../tasks/agent-harness-task-runtime-scope.js";
-import { createRunningTaskRun, finalizeTaskRunByRunId } from "../tasks/detached-task-runtime.js";
+import {
+  createRunningTaskRun,
+  finalizeTaskRunByRunId,
+  recordTaskRunProgressByRunId,
+} from "../tasks/detached-task-runtime.js";
 import { listTaskRecords } from "../tasks/runtime-internal.js";
 import {
   createAgentHarnessTaskRuntime,
@@ -77,6 +81,49 @@ describe("agent-harness-task-runtime", () => {
         runtime: "subagent",
         sessionKey: "agent:main:channel:C123",
         runId: "example:child-1",
+      }),
+    );
+  });
+
+  it("persists harness-owned facts through the native task detail field", () => {
+    const runtime = createAgentHarnessTaskRuntime({
+      runtime: "subagent",
+      taskKind: "example-harness",
+      scope: createScope(),
+      runIdPrefix: "example:",
+    });
+
+    runtime.createRunningTaskRun({
+      runId: "example:child-1",
+      sourceId: "example:child-1",
+      task: "do work",
+      label: "worker",
+      detail: { phase: "spawned", childThreadId: "child-1" },
+    });
+    runtime.recordTaskRunProgressByRunId({
+      runId: "example:child-1",
+      detail: { phase: "running", childThreadId: "child-1" },
+    });
+    runtime.finalizeTaskRunByRunId({
+      runId: "example:child-1",
+      status: "succeeded",
+      endedAt: 1,
+      detail: { phase: "completed", childThreadId: "child-1" },
+    });
+
+    expect(createRunningTaskRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: { phase: "spawned", childThreadId: "child-1" },
+      }),
+    );
+    expect(recordTaskRunProgressByRunId).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: { phase: "running", childThreadId: "child-1" },
+      }),
+    );
+    expect(finalizeTaskRunByRunId).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: { phase: "completed", childThreadId: "child-1" },
       }),
     );
   });

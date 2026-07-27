@@ -1784,7 +1784,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
     });
 
     expect(binding.threadId).toBe("thread-fresh");
-    expect(binding.lifecycle).toEqual({
+    expect(binding.lifecycle).toMatchObject({
       action: "started",
       rotatedContextEngineBinding: true,
     });
@@ -1835,7 +1835,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
     });
 
     expect(binding.threadId).toBe("thread-existing");
-    expect(binding.lifecycle).toEqual({ action: "resumed" });
+    expect(binding.lifecycle).toMatchObject({ action: "resumed" });
     expect(request.mock.calls.map(([method]) => method)).toEqual(["thread/resume"]);
   });
 
@@ -1873,7 +1873,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
     });
 
     expect(binding.threadId).toBe("thread-fresh");
-    expect(binding.lifecycle).toEqual({
+    expect(binding.lifecycle).toMatchObject({
       action: "started",
       rotatedContextEngineBinding: true,
     });
@@ -1929,7 +1929,7 @@ describe("Codex app-server thread lifecycle bindings", () => {
     });
 
     expect(binding.threadId).toBe("thread-fresh");
-    expect(binding.lifecycle).toEqual({
+    expect(binding.lifecycle).toMatchObject({
       action: "started",
       rotatedContextEngineBinding: true,
     });

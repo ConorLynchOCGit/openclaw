@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { access as fsAccess, readFile as fsReadFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve as resolvePath, sep } from "node:path";
@@ -46,7 +47,17 @@ const readSchema = Type.Object({
   path: Type.String({ description: "File path; relative/absolute." }),
   offset: Type.Optional(Type.Integer({ minimum: 1, description: "Start line; 1-based." })),
   limit: Type.Optional(Type.Number({ description: "Max lines." })),
+  includeDigest: Type.Optional(
+    Type.Boolean({
+      description: "Include the complete file SHA-256 and byte size in visible output.",
+    }),
+  ),
 });
+
+const ReadFileIdentityOutputSchema = {
+  sha256: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$" })),
+  bytes: Type.Optional(Type.Integer({ minimum: 0 })),
+};
 
 const ReadTruncationOutputSchema = Type.Object(
   {
@@ -66,7 +77,11 @@ const ReadTruncationOutputSchema = Type.Object(
 
 const ReadToolOutputSchema = Type.Union([
   Type.Object(
-    { kind: Type.Literal("text"), content: Type.String() },
+    {
+      kind: Type.Literal("text"),
+      content: Type.String(),
+      ...ReadFileIdentityOutputSchema,
+    },
     { additionalProperties: false },
   ),
   Type.Object(
@@ -74,6 +89,7 @@ const ReadToolOutputSchema = Type.Union([
       kind: Type.Literal("image"),
       content: Type.String(),
       mimeType: Type.String(),
+      ...ReadFileIdentityOutputSchema,
     },
     { additionalProperties: false },
   ),
@@ -82,6 +98,7 @@ const ReadToolOutputSchema = Type.Union([
       kind: Type.Literal("truncated"),
       content: Type.String(),
       truncation: ReadTruncationOutputSchema,
+      ...ReadFileIdentityOutputSchema,
     },
     { additionalProperties: false },
   ),
@@ -103,21 +120,23 @@ function withoutTruncationContent(truncation: TruncationResult): ReadToolTruncat
 
 function createReadDetails(
   content: (TextContent | ImageContent)[],
+  identity: { sha256: string; bytes: number },
   truncation?: TruncationResult,
 ): ReadToolDetails {
   const text = content.find((part): part is TextContent => part.type === "text")?.text ?? "";
   const image = content.find((part): part is ImageContent => part.type === "image");
   if (image) {
-    return { kind: "image", content: text, mimeType: image.mimeType };
+    return { kind: "image", content: text, mimeType: image.mimeType, ...identity };
   }
   if (truncation) {
     return {
       kind: "truncated",
       content: text,
       truncation: withoutTruncationContent(truncation),
+      ...identity,
     };
   }
-  return { kind: "text", content: text };
+  return { kind: "text", content: text, ...identity };
 }
 interface CompactReadClassification {
   kind: "docs" | "resource" | "skill";
@@ -342,7 +361,16 @@ export function createReadToolDefinition(
     outputSchema: ReadToolOutputSchema,
     async execute(
       toolCallId,
-      { path, offset, limit }: { path: string; offset?: number; limit?: number },
+      {
+        path,
+        offset,
+        limit,
+      }: {
+        path: string;
+        offset?: number;
+        limit?: number;
+        includeDigest?: boolean;
+      },
       signal?: AbortSignal,
       onUpdate?,
       ctx?,
@@ -378,12 +406,16 @@ export function createReadToolDefinition(
             const mimeType = ops.detectImageMimeType
               ? await ops.detectImageMimeType(absolutePath)
               : undefined;
+            const buffer = await ops.readFile(absolutePath);
+            const identity = {
+              sha256: createHash("sha256").update(buffer).digest("hex"),
+              bytes: buffer.byteLength,
+            };
             let content: (TextContent | ImageContent)[];
             let truncationDetails: TruncationResult | undefined;
             const nonVisionImageNote = getNonVisionImageNote(ctx?.model);
             if (mimeType) {
               // Read image as binary.
-              const buffer = await ops.readFile(absolutePath);
               const base64 = buffer.toString("base64");
               const processed = await processImage(
                 { type: "image", data: base64, mimeType },
@@ -407,7 +439,6 @@ export function createReadToolDefinition(
               }
             } else {
               // Read text content.
-              const buffer = await ops.readFile(absolutePath);
               const textContent =
                 ops.decodeText?.({ buffer, absolutePath }) ?? buffer.toString("utf8");
               const allLines = textContent.split("\n");
@@ -474,7 +505,7 @@ export function createReadToolDefinition(
               return;
             }
             signal?.removeEventListener("abort", onAbort);
-            resolve({ content, details: createReadDetails(content, truncationDetails) });
+            resolve({ content, details: createReadDetails(content, identity, truncationDetails) });
           } catch (error: unknown) {
             signal?.removeEventListener("abort", onAbort);
             if (!aborted) {

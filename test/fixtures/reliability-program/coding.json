@@ -1,0 +1,499 @@
+{
+  "schemaVersion": "openclaw.reliability.fixture-corpus.v1",
+  "corpus": "coding",
+  "authority": {
+    "sourceCommit": "41ec19868b13c463cfdcde264fa1857c3e05d29c",
+    "sourceTree": "bc768005ffef524407f66041752c502076b8fa9e",
+    "baselineProgramSpecCommit": "cdc3c11e575eb6067de18333ee88133ba9b903dd",
+    "correctedProgramSpecContentSha256": "61c73a55f1f604964479423fdb901af8bc206b4064745dda225ef13546532d43",
+    "programSpecSection": "12",
+    "proofLockGate": "G0"
+  },
+  "entries": [
+    {
+      "id": "FX-CODE-01",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "Codex parent decomposition with native V2 children",
+        "surfaces": [
+          "extensions/codex/src/conversation-binding.ts",
+          "extensions/codex/src/app-server/native-subagent-task-mirror.ts",
+          "extensions/codex/src/app-server/native-subagent-monitor.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 4C",
+        "focusedGate": "G4C",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "A synthetic repository and accepted plan packet defining three disjoint implementation slices, one dependent integration slice, exact write sets, and deterministic child result packets.",
+        "steps": [
+          "Require the parent to state settled decisions, unresolved decision-changing questions, dependency order, and write-set ownership.",
+          "Start the three disjoint slices concurrently through native V2 children.",
+          "Start the integration slice only after all required child packets settle, then inspect write ownership and task chronology."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "Disjoint child implementation intervals overlap without write-set collision.",
+        "The dependent integration slice waits for exact settled packets.",
+        "The final parent packet names changed paths, decisions, tests, unresolved defects, tree digest, and released write sets."
+      ],
+      "negativeAssertions": [
+        "No fixed child count, Coding orchestrator, or broad repository tour is introduced.",
+        "No child rereads the complete plan when scoped refs are supplied.",
+        "No child edits a shared or dependent write set before ownership transfers."
+      ],
+      "existingPassingControlTestPaths": [
+        "extensions/codex/src/app-server/native-subagent-task-mirror.test.ts",
+        "extensions/codex/src/app-server/native-subagent-monitor.test.ts",
+        "extensions/codex/src/app-server/event-projector-snapshot.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "extensions/codex/src/app-server/coding-team-behavior.integration.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs extensions/codex/src/app-server/coding-team-behavior.integration.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-CODE-01.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-CODE-01.json"
+      },
+      "baselineState": {
+        "classification": "missing_exact_fixture",
+        "gap": "Native child lifecycle controls exist, but no synthetic behavior repository proves decision-first exploration, parallel write sets, and dependent integration."
+      }
+    },
+    {
+      "id": "FX-CODE-02",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "native managed-worktree setup and Coding admission",
+        "surfaces": [
+          "src/agents/worktrees/service.ts",
+          "src/commands/agent.ts",
+          "extensions/codex/src/conversation-binding.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 4C",
+        "focusedGate": "G4C",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "A synthetic Coding repository whose trusted worktree setup cannot provide one required lockfile-local test binary.",
+        "steps": [
+          "Create the managed worktree through native admission.",
+          "Run setup and verify the required package manager, lockfile, local binaries, links, and writable cache paths.",
+          "Inspect task, session, Codex app-server, and provider records after setup fails."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "Admission fails with one native setup result before a Coding thread starts.",
+        "The task remains a truthful environment failure.",
+        "A clean new worktree is removed only through native ownership rules."
+      ],
+      "negativeAssertions": [
+        "No provider call, Codex thread, V2 child, or model-authored repair begins.",
+        "Environment failure is not converted into static-evidence success.",
+        "No copied dependency layout or custom test runner is used."
+      ],
+      "existingPassingControlTestPaths": [
+        "src/agents/worktrees/service.test.ts",
+        "src/commands/agent.worktree-race.test.ts",
+        "extensions/codex/src/app-server/coding-workbench-plugin.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "extensions/codex/src/app-server/coding-admission.integration.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs extensions/codex/src/app-server/coding-admission.integration.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-CODE-02.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-CODE-02.json"
+      },
+      "baselineState": {
+        "classification": "partial",
+        "gap": "Worktree cleanup controls exist, but missing toolchain admission is not yet proved across every Coding inference surface."
+      }
+    },
+    {
+      "id": "FX-CODE-03",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "native Workbench and installed package resolution",
+        "surfaces": [
+          "extensions/codex/system-profile/tools/openclaw-repo-workbench.mjs",
+          "test/scripts/openclaw-coding-workbench-mcp.test.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 4C",
+        "focusedGate": "G4C",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "A synthetic workspace package whose installed dependency is reachable through an in-root symlink and exports one known API absent from the caller source tree.",
+        "steps": [
+          "Give the explorer one API-existence question and exact package roots.",
+          "Resolve the installed package root through workspace and symlink metadata.",
+          "Return search coverage, read errors, exact export symbol, and supported implementation decision."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "The explorer finds the installed API through the symlinked in-root package.",
+        "Its packet identifies the actual package root, symbol, and inspected coverage.",
+        "The implementation selects the existing API rather than creating a substitute."
+      ],
+      "negativeAssertions": [
+        "An incomplete source-only search cannot claim the API is absent.",
+        "Workbench does not follow a symlink outside the allowed root.",
+        "No custom replacement is proposed while the installed native surface exists."
+      ],
+      "existingPassingControlTestPaths": [
+        "test/scripts/openclaw-coding-workbench-mcp.test.ts",
+        "extensions/codex/src/app-server/coding-workbench-plugin.test.ts",
+        "src/infra/fs-safe.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "test/scripts/openclaw-coding-workbench-mcp.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs test/scripts/openclaw-coding-workbench-mcp.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-CODE-03.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-CODE-03.json"
+      },
+      "baselineState": {
+        "classification": "partial",
+        "gap": "Workbench path safety has controls, but a positive symlinked installed-API discovery fixture is missing."
+      }
+    },
+    {
+      "id": "FX-VALID-01",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "native selected-shard test router and aggregate validation ledger",
+        "surfaces": [
+          "scripts/test-projects.mjs",
+          "scripts/run-vitest.mjs",
+          "test/scripts/test-projects.test.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 4C",
+        "focusedGate": "G4C",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "Three deterministic selected shards over one frozen tree: the first exits nonzero, and the later two write unique completion markers and settle independently.",
+        "steps": [
+          "Dispatch all selected shards through the existing native test router.",
+          "Retain command identity, cwd, profile, start, end, exit status, output ref, and tree digest for each shard.",
+          "Return one aggregate defect ledger after every safe shard settles."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "The first failure remains visible after later successes.",
+        "Both later safe shards run and produce their markers.",
+        "The aggregate ledger contains every shard status bound to the same tree digest."
+      ],
+      "negativeAssertions": [
+        "A later success does not overwrite an earlier failure.",
+        "Environment failure does not become permission to substitute static evidence.",
+        "No second runner, command language, or fail-fast wrapper is added."
+      ],
+      "existingPassingControlTestPaths": [
+        "test/scripts/test-projects.test.ts",
+        "src/scripts/test-projects.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "test/scripts/test-projects.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs test/scripts/test-projects.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-VALID-01.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-VALID-01.json"
+      },
+      "baselineState": {
+        "classification": "partial",
+        "gap": "The router is tested, but selected-shard continuation and one aggregate digest-bound defect ledger are not frozen together."
+      }
+    },
+    {
+      "id": "FX-DIFF-01",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "Codex validation and review packet identity",
+        "surfaces": [
+          "extensions/codex/src/app-server/event-projector.ts",
+          "extensions/codex/src/conversation-binding.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 4C",
+        "focusedGate": "G4C",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "A synthetic repository at tree A with two independent review scopes, followed by one file mutation producing tree B.",
+        "steps": [
+          "Bind validation and review packets to tree A and their declared file or dependency scopes.",
+          "Mutate one file covered by only one packet and compute tree B.",
+          "Project current and stale packet status to the Codex parent."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "The affected packet becomes stale against tree B.",
+        "The unaffected packet remains current with its original digest and scope.",
+        "The parent cannot issue final approval until every material affected packet is current."
+      ],
+      "negativeAssertions": [
+        "Review never approves a moving worktree.",
+        "Unrelated packets are not invalidated merely because the tree changed.",
+        "No full rerun is triggered without scope or dependency impact."
+      ],
+      "existingPassingControlTestPaths": [
+        "extensions/codex/src/app-server/event-projector-snapshot.test.ts",
+        "extensions/codex/src/app-server/native-subagent-task-mirror.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "extensions/codex/src/app-server/review-digest-invalidation.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs extensions/codex/src/app-server/review-digest-invalidation.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-DIFF-01.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-DIFF-01.json"
+      },
+      "baselineState": {
+        "classification": "missing_exact_fixture",
+        "gap": "Codex event packets expose activity, but no exact tree A to tree B fixture proves selective review invalidation."
+      }
+    },
+    {
+      "id": "FX-CHILD-01",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "native Codex V2 child lifecycle and process ownership",
+        "surfaces": [
+          "extensions/codex/src/app-server/native-subagent-monitor.ts",
+          "extensions/codex/src/app-server/native-subagent-task-mirror.ts",
+          "extensions/codex/src/app-server/event-projector.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 4C",
+        "focusedGate": "G4C",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "Two native V2 children: one settles then receives a follow-up turn, and one is cancelled while active with owned MCP and shell process fixtures.",
+        "steps": [
+          "Settle the first child and reopen it through native follow-up.",
+          "Cancel the second child and archive or unsubscribe both through native Codex lifecycle.",
+          "Inspect task, child, process, write-set, and final settlement readback."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "The reopened child is active and visible until its follow-up turn settles.",
+        "The cancelled child settles cancelled and its owned processes terminate.",
+        "Final Coding settlement shows no active or queued child and every write set released."
+      ],
+      "negativeAssertions": [
+        "A reopened child does not edit under a completed task projection.",
+        "No MCP, browser, shell, app-server child process, or subscription survives settlement.",
+        "No process sweeper daemon is introduced."
+      ],
+      "existingPassingControlTestPaths": [
+        "extensions/codex/src/app-server/native-subagent-monitor.test.ts",
+        "extensions/codex/src/app-server/native-subagent-task-mirror.test.ts",
+        "extensions/codex/src/app-server/native-subagent-notification.test.ts",
+        "extensions/codex/src/app-server/event-projector-snapshot.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "extensions/codex/src/app-server/native-subagent-lifecycle.integration.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs extensions/codex/src/app-server/native-subagent-lifecycle.integration.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-CHILD-01.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-CHILD-01.json"
+      },
+      "baselineState": {
+        "classification": "partial",
+        "gap": "Monitor, mirror, notification, and projection controls exist, but no assembled reopen, cancel, archive, process-settlement fixture exists."
+      }
+    },
+    {
+      "id": "FX-CREVIEW-01",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "package-owned Codex purpose agents and parent review adjudication",
+        "surfaces": [
+          "extensions/codex/system-profile/project/.codex/agents",
+          "extensions/codex/system-profile/shared-skills",
+          "extensions/codex/src/conversation-binding.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 4C",
+        "focusedGate": "G4C",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "A broad synthetic diff containing independent architecture, native-fit, validation, and code-correctness defects plus one fatal interaction across two lenses.",
+        "steps": [
+          "Have the parent name only verdict-changing uncertainties.",
+          "Dispatch the existing package-owned specialist roles selectively with the exact diff digest and lens-specific scope.",
+          "Return compact packets and require the parent to adjudicate their interaction and issue the only final verdict."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "Only material specialist lenses are selected.",
+        "Each packet binds the exact diff digest and reports its bounded scope.",
+        "The parent catches the fatal cross-lens interaction and rejects the diff."
+      ],
+      "negativeAssertions": [
+        "No fixed panel, vote, duplicate broad inspection, or home-owned review-agent catalog appears.",
+        "Specialist pass results do not mechanically produce approval.",
+        "Minor reversible details do not trigger another specialist without a verdict-changing claim."
+      ],
+      "existingPassingControlTestPaths": [
+        "extensions/codex/src/app-server/system-profile.test.ts",
+        "extensions/codex/src/app-server/event-projector-snapshot.test.ts",
+        "extensions/codex/src/app-server/native-subagent-monitor.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "extensions/codex/src/app-server/coding-review-specialists.integration.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs extensions/codex/src/app-server/coding-review-specialists.integration.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-CREVIEW-01.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-CREVIEW-01.json"
+      },
+      "baselineState": {
+        "classification": "missing_exact_fixture",
+        "gap": "Purpose-agent assets exist, but no behavior fixture proves selective dispatch and parent-owned cross-lens adjudication."
+      }
+    },
+    {
+      "id": "FX-CREVIEW-02",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "Codex parent review diminishing-returns contract",
+        "surfaces": [
+          "extensions/codex/system-profile/project/.codex/agents",
+          "extensions/codex/system-profile/shared-skills/openclaw-codex-execution-review"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 4C",
+        "focusedGate": "G4C",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "A narrow synthetic one-file change with complete focused tests, no architecture or dependency change, and no material unresolved uncertainty.",
+        "steps": [
+          "Have the parent classify the change, accepted decision, write set, validation, and remaining uncertainty.",
+          "Require it to decide whether any specialist can change severity or verdict.",
+          "Complete review and settlement using only the parent when no such claim exists."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "The parent correctly selects no helper agents.",
+        "The final verdict binds the exact diff and focused validation evidence.",
+        "The packet explains why specialist review would have no material decision value."
+      ],
+      "negativeAssertions": [
+        "No fixed specialist minimum or mandatory review sequence is applied.",
+        "Diff size alone does not determine whether helpers are used.",
+        "The parent does not perform extra source reads after all material claims are settled."
+      ],
+      "existingPassingControlTestPaths": [
+        "extensions/codex/src/app-server/system-profile.test.ts",
+        "extensions/codex/src/app-server/event-projector-snapshot.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "extensions/codex/src/app-server/coding-review-specialists.integration.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs extensions/codex/src/app-server/coding-review-specialists.integration.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-CREVIEW-02.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-CREVIEW-02.json"
+      },
+      "baselineState": {
+        "classification": "missing_exact_fixture",
+        "gap": "Review contracts exist, but there is no clean control proving that no specialist is the correct native decision."
+      }
+    },
+    {
+      "id": "FX-VALID-02",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "native focused-validation routing and minimal agent-harness composition",
+        "surfaces": [
+          "scripts/test-projects.mjs",
+          "test/vitest",
+          "src/plugin-sdk/agent-harness-runtime.ts",
+          "extensions/codex/src/app-server/run-attempt-test-harness.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 4C",
+        "focusedGate": "G4C",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "One Codex startup-capability assertion whose behavior requires no OpenClaw dynamic tools, one file-scoped lint whose files do not change SDK exports, and separate assembled controls for the full plugin/tool graph and generated package-boundary declarations.",
+        "steps": [
+          "Run the focused assertion through the existing narrow Vitest project with minimal harness defaults and record transform/import/setup separately from assertion execution.",
+          "Run file-scoped lint without generating package-wide SDK declarations when no exported boundary changed.",
+          "Run broad controls through their existing plugin/runtime and package-boundary projects with explicit enablement.",
+          "Compare loaded owners and gate receipts to confirm that each validation assembled only its declared surface."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "The focused test does not load the plugin catalog or bundle-MCP graph when the native construction decision says those tools are disabled or unneeded.",
+        "The file-scoped lint does not run package-wide SDK declaration generation for unrelated files.",
+        "The assembled control still loads and validates the broad catalog through the existing integration project.",
+        "The native validation router reports focused and assembled outcomes as separate gates."
+      ],
+      "negativeAssertions": [
+        "No timeout increase, second test runner, test-only plugin registry, or mocked owned behavior hides the composition defect.",
+        "A helper cannot silently activate production-wide catalogs for an unrelated focused assertion.",
+        "Focused success cannot substitute for the assembled control."
+      ],
+      "existingPassingControlTestPaths": [
+        "src/plugin-sdk/agent-harness-runtime.test.ts",
+        "src/agents/codex-mcp-config.test.ts",
+        "extensions/codex/src/app-server/run-attempt.test.ts",
+        "test/scripts/test-projects.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "src/plugin-sdk/agent-harness-runtime.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs src/plugin-sdk/agent-harness-runtime.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-VALID-02.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-VALID-02.json"
+      },
+      "baselineState": {
+        "classification": "partial",
+        "gap": "The native router and minimal harness defaults exist, but focused tests can still explicitly enable unrelated production-wide catalogs and pay assembled startup cost."
+      }
+    }
+  ]
+}

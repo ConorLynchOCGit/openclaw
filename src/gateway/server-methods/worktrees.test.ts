@@ -48,6 +48,18 @@ describe("worktrees gateway methods", () => {
       { worktrees: [record] },
       undefined,
     ]);
+    expect(service.list).toHaveBeenCalledWith({
+      includeTelemetry: undefined,
+      includeSize: undefined,
+    });
+    await call(handlers, "worktrees.list", {
+      includeTelemetry: true,
+      includeSize: true,
+    });
+    expect(service.list).toHaveBeenLastCalledWith({
+      includeTelemetry: true,
+      includeSize: true,
+    });
     expect(
       await call(handlers, "worktrees.create", {
         repoRoot: "/repo",

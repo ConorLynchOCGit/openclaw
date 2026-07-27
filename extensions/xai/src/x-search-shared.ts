@@ -562,7 +562,6 @@ export async function requestXaiXSearch(params: {
   apiKey: string;
   endpoint: string;
   model: string;
-  timeoutSeconds: number;
   inlineCitations: boolean;
   maxTurns?: number;
   maxTotalResults?: number;
@@ -604,7 +603,6 @@ export async function requestXaiXSearch(params: {
   return await postTrustedWebToolsJson(
     {
       url: params.endpoint,
-      timeoutSeconds: params.timeoutSeconds,
       apiKey: params.apiKey,
       body,
       errorLabel: providerLabel,

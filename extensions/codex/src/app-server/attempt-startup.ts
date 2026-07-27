@@ -76,6 +76,7 @@ import {
 import {
   buildCodexUntrustedProjectConfig,
   loadCodexSystemProfileForAgent,
+  type CodexLoadedSystemProfile,
 } from "./system-profile.js";
 import {
   startOrResumeThread,
@@ -118,6 +119,8 @@ type StartCodexAttemptThreadResult = {
   executionCwd: string;
   sandboxPolicy: CodexSandboxPolicy | undefined;
   permissionProfile: string | undefined;
+  systemProfile: CodexLoadedSystemProfile | undefined;
+  appServerVersion: string | undefined;
   runtimeArtifact?: AgentHarnessRuntimeArtifactBinding;
   releaseSharedClientLease: () => void;
   restartContextEngineCodexThread: () => Promise<CodexAppServerThreadLifecycleBinding>;
@@ -498,6 +501,7 @@ export async function startCodexAttemptThread(params: {
                 mcpServersFingerprintEvaluated: params.bundleMcpThreadConfig.evaluated,
                 environmentSelection: startupEnvironmentSelection,
                 selectedCapabilityRoots: systemProfile?.selectedCapabilityRoots,
+                requireSystemProfileReadback: Boolean(systemProfile),
                 appServerRuntimeFingerprint,
                 contextEngineProjection: params.contextEngineProjection,
                 signal,
@@ -559,6 +563,8 @@ export async function startCodexAttemptThread(params: {
                 executionCwd: startupExecutionCwd,
                 sandboxPolicy: startupSandboxPolicy,
                 permissionProfile: systemProfile?.permissionProfile,
+                systemProfile,
+                appServerVersion: activeStartupClient.getServerVersion(),
                 ...(runtimeArtifact ? { runtimeArtifact } : {}),
                 restartContextEngineCodexThread: async () => {
                   try {

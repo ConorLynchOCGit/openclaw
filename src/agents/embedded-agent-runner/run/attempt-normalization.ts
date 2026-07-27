@@ -236,6 +236,11 @@ export async function normalizeEmbeddedRunAttempt(input: {
   }
   const attemptCompactionCount = Math.max(0, attempt.compactionCount ?? 0);
   input.contextRecoveryState.autoCompactionCount += attemptCompactionCount;
+  const requestLocalReductionCount = Math.max(0, attempt.requestLocalReductionCount ?? 0);
+  input.contextRecoveryState.requestLocalReductionCount += requestLocalReductionCount;
+  if (requestLocalReductionCount > 0 && attempt.requestLocalReductionRoute) {
+    input.contextRecoveryState.requestLocalReductionRoute = attempt.requestLocalReductionRoute;
+  }
   if (
     typeof attempt.compactionTokensAfter === "number" &&
     Number.isFinite(attempt.compactionTokensAfter) &&

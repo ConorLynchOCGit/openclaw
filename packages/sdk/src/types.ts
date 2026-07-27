@@ -167,6 +167,125 @@ export type ArtifactsDownloadResult = {
 
 export type TaskStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "timed_out";
 
+export type TaskDeliveryStatus =
+  | "pending"
+  | "delivered"
+  | "session_queued"
+  | "failed"
+  | "parent_missing"
+  | "not_applicable";
+
+export type TaskLifecycleReadback = {
+  schema: "openclaw.task.lifecycle_readback.v1";
+  logicalStatus: TaskStatus;
+  nativeTaskStatus: string;
+  logicalStartedAt?: number;
+  lastActivityAt: number;
+  lastRealActivityAt: number;
+  physical?: {
+    runId?: string;
+    sessionKey?: string;
+    sessionStatus?: string;
+    active: boolean;
+    startedAt?: number;
+    attemptNumber?: number;
+    continuationReason?: string;
+    attemptId?: string;
+    attemptStatus?: string;
+  };
+  children: Array<{
+    taskId: string;
+    status: TaskStatus;
+    active: boolean;
+    kind?: string;
+    runId?: string;
+    sessionKey?: string;
+    phase?: string;
+    attemptKind?: "follow_up";
+    operationId?: string;
+    role?: string;
+    model?: string;
+    reasoning?: string;
+    startedAt?: number;
+    endedAt?: number;
+    lastActivityAt?: number;
+  }>;
+  activeChildCount: number;
+  queuedChildCount: number;
+  terminalChildCount: number;
+  followupActive: boolean;
+  worktree?: {
+    id: string;
+    kind?: "source-inspection" | "system-change";
+    baseRef?: string;
+    writeOwnerTaskIds: string[];
+    writeOwnerTaskId?: string;
+  };
+  execution?: {
+    provider?: string;
+    model?: string;
+    reasoning?: string;
+    profile?: string;
+  };
+  codex?: {
+    threadId: string;
+    action: "started" | "resumed" | "forked";
+    cwd: string;
+    model?: string;
+    modelProvider?: string;
+    permissionProfile?: string;
+    runtimeWorkspaceRoots: string[];
+    instructionSources: string[];
+    appServerVersion?: string;
+    runtimeFingerprint?: string;
+    systemProfile?: {
+      layerVersion: string;
+      purposeAgents: string[];
+      capabilityRoots: string[];
+      workbenchMcp: true;
+    };
+  };
+  context?: {
+    nativeCompactionCount?: number;
+    lastTurnCompactions?: number;
+    requestLocalReductions?: {
+      count: number;
+      route?: string;
+    };
+  };
+  artifact?: {
+    governingRef?: string;
+    governingDigest?: string;
+    observedDigest?: string;
+    validationDigest?: string;
+    reviewReceiptRef?: string;
+    reviewedDigest?: string;
+    reviewVerdict?: string;
+    handoffTarget?: string;
+    handoffDigest?: string;
+    stale: boolean;
+  };
+  provider?: {
+    state?: string;
+    cause?: string;
+    attemptId?: string;
+  };
+  taskFlow?: {
+    flowId: string;
+    revision: number;
+    status: string;
+    terminal: boolean;
+    currentStep?: string;
+    stateLabel?: string;
+  };
+  deliveryStatus: TaskDeliveryStatus;
+  mismatches: Array<{
+    code: string;
+    owners: string[];
+    evidence: string[];
+  }>;
+};
+
 /** Gateway task summary returned by task list/get calls. */
 export type TaskSummary = {
   id: string;
@@ -175,6 +294,8 @@ export type TaskSummary = {
   runtime?: string;
   status: TaskStatus;
   title?: string;
+  deliveryStatus: TaskDeliveryStatus;
+  terminalOutcome?: "succeeded" | "blocked";
   agentId?: string;
   sessionKey?: string;
   childSessionKey?: string;
@@ -189,6 +310,7 @@ export type TaskSummary = {
   endedAt?: RunTimestamp;
   progressSummary?: string;
   terminalSummary?: string;
+  readback?: TaskLifecycleReadback;
   error?: string;
 };
 

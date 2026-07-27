@@ -129,6 +129,7 @@ describe("xai x_search tool", () => {
     expect(queryDescription).toContain("Grok X-search agent");
     expect(queryDescription).toContain("meaningful and non-empty");
     expect(queryDescription).not.toContain("allowed_x_handles");
+    expect(JSON.stringify(tool?.parameters)).not.toContain("timeoutSeconds");
   });
 
   it("publishes xAI handle-filter constraints in the tool schema", () => {

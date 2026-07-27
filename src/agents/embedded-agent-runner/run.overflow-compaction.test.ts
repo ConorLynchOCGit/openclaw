@@ -3837,44 +3837,49 @@ describe("runEmbeddedAgent overflow compaction trigger routing", () => {
   });
 
   it("uses the top-level successor id when resolving a partial compaction session target", async () => {
-    const rotatedStorePath = "/tmp/rotated-sessions.sqlite";
-    mockedRunEmbeddedAttempt
-      .mockResolvedValueOnce(makeAttemptResult({ promptError: makeOverflowError() }))
-      .mockResolvedValueOnce(
-        makeAttemptResult({
-          promptError: null,
-          sessionIdUsed: "rotated-session",
-          sessionFileUsed: `sqlite:main:rotated-session:${rotatedStorePath}`,
-        }),
-      );
-    mockedCompactDirect.mockResolvedValueOnce({
-      ok: true,
-      compacted: true,
-      result: {
-        summary: "rotated overflow compaction",
-        tokensAfter: 50,
-        sessionId: "rotated-session",
-        sessionTarget: {
-          sessionKey: "test-key",
-          storePath: rotatedStorePath,
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-overflow-successor-"));
+    const rotatedStorePath = path.join(tempDir, "sessions.sqlite");
+    try {
+      mockedRunEmbeddedAttempt
+        .mockResolvedValueOnce(makeAttemptResult({ promptError: makeOverflowError() }))
+        .mockResolvedValueOnce(
+          makeAttemptResult({
+            promptError: null,
+            sessionIdUsed: "rotated-session",
+            sessionFileUsed: `sqlite:main:rotated-session:${rotatedStorePath}`,
+          }),
+        );
+      mockedCompactDirect.mockResolvedValueOnce({
+        ok: true,
+        compacted: true,
+        result: {
+          summary: "rotated overflow compaction",
+          tokensAfter: 50,
+          sessionId: "rotated-session",
+          sessionTarget: {
+            sessionKey: "test-key",
+            storePath: rotatedStorePath,
+          },
         },
-      },
-    });
+      });
 
-    await runEmbeddedAgent(overflowBaseRunParams);
+      await runEmbeddedAgent(overflowBaseRunParams);
 
-    expectMockCallFields(
-      mockedRunEmbeddedAttempt,
-      {
+      expectMockCallFields(
+        mockedRunEmbeddedAttempt,
+        {
+          sessionId: "rotated-session",
+          sessionFile: `sqlite:main:rotated-session:${rotatedStorePath}`,
+        },
+        1,
+      );
+      expectMockCallFields(mockedRunContextEngineMaintenance, {
         sessionId: "rotated-session",
         sessionFile: `sqlite:main:rotated-session:${rotatedStorePath}`,
-      },
-      1,
-    );
-    expectMockCallFields(mockedRunContextEngineMaintenance, {
-      sessionId: "rotated-session",
-      sessionFile: `sqlite:main:rotated-session:${rotatedStorePath}`,
-    });
+      });
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("does not let an old execution rotate a newer same-id run context", async () => {

@@ -9,7 +9,10 @@ import {
   resolveAgentRunAbortLifecycleFields,
   resolveAgentRunErrorLifecycleFields,
 } from "../run-termination.js";
-import type { AgentAttemptLifecycleState } from "./attempt-callbacks.js";
+import {
+  buildAgentAttemptTerminalTaskEventMetadata,
+  type AgentAttemptLifecycleState,
+} from "./attempt-callbacks.js";
 import type { AgentAttemptResult } from "./runtime-loaders.js";
 
 const log = createSubsystemLogger("agents/agent-command");
@@ -96,6 +99,9 @@ export function createAgentCommandLifecycle(params: {
       }
       lifecycleFinishingEmitted = true;
       params.state.lifecycleFinishing = true;
+      const taskEventMetadata = buildAgentAttemptTerminalTaskEventMetadata({
+        attemptMetadata: params.state.terminalTaskEventMetadata,
+      });
       emitAgentEvent({
         runId: params.runId,
         lifecycleGeneration: params.lifecycleGeneration(),
@@ -106,6 +112,7 @@ export function createAgentCommandLifecycle(params: {
           endedAt: Date.now(),
           aborted: terminal.metadata.aborted ?? false,
           stopReason: terminal.outcome.stopReason,
+          ...(taskEventMetadata ? { taskEventMetadata } : {}),
           ...resolveAgentRunAbortLifecycleFields(params.abortSignal),
         },
       });
@@ -120,6 +127,9 @@ export function createAgentCommandLifecycle(params: {
       if (logLevel) {
         log[logLevel](`[agent] run ${params.runId} ended with stopReason=${stopReason}`);
       }
+      const taskEventMetadata = buildAgentAttemptTerminalTaskEventMetadata({
+        attemptMetadata: params.state.terminalTaskEventMetadata,
+      });
       emitAgentEvent({
         runId: params.runId,
         lifecycleGeneration: params.lifecycleGeneration(),
@@ -130,6 +140,7 @@ export function createAgentCommandLifecycle(params: {
           endedAt: Date.now(),
           aborted: terminal.metadata.aborted ?? false,
           stopReason,
+          ...(taskEventMetadata ? { taskEventMetadata } : {}),
           ...resolveAgentRunAbortLifecycleFields(params.abortSignal),
         },
       });
@@ -147,6 +158,9 @@ export function createAgentCommandLifecycle(params: {
       const error =
         resolveResultError(runResult, fallbackExhausted) ??
         (fallbackExhausted ? "All model fallback candidates failed" : "Agent run failed");
+      const taskEventMetadata = buildAgentAttemptTerminalTaskEventMetadata({
+        attemptMetadata: params.state.terminalTaskEventMetadata,
+      });
       emitAgentEvent({
         runId: params.runId,
         lifecycleGeneration: params.lifecycleGeneration(),
@@ -157,6 +171,7 @@ export function createAgentCommandLifecycle(params: {
           endedAt: Date.now(),
           error,
           ...terminal.metadata,
+          ...(taskEventMetadata ? { taskEventMetadata } : {}),
           ...(fallbackExhausted ? { fallbackExhaustedFailure: true } : {}),
         },
       });
@@ -166,6 +181,10 @@ export function createAgentCommandLifecycle(params: {
         return;
       }
       params.state.lifecycleEnded = true;
+      const taskEventMetadata = buildAgentAttemptTerminalTaskEventMetadata({
+        attemptMetadata: params.state.terminalTaskEventMetadata,
+        postprocessingFailed: true,
+      });
       emitAgentEvent({
         runId: params.runId,
         lifecycleGeneration: params.lifecycleGeneration(),
@@ -175,6 +194,7 @@ export function createAgentCommandLifecycle(params: {
           startedAt: params.startedAt,
           endedAt: Date.now(),
           error: error instanceof Error ? error.message : "Agent run failed",
+          ...(taskEventMetadata ? { taskEventMetadata } : {}),
           ...resolveAgentRunErrorLifecycleFields(error, params.abortSignal),
         },
       });

@@ -150,6 +150,8 @@ export async function runEmbeddedAttemptSettledPhase(
   let sessionIdUsed = activeSession.sessionId;
   let sessionFileUsed: string | undefined = attempt.sessionFile;
   let preflightRecovery: EmbeddedRunAttemptResult["preflightRecovery"];
+  let requestLocalReductionCount: number | undefined;
+  let requestLocalReductionRoute: EmbeddedRunAttemptResult["requestLocalReductionRoute"];
   const readTerminal = () => projectAgentRunAttemptTerminal(state.terminal);
   const setFailure = (error: unknown, source: AgentRunAttemptFailureSource | null) => {
     state.terminal = setAgentRunAttemptTerminalFailure(
@@ -244,6 +246,8 @@ export async function runEmbeddedAttemptSettledPhase(
           return {
             contextBudgetStatus,
             preflightRecovery,
+            requestLocalReductionCount,
+            requestLocalReductionRoute,
             promptError: terminal.promptError,
             promptErrorSource: terminal.promptErrorSource,
           };
@@ -251,6 +255,8 @@ export async function runEmbeddedAttemptSettledPhase(
         writeState: (nextState) => {
           contextBudgetStatus = nextState.contextBudgetStatus;
           preflightRecovery = nextState.preflightRecovery;
+          requestLocalReductionCount = nextState.requestLocalReductionCount;
+          requestLocalReductionRoute = nextState.requestLocalReductionRoute;
           setFailure(nextState.promptError, nextState.promptErrorSource);
         },
         getPrePromptMessageCount: () => sessionRuntimeState.prePromptMessageCount,
@@ -406,6 +412,8 @@ export async function runEmbeddedAttemptSettledPhase(
     state: {
       terminal: state.terminal,
       preflightRecovery,
+      requestLocalReductionCount,
+      requestLocalReductionRoute,
       sessionIdUsed,
       sessionFileUsed,
       diagnosticTrace: input.diagnostics.diagnosticTrace,

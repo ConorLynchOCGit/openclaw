@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -37,7 +38,11 @@ describe("filesystem tool output contracts", () => {
     const tool = createOpenClawReadTool(
       createReadTool(tmpDir, { autoResizeImages: false }) as unknown as AnyAgentTool,
     );
-    const text = await tool.execute("read-text", { path: "notes.txt", limit: 10 });
+    const text = await tool.execute("read-text", {
+      path: "notes.txt",
+      limit: 10,
+      includeDigest: true,
+    });
     const image = await tool.execute("read-image", { path: "pixel.png", limit: 10 });
     const truncated = await tool.execute("read-truncated", { path: "long.txt", limit: 10 });
     const notFound = await tool.execute("read-not-found", { path: "memory/2026-07-17.md" });
@@ -45,9 +50,36 @@ describe("filesystem tool output contracts", () => {
     for (const result of [text, image, truncated, notFound]) {
       expectContract(tool, result.details);
     }
-    expect(text.details).toEqual({ kind: "text", content: "ordinary text\n" });
-    expect(image.details).toMatchObject({ kind: "image", mimeType: "image/png" });
-    expect(truncated.details).toMatchObject({ kind: "truncated" });
+    expect(text.details).toEqual({
+      kind: "text",
+      content: "ordinary text\n",
+      sha256: createHash("sha256").update("ordinary text\n").digest("hex"),
+      bytes: 14,
+    });
+    expect(text.content).toEqual([
+      {
+        type: "text",
+        text: "ordinary text\n",
+      },
+      {
+        type: "text",
+        text: `[File identity: sha256=${createHash("sha256").update("ordinary text\n").digest("hex")} bytes=14]`,
+      },
+    ]);
+    expect(image.details).toMatchObject({
+      kind: "image",
+      mimeType: "image/png",
+      sha256: createHash("sha256")
+        .update(Buffer.from(ONE_PIXEL_PNG_BASE64, "base64"))
+        .digest("hex"),
+    });
+    expect(truncated.details).toMatchObject({
+      kind: "truncated",
+      sha256: createHash("sha256")
+        .update("x".repeat(DEFAULT_MAX_BYTES + 1))
+        .digest("hex"),
+      bytes: DEFAULT_MAX_BYTES + 1,
+    });
     expect(notFound.details).toEqual({
       kind: "not_found",
       status: "not_found",
@@ -55,7 +87,7 @@ describe("filesystem tool output contracts", () => {
       optional: true,
     });
     expect(compactToolOutputHint(tool.outputSchema)).toBe(
-      '{ content: string; kind: "text" } | { content: string; kind: "image"; mimeType: string } | { content: string; kind: "truncated"; truncation: { firstLineExceedsLimit: boolean; lastLinePartial: boolean; maxBytes: number; maxLines: number; outputBytes: number; outputLines: number; totalBytes: number; totalLines: number; truncated: true; truncatedBy: "lines" | "bytes" } } | { kind: "not_found"; optional: true; path: string; status: "not_found" }',
+      '{ content: string; kind: "text"; bytes?: number; sha256?: string } | { content: string; kind: "image"; mimeType: string; bytes?: number; sha256?: string } | { content: string; kind: "truncated"; truncation: { firstLineExceedsLimit: boolean; lastLinePartial: boolean; maxBytes: number; maxLines: number; outputBytes: number; outputLines: number; totalBytes: number; totalLines: number; truncated: true; truncatedBy: "lines" | "bytes" }; bytes?: number; sha256?: string } | { kind: "not_found"; optional: true; path: string; status: "not_found" }',
     );
   });
 

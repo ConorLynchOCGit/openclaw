@@ -1,6 +1,9 @@
 // Dispatches Vitest project shards for explicit targets, changed files, or the
 // full local suite.
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
+import path from "node:path";
 import { performance } from "node:perf_hooks";
 import pMap from "p-map";
 import { formatMs } from "./lib/check-timing-summary.mjs";
@@ -26,6 +29,7 @@ import {
   applyDefaultVitestNoOutputTimeout,
   applyParallelVitestCachePaths,
   buildFullSuiteVitestRunPlans,
+  createValidationResultLedger,
   createVitestPreflightPnpmArgs,
   createVitestRunSpecs,
   findUnmatchedExplicitTestTargets,
@@ -89,6 +93,7 @@ function cleanupVitestRunSpec(spec) {
 
 function runPnpmSpecCommand(spec, pnpmArgs, label) {
   let noOutputTimedOut = false;
+  const startedAtMs = Date.now();
   return new Promise((resolve, reject) => {
     const { child, getForwardedSignal, teardown } = spawnWatchedVitestProcess({
       pnpmArgs,
@@ -108,10 +113,26 @@ function runPnpmSpecCommand(spec, pnpmArgs, label) {
       const forwardedSignal = getForwardedSignal();
       if (forwardedSignal) {
         forceKillVitestProcessGroup(child);
-        resolve({ code: 143, noOutputTimedOut, signal: forwardedSignal });
+        const endedAtMs = Date.now();
+        resolve({
+          code: 143,
+          noOutputTimedOut,
+          signal: forwardedSignal,
+          startedAtMs,
+          endedAtMs,
+          durationMs: endedAtMs - startedAtMs,
+        });
         return;
       }
-      resolve({ code: code ?? (signal ? 143 : 1), noOutputTimedOut, signal });
+      const endedAtMs = Date.now();
+      resolve({
+        code: code ?? (signal ? 143 : 1),
+        noOutputTimedOut,
+        signal,
+        startedAtMs,
+        endedAtMs,
+        durationMs: endedAtMs - startedAtMs,
+      });
     });
 
     child.on("error", (error) => {
@@ -119,6 +140,102 @@ function runPnpmSpecCommand(spec, pnpmArgs, label) {
       reject(error instanceof Error ? error : new Error(String(error)));
     });
   });
+}
+
+function runGitBuffer(cwd, args) {
+  const result = spawnSync("git", ["-C", cwd, ...args], {
+    maxBuffer: 128 * 1024 * 1024,
+  });
+  if (result.status !== 0) {
+    const detail = result.stderr?.toString("utf8").trim();
+    throw new Error(detail || `git ${args.join(" ")} exited ${result.status ?? "unknown"}`);
+  }
+  return result.stdout ?? Buffer.alloc(0);
+}
+
+function splitNullBuffer(value) {
+  const entries = [];
+  let start = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] !== 0) {
+      continue;
+    }
+    if (index > start) {
+      entries.push(value.subarray(start, index));
+    }
+    start = index + 1;
+  }
+  if (start < value.length) {
+    entries.push(value.subarray(start));
+  }
+  return entries;
+}
+
+function resolveValidationWorktreeIdentity(cwd) {
+  try {
+    const head = runGitBuffer(cwd, ["rev-parse", "HEAD"]).toString("utf8").trim();
+    const diff = runGitBuffer(cwd, ["diff", "--binary", "--no-ext-diff", "HEAD", "--"]);
+    const untracked = splitNullBuffer(
+      runGitBuffer(cwd, ["ls-files", "--others", "--exclude-standard", "-z"]),
+    ).toSorted((left, right) => Buffer.compare(left, right));
+    const digest = createHash("sha256");
+    digest.update("openclaw.validation.worktree.v1\0");
+    digest.update(head);
+    digest.update("\0tracked-diff\0");
+    digest.update(diff);
+    for (const pathBytes of untracked) {
+      const relativePath = pathBytes.toString("utf8");
+      const absolutePath = path.join(cwd, relativePath);
+      const stat = fs.lstatSync(absolutePath);
+      digest.update("\0untracked-path\0");
+      digest.update(pathBytes);
+      digest.update(`\0mode:${stat.mode.toString(8)}\0`);
+      if (stat.isSymbolicLink()) {
+        digest.update(fs.readlinkSync(absolutePath));
+      } else if (stat.isFile()) {
+        digest.update(fs.readFileSync(absolutePath));
+      } else {
+        digest.update(`kind:${stat.isDirectory() ? "directory" : "other"}`);
+      }
+    }
+    return {
+      schema: "openclaw.validation.worktree_identity.v1",
+      status: "available",
+      head,
+      diffSha256: digest.digest("hex"),
+      untrackedPathCount: untracked.length,
+    };
+  } catch (error) {
+    return {
+      schema: "openclaw.validation.worktree_identity.v1",
+      status: "unavailable",
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function createValidationGateResult(spec, result, order) {
+  return {
+    order,
+    gateId: `${order + 1}:${spec.config}`,
+    command: ["pnpm", ...spec.pnpmArgs].join(" "),
+    config: spec.config,
+    includePatterns: spec.includePatterns,
+    profile: spec.config,
+    cwd: process.cwd(),
+    startedAt: new Date(result.startedAtMs).toISOString(),
+    endedAt: new Date(result.endedAtMs).toISOString(),
+    durationMs: result.durationMs,
+    exitCode: result.code,
+    signal: result.signal,
+    noOutputTimedOut: result.noOutputTimedOut,
+    outputRef: "process_stdio",
+  };
+}
+
+function printValidationResultLedger(params) {
+  const ledger = createValidationResultLedger(params);
+  console.error(`[test] validation result ledger: ${JSON.stringify(ledger)}`);
 }
 
 async function runVitestSpec(spec) {
@@ -214,6 +331,7 @@ async function runVitestSpecsParallel(specs, concurrency) {
   let exitCode = 0;
   let stopScheduling = false;
   const failures = [];
+  const results = [];
   const timings = [];
 
   await pMap(
@@ -239,17 +357,19 @@ async function runVitestSpecsParallel(specs, concurrency) {
           signal: result.signal,
         });
       }
+      results.push(createValidationGateResult(spec, result, index));
       if (result.timing) {
         timings.push(result.timing);
       }
     },
     { concurrency, stopOnError: true },
   );
-  return { exitCode, failures, timings };
+  return { exitCode, failures, results, timings };
 }
 
 async function main() {
   const suiteStartedAt = performance.now();
+  const suiteStartedAtMs = Date.now();
   const args = process.argv.slice(2);
   if (isWrapperMetadataRequest(args)) {
     printHelp();
@@ -309,6 +429,7 @@ async function main() {
     return;
   }
 
+  const worktreeBefore = resolveValidationWorktreeIdentity(process.cwd());
   releaseLock = shouldAcquireLocalHeavyCheckLock(runSpecs, baseEnv)
     ? acquireLocalHeavyCheckLockSync({
         cwd: process.cwd(),
@@ -349,9 +470,17 @@ async function main() {
       const {
         exitCode: parallelExitCode,
         failures,
+        results,
         timings,
       } = await runVitestSpecsParallel(parallelSpecs, concurrency);
       writeShardTimings(timings, process.cwd(), baseEnv);
+      printValidationResultLedger({
+        startedAtMs: suiteStartedAtMs,
+        endedAtMs: Date.now(),
+        worktreeBefore,
+        worktreeAfter: resolveValidationWorktreeIdentity(process.cwd()),
+        results: results.toSorted((left, right) => left.order - right.order),
+      });
       printTestSummary(
         parallelExitCode === 0 ? "passed" : "failed",
         parallelSpecs.length,
@@ -370,8 +499,9 @@ async function main() {
   }
 
   let exitCode = 0;
+  const results = [];
   const timings = [];
-  for (const spec of runSpecs) {
+  for (const [index, spec] of runSpecs.entries()) {
     const result = await runLoggedVitestSpec(spec);
     if (!result) {
       return;
@@ -379,9 +509,17 @@ async function main() {
     if (result.timing) {
       timings.push(result.timing);
     }
+    results.push(createValidationGateResult(spec, result, index));
     if (result.code !== 0) {
       exitCode = exitCode || result.code;
       if (spec.continueOnFailure !== true) {
+        printValidationResultLedger({
+          startedAtMs: suiteStartedAtMs,
+          endedAtMs: Date.now(),
+          worktreeBefore,
+          worktreeAfter: resolveValidationWorktreeIdentity(process.cwd()),
+          results,
+        });
         printTestSummary("failed", timings.length, performance.now() - suiteStartedAt);
         releaseLockOnce();
         process.exit(result.code);
@@ -389,6 +527,13 @@ async function main() {
     }
   }
   writeShardTimings(timings, process.cwd(), baseEnv);
+  printValidationResultLedger({
+    startedAtMs: suiteStartedAtMs,
+    endedAtMs: Date.now(),
+    worktreeBefore,
+    worktreeAfter: resolveValidationWorktreeIdentity(process.cwd()),
+    results,
+  });
   printTestSummary(
     exitCode === 0 ? "passed" : "failed",
     timings.length,

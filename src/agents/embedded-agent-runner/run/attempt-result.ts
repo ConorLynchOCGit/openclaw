@@ -44,6 +44,8 @@ type EmbeddedAttemptResultState = Pick<
   EmbeddedRunAttemptResult,
   | "terminal"
   | "preflightRecovery"
+  | "requestLocalReductionCount"
+  | "requestLocalReductionRoute"
   | "sessionIdUsed"
   | "sessionFileUsed"
   | "systemPromptReport"

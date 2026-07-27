@@ -3,6 +3,7 @@ import type {
   NativeHookRelayEvent,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import type { CodexAppServerBindingStore } from "./session-binding.js";
+import type { CodexExecutionProjectionRuntime } from "./session-execution-projection.js";
 import type { CodexAppServerClientFactory } from "./shared-client.js";
 
 export type CodexRunAttemptOptions = {
@@ -22,6 +23,7 @@ export type CodexRunAttemptOptions = {
   postToolRawAssistantCompletionIdleTimeoutMs?: number;
   turnTerminalIdleTimeoutMs?: number;
   clientFactory?: CodexAppServerClientFactory;
+  runtime?: CodexExecutionProjectionRuntime;
 };
 
 export type CodexRunAttemptInput = {

@@ -25,6 +25,10 @@ export function createFakeTaskFlow(overrides?: Partial<BoundTaskFlow>): BoundTas
     get: vi.fn(),
     list: vi.fn().mockReturnValue([]),
     findLatest: vi.fn(),
+    findLatestActiveManaged: vi.fn(),
+    findLatestTerminalManaged: vi.fn(),
+    buildCloseoutHandoff: vi.fn().mockReturnValue(undefined),
+    validateCloseoutHandoff: vi.fn().mockReturnValue({ valid: true }),
     resolve: vi.fn(),
     getTaskSummary: vi.fn(),
     setWaiting: vi.fn().mockImplementation((input) => ({
@@ -37,7 +41,7 @@ export function createFakeTaskFlow(overrides?: Partial<BoundTaskFlow>): BoundTas
     })),
     finish: vi.fn().mockImplementation((input) => ({
       applied: true,
-      flow: { ...baseFlow, revision: input.expectedRevision + 1, status: "completed" as const },
+      flow: { ...baseFlow, revision: input.expectedRevision + 1, status: "succeeded" as const },
     })),
     fail: vi.fn().mockImplementation((input) => ({
       applied: true,

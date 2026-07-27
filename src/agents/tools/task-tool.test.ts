@@ -37,13 +37,19 @@ const config = {
         subagents: { allowAgents: ["planning", "coding"] },
       },
       planning: {
-        subagents: { allowAgents: ["reviewer", "codebase-researcher"] },
+        subagents: {
+          allowAgents: ["reviewer", "codebase-researcher", "operator-intent-researcher"],
+        },
       },
-      reviewer: {},
+      reviewer: { subagents: { allowAgents: ["review-specialist"] } },
       coding: {
         executionWorkspace: { type: "loaded-source" as const, access: "modify" as const },
       },
       "codebase-researcher": {
+        executionWorkspace: { type: "loaded-source" as const, access: "inspect" as const },
+      },
+      "operator-intent-researcher": {},
+      "review-specialist": {
         executionWorkspace: { type: "loaded-source" as const, access: "inspect" as const },
       },
     },
@@ -87,8 +93,33 @@ describe("task foreground delegation", () => {
     });
     const agentId = (tool.parameters as { properties?: { agentId?: { enum?: string[] } } })
       .properties?.agentId;
-    expect(agentId?.enum).toEqual(["codebase-researcher", "reviewer"]);
+    expect(agentId?.enum).toEqual([
+      "codebase-researcher",
+      "operator-intent-researcher",
+      "reviewer",
+    ]);
     expect(tool.executionMode).toBe("parallel");
+  });
+
+  it("projects only Reviewer's specialist and withholds model-authored cwd", () => {
+    const tool = createTaskTool({
+      config,
+      agentSessionKey: "agent:reviewer:main",
+      requesterAgentIdOverride: "reviewer",
+    });
+    const properties = (
+      tool.parameters as {
+        properties?: {
+          agentId?: { enum?: string[] };
+          checkout?: { const?: string };
+          cwd?: unknown;
+        };
+      }
+    ).properties;
+
+    expect(properties?.agentId?.enum).toEqual(["review-specialist"]);
+    expect(properties?.checkout?.const).toBe("loaded_system");
+    expect(properties).not.toHaveProperty("cwd");
   });
 
   it("transports Main's exact operator request without changing child ownership", async () => {
@@ -136,6 +167,50 @@ describe("task foreground delegation", () => {
         agentId: "codebase-researcher",
         cwd: undefined,
         context: "isolated",
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it("binds Reviewer's specialist to its native inspect-only loaded-source workspace", async () => {
+    const tool = createTaskTool({
+      config,
+      agentSessionKey: "agent:reviewer:main",
+      requesterAgentIdOverride: "reviewer",
+    });
+    await tool.execute("call", {
+      agentId: "review-specialist",
+      task: "Challenge one current-source ownership claim.",
+      checkout: "loaded_system",
+    });
+
+    expect(mocks.spawn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "review-specialist",
+        cwd: undefined,
+        context: "isolated",
+        lightContext: true,
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it("uses the target operator-intent profile with lightweight native context", async () => {
+    const tool = createTaskTool({
+      config,
+      agentSessionKey: "agent:planning:main",
+      requesterAgentIdOverride: "planning",
+    });
+    await tool.execute("call", {
+      agentId: "operator-intent-researcher",
+      task: "Identify only ambiguities that can change the architecture.",
+    });
+
+    expect(mocks.spawn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "operator-intent-researcher",
+        context: "isolated",
+        lightContext: true,
       }),
       expect.any(Object),
     );

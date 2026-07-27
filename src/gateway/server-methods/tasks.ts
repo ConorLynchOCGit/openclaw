@@ -14,6 +14,7 @@ import {
 import { parseAgentSessionKey } from "../../routing/session-key.js";
 import { getTaskById, listTaskRecordsUnsorted } from "../../tasks/runtime-internal.js";
 import { cancelDetachedTaskRunById } from "../../tasks/task-executor.js";
+import { createTaskLifecycleReadbackContext } from "../../tasks/task-lifecycle-readback.js";
 import type { TaskRecord, TaskStatus } from "../../tasks/task-registry.types.js";
 import { mapTaskSummary, taskUpdatedAt } from "./task-summary.js";
 import type { GatewayRequestHandlers } from "./types.js";
@@ -113,7 +114,9 @@ export const tasksHandlers: GatewayRequestHandlers = {
     // just finished still surfaces on the first page instead of hiding behind
     // newer-created records. Start from a cloned insertion-order snapshot so
     // this sort does not first pay for the registry's discarded createdAt sort.
-    const filtered = listTaskRecordsUnsorted()
+    const taskSnapshot = listTaskRecordsUnsorted();
+    const lifecycleContext = createTaskLifecycleReadbackContext({ tasks: taskSnapshot });
+    const filtered = taskSnapshot
       .filter((task) => {
         if (statusFilter && !statusFilter.has(task.status)) {
           return false;
@@ -132,7 +135,7 @@ export const tasksHandlers: GatewayRequestHandlers = {
     const page = filtered.slice(cursor, cursor + limit);
     const nextOffset = cursor + page.length;
     respond(true, {
-      tasks: page.map((task) => mapTaskSummary(task)),
+      tasks: page.map((task) => mapTaskSummary(task, { lifecycleContext })),
       ...(nextOffset < filtered.length ? { nextCursor: String(nextOffset) } : {}),
     });
   },

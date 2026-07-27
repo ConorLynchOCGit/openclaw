@@ -315,6 +315,57 @@ function shouldExposeMcpTool(selection: McpToolSelection, toolName: string): boo
   return !exclude.some((pattern) => matchesMcpToolFilterPattern(pattern, toolName));
 }
 
+function normalizeListedMcpTools(params: {
+  listedTools: Awaited<ReturnType<typeof listAllToolsBestEffort>>;
+  selection: McpToolSelection;
+  serverName: string;
+  safeServerName: string;
+  launchSummary: string;
+  diagnostics: McpToolCatalogDiagnostic[];
+}): Awaited<ReturnType<typeof listAllToolsBestEffort>> {
+  const uniqueTools: Awaited<ReturnType<typeof listAllToolsBestEffort>> = [];
+  const listedNames = new Set<string>();
+
+  for (const tool of params.listedTools) {
+    const toolName = tool.name.trim();
+    if (!toolName) {
+      params.diagnostics.push({
+        serverName: params.serverName,
+        safeServerName: params.safeServerName,
+        launchSummary: params.launchSummary,
+        message: "MCP tools/list returned a tool with an empty name.",
+      });
+      continue;
+    }
+    if (listedNames.has(toolName)) {
+      params.diagnostics.push({
+        serverName: params.serverName,
+        safeServerName: params.safeServerName,
+        launchSummary: params.launchSummary,
+        message: `MCP tools/list returned duplicate tool name "${toolName}".`,
+      });
+      continue;
+    }
+    listedNames.add(toolName);
+    uniqueTools.push(tool);
+  }
+
+  for (const includeEntry of params.selection.include ?? []) {
+    const toolName = includeEntry.trim();
+    if (!toolName || toolName.includes("*") || listedNames.has(toolName)) {
+      continue;
+    }
+    params.diagnostics.push({
+      serverName: params.serverName,
+      safeServerName: params.safeServerName,
+      launchSummary: params.launchSummary,
+      message: `Configured toolFilter.include entry "${toolName}" was not returned by MCP tools/list.`,
+    });
+  }
+
+  return uniqueTools;
+}
+
 function summarizeServerCapabilities(capabilities: ServerCapabilities | undefined) {
   return {
     resources: capabilities?.resources
@@ -686,7 +737,16 @@ export function createSessionMcpRuntime(params: {
                 });
                 failIfDisposed();
                 const selection = getMcpToolSelection(rawServer);
-                const exposedTools = listedTools.filter((tool) =>
+                const serverDiagnostics: McpToolCatalogDiagnostic[] = [];
+                const uniqueTools = normalizeListedMcpTools({
+                  listedTools,
+                  selection,
+                  serverName,
+                  safeServerName,
+                  launchSummary: launchDescription,
+                  diagnostics: serverDiagnostics,
+                });
+                const exposedTools = uniqueTools.filter((tool) =>
                   shouldExposeMcpTool(selection, tool.name.trim()),
                 );
                 const serverEntry: McpServerCatalog = {
@@ -702,8 +762,8 @@ export function createSessionMcpRuntime(params: {
                     ? {
                         tools: {
                           ...capabilities.tools,
-                          ...(exposedTools.length !== listedTools.length
-                            ? { filteredCount: listedTools.length - exposedTools.length }
+                          ...(exposedTools.length !== uniqueTools.length
+                            ? { filteredCount: uniqueTools.length - exposedTools.length }
                             : {}),
                         },
                       }
@@ -750,7 +810,7 @@ export function createSessionMcpRuntime(params: {
                   serverName,
                   serverEntry,
                   toolEntries,
-                  diagnostics: [] as McpToolCatalogDiagnostic[],
+                  diagnostics: serverDiagnostics,
                 };
               } catch (error) {
                 const message = redactMcpDiagnosticError(error);

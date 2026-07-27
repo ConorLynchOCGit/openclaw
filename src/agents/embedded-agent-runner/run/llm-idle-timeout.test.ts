@@ -839,6 +839,34 @@ describe("streamWithIdleTimeout", () => {
     expect(streamSignal?.aborted).toBe(true);
   });
 
+  it("resets the stream-creation timeout on native request activity", async () => {
+    vi.useFakeTimers();
+    let requestSignal: AbortSignal | undefined;
+    let resolveStream: ((stream: AssistantMessageEventStream) => void) | undefined;
+    const baseFn: StreamFn = vi.fn((_model, _context, options) => {
+      requestSignal = options?.signal;
+      return new Promise<AssistantMessageEventStream>((resolve) => {
+        resolveStream = resolve;
+      });
+    });
+    const wrapped = streamWithIdleTimeout(baseFn, 100);
+    const pending = wrapped(
+      {} as Parameters<typeof baseFn>[0],
+      {} as Parameters<typeof baseFn>[1],
+      {} as Parameters<typeof baseFn>[2],
+    ) as Promise<AssistantMessageEventStream>;
+
+    await vi.advanceTimersByTimeAsync(60);
+    notifyLlmRequestActivity(requestSignal);
+    await vi.advanceTimersByTimeAsync(60);
+    notifyLlmRequestActivity(requestSignal);
+    await vi.advanceTimersByTimeAsync(60);
+
+    const stream = createAssistantMessageEventStream();
+    resolveStream?.(stream);
+    await expect(pending).resolves.toBe(stream);
+  });
+
   it("clears setup state when baseFn throws synchronously", async () => {
     vi.useFakeTimers();
     const setupError = new Error("sync provider setup failed");

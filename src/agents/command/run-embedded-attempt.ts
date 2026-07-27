@@ -20,6 +20,7 @@ import {
   markAutoFallbackPrimaryProbe,
   resolveEffectiveModelFallbacks,
 } from "../agent-scope.js";
+import { resolveProviderLifecycleCause } from "../embedded-agent-error-observation.js";
 import {
   runEmbeddedAgentEntry,
   type EmbeddedAgentRunEntryTerminal,
@@ -442,6 +443,17 @@ export async function runEmbeddedAgentAttempt(params: {
       fallbackProvider = fallbackResult.provider;
       fallbackModel = fallbackResult.model;
       fallbackExhausted = fallbackResult.outcome === "exhausted";
+      const primaryFallbackFailure = fallbackResult.attempts[0];
+      if (primaryFallbackFailure && !fallbackExhausted) {
+        attemptLifecycleState.terminalTaskEventMetadata = {
+          ...attemptLifecycleState.terminalTaskEventMetadata,
+          providerState: "fallback_recovered",
+          providerCause: resolveProviderLifecycleCause({
+            failoverReason: primaryFallbackFailure.reason ?? null,
+          }),
+          providerAttemptStatus: "succeeded",
+        };
+      }
       await fallbackResult.settleSessionOverride();
       if (fallbackResult.attempts.length > 0 && result.meta.agentMeta) {
         result = {
@@ -456,6 +468,33 @@ export async function runEmbeddedAgentAttempt(params: {
         };
       }
       if (!fallbackExhausted) {
+        const contextManagement = result.meta.contextManagement;
+        const executionAttemptCount = Math.max(
+          1,
+          result.meta.executionTrace?.attempts?.length ?? fallbackResult.attempts.length + 1,
+        );
+        const continuationReason =
+          fallbackResult.attempts.length > 0
+            ? (fallbackResult.attempts.at(-1)?.reason ?? "provider_retry")
+            : undefined;
+        attemptLifecycleState.terminalTaskEventMetadata = {
+          ...attemptLifecycleState.terminalTaskEventMetadata,
+          providerState:
+            attemptLifecycleState.terminalTaskEventMetadata?.providerState ?? "succeeded",
+          providerAttemptStatus: "succeeded",
+          providerAttemptNumber: executionAttemptCount,
+          physicalAttemptStartedAt: startedAt,
+          ...(continuationReason ? { continuationReason } : {}),
+          ...(typeof contextManagement?.lastTurnCompactions === "number"
+            ? { lastTurnCompactions: contextManagement.lastTurnCompactions }
+            : {}),
+          ...(typeof contextManagement?.requestLocalReductionCount === "number"
+            ? { requestLocalReductionCount: contextManagement.requestLocalReductionCount }
+            : {}),
+          ...(contextManagement?.requestLocalReductionRoute
+            ? { requestLocalReductionRoute: contextManagement.requestLocalReductionRoute }
+            : {}),
+        };
         lifecycle.emitFinishing(terminal);
       }
       break;

@@ -124,8 +124,20 @@ export async function runEmbeddedAttemptPromptPhase(input: {
         activeSession.agent.state.messages = messages;
       },
     });
+    const currentState = input.lifecycle.readState();
+    const reducedCount =
+      outcome.preflightRecovery.handled === true
+        ? (outcome.preflightRecovery.truncatedCount ?? 0)
+        : 0;
     patchState({
       preflightRecovery: outcome.preflightRecovery,
+      ...(reducedCount > 0
+        ? {
+            requestLocalReductionCount:
+              (currentState.requestLocalReductionCount ?? 0) + reducedCount,
+            requestLocalReductionRoute: "mid_turn" as const,
+          }
+        : {}),
       ...(outcome.promptError
         ? { promptError: outcome.promptError, promptErrorSource: "precheck" }
         : {}),
@@ -178,6 +190,14 @@ export async function runEmbeddedAttemptPromptPhase(input: {
       },
       ...input.context,
     });
+    if (promptContext.requestLocalReductionCount > 0) {
+      const currentState = input.lifecycle.readState();
+      patchState({
+        requestLocalReductionCount:
+          (currentState.requestLocalReductionCount ?? 0) + promptContext.requestLocalReductionCount,
+        requestLocalReductionRoute: "prompt_projection",
+      });
+    }
     const { hookMessagesForCurrentPrompt, promptForModel, systemPromptForHook } = promptContext;
     input.lifecycle.setPrePromptMessageCount(promptContext.prePromptMessageCount);
     input.lifecycle.setCurrentUserTimestampOverride(promptContext.currentUserTimestampOverride);

@@ -179,6 +179,7 @@ export function createCodexAppServerAgentHarness(options: {
         pluginRoot: options.pluginRoot,
         pluginConfig: options?.resolvePluginConfig?.() ?? options?.pluginConfig,
         nativeHookRelay: { enabled: true },
+        runtime: options.runtime,
       });
     },
     finalizeSettledTurn: async (params) => {

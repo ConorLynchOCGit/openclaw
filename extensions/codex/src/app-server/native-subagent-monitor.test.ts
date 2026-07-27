@@ -407,7 +407,7 @@ describe("CodexNativeSubagentMonitor", () => {
     expect(runtime.createRunningTaskRun).toHaveBeenCalledWith(
       expect.objectContaining({
         runId: "codex-thread:child-v2",
-        task: "Codex native subagent /root/researcher",
+        task: "researcher",
       }),
     );
     expect(runtime.finalizeTaskRunByRunId).toHaveBeenCalledWith(
@@ -1554,8 +1554,9 @@ describe("CodexNativeSubagentMonitor", () => {
     });
     await vi.waitFor(() => expect(client.request).toHaveBeenCalledTimes(1));
 
-    // Initial discovery plus the pre-read ownership recheck; neither scans another parent.
-    expect(runtime.listTaskRecords).toHaveBeenCalledTimes(2);
+    // Initial discovery, pre-read ownership recheck, and delivery-idempotency
+    // claim all stay within the registered parent's scoped task runtime.
+    expect(runtime.listTaskRecords).toHaveBeenCalledTimes(3);
     expect(client.request).toHaveBeenCalledTimes(1);
     expect(client.request).toHaveBeenCalledWith(
       "thread/read",

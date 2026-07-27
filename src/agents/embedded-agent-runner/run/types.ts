@@ -193,6 +193,10 @@ export type EmbeddedRunAttemptResult = {
         overflowTokens?: number;
         handled?: false;
       };
+  /** Bounded count of tool-result entries reduced only in the provider-bound request. */
+  requestLocalReductionCount?: number;
+  /** Native request projection that performed the latest request-local reduction. */
+  requestLocalReductionRoute?: "prompt_projection" | "mid_turn";
   sessionIdUsed: string;
   sessionFileUsed?: string;
   diagnosticTrace?: DiagnosticTraceContext;
@@ -319,6 +323,7 @@ export type EmbeddedRunAttemptResult = {
     replayInvalid?: boolean;
     livenessState?: EmbeddedRunLivenessState;
     stopReason?: string;
+    taskEventMetadata?: Record<string, string | number | boolean | null>;
     yielded?: boolean;
     timeoutPhase?: AgentRunTimeoutPhase;
     providerStarted?: boolean;

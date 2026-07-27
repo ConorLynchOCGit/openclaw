@@ -8,6 +8,8 @@ export function createEmbeddedRunContextRecoveryState() {
     overflowCompactionAttempts: 0,
     timeoutCompactionAttempts: 0,
     toolResultTruncationAttempted: false,
+    requestLocalReductionCount: 0,
+    requestLocalReductionRoute: undefined as "prompt_projection" | "mid_turn" | undefined,
   };
 }
 

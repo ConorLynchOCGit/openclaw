@@ -25,7 +25,6 @@ describeLive("xai x_search live", () => {
                   model: liveProvider === "openrouter" ? "x-ai/grok-4.5" : "grok-4.3",
                   maxTurns: 1,
                   maxTotalResults: 5,
-                  timeoutSeconds: 60,
                 },
               },
             },

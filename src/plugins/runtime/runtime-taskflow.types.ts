@@ -1,5 +1,6 @@
 // Runtime task-flow types describe task-flow hooks and options for plugin runtimes.
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { ManagedTaskFlowCloseoutHandoff } from "../../tasks/task-flow-owner-access.js";
 import type { JsonValue, TaskFlowRecord } from "../../tasks/task-flow-registry.types.js";
 import type {
   TaskDeliveryState,
@@ -31,6 +32,19 @@ export type ManagedTaskFlowMutationResult =
       applied: false;
       code: ManagedTaskFlowMutationErrorCode;
       current?: TaskFlowRecord;
+    };
+
+export type ManagedTaskFlowCloseoutHandoffResult =
+  | { valid: true }
+  | {
+      valid: false;
+      code:
+        | "invalid_handoff"
+        | "not_found"
+        | "not_terminal_managed"
+        | "revision_conflict"
+        | "handoff_not_authorized"
+        | "artifact_mismatch";
     };
 
 type ManagedTaskFlowCreateParams = {
@@ -76,6 +90,12 @@ export type BoundTaskFlowRuntime = {
   get: (flowId: string) => TaskFlowRecord | undefined;
   list: () => TaskFlowRecord[];
   findLatest: () => TaskFlowRecord | undefined;
+  findLatestActiveManaged: () => ManagedTaskFlowRecord | undefined;
+  findLatestTerminalManaged: () => ManagedTaskFlowRecord | undefined;
+  buildCloseoutHandoff: (flowId: string) => ManagedTaskFlowCloseoutHandoff | undefined;
+  validateCloseoutHandoff: (params: {
+    stateJson: JsonValue;
+  }) => ManagedTaskFlowCloseoutHandoffResult;
   resolve: (token: string) => TaskFlowRecord | undefined;
   getTaskSummary: (flowId: string) => TaskRegistrySummary | undefined;
   setWaiting: (params: {
@@ -99,6 +119,7 @@ export type BoundTaskFlowRuntime = {
   finish: (params: {
     flowId: string;
     expectedRevision: number;
+    currentStep?: string | null;
     stateJson?: JsonValue | null;
     updatedAt?: number;
     endedAt?: number;

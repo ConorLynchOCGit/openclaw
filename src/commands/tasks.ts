@@ -42,6 +42,7 @@ import {
 } from "../tasks/task-registry.reconcile.js";
 import { summarizeTaskRecords } from "../tasks/task-registry.summary.js";
 import type { TaskNotifyPolicy, TaskRecord } from "../tasks/task-registry.types.js";
+import { mapTaskSummaries, mapTaskSummary } from "../tasks/task-summary-projection.js";
 import {
   buildTaskSystemAuditJsonPayload,
   buildTaskSystemAuditFindings,
@@ -360,11 +361,12 @@ export async function tasksListCommand(
   });
 
   if (opts.json) {
+    const summaries = mapTaskSummaries(tasks);
     writeRuntimeJson(runtime, {
-      count: tasks.length,
+      count: summaries.length,
       runtime: runtimeFilter ?? null,
       status: statusFilter ?? null,
-      tasks,
+      tasks: summaries,
     });
     return;
   }
@@ -402,10 +404,11 @@ export async function tasksShowCommand(
   }
 
   if (opts.json) {
-    writeRuntimeJson(runtime, task);
+    writeRuntimeJson(runtime, mapTaskSummary(task, { includePrompt: true }));
     return;
   }
 
+  const lifecycle = mapTaskSummary(task).readback;
   const lines = [
     "Background task:",
     `taskId: ${task.taskId}`,
@@ -427,6 +430,34 @@ export async function tasksShowCommand(
     `endedAt: ${formatTaskTimestamp(task.endedAt)}`,
     `lastEventAt: ${formatTaskTimestamp(task.lastEventAt)}`,
     `cleanupAfter: ${formatTaskTimestamp(task.cleanupAfter)}`,
+    `physical: ${lifecycle?.physical?.active ? "active" : "settled"}${
+      lifecycle?.physical?.attemptStatus ? ` attempt=${lifecycle.physical.attemptStatus}` : ""
+    }`,
+    `children: active=${lifecycle?.activeChildCount ?? 0} queued=${
+      lifecycle?.queuedChildCount ?? 0
+    } terminal=${lifecycle?.terminalChildCount ?? 0} followup=${
+      lifecycle?.followupActive === true ? "active" : "inactive"
+    }`,
+    ...(lifecycle?.worktree
+      ? [
+          `worktree: ${lifecycle.worktree.id} owners=${
+            lifecycle.worktree.writeOwnerTaskIds.join(",") || "n/a"
+          }`,
+        ]
+      : []),
+    ...(lifecycle?.codex
+      ? [
+          `codex: thread=${lifecycle.codex.threadId} action=${lifecycle.codex.action} cwd=${lifecycle.codex.cwd}`,
+        ]
+      : []),
+    ...(lifecycle?.taskFlow
+      ? [
+          `taskFlow: ${lifecycle.taskFlow.flowId} revision=${lifecycle.taskFlow.revision} status=${lifecycle.taskFlow.status}`,
+        ]
+      : []),
+    ...(lifecycle?.mismatches.length
+      ? [`mismatches: ${lifecycle.mismatches.map((entry) => entry.code).join(", ")}`]
+      : []),
     ...(task.error ? [`error: ${task.error}`] : []),
     ...(task.progressSummary ? [`progressSummary: ${task.progressSummary}`] : []),
     ...(task.terminalSummary ? [`terminalSummary: ${task.terminalSummary}`] : []),

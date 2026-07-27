@@ -74,6 +74,7 @@ type EmbeddedAttemptPromptContext = {
   promptSubmission: ReturnType<typeof resolveRuntimeContextPromptParts>;
   promptToolResultAggregateMaxChars: number;
   promptToolResultMaxChars: number;
+  requestLocalReductionCount: number;
   runtimeContextMessageForCurrentTurn?: RuntimeContextCustomMessage;
   systemPromptForHook: string;
 };
@@ -273,6 +274,7 @@ export function prepareEmbeddedAttemptPromptContext(input: {
     promptSubmission,
     promptToolResultAggregateMaxChars,
     promptToolResultMaxChars,
+    requestLocalReductionCount: promptToolResultTruncation.truncatedCount,
     ...(runtimeContextMessageForCurrentTurn ? { runtimeContextMessageForCurrentTurn } : {}),
     systemPromptForHook,
   };

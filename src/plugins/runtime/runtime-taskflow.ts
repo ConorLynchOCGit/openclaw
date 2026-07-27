@@ -5,10 +5,14 @@ import {
   runTaskInFlowForOwner,
 } from "../../tasks/task-executor.js";
 import {
+  buildManagedTaskFlowCloseoutHandoffForOwner,
+  findLatestActiveManagedTaskFlowForOwner,
   findLatestTaskFlowForOwner,
+  findLatestTerminalManagedTaskFlowForOwner,
   getTaskFlowByIdForOwner,
   listTaskFlowsForOwner,
   resolveTaskFlowForLookupTokenForOwner,
+  validateManagedTaskFlowCloseoutHandoffForOwner,
 } from "../../tasks/task-flow-owner-access.js";
 import type { TaskFlowRecord } from "../../tasks/task-flow-registry.types.js";
 import {
@@ -142,6 +146,29 @@ function createBoundTaskFlowRuntime(params: {
       findLatestTaskFlowForOwner({
         callerOwnerKey: ownerKey,
       }),
+    findLatestActiveManaged: () =>
+      asManagedTaskFlowRecord(
+        findLatestActiveManagedTaskFlowForOwner({
+          callerOwnerKey: ownerKey,
+        }),
+      ),
+    findLatestTerminalManaged: () =>
+      asManagedTaskFlowRecord(
+        findLatestTerminalManagedTaskFlowForOwner({
+          callerOwnerKey: ownerKey,
+        }),
+      ),
+    buildCloseoutHandoff: (flowId) =>
+      buildManagedTaskFlowCloseoutHandoffForOwner({
+        flowId,
+        callerOwnerKey: ownerKey,
+      }),
+    validateCloseoutHandoff: ({ stateJson }) =>
+      validateManagedTaskFlowCloseoutHandoffForOwner({
+        callerOwnerKey: ownerKey,
+        requesterOrigin,
+        stateJson,
+      }),
     resolve: (token) =>
       resolveTaskFlowForLookupTokenForOwner({
         token,
@@ -192,6 +219,7 @@ function createBoundTaskFlowRuntime(params: {
           finishFlow({
             flowId,
             expectedRevision: input.expectedRevision,
+            currentStep: input.currentStep,
             stateJson: input.stateJson,
             updatedAt: input.updatedAt,
             endedAt: input.endedAt,

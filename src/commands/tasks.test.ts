@@ -23,6 +23,7 @@ import {
   resetTaskRegistryDeliveryRuntimeForTests,
   resetTaskRegistryForTests,
 } from "../tasks/task-runtime.test-helpers.js";
+import { mapTaskSummaries } from "../tasks/task-summary-projection.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import type { OpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import type { TaskSystemAuditCode, TaskSystemAuditSeverity } from "./tasks-audit-system.js";
@@ -282,7 +283,7 @@ describe("tasks commands", () => {
         count: 1,
         runtime: null,
         status: null,
-        tasks: [jsonRoundTrip(task)],
+        tasks: jsonRoundTrip(mapTaskSummaries([task])),
       });
     });
   });

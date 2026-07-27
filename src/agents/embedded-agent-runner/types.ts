@@ -144,6 +144,8 @@ type ContextManagementTrace = {
   lastTurnCompactions?: number;
   preflightCompactionApplied?: boolean;
   postCompactionContextInjected?: boolean;
+  requestLocalReductionCount?: number;
+  requestLocalReductionRoute?: "prompt_projection" | "mid_turn";
 };
 
 export type EmbeddedRunLivenessState = "working" | "paused" | "blocked" | "abandoned";

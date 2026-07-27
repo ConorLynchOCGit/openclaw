@@ -569,6 +569,11 @@ describe("task-registry", () => {
         data: {
           phase: "end",
           endedAt: 250,
+          taskEventMetadata: {
+            providerState: "fallback_recovered",
+            providerCause: "overloaded",
+            providerAttemptStatus: "succeeded",
+          },
         },
       });
 
@@ -576,13 +581,98 @@ describe("task-registry", () => {
         runtime: "acp",
         status: "succeeded",
         endedAt: 250,
+        detail: {
+          providerState: "fallback_recovered",
+          providerCause: "overloaded",
+          providerAttemptStatus: "succeeded",
+        },
+      });
+    });
+  });
+
+  it("keeps logical finality while accepting a later physical-attempt receipt", async () => {
+    await withTaskRegistryTempDir(async () => {
+      resetTaskRegistryMemoryForTest();
+
+      createTaskFixture("subagent", {
+        childSessionKey: "agent:main:subagent:late-receipt",
+        runId: "run-late-receipt",
+        task: "Complete once.",
+        startedAt: 100,
+      });
+
+      emitAgentEvent({
+        runId: "run-late-receipt",
+        stream: "lifecycle",
+        data: { phase: "end", endedAt: 200 },
+      });
+      emitAgentEvent({
+        runId: "run-late-receipt",
+        stream: "lifecycle",
+        data: {
+          phase: "end",
+          endedAt: 210,
+          taskEventMetadata: {
+            providerState: "fallback_recovered",
+            providerCause: "disconnect",
+            providerAttemptNumber: 2,
+            providerAttemptStatus: "succeeded",
+          },
+        },
+      });
+
+      expectRecordFields(requireTaskByRunId("run-late-receipt"), {
+        status: "succeeded",
+        startedAt: 100,
+        endedAt: 200,
+        detail: {
+          providerState: "fallback_recovered",
+          providerCause: "disconnect",
+          providerAttemptNumber: 2,
+          providerAttemptStatus: "succeeded",
+        },
+      });
+    });
+  });
+
+  it("separates the original logical start from later physical attempts", async () => {
+    await withTaskRegistryTempDir(async () => {
+      resetTaskRegistryMemoryForTest();
+
+      createTaskFixture("subagent", {
+        childSessionKey: "agent:main:subagent:attempts",
+        runId: "run-attempts",
+        task: "Continue without losing the original start.",
+        startedAt: 100,
+      });
+
+      emitAgentEvent({
+        runId: "run-attempts",
+        stream: "lifecycle",
+        data: { phase: "start", startedAt: 200 },
+      });
+      emitAgentEvent({
+        runId: "run-attempts",
+        stream: "lifecycle",
+        data: { phase: "start", startedAt: 300 },
+      });
+
+      expectRecordFields(requireTaskByRunId("run-attempts"), {
+        status: "running",
+        startedAt: 100,
+        detail: {
+          providerAttemptNumber: 2,
+          providerAttemptStatus: "running",
+          physicalAttemptStartedAt: 300,
+          continuationReason: "native_retry",
+        },
       });
     });
   });
 
   it.each([
     {
-      name: "persists an ACP producer timestamp across lifecycle projection and SQLite reload",
+      name: "preserves the earliest ACP producer timestamp across lifecycle projection and reload",
       runId: "run-reused-lifecycle",
       task: "Reuse a persisted task row",
       initialStatus: "queued" as const,
@@ -590,7 +680,7 @@ describe("task-registry", () => {
       lifecycleStartedAt: 2_000,
       terminalStartedAt: undefined,
       endedAt: 2_500,
-      expectedStartedAt: 2_000,
+      expectedStartedAt: 1_000,
     },
     {
       name: "persists an accepted zero lifecycle start timestamp over stale state",

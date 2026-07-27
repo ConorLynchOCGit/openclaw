@@ -130,6 +130,7 @@ function createFixture() {
       promptSubmission: { prompt: "hello", runtimeOnly: false },
       promptToolResultAggregateMaxChars: 2_000,
       promptToolResultMaxChars: 1_000,
+      requestLocalReductionCount: 0,
       runtimeContextMessageForCurrentTurn: undefined,
       systemPromptForHook: "system",
     };
@@ -331,6 +332,24 @@ describe("runEmbeddedAttemptPromptPhase", () => {
           promptError: null,
           promptErrorSource: null,
         }),
+      }),
+    );
+  });
+
+  it("records prompt-projection reductions in the attempt lifecycle state", async () => {
+    const fixture = createFixture();
+    const preparePromptContext = mocks.preparePromptContext.getMockImplementation();
+    mocks.preparePromptContext.mockImplementation(() => ({
+      ...(preparePromptContext?.() as Record<string, unknown>),
+      requestLocalReductionCount: 3,
+    }));
+
+    await runEmbeddedAttemptPromptPhase(fixture.input);
+
+    expect(fixture.state).toEqual(
+      expect.objectContaining({
+        requestLocalReductionCount: 3,
+        requestLocalReductionRoute: "prompt_projection",
       }),
     );
   });

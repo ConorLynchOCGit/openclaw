@@ -19,9 +19,48 @@ export const WorktreeRecordSchema = closedObject({
   createdAt: Type.Integer({ minimum: 0 }),
   lastActiveAt: Type.Integer({ minimum: 0 }),
   removedAt: Type.Optional(Type.Integer({ minimum: 0 })),
+  telemetry: Type.Optional(
+    closedObject({
+      measuredAt: Type.Integer({ minimum: 0 }),
+      ageMs: Type.Integer({ minimum: 0 }),
+      idleMs: Type.Integer({ minimum: 0 }),
+      sizeBytes: Type.Optional(Type.Integer({ minimum: 0 })),
+      sizeStatus: Type.Union([
+        Type.Literal("not_requested"),
+        Type.Literal("measured"),
+        Type.Literal("not_live"),
+        Type.Literal("unavailable"),
+      ]),
+      lockState: Type.Union([
+        Type.Literal("none"),
+        Type.Literal("live"),
+        Type.Literal("dead"),
+        Type.Literal("foreign"),
+        Type.Literal("unavailable"),
+      ]),
+      activityState: Type.Union([
+        Type.Literal("idle"),
+        Type.Literal("active_run"),
+        Type.Literal("git_locked"),
+        Type.Literal("snapshot_retained"),
+        Type.Literal("unavailable"),
+      ]),
+      runLeaseActive: Type.Boolean(),
+      cleanupKind: Type.Union([
+        Type.Literal("manual_only"),
+        Type.Literal("idle_gc"),
+        Type.Literal("snapshot_prune"),
+      ]),
+      cleanupEligibleAt: Type.Optional(Type.Integer({ minimum: 0 })),
+      cleanupEligibleNow: Type.Boolean(),
+    }),
+  ),
 });
 
-export const WorktreesListParamsSchema = closedObject({});
+export const WorktreesListParamsSchema = closedObject({
+  includeTelemetry: Type.Optional(Type.Boolean()),
+  includeSize: Type.Optional(Type.Boolean()),
+});
 export const WorktreesListResultSchema = closedObject({
   worktrees: Type.Array(WorktreeRecordSchema),
 });

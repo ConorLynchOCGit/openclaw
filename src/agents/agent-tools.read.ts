@@ -468,6 +468,16 @@ function normalizeReadResultDetails(
 
   const content = Array.isArray(result.content) ? result.content : [];
   const text = getToolResultText(result) ?? "";
+  const sha256 = currentDetails?.sha256;
+  const bytes = currentDetails?.bytes;
+  const identity =
+    typeof sha256 === "string" &&
+    /^[a-f0-9]{64}$/u.test(sha256) &&
+    typeof bytes === "number" &&
+    Number.isSafeInteger(bytes) &&
+    bytes >= 0
+      ? { sha256, bytes }
+      : undefined;
   const image = content.find(
     (block): block is ImageContentBlock =>
       Boolean(block) &&
@@ -476,7 +486,15 @@ function normalizeReadResultDetails(
       typeof (block as { mimeType?: unknown }).mimeType === "string",
   );
   if (image) {
-    return { ...result, details: { kind: "image", content: text, mimeType: image.mimeType } };
+    return {
+      ...result,
+      details: {
+        kind: "image",
+        content: text,
+        mimeType: image.mimeType,
+        ...identity,
+      },
+    };
   }
 
   const truncation = currentDetails?.truncation;
@@ -487,10 +505,43 @@ function normalizeReadResultDetails(
         kind: "truncated",
         content: text,
         truncation: truncation as ReadToolTruncationDetails,
+        ...identity,
       },
     };
   }
-  return { ...result, details: { kind: "text", content: text } };
+  return {
+    ...result,
+    details: { kind: "text", content: text, ...identity },
+  };
+}
+
+function appendVisibleReadDigest(
+  result: AgentToolResult<ReadToolDetails>,
+  includeDigest: boolean,
+): AgentToolResult<ReadToolDetails> {
+  if (!includeDigest || result.details?.kind === "not_found") {
+    return result;
+  }
+  const sha256 = result.details?.sha256;
+  const bytes = result.details?.bytes;
+  if (
+    typeof sha256 !== "string" ||
+    !/^[a-f0-9]{64}$/u.test(sha256) ||
+    typeof bytes !== "number" ||
+    !Number.isSafeInteger(bytes) ||
+    bytes < 0
+  ) {
+    throw new Error("read: complete file identity is unavailable");
+  }
+  const metadata = `[File identity: sha256=${sha256} bytes=${bytes}]`;
+  const metadataBlock = { type: "text", text: metadata } as unknown as TextContentBlock;
+  return {
+    ...result,
+    content: [
+      ...(Array.isArray(result.content) ? result.content : []),
+      metadataBlock,
+    ] as AgentToolResult<ReadToolDetails>["content"],
+  };
 }
 
 /** Wrap a file tool so path params stay inside the workspace root. */
@@ -997,7 +1048,10 @@ export function createOpenClawReadTool(
         `read:${filePath}`,
         options?.imageSanitization,
       );
-      return normalizeReadResultDetails(sanitizedResult);
+      return appendVisibleReadDigest(
+        normalizeReadResultDetails(sanitizedResult),
+        normalizedRecord?.includeDigest === true,
+      );
     },
   };
 }

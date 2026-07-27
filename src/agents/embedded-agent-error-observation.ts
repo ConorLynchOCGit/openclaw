@@ -10,6 +10,7 @@ import {
   classifyProviderRuntimeFailureKind,
   getApiErrorPayloadFingerprint,
   parseApiErrorInfo,
+  type FailoverReason,
   type ProviderRuntimeFailureKind,
 } from "./embedded-agent-helpers.js";
 import { stableStringify } from "./stable-stringify.js";
@@ -30,6 +31,32 @@ const RAW_ERROR_CONSOLE_SUPPRESSED_FAILURE_KINDS = new Set<ProviderRuntimeFailur
   "auth_scope",
   "upstream_html",
 ]);
+
+/** Maps native provider classifications to one stable lifecycle/readback cause. */
+export function resolveProviderLifecycleCause(params: {
+  failoverReason: FailoverReason | null;
+  runtimeFailureKind?: ProviderRuntimeFailureKind;
+}): string {
+  if (params.runtimeFailureKind === "connection" || params.runtimeFailureKind === "dns") {
+    return "connection";
+  }
+  if (params.runtimeFailureKind === "disconnect") {
+    return "disconnect";
+  }
+  if (params.runtimeFailureKind === "schema") {
+    return "malformed_response";
+  }
+  if (params.runtimeFailureKind === "overloaded" || params.failoverReason === "overloaded") {
+    return "overloaded";
+  }
+  if (params.runtimeFailureKind === "rate_limit" || params.failoverReason === "rate_limit") {
+    return "rate_limit";
+  }
+  if (params.runtimeFailureKind === "timeout" || params.failoverReason === "timeout") {
+    return "provider_timeout";
+  }
+  return params.runtimeFailureKind ?? params.failoverReason ?? "unknown";
+}
 
 function resolveConfiguredRedactPatterns(): string[] {
   const configured = readLoggingConfig()?.redactPatterns;

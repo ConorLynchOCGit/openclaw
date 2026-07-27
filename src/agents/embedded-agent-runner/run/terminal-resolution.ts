@@ -597,8 +597,25 @@ function completeEmbeddedRun(
           ...(stopReason?.toLowerCase().includes("refusal") ? { refusal: true } : {}),
         },
         contextManagement:
-          input.contextRecoveryState.autoCompactionCount > 0
-            ? { lastTurnCompactions: input.contextRecoveryState.autoCompactionCount }
+          input.contextRecoveryState.autoCompactionCount > 0 ||
+          input.contextRecoveryState.requestLocalReductionCount > 0
+            ? {
+                ...(input.contextRecoveryState.autoCompactionCount > 0
+                  ? { lastTurnCompactions: input.contextRecoveryState.autoCompactionCount }
+                  : {}),
+                ...(input.contextRecoveryState.requestLocalReductionCount > 0
+                  ? {
+                      requestLocalReductionCount:
+                        input.contextRecoveryState.requestLocalReductionCount,
+                      ...(input.contextRecoveryState.requestLocalReductionRoute
+                        ? {
+                            requestLocalReductionRoute:
+                              input.contextRecoveryState.requestLocalReductionRoute,
+                          }
+                        : {}),
+                    }
+                  : {}),
+              }
             : undefined,
       },
       ...copyAttemptDeliveryState(input.attempt),

@@ -146,6 +146,7 @@ describe("prepareEmbeddedAttemptPromptContext", () => {
     expect(result.contextTokenBudget).toBe(32_000);
     expect(result.promptToolResultMaxChars).toBe(100);
     expect(result.promptToolResultAggregateMaxChars).toBe(200);
+    expect(result.requestLocalReductionCount).toBe(0);
     expect(fixture.report.currentTurn).toEqual({
       kind: "user_request",
       promptChars: "Visible request".length,
@@ -204,6 +205,7 @@ describe("prepareEmbeddedAttemptPromptContext", () => {
     const result = prepareEmbeddedAttemptPromptContext(fixture.input);
 
     expect(result.aggregatePressureEngaged).toBe(true);
+    expect(result.requestLocalReductionCount).toBe(2);
     expect(hoisted.warn).toHaveBeenCalledWith(
       expect.stringContaining("aggregate tool-result pressure"),
     );

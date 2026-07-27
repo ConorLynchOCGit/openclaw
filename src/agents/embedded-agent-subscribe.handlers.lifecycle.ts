@@ -8,6 +8,7 @@ import { sanitizeForConsole } from "./console-sanitize.js";
 import {
   buildApiErrorObservationFields,
   buildTextObservationFields,
+  resolveProviderLifecycleCause,
   shouldSuppressRawErrorConsoleSuffix,
 } from "./embedded-agent-error-observation.js";
 import {
@@ -71,6 +72,7 @@ export function handleAgentEnd(
   const lastAssistant = ctx.state.lastAssistant;
   const isError = isAssistantMessage(lastAssistant) && lastAssistant.stopReason === "error";
   let lifecycleErrorText: string | undefined;
+  let inferredProviderTaskMetadata: Record<string, string | number | boolean | null> | undefined;
   const hasAssistantVisibleText =
     Array.isArray(ctx.state.assistantTexts) &&
     ctx.state.assistantTexts.some((text) => hasAssistantVisibleReply({ text }));
@@ -143,6 +145,14 @@ export function handleAgentEnd(
     const observedError = buildApiErrorObservationFields(rawError, {
       provider: lastAssistant.provider,
     });
+    inferredProviderTaskMetadata = {
+      providerState: "failed",
+      providerCause: resolveProviderLifecycleCause({
+        failoverReason,
+        runtimeFailureKind: observedError.providerRuntimeFailureKind,
+      }),
+      providerAttemptStatus: "failed",
+    };
     const safeErrorText =
       buildTextObservationFields(errorText, {
         provider: lastAssistant.provider,
@@ -182,6 +192,20 @@ export function handleAgentEnd(
       typeof ctx.state.terminalAborted === "boolean"
         ? ctx.state.terminalAborted
         : ctx.params.isTerminalAborted?.();
+    const cancellationTaskMetadata =
+      !isError &&
+      (terminalAborted === true || terminalStopReason === "aborted" || terminalStopReason === "rpc")
+        ? {
+            providerState: "cancelled",
+            providerCause: "local_cancellation",
+            providerAttemptStatus: "cancelled",
+          }
+        : undefined;
+    const taskEventMetadata = {
+      ...inferredProviderTaskMetadata,
+      ...cancellationTaskMetadata,
+      ...ctx.state.terminalTaskEventMetadata,
+    };
     // Aborted validation loops lose their final tool result. Preserve only the
     // argument-free validator summary; arbitrary tool errors can contain secrets.
     const toolErrorSummary =
@@ -197,6 +221,7 @@ export function handleAgentEnd(
         : {}),
       ...(typeof terminalAborted === "boolean" ? { aborted: terminalAborted } : {}),
       ...(toolErrorSummary ? { toolErrorSummary } : {}),
+      ...(Object.keys(taskEventMetadata).length > 0 ? { taskEventMetadata } : {}),
     };
     const phase =
       ctx.params.terminalLifecyclePhase === "finishing" ? "finishing" : isError ? "error" : "end";

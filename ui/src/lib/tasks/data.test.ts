@@ -76,6 +76,38 @@ describe("tasks page data", () => {
     expect(normalizeTasksCancelResult("nope")).toBeNull();
   });
 
+  it("preserves bounded lifecycle, delivery, and terminal facts", () => {
+    const normalizedTask = normalizeTasksCancelResult({
+      found: true,
+      cancelled: false,
+      task: {
+        id: "task-1",
+        taskId: "task-1",
+        status: "completed",
+        deliveryStatus: "delivered",
+        terminalOutcome: "blocked",
+        readback: {
+          schema: "openclaw.task.lifecycle_readback.v1",
+          logicalStatus: "completed",
+          nativeTaskStatus: "succeeded",
+          lastActivityAt: 200,
+          lastRealActivityAt: 200,
+          children: [],
+          activeChildCount: 0,
+          queuedChildCount: 0,
+          terminalChildCount: 0,
+          followupActive: false,
+          deliveryStatus: "delivered",
+          mismatches: [],
+        },
+      },
+    })?.task;
+
+    expect(normalizedTask?.deliveryStatus).toBe("delivered");
+    expect(normalizedTask?.terminalOutcome).toBe("blocked");
+    expect(normalizedTask?.readback?.logicalStatus).toBe("completed");
+  });
+
   it("merges upserts, applies deletes, and requests refetches for restored events", () => {
     const initial = [task({ id: "task-1", status: "running", updatedAt: 100 })];
     const completed = task({ id: "task-1", status: "completed", updatedAt: 200 });

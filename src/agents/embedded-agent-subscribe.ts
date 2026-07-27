@@ -1476,6 +1476,7 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
       replayInvalid?: boolean;
       livenessState?: EmbeddedRunLivenessState;
       stopReason?: string;
+      taskEventMetadata?: Record<string, string | number | boolean | null>;
       yielded?: boolean;
       timeoutPhase?: AgentRunTimeoutPhase;
       providerStarted?: boolean;
@@ -1489,6 +1490,9 @@ export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSess
       }
       if (typeof meta.stopReason === "string") {
         state.terminalStopReason = meta.stopReason;
+      }
+      if (meta.taskEventMetadata) {
+        state.terminalTaskEventMetadata = { ...meta.taskEventMetadata };
       }
       if (typeof meta.yielded === "boolean") {
         state.yielded = meta.yielded;

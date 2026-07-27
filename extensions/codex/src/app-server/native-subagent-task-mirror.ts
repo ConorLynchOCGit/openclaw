@@ -3,6 +3,7 @@
  * runtime rows so parent sessions can observe child progress.
  */
 import type { AgentHarnessTaskRuntime } from "openclaw/plugin-sdk/agent-harness-task-runtime";
+import { readCodexSubagentThreadSpawnSource } from "./native-subagent-source.js";
 import { CODEX_NATIVE_SUBAGENT_RUN_ID_PREFIX } from "./native-subagent-task-ids.js";
 import type {
   CodexServerNotification,
@@ -18,13 +19,30 @@ import type {
 import { isJsonObject } from "./protocol.js";
 
 /** Minimal task-runtime surface needed to mirror native subagent lifecycle. */
-type TaskLifecycleRuntime = Pick<
+export type TaskLifecycleRuntime = Pick<
   AgentHarnessTaskRuntime,
-  "tryCreateRunningTaskRun" | "recordTaskRunProgressByRunId" | "finalizeTaskRunByRunId"
+  | "tryCreateRunningTaskRun"
+  | "recordTaskRunProgressByRunId"
+  | "finalizeTaskRunByRunId"
+  | "listTaskRecords"
 >;
 
+type NativeSubagentTaskEventMetadata = Record<string, string | number | boolean | null>;
+type PendingKeyedNativeSpawn = {
+  identity: NativeSubagentIdentity;
+  parentTurnId?: string;
+};
+type PendingNativeFollowUp = {
+  parentTurnId?: string;
+  prompt?: string;
+};
+type NativeSubagentAttempt = {
+  kind: "follow_up";
+  operationId: string;
+};
+
 /** Stable parent/session context used while mirroring native subagent tasks. */
-type CodexNativeSubagentTaskMirrorParams = {
+export type CodexNativeSubagentTaskMirrorParams = {
   parentThreadId: string;
   requesterSessionKey?: string;
   agentId?: string;
@@ -33,10 +51,18 @@ type CodexNativeSubagentTaskMirrorParams = {
 
 /** Projects Codex thread and collab-agent notifications into task lifecycle updates. */
 export class CodexNativeSubagentTaskMirror {
-  // "failed" remembers a rejected task-run creation so later status events for
-  // that thread stay silent; unknown threads still pass through by design.
-  private readonly mirrorStateByThreadId = new Map<string, "mirrored" | "failed">();
+  private readonly mirroredThreadIds = new Set<string>();
+  private readonly failedMirrorThreadIds = new Set<string>();
   private readonly terminalRunIds = new Set<string>();
+  private readonly activeRunIdByThreadId = new Map<string, string>();
+  private readonly activeAttemptByThreadId = new Map<string, NativeSubagentAttempt>();
+  private readonly identityByThreadId = new Map<string, NativeSubagentIdentity>();
+  private readonly parentTurnIdByThreadId = new Map<string, string>();
+  private readonly pendingSpawnsByCallId = new Map<string, PendingKeyedNativeSpawn>();
+  private readonly pendingFollowUpsByCallId = new Map<string, PendingNativeFollowUp>();
+  private readonly latestCollabStatusDetailByThreadId = new Map<string, string>();
+  private readonly latestCollabTerminalDetailByThreadId = new Map<string, string>();
+  private readonly tokenUsageByThreadId = new Map<string, NativeSubagentTokenUsage>();
   private readonly authoritativeRunIds = new Set<string>();
   private readonly expectedAuthoritativeRunIds = new Set<string>();
   private readonly now: () => number;
@@ -46,20 +72,17 @@ export class CodexNativeSubagentTaskMirror {
     private readonly runtime: TaskLifecycleRuntime,
   ) {
     this.now = params.now ?? Date.now;
+    this.hydratePersistedTaskState();
   }
 
   markAuthoritativeCompletion(childThreadId: string): void {
-    const runId = codexNativeSubagentRunId(childThreadId);
-    // Run identity is per child thread, not per resumed turn. Once the monitor
-    // finalizes and delivers this task, later mirror events must not rewrite it.
+    const runId = this.currentRunId(childThreadId);
     this.authoritativeRunIds.add(runId);
     this.terminalRunIds.add(runId);
   }
 
   markAuthoritativeCompletionExpected(childThreadId: string): void {
-    // App-server history or streamed terminal events supply the real result.
-    // Callers without either path keep mirror terminal states as their fallback.
-    this.expectedAuthoritativeRunIds.add(codexNativeSubagentRunId(childThreadId));
+    this.expectedAuthoritativeRunIds.add(this.currentRunId(childThreadId));
   }
 
   handleNotification(notification: CodexServerNotification): void {
@@ -75,18 +98,117 @@ export class CodexNativeSubagentTaskMirror {
       this.handleThreadStatusChanged(params);
       return;
     }
-    if (notification.method === "item/started" || notification.method === "item/completed") {
-      const item = isJsonObject(params.item) ? params.item : undefined;
-      if (
-        notification.method === "item/completed" &&
-        item &&
-        readString(item, "type") === "subAgentActivity"
-      ) {
-        this.handleSubagentActivityItem(params);
+    if (notification.method === "thread/tokenUsage/updated") {
+      this.handleTokenUsageUpdated(params);
+      return;
+    }
+    if (
+      notification.method === "item/started" ||
+      notification.method === "item/completed" ||
+      notification.method === "rawResponseItem/completed"
+    ) {
+      this.handleNativeFunctionItem(params);
+      this.handleDynamicAgentItem(params);
+      this.handleCollabAgentItem(params);
+      if (notification.method === "item/completed") {
+        this.handleSubAgentActivityItem(params);
+      }
+    }
+  }
+
+  private handleDynamicAgentItem(params: JsonObject): void {
+    const item = isJsonObject(params.item) ? params.item : undefined;
+    if (!item || readString(item, "type") !== "dynamicToolCall") {
+      return;
+    }
+    const namespace = readString(item, "namespace");
+    if (namespace && namespace !== "agents") {
+      return;
+    }
+    const threadId = readString(params, "threadId")?.trim();
+    if (threadId !== this.params.parentThreadId) {
+      return;
+    }
+    const toolName = normalizeToolName(readString(item, "tool"));
+    const callId = readFunctionCallId(item);
+    if (!callId) {
+      return;
+    }
+    const parentTurnId = trimOptional(readString(params, "turnId"));
+    if (isNativeFollowUpToolName(toolName)) {
+      this.rememberPendingFollowUp(item, callId, parentTurnId);
+      return;
+    }
+    if (toolName !== "spawnagent") {
+      return;
+    }
+    const identity = resolveNativeSpawnFunctionIdentity(item);
+    const pending = { identity, ...(parentTurnId ? { parentTurnId } : {}) };
+    if (!this.pendingSpawnsByCallId.has(callId)) {
+      this.pendingSpawnsByCallId.set(callId, pending);
+    }
+  }
+
+  private handleSubAgentActivityItem(params: JsonObject): void {
+    const item = isJsonObject(params.item) ? params.item : undefined;
+    if (!item || readString(item, "type") !== "subAgentActivity") {
+      return;
+    }
+    const threadId = readString(params, "threadId")?.trim();
+    if (threadId !== this.params.parentThreadId) {
+      return;
+    }
+    const childThreadId = trimOptional(readString(item, "agentThreadId"));
+    const kind = normalizeSubagentActivityKind(readString(item, "kind"));
+    if (!childThreadId || !kind) {
+      return;
+    }
+    if (kind !== "started") {
+      if (!this.mirroredThreadIds.has(childThreadId)) {
         return;
       }
-      this.handleCollabAgentItem(params);
+      const message =
+        kind === "interacted"
+          ? "Codex native subagent received more input."
+          : "Codex native subagent was interrupted.";
+      this.applyCollabAgentStatus(
+        childThreadId,
+        kind === "interacted" ? "running" : "interrupted",
+        message,
+      );
+      return;
     }
+    const callId = readFunctionCallId(item);
+    const pending = callId ? this.pendingSpawnsByCallId.get(callId) : undefined;
+    const pendingFollowUp = callId ? this.pendingFollowUpsByCallId.get(callId) : undefined;
+    if (callId) {
+      this.pendingSpawnsByCallId.delete(callId);
+      this.pendingFollowUpsByCallId.delete(callId);
+    }
+    const parentTurnId =
+      pending?.parentTurnId ??
+      pendingFollowUp?.parentTurnId ??
+      trimOptional(readString(params, "turnId"));
+    if (pendingFollowUp && callId) {
+      this.beginFollowUpAttempt({
+        threadId: childThreadId,
+        operationId: callId,
+        parentTurnId,
+        prompt: pendingFollowUp.prompt,
+      });
+      return;
+    }
+    const agentPath = trimOptional(readString(item, "agentPath"));
+    const activityIdentity = agentPath
+      ? { agentPath, spawnReason: taskNameFromAgentPath(agentPath) }
+      : undefined;
+    const identity = mergeNativeSubagentIdentity(activityIdentity, pending?.identity ?? {});
+    this.createOrIdentifyTaskFromSpawn({
+      threadId: childThreadId,
+      identity,
+      prompt: identity.spawnReason,
+      parentTurnId,
+    });
   }
 
   private handleThreadStarted(params: JsonObject): void {
@@ -100,27 +222,69 @@ export class CodexNativeSubagentTaskMirror {
       return;
     }
     const threadId = thread.id.trim();
-    const label =
-      trimOptional(spawn.agent_nickname) ??
-      trimOptional(thread.agentNickname) ??
-      trimOptional(spawn.agent_role) ??
-      trimOptional(thread.agentRole) ??
-      "Codex subagent";
-    const task =
-      trimOptional(thread.preview) ??
-      `Codex native subagent${label === "Codex subagent" ? "" : ` ${label}`}`;
-    const createdAt = secondsToMillis(thread.createdAt) ?? this.now();
-    if (
-      !this.createRunningTask({
-        threadId,
-        label,
-        task,
-        startedAt: createdAt,
-        progressSummary: "Codex native subagent started.",
-      })
-    ) {
+    if (!threadId) {
       return;
     }
+    const runId = this.currentRunId(threadId);
+    const spawnReason = trimOptional(thread.preview);
+    const identity = resolveThreadSubagentIdentity(thread, spawn, spawnReason);
+    if (this.mirroredThreadIds.has(threadId)) {
+      const previousIdentity = this.identityByThreadId.get(threadId);
+      const mergedIdentity = mergeNativeSubagentIdentity(previousIdentity, identity);
+      if (!sameNativeSubagentIdentity(previousIdentity, mergedIdentity)) {
+        this.identityByThreadId.set(threadId, mergedIdentity);
+        const progressSummary = nativeSubagentStartSummary("identified", mergedIdentity);
+        this.runtime.recordTaskRunProgressByRunId({
+          runId,
+          lastEventAt: this.now(),
+          progressSummary,
+          eventSummary: progressSummary,
+          detail: this.buildTaskDetail({
+            threadId,
+            identity: mergedIdentity,
+            phase: "child_identified",
+          }),
+        });
+      }
+      this.applyStatus(threadId, thread.status);
+      return;
+    }
+    this.mirroredThreadIds.add(threadId);
+    this.identityByThreadId.set(threadId, identity);
+    const label = formatNativeSubagentLabel(identity) ?? "Codex subagent";
+    const task =
+      identity.spawnReason ??
+      `Codex native subagent${label === "Codex subagent" ? "" : ` ${label}`}`;
+    const createdAt = secondsToMillis(thread.createdAt) ?? this.now();
+    const taskRecord = this.runtime.tryCreateRunningTaskRun({
+      sourceId: runId,
+      agentId: this.params.agentId,
+      runId,
+      label,
+      task,
+      notifyPolicy: "silent",
+      deliveryStatus: "not_applicable",
+      preferMetadata: true,
+      startedAt: createdAt,
+      lastEventAt: this.now(),
+      progressSummary: nativeSubagentStartSummary("started", identity),
+      detail: this.buildTaskDetail({
+        threadId,
+        identity,
+        phase: "child_spawned",
+      }),
+    });
+    if (!taskRecord) {
+      this.mirroredThreadIds.delete(threadId);
+      this.failedMirrorThreadIds.add(threadId);
+      this.identityByThreadId.delete(threadId);
+      this.parentTurnIdByThreadId.delete(threadId);
+      return;
+    }
+    this.failedMirrorThreadIds.delete(threadId);
+    this.terminalRunIds.delete(runId);
+    this.activeRunIdByThreadId.set(threadId, runId);
+    this.activeAttemptByThreadId.delete(threadId);
     this.applyStatus(threadId, thread.status);
   }
 
@@ -132,15 +296,41 @@ export class CodexNativeSubagentTaskMirror {
     this.applyStatus(notification.threadId, notification.status);
   }
 
+  private handleTokenUsageUpdated(params: JsonObject): void {
+    const threadId = trimOptional(readString(params, "threadId"));
+    if (!threadId || !this.mirroredThreadIds.has(threadId)) {
+      return;
+    }
+    const tokenUsage = isJsonObject(params.tokenUsage) ? params.tokenUsage : undefined;
+    const total = tokenUsage && isJsonObject(tokenUsage.total) ? tokenUsage.total : undefined;
+    if (!total) {
+      return;
+    }
+    const usage = {
+      inputTokens: readFiniteNumber(total, "inputTokens", "input_tokens"),
+      outputTokens: readFiniteNumber(total, "outputTokens", "output_tokens"),
+      cachedInputTokens: readFiniteNumber(total, "cachedInputTokens", "cached_input_tokens"),
+      reasoningOutputTokens: readFiniteNumber(
+        total,
+        "reasoningOutputTokens",
+        "reasoning_output_tokens",
+      ),
+      totalTokens: readFiniteNumber(total, "totalTokens", "total_tokens"),
+    } satisfies NativeSubagentTokenUsage;
+    if (Object.values(usage).some((value) => value !== undefined)) {
+      this.tokenUsageByThreadId.set(threadId, usage);
+    }
+  }
+
   private applyStatus(threadId: string, status: CodexThreadStatus | null | undefined): void {
-    if (this.mirrorStateByThreadId.get(threadId) === "failed") {
+    if (!this.mirroredThreadIds.has(threadId) && this.failedMirrorThreadIds.has(threadId)) {
       return;
     }
     const statusType = status?.type;
     if (!statusType) {
       return;
     }
-    const runId = codexNativeSubagentRunId(threadId);
+    const runId = this.currentRunId(threadId);
     if (this.authoritativeRunIds.has(runId)) {
       return;
     }
@@ -149,48 +339,93 @@ export class CodexNativeSubagentTaskMirror {
     }
     const eventAt = this.now();
     if (statusType === "active") {
+      const progressSummary = nativeSubagentSummary(
+        "Codex native subagent is active",
+        this.latestCollabStatusDetailByThreadId.get(threadId) ??
+          activeFlagsSummary(status.activeFlags),
+      );
       this.runtime.recordTaskRunProgressByRunId({
         runId,
         lastEventAt: eventAt,
-        progressSummary: "Codex native subagent is active.",
+        progressSummary,
+        eventSummary: progressSummary,
+        detail: this.buildTaskDetail({
+          threadId,
+          phase: "child_active",
+        }),
       });
       return;
     }
     if (statusType === "idle") {
+      const detail =
+        this.latestCollabTerminalDetailByThreadId.get(threadId) ??
+        this.latestCollabStatusDetailByThreadId.get(threadId);
+      const progressSummary = nativeSubagentSummary("Codex native subagent is idle", detail);
       this.runtime.recordTaskRunProgressByRunId({
         runId,
         lastEventAt: eventAt,
-        progressSummary: "Codex native subagent is idle.",
+        progressSummary,
+        eventSummary: progressSummary,
+        detail: this.buildTaskDetail({
+          threadId,
+          phase: "child_idle",
+        }),
       });
       return;
     }
     if (statusType === "systemError") {
       if (this.expectedAuthoritativeRunIds.has(runId)) {
         this.terminalRunIds.delete(runId);
+        const progressSummary = nativeSubagentSummary(
+          "Codex native subagent hit a system error; awaiting recovery",
+          this.latestCollabTerminalDetailByThreadId.get(threadId) ??
+            this.latestCollabStatusDetailByThreadId.get(threadId),
+        );
         this.runtime.recordTaskRunProgressByRunId({
           runId,
           lastEventAt: eventAt,
-          progressSummary: "Codex native subagent hit a system error; awaiting recovery.",
+          progressSummary,
+          eventSummary: progressSummary,
+          detail: this.buildTaskDetail({
+            threadId,
+            phase: "child_recovering",
+          }),
         });
         return;
       }
       this.terminalRunIds.add(runId);
+      const detail =
+        this.latestCollabTerminalDetailByThreadId.get(threadId) ??
+        this.latestCollabStatusDetailByThreadId.get(threadId);
       this.runtime.finalizeTaskRunByRunId({
         runId,
         status: "failed",
         endedAt: eventAt,
         lastEventAt: eventAt,
         error: "Codex app-server reported a system error for the native subagent thread.",
-        progressSummary: "Codex native subagent hit a system error.",
-        terminalSummary: "Codex native subagent failed.",
+        progressSummary: nativeSubagentSummary("Codex native subagent hit a system error", detail),
+        terminalSummary: nativeSubagentSummary("Codex native subagent failed", detail),
+        detail: this.buildTaskDetail({
+          threadId,
+          phase: "child_failed",
+        }),
       });
       return;
     }
     if (statusType === "notLoaded") {
+      const progressSummary = nativeSubagentSummary(
+        "Codex native subagent is not loaded",
+        this.latestCollabStatusDetailByThreadId.get(threadId),
+      );
       this.runtime.recordTaskRunProgressByRunId({
         runId,
         lastEventAt: eventAt,
-        progressSummary: "Codex native subagent is not loaded.",
+        progressSummary,
+        eventSummary: progressSummary,
+        detail: this.buildTaskDetail({
+          threadId,
+          phase: "child_not_loaded",
+        }),
       });
     }
   }
@@ -205,12 +440,26 @@ export class CodexNativeSubagentTaskMirror {
       return;
     }
     const isSpawnAgentTool = normalizeToolName(readString(item, "tool")) === "spawnagent";
+    const isFollowUpTool = isNativeFollowUpToolName(normalizeToolName(readString(item, "tool")));
     const receiverThreadIds = readStringArray(item.receiverThreadIds);
     const agentsStates = readAgentsStates(item.agentsStates);
     const spawnChildThreadIds = new Set([...receiverThreadIds, ...agentsStates.keys()]);
+    const parentTurnId = trimOptional(readString(params, "turnId"));
+    const operationId = readFunctionCallId(item);
+    if (isFollowUpTool && operationId) {
+      const prompt = trimOptional(readString(item, "prompt"));
+      for (const childThreadId of spawnChildThreadIds) {
+        this.beginFollowUpAttempt({
+          threadId: childThreadId,
+          operationId,
+          parentTurnId,
+          prompt,
+        });
+      }
+    }
     if (isSpawnAgentTool) {
       for (const childThreadId of spawnChildThreadIds) {
-        this.createTaskFromCollabSpawnItem(childThreadId, item);
+        this.createTaskFromCollabSpawnItem(childThreadId, item, parentTurnId);
       }
     }
     const toolCallStatus = normalizeCollabToolCallStatus(readString(item, "status"));
@@ -248,94 +497,174 @@ export class CodexNativeSubagentTaskMirror {
     }
   }
 
-  private handleSubagentActivityItem(params: JsonObject): void {
+  private handleNativeFunctionItem(params: JsonObject): void {
     const item = isJsonObject(params.item) ? params.item : undefined;
-    if (
-      !item ||
-      readString(item, "type") !== "subAgentActivity" ||
-      readString(params, "threadId") !== this.params.parentThreadId
-    ) {
+    if (!item) {
       return;
     }
-    const threadId = trimOptional(readString(item, "agentThreadId"));
-    const kind = normalizeSubagentActivityKind(readString(item, "kind"));
-    if (!threadId || !kind) {
+    const threadId = readString(params, "threadId")?.trim();
+    if (threadId && threadId !== this.params.parentThreadId) {
       return;
     }
-    if (kind === "started") {
-      this.createTaskFromSubagentActivity(threadId, trimOptional(readString(item, "agentPath")));
+    const itemType = readString(item, "type");
+    const parentTurnId = trimOptional(readString(params, "turnId"));
+    if (itemType === "function_call") {
+      const toolName = normalizeToolName(readString(item, "name"));
+      if (isNativeFollowUpToolName(toolName)) {
+        const callId = readFunctionCallId(item);
+        if (callId) {
+          this.rememberPendingFollowUp(item, callId, parentTurnId);
+        }
+      } else {
+        this.rememberNativeSpawnFunctionCall(item, parentTurnId);
+      }
       return;
     }
-    if (this.mirrorStateByThreadId.get(threadId) !== "mirrored") {
-      return;
+    if (itemType === "function_call_output") {
+      this.createTaskFromNativeFunctionOutput(item);
     }
-    const message =
-      kind === "interacted"
-        ? "Codex native subagent received more input."
-        : "Codex native subagent was interrupted.";
-    this.applyCollabAgentStatus(
-      threadId,
-      kind === "interacted" ? "running" : "interrupted",
-      message,
-    );
   }
 
-  private createTaskFromSubagentActivity(threadId: string, agentPath: string | undefined): void {
-    const eventAt = this.now();
-    this.createRunningTask({
-      threadId,
-      label: "Codex subagent",
-      task: agentPath ? `Codex native subagent ${agentPath}` : "Codex native subagent",
-      startedAt: eventAt,
-      progressSummary: "Codex native subagent started.",
+  private rememberNativeSpawnFunctionCall(item: JsonObject, parentTurnId?: string): void {
+    if (normalizeToolName(readString(item, "name")) !== "spawnagent") {
+      return;
+    }
+    const identity = resolveNativeSpawnFunctionIdentity(item);
+    if (!hasNativeSubagentIdentity(identity)) {
+      return;
+    }
+    const callId = readFunctionCallId(item);
+    if (!callId) {
+      return;
+    }
+    const pending = {
+      identity,
+      ...(parentTurnId ? { parentTurnId } : {}),
+    } satisfies PendingKeyedNativeSpawn;
+    if (!this.pendingSpawnsByCallId.has(callId)) {
+      this.pendingSpawnsByCallId.set(callId, pending);
+    }
+  }
+
+  private createTaskFromNativeFunctionOutput(item: JsonObject): void {
+    const callId = readFunctionCallId(item);
+    const output = readJsonObjectValue(item.output);
+    const childThreadId =
+      trimOptional(readString(output, "agent_id")) ??
+      trimOptional(readString(output, "agentId")) ??
+      trimOptional(readString(output, "thread_id")) ??
+      trimOptional(readString(output, "threadId"));
+    if (!childThreadId) {
+      return;
+    }
+    const pendingFollowUp = callId ? this.pendingFollowUpsByCallId.get(callId) : undefined;
+    if (pendingFollowUp && callId) {
+      this.pendingFollowUpsByCallId.delete(callId);
+      this.beginFollowUpAttempt({
+        threadId: childThreadId,
+        operationId: callId,
+        parentTurnId: pendingFollowUp.parentTurnId,
+        prompt: pendingFollowUp.prompt,
+      });
+      return;
+    }
+    const pending = callId ? this.pendingSpawnsByCallId.get(callId) : undefined;
+    if (callId) {
+      this.pendingSpawnsByCallId.delete(callId);
+    }
+    const parentTurnId = pending?.parentTurnId;
+    const outputIdentity = {
+      nickname: trimOptional(readString(output, "nickname")),
+    };
+    const identity = mergeNativeSubagentIdentity(pending?.identity, outputIdentity);
+    this.createOrIdentifyTaskFromSpawn({
+      threadId: childThreadId,
+      identity,
+      prompt: identity.spawnReason,
+      parentTurnId,
     });
   }
 
-  private createTaskFromCollabSpawnItem(threadId: string, item: JsonObject): void {
+  private createTaskFromCollabSpawnItem(
+    threadId: string,
+    item: JsonObject,
+    parentTurnId?: string,
+  ): void {
     const prompt = trimOptional(readString(item, "prompt"));
-    const createdAt = this.now();
-    this.createRunningTask({
-      threadId,
-      label: "Codex subagent",
-      task: prompt ?? "Codex native subagent",
-      startedAt: createdAt,
-      progressSummary: "Codex native subagent spawned.",
-    });
+    const identity = {
+      ...resolveCollabItemSubagentIdentity(item),
+      ...(prompt ? { spawnReason: prompt } : {}),
+    };
+    this.createOrIdentifyTaskFromSpawn({ threadId, identity, prompt, parentTurnId });
   }
 
-  private createRunningTask(params: {
+  private createOrIdentifyTaskFromSpawn(params: {
     threadId: string;
-    label: string;
-    task: string;
-    startedAt: number;
-    progressSummary: string;
-  }): boolean {
-    const threadId = params.threadId.trim();
-    if (!threadId || this.mirrorStateByThreadId.get(threadId) === "mirrored") {
-      return false;
+    identity: NativeSubagentIdentity;
+    prompt?: string;
+    parentTurnId?: string;
+  }): void {
+    const normalizedThreadId = params.threadId.trim();
+    if (!normalizedThreadId) {
+      return;
     }
-    this.mirrorStateByThreadId.set(threadId, "mirrored");
-    const runId = codexNativeSubagentRunId(threadId);
+    const parentTurnChanged = this.rememberParentTurnId(normalizedThreadId, params.parentTurnId);
+    if (this.mirroredThreadIds.has(normalizedThreadId)) {
+      const previousIdentity = this.identityByThreadId.get(normalizedThreadId);
+      const mergedIdentity = mergeNativeSubagentIdentity(previousIdentity, params.identity);
+      if (!sameNativeSubagentIdentity(previousIdentity, mergedIdentity) || parentTurnChanged) {
+        this.identityByThreadId.set(normalizedThreadId, mergedIdentity);
+        const progressSummary = nativeSubagentStartSummary("identified", mergedIdentity);
+        this.runtime.recordTaskRunProgressByRunId({
+          runId: this.currentRunId(normalizedThreadId),
+          lastEventAt: this.now(),
+          progressSummary,
+          eventSummary: progressSummary,
+          detail: this.buildTaskDetail({
+            threadId: normalizedThreadId,
+            identity: mergedIdentity,
+            phase: "child_identified",
+          }),
+        });
+      }
+      return;
+    }
+    this.mirroredThreadIds.add(normalizedThreadId);
+    const identity = params.identity;
+    this.identityByThreadId.set(normalizedThreadId, identity);
+    const label = formatNativeSubagentLabel(identity) ?? "Codex subagent";
+    const runId = codexNativeSubagentRunId(normalizedThreadId);
+    const createdAt = this.now();
     const taskRecord = this.runtime.tryCreateRunningTaskRun({
       sourceId: runId,
       agentId: this.params.agentId,
       runId,
-      label: params.label,
-      task: params.task,
+      label,
+      task:
+        params.prompt ?? `Codex native subagent${label === "Codex subagent" ? "" : ` ${label}`}`,
       notifyPolicy: "silent",
       deliveryStatus: "not_applicable",
       preferMetadata: true,
-      startedAt: params.startedAt,
-      lastEventAt: this.now(),
-      progressSummary: params.progressSummary,
+      startedAt: createdAt,
+      lastEventAt: createdAt,
+      progressSummary: nativeSubagentStartSummary("spawned", identity),
+      detail: this.buildTaskDetail({
+        threadId: normalizedThreadId,
+        identity,
+        phase: "child_spawned",
+      }),
     });
     if (!taskRecord) {
-      this.mirrorStateByThreadId.set(threadId, "failed");
-      return false;
+      this.mirroredThreadIds.delete(normalizedThreadId);
+      this.failedMirrorThreadIds.add(normalizedThreadId);
+      this.identityByThreadId.delete(normalizedThreadId);
+      this.parentTurnIdByThreadId.delete(normalizedThreadId);
+      return;
     }
+    this.failedMirrorThreadIds.delete(normalizedThreadId);
     this.terminalRunIds.delete(runId);
-    this.authoritativeRunIds.delete(runId);
-    return true;
+    this.activeRunIdByThreadId.set(normalizedThreadId, runId);
+    this.activeAttemptByThreadId.delete(normalizedThreadId);
   }
 
   private applyCollabAgentStatus(
@@ -343,14 +672,14 @@ export class CodexNativeSubagentTaskMirror {
     status: string | undefined,
     message: string | null | undefined,
   ): void {
-    if (this.mirrorStateByThreadId.get(threadId) === "failed") {
+    if (!this.mirroredThreadIds.has(threadId) && this.failedMirrorThreadIds.has(threadId)) {
       return;
     }
     const normalizedStatus = normalizeAgentStateStatus(status);
     if (!normalizedStatus) {
       return;
     }
-    const runId = codexNativeSubagentRunId(threadId);
+    const runId = this.currentRunId(threadId);
     if (this.authoritativeRunIds.has(runId)) {
       return;
     }
@@ -359,54 +688,79 @@ export class CodexNativeSubagentTaskMirror {
     }
     const eventAt = this.now();
     if (normalizedStatus === "pendingInit" || normalizedStatus === "running") {
+      const detail = trimOptional(message);
+      this.rememberCollabStatusDetail(threadId, detail);
+      const progressSummary = nativeSubagentSummary(
+        normalizedStatus === "pendingInit"
+          ? "Codex native subagent is initializing"
+          : "Codex native subagent is running",
+        detail,
+      );
       this.runtime.recordTaskRunProgressByRunId({
         runId,
         lastEventAt: eventAt,
-        progressSummary:
-          trimOptional(message) ??
-          (normalizedStatus === "pendingInit"
-            ? "Codex native subagent is initializing."
-            : "Codex native subagent is running."),
+        progressSummary,
+        eventSummary: progressSummary,
+        detail: this.buildTaskDetail({
+          threadId,
+          phase: normalizedStatus === "pendingInit" ? "child_initializing" : "child_running",
+        }),
       });
       return;
     }
     if (normalizedStatus === "completed") {
       this.terminalRunIds.add(runId);
-      const summary = trimOptional(message) ?? "Codex native subagent completed.";
+      const detail = trimOptional(message);
+      this.rememberCollabTerminalDetail(threadId, detail);
       if (this.expectedAuthoritativeRunIds.has(runId)) {
         this.runtime.recordTaskRunProgressByRunId({
           runId,
           lastEventAt: eventAt,
-          progressSummary: summary,
+          progressSummary: detail ?? "Codex native subagent completed.",
+          eventSummary: detail ?? "Codex native subagent completed.",
+          detail: this.buildTaskDetail({
+            threadId,
+            phase: "child_completed",
+          }),
         });
-      } else {
-        // Remote V1 has no trusted completion envelope or local transcript.
-        // Its collab-completed state is therefore the terminal fallback.
-        this.runtime.finalizeTaskRunByRunId({
-          runId,
-          status: "succeeded",
-          endedAt: eventAt,
-          lastEventAt: eventAt,
-          progressSummary: summary,
-          terminalSummary: summary,
-        });
+        return;
       }
-      return;
-    }
-    if (normalizedStatus === "blocked") {
-      this.terminalRunIds.add(runId);
       this.runtime.finalizeTaskRunByRunId({
         runId,
         status: "succeeded",
         endedAt: eventAt,
         lastEventAt: eventAt,
-        progressSummary: trimOptional(message) ?? "Codex native subagent blocked.",
-        terminalSummary: trimOptional(message) ?? "Codex native subagent blocked.",
+        progressSummary: nativeSubagentSummary("Codex native subagent completed", detail),
+        terminalSummary: nativeSubagentSummary("Codex native subagent finished", detail),
+        detail: this.buildTaskDetail({
+          threadId,
+          phase: "child_completed",
+        }),
+      });
+      return;
+    }
+    if (normalizedStatus === "blocked") {
+      this.terminalRunIds.add(runId);
+      const detail = trimOptional(message);
+      this.rememberCollabTerminalDetail(threadId, detail);
+      this.runtime.finalizeTaskRunByRunId({
+        runId,
+        status: "succeeded",
+        endedAt: eventAt,
+        lastEventAt: eventAt,
+        progressSummary: nativeSubagentSummary("Codex native subagent blocked", detail),
+        terminalSummary: nativeSubagentSummary("Codex native subagent blocked", detail),
         terminalOutcome: "blocked",
+        detail: this.buildTaskDetail({
+          threadId,
+          phase: "child_blocked",
+        }),
       });
       return;
     }
     this.terminalRunIds.add(runId);
+    const detail = trimOptional(message) ?? `Codex native subagent status: ${normalizedStatus}`;
+    this.rememberCollabTerminalDetail(threadId, detail);
     this.runtime.finalizeTaskRunByRunId({
       runId,
       status:
@@ -415,10 +769,233 @@ export class CodexNativeSubagentTaskMirror {
           : "failed",
       endedAt: eventAt,
       lastEventAt: eventAt,
-      error: trimOptional(message) ?? `Codex native subagent status: ${normalizedStatus}`,
-      progressSummary: trimOptional(message) ?? `Codex native subagent ${normalizedStatus}.`,
-      terminalSummary: trimOptional(message) ?? "Codex native subagent did not complete.",
+      error: detail,
+      progressSummary: nativeSubagentSummary(`Codex native subagent ${normalizedStatus}`, detail),
+      terminalSummary: nativeSubagentSummary("Codex native subagent did not complete", detail),
+      detail: this.buildTaskDetail({
+        threadId,
+        phase:
+          normalizedStatus === "interrupted" || normalizedStatus === "shutdown"
+            ? "child_cancelled"
+            : "child_failed",
+      }),
     });
+  }
+
+  private buildTaskDetail(params: {
+    threadId: string;
+    identity?: NativeSubagentIdentity;
+    phase: string;
+  }): NativeSubagentTaskEventMetadata {
+    const identity = params.identity ?? this.identityByThreadId.get(params.threadId);
+    const spawnReason = trimOptional(identity?.spawnReason);
+    const tokenUsage = this.tokenUsageByThreadId.get(params.threadId);
+    const attempt = this.activeAttemptByThreadId.get(params.threadId);
+    return {
+      schema: "openclaw.codex.native_subagent_task.v1",
+      codexNativeSubagent: true,
+      parentThreadId: this.params.parentThreadId,
+      ...(this.parentTurnIdByThreadId.get(params.threadId)
+        ? { parentTurnId: this.parentTurnIdByThreadId.get(params.threadId) as string }
+        : {}),
+      childThreadId: params.threadId,
+      childPhase: params.phase,
+      ...(attempt
+        ? {
+            childAttemptKind: attempt.kind,
+            childOperationId: attempt.operationId,
+          }
+        : {}),
+      ...(identity?.role ? { childRole: identity.role } : {}),
+      ...(identity?.agentPath ? { childAgentPath: identity.agentPath } : {}),
+      ...(identity?.nickname ? { childNickname: identity.nickname } : {}),
+      ...(identity?.taskName ? { childTaskName: identity.taskName } : {}),
+      ...(identity?.model ? { childModel: identity.model } : {}),
+      ...(identity?.reasoningEffort ? { childReasoningEffort: identity.reasoningEffort } : {}),
+      ...(spawnReason ? { spawnReason } : {}),
+      ...(tokenUsage?.inputTokens !== undefined
+        ? { childInputTokens: tokenUsage.inputTokens }
+        : {}),
+      ...(tokenUsage?.outputTokens !== undefined
+        ? { childOutputTokens: tokenUsage.outputTokens }
+        : {}),
+      ...(tokenUsage?.cachedInputTokens !== undefined
+        ? { childCachedInputTokens: tokenUsage.cachedInputTokens }
+        : {}),
+      ...(tokenUsage?.reasoningOutputTokens !== undefined
+        ? { childReasoningOutputTokens: tokenUsage.reasoningOutputTokens }
+        : {}),
+      ...(tokenUsage?.totalTokens !== undefined
+        ? { childTotalTokens: tokenUsage.totalTokens }
+        : {}),
+    };
+  }
+
+  private hydratePersistedTaskState(): void {
+    const latestTaskByThreadId = new Map<
+      string,
+      { lastEventAt: number; runId: string; attempt?: NativeSubagentAttempt }
+    >();
+    for (const task of this.runtime.listTaskRecords?.() ?? []) {
+      const metadata = readPersistedTaskMetadata(task);
+      if (
+        metadata?.codexNativeSubagent !== true ||
+        readMetadataString(metadata, "parentThreadId") !== this.params.parentThreadId
+      ) {
+        continue;
+      }
+      const childThreadId =
+        readMetadataString(metadata, "childThreadId") ??
+        readCodexNativeSubagentThreadId(task.runId ?? task.sourceId);
+      if (!childThreadId) {
+        continue;
+      }
+      this.mirroredThreadIds.add(childThreadId);
+      this.rememberParentTurnId(childThreadId, readMetadataString(metadata, "parentTurnId"));
+      const identity = readPersistedNativeSubagentIdentity(metadata);
+      if (hasNativeSubagentIdentity(identity)) {
+        this.identityByThreadId.set(childThreadId, identity);
+      }
+      const tokenUsage = readPersistedNativeSubagentTokenUsage(metadata);
+      if (Object.values(tokenUsage).some((value) => value !== undefined)) {
+        this.tokenUsageByThreadId.set(childThreadId, tokenUsage);
+      }
+      if (task.status !== "queued" && task.status !== "running") {
+        if (task.runId) {
+          this.terminalRunIds.add(task.runId);
+        }
+      }
+      const taskRunId = trimOptional(task.runId);
+      if (taskRunId) {
+        const operationId = readMetadataString(metadata, "childOperationId");
+        const attempt =
+          readMetadataString(metadata, "childAttemptKind") === "follow_up" && operationId
+            ? { kind: "follow_up" as const, operationId }
+            : undefined;
+        const candidate = {
+          lastEventAt: task.lastEventAt ?? task.startedAt ?? task.createdAt,
+          runId: taskRunId,
+          ...(attempt ? { attempt } : {}),
+        };
+        const previous = latestTaskByThreadId.get(childThreadId);
+        if (!previous || candidate.lastEventAt >= previous.lastEventAt) {
+          latestTaskByThreadId.set(childThreadId, candidate);
+        }
+      }
+    }
+    for (const [threadId, latest] of latestTaskByThreadId) {
+      this.activeRunIdByThreadId.set(threadId, latest.runId);
+      if (latest.attempt) {
+        this.activeAttemptByThreadId.set(threadId, latest.attempt);
+      }
+    }
+  }
+
+  private rememberParentTurnId(threadId: string, parentTurnId?: string): boolean {
+    const normalized = trimOptional(parentTurnId);
+    const existing = this.parentTurnIdByThreadId.get(threadId);
+    if (!normalized || existing === normalized) {
+      return false;
+    }
+    this.parentTurnIdByThreadId.set(threadId, normalized);
+    return true;
+  }
+
+  private rememberPendingFollowUp(item: JsonObject, callId: string, parentTurnId?: string): void {
+    const args = readJsonObjectValue(item.arguments);
+    const prompt =
+      trimOptional(readString(item, "prompt")) ??
+      trimOptional(readString(args, "message")) ??
+      trimOptional(readString(args, "prompt"));
+    this.pendingFollowUpsByCallId.set(callId, {
+      ...(parentTurnId ? { parentTurnId } : {}),
+      ...(prompt ? { prompt } : {}),
+    });
+  }
+
+  private beginFollowUpAttempt(params: {
+    threadId: string;
+    operationId: string;
+    parentTurnId?: string;
+    prompt?: string;
+  }): void {
+    const threadId = params.threadId.trim();
+    const operationId = params.operationId.trim();
+    if (!threadId || !operationId || !this.mirroredThreadIds.has(threadId)) {
+      return;
+    }
+    const runId = codexNativeSubagentFollowUpRunId(threadId, operationId);
+    if (this.activeRunIdByThreadId.get(threadId) === runId) {
+      return;
+    }
+    const records = this.runtime.listTaskRecords();
+    const existing = records.find((task) => task.runId === runId);
+    this.rememberParentTurnId(threadId, params.parentTurnId);
+    this.activeRunIdByThreadId.set(threadId, runId);
+    this.activeAttemptByThreadId.set(threadId, {
+      kind: "follow_up",
+      operationId,
+    });
+    if (existing) {
+      if (existing.status === "queued" || existing.status === "running") {
+        this.terminalRunIds.delete(runId);
+      } else {
+        this.terminalRunIds.add(runId);
+      }
+      return;
+    }
+    const rootRunId = codexNativeSubagentRunId(threadId);
+    const parentTask = records.find((task) => task.runId === rootRunId);
+    const identity = this.identityByThreadId.get(threadId) ?? {};
+    const label = formatNativeSubagentLabel(identity) ?? "Codex subagent";
+    const prompt = trimOptional(params.prompt) ?? trimOptional(identity.spawnReason);
+    const startedAt = this.now();
+    const progressSummary = nativeSubagentSummary(
+      "Codex native subagent follow-up started",
+      prompt,
+    );
+    const taskRecord = this.runtime.tryCreateRunningTaskRun({
+      sourceId: runId,
+      agentId: this.params.agentId,
+      runId,
+      label,
+      task: prompt ?? `Codex native subagent follow-up for ${label}`,
+      ...(parentTask ? { parentTaskId: parentTask.taskId } : {}),
+      notifyPolicy: "silent",
+      deliveryStatus: "not_applicable",
+      preferMetadata: true,
+      startedAt,
+      lastEventAt: startedAt,
+      progressSummary,
+      detail: this.buildTaskDetail({
+        threadId,
+        identity,
+        phase: "child_follow_up_started",
+      }),
+    });
+    if (!taskRecord) {
+      this.activeRunIdByThreadId.set(threadId, rootRunId);
+      this.activeAttemptByThreadId.delete(threadId);
+      return;
+    }
+    this.terminalRunIds.delete(runId);
+  }
+
+  private currentRunId(threadId: string): string {
+    return this.activeRunIdByThreadId.get(threadId) ?? codexNativeSubagentRunId(threadId);
+  }
+
+  private rememberCollabStatusDetail(threadId: string, detail: string | undefined): void {
+    if (detail) {
+      this.latestCollabStatusDetailByThreadId.set(threadId, detail);
+    }
+  }
+
+  private rememberCollabTerminalDetail(threadId: string, detail: string | undefined): void {
+    if (detail) {
+      this.latestCollabStatusDetailByThreadId.set(threadId, detail);
+      this.latestCollabTerminalDetailByThreadId.set(threadId, detail);
+    }
   }
 }
 
@@ -427,23 +1004,25 @@ export function codexNativeSubagentRunId(threadId: string): string {
   return `${CODEX_NATIVE_SUBAGENT_RUN_ID_PREFIX}${threadId.trim()}`;
 }
 
+/** Converts one native follow-up operation into a linked task-attempt run id. */
+export function codexNativeSubagentFollowUpRunId(threadId: string, operationId: string): string {
+  return `${codexNativeSubagentRunId(threadId)}:followup:${operationId.trim()}`;
+}
+
+function readCodexNativeSubagentThreadId(runId: string | undefined): string | undefined {
+  const normalized = trimOptional(runId);
+  if (!normalized?.startsWith(CODEX_NATIVE_SUBAGENT_RUN_ID_PREFIX)) {
+    return undefined;
+  }
+  return trimOptional(normalized.slice(CODEX_NATIVE_SUBAGENT_RUN_ID_PREFIX.length));
+}
+
 /** Reads a subagent thread-spawn source only when it belongs to the expected parent thread. */
-function readSubagentThreadSpawnSource(
+export function readSubagentThreadSpawnSource(
   source: CodexSessionSource | null | undefined,
   parentThreadId: string,
 ): CodexSubAgentThreadSpawnSource | undefined {
-  if (!source || typeof source !== "object" || !("subAgent" in source)) {
-    return undefined;
-  }
-  const subAgent = source.subAgent;
-  if (!subAgent || typeof subAgent !== "object" || !("thread_spawn" in subAgent)) {
-    return undefined;
-  }
-  const spawn = subAgent.thread_spawn;
-  if (!spawn || typeof spawn !== "object") {
-    return undefined;
-  }
-  return spawn.parent_thread_id === parentThreadId ? spawn : undefined;
+  return readCodexSubagentThreadSpawnSource(source, parentThreadId);
 }
 
 function readThreadStartedNotification(
@@ -501,9 +1080,240 @@ function readStringArray(value: JsonValue | undefined): string[] {
   return value.filter((entry): entry is string => typeof entry === "string" && entry.trim() !== "");
 }
 
+export type NativeSubagentIdentity = {
+  nickname?: string;
+  role?: string;
+  agentPath?: string;
+  spawnReason?: string;
+  taskName?: string;
+  model?: string;
+  reasoningEffort?: string;
+};
+
+type NativeSubagentTokenUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedInputTokens?: number;
+  reasoningOutputTokens?: number;
+  totalTokens?: number;
+};
+
+function readMetadataString(
+  metadata: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined {
+  const value = metadata?.[key];
+  return typeof value === "string" ? trimOptional(value) : undefined;
+}
+
+function readPersistedTaskMetadata(task: {
+  detail?: JsonValue;
+}): Record<string, unknown> | undefined {
+  if (task.detail && typeof task.detail === "object" && !Array.isArray(task.detail)) {
+    return task.detail;
+  }
+  return undefined;
+}
+
+function readMetadataNumber(
+  metadata: Record<string, unknown> | undefined,
+  key: string,
+): number | undefined {
+  const value = metadata?.[key];
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function readPersistedNativeSubagentIdentity(
+  metadata: Record<string, unknown> | undefined,
+): NativeSubagentIdentity {
+  return {
+    nickname: readMetadataString(metadata, "childNickname"),
+    role: readMetadataString(metadata, "childRole"),
+    agentPath: readMetadataString(metadata, "childAgentPath"),
+    spawnReason: readMetadataString(metadata, "spawnReason"),
+    taskName: readMetadataString(metadata, "childTaskName"),
+    model: readMetadataString(metadata, "childModel"),
+    reasoningEffort: readMetadataString(metadata, "childReasoningEffort"),
+  };
+}
+
+function readPersistedNativeSubagentTokenUsage(
+  metadata: Record<string, unknown> | undefined,
+): NativeSubagentTokenUsage {
+  return {
+    inputTokens: readMetadataNumber(metadata, "childInputTokens"),
+    outputTokens: readMetadataNumber(metadata, "childOutputTokens"),
+    cachedInputTokens: readMetadataNumber(metadata, "childCachedInputTokens"),
+    reasoningOutputTokens: readMetadataNumber(metadata, "childReasoningOutputTokens"),
+    totalTokens: readMetadataNumber(metadata, "childTotalTokens"),
+  };
+}
+
+function resolveThreadSubagentIdentity(
+  thread: CodexThread,
+  spawn: CodexSubAgentThreadSpawnSource,
+  spawnReason?: string,
+): NativeSubagentIdentity {
+  const normalizedSpawnReason =
+    trimOptional(spawnReason) ?? taskNameFromAgentPath(spawn.agent_path);
+  return {
+    nickname: trimOptional(spawn.agent_nickname) ?? trimOptional(thread.agentNickname),
+    role: trimOptional(spawn.agent_role) ?? trimOptional(thread.agentRole),
+    agentPath: trimOptional(spawn.agent_path),
+    ...(normalizedSpawnReason ? { spawnReason: normalizedSpawnReason } : {}),
+  };
+}
+
+function taskNameFromAgentPath(agentPath: string | null | undefined): string | undefined {
+  const normalized = trimOptional(agentPath)?.replace(/\/+$/u, "");
+  if (!normalized) {
+    return undefined;
+  }
+  return trimOptional(normalized.slice(normalized.lastIndexOf("/") + 1));
+}
+
+function resolveCollabItemSubagentIdentity(item: JsonObject): NativeSubagentIdentity {
+  return {
+    nickname:
+      trimOptional(readString(item, "agent_nickname")) ??
+      trimOptional(readString(item, "agentNickname")),
+    role:
+      trimOptional(readString(item, "agent_role")) ??
+      trimOptional(readString(item, "agentRole")) ??
+      trimOptional(readString(item, "role")),
+    agentPath:
+      trimOptional(readString(item, "agent_path")) ?? trimOptional(readString(item, "agentPath")),
+    taskName:
+      trimOptional(readString(item, "task_name")) ?? trimOptional(readString(item, "taskName")),
+    model: trimOptional(readString(item, "model")),
+    reasoningEffort:
+      trimOptional(readString(item, "reasoning_effort")) ??
+      trimOptional(readString(item, "reasoningEffort")),
+  };
+}
+
+export function resolveNativeSpawnFunctionIdentity(item: JsonObject): NativeSubagentIdentity {
+  const args = readJsonObjectValue(item.arguments);
+  const message = trimOptional(readString(args, "message"));
+  const explicitRole =
+    extractSpawnMessageRole(message) ??
+    trimOptional(readString(args, "agent_type")) ??
+    trimOptional(readString(args, "agentType")) ??
+    trimOptional(readString(args, "role"));
+  const agentPath =
+    trimOptional(readString(args, "agent_path")) ??
+    trimOptional(readString(args, "agentPath")) ??
+    roleToAgentPath(explicitRole);
+  const taskName =
+    trimOptional(readString(args, "task_name")) ?? trimOptional(readString(args, "taskName"));
+  return {
+    role: explicitRole,
+    agentPath,
+    taskName,
+    model: trimOptional(readString(args, "model")),
+    reasoningEffort:
+      trimOptional(readString(args, "reasoning_effort")) ??
+      trimOptional(readString(args, "reasoningEffort")),
+    spawnReason:
+      extractSpawnMessageObjective(message) ??
+      trimOptional(readString(args, "objective")) ??
+      trimOptional(readString(args, "task")) ??
+      taskName ??
+      message,
+  };
+}
+
+function mergeNativeSubagentIdentity(
+  previous: NativeSubagentIdentity | undefined,
+  next: NativeSubagentIdentity,
+): NativeSubagentIdentity {
+  return {
+    nickname: trimOptional(next.nickname) ?? trimOptional(previous?.nickname),
+    role: trimOptional(next.role) ?? trimOptional(previous?.role),
+    agentPath: trimOptional(next.agentPath) ?? trimOptional(previous?.agentPath),
+    spawnReason: trimOptional(previous?.spawnReason) ?? trimOptional(next.spawnReason),
+    taskName: trimOptional(next.taskName) ?? trimOptional(previous?.taskName),
+    model: trimOptional(next.model) ?? trimOptional(previous?.model),
+    reasoningEffort: trimOptional(next.reasoningEffort) ?? trimOptional(previous?.reasoningEffort),
+  };
+}
+
+function sameNativeSubagentIdentity(
+  left: NativeSubagentIdentity | undefined,
+  right: NativeSubagentIdentity | undefined,
+): boolean {
+  return (
+    trimOptional(left?.nickname) === trimOptional(right?.nickname) &&
+    trimOptional(left?.role) === trimOptional(right?.role) &&
+    trimOptional(left?.agentPath) === trimOptional(right?.agentPath) &&
+    trimOptional(left?.spawnReason) === trimOptional(right?.spawnReason) &&
+    trimOptional(left?.taskName) === trimOptional(right?.taskName) &&
+    trimOptional(left?.model) === trimOptional(right?.model) &&
+    trimOptional(left?.reasoningEffort) === trimOptional(right?.reasoningEffort)
+  );
+}
+
+function hasNativeSubagentIdentity(identity: NativeSubagentIdentity): boolean {
+  return Boolean(
+    trimOptional(identity.nickname) ??
+    trimOptional(identity.role) ??
+    trimOptional(identity.agentPath) ??
+    trimOptional(identity.spawnReason) ??
+    trimOptional(identity.taskName) ??
+    trimOptional(identity.model) ??
+    trimOptional(identity.reasoningEffort),
+  );
+}
+
+function formatNativeSubagentLabel(identity: NativeSubagentIdentity): string | undefined {
+  const nickname = trimOptional(identity.nickname);
+  const role = trimOptional(identity.role);
+  if (nickname && role && nickname !== role) {
+    return `${nickname} (${role})`;
+  }
+  return nickname ?? role;
+}
+
+function nativeSubagentStartSummary(
+  verb: "started" | "spawned" | "identified",
+  identity: NativeSubagentIdentity,
+): string {
+  const role = trimOptional(identity.role);
+  const agentPath = trimOptional(identity.agentPath);
+  const detailParts = [
+    role ? `role: ${role}` : undefined,
+    agentPath && agentPath !== role ? `agent_path: ${agentPath}` : undefined,
+  ].filter((part): part is string => Boolean(part));
+  const detail = detailParts.length > 0 ? ` (${detailParts.join("; ")})` : "";
+  return `Codex native subagent ${verb}${detail}.`;
+}
+
 function readString(value: JsonObject, key: string): string | undefined {
   const entry = value[key];
   return typeof entry === "string" ? entry : undefined;
+}
+
+function readJsonObjectValue(value: JsonValue | undefined): JsonObject {
+  if (isJsonObject(value)) {
+    return value;
+  }
+  if (typeof value !== "string") {
+    return {};
+  }
+  try {
+    const parsed: JsonValue = JSON.parse(value);
+    return isJsonObject(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function readFunctionCallId(item: JsonObject): string | undefined {
+  return (
+    trimOptional(readString(item, "call_id")) ??
+    trimOptional(readString(item, "callId")) ??
+    trimOptional(readString(item, "id"))
+  );
 }
 
 function readNullableString(value: JsonObject, key: string): string | null | undefined {
@@ -515,11 +1325,31 @@ function normalizeToolName(value: string | undefined): string | undefined {
   return value?.replace(/[^a-z0-9]/giu, "").toLowerCase();
 }
 
-function normalizeSubagentActivityKind(
-  value: string | undefined,
-): "started" | "interacted" | "interrupted" | undefined {
-  const key = value?.replace(/[^a-z]/giu, "").toLowerCase();
-  return key === "started" || key === "interacted" || key === "interrupted" ? key : undefined;
+function isNativeFollowUpToolName(value: string | undefined): boolean {
+  return value === "followuptask" || value === "sendinput" || value === "resumeagent";
+}
+
+function roleToAgentPath(role: string | undefined): string | undefined {
+  const normalized = trimOptional(role);
+  if (
+    !normalized ||
+    normalized === "default" ||
+    normalized === "worker" ||
+    normalized === "explorer"
+  ) {
+    return undefined;
+  }
+  return `agents/${normalized}.toml`;
+}
+
+function extractSpawnMessageRole(message: string | undefined): string | undefined {
+  const match = message?.match(/(?:^|\n)\s*Role:\s*([A-Za-z0-9_-]+)/u);
+  return trimOptional(match?.[1]);
+}
+
+function extractSpawnMessageObjective(message: string | undefined): string | undefined {
+  const match = message?.match(/(?:^|[\n.])\s*Objective:\s*([^\n]+)/u);
+  return trimOptional(match?.[1]);
 }
 
 function normalizeCollabToolCallStatus(value: string | undefined): string | undefined {
@@ -537,6 +1367,13 @@ function normalizeCollabToolCallStatus(value: string | undefined): string | unde
     return "running";
   }
   return value?.trim();
+}
+
+function normalizeSubagentActivityKind(
+  value: string | undefined,
+): "started" | "interacted" | "interrupted" | undefined {
+  const key = value?.replace(/[^a-z]/giu, "").toLowerCase();
+  return key === "started" || key === "interacted" || key === "interrupted" ? key : undefined;
 }
 
 function isBlockedOrFailedCollabToolCallStatus(value: string | undefined): boolean {
@@ -584,7 +1421,45 @@ function secondsToMillis(value: number | null | undefined): number | undefined {
   return value * 1000;
 }
 
+function nativeSubagentSummary(prefix: string, detail: string | null | undefined): string {
+  const normalizedPrefix = prefix.replace(/[.:]\s*$/u, "").trim();
+  const normalizedDetail = boundNativeSubagentText(detail);
+  if (!normalizedDetail) {
+    return `${normalizedPrefix}.`;
+  }
+  return `${normalizedPrefix}: ${normalizedDetail}`;
+}
+
+/** Bounds child prose used in task/session display while exact thread refs remain available. */
+export function boundNativeSubagentText(
+  value: string | null | undefined,
+  maxChars = 800,
+): string | undefined {
+  const normalized = trimOptional(value)?.replace(/\s+/gu, " ");
+  if (!normalized || normalized.length <= maxChars) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(1, maxChars - 1)).trimEnd()}…`;
+}
+
+function readFiniteNumber(value: JsonObject, ...keys: string[]): number | undefined {
+  for (const key of keys) {
+    const candidate = value[key];
+    if (typeof candidate === "number" && Number.isFinite(candidate) && candidate >= 0) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+function activeFlagsSummary(activeFlags: string[] | undefined): string | undefined {
+  const flags = activeFlags?.map((flag) => flag.trim()).filter(Boolean);
+  return flags && flags.length > 0 ? `active flags: ${flags.join(", ")}` : undefined;
+}
+
 function trimOptional(value: string | null | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
 }
+
+/* oxlint-disable max-lines -- Retained parity implementation; split only after assembled proof. */

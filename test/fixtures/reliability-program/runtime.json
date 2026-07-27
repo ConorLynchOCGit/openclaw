@@ -1,0 +1,1219 @@
+{
+  "schemaVersion": "openclaw.reliability.fixture-corpus.v1",
+  "corpus": "runtime",
+  "authority": {
+    "sourceCommit": "41ec19868b13c463cfdcde264fa1857c3e05d29c",
+    "sourceTree": "bc768005ffef524407f66041752c502076b8fa9e",
+    "baselineProgramSpecCommit": "cdc3c11e575eb6067de18333ee88133ba9b903dd",
+    "correctedProgramSpecContentSha256": "61c73a55f1f604964479423fdb901af8bc206b4064745dda225ef13546532d43",
+    "programSpecSection": "12",
+    "proofLockGate": "G0"
+  },
+  "entries": [
+    {
+      "id": "FX-LIFE-01",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "native task ledger and subagent registry",
+        "surfaces": [
+          "src/tasks/task-registry.ts",
+          "src/agents/subagent-control.ts",
+          "src/agents/subagent-registry.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 1",
+        "focusedGate": "G1",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "A disposable SQLite lineage containing one parent, one active descendant, one queued descendant, one settled descendant, and one descendant spawn attempted after cancellation.",
+        "steps": [
+          "Commit the parent cancellation tombstone before dispatching active-run aborts.",
+          "Attempt queued admission, future spawn, follow-up, deferred delivery, and restart recovery for the lineage.",
+          "Read the task ledger, subagent registry, queue, session, and delivery facts after settlement."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "The settled descendant remains settled and every nonterminal descendant settles cancelled exactly once.",
+        "Every native projection reports the same lineage tombstone and terminal revision.",
+        "Cancellation survives a registry reopen without repair from another store."
+      ],
+      "negativeAssertions": [
+        "No queued or future descendant reaches provider or tool execution.",
+        "No follow-up, deferred delivery, or restart recovery revives the lineage.",
+        "No second cancellation store, queue, watchdog, or cleanup daemon participates."
+      ],
+      "existingPassingControlTestPaths": [
+        "src/tasks/task-registry.test.ts",
+        "src/agents/subagent-control.test.ts",
+        "src/agents/subagent-registry-queries.test.ts",
+        "src/agents/subagent-registry.nested.e2e.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "src/tasks/task-registry.lineage-cancellation.integration.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs src/tasks/task-registry.lineage-cancellation.integration.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-LIFE-01.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-LIFE-01.json"
+      },
+      "baselineState": {
+        "classification": "partial",
+        "gap": "Component controls exist, but no single fixture currently proves active, queued, future, and settled descendant behavior through all native projections."
+      }
+    },
+    {
+      "id": "FX-LIFE-02",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "native subagent terminal compare-and-set boundary",
+        "surfaces": [
+          "src/agents/subagent-control.ts",
+          "src/agents/subagent-registry-lifecycle.ts",
+          "src/agents/subagent-registry-completion.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 1",
+        "focusedGate": "G1",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "Two deterministic race arms over the same disposable task: completion commits before cancellation in one arm, and cancellation commits before completion in the other.",
+        "steps": [
+          "Pause both contenders immediately before the native terminal compare-and-set.",
+          "Release them in each prescribed order.",
+          "Attempt announcement, delivery, and one subsequent tool action after the winning revision."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "Completion-first remains completed and a later cancellation reports already terminal.",
+        "Cancellation-first remains cancelled and later completion cannot change the terminal revision.",
+        "Each descendant and delivery settles exactly once."
+      ],
+      "negativeAssertions": [
+        "No terminal state is overwritten by a later contender.",
+        "No post-cancellation tool action starts.",
+        "An ambiguous dispatch result is not replayed."
+      ],
+      "existingPassingControlTestPaths": [
+        "src/agents/subagent-control.test.ts",
+        "src/agents/subagent-registry-lifecycle.test.ts",
+        "src/agents/subagent-registry-completion.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "src/agents/subagent-registry-lifecycle.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs src/agents/subagent-registry-lifecycle.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-LIFE-02.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-LIFE-02.json"
+      },
+      "baselineState": {
+        "classification": "partial",
+        "gap": "Native lifecycle tests exist, but the two race orders are not yet bound to one cross-projection fixture and evidence identity."
+      }
+    },
+    {
+      "id": "FX-RESTART-01",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "native restart recovery and task maintenance",
+        "surfaces": [
+          "src/agents/main-session-restart-recovery.ts",
+          "src/agents/subagent-orphan-recovery.ts",
+          "src/tasks/task-registry.maintenance.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 1",
+        "focusedGate": "G1",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "A persisted registry with fresh interrupted, stale interrupted, cancelled, quarantined, terminal, and exhausted logical runs.",
+        "steps": [
+          "Open the persisted registry as a newly started Gateway generation.",
+          "Run native recovery admission and task maintenance once.",
+          "Reopen the stores and compare recovery identity, attempt accounting, and terminal revisions."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "Only genuinely interrupted fresh work is admitted under its existing logical recovery identity.",
+        "Stale, cancelled, quarantined, terminal, superseded, and exhausted work is finalized or left terminal.",
+        "Maintenance converges registry and task facts in one native pass."
+      ],
+      "negativeAssertions": [
+        "No ineligible run resumes.",
+        "No recovery attempt counter resets.",
+        "No local retry ledger, restart-only retry, or stale-run watchdog is consulted."
+      ],
+      "existingPassingControlTestPaths": [
+        "src/agents/main-session-restart-recovery.test.ts",
+        "src/agents/subagent-orphan-recovery.test.ts",
+        "src/tasks/task-registry.maintenance.issue-60299.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "src/agents/subagent-orphan-recovery.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs src/agents/subagent-orphan-recovery.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-RESTART-01.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-RESTART-01.json"
+      },
+      "baselineState": {
+        "classification": "partial",
+        "gap": "Recovery controls cover individual states, but no frozen persisted-state table proves the complete eligibility matrix."
+      }
+    },
+    {
+      "id": "FX-RESTART-02",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "native Gateway restart sentinel and persisted recovery identity",
+        "surfaces": [
+          "src/agents/main-session-restart-recovery.ts",
+          "src/gateway/server-restart-sentinel.ts",
+          "src/agents/subagent-registry.steer-restart.test.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 1",
+        "focusedGate": "G1",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "One accepted interrupted logical run persisted across three consecutive isolated Gateway service restarts.",
+        "steps": [
+          "Start recovery and persist its logical recovery identity.",
+          "Restart the isolated Gateway three times at deterministic recovery boundaries.",
+          "Read attempt accounting and final delivery after the third restart."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "All restarts preserve one logical recovery identity.",
+        "Native recovery-attempt accounting remains bounded and monotonic.",
+        "The workload produces at most one terminal result and one final delivery."
+      ],
+      "negativeAssertions": [
+        "No restart creates a duplicate model turn or task lineage.",
+        "No attempt count resets to zero.",
+        "No stale generation announces or delivers."
+      ],
+      "existingPassingControlTestPaths": [
+        "src/agents/main-session-restart-recovery.test.ts",
+        "src/agents/subagent-registry.steer-restart.test.ts",
+        "src/agents/subagent-registry.persistence.resume.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "src/agents/main-session-restart-recovery.integration.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs src/agents/main-session-restart-recovery.integration.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-RESTART-02.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-RESTART-02.json"
+      },
+      "baselineState": {
+        "classification": "missing_exact_fixture",
+        "gap": "Unit controls exist, but no isolated-service fixture performs three real consecutive restarts."
+      }
+    },
+    {
+      "id": "FX-CONT-01",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "provider request projection and native tool-result reduction",
+        "surfaces": [
+          "src/agents/embedded-agent-runner/tool-result-truncation.ts",
+          "src/agents/embedded-agent-runner/run.ts",
+          "src/gateway/session-compaction-checkpoints.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 1",
+        "focusedGate": "G1",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "Eight immutable child result packets of approximately six thousand tokens each plus several larger ordinary tool results in one synthetic transcript.",
+        "steps": [
+          "Project the transcript into the provider request using native request-local reduction.",
+          "Continue synthesis from the packet refs and unresolved decisions.",
+          "Inspect compaction, reduction, history-read, and child-mission telemetry."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "All eight child packet refs, digests, verdicts, and unresolved decisions remain represented.",
+        "Large ordinary tool results may be reduced only in the provider-bound request.",
+        "Telemetry distinguishes request-local reductions from semantic compaction."
+      ],
+      "negativeAssertions": [
+        "No local size estimate forces semantic compaction.",
+        "No sessions_history recovery occurs.",
+        "No child mission is launched twice."
+      ],
+      "existingPassingControlTestPaths": [
+        "src/agents/embedded-agent-runner/tool-result-truncation.test.ts",
+        "src/gateway/session-compaction-checkpoints.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "src/agents/embedded-agent-runner/tool-result-truncation.integration.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs src/agents/embedded-agent-runner/tool-result-truncation.integration.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-CONT-01.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-CONT-01.json"
+      },
+      "baselineState": {
+        "classification": "partial",
+        "gap": "A unit seed contains the packet shape, but no full attempt fixture proves packet preservation and zero semantic recovery side effects."
+      }
+    },
+    {
+      "id": "FX-CONT-02",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "native provider overflow and compaction recovery",
+        "surfaces": [
+          "src/agents/embedded-agent-runner/run/incomplete-turn.ts",
+          "src/agents/embedded-agent-runner/post-compaction-loop-guard.ts",
+          "src/gateway/server-methods/sessions.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 1",
+        "focusedGate": "G1",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "A deterministic fake provider that rejects one rendered request as context overflow and accepts the native post-compaction retry.",
+        "steps": [
+          "Send the original request without a preemptive local estimate changing control flow.",
+          "Return the provider overflow rejection.",
+          "Run the native compaction/retry path once and record request, attempt, and logical-task facts."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "One provider rejection leads to one native overflow recovery path.",
+        "Rendered occupancy, provider rejection, semantic compaction, request reduction, physical attempts, and logical outcome remain distinct.",
+        "The accepted retry retains required packet refs and completes under the original logical task."
+      ],
+      "negativeAssertions": [
+        "No local character estimate triggers the recovery.",
+        "No second semantic retry loop begins.",
+        "No duplicate child or tool execution occurs."
+      ],
+      "existingPassingControlTestPaths": [
+        "src/agents/embedded-agent-runner/run.incomplete-turn.test.ts",
+        "src/agents/embedded-agent-runner/post-compaction-loop-guard.test.ts",
+        "src/gateway/server.sessions.compaction.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "src/agents/embedded-agent-runner/run.overflow-recovery.integration.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs src/agents/embedded-agent-runner/run.overflow-recovery.integration.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-CONT-02.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-CONT-02.json"
+      },
+      "baselineState": {
+        "classification": "partial",
+        "gap": "Compaction and incomplete-turn controls exist, but the provider rejection through logical completion is not one deterministic fixture."
+      }
+    },
+    {
+      "id": "FX-CONT-03",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "native incomplete-turn continuation",
+        "surfaces": [
+          "src/agents/embedded-agent-runner/run/incomplete-turn.ts",
+          "src/agents/embedded-agent-runner/run/failover-policy.ts",
+          "src/tasks/task-registry.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 1",
+        "focusedGate": "G1",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "A fake provider turn with one successful externally confirmed tool result followed immediately by a classified transport failure.",
+        "steps": [
+          "Persist the final tool result and its external confirmation.",
+          "Fail the physical provider attempt before model final text.",
+          "Continue or block through the native logical owner and inspect the next request."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "The completed tool result remains present after physical attempt failure.",
+        "One continuation decision is recorded under the original logical task.",
+        "Readback separates physical attempt failure from final logical status."
+      ],
+      "negativeAssertions": [
+        "The tool is not executed again.",
+        "The research mission is not relaunched.",
+        "Attempt failure does not silently overwrite logical task truth."
+      ],
+      "existingPassingControlTestPaths": [
+        "src/agents/embedded-agent-runner/run.incomplete-turn.test.ts",
+        "src/agents/embedded-agent-runner/run/failover-policy.test.ts",
+        "src/agents/provider-finality.integration.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "src/agents/embedded-agent-runner/run.incomplete-turn.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs src/agents/embedded-agent-runner/run.incomplete-turn.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-CONT-03.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-CONT-03.json"
+      },
+      "baselineState": {
+        "classification": "partial",
+        "gap": "Incomplete-turn controls exist, but the final settled tool result and no-replay assertions are not frozen as one fixture."
+      }
+    },
+    {
+      "id": "FX-CONT-04",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "native task artifact references and role input composition",
+        "surfaces": [
+          "src/agents/tools/task-tool.ts",
+          "src/infra/outbound/session-context.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 1",
+        "focusedGate": "G1",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "A synthetic synthesis task receiving one immutable artifact manifest, bounded packet refs, exact digests, unresolved decisions, and overlapping source files.",
+        "steps": [
+          "Compose the task input from native artifact and task refs.",
+          "Request synthesis of only the unresolved decision.",
+          "Capture the assembled input and exact additional evidence reads."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "The assembled input contains the manifest, packet refs, digests, and unresolved decision once.",
+        "The model may open a named exact source only for a stated unresolved claim.",
+        "The output cites the governing artifact identity."
+      ],
+      "negativeAssertions": [
+        "Overlapping source bodies and child transcripts are not copied into the initial input.",
+        "No context compiler, semantic packet database, or automatic summarizer is introduced.",
+        "No read-count or token gate controls synthesis."
+      ],
+      "existingPassingControlTestPaths": [
+        "src/agents/tools/task-tool.test.ts",
+        "src/infra/outbound/session-context.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "src/agents/tools/task-reference-first-inputs.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs src/agents/tools/task-reference-first-inputs.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-CONT-04.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-CONT-04.json"
+      },
+      "baselineState": {
+        "classification": "missing_exact_fixture",
+        "gap": "Native artifact and task refs exist, but no assembled-input fixture proves reference-first synthesis without duplicate source bodies."
+      }
+    },
+    {
+      "id": "FX-PROVIDER-01",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "native provider failure taxonomy and task finality projection",
+        "surfaces": [
+          "src/agents/provider-http-errors.ts",
+          "src/agents/embedded-agent-helpers/provider-error-patterns.ts",
+          "src/agents/embedded-agent-runner/run/failover-policy.ts",
+          "src/readback/finality.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 3",
+        "focusedGate": "G3",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "A table-driven fake provider with connection failure, disconnect, overload, provider-declared timeout, rate limit, malformed response, local cancellation, explicit outer deadline, fallback, and successful response followed by local postprocessing failure.",
+        "steps": [
+          "Execute one physical attempt for each cause.",
+          "Project each result through task, fallback, and operator readback.",
+          "Compare the primary cause, fallback event, physical attempt, and logical outcome."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "Every cause retains a distinct closed code through provider and readback.",
+        "Fallback is recorded as routing rather than replacing the primary failure.",
+        "Successful provider output followed by local postprocessing failure remains distinguishable."
+      ],
+      "negativeAssertions": [
+        "No malformed response is relabeled as timeout or overload.",
+        "No local cancellation is reported as provider failure.",
+        "No valid reasoning interval is ended by a local elapsed-time wall clock."
+      ],
+      "existingPassingControlTestPaths": [
+        "src/agents/embedded-agent-runner/run/failover-policy.test.ts",
+        "src/agents/embedded-agent-helpers/provider-error-patterns.test.ts",
+        "src/agents/provider-http-errors.test.ts",
+        "src/agents/provider-finality.integration.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "src/agents/provider-finality.integration.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs src/agents/provider-finality.integration.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-PROVIDER-01.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-PROVIDER-01.json"
+      },
+      "baselineState": {
+        "classification": "partial",
+        "gap": "Component classifiers pass independently, but no provider-to-task/readback matrix preserves all required causes end to end."
+      }
+    },
+    {
+      "id": "FX-WT-01",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "native managed-worktree service and trusted setup hook",
+        "surfaces": [
+          ".openclaw/worktree-setup.sh",
+          "src/agents/worktrees/service.ts",
+          "src/agents/worktrees/run-lease.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 2",
+        "focusedGate": "G2",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "A temporary Git repository at the exact source base with an executable tracked setup hook, pinned package manager, exact lockfile, warm-cache arm, and one cache-miss arm.",
+        "steps": [
+          "Create a native managed worktree as the service identity.",
+          "Run the trusted Generation N setup hook before any Codex thread starts.",
+          "Run one focused Vitest target and one TypeScript target from the prepared worktree."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "The worktree has a lockfile-local dependency layout and package-local test and TypeScript binaries.",
+        "Warm cache completes without network; the cache-miss arm permits acquisition only during setup.",
+        "The base checkout and lockfile remain byte-identical and clean."
+      ],
+      "negativeAssertions": [
+        "No Gateway, provider, database, browser, release, or user credential reaches setup.",
+        "No model performs dependency installation or toolchain repair.",
+        "No copied dependency tree or second worktree manager is used."
+      ],
+      "existingPassingControlTestPaths": [
+        "src/agents/worktrees/service.test.ts",
+        "src/agents/worktrees/run-lease.test.ts",
+        "src/agents/worktrees/registry.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "src/agents/worktrees/service.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs src/agents/worktrees/service.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-WT-01.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-WT-01.json"
+      },
+      "baselineState": {
+        "classification": "partial",
+        "gap": "Native worktree ownership is covered, but the repository setup hook and exact-lockfile toolchain admission do not yet exist."
+      }
+    },
+    {
+      "id": "FX-WT-02",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "native managed-worktree admission",
+        "surfaces": [
+          "src/agents/worktrees/service.ts",
+          "src/commands/agent.ts",
+          "extensions/codex/src/conversation-binding.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 2",
+        "focusedGate": "G2",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "Two clean newly created worktrees: one whose setup hook exits nonzero and one cancelled while setup is active.",
+        "steps": [
+          "Start native worktree creation without starting a Codex thread.",
+          "Fail or cancel the setup step.",
+          "Inspect worktree, session, task, app-server, and provider records."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "Admission returns one native setup error with the setup result.",
+        "A provably clean failed worktree is removed through native lifecycle; an uncertain or dirty worktree is preserved.",
+        "The task records setup failure without model inference."
+      ],
+      "negativeAssertions": [
+        "No Codex thread, provider call, MCP process, or child starts.",
+        "Cancellation does not remove a worktree whose cleanliness is unproved.",
+        "The model is not asked to diagnose missing toolchain state."
+      ],
+      "existingPassingControlTestPaths": [
+        "src/agents/worktrees/service.test.ts",
+        "src/agents/worktrees/service.remove-lease.test.ts",
+        "src/commands/agent.worktree-race.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "src/commands/agent.worktree-admission.integration.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs src/commands/agent.worktree-admission.integration.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-WT-02.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-WT-02.json"
+      },
+      "baselineState": {
+        "classification": "partial",
+        "gap": "Cleanup and admission race controls exist, but setup failure is not yet proven to block every inference surface."
+      }
+    },
+    {
+      "id": "FX-FS-01",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "native workspace-only filesystem guard",
+        "surfaces": [
+          "src/infra/fs-safe.ts",
+          "src/agents/agent-tools.read.ts",
+          "src/agents/agent-tools.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 2",
+        "focusedGate": "G2",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "A temporary readable workspace with nested directories, bounded files, an outside sibling, parent traversal, absolute outside path, symlink escape, and hard-link escape.",
+        "steps": [
+          "Run native ls, find, grep, and read through each applicable read-only role policy.",
+          "Produce one bounded directory pack with explicit incomplete-coverage metadata.",
+          "Attempt every outside-root and link escape."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "All four native read tools resolve the same effective task cwd and readable root.",
+        "The bounded pack is deterministic and truthfully reports truncation or incomplete coverage.",
+        "Each role exposes discovery tools without exposing mutation tools."
+      ],
+      "negativeAssertions": [
+        "No path outside the effective root is read.",
+        "No shell, generic filesystem MCP, root registry, URI scheme, or copied artifact tree is introduced.",
+        "Directory discovery does not grant write authority."
+      ],
+      "existingPassingControlTestPaths": [
+        "test/scripts/openclaw-coding-workbench-mcp.test.ts",
+        "src/infra/fs-safe.test.ts",
+        "src/agents/agent-tools.read.workspace-root-guard.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "src/agents/agent-tools.read.workspace-root-guard.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs src/agents/agent-tools.read.workspace-root-guard.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-FS-01.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-FS-01.json"
+      },
+      "baselineState": {
+        "classification": "partial",
+        "gap": "Read and Workbench guards exist, but native ls, find, grep, role parity, and bounded pack semantics are not one shared fixture."
+      }
+    },
+    {
+      "id": "FX-READ-01",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "native task summary extended with Codex and TaskFlow facts",
+        "surfaces": [
+          "src/tasks/task-registry.summary.ts",
+          "src/gateway/session-detail.ts",
+          "extensions/codex/src/app-server/event-projector.ts",
+          "src/plugins/runtime/runtime-taskflow.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 3",
+        "focusedGate": "G3",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "One disposable Coding task with two V2 children, one follow-up reopen, one cancellation, one Gateway restart, validation at tree A, mutation to tree B, parent settlement, and delivery.",
+        "steps": [
+          "Capture raw native task, session, subagent, Codex, worktree, provider, delivery, and TaskFlow facts at each boundary.",
+          "Read the shared DTO through CLI, Gateway RPC, and Control UI consumers.",
+          "Compare logical status, physical attempts, child activity, digests, delivery, and mismatch codes."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "Every consumer derives terminal state from the same native revision.",
+        "The reopened child remains active until its follow-up settles.",
+        "Tree A validation becomes stale after tree B while unaffected facts remain current."
+      ],
+      "negativeAssertions": [
+        "No active Codex turn renders absent or completed.",
+        "No reader repairs or persists lifecycle state.",
+        "No modelCompleted or attempt error overwrites logical task truth."
+      ],
+      "existingPassingControlTestPaths": [
+        "src/gateway/server-methods/tasks.test.ts",
+        "src/gateway/task-readback.integration.test.ts",
+        "extensions/codex/src/app-server/event-projector-snapshot.test.ts",
+        "extensions/codex/src/app-server/native-subagent-task-mirror.test.ts",
+        "extensions/codex/src/app-server/native-subagent-monitor.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "src/gateway/task-readback.integration.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs src/gateway/task-readback.integration.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-READ-01.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-READ-01.json"
+      },
+      "baselineState": {
+        "classification": "partial",
+        "gap": "Each component has controls, but no composite lifecycle compares raw stores with CLI, RPC, and UI at every boundary."
+      }
+    },
+    {
+      "id": "FX-TASKFLOW-01",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "native TaskFlow terminal revision and Lobster adapter",
+        "surfaces": [
+          "src/tasks/task-flow-registry.ts",
+          "src/plugins/runtime/runtime-taskflow.ts",
+          "extensions/lobster/src/lobster-taskflow.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 3",
+        "focusedGate": "G3",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "A shared disposable flow whose native terminal revision is closed_candidate_complete, plus cancelled and failed control arms.",
+        "steps": [
+          "Persist each terminal revision through the native TaskFlow registry.",
+          "Read it through runtime TaskFlow, Lobster, task summary, and operator projections.",
+          "Compare status code, completion metadata, and revision identity."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "All projections retain the same terminal revision and compatible status.",
+        "closed_candidate_complete remains complete in Lobster and operator readback.",
+        "Cancelled and failed controls remain distinct."
+      ],
+      "negativeAssertions": [
+        "Complete does not render waiting or closed_no_approval_requested.",
+        "No adapter invents another workflow state.",
+        "No projection writes a repair back into the registry."
+      ],
+      "existingPassingControlTestPaths": [
+        "src/tasks/task-flow-registry.test.ts",
+        "src/tasks/task-flow-registry.maintenance.test.ts",
+        "src/plugins/runtime/runtime-taskflow.test.ts",
+        "extensions/lobster/src/lobster-taskflow.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "src/tasks/task-flow-terminal-convergence.integration.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs src/tasks/task-flow-terminal-convergence.integration.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-TASKFLOW-01.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-TASKFLOW-01.json"
+      },
+      "baselineState": {
+        "classification": "partial",
+        "gap": "Registry and adapter tests exist, but the contradictory terminal states are not exercised from one shared native revision."
+      }
+    },
+    {
+      "id": "FX-DOCTOR-01",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "native active tool-schema and plugin Doctor registry",
+        "surfaces": [
+          "src/commands/doctor/shared/active-tool-schema-warnings.ts",
+          "src/plugins/doctor-contract-registry.ts",
+          "src/plugins/tools.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 3",
+        "focusedGate": "G3",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "A disposable plugin registry containing one valid dynamic tool, one missing schema, one malformed schema, one duplicate identity, and one policy-denied tool.",
+        "steps": [
+          "Load the same active tool catalog used by the Gateway.",
+          "Run native doctor --lint --json against the disposable registry.",
+          "Compare Doctor findings with active runtime schema evidence."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "The valid dynamic tool produces no static false warning.",
+        "Missing, malformed, duplicate, and policy-denied cases retain distinct findings.",
+        "Doctor evidence identifies the active owner and schema origin."
+      ],
+      "negativeAssertions": [
+        "Runtime schema validation is not weakened.",
+        "No parallel static allowlist is introduced.",
+        "Doctor does not mutate the fixture during lint."
+      ],
+      "existingPassingControlTestPaths": [
+        "src/commands/doctor/shared/active-tool-schema-warnings.test.ts",
+        "src/plugins/doctor-contract-registry.test.ts",
+        "src/plugins/tools.optional.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "src/commands/doctor/active-tool-schema.integration.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs src/commands/doctor/active-tool-schema.integration.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-DOCTOR-01.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-DOCTOR-01.json"
+      },
+      "baselineState": {
+        "classification": "partial",
+        "gap": "Warning and registry controls exist, but no assembled dynamic-tool matrix runs through Doctor JSON readback."
+      }
+    },
+    {
+      "id": "FX-X-RETRY-01",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "provider-native direct data transport",
+        "surfaces": [
+          "extensions/x-intelligence/src/transport.ts",
+          "extensions/x-intelligence/src/tools.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 3",
+        "focusedGate": "G3",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "A fake provider sequence with Retry-After, reset metadata, transient recovery, duplicate candidate requests, partial hydration success, terminal 400, and entitlement denial.",
+        "steps": [
+          "Execute requests through the provider transport at its declared bounded concurrency.",
+          "Honor provider retry metadata only for provider-defined transient classes.",
+          "Return partial results and retry telemetry through the tool receipt."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "Transient responses follow provider retry/reset metadata and eventually settle once.",
+        "Successful partial results survive failures in sibling requests.",
+        "Terminal 400 and entitlement failures remain classified without retry."
+      ],
+      "negativeAssertions": [
+        "No duplicate hydrate or count request is sent.",
+        "No local budget, reservation, admission, payload, cost, or elapsed-time control plane returns.",
+        "No terminal client or entitlement error is retried."
+      ],
+      "existingPassingControlTestPaths": [
+        "extensions/x-intelligence/src/transport.test.ts",
+        "extensions/x-intelligence/src/tools.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "extensions/x-intelligence/src/transport.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs extensions/x-intelligence/src/transport.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-X-RETRY-01.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-X-RETRY-01.json"
+      },
+      "baselineState": {
+        "classification": "partial",
+        "gap": "Transport controls cover individual cases, but the full retry, concurrency, dedupe, partial-success, and telemetry sequence is not frozen."
+      }
+    },
+    {
+      "id": "FX-WRITE-01",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "effective systemd, OpenClaw, sandbox, and support-service ownership configuration",
+        "surfaces": [
+          "src/daemon/systemd-unit.ts",
+          "src/agents/sandbox/workspace-mounts.ts",
+          "src/infra/fs-safe.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 2",
+        "focusedGate": "G2",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "A generated inventory of every runtime-owned writable root from effective unit, native config, sandbox, and support-service evidence.",
+        "steps": [
+          "Resolve each root and its owning Unix identity from authoritative configuration.",
+          "As that identity, create, write, fsync the file, fsync the directory, rename, reread, and delete one sentinel.",
+          "Record ownership, mode, device, and cleanup result without retaining the sentinel."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "Every declared root passes the full sentinel cycle under its configured owner.",
+        "The inventory covers state, agent write roots, managed worktrees, setup cache, temp/cache, support state, and backup output where configured.",
+        "Evidence is bounded and leaves every root unchanged after cleanup."
+      ],
+      "negativeAssertions": [
+        "The test does not guess or create a missing root.",
+        "The inventory does not become a runtime filesystem registry.",
+        "No sentinel remains after a passing run."
+      ],
+      "existingPassingControlTestPaths": [
+        "src/infra/fs-safe.test.ts",
+        "src/daemon/systemd-unit.test.ts",
+        "src/agents/sandbox/workspace-mounts.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "test/reliability-program/runtime-writable-roots.integration.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs test/reliability-program/runtime-writable-roots.integration.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-WRITE-01.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-WRITE-01.json"
+      },
+      "baselineState": {
+        "classification": "missing_exact_fixture",
+        "gap": "Filesystem helpers and unit parsing have controls, but no owner-derived service-identity sentinel matrix exists."
+      }
+    },
+    {
+      "id": "FX-GBRAIN-01",
+      "nativeOwner": {
+        "repository": "gbrain-support-image",
+        "component": "GBrain-owned support image",
+        "surfaces": [
+          "Dockerfile.openclaw",
+          "package.json",
+          "test/image-git-refresh.test.ts"
+        ],
+        "sourceAuthority": {
+          "checkout": "/srv/openclaw-next/src/gbrain",
+          "origin": "https://github.com/garrytan/gbrain.git",
+          "commit": "c13dab0e474a06dbcf75c9b5ec102c3070820cbc",
+          "tree": "573ac91a2db801930c572d2cc83bb64a05fd8334",
+          "dockerfilePath": "Dockerfile.openclaw",
+          "dockerfileSha256": "51d3ae2f419f7a39b0aaa789825b5b09e8bc1698054c33de6efd935c5936d457",
+          "livePackageSha256": "f3c9e442c5fb27d659b90fd7e19dd228c06ce1d8c45485abae5c99d91cb43bc7",
+          "liveImageDigest": "sha256:8b6c5a0f8eedacdd5f6781d837ca44adf3285c735578039464942cca5ab31cd5",
+          "liveImageRevisionLabel": "c13dab0e",
+          "observedLiveContainers": [
+            "openclaw-next-gbrain-autopilot",
+            "openclaw-next-gbrain-mcp"
+          ]
+        }
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 3",
+        "focusedGate": "G3",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "The owned support image and a read-only fixture Git repository mounted at /workspace.",
+        "steps": [
+          "Start the image without Gateway or host wrapper assistance.",
+          "Read the fixture repository identity and refresh source metadata using image-provided Git.",
+          "Verify the mounted repository remains read-only and the prior image digest remains available."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "Git is available from the support image package inventory.",
+        "Read-only source refresh succeeds against the fixture repository.",
+        "Evidence records candidate image digest and retained rollback digest."
+      ],
+      "negativeAssertions": [
+        "The Gateway image or a host wrapper does not provide Git.",
+        "The fixture repository is not mutated.",
+        "GBrain filesystem authority is not broadened."
+      ],
+      "existingPassingControlTestPaths": [],
+      "intendedOwningTargetTest": {
+        "repository": "gbrain-support-image",
+        "path": "test/image-git-refresh.test.ts"
+      },
+      "nativeRouterTargetPath": "test/reliability-program/gbrain-image.integration.test.ts",
+      "nativeTestCommand": "node scripts/test-projects.mjs test/reliability-program/gbrain-image.integration.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-GBRAIN-01.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-GBRAIN-01.json"
+      },
+      "baselineState": {
+        "classification": "partial",
+        "gap": "Both live GBrain containers run the exact recorded image and lack Git; the GBrain-owned image does not yet prove Git availability or read-only fixture-repository refresh."
+      }
+    },
+    {
+      "id": "FX-AUTH-01",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "native Gateway config and SecretRef authentication",
+        "surfaces": [
+          "src/secrets/runtime-gateway-auth-surfaces.ts",
+          "src/commands/configure.gateway-auth.ts",
+          "src/commands/doctor-gateway-auth-token.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 3",
+        "focusedGate": "G3",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "An isolated Gateway using one native SecretRef-backed authentication authority and clients for CLI, Control UI, and one support connection.",
+        "steps": [
+          "Connect all clients using the native resolved authority.",
+          "Restart the isolated Gateway once.",
+          "Reconnect clients and audit effective config and process environment with values redacted."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "All clients authenticate before and after restart from one native authority.",
+        "Readback identifies the authority class without exposing the credential.",
+        "The prior unit and config preimage remains available for rollback evidence."
+      ],
+      "negativeAssertions": [
+        "No redundant environment-token projection is required.",
+        "No credential value appears in logs, evidence, or process arguments.",
+        "The test does not rotate or rewrite the credential."
+      ],
+      "existingPassingControlTestPaths": [
+        "src/secrets/runtime.gateway-auth.integration.test.ts",
+        "src/secrets/runtime-gateway-auth-surfaces.test.ts",
+        "src/commands/doctor-gateway-auth-token.test.ts",
+        "src/security/audit-gateway-auth-selection.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "src/secrets/runtime.gateway-auth.integration.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs src/secrets/runtime.gateway-auth.integration.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-AUTH-01.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-AUTH-01.json"
+      },
+      "baselineState": {
+        "classification": "partial",
+        "gap": "SecretRef and authority-selection controls exist, but candidate restart plus CLI, UI, and support reconnect are not one fixture."
+      }
+    },
+    {
+      "id": "FX-TOPOLOGY-01",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "read-only native service and runtime topology audit",
+        "surfaces": [
+          "src/daemon/service-audit.ts",
+          "src/daemon/systemd-unit.ts",
+          "src/agents/sandbox/workspace-mounts.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 3",
+        "focusedGate": "G3",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "Captured effective unit, drop-ins, manager environment, redacted process environment, mounts, writable paths, symlinks, loaded identities, database metadata, and support endpoints.",
+        "steps": [
+          "Parse the captured candidate topology without mutation.",
+          "Compare loaded package, source, profile, service, path, owner, mount, and network facts.",
+          "Report competing or retired authorities as explicit findings."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "The audit emits bounded object-native facts with secret values redacted.",
+        "Loaded identities and effective owners are traceable to native sources.",
+        "Retired controller, candidate, nested-source, and duplicate profile or plugin authorities are absent or reported."
+      ],
+      "negativeAssertions": [
+        "The audit does not repair, rewrite, stop, or restart anything.",
+        "No secret value is retained.",
+        "The audit output does not become runtime authority."
+      ],
+      "existingPassingControlTestPaths": [
+        "src/daemon/service-audit.test.ts",
+        "src/daemon/systemd-unit.test.ts",
+        "src/agents/sandbox/workspace-mounts.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "test/reliability-program/assembled-topology-audit.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs test/reliability-program/assembled-topology-audit.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-TOPOLOGY-01.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-TOPOLOGY-01.json"
+      },
+      "baselineState": {
+        "classification": "missing_exact_fixture",
+        "gap": "Service and mount parsers have controls, but no assembled topology fixture covers all required authorities and negative findings."
+      }
+    },
+    {
+      "id": "FX-BACKUP-01",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "native OpenClaw backup create and verify commands",
+        "surfaces": [
+          "src/commands/backup.ts",
+          "src/commands/backup-verify.ts",
+          "src/infra/backup-create.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 3",
+        "focusedGate": "G3",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "Disposable native state and workspace roots containing canonical state, symlinks, SQLite data, excluded volatile material, and owner-specific support backup receipts.",
+        "steps": [
+          "Run native backup create with verification.",
+          "Restore the portable backup to disposable roots only.",
+          "Verify canonical content, ownership expectations, exclusions, and support-owner receipt references."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "Native verification succeeds and the restore reproduces included canonical state.",
+        "Intentional exclusions remain excluded and are listed in evidence.",
+        "Support data remains owned by its native backup commands rather than copied by OpenClaw."
+      ],
+      "negativeAssertions": [
+        "No restore targets live state.",
+        "No routine exact stopped-filesystem archive is scheduled.",
+        "No second backup format or scheduler is introduced."
+      ],
+      "existingPassingControlTestPaths": [
+        "src/commands/backup.create-verify.test.ts",
+        "src/commands/backup-verify.test.ts",
+        "src/commands/backup.atomic.test.ts",
+        "src/infra/backup-create.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "src/commands/backup.restore.integration.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs src/commands/backup.restore.integration.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-BACKUP-01.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-BACKUP-01.json"
+      },
+      "baselineState": {
+        "classification": "partial",
+        "gap": "Native create and verify commands have controls, but no frozen disposable restore proves the assembled recovery contract."
+      }
+    },
+    {
+      "id": "FX-WT-TELEMETRY-01",
+      "nativeOwner": {
+        "repository": "openclaw",
+        "component": "native managed-worktree registry, list, preserve, and garbage collection",
+        "surfaces": [
+          "src/agents/worktrees/registry.ts",
+          "src/agents/worktrees/service.ts",
+          "src/agents/worktrees/run-lease.ts"
+        ]
+      },
+      "phaseGate": {
+        "implementationPhase": "Phase 3",
+        "focusedGate": "G3",
+        "candidateGate": "G5",
+        "liveGate": "G6"
+      },
+      "scenario": {
+        "input": "A disposable registry containing active, locked, dirty-preserved, clean-idle, snapshot-retained, and cleanup-eligible worktrees with fixed filesystem metadata.",
+        "steps": [
+          "Read native worktree list and registry facts.",
+          "Run native preserve and garbage-collection evaluation.",
+          "Compare age, size, owner, lock/activity state, snapshot state, and next cleanup eligibility."
+        ]
+      },
+      "expectedObservableOutcomes": [
+        "Telemetry derives from existing registry and filesystem ownership facts.",
+        "Active, locked, and dirty-preserved worktrees remain ineligible.",
+        "Only natively eligible clean worktrees are removed and shared cache content remains."
+      ],
+      "negativeAssertions": [
+        "No second garbage collector, lease system, retention database, or deletion timer is created.",
+        "Telemetry does not change the native seven-day idle or thirty-day snapshot lifecycle.",
+        "A read-only inventory does not acquire removal authority."
+      ],
+      "existingPassingControlTestPaths": [
+        "src/agents/worktrees/registry.test.ts",
+        "src/agents/worktrees/service.test.ts",
+        "src/agents/worktrees/service.remove-lease.test.ts",
+        "src/agents/worktrees/run-lease.test.ts"
+      ],
+      "intendedOwningTargetTest": {
+        "repository": "openclaw",
+        "path": "src/agents/worktrees/registry.telemetry.test.ts"
+      },
+      "nativeTestCommand": "node scripts/test-projects.mjs src/agents/worktrees/registry.telemetry.test.ts",
+      "evidenceTargets": {
+        "candidate": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G5/FX-WT-TELEMETRY-01.json",
+        "live": "docs/projects/execution-platform/evidence/native-runtime-planning-coding-reliability-program/G6/FX-WT-TELEMETRY-01.json"
+      },
+      "baselineState": {
+        "classification": "partial",
+        "gap": "Registry and cleanup controls exist, but age, size, owner, activity, retention, and eligibility are not exposed and proved together."
+      }
+    }
+  ]
+}

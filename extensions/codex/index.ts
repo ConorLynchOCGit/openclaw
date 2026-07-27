@@ -21,6 +21,7 @@ import {
   createLazyCodexAppServerBindingStore,
   type StoredCodexAppServerBinding,
 } from "./src/app-server/session-binding-store.js";
+import { registerCodexExecutionSessionExtension } from "./src/app-server/session-execution-projection.js";
 import type { CodexPluginsConfigBlock } from "./src/command-plugins-management.js";
 import { createCodexCommand } from "./src/commands.js";
 import { codexConversationBindingRuntime } from "./src/conversation-binding.js";
@@ -106,6 +107,7 @@ export default definePluginEntry({
       },
     };
     const bindingStore = createLazyCodexAppServerBindingStore(lazyBindingStateStore);
+    registerCodexExecutionSessionExtension(api);
     registerCodexCliMetadata(api);
     const sessionCatalogControl = createCodexSessionCatalogControl({
       getPluginConfig: resolveCurrentPluginConfig,

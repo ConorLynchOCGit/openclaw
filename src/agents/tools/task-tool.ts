@@ -24,11 +24,18 @@ const TASK_WAIT_POLL_MS = 60_000;
 const TASK_RESULT_INLINE_MAX_CHARS = 1_800;
 const PLANNING_REVIEW_RESULT_INLINE_MAX_CHARS = 12_000;
 const CODING_AGENT_IDS = new Set(["coding", "execution-coding"]);
-const SOURCE_RESEARCH_AGENT_IDS = new Set(["codebase-researcher", "docs-standards-researcher"]);
+const SOURCE_RESEARCH_AGENT_IDS = new Set([
+  "codebase-researcher",
+  "docs-standards-researcher",
+  "review-specialist",
+]);
+const FIXED_TASK_CWD_REQUESTER_AGENT_IDS = new Set(["planning", "reviewer"]);
 const DEFAULT_LIGHT_CONTEXT_AGENT_IDS = new Set([
   "codebase-researcher",
   "docs-standards-researcher",
+  "operator-intent-researcher",
   "researcher",
+  "review-specialist",
   "reviewer",
   "web-researcher",
   "x-researcher",
@@ -131,7 +138,7 @@ function createTaskSchema(params: {
     checkout: Type.Optional(
       Type.Literal("loaded_system", {
         description:
-          "Require the target source-research role's configured read-only loaded-source workspace.",
+          "Require the target source-inspection role's configured read-only loaded-source workspace.",
       }),
     ),
     lightContext: Type.Optional(
@@ -417,11 +424,13 @@ export function createTaskTool(
     name: "task",
     label: "Task",
     description:
-      "Run one OpenClaw role as a foreground child and return its final result or exact native transcript pointers. Give the child one bounded decision-changing question, exact refs, exclusions, and an output contract. Independent task calls may run in parallel in the same turn. Use checkout=loaded_system only for configured source-research roles and systemChange=true only for Main-to-Coding work. Do not call sessions_yield after task.",
+      "Run one OpenClaw role as a foreground child and return its final result or exact native transcript pointers. Give the child one bounded decision-changing question, exact refs, exclusions, and an output contract. Independent task calls may run in parallel in the same turn. Use checkout=loaded_system only for configured source-inspection roles and systemChange=true only for Main-to-Coding work. Do not call sessions_yield after task.",
     executionMode: "parallel",
     parameters: createTaskSchema({
       allowedAgentIds,
-      allowArbitraryCwd: requesterAgentId?.trim().toLowerCase() !== "planning",
+      allowArbitraryCwd: !FIXED_TASK_CWD_REQUESTER_AGENT_IDS.has(
+        requesterAgentId?.trim().toLowerCase() ?? "",
+      ),
     }),
     execute: async (_toolCallId, args, signal) => {
       const params = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
@@ -452,7 +461,7 @@ export function createTaskTool(
       if (requestsInspection && !SOURCE_RESEARCH_AGENT_IDS.has(agentId)) {
         return jsonResult({
           status: "error",
-          error: "loaded-system inspection may only target a source-research role",
+          error: "loaded-system inspection may only target a source-inspection role",
         });
       }
       if (requestsSystemChange && (!isCodingAgent(agentId) || requesterAgentId !== "main")) {

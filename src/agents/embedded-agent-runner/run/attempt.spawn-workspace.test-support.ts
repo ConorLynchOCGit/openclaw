@@ -609,6 +609,7 @@ vi.mock("../wait-for-idle-before-flush.js", () => ({
 vi.mock("../runs.js", () => ({
   setActiveEmbeddedRun: () => {},
   clearActiveEmbeddedRun: () => {},
+  markActiveEmbeddedRunAbandoned: () => {},
   updateActiveEmbeddedRunSnapshot: () => {},
 }));
 
@@ -999,7 +1000,11 @@ type MutableSession = {
 type SessionPromptOverride = (
   session: MutableSession,
   prompt: string,
-  options?: { images?: unknown[]; preflightResult?: (submitted: boolean) => void },
+  options?: {
+    images?: unknown[];
+    preflightResult?: (submitted: boolean) => void;
+    signal?: AbortSignal;
+  },
 ) => Promise<void>;
 
 type TestAgentStream = {
@@ -1153,11 +1158,7 @@ export async function cleanupTempPaths(tempPaths: string[]) {
 
 export function createDefaultEmbeddedSession(params?: {
   initialMessages?: unknown[];
-  prompt?: (
-    session: MutableSession,
-    prompt: string,
-    options?: { images?: unknown[]; preflightResult?: (submitted: boolean) => void },
-  ) => Promise<void>;
+  prompt?: SessionPromptOverride;
 }): MutableSession {
   let pendingPrompt:
     | {
@@ -1181,12 +1182,16 @@ export function createDefaultEmbeddedSession(params?: {
         };
         await session.agent.streamFn?.();
       },
-      streamFn: async () => {
+      streamFn: async (...args: unknown[]) => {
+        const streamOptions = args[2] as { signal?: AbortSignal } | undefined;
         if (params?.prompt && pendingPrompt) {
           const currentPrompt = pendingPrompt;
           pendingPrompt = undefined;
           currentPrompt.options?.preflightResult?.(true);
-          await params.prompt(session, currentPrompt.prompt, currentPrompt.options);
+          await params.prompt(session, currentPrompt.prompt, {
+            ...currentPrompt.options,
+            signal: streamOptions?.signal,
+          });
         }
         return createCompletedAssistantStream();
       },

@@ -1,4 +1,8 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
+import type {
+  TaskDeliveryStatus,
+  TaskLifecycleReadback,
+} from "../../../../packages/gateway-protocol/src/index.ts";
 import { t } from "../../i18n/index.ts";
 
 export type TaskStatus = "queued" | "running" | "completed" | "failed" | "cancelled" | "timed_out";
@@ -13,6 +17,8 @@ export type TaskSummary = {
   kind?: string;
   runtime?: TaskRuntime;
   title?: string;
+  deliveryStatus?: TaskDeliveryStatus;
+  terminalOutcome?: "succeeded" | "blocked";
   agentId?: string;
   sessionKey?: string;
   childSessionKey?: string;
@@ -26,6 +32,7 @@ export type TaskSummary = {
   progressSummary?: string;
   terminalSummary?: string;
   error?: string;
+  readback?: TaskLifecycleReadback;
   /** Bounded task input returned by tasks.get, not tasks.list. */
   prompt?: string;
 };
@@ -69,6 +76,37 @@ function normalizeTaskRuntime(value: unknown): TaskRuntime | undefined {
   }
 }
 
+function normalizeDeliveryStatus(value: unknown): TaskDeliveryStatus | undefined {
+  switch (value) {
+    case "pending":
+    case "delivered":
+    case "session_queued":
+    case "failed":
+    case "parent_missing":
+    case "not_applicable":
+      return value;
+    default:
+      return undefined;
+  }
+}
+
+function normalizeTaskLifecycleReadback(value: unknown): TaskLifecycleReadback | undefined {
+  if (
+    !isRecord(value) ||
+    value.schema !== "openclaw.task.lifecycle_readback.v1" ||
+    !Array.isArray(value.children) ||
+    !Array.isArray(value.mismatches) ||
+    typeof value.lastActivityAt !== "number" ||
+    typeof value.activeChildCount !== "number" ||
+    typeof value.queuedChildCount !== "number" ||
+    typeof value.terminalChildCount !== "number" ||
+    typeof value.followupActive !== "boolean"
+  ) {
+    return undefined;
+  }
+  return value as TaskLifecycleReadback;
+}
+
 function normalizeTimestamp(value: unknown): TaskTimestamp | undefined {
   if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
     return value;
@@ -92,6 +130,11 @@ function normalizeTaskSummary(value: unknown): TaskSummary | null {
   const runtime = normalizeTaskRuntime(value.runtime);
   const kind = optionalString(value.kind);
   const title = optionalString(value.title);
+  const deliveryStatus = normalizeDeliveryStatus(value.deliveryStatus);
+  const terminalOutcome =
+    value.terminalOutcome === "succeeded" || value.terminalOutcome === "blocked"
+      ? value.terminalOutcome
+      : undefined;
   const agentId = optionalString(value.agentId);
   const sessionKey = optionalString(value.sessionKey);
   const childSessionKey = optionalString(value.childSessionKey);
@@ -105,6 +148,7 @@ function normalizeTaskSummary(value: unknown): TaskSummary | null {
   const progressSummary = optionalString(value.progressSummary);
   const terminalSummary = optionalString(value.terminalSummary);
   const error = optionalString(value.error);
+  const readback = normalizeTaskLifecycleReadback(value.readback);
   const prompt = optionalString(value.prompt);
   return {
     id,
@@ -113,6 +157,8 @@ function normalizeTaskSummary(value: unknown): TaskSummary | null {
     ...(kind ? { kind } : {}),
     ...(runtime ? { runtime } : {}),
     ...(title ? { title } : {}),
+    ...(deliveryStatus ? { deliveryStatus } : {}),
+    ...(terminalOutcome ? { terminalOutcome } : {}),
     ...(agentId ? { agentId } : {}),
     ...(sessionKey ? { sessionKey } : {}),
     ...(childSessionKey ? { childSessionKey } : {}),
@@ -126,6 +172,7 @@ function normalizeTaskSummary(value: unknown): TaskSummary | null {
     ...(progressSummary ? { progressSummary } : {}),
     ...(terminalSummary ? { terminalSummary } : {}),
     ...(error ? { error } : {}),
+    ...(readback ? { readback } : {}),
     ...(prompt ? { prompt } : {}),
   };
 }

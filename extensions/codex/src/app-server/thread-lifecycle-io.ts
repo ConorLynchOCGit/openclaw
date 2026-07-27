@@ -25,6 +25,7 @@ import type {
   CodexAppServerThreadBinding,
 } from "./session-binding.js";
 import { isCodexAppServerStartSelectionChangedError } from "./shared-client.js";
+import { readCodexThreadAuthorityResponse } from "./thread-authority-readback.js";
 import { readActiveCodexTurnIdsFromResume } from "./thread-fingerprints.js";
 import {
   CodexAdoptedThreadActiveError,
@@ -189,6 +190,7 @@ export async function resumeExistingCodexThread(
       }),
     );
     assertCodexPermissionProfile(response.activePermissionProfile?.id, params.permissionProfile);
+    const authorityReadback = readCodexThreadAuthorityResponse(response, params);
     if (ringZeroActive) {
       try {
         await lifecycleTiming.measure("ring-zero-mcp-attestation", () =>
@@ -279,6 +281,7 @@ export async function resumeExistingCodexThread(
       lifecycle: {
         action: "resumed",
         ...(activeTurnIds.length ? { activeTurnIds } : {}),
+        authorityReadback,
       },
     };
   } catch (error) {
@@ -414,6 +417,7 @@ export async function startFreshCodexThread(
   });
   const response = assertCodexThreadStartResponse(threadStartResponse);
   assertCodexPermissionProfile(response.activePermissionProfile?.id, params.permissionProfile);
+  const authorityReadback = readCodexThreadAuthorityResponse(response, params);
   if (ringZeroActive) {
     try {
       await lifecycleTiming.measure("ring-zero-mcp-attestation", () =>
@@ -517,6 +521,7 @@ export async function startFreshCodexThread(
     lifecycle: {
       action: "started",
       ...(rotatedContextEngineBinding ? { rotatedContextEngineBinding } : {}),
+      authorityReadback,
     },
   };
 }

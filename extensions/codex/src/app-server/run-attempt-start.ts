@@ -7,6 +7,7 @@ import {
   withCodexAppServerFastModeServiceTier,
 } from "./run-attempt-lifecycle.js";
 import type { CodexAttemptResources } from "./run-attempt-resources.js";
+import { publishCodexExecutionSessionProjection } from "./session-execution-projection.js";
 import { recordCodexTrajectoryContext } from "./trajectory.js";
 
 export async function startCodexAttemptRuntime(resources: CodexAttemptResources) {
@@ -160,6 +161,17 @@ export async function startCodexAttemptRuntime(resources: CodexAttemptResources)
     state.codexExecutionCwd = startupResult.executionCwd;
     state.codexSandboxPolicy = startupResult.sandboxPolicy;
     state.codexPermissionProfile = startupResult.permissionProfile;
+    if (options.runtime) {
+      await publishCodexExecutionSessionProjection({
+        runtime: options.runtime,
+        sessionKey: params.sessionKey,
+        sessionId: params.sessionId,
+        agentId: sessionAgentId,
+        thread: state.thread,
+        systemProfile: startupResult.systemProfile,
+        appServerVersion: startupResult.appServerVersion,
+      });
+    }
     void emitCodexAppServerEvent(params, {
       stream: "codex_app_server.lifecycle",
       data: {
