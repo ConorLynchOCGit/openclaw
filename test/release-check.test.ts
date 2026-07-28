@@ -566,6 +566,19 @@ describe("collectForbiddenPackPaths", () => {
     expect(pkg.files).toContain("!dist/plugin-sdk/src/**");
   });
 
+  it("ships the privileged Codex runtime from the immutable core package", () => {
+    const pkg = JSON.parse(readFileSync("package.json", "utf8")) as {
+      dependencies?: Record<string, string>;
+      files?: string[];
+    };
+    const codexPackage = JSON.parse(readFileSync("extensions/codex/package.json", "utf8")) as {
+      dependencies?: Record<string, string>;
+    };
+
+    expect(pkg.files).not.toContain("!dist/extensions/codex/**");
+    expect(pkg.dependencies?.["@openai/codex"]).toBe(codexPackage.dependencies?.["@openai/codex"]);
+  });
+
   it("blocks private declarations and non-production SDK artifacts from npm pack output", () => {
     expect(
       collectForbiddenPackPaths(["dist/index.js", ...unpackagedPrivatePluginSdkPaths]),

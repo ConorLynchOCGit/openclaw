@@ -103,6 +103,33 @@ describe("explicit model visibility policy", () => {
     expect(policy.automaticFallbackKeys).toEqual(new Set(["external/sensitive"]));
   });
 
+  it("preserves an explicit provider for a default model id containing slashes", () => {
+    const model = "anthropic/claude-haiku-4.5";
+    const policy = createModelVisibilityPolicy({
+      cfg: {
+        agents: {
+          defaults: {
+            modelPolicy: { allow: ["openai/gpt-5.5"] },
+          },
+        },
+      },
+      catalog: [
+        { provider: "openrouter", id: model, name: "Claude Haiku via OpenRouter" },
+        { provider: "openai", id: "gpt-5.5", name: "GPT 5.5" },
+      ],
+      defaultProvider: "openrouter",
+      defaultModel: model,
+    });
+
+    expect(policy.allowedKeys.has(`openrouter/${model}`)).toBe(true);
+    expect(policy.allowedKeys.has(model)).toBe(false);
+    expect(policy.retainedKeys.has(`openrouter/${model}`)).toBe(true);
+    expect(policy.resolveSelection({ provider: "openrouter", model })).toEqual({
+      provider: "openrouter",
+      model,
+    });
+  });
+
   it("allows a configured fallback when the explicit policy also allows it", () => {
     const policy = createPolicy({
       agents: {

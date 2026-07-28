@@ -1041,12 +1041,7 @@ export function buildAllowedModelSetWithFallbacks(
   const defaultModel = params.defaultModel?.trim();
   const defaultRef =
     defaultModel && params.defaultProvider
-      ? parseModelRefWithCompatAlias({
-          cfg: params.cfg,
-          raw: defaultModel,
-          defaultProvider: params.defaultProvider,
-          ...defaultModelNormalization,
-        })
+      ? normalizeModelRef(params.defaultProvider, defaultModel, defaultModelNormalization)
       : null;
   const defaultKey = defaultRef ? modelKey(defaultRef.provider, defaultRef.model) : undefined;
   const resolveSelectionModelRef = (raw: string, aliasIndex: ModelAliasIndex) => {
@@ -1740,6 +1735,16 @@ export function createModelVisibilityPolicyWithFallbacks(
   const allowed = buildAllowedModelSetWithFallbacks({ ...params, aliasIndex: policyAliasIndex });
   const configuredKeys = new Set(allowed.configuredCatalog.map(modelCatalogLogicalKey));
   const retainedKeys = new Set<string>();
+  const addConfiguredModelRef = (ref: ModelRef, retained: boolean) => {
+    const key = modelCatalogLogicalKey({
+      provider: ref.provider,
+      id: ref.model,
+    });
+    configuredKeys.add(key);
+    if (retained) {
+      retainedKeys.add(key);
+    }
+  };
   const addConfiguredRef = (
     raw: string | undefined,
     retained: boolean,
@@ -1760,14 +1765,7 @@ export function createModelVisibilityPolicyWithFallbacks(
     if (!resolved) {
       return;
     }
-    const key = modelCatalogLogicalKey({
-      provider: resolved.ref.provider,
-      id: resolved.ref.model,
-    });
-    configuredKeys.add(key);
-    if (retained) {
-      retainedKeys.add(key);
-    }
+    addConfiguredModelRef(resolved.ref, retained);
   };
   for (const raw of visibility.exactModelRefs) {
     addConfiguredRef(raw, false, policyAliasIndex);
@@ -1775,7 +1773,16 @@ export function createModelVisibilityPolicyWithFallbacks(
   for (const raw of params.additionalConfiguredModelRefs ?? []) {
     addConfiguredRef(raw, false, selectionAliasIndex);
   }
-  addConfiguredRef(params.defaultModel, true, selectionAliasIndex);
+  if (params.defaultModel?.trim()) {
+    addConfiguredModelRef(
+      normalizeModelRef(params.defaultProvider, params.defaultModel, {
+        allowManifestNormalization: params.allowManifestNormalization,
+        allowPluginNormalization: params.allowPluginNormalization,
+        manifestPlugins: params.manifestPlugins,
+      }),
+      true,
+    );
+  }
   for (const fallback of params.fallbackModels) {
     // Configured fallbacks remain available for automatic failover and catalog
     // retention, but are not user-selectable overrides unless policy also allows them.
