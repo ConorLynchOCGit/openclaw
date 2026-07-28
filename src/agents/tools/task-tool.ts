@@ -19,7 +19,10 @@ import { resolveAgentExecutionWorkspaceConfig } from "../execution-workspace.js"
 import { readLatestAssistantReply, waitForAgentRun, type AgentWaitResult } from "../run-wait.js";
 import type { SpawnedToolContext } from "../spawned-context.js";
 import { killControlledSubagentRun, resolveSubagentController } from "../subagent-control.js";
-import { getLatestSubagentRunByChildSessionKey } from "../subagent-registry-read.js";
+import {
+  getLatestSubagentRunByChildSessionKey,
+  waitForSettledSubagentCompletion,
+} from "../subagent-registry-read.js";
 import { spawnSubagentDirect } from "../subagent-spawn.js";
 import { resolveSubagentAllowedTargetIds } from "../subagent-target-policy.js";
 import { normalizeSubagentTaskName } from "../subagent-task-name.js";
@@ -292,13 +295,39 @@ async function waitForForegroundResult(params: {
       timeoutMs: TASK_WAIT_POLL_MS,
     });
     if (wait.status === "ok") {
+      const completion = await waitForSettledSubagentCompletion({
+        taskRunId: params.runId,
+        childSessionKey: params.sessionKey,
+        signal: params.signal,
+      });
+      if (completion) {
+        return {
+          status: "ok",
+          replyText: completion.resultText ?? undefined,
+        };
+      }
+      if (params.signal?.aborted) {
+        return { status: "error", error: "task wait cancelled" };
+      }
       return {
         status: "ok",
-        replyText: await readLatestAssistantReply({ sessionKey: params.sessionKey }),
+        replyText: await readLatestAssistantReply({ sessionKey: params.sessionKey }).catch(
+          () => undefined,
+        ),
       };
     }
     if (wait.status === "error") {
-      const replyText = await readLatestAssistantReply({ sessionKey: params.sessionKey });
+      const completion = await waitForSettledSubagentCompletion({
+        taskRunId: params.runId,
+        childSessionKey: params.sessionKey,
+        signal: params.signal,
+      });
+      if (params.signal?.aborted) {
+        return { status: "error", error: "task wait cancelled" };
+      }
+      const replyText =
+        completion?.resultText ??
+        (await readLatestAssistantReply({ sessionKey: params.sessionKey }).catch(() => undefined));
       if (replyText?.trim()) {
         return {
           status: "ok",

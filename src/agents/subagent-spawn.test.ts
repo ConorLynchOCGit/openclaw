@@ -269,6 +269,7 @@ describe("spawnSubagentDirect seam flow", () => {
 
   it("binds explicitly requested loaded-source work to the native child session", async () => {
     const store: Record<string, Record<string, unknown>> = {};
+    hoisted.loadSessionStoreMock.mockReturnValue(store);
     hoisted.updateSessionStoreMock.mockImplementation(
       async (
         _storePath: string,
@@ -276,6 +277,21 @@ describe("spawnSubagentDirect seam flow", () => {
       ) => {
         await mutator(store);
         return store;
+      },
+    );
+    hoisted.callGatewayMock.mockImplementation(
+      async (request: { method?: string; params?: Record<string, unknown> }) => {
+        if (request.method === "agent") {
+          const sessionKey =
+            typeof request.params?.sessionKey === "string" ? request.params.sessionKey : "";
+          store[sessionKey] = {
+            ...store[sessionKey],
+            sessionId: "session-loaded-source-child",
+            updatedAt: 2,
+          };
+          return { runId: "run-1", status: "accepted", acceptedAt: 1000 };
+        }
+        return {};
       },
     );
     hoisted.configOverride = createConfigOverride({
@@ -344,6 +360,11 @@ describe("spawnSubagentDirect seam flow", () => {
     expect(firstRegisteredSubagentRun()).toMatchObject({
       childSessionKey: result.childSessionKey,
       workspaceDir: "/srv/instance/workspace",
+      transcriptTarget: {
+        sessionId: store[result.childSessionKey ?? ""]?.sessionId,
+        sessionKey: result.childSessionKey,
+        storePath: "/tmp/subagent-spawn-session-store.json",
+      },
     });
     const launchParams = requireRecord(gatewayRequest("agent").params);
     expect(launchParams.extraSystemPrompt).toContain(`Working directory: ${worktree.path}`);

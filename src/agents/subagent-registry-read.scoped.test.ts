@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
 
 const mocks = vi.hoisted(() => ({
+  persistListeners: new Set<() => void>(),
   getSubagentRunsSnapshotForChildSession: vi.fn<
     (
       runs: Map<string, SubagentRunRecord>,
@@ -29,6 +30,10 @@ vi.mock("./subagent-registry-state.js", () => ({
   getSubagentRunsSnapshotForChildSession: mocks.getSubagentRunsSnapshotForChildSession,
   getSubagentRunsSnapshotForController: mocks.getSubagentRunsSnapshotForController,
   getSubagentRunsSnapshotForRead: mocks.getSubagentRunsSnapshotForRead,
+  onSubagentRegistryPersisted: (listener: () => void) => {
+    mocks.persistListeners.add(listener);
+    return () => mocks.persistListeners.delete(listener);
+  },
 }));
 
 function createRun(overrides: Partial<SubagentRunRecord>): SubagentRunRecord {
@@ -49,6 +54,7 @@ describe("subagent registry scoped reads", () => {
   let mod: typeof import("./subagent-registry-read.js");
 
   beforeEach(async () => {
+    mocks.persistListeners.clear();
     mocks.getSubagentRunsSnapshotForChildSession.mockReset().mockReturnValue(new Map());
     mocks.getSubagentRunsSnapshotForController.mockReset().mockReturnValue(new Map());
     mocks.getSubagentRunsSnapshotForRead.mockClear();
@@ -95,5 +101,87 @@ describe("subagent registry scoped reads", () => {
 
     expect(mod.listSubagentRunsForController(controllerSessionKey)).toEqual([explicit, legacy]);
     expect(mocks.getSubagentRunsSnapshotForRead).not.toHaveBeenCalled();
+  });
+
+  it("returns the durable completion for the original or replacement run", async () => {
+    const childSessionKey = "agent:main:subagent:child";
+    const replacement = createRun({
+      runId: "replacement",
+      taskRunId: "original",
+      childSessionKey,
+      generation: 2,
+      endedAt: 300,
+      outcome: { status: "ok" },
+      completion: {
+        required: false,
+        resultText: "Task status: complete\n\nUseful result.",
+        capturedAt: 301,
+      },
+    });
+    mocks.getSubagentRunsSnapshotForChildSession.mockReturnValue(
+      new Map([[replacement.runId, replacement]]),
+    );
+
+    await expect(
+      mod.waitForSettledSubagentCompletion({
+        taskRunId: "original",
+        childSessionKey,
+      }),
+    ).resolves.toEqual({
+      runId: "replacement",
+      outcome: { status: "ok" },
+      endedAt: 300,
+      resultText: "Task status: complete\n\nUseful result.",
+    });
+  });
+
+  it("waits on the native persistence event until completion capture settles", async () => {
+    const childSessionKey = "agent:main:subagent:child";
+    const active = createRun({
+      runId: "original",
+      taskRunId: "original",
+      childSessionKey,
+      generation: 1,
+      completion: { required: false },
+    });
+    let rows = new Map([[active.runId, active]]);
+    mocks.getSubagentRunsSnapshotForChildSession.mockImplementation(() => rows);
+
+    const settled = mod.waitForSettledSubagentCompletion({
+      taskRunId: "original",
+      childSessionKey,
+    });
+    expect(mocks.persistListeners.size).toBe(1);
+
+    const completed = createRun({
+      ...active,
+      endedAt: 400,
+      outcome: { status: "ok" },
+      completion: {
+        required: false,
+        resultText: "Task status: complete",
+        capturedAt: 401,
+      },
+    });
+    rows = new Map([[completed.runId, completed]]);
+    for (const listener of mocks.persistListeners) {
+      listener();
+    }
+
+    await expect(settled).resolves.toMatchObject({
+      runId: "original",
+      resultText: "Task status: complete",
+    });
+    expect(mocks.persistListeners.size).toBe(0);
+  });
+
+  it("returns immediately for a non-native or already retired run", async () => {
+    await expect(
+      mod.waitForSettledSubagentCompletion({
+        taskRunId: "missing",
+        childSessionKey: "agent:main:subagent:missing",
+      }),
+    ).resolves.toBeNull();
+    expect(mocks.persistListeners.size).toBe(0);
   });
 });

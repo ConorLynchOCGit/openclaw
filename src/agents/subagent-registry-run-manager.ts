@@ -207,6 +207,7 @@ export type RegisterSubagentRunParams = {
   runId: string;
   requesterTurnRunId?: string;
   childSessionKey: string;
+  transcriptTarget?: AgentRunSessionTarget;
   controllerSessionKey?: string;
   requesterSessionKey: string;
   requesterOrigin?: DeliveryContext;
@@ -846,6 +847,7 @@ export function createSubagentRunManager(params: {
       execution: {
         status: queued ? "queued" : "running",
         startedAt: queued ? undefined : now,
+        transcriptTarget: registerParams.transcriptTarget,
       },
       completion: {
         required: registerParams.expectsCompletionMessage === true,

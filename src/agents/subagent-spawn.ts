@@ -64,6 +64,7 @@ import {
 } from "./model-selection.js";
 import { resolveThinkingDefault } from "./model-thinking-default.js";
 import { supportsModelTools } from "./model-tool-support.js";
+import type { AgentRunSessionTarget } from "./run-session-target.js";
 import { sanitizeForPromptLiteral } from "./sanitize-for-prompt.js";
 import {
   runSpawnPipeline,
@@ -1488,6 +1489,38 @@ export async function spawnSubagentDirect(
         return `child session patch failed: ${message}`;
       }
     };
+    const resolveChildTranscriptTarget = (): AgentRunSessionTarget | undefined => {
+      const target = incognito
+        ? {
+            agentId: targetAgentId,
+            canonicalKey: childSessionKey,
+            storePath: resolveIncognitoOpenClawAgentSqlitePath({ agentId: targetAgentId }),
+          }
+        : resolveGatewaySessionStoreTarget({
+            cfg,
+            key: childSessionKey,
+          });
+      let entry: SessionEntry | undefined;
+      try {
+        entry = loadSessionEntry({
+          storePath: target.storePath,
+          sessionKey: target.canonicalKey,
+        });
+      } catch {
+        // Registration remains compatible with a temporarily unreadable
+        // session index; completion capture retains its existing fallback.
+      }
+      entry ??= childCreationEntry;
+      if (!entry?.sessionId) {
+        return undefined;
+      }
+      return {
+        agentId: target.agentId ?? targetAgentId,
+        sessionId: entry.sessionId,
+        sessionKey: target.canonicalKey,
+        storePath: target.storePath,
+      };
+    };
 
     const initialChildSessionPatch: Record<string, unknown> = {
       spawnedBy: spawnedByKey,
@@ -1941,6 +1974,7 @@ The runtime created and attested this checkout for the task. The target role pro
           runId,
           requesterTurnRunId: ctx.requesterTurnRunId,
           childSessionKey,
+          transcriptTarget: resolveChildTranscriptTarget(),
           controllerSessionKey: ownership.controllerSessionKey,
           requesterSessionKey: ownership.completionRequesterSessionKey,
           requesterOrigin,

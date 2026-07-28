@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),
   wait: vi.fn(),
   readReply: vi.fn(),
+  waitCompletion: vi.fn(),
   latestRun: vi.fn(),
   resolveController: vi.fn(),
   kill: vi.fn(),
@@ -25,6 +26,7 @@ vi.mock("../run-wait.js", () => ({
 
 vi.mock("../subagent-registry-read.js", () => ({
   getLatestSubagentRunByChildSessionKey: (...args: unknown[]) => mocks.latestRun(...args),
+  waitForSettledSubagentCompletion: (...args: unknown[]) => mocks.waitCompletion(...args),
 }));
 
 vi.mock("../subagent-control.js", () => ({
@@ -96,6 +98,12 @@ describe("task foreground delegation", () => {
     });
     mocks.wait.mockReset().mockResolvedValue({ status: "ok" });
     mocks.readReply.mockReset().mockResolvedValue("Task status: complete\n\nUseful result.");
+    mocks.waitCompletion.mockReset().mockResolvedValue({
+      runId: "run-child",
+      outcome: { status: "ok" },
+      endedAt: 200,
+      resultText: "Task status: complete\n\nUseful result.",
+    });
     mocks.latestRun.mockReset().mockReturnValue(null);
     mocks.resolveController.mockReset().mockReturnValue({
       controllerSessionKey: "agent:main:main",
@@ -371,6 +379,54 @@ describe("task foreground delegation", () => {
     expect(textOf(result)).toContain("<task_result>");
   });
 
+  it("uses the native durable completion without rebuilding output through chat history", async () => {
+    mocks.readReply.mockRejectedValue(new Error("session history is rebuilding; retry shortly"));
+
+    const result = await createTaskTool({
+      config,
+      agentSessionKey: "agent:planning:main",
+      requesterAgentIdOverride: "planning",
+    }).execute("call", { agentId: "reviewer", task: "Review the plan." });
+
+    expect(textOf(result)).toContain("Useful result.");
+    expect(mocks.waitCompletion).toHaveBeenCalledWith({
+      taskRunId: "run-child",
+      childSessionKey: "agent:reviewer:subagent:child",
+      signal: undefined,
+    });
+    expect(mocks.readReply).not.toHaveBeenCalled();
+  });
+
+  it("falls back to legacy history only when no native registry row exists", async () => {
+    mocks.waitCompletion.mockResolvedValue(null);
+    mocks.readReply.mockResolvedValue("Task status: complete\n\nLegacy result.");
+
+    const result = await createTaskTool({
+      config,
+      agentSessionKey: "agent:planning:main",
+      requesterAgentIdOverride: "planning",
+    }).execute("call", { agentId: "reviewer", task: "Review the plan." });
+
+    expect(textOf(result)).toContain("Legacy result.");
+    expect(mocks.readReply).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a clean missing-result error when legacy history is rebuilding", async () => {
+    mocks.waitCompletion.mockResolvedValue(null);
+    mocks.readReply.mockRejectedValue(new Error("session history is rebuilding; retry shortly"));
+
+    const result = await createTaskTool({
+      config,
+      agentSessionKey: "agent:planning:main",
+      requesterAgentIdOverride: "planning",
+    }).execute("call", { agentId: "reviewer", task: "Review the plan." });
+
+    expect((result as { details?: unknown }).details).toMatchObject({
+      status: "error",
+      error: "child task produced no assistant result",
+    });
+  });
+
   it("projects advancing native child activity into parent liveness", async () => {
     mocks.wait
       .mockResolvedValueOnce({ status: "timeout" })
@@ -433,7 +489,12 @@ describe("task foreground delegation", () => {
   });
 
   it("keeps large child output behind native transcript pointers", async () => {
-    mocks.readReply.mockResolvedValue(`Task status: complete\n\n${"x".repeat(13_000)}`);
+    mocks.waitCompletion.mockResolvedValue({
+      runId: "run-child",
+      outcome: { status: "ok" },
+      endedAt: 200,
+      resultText: `Task status: complete\n\n${"x".repeat(13_000)}`,
+    });
     const result = await createTaskTool({
       config,
       agentSessionKey: "agent:planning:main",

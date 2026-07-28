@@ -19,6 +19,7 @@ import {
   getSubagentRunsSnapshotForChildSession,
   getSubagentRunsSnapshotForController,
   getSubagentRunsSnapshotForRead,
+  onSubagentRegistryPersisted,
 } from "./subagent-registry-state.js";
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
 import { compareSubagentRunGeneration } from "./subagent-run-generation.js";
@@ -141,4 +142,110 @@ export function getLatestSubagentRunByChildSessionKey(
   }
 
   return latest;
+}
+
+export type SettledSubagentCompletion = {
+  runId: string;
+  outcome: NonNullable<SubagentRunRecord["outcome"]>;
+  endedAt: number;
+  resultText: string | null;
+};
+
+type RelatedSubagentCompletionRead = {
+  found: boolean;
+  completion?: SettledSubagentCompletion;
+};
+
+function readRelatedSubagentCompletion(params: {
+  taskRunId: string;
+  childSessionKey: string;
+}): RelatedSubagentCompletionRead {
+  const taskRunId = params.taskRunId.trim();
+  const childSessionKey = params.childSessionKey.trim();
+  if (!taskRunId || !childSessionKey) {
+    return { found: false };
+  }
+
+  let latest: SubagentRunRecord | undefined;
+  for (const entry of getSubagentRunsSnapshotForChildSession(
+    subagentRuns,
+    childSessionKey,
+  ).values()) {
+    if (
+      entry.childSessionKey !== childSessionKey ||
+      (entry.runId !== taskRunId && entry.taskRunId !== taskRunId)
+    ) {
+      continue;
+    }
+    if (!latest || compareSubagentRunGeneration(entry, latest) > 0) {
+      latest = entry;
+    }
+  }
+  if (!latest) {
+    return { found: false };
+  }
+  const completion = latest.completion;
+  if (
+    typeof latest.endedAt !== "number" ||
+    !latest.outcome ||
+    latest.pauseReason === "sessions_yield" ||
+    (completion?.resultText === undefined && typeof completion?.capturedAt !== "number")
+  ) {
+    return { found: true };
+  }
+  return {
+    found: true,
+    completion: {
+      runId: latest.runId,
+      outcome: latest.outcome,
+      endedAt: latest.endedAt,
+      resultText: completion.resultText ?? null,
+    },
+  };
+}
+
+/**
+ * Waits for the native registry's durable completion snapshot.
+ *
+ * Initial spawn registration is synchronous, so an absent related row denotes
+ * a legacy/non-native caller and returns immediately. Registered runs settle
+ * through the registry persistence event rather than polling chat history.
+ */
+export async function waitForSettledSubagentCompletion(params: {
+  taskRunId: string;
+  childSessionKey: string;
+  signal?: AbortSignal;
+}): Promise<SettledSubagentCompletion | null> {
+  const initial = readRelatedSubagentCompletion(params);
+  if (!initial.found || initial.completion) {
+    return initial.completion ?? null;
+  }
+  if (params.signal?.aborted) {
+    return null;
+  }
+
+  return await new Promise<SettledSubagentCompletion | null>((resolve) => {
+    let settled = false;
+    const finish = (value: SettledSubagentCompletion | null) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      unsubscribe();
+      params.signal?.removeEventListener("abort", onAbort);
+      resolve(value);
+    };
+    const read = () => {
+      const current = readRelatedSubagentCompletion(params);
+      if (!current.found) {
+        finish(null);
+      } else if (current.completion) {
+        finish(current.completion);
+      }
+    };
+    const onAbort = () => finish(null);
+    const unsubscribe = onSubagentRegistryPersisted(read);
+    params.signal?.addEventListener("abort", onAbort, { once: true });
+    read();
+  });
 }

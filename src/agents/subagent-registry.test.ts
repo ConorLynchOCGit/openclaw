@@ -571,6 +571,30 @@ describe("subagent registry seam flow", () => {
     });
   });
 
+  it("persists the initial run's exact transcript target", () => {
+    const transcriptTarget = {
+      agentId: "review-specialist",
+      sessionId: "session-specialist",
+      sessionKey: "agent:review-specialist:subagent:child",
+      storePath: "/tmp/review-specialist.sqlite",
+    };
+    mod.registerSubagentRun({
+      runId: "run-with-transcript-target",
+      childSessionKey: transcriptTarget.sessionKey,
+      task: "return one bounded review packet",
+      expectsCompletionMessage: false,
+      transcriptTarget,
+    });
+
+    expect(mod.getSubagentRunByRunId("run-with-transcript-target")).toMatchObject({
+      taskRunId: "run-with-transcript-target",
+      execution: {
+        status: "running",
+        transcriptTarget,
+      },
+    });
+  });
+
   it("tracks missing-entry lifecycle result refresh until capture and persistence settle", async () => {
     const childSessionKey = "agent:main:subagent:refresh-admission";
     mocks.callGateway.mockImplementation(async (request: { method?: string }) =>
