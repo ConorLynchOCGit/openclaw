@@ -697,6 +697,16 @@
         "cleanup"
       ]
     },
+    "task": {
+      "emoji": "🧑‍🔧",
+      "title": "Task",
+      "detailKeys": [
+        "agentId",
+        "taskName",
+        "label",
+        "task"
+      ]
+    },
     "agents_wait": {
       "emoji": "⏳",
       "title": "Wait for Agents",

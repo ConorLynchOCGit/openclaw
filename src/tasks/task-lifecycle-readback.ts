@@ -5,9 +5,9 @@ import type { ManagedWorktreeRecord } from "../agents/worktrees/types.js";
 import { resolveDefaultSessionStorePath } from "../config/sessions.js";
 import { loadSessionEntryReadOnly } from "../config/sessions/session-accessor.js";
 import { parseAgentSessionKey } from "../sessions/session-key-utils.js";
-import { getTaskFlowById } from "./task-flow-registry.js";
+import { listTaskRecords } from "./runtime-internal.js";
 import type { TaskFlowRecord } from "./task-flow-registry.types.js";
-import { listTaskRecords } from "./task-registry.js";
+import { getTaskFlowById } from "./task-flow-runtime-internal.js";
 import type { JsonValue, TaskRecord, TaskStatus } from "./task-registry.types.js";
 
 type TaskLedgerStatus = TaskSummary["status"];

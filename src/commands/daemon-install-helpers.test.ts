@@ -396,6 +396,41 @@ describe("buildGatewayInstallPlan", () => {
     expect(plan.workingDirectory).toBeUndefined();
   });
 
+  it("preserves durable instance paths as managed state-directory dotenv keys", async () => {
+    const stateDir = path.join(isolatedHome, ".openclaw");
+    const durablePaths = {
+      OPENCLAW_HOME: "/srv/openclaw-next",
+      OPENCLAW_WORKSPACE_DIR: "/srv/openclaw-next/home-repo",
+      OPENCLAW_SOURCE_TREE_PATH: "/srv/openclaw-next/src/openclaw-anchor",
+      CODEX_HOME: "/srv/openclaw-next/state/external-auth/codex",
+    };
+    await writeStateDirDotEnv(
+      Object.entries(durablePaths)
+        .map(([key, value]) => `${key}=${value}`)
+        .join("\n"),
+      { stateDir },
+    );
+    mockNodeGatewayPlanFixture({
+      workingDirectory: undefined,
+      serviceEnvironment: { OPENCLAW_PORT: "3000" },
+    });
+
+    const plan = await buildGatewayInstallPlan({
+      env: isolatedPlanEnv({ OPENCLAW_STATE_DIR: stateDir }),
+      port: 3000,
+      runtime: "node",
+      platform: "linux",
+    });
+
+    expect(plan.environment.OPENCLAW_SERVICE_MANAGED_ENV_KEYS).toBe(
+      "CODEX_HOME,OPENCLAW_HOME,OPENCLAW_SOURCE_TREE_PATH,OPENCLAW_WORKSPACE_DIR",
+    );
+    for (const key of Object.keys(durablePaths)) {
+      expect(plan.environment[key]).toBeUndefined();
+      expect(plan.environmentValueSources?.[key]).toBeUndefined();
+    }
+  });
+
   it("passes OPENCLAW_WRAPPER through program args and managed service env", async () => {
     const wrapperPath = path.resolve("/usr/local/bin/openclaw-doppler");
     mockNodeGatewayPlanFixture({

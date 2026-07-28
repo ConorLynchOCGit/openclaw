@@ -11,8 +11,8 @@ import {
   getDiagnosticSessionActivitySnapshot,
   markDiagnosticRunProgress,
 } from "../../logging/diagnostic-run-activity.js";
+import { findTaskByRunId } from "../../tasks/runtime-internal.js";
 import { buildTaskLifecycleReadback } from "../../tasks/task-lifecycle-readback.js";
-import { findTaskByRunId } from "../../tasks/task-registry.js";
 import type { GatewayMessageChannel } from "../../utils/message-channel.js";
 import { listAgentIds, resolveAgentConfig } from "../agent-scope-config.js";
 import { resolveAgentExecutionWorkspaceConfig } from "../execution-workspace.js";

@@ -26,6 +26,7 @@ import {
   collectForbiddenPackContentPaths,
   collectForbiddenPackPaths,
   collectMissingPackPaths,
+  collectPackedCodexSystemProfileErrors,
   collectSkillShellScriptExecutableErrors,
   collectPackUnpackedSizeErrors,
   collectPackedInstalledPackageVerificationErrors,
@@ -37,6 +38,7 @@ import {
   PACKED_BUNDLED_RUNTIME_DEPS_REPAIR_ARGS,
   PACKED_CLI_SMOKE_COMMANDS,
   PACKED_COMPLETION_SMOKE_ARGS,
+  listCodexSystemProfilePackArtifacts,
   packageNameFromSpecifier,
   resolvePackedTarballPath,
   resolveReleaseNpmCommand,
@@ -576,7 +578,31 @@ describe("collectForbiddenPackPaths", () => {
     };
 
     expect(pkg.files).not.toContain("!dist/extensions/codex/**");
-    expect(pkg.dependencies?.["@openai/codex"]).toBe(codexPackage.dependencies?.["@openai/codex"]);
+    for (const dependency of [
+      "@modelcontextprotocol/sdk",
+      "@openai/codex",
+      "typebox",
+      "typescript",
+      "zod",
+    ]) {
+      expect(pkg.dependencies?.[dependency], dependency).toBe(
+        codexPackage.dependencies?.[dependency],
+      );
+    }
+  });
+
+  it("requires every immutable Codex profile asset in the root package", () => {
+    const sourceRoot = resolvePath("extensions/codex/system-profile");
+    const packageRoot = mkdtempSync(join(tmpdir(), "openclaw-codex-profile-package-"));
+    try {
+      const installedRoot = join(packageRoot, "dist/extensions/codex/system-profile");
+      mkdirSync(installedRoot, { recursive: true });
+      expect(collectPackedCodexSystemProfileErrors({ packageRoot, sourceRoot })).toContain(
+        'installed Codex system profile is missing "project/.codex/config.toml".',
+      );
+    } finally {
+      rmSync(packageRoot, { recursive: true, force: true });
+    }
   });
 
   it("blocks private declarations and non-production SDK artifacts from npm pack output", () => {
@@ -755,6 +781,7 @@ describe("collectMissingPackPaths", () => {
         "dist/extensions/acpx/error-format.mjs",
         "dist/extensions/acpx/mcp-command-line.mjs",
         "dist/extensions/acpx/mcp-proxy.mjs",
+        ...listCodexSystemProfilePackArtifacts(),
         ...requiredBundledPluginPackPaths,
         ...requiredPluginSdkPackPaths,
         ...packagedPrivatePluginSdkRuntimePaths,

@@ -83,6 +83,34 @@ const rootPackageExcludedExtensionDirs = collectRootPackageExcludedExtensionDirs
 const rootPackageExcludedExtensionPrefixes = [...rootPackageExcludedExtensionDirs].map(
   (extensionId) => `dist/extensions/${extensionId}/`,
 );
+const CODEX_SYSTEM_PROFILE_SOURCE_ROOT = resolve("extensions/codex/system-profile");
+const CODEX_SYSTEM_PROFILE_PACK_ROOT = "dist/extensions/codex/system-profile";
+
+function listRelativeRegularFiles(rootDir: string, relativeDir = ""): string[] {
+  const currentDir = join(rootDir, relativeDir);
+  if (!existsSync(currentDir)) {
+    return [];
+  }
+  return readdirSync(currentDir, { withFileTypes: true })
+    .flatMap((entry) => {
+      const relativePath = relativeDir ? join(relativeDir, entry.name) : entry.name;
+      if (entry.isDirectory()) {
+        return listRelativeRegularFiles(rootDir, relativePath);
+      }
+      return entry.isFile() ? [relativePath.replaceAll("\\", "/")] : [];
+    })
+    .toSorted((left, right) => left.localeCompare(right));
+}
+
+export function listCodexSystemProfilePackArtifacts(
+  sourceRoot = CODEX_SYSTEM_PROFILE_SOURCE_ROOT,
+): string[] {
+  return listRelativeRegularFiles(sourceRoot).map(
+    (relativePath) => `${CODEX_SYSTEM_PROFILE_PACK_ROOT}/${relativePath}`,
+  );
+}
+
+const requiredCodexSystemProfilePackPaths = listCodexSystemProfilePackArtifacts();
 const requiredPathGroups = [
   "npm-shrinkwrap.json",
   PACKAGE_DIST_INVENTORY_RELATIVE_PATH,
@@ -91,6 +119,7 @@ const requiredPathGroups = [
   ...listPluginSdkDistArtifacts(),
   ...listPackagedPrivatePluginSdkRuntimeArtifacts(),
   ...listBundledPluginPackArtifacts(),
+  ...requiredCodexSystemProfilePackPaths,
   ...listStaticExtensionAssetOutputs().filter((relativePath) => {
     const match = /^dist\/extensions\/([^/]+)\//u.exec(relativePath);
     return (
@@ -732,6 +761,52 @@ export function collectPackedInstalledPackageVerificationErrors(params: {
   return errors;
 }
 
+export function collectPackedCodexSystemProfileErrors(params: {
+  packageRoot: string;
+  sourceRoot?: string;
+}): string[] {
+  const sourceRoot = params.sourceRoot ?? CODEX_SYSTEM_PROFILE_SOURCE_ROOT;
+  const installedRoot = join(params.packageRoot, CODEX_SYSTEM_PROFILE_PACK_ROOT);
+  const sourcePaths = listRelativeRegularFiles(sourceRoot);
+  const installedPaths = listRelativeRegularFiles(installedRoot);
+  const errors: string[] = [];
+
+  if (sourcePaths.length === 0) {
+    return ["Codex system profile source contains no files."];
+  }
+
+  const sourceSet = new Set(sourcePaths);
+  const installedSet = new Set(installedPaths);
+  for (const relativePath of sourcePaths) {
+    if (!installedSet.has(relativePath)) {
+      errors.push(`installed Codex system profile is missing "${relativePath}".`);
+    }
+  }
+  for (const relativePath of installedPaths) {
+    if (!sourceSet.has(relativePath)) {
+      errors.push(`installed Codex system profile has unexpected file "${relativePath}".`);
+    }
+  }
+  for (const relativePath of sourcePaths) {
+    if (!installedSet.has(relativePath)) {
+      continue;
+    }
+    const sourceBytes = readFileSync(join(sourceRoot, relativePath));
+    const installedBytes = readFileSync(join(installedRoot, relativePath));
+    if (!sourceBytes.equals(installedBytes)) {
+      errors.push(`installed Codex system profile differs from source at "${relativePath}".`);
+    }
+    const sourceExecutableBits = statSync(join(sourceRoot, relativePath)).mode & 0o111;
+    const installedExecutableBits = statSync(join(installedRoot, relativePath)).mode & 0o111;
+    if (sourceExecutableBits !== installedExecutableBits) {
+      errors.push(
+        `installed Codex system profile executable mode differs from source at "${relativePath}".`,
+      );
+    }
+  }
+  return errors.toSorted((left, right) => left.localeCompare(right));
+}
+
 function verifyPackedInstalledPackage(params: {
   expectedVersion: string;
   packageRoot: string;
@@ -751,11 +826,14 @@ function verifyPackedInstalledPackage(params: {
       stdio: ["ignore", "pipe", "pipe"],
     },
   ).trim();
-  const errors = collectPackedInstalledPackageVerificationErrors({
-    expectedVersion: params.expectedVersion,
-    installedBinaryVersion,
-    packageRoot: params.packageRoot,
-  });
+  const errors = [
+    ...collectPackedInstalledPackageVerificationErrors({
+      expectedVersion: params.expectedVersion,
+      installedBinaryVersion,
+      packageRoot: params.packageRoot,
+    }),
+    ...collectPackedCodexSystemProfileErrors({ packageRoot: params.packageRoot }),
+  ];
   if (errors.length > 0) {
     throw new Error(
       `release-check: packed installed package verification failed:\n- ${errors.join("\n- ")}`,

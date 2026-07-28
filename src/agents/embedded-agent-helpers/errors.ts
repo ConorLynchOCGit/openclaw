@@ -600,8 +600,11 @@ function isDnsTransportErrorMessage(raw: string): boolean {
 function classifyTransportFailureKind(
   signal: FailoverSignal,
   message: string,
-): "connection" | "disconnect" | undefined {
+): "connection" | "disconnect" | "dns" | undefined {
   const code = signal.code?.trim().toUpperCase();
+  if (code === "ENOTFOUND" || code === "EAI_AGAIN" || isDnsTransportErrorMessage(message)) {
+    return "dns";
+  }
   if (code && CONNECTION_ESTABLISHMENT_ERROR_CODES.has(code)) {
     return "connection";
   }
@@ -1359,9 +1362,6 @@ export function classifyProviderRuntimeFailureKind(
     failoverClassification.reason === "model_not_found"
   ) {
     return "model_not_found";
-  }
-  if (message && isDnsTransportErrorMessage(message)) {
-    return "dns";
   }
   if (message && isSandboxBlockedErrorMessage(message)) {
     return "sandbox_blocked";

@@ -1653,7 +1653,13 @@ describe("classifyProviderRuntimeFailureKind", () => {
     expect(
       classifyProviderRuntimeFailureKind("dial tcp: lookup api.example.com: no such host"),
     ).toBe("dns");
-    expect(classifyProviderRuntimeFailureKind("socket hang up")).toBe("timeout");
+    expect(
+      classifyProviderRuntimeFailureKind({
+        code: "ENOTFOUND",
+        message: "",
+      }),
+    ).toBe("dns");
+    expect(classifyProviderRuntimeFailureKind("socket hang up")).toBe("disconnect");
     expect(
       classifyProviderRuntimeFailureKind({
         code: "CERT_HAS_EXPIRED",
