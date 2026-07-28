@@ -134,6 +134,7 @@ describe("shared task lifecycle readback", () => {
             threadId: "thread-parent",
             action: "resumed",
             cwd: "/repo/worktrees/test",
+            identityWorkspaceDir: "/srv/openclaw/agents/coding",
             model: "gpt-5.6-codex",
             modelProvider: "openai",
             permissionProfile: ":workspace",
@@ -212,6 +213,7 @@ describe("shared task lifecycle readback", () => {
         threadId: "thread-parent",
         action: "resumed",
         cwd: "/repo/worktrees/test",
+        identityWorkspaceDir: "/srv/openclaw/agents/coding",
         permissionProfile: ":workspace",
         runtimeWorkspaceRoots: ["/repo/worktrees/test"],
         instructionSources: [],
@@ -379,5 +381,46 @@ describe("shared task lifecycle readback", () => {
     expect(summary.readback?.physical?.attemptStatus).toBe("failed");
     expect(summary.readback?.deliveryStatus).toBe("delivered");
     expect(summary.readback?.mismatches).toEqual([]);
+  });
+
+  it("exposes cancellation that physically completed as a lifecycle disagreement", () => {
+    const parent = task({
+      taskId: "task-parent",
+      status: "cancelled",
+      runId: "run-parent",
+      endedAt: 100,
+      detail: {
+        providerState: "succeeded",
+        providerAttemptStatus: "succeeded",
+      },
+    });
+    const session = {
+      sessionId: "thread-parent",
+      updatedAt: 110,
+      status: "done",
+    } satisfies SessionEntry;
+    const flow = {
+      flowId: "unused",
+      syncMode: "managed",
+      ownerKey: parent.ownerKey,
+      controllerId: "tests/readback",
+      revision: 1,
+      status: "cancelled",
+      notifyPolicy: "done_only",
+      goal: "Implement",
+      createdAt: 5,
+      updatedAt: 100,
+      endedAt: 100,
+    } satisfies TaskFlowRecord;
+
+    const summary = mapTaskSummary(parent, {
+      lifecycleContext: fixtureContext({ tasks: [parent], session, flow }),
+    });
+
+    expect(summary.readback?.mismatches).toContainEqual({
+      code: "logical_cancelled_provider_succeeded",
+      owners: ["task-registry", "provider-attempt", "session-store"],
+      evidence: ["task:cancelled", "provider:succeeded", "attempt:succeeded", "session:done"],
+    });
   });
 });

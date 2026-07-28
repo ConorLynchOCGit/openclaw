@@ -2,6 +2,19 @@ import type { EmbeddedRunAttemptParams } from "openclaw/plugin-sdk/agent-harness
 import { isCodexAppServerStartupError } from "./attempt-timeouts.js";
 import { isCodexAppServerBrokenPipeError, isCodexAppServerRequestTimeoutError } from "./client.js";
 
+export const CODEX_APP_SERVER_CONTEXT_RESTART_SELECTION_CHANGED =
+  "CODEX_APP_SERVER_CONTEXT_RESTART_SELECTION_CHANGED";
+
+export function isCodexContextRestartSelectionChangedError(
+  error: unknown,
+): error is Error & { code: typeof CODEX_APP_SERVER_CONTEXT_RESTART_SELECTION_CHANGED } {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    error.code === CODEX_APP_SERVER_CONTEXT_RESTART_SELECTION_CHANGED
+  );
+}
+
 export function shouldClearSharedClientAfterStartupAbandon(error: unknown): boolean {
   return isCodexAppServerStartupError(error);
 }

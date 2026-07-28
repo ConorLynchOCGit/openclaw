@@ -14,7 +14,7 @@ import {
 import { findTaskByRunId } from "../../tasks/runtime-internal.js";
 import { buildTaskLifecycleReadback } from "../../tasks/task-lifecycle-readback.js";
 import type { GatewayMessageChannel } from "../../utils/message-channel.js";
-import { listAgentIds, resolveAgentConfig } from "../agent-scope-config.js";
+import { resolveAgentConfig } from "../agent-scope-config.js";
 import { resolveAgentExecutionWorkspaceConfig } from "../execution-workspace.js";
 import { readLatestAssistantReply, waitForAgentRun, type AgentWaitResult } from "../run-wait.js";
 import type { SpawnedToolContext } from "../spawned-context.js";
@@ -24,10 +24,14 @@ import {
   waitForSettledSubagentCompletion,
 } from "../subagent-registry-read.js";
 import { spawnSubagentDirect } from "../subagent-spawn.js";
-import { resolveSubagentAllowedTargetIds } from "../subagent-target-policy.js";
 import { normalizeSubagentTaskName } from "../subagent-task-name.js";
 import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readStringParam, textResult } from "./common.js";
+import {
+  resolveForegroundParentTask,
+  resolveTaskAllowedAgentIds,
+  resolveTaskRequesterAgentId,
+} from "./task-tool-policy.js";
 
 const TASK_WAIT_POLL_MS = 60_000;
 const TASK_RESULT_INLINE_MAX_CHARS = 1_800;
@@ -62,34 +66,6 @@ function escapeXml(value: string): string {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
-}
-
-function resolveRequesterAgentId(
-  opts: { requesterAgentIdOverride?: string; agentSessionKey?: string } | undefined,
-): string | undefined {
-  const explicit = opts?.requesterAgentIdOverride?.trim();
-  if (explicit) {
-    return explicit;
-  }
-  return /^agent:([^:]+)/.exec(opts?.agentSessionKey ?? "")?.[1]?.trim() || undefined;
-}
-
-function resolveAllowedAgentIds(params: {
-  config?: OpenClawConfig;
-  requesterAgentId?: string;
-}): string[] {
-  const requesterAgentId = params.requesterAgentId?.trim();
-  if (!params.config || !requesterAgentId) {
-    return [];
-  }
-  const requesterConfig = resolveAgentConfig(params.config, requesterAgentId);
-  return resolveSubagentAllowedTargetIds({
-    requesterAgentId,
-    allowAgents:
-      requesterConfig?.subagents?.allowAgents ??
-      params.config.agents?.defaults?.subagents?.allowAgents,
-    configuredAgentIds: listAgentIds(params.config),
-  }).allowedIds;
 }
 
 function createTaskSchema(params: { allowedAgentIds: readonly string[] }) {
@@ -467,8 +443,8 @@ export function createTaskTool(
     workspaceDir?: string;
   } & SpawnedToolContext,
 ): AnyAgentTool {
-  const requesterAgentId = resolveRequesterAgentId(opts);
-  const allowedAgentIds = resolveAllowedAgentIds({
+  const requesterAgentId = resolveTaskRequesterAgentId(opts);
+  const allowedAgentIds = resolveTaskAllowedAgentIds({
     config: opts?.config,
     requesterAgentId,
   });
@@ -545,6 +521,13 @@ export function createTaskTool(
       const targetThinking =
         (opts?.config ? resolveAgentConfig(opts.config, agentId)?.thinkingDefault : undefined) ??
         opts?.config?.agents?.defaults?.thinkingDefault;
+      const parentTask = resolveForegroundParentTask(opts?.parentRunId);
+      if (parentTask === null) {
+        return jsonResult({
+          status: "error",
+          error: "foreground task parent is unavailable or already terminal",
+        });
+      }
 
       const spawn = await spawnSubagentDirect(
         {
@@ -579,6 +562,7 @@ export function createTaskTool(
         {
           agentSessionKey: opts?.agentSessionKey,
           requesterTurnRunId: opts?.parentRunId,
+          parentTaskId: parentTask?.taskId,
           completionOwnerKey: opts?.completionOwnerKey ?? opts?.agentSessionKey,
           agentChannel: opts?.agentChannel,
           agentAccountId: opts?.agentAccountId,

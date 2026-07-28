@@ -15,7 +15,7 @@ import {
   buildCodexTurnStartFailureResult,
   isInvalidCodexImagePayloadError,
 } from "./attempt-results.js";
-import { isCodexContextRestartSelectionChangedError } from "./attempt-startup.js";
+import { isCodexContextRestartSelectionChangedError } from "./attempt-startup-cleanup-policy.js";
 import type { EmbeddedRunAttemptResult } from "./attempt-terminal.js";
 import type { CodexTurnStartResponse } from "./protocol.js";
 import { emitCodexAppServerEvent, runCodexAgentEndHook } from "./run-attempt-lifecycle.js";

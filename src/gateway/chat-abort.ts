@@ -398,6 +398,8 @@ export type ChatAbortOps = {
   ) => void;
   nodeSendToSession: (sessionKey: string, event: string, payload: unknown) => void;
   onRunAborted?: (runId: string) => void;
+  /** Persist the owning task terminal state before physical abort begins. */
+  beforeRunAbort?: (params: { runId: string; sessionKey: string; stopReason?: string }) => boolean;
 };
 
 type TrackedChatRunAbortOps = {
@@ -540,6 +542,13 @@ export function abortChatRunById(
     return { aborted: false };
   }
   if (!isChatAbortControllerEntryAbortable(active)) {
+    return { aborted: false };
+  }
+  try {
+    if (ops.beforeRunAbort?.({ runId, sessionKey, stopReason }) === false) {
+      return { aborted: false };
+    }
+  } catch {
     return { aborted: false };
   }
 

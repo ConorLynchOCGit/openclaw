@@ -85,6 +85,7 @@ describe("subagent registry sqlite store", () => {
   it("persists subagent runs in the shared sqlite state database", async () => {
     await withTempStateEnv(async () => {
       const run = createRun({
+        parentTaskId: "task-parent",
         requesterTurnRunId: "run-requester",
         requesterTurnYielded: true,
         retireAfterRequesterTurn: true,
@@ -114,6 +115,7 @@ describe("subagent registry sqlite store", () => {
         childSessionKey: run.childSessionKey,
         requesterSessionKey: run.requesterSessionKey,
         task: run.task,
+        parentTaskId: "task-parent",
         requesterTurnRunId: "run-requester",
         requesterTurnYielded: true,
         retireAfterRequesterTurn: true,

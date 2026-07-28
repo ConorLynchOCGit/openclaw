@@ -16,6 +16,8 @@ import { getTaskById, listTaskRecordsUnsorted } from "../../tasks/runtime-intern
 import { cancelDetachedTaskRunById } from "../../tasks/task-executor.js";
 import { createTaskLifecycleReadbackContext } from "../../tasks/task-lifecycle-readback.js";
 import type { TaskRecord, TaskStatus } from "../../tasks/task-registry.types.js";
+import { abortChatRunById } from "../chat-abort.js";
+import { createChatAbortOps } from "./chat-abort-runtime.js";
 import { mapTaskSummary, taskUpdatedAt } from "./task-summary.js";
 import type { GatewayRequestHandlers } from "./types.js";
 
@@ -179,11 +181,24 @@ export const tasksHandlers: GatewayRequestHandlers = {
     }
     const taskId = params.taskId;
     const reason = normalizeOptionalString(params.reason);
+    const taskBeforeCancel = getTaskById(taskId);
     const result = await cancelDetachedTaskRunById({
       cfg: context.getRuntimeConfig(),
       taskId,
       ...(reason ? { reason } : {}),
     });
+    if (
+      result.cancelled &&
+      taskBeforeCancel?.runtime === "cli" &&
+      taskBeforeCancel.runId?.trim() &&
+      taskBeforeCancel.childSessionKey?.trim()
+    ) {
+      abortChatRunById(createChatAbortOps(context), {
+        runId: taskBeforeCancel.runId,
+        sessionKey: taskBeforeCancel.childSessionKey,
+        stopReason: reason ?? "task_cancel",
+      });
+    }
     respond(true, {
       found: result.found,
       cancelled: result.cancelled,

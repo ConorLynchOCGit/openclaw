@@ -431,7 +431,16 @@ describe("startCodexAttemptThread", () => {
           }>;
         }
       | undefined;
-    expect(threadStartParams?.developerInstructions).toBe(profileDeveloperInstructions);
+    expect(threadStartParams?.developerInstructions).toContain(profileDeveloperInstructions);
+    expect(threadStartParams?.developerInstructions).not.toContain(
+      "This mutable workspace instruction must not win.",
+    );
+    expect(threadStartParams?.developerInstructions).toContain(
+      `identityWorkspaceDir: ${JSON.stringify(paths.workspaceDir)}`,
+    );
+    expect(threadStartParams?.developerInstructions).toContain(
+      `executionCwd: ${JSON.stringify(paths.cwd)}`,
+    );
     expect(threadStartParams?.permissions).toBe(":workspace");
     expect(threadStartParams).not.toHaveProperty("sandbox");
     expect(threadStartParams?.config?.project_doc_max_bytes).toBe(0);

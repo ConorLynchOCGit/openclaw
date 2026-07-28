@@ -78,6 +78,7 @@ export async function finalizeInterruptedSubagentRun(params: {
   runId: string;
   error: string;
   endedAt?: number;
+  status?: "failed" | "cancelled";
 }) {
   return await getRegistryTestApi().finalizeInterruptedSubagentRun(params);
 }

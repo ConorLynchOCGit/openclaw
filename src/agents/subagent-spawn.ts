@@ -216,6 +216,8 @@ type SpawnSubagentParams = {
 type SpawnSubagentContext = {
   agentSessionKey?: string;
   requesterTurnRunId?: string;
+  /** Native task parent for foreground role delegation only. */
+  parentTaskId?: string;
   /** Separate key used only for completion routing, not sandbox policy. */
   completionOwnerKey?: string;
   agentChannel?: string;
@@ -1962,6 +1964,7 @@ The runtime created and attested this checkout for the task. The target role pro
       progressOrigin,
       progressSessionKey: requesterInternalKey,
       buildRegistration: (_state, runId) => {
+        ctx.abortSignal?.throwIfAborted();
         if (params.collect) {
           const latestAdmission = resolveAdmission();
           if (!latestAdmission.ok) {
@@ -1973,6 +1976,7 @@ The runtime created and attested this checkout for the task. The target role pro
         return {
           runId,
           requesterTurnRunId: ctx.requesterTurnRunId,
+          parentTaskId: ctx.parentTaskId,
           childSessionKey,
           transcriptTarget: resolveChildTranscriptTarget(),
           controllerSessionKey: ownership.controllerSessionKey,

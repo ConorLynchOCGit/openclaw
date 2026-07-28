@@ -26,8 +26,11 @@ import {
   setTaskRegistryControlRuntimeForTests,
 } from "../../tasks/task-runtime.test-helpers.js";
 import { captureEnv, setTestEnvValue } from "../../test-utils/env.js";
+import { abortChatRunById, registerChatAbortController } from "../chat-abort.js";
+import { createChatRunState } from "../server-chat-state.js";
+import { createChatAbortOps } from "./chat-abort-runtime.js";
 import { tasksHandlers } from "./tasks.js";
-import type { RespondFn } from "./types.js";
+import type { GatewayRequestContext, RespondFn } from "./types.js";
 
 const stateDirEnvSnapshot = captureEnv(["OPENCLAW_STATE_DIR"]);
 const cancelSessionMock = vi.fn();
@@ -80,9 +83,15 @@ function captureRespond() {
   return { calls, respond };
 }
 
-function createContext() {
+function createContext(): GatewayRequestContext {
   return {
     getRuntimeConfig: () => ({}),
+    chatAbortControllers: new Map(),
+    chatRunState: createChatRunState(),
+    removeChatRun: vi.fn(),
+    agentRunSeq: new Map(),
+    broadcast: vi.fn(),
+    nodeSendToSession: vi.fn(),
   } as never;
 }
 
@@ -108,6 +117,7 @@ function createSnapshotTask(overrides: Partial<TaskRecord>): TaskRecord {
 async function runTaskHandler(
   method: "tasks.list" | "tasks.get" | "tasks.cancel",
   params: Record<string, unknown>,
+  context = createContext(),
 ) {
   const { calls, respond } = captureRespond();
   await expectDefined(
@@ -117,7 +127,7 @@ async function runTaskHandler(
     req: { type: "req", id: `req-${method}`, method },
     params,
     respond,
-    context: createContext(),
+    context,
     client: null,
     isWebchatConnect: () => false,
   });
@@ -428,6 +438,78 @@ describe("tasks gateway handlers", () => {
     expect(payload?.task?.id).toBe(task.taskId);
     expect(payload?.task?.status).toBe("cancelled");
     expect(payload?.task?.error).toBe("user stopped task");
+  });
+
+  it("physically aborts the native agent run after its CLI task is durably cancelled", async () => {
+    const context = createContext();
+    const childSessionKey = "agent:planning:subagent:child";
+    const registration = registerChatAbortController({
+      chatAbortControllers: context.chatAbortControllers,
+      runId: "run-cancel-agent",
+      sessionId: "session-cancel-agent",
+      sessionKey: childSessionKey,
+      timeoutMs: 60_000,
+    });
+    const task = createTaskRecord({
+      runtime: "cli",
+      requesterSessionKey: "agent:main:main",
+      ownerKey: "agent:main:main",
+      scopeKind: "session",
+      childSessionKey,
+      runId: "run-cancel-agent",
+      task: "Cancelable agent task",
+      status: "running",
+      deliveryStatus: "pending",
+    });
+
+    const { payload } = await runTaskHandler(
+      "tasks.cancel",
+      { taskId: task.taskId, reason: "operator stopped parent" },
+      context,
+    );
+
+    expect(payload?.cancelled).toBe(true);
+    expect(registration.controller.signal.aborted).toBe(true);
+    expect(getTaskById(task.taskId)).toMatchObject({
+      status: "cancelled",
+      error: "operator stopped parent",
+    });
+  });
+
+  it("tombstones the native task before a direct Gateway chat abort", () => {
+    const context = createContext();
+    const childSessionKey = "agent:planning:subagent:direct-abort";
+    const registration = registerChatAbortController({
+      chatAbortControllers: context.chatAbortControllers,
+      runId: "run-direct-abort",
+      sessionId: "session-direct-abort",
+      sessionKey: childSessionKey,
+      timeoutMs: 60_000,
+    });
+    const task = createTaskRecord({
+      runtime: "cli",
+      requesterSessionKey: "agent:main:main",
+      ownerKey: "agent:main:main",
+      scopeKind: "session",
+      childSessionKey,
+      runId: "run-direct-abort",
+      task: "Directly aborted task",
+      status: "running",
+      deliveryStatus: "pending",
+    });
+
+    expect(
+      abortChatRunById(createChatAbortOps(context), {
+        runId: "run-direct-abort",
+        sessionKey: childSessionKey,
+        stopReason: "user",
+      }),
+    ).toEqual({ aborted: true });
+    expect(registration.controller.signal.aborted).toBe(true);
+    expect(getTaskById(task.taskId)).toMatchObject({
+      status: "cancelled",
+      error: "Agent run was cancelled.",
+    });
   });
 
   it("cancels ACP tasks through the live Gateway handler and control runtime", async () => {

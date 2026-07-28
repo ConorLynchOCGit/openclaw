@@ -146,6 +146,16 @@ function readNumber(metadata: TaskReadbackMetadata | undefined, key: string): nu
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function isSuccessfulPhysicalStatus(value: string | undefined): boolean {
+  return (
+    value === "succeeded" ||
+    value === "success" ||
+    value === "completed" ||
+    value === "done" ||
+    value === "ok"
+  );
+}
+
 type CodexExecutionProjection = NonNullable<TaskLifecycleReadback["codex"]>;
 
 function readCodexExecutionProjection(
@@ -190,6 +200,9 @@ function readCodexExecutionProjection(
     threadId,
     action,
     cwd,
+    ...(readRecordText(raw, "identityWorkspaceDir")
+      ? { identityWorkspaceDir: readRecordText(raw, "identityWorkspaceDir") }
+      : {}),
     ...(readRecordText(raw, "model") ? { model: readRecordText(raw, "model") } : {}),
     ...(readRecordText(raw, "modelProvider")
       ? { modelProvider: readRecordText(raw, "modelProvider") }
@@ -543,6 +556,25 @@ export function buildTaskLifecycleReadback(
     readText(metadata, "providerAttemptId") ?? readText(metadata, "latestAttemptId");
   const attemptStatus =
     readText(metadata, "providerAttemptStatus") ?? readText(metadata, "latestAttemptStatus");
+  if (
+    logicalStatus === "cancelled" &&
+    (isSuccessfulPhysicalStatus(providerState) ||
+      isSuccessfulPhysicalStatus(attemptStatus) ||
+      session?.status === "done")
+  ) {
+    mismatches.push(
+      mismatch(
+        "logical_cancelled_provider_succeeded",
+        ["task-registry", "provider-attempt", "session-store"],
+        [
+          `task:${task.status}`,
+          providerState ? `provider:${providerState}` : undefined,
+          attemptStatus ? `attempt:${attemptStatus}` : undefined,
+          session?.status ? `session:${session.status}` : undefined,
+        ],
+      ),
+    );
+  }
   const physicalAttemptStartedAt = readNumber(metadata, "physicalAttemptStartedAt");
   const providerAttemptNumber = readNumber(metadata, "providerAttemptNumber");
   const continuationReason = readText(metadata, "continuationReason");

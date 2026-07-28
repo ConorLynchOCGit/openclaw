@@ -19,6 +19,8 @@ import {
   finalizeTaskRunByRunId,
   startTaskRunByRunId,
 } from "../tasks/detached-task-runtime.js";
+import { getTaskById } from "../tasks/runtime-internal.js";
+import { isTerminalTaskStatus } from "../tasks/task-executor-policy.js";
 import { normalizeDeliveryContext } from "../utils/delivery-context.shared.js";
 import type { DeliveryContext } from "../utils/delivery-context.types.js";
 import { buildAgentRunTerminalOutcomeFromWaitResult } from "./agent-run-terminal-outcome.js";
@@ -206,6 +208,7 @@ export function markSubagentRunPausedAfterYield(params: {
 export type RegisterSubagentRunParams = {
   runId: string;
   requesterTurnRunId?: string;
+  parentTaskId?: string;
   childSessionKey: string;
   transcriptTarget?: AgentRunSessionTarget;
   controllerSessionKey?: string;
@@ -784,9 +787,21 @@ export function createSubagentRunManager(params: {
     const childSessionKey = registerParams.childSessionKey.trim();
     const requesterSessionKey = registerParams.requesterSessionKey.trim();
     const requesterTurnRunId = registerParams.requesterTurnRunId?.trim();
+    const parentTaskId = registerParams.parentTaskId?.trim();
     const controllerSessionKey = registerParams.controllerSessionKey?.trim() || requesterSessionKey;
     if (!runId || !childSessionKey || !requesterSessionKey) {
       return;
+    }
+    if (parentTaskId) {
+      const parentTask = getTaskById(parentTaskId);
+      if (
+        !parentTask ||
+        !requesterTurnRunId ||
+        parentTask.runId !== requesterTurnRunId ||
+        isTerminalTaskStatus(parentTask.status)
+      ) {
+        throw new Error("foreground task parent became unavailable before child registration");
+      }
     }
     const now = Date.now();
     const generation = nextSubagentRunGeneration(params.runs.values(), childSessionKey);
@@ -806,6 +821,7 @@ export function createSubagentRunManager(params: {
     const entry: SubagentRunRecord = normalizeSubagentRunState({
       runId,
       taskRunId: runId,
+      ...(parentTaskId ? { parentTaskId } : {}),
       ...(requesterTurnRunId && registerParams.expectsCompletionMessage === true
         ? { requesterTurnRunId }
         : {}),
@@ -887,6 +903,7 @@ export function createSubagentRunManager(params: {
         task: registerParams.task,
         agentId: registerParams.agentId,
         requesterAgentId: registerParams.requesterAgentId,
+        ...(parentTaskId ? { parentTaskId } : {}),
         deliveryStatus:
           registerParams.expectsCompletionMessage === false ? "not_applicable" : "pending",
       } as const;
@@ -898,11 +915,25 @@ export function createSubagentRunManager(params: {
             lastEventAt: now,
           });
       if (!task) {
-        log.warn("Failed to persist background task for subagent run", {
-          runId: registerParams.runId,
-        });
+        throw new Error("Failed to persist background task for subagent run");
       }
     } catch (error) {
+      if (parentTaskId) {
+        params.runs.delete(runId);
+        restoreKillReconciliationSnapshots(killReconciliationSnapshots);
+        try {
+          params.persistOrThrow();
+        } catch (rollbackError) {
+          params.runs.set(runId, entry);
+          markOlderKillReconciliationsSuperseded(entry);
+          const persistenceError = error instanceof Error ? error.message : String(error);
+          throw new Error(
+            `Foreground child task persistence and registration rollback both failed: ${persistenceError}`,
+            { cause: rollbackError },
+          );
+        }
+        throw error;
+      }
       log.warn("Failed to create background task for subagent run", {
         runId: registerParams.runId,
         error,

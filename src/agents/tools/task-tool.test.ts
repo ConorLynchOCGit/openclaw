@@ -34,7 +34,7 @@ vi.mock("../subagent-control.js", () => ({
   killControlledSubagentRun: (...args: unknown[]) => mocks.kill(...args),
 }));
 
-vi.mock("../../tasks/task-registry.js", () => ({
+vi.mock("../../tasks/runtime-internal.js", () => ({
   findTaskByRunId: (...args: unknown[]) => mocks.findTask(...args),
 }));
 
@@ -112,7 +112,11 @@ describe("task foreground delegation", () => {
       controlScope: "children",
     });
     mocks.kill.mockReset().mockResolvedValue({ status: "ok", killed: 1 });
-    mocks.findTask.mockReset().mockReturnValue({ taskId: "task-child" });
+    mocks.findTask.mockReset().mockImplementation((runId: string) => ({
+      taskId: runId === "run-parent" ? "task-parent" : "task-child",
+      runId,
+      status: "running",
+    }));
     mocks.lifecycleReadback.mockReset().mockReturnValue({ lastRealActivityAt: 100 });
     mocks.markRunProgress.mockReset();
     mocks.diagnosticSnapshot.mockReset().mockReturnValue({});
@@ -205,7 +209,29 @@ describe("task foreground delegation", () => {
     expect(spawnContext).toMatchObject({
       requesterTurnRunId: "run-parent",
       requesterRunId: "run-parent",
+      parentTaskId: "task-parent",
     });
+  });
+
+  it("blocks foreground delegation when its native parent task is terminal", async () => {
+    mocks.findTask.mockReturnValue({
+      taskId: "task-parent",
+      runId: "run-parent",
+      status: "cancelled",
+    });
+
+    const result = await createTaskTool({
+      config,
+      agentSessionKey: "agent:main:main",
+      parentRunId: "run-parent",
+      requesterAgentIdOverride: "main",
+    }).execute("call", { agentId: "planning", task: "Produce the plan." });
+
+    expect((result as { details?: unknown }).details).toMatchObject({
+      status: "error",
+      error: "foreground task parent is unavailable or already terminal",
+    });
+    expect(mocks.spawn).not.toHaveBeenCalled();
   });
 
   it("uses target executionWorkspace policy instead of a model-authored source path", async () => {

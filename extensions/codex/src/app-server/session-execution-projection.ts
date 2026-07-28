@@ -11,6 +11,7 @@ export type CodexExecutionSessionProjection = {
   threadId: string;
   action: "started" | "resumed" | "forked";
   cwd: string;
+  identityWorkspaceDir?: string;
   model?: string;
   modelProvider?: string;
   permissionProfile?: string;
@@ -47,6 +48,7 @@ export async function publishCodexExecutionSessionProjection(params: {
   sessionKey?: string;
   sessionId: string;
   agentId?: string;
+  identityWorkspaceDir?: string;
   thread: CodexAppServerThreadLifecycleBinding;
   systemProfile?: CodexLoadedSystemProfile;
   appServerVersion?: string;
@@ -64,6 +66,9 @@ export async function publishCodexExecutionSessionProjection(params: {
     threadId: params.thread.threadId,
     action: params.thread.lifecycle.action,
     cwd: authority.cwd,
+    ...(params.identityWorkspaceDir?.trim()
+      ? { identityWorkspaceDir: params.identityWorkspaceDir.trim() }
+      : {}),
     ...(params.thread.model ? { model: params.thread.model } : {}),
     ...(params.thread.modelProvider ? { modelProvider: params.thread.modelProvider } : {}),
     ...(authority.permissionProfile ? { permissionProfile: authority.permissionProfile } : {}),
@@ -134,6 +139,9 @@ export function readCodexExecutionSessionProjection(
     threadId,
     action,
     cwd,
+    ...(readString(value.identityWorkspaceDir)
+      ? { identityWorkspaceDir: readString(value.identityWorkspaceDir) }
+      : {}),
     ...(readString(value.model) ? { model: readString(value.model) } : {}),
     ...(readString(value.modelProvider) ? { modelProvider: readString(value.modelProvider) } : {}),
     ...(readString(value.permissionProfile)

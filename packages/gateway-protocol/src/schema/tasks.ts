@@ -111,6 +111,7 @@ const TaskLifecycleReadbackSchema = closedObject({
         Type.Literal("forked"),
       ]),
       cwd: NonEmptyString,
+      identityWorkspaceDir: Type.Optional(NonEmptyString),
       model: Type.Optional(Type.String()),
       modelProvider: Type.Optional(Type.String()),
       permissionProfile: Type.Optional(Type.String()),

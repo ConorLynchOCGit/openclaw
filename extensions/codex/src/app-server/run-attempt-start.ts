@@ -167,6 +167,7 @@ export async function startCodexAttemptRuntime(resources: CodexAttemptResources)
         sessionKey: params.sessionKey,
         sessionId: params.sessionId,
         agentId: sessionAgentId,
+        ...(startupResult.systemProfile ? { identityWorkspaceDir: effectiveWorkspace } : {}),
         thread: state.thread,
         systemProfile: startupResult.systemProfile,
         appServerVersion: startupResult.appServerVersion,

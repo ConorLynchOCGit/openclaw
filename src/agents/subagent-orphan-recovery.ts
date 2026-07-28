@@ -23,6 +23,9 @@ import { readSessionMessagesAsync } from "../gateway/session-transcript-readers.
 import { formatErrorMessage } from "../infra/errors.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { runWithGatewayIndependentRootWorkAdmission } from "../process/gateway-work-admission.js";
+import { createRunningTaskRun } from "../tasks/detached-task-runtime.js";
+import { findTaskByRunId, getTaskById } from "../tasks/runtime-internal.js";
+import { isTerminalTaskStatus } from "../tasks/task-executor-policy.js";
 import { truncateUtf16Safe } from "../utils.js";
 import { resolveInternalSessionEffectsTarget } from "./internal-session-effects.js";
 import {
@@ -147,6 +150,37 @@ function extractMessageText(msg: unknown): string | undefined {
     return text || undefined;
   }
   return undefined;
+}
+
+function restoreForegroundChildTask(params: {
+  taskRunId: string;
+  runRecord: SubagentRunRecord;
+  parentTaskId: string;
+}) {
+  const existing = findTaskByRunId(params.taskRunId);
+  if (existing) {
+    return existing;
+  }
+  return (
+    createRunningTaskRun({
+      runtime: "subagent",
+      sourceId: params.taskRunId,
+      ownerKey: params.runRecord.requesterSessionKey,
+      scopeKind: "session",
+      requesterOrigin: params.runRecord.requesterOrigin,
+      childSessionKey: params.runRecord.childSessionKey,
+      parentTaskId: params.parentTaskId,
+      runId: params.taskRunId,
+      label: params.runRecord.label,
+      task: params.runRecord.task,
+      agentId: resolveAgentIdFromSessionKey(params.runRecord.childSessionKey),
+      requesterAgentId: params.runRecord.requesterAgentId,
+      deliveryStatus:
+        params.runRecord.expectsCompletionMessage === false ? "not_applicable" : "pending",
+      startedAt: params.runRecord.startedAt ?? params.runRecord.createdAt,
+      lastEventAt: params.runRecord.startedAt ?? params.runRecord.createdAt,
+    }) ?? undefined
+  );
 }
 
 /**
@@ -347,6 +381,60 @@ export async function recoverOrphanedSubagentSessions(params: {
       }
       try {
         cfg ??= getRuntimeConfig();
+        const taskRunId = runRecord.taskRunId?.trim() || runId;
+        let childTask = findTaskByRunId(taskRunId);
+        const registryParentTaskId = runRecord.parentTaskId?.trim();
+        const taskParentTaskId = childTask?.parentTaskId?.trim();
+        if (registryParentTaskId && taskParentTaskId && registryParentTaskId !== taskParentTaskId) {
+          const lineageError =
+            "Foreground child lineage disagrees between the subagent registry and task ledger.";
+          const finalized = await finalizeInterruptedSubagentRun({
+            runId,
+            error: lineageError,
+            status: "cancelled",
+          });
+          const settledChild = findTaskByRunId(taskRunId);
+          if (finalized > 0 || (settledChild && isTerminalTaskStatus(settledChild.status))) {
+            result.skipped++;
+          } else {
+            result.failed++;
+            result.failedRuns.push({ runId, childSessionKey, error: lineageError });
+          }
+          continue;
+        }
+        const parentTaskId = registryParentTaskId ?? taskParentTaskId;
+        if (parentTaskId) {
+          childTask ??= restoreForegroundChildTask({
+            taskRunId,
+            runRecord,
+            parentTaskId,
+          });
+          if (!childTask) {
+            const error = "failed to restore foreground child task before restart recovery";
+            result.failed++;
+            result.failedRuns.push({ runId, childSessionKey, error });
+            continue;
+          }
+          const parentTask = getTaskById(parentTaskId);
+          if (!parentTask || isTerminalTaskStatus(parentTask.status)) {
+            const cancellationError =
+              "Foreground parent task is terminal; child recovery is not permitted.";
+            const finalized = await finalizeInterruptedSubagentRun({
+              runId,
+              error: cancellationError,
+              status: "cancelled",
+            });
+            const settledChild = findTaskByRunId(taskRunId);
+            if (finalized > 0 || (settledChild && isTerminalTaskStatus(settledChild.status))) {
+              result.skipped++;
+            } else {
+              const error = "failed to settle child of terminal foreground task";
+              result.failed++;
+              result.failedRuns.push({ runId, childSessionKey, error });
+            }
+            continue;
+          }
+        }
         const agentId = resolveAgentIdFromSessionKey(childSessionKey);
         const storePath = resolveStorePath(cfg.session?.store, { agentId });
         const entry = loadRecoverySessionEntry({ storePath, childSessionKey });

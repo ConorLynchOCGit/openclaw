@@ -595,6 +595,112 @@ describe("subagent registry seam flow", () => {
     });
   });
 
+  it("persists foreground parent-task lineage and rejects a terminal parent race", () => {
+    resetTaskRegistryForTests({ persist: false });
+    resetTaskFlowRegistryForTests({ persist: false });
+    try {
+      const parent = createRunningTaskRun({
+        runtime: "cli",
+        ownerKey: "agent:planning:main",
+        scopeKind: "session",
+        childSessionKey: "agent:planning:main",
+        runId: "run-foreground-parent",
+        task: "Plan with one bounded child.",
+        deliveryStatus: "pending",
+        startedAt: Date.now(),
+      });
+      expect(parent).not.toBeNull();
+
+      mod.registerSubagentRun({
+        runId: "run-foreground-child",
+        requesterTurnRunId: "run-foreground-parent",
+        parentTaskId: parent!.taskId,
+        childSessionKey: "agent:reviewer:subagent:foreground-child",
+        requesterSessionKey: "agent:planning:main",
+        requesterDisplayKey: "planning",
+        task: "Review one bounded question.",
+        cleanup: "keep",
+        expectsCompletionMessage: false,
+        queued: true,
+      });
+      expect(findTaskByRunIdForStatus("run-foreground-child")).toMatchObject({
+        parentTaskId: parent!.taskId,
+      });
+
+      finalizeTaskRunByRunId({
+        runId: "run-foreground-parent",
+        runtime: "cli",
+        status: "cancelled",
+        endedAt: Date.now(),
+        error: "cancelled",
+      });
+      expect(() =>
+        mod.registerSubagentRun({
+          runId: "run-late-foreground-child",
+          requesterTurnRunId: "run-foreground-parent",
+          parentTaskId: parent!.taskId,
+          childSessionKey: "agent:reviewer:subagent:late-child",
+          requesterSessionKey: "agent:planning:main",
+          requesterDisplayKey: "planning",
+          task: "Must not start after parent cancellation.",
+          cleanup: "keep",
+          expectsCompletionMessage: false,
+          queued: true,
+        }),
+      ).toThrow("foreground task parent became unavailable");
+    } finally {
+      resetTaskRegistryForTests({ persist: false });
+      resetTaskFlowRegistryForTests({ persist: false });
+    }
+  });
+
+  it("rolls back foreground registration when durable child-task persistence fails", () => {
+    resetTaskRegistryForTests({ persist: false });
+    resetTaskFlowRegistryForTests({ persist: false });
+    try {
+      const parent = createRunningTaskRun({
+        runtime: "cli",
+        ownerKey: "agent:planning:main",
+        scopeKind: "session",
+        childSessionKey: "agent:planning:main",
+        runId: "run-foreground-persistence-parent",
+        task: "Plan with one durable child.",
+        deliveryStatus: "pending",
+        startedAt: Date.now(),
+      });
+      expect(parent).not.toBeNull();
+      const runtime = getDetachedTaskLifecycleRuntime();
+      setDetachedTaskLifecycleRuntime({
+        ...runtime,
+        createQueuedTaskRun: vi.fn(() => null),
+      });
+
+      expect(() =>
+        mod.registerSubagentRun({
+          runId: "run-foreground-unpersisted-child",
+          requesterTurnRunId: "run-foreground-persistence-parent",
+          parentTaskId: parent!.taskId,
+          childSessionKey: "agent:reviewer:subagent:unpersisted-child",
+          requesterSessionKey: "agent:planning:main",
+          requesterDisplayKey: "planning",
+          task: "Must not run without durable lineage.",
+          cleanup: "keep",
+          expectsCompletionMessage: false,
+          queued: true,
+        }),
+      ).toThrow("Failed to persist background task");
+      expect(
+        mod
+          .listSubagentRunsForRequester("agent:planning:main")
+          .some((entry) => entry.runId === "run-foreground-unpersisted-child"),
+      ).toBe(false);
+    } finally {
+      resetDetachedTaskLifecycleRuntimeForTests();
+      resetTaskRegistryForTests({ persist: false });
+      resetTaskFlowRegistryForTests({ persist: false });
+    }
+  });
+
   it("tracks missing-entry lifecycle result refresh until capture and persistence settle", async () => {
     const childSessionKey = "agent:main:subagent:refresh-admission";
     mocks.callGateway.mockImplementation(async (request: { method?: string }) =>

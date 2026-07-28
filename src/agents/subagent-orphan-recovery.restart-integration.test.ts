@@ -12,7 +12,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setRuntimeConfigSnapshot } from "../config/config.js";
 import type { GatewayRecoveryRuntime } from "../gateway/server-instance-runtime.types.js";
-import { createRunningTaskRun } from "../tasks/detached-task-runtime.js";
+import { createRunningTaskRun, finalizeTaskRunByRunId } from "../tasks/detached-task-runtime.js";
 import { findTaskByRunId } from "../tasks/task-registry.js";
 import {
   resetTaskFlowRegistryForTests,
@@ -205,6 +205,145 @@ describe("subagent orphan recovery — faithful restart path", () => {
       deliver: false,
     });
     expect(result.recovered).toBe(1);
+  });
+
+  it("never resumes a foreground child whose durable parent is terminal", async () => {
+    const now = Date.now();
+    const childSessionKey = "agent:reviewer:subagent:cancelled-parent";
+    const runId = "run-child-of-cancelled-parent";
+    const taskRunId = "task-run-child-of-cancelled-parent";
+    await writeSubagentSessionEntry({
+      stateDir: tempStateDir!,
+      agentId: "reviewer",
+      sessionKey: childSessionKey,
+      sessionId: "sess-child-of-cancelled-parent",
+      updatedAt: now,
+      abortedLastRun: true,
+      defaultSessionId: "sess-child-of-cancelled-parent",
+    });
+    const parent = createRunningTaskRun({
+      runtime: "cli",
+      ownerKey: "agent:planning:main",
+      scopeKind: "session",
+      childSessionKey: "agent:planning:main",
+      runId: "run-cancelled-parent",
+      task: "Plan with a reviewer.",
+      deliveryStatus: "pending",
+      startedAt: now - 60_000,
+    });
+    expect(parent).not.toBeNull();
+    finalizeTaskRunByRunId({
+      runId: "run-cancelled-parent",
+      runtime: "cli",
+      status: "cancelled",
+      endedAt: now - 30_000,
+      error: "operator cancelled parent",
+    });
+    const record = makeRunRecord({
+      runId,
+      taskRunId,
+      childSessionKey,
+      requesterSessionKey: "agent:planning:main",
+      parentTaskId: parent!.taskId,
+      createdAt: now - 50_000,
+      startedAt: now - 45_000,
+    });
+    addSubagentRunForTests(record);
+
+    const result = await recoverOrphanedSubagentSessions({
+      getActiveRuns: () => new Map([[runId, record]]),
+    });
+
+    expect(dispatchAgent).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ recovered: 0, failed: 0, skipped: 1 });
+    expect(findTaskByRunId(taskRunId)).toMatchObject({
+      status: "cancelled",
+      error: "Subagent run killed.",
+    });
+    expect(getSubagentRunByChildSessionKey(childSessionKey)).toMatchObject({
+      endedReason: "subagent-killed",
+      outcome: {
+        status: "error",
+        error: expect.stringContaining("parent task is terminal"),
+      },
+    });
+  });
+
+  it("fails closed when persisted foreground lineage disagrees", async () => {
+    const now = Date.now();
+    const childSessionKey = "agent:reviewer:subagent:mismatched-parent";
+    const runId = "run-child-with-mismatched-parent";
+    const taskRunId = "task-run-child-with-mismatched-parent";
+    await writeSubagentSessionEntry({
+      stateDir: tempStateDir!,
+      agentId: "reviewer",
+      sessionKey: childSessionKey,
+      sessionId: "sess-child-with-mismatched-parent",
+      updatedAt: now,
+      abortedLastRun: true,
+      defaultSessionId: "sess-child-with-mismatched-parent",
+    });
+    const registryParent = createRunningTaskRun({
+      runtime: "cli",
+      ownerKey: "agent:planning:main",
+      scopeKind: "session",
+      childSessionKey: "agent:planning:main",
+      runId: "run-registry-parent",
+      task: "Registry parent.",
+      deliveryStatus: "pending",
+      startedAt: now - 60_000,
+    });
+    const ledgerParent = createRunningTaskRun({
+      runtime: "cli",
+      ownerKey: "agent:planning:main",
+      scopeKind: "session",
+      childSessionKey: "agent:planning:main",
+      runId: "run-ledger-parent",
+      task: "Ledger parent.",
+      deliveryStatus: "pending",
+      startedAt: now - 60_000,
+    });
+    expect(registryParent).not.toBeNull();
+    expect(ledgerParent).not.toBeNull();
+    const record = makeRunRecord({
+      runId,
+      taskRunId,
+      childSessionKey,
+      requesterSessionKey: "agent:planning:main",
+      parentTaskId: registryParent!.taskId,
+      createdAt: now - 50_000,
+      startedAt: now - 45_000,
+    });
+    expect(
+      createRunningTaskRun({
+        runtime: "subagent",
+        sourceId: taskRunId,
+        ownerKey: record.requesterSessionKey,
+        scopeKind: "session",
+        childSessionKey,
+        parentTaskId: ledgerParent!.taskId,
+        runId: taskRunId,
+        task: record.task,
+        deliveryStatus: "not_applicable",
+        startedAt: record.startedAt,
+      }),
+    ).not.toBeNull();
+    addSubagentRunForTests(record);
+
+    const result = await recoverOrphanedSubagentSessions({
+      getActiveRuns: () => new Map([[runId, record]]),
+    });
+
+    expect(dispatchAgent).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ recovered: 0, failed: 0, skipped: 1 });
+    expect(findTaskByRunId(taskRunId)).toMatchObject({ status: "cancelled" });
+    expect(getSubagentRunByChildSessionKey(childSessionKey)).toMatchObject({
+      endedReason: "subagent-killed",
+      outcome: {
+        status: "error",
+        error: expect.stringContaining("lineage disagrees"),
+      },
+    });
   });
 
   it("finalizes only a stale predecessor when a fresh generation shares its child session", async () => {

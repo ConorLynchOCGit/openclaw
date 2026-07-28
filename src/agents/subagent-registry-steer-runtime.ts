@@ -29,6 +29,7 @@ type FinalizeInterruptedSubagentRunParams = {
   runId: string;
   error: string;
   endedAt?: number;
+  status?: "failed" | "cancelled";
 };
 
 type FinalizeInterruptedSubagentRunFn = (

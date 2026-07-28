@@ -173,6 +173,8 @@ export type SubagentRunRecord = {
   runId: string;
   /** Detached task owner; steer/restart changes runId but continues the same task. */
   taskRunId?: string;
+  /** Foreground parent task retained across the registry/task-ledger crash boundary. */
+  parentTaskId?: string;
   /** Requester attempt that must settle before this completion row can retire. */
   requesterTurnRunId?: string;
   /** Durable proof that this requester attempt invoked sessions_yield. */

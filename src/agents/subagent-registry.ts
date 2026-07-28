@@ -450,7 +450,12 @@ const subagentRunManager = createSubagentRunManager({
 configureSubagentRegistrySteerRuntime({
   replaceSubagentRunAfterSteer: (params) => subagentRunManager.replaceSubagentRunAfterSteer(params),
   finalizeInterruptedSubagentRun: async (params) =>
-    await completionRuntime.finalizeInterruptedSubagentRun(params),
+    params.status === "cancelled"
+      ? subagentRunManager.markSubagentRunTerminated({
+          runId: params.runId,
+          reason: params.error,
+        })
+      : await completionRuntime.finalizeInterruptedSubagentRun(params),
   reserveSwarmCollectorLaunch: (runId, idempotencyKey) => {
     const entry =
       subagentRuns.get(runId) ??

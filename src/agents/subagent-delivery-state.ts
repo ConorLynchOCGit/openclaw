@@ -50,6 +50,8 @@ export function normalizeSubagentRunState(entry: SubagentRunRecord): SubagentRun
   const legacy = entry as LegacySubagentRunRecord;
   const taskRunId = typeof entry.taskRunId === "string" ? entry.taskRunId.trim() : "";
   entry.taskRunId = taskRunId || undefined;
+  const parentTaskId = typeof entry.parentTaskId === "string" ? entry.parentTaskId.trim() : "";
+  entry.parentTaskId = parentTaskId || undefined;
   const requesterTurnRunId =
     typeof entry.requesterTurnRunId === "string" ? entry.requesterTurnRunId.trim() : "";
   entry.requesterTurnRunId = requesterTurnRunId || undefined;

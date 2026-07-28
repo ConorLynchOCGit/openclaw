@@ -285,6 +285,25 @@ describe("registerChatAbortController", () => {
 });
 
 describe("abortChatRunById", () => {
+  it("requires the durable pre-abort owner before mutating the physical run", () => {
+    const { runId, sessionKey, entry, ops } = createAbortRunFixture({
+      buffer: "still active",
+    });
+    const beforeRunAbort = vi.fn(() => {
+      expect(entry.controller.signal.aborted).toBe(false);
+      return false;
+    });
+    ops.beforeRunAbort = beforeRunAbort;
+
+    expect(abortChatRunById(ops, { runId, sessionKey, stopReason: "user" })).toEqual({
+      aborted: false,
+    });
+    expect(beforeRunAbort).toHaveBeenCalledWith({ runId, sessionKey, stopReason: "user" });
+    expect(entry.controller.signal.aborted).toBe(false);
+    expect(ops.chatRunState.runs.get(runId)?.buffer).toBe("still active");
+    expect(ops.removeChatRun).not.toHaveBeenCalled();
+  });
+
   it("notifies the run-bound approval owner only after an active run abort wins", () => {
     const { runId, sessionKey, ops } = createAbortRunFixture({});
     const onRunAborted = vi.fn();
