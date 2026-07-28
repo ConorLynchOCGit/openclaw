@@ -53,18 +53,10 @@ describe("resolveLlmIdleTimeoutMs", () => {
   });
 
   it.each([
-    [
-      "cloud",
-      { provider: "openai", baseUrl: "https://api.openai.com/v1" },
-      DEFAULT_LLM_IDLE_TIMEOUT_MS,
-    ],
-    [
-      "self-hosted",
-      { provider: "vllm", baseUrl: "https://gpu.example.com/v1" },
-      SELF_HOSTED_LLM_IDLE_TIMEOUT_MS,
-    ],
-  ])("uses the provider-class idle default for no-timeout %s models", (_label, model, expected) => {
-    expect(resolveLlmIdleTimeoutMs({ runTimeoutMs: MAX_TIMER_TIMEOUT_MS, model })).toBe(expected);
+    ["cloud", { provider: "openai", baseUrl: "https://api.openai.com/v1" }],
+    ["self-hosted", { provider: "vllm", baseUrl: "https://gpu.example.com/v1" }],
+  ])("disables the implicit idle watchdog for no-timeout %s models", (_label, model) => {
+    expect(resolveLlmIdleTimeoutMs({ runTimeoutMs: MAX_TIMER_TIMEOUT_MS, model })).toBe(0);
   });
 
   it("keeps local base URLs opted out of the implicit idle watchdog under no-timeout runs", () => {
@@ -312,7 +304,7 @@ describe("resolveLlmIdleTimeoutMs", () => {
     ).toBe(180_000);
   });
 
-  it("keeps the cloud idle watchdog finite when config timeoutSeconds is unlimited", () => {
+  it("disables the implicit cloud idle watchdog when config timeoutSeconds is unlimited", () => {
     const cfg = { agents: { defaults: { timeoutSeconds: 0 } } } as OpenClawConfig;
     const runTimeoutMs = resolveAgentTimeoutMs({ cfg });
 
@@ -323,7 +315,7 @@ describe("resolveLlmIdleTimeoutMs", () => {
         runTimeoutMs,
         model: { provider: "openai", baseUrl: "https://api.openai.com/v1" },
       }),
-    ).toBe(DEFAULT_LLM_IDLE_TIMEOUT_MS);
+    ).toBe(0);
   });
 
   it.each([
@@ -608,34 +600,21 @@ describe("resolveLlmFirstEventTimeoutMs", () => {
     ).toBe(45_000);
   });
 
-  it("does not treat the no-timeout run sentinel as an unlimited first-event wait", () => {
+  it("disables the implicit first-event watchdog for no-timeout runs", () => {
     expect(
       resolveLlmFirstEventTimeoutMs({
         model: { baseUrl: "http://127.0.0.1:11434" },
         runTimeoutMs: MAX_TIMER_TIMEOUT_MS,
       }),
-    ).toBe(LOCAL_LLM_FIRST_EVENT_TIMEOUT_MS);
+    ).toBe(0);
   });
 
   it.each([
-    [
-      "cloud",
-      { provider: "openai", baseUrl: "https://api.openai.com/v1" },
-      CLOUD_LLM_FIRST_EVENT_TIMEOUT_MS,
-    ],
-    [
-      "self-hosted",
-      { provider: "vllm", baseUrl: "https://gpu.example.com/v1" },
-      LOCAL_LLM_FIRST_EVENT_TIMEOUT_MS,
-    ],
-  ])(
-    "uses the provider-class first-event default for no-timeout %s models",
-    (_label, model, expected) => {
-      expect(resolveLlmFirstEventTimeoutMs({ runTimeoutMs: MAX_TIMER_TIMEOUT_MS, model })).toBe(
-        expected,
-      );
-    },
-  );
+    ["cloud", { provider: "openai", baseUrl: "https://api.openai.com/v1" }],
+    ["self-hosted", { provider: "vllm", baseUrl: "https://gpu.example.com/v1" }],
+  ])("disables the implicit first-event watchdog for no-timeout %s models", (_label, model) => {
+    expect(resolveLlmFirstEventTimeoutMs({ runTimeoutMs: MAX_TIMER_TIMEOUT_MS, model })).toBe(0);
+  });
 
   it("honors explicit first-event provider request timeouts under no-timeout runs", () => {
     expect(

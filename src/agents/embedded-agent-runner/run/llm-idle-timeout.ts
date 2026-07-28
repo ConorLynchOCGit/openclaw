@@ -294,8 +294,7 @@ export function resolveLlmIdleTimeoutMs(params?: {
 
   // Explicit per-model idle timeout (`models.providers.<id>.timeoutSeconds`) wins
   // over the NO_TIMEOUT_MS sentinel that runTimeoutMs may carry when the caller
-  // declared "run is unlimited". The two are independent: an unlimited run does
-  // not imply opting out of chunk-level hang detection.
+  // declared "run is unlimited".
   const modelRequestTimeoutMs = params?.modelRequestTimeoutMs;
   if (
     typeof modelRequestTimeoutMs === "number" &&
@@ -316,8 +315,13 @@ export function resolveLlmIdleTimeoutMs(params?: {
     return clampTimeoutMs(boundedTimeoutMs);
   }
 
-  // Unlimited run budget bounds total cost, not stream liveness. Only finite
-  // explicit run budgets cap the idle watchdog.
+  // An explicitly unlimited run delegates liveness to the provider transport
+  // and explicit cancellation. Silent reasoning is not evidence of failure.
+  if (runTimeoutIsNoTimeout) {
+    return 0;
+  }
+
+  // Only finite explicit run budgets cap the idle watchdog.
   if (hasExplicitRunTimeout && runTimeoutMs < MAX_TIMER_TIMEOUT_MS) {
     if (params?.trigger === "cron") {
       if (
@@ -373,6 +377,7 @@ export function resolveLlmFirstEventTimeoutMs(params?: {
   const hasExplicitRunTimeout =
     typeof runTimeoutMs === "number" && Number.isFinite(runTimeoutMs) && runTimeoutMs > 0;
   const runTimeoutIsBounded = hasExplicitRunTimeout && runTimeoutMs < MAX_TIMER_TIMEOUT_MS;
+  const runTimeoutIsNoTimeout = hasExplicitRunTimeout && runTimeoutMs >= MAX_TIMER_TIMEOUT_MS;
   const {
     isLocalRuntimeModel,
     isExplicitLocalHostnameRuntimeModel,
@@ -400,6 +405,10 @@ export function resolveLlmFirstEventTimeoutMs(params?: {
     modelRequestTimeoutMs > 0
   ) {
     return clampTimeoutMs(Math.min(modelRequestTimeoutMs, ...timeoutBounds));
+  }
+
+  if (runTimeoutIsNoTimeout) {
+    return 0;
   }
 
   const defaultTimeoutMs =
