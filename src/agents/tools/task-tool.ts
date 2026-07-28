@@ -30,11 +30,7 @@ const TASK_WAIT_POLL_MS = 60_000;
 const TASK_RESULT_INLINE_MAX_CHARS = 1_800;
 const PLANNING_REVIEW_RESULT_INLINE_MAX_CHARS = 12_000;
 const CODING_AGENT_IDS = new Set(["coding", "execution-coding"]);
-const SOURCE_RESEARCH_AGENT_IDS = new Set([
-  "codebase-researcher",
-  "docs-standards-researcher",
-  "review-specialist",
-]);
+const SOURCE_RESEARCH_AGENT_IDS = new Set(["codebase-researcher", "review-specialist"]);
 const FIXED_TASK_CWD_REQUESTER_AGENT_IDS = new Set(["planning", "reviewer"]);
 const DEFAULT_LIGHT_CONTEXT_AGENT_IDS = new Set([
   "codebase-researcher",

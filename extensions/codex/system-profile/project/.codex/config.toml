@@ -211,8 +211,6 @@ config_file = "agents/test_engineer.toml"
 [mcp_servers.openclaw_repo_workbench]
 command = "node"
 args = ["tools/openclaw-repo-workbench.mjs"]
-startup_timeout_sec = 10
-tool_timeout_sec = 30
 required = true
 supports_parallel_tool_calls = true
 enabled_tools = [

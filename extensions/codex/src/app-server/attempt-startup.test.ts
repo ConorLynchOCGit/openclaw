@@ -215,7 +215,7 @@ async function waitForThreadStart(harness: ClientHarness): Promise<{ id?: number
   return waitForRequest(harness, "thread/start");
 }
 
-function threadStartResult(threadId = "thread-1", permissionProfile?: string) {
+function threadStartResult(threadId = "thread-1", permissionProfile?: string, cwd = "/repo") {
   return {
     thread: {
       id: threadId,
@@ -228,7 +228,7 @@ function threadStartResult(threadId = "thread-1", permissionProfile?: string) {
       updatedAt: 1,
       status: { type: "idle" },
       path: null,
-      cwd: "/repo",
+      cwd,
       cliVersion: "0.143.0",
       source: "unknown",
       agentNickname: null,
@@ -240,7 +240,8 @@ function threadStartResult(threadId = "thread-1", permissionProfile?: string) {
     model: "gpt-5.4-codex",
     modelProvider: "openai",
     serviceTier: null,
-    cwd: "/repo",
+    cwd,
+    runtimeWorkspaceRoots: [cwd],
     instructionSources: [],
     approvalPolicy: "never",
     approvalsReviewer: "user",
@@ -464,7 +465,10 @@ describe("startCodexAttemptThread", () => {
       },
     ]);
 
-    harness.send({ id: threadStart.id, result: threadStartResult("thread-1", ":workspace") });
+    harness.send({
+      id: threadStart.id,
+      result: threadStartResult("thread-1", ":workspace", paths.cwd),
+    });
     const result = await run;
     result.turnRoute.release();
     result.releaseSharedClientLease();

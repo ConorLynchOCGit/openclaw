@@ -289,6 +289,32 @@ describe("task foreground delegation", () => {
     expect(mocks.spawn).not.toHaveBeenCalled();
   });
 
+  it("keeps docs and standards research on its native workspace", async () => {
+    const tool = createTaskTool({
+      config: {
+        agents: {
+          entries: {
+            planning: { subagents: { allowAgents: ["docs-standards-researcher"] } },
+            "docs-standards-researcher": {},
+          },
+        },
+      },
+      agentSessionKey: "agent:planning:main",
+      requesterAgentIdOverride: "planning",
+    });
+    const result = await tool.execute("call", {
+      agentId: "docs-standards-researcher",
+      task: "Inspect official documentation.",
+      checkout: "loaded_system",
+    });
+
+    expect((result as { details?: unknown }).details).toMatchObject({
+      status: "error",
+      error: "loaded-system inspection may only target a source-inspection role",
+    });
+    expect(mocks.spawn).not.toHaveBeenCalled();
+  });
+
   it("keeps waiting through bounded wait-RPC timeouts", async () => {
     mocks.wait
       .mockResolvedValueOnce({ status: "timeout" })
