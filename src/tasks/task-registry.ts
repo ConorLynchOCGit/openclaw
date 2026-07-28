@@ -12,6 +12,7 @@ import {
 export { isParentFlowLinkError } from "./task-registry-common.js";
 export { assertTaskCancellationReadyById, cancelTaskById } from "./task-registry-cancel.js";
 export { maybeDeliverTaskTerminalUpdate } from "./task-registry-delivery.js";
+export { finalizeTaskLineageBeforeRunAbort } from "./task-registry-lineage-cancellation.js";
 export {
   createTaskRecord,
   finalizeTaskRunByRunId,

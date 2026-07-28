@@ -1,5 +1,4 @@
-import { finalizeTaskRunByRunId, listTaskRecordsUnsorted } from "../../tasks/runtime-internal.js";
-import { isTerminalTaskStatus } from "../../tasks/task-executor-policy.js";
+import { finalizeTaskLineageBeforeRunAbort } from "../../tasks/runtime-internal.js";
 import {
   abortChatRunById,
   type ChatAbortControllerEntry,
@@ -118,23 +117,13 @@ export function createChatAbortOps(context: GatewayRequestContext): ChatAbortOps
       if (stopReason === "restart") {
         return true;
       }
-      const activeTasks = listTaskRecordsUnsorted().filter(
-        (task) => task.runId === runId && !isTerminalTaskStatus(task.status),
-      );
-      if (activeTasks.length === 0) {
-        return true;
-      }
       const endedAt = Date.now();
-      finalizeTaskRunByRunId({
+      return finalizeTaskLineageBeforeRunAbort({
         runId,
         status: stopReason === "timeout" ? "timed_out" : "cancelled",
         endedAt,
-        lastEventAt: endedAt,
         error: stopReason === "timeout" ? "Agent run timed out." : "Agent run was cancelled.",
       });
-      return listTaskRecordsUnsorted().every(
-        (task) => task.runId !== runId || isTerminalTaskStatus(task.status),
-      );
     },
   };
 }
