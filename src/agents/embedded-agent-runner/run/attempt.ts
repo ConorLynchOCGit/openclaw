@@ -240,6 +240,7 @@ export async function runEmbeddedAttempt(
     const preparedBundleTools = await prepareEmbeddedAttemptBundleTools({
       agentDir,
       attempt: params,
+      effectiveCwd,
       effectiveWorkspace,
       getCurrentAttemptPluginMetadataSnapshot,
       getProviderRuntimeHandle,
@@ -428,6 +429,7 @@ export async function runEmbeddedAttempt(
           withOwnedSessionWriteLock,
         },
         setup: {
+          effectiveCwd,
           effectiveFsWorkspaceOnly,
           effectiveWorkspace,
           emitPrepStageSummary,

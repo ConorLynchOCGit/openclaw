@@ -42,6 +42,7 @@ function emptyPromptImages(): PromptImageResult {
 
 export async function prepareEmbeddedAttemptPromptExecution(input: {
   attempt: PromptExecutionAttempt;
+  effectiveCwd: string;
   effectiveFsWorkspaceOnly: boolean;
   effectiveWorkspace: string;
   prompt: string;
@@ -81,7 +82,7 @@ export async function prepareEmbeddedAttemptPromptExecution(input: {
 
   return await detectAndLoadPromptImages({
     prompt: input.prompt,
-    workspaceDir: input.effectiveWorkspace,
+    workspaceDir: input.effectiveCwd,
     model: attempt.model,
     existingImages: attempt.images,
     imageOrder: attempt.imageOrder,

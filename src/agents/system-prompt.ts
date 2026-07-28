@@ -692,6 +692,8 @@ export function appendModelIdentitySystemPrompt(params: {
 
 export function buildAgentSystemPrompt(params: {
   workspaceDir: string;
+  /** Runtime working directory when identity/bootstrap lives in another workspace. */
+  cwd?: string;
   defaultThinkLevel?: ThinkLevel;
   reasoningLevel?: ReasoningLevel;
   extraSystemPrompt?: string;
@@ -967,6 +969,7 @@ export function buildAgentSystemPrompt(params: {
     : (params.silentReplyPromptMode ?? "generic");
   const sandboxContainerWorkspace = params.sandboxInfo?.containerWorkspaceDir?.trim();
   const sanitizedWorkspaceDir = sanitizeForPromptLiteral(params.workspaceDir);
+  const sanitizedCwd = sanitizeForPromptLiteral(params.cwd?.trim() || params.workspaceDir);
   const sanitizedSandboxContainerWorkspace = sandboxContainerWorkspace
     ? sanitizeForPromptLiteral(sandboxContainerWorkspace)
     : "";
@@ -978,11 +981,17 @@ export function buildAgentSystemPrompt(params: {
   const displayWorkspaceDir =
     params.sandboxInfo?.enabled && sanitizedSandboxContainerWorkspace
       ? sanitizedSandboxContainerWorkspace
-      : sanitizedWorkspaceDir;
+      : sanitizedCwd;
+  const identityWorkspaceGuidance =
+    !params.sandboxInfo?.enabled && sanitizedWorkspaceDir !== sanitizedCwd
+      ? `Agent workspace (bootstrap/context): ${sanitizedWorkspaceDir}`
+      : "";
   const workspaceGuidance =
     params.sandboxInfo?.enabled && sanitizedSandboxContainerWorkspace
       ? `File tools use host workspace ${sanitizedWorkspaceDir}. exec uses container ${sanitizedSandboxContainerWorkspace} or relative workdir paths; never host paths. Prefer relative paths for both.`
-      : "Single global file workspace unless explicitly told otherwise.";
+      : sanitizedWorkspaceDir !== sanitizedCwd
+        ? "File tools resolve relative paths from the task working directory. The configured role bootstrap and capability selection remain unchanged."
+        : "Single global file workspace unless explicitly told otherwise.";
   const workspaceOnlyGuidance =
     params.fsWorkspaceOnly === true
       ? "tools.fs.workspaceOnly ON: file-tool scratch/temp/meta stays in workspace, preferably `.openclaw/tmp/`. If file tools need it later, never exec-write `/tmp`; use workspace path."
@@ -1061,6 +1070,7 @@ export function buildAgentSystemPrompt(params: {
     proactiveSubagentOrchestration,
     sandboxInfo: params.sandboxInfo,
     displayWorkspaceDir,
+    identityWorkspaceGuidance,
     workspaceGuidance,
     workspaceOnlyGuidance,
     workspaceNotes,
@@ -1196,6 +1206,7 @@ export function buildAgentSystemPrompt(params: {
       userTimezone ? "Need date/time/day: `session_status`." : "",
       "## Workspace",
       `Working directory: ${displayWorkspaceDir}`,
+      identityWorkspaceGuidance,
       workspaceGuidance,
       workspaceOnlyGuidance,
       ...workspaceNotes,

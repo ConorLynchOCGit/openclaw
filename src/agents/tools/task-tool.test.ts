@@ -58,7 +58,10 @@ const config = {
           allowAgents: ["reviewer", "codebase-researcher", "operator-intent-researcher"],
         },
       },
-      reviewer: { subagents: { allowAgents: ["review-specialist"] } },
+      reviewer: {
+        subagents: { allowAgents: ["review-specialist"] },
+        executionWorkspace: { type: "loaded-source" as const, access: "inspect" as const },
+      },
       coding: {
         thinkingDefault: "high" as const,
         executionWorkspace: { type: "loaded-source" as const, access: "modify" as const },
@@ -212,7 +215,7 @@ describe("task foreground delegation", () => {
     expect(mocks.spawn).toHaveBeenCalledWith(
       expect.objectContaining({
         agentId: "codebase-researcher",
-        cwd: undefined,
+        executionWorkspace: { type: "loaded-source", access: "inspect" },
         context: "isolated",
       }),
       expect.any(Object),
@@ -234,12 +237,49 @@ describe("task foreground delegation", () => {
     expect(mocks.spawn).toHaveBeenCalledWith(
       expect.objectContaining({
         agentId: "review-specialist",
-        cwd: undefined,
+        executionWorkspace: { type: "loaded-source", access: "inspect" },
         context: "isolated",
         lightContext: true,
       }),
       expect.any(Object),
     );
+  });
+
+  it("lets Reviewer inspect exact loaded source directly when the task requests it", async () => {
+    const tool = createTaskTool({
+      config,
+      agentSessionKey: "agent:planning:main",
+      requesterAgentIdOverride: "planning",
+    });
+    await tool.execute("call", {
+      agentId: "reviewer",
+      task: "Review one bounded current-source claim.",
+      checkout: "loaded_system",
+    });
+
+    expect(mocks.spawn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "reviewer",
+        executionWorkspace: { type: "loaded-source", access: "inspect" },
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it("keeps an authorized Reviewer in its ordinary workspace when no checkout is requested", async () => {
+    const tool = createTaskTool({
+      config,
+      agentSessionKey: "agent:planning:main",
+      requesterAgentIdOverride: "planning",
+    });
+    await tool.execute("call", {
+      agentId: "reviewer",
+      task: "Review the exact plan artifact.",
+    });
+
+    const [spawnParams] = mocks.spawn.mock.calls[0] ?? [];
+    expect(spawnParams).not.toHaveProperty("executionWorkspace");
+    expect(spawnParams).not.toHaveProperty("cwd");
   });
 
   it("uses the target operator-intent profile with lightweight native context", async () => {
@@ -263,7 +303,7 @@ describe("task foreground delegation", () => {
     );
   });
 
-  it("requires configured loaded-source ownership for semantic checkout requests", async () => {
+  it("requires configured loaded-source authorization for semantic checkout requests", async () => {
     const tool = createTaskTool({
       config: {
         agents: {
@@ -310,7 +350,7 @@ describe("task foreground delegation", () => {
 
     expect((result as { details?: unknown }).details).toMatchObject({
       status: "error",
-      error: "loaded-system inspection may only target a source-inspection role",
+      error: "docs-standards-researcher is not configured for loaded-source inspection",
     });
     expect(mocks.spawn).not.toHaveBeenCalled();
   });

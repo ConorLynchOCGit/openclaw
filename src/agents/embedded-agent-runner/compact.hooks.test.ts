@@ -13,6 +13,7 @@ import {
   contextEngineCompactMock,
   compactWithSafetyTimeoutMock,
   createAgentSessionMock,
+  createBundleLspToolRuntimeMock,
   createPreparedEmbeddedAgentSettingsManagerMock,
   createOpenClawCodingToolsMock,
   enqueueCommandInLaneMock,
@@ -1017,6 +1018,13 @@ describe("compactEmbeddedAgentSessionDirect hooks", () => {
     expectRecordFields(mockCallArg(createPreparedEmbeddedAgentSettingsManagerMock), {
       cwd: "/tmp/task-repo",
       agentDir: "/tmp/agents/main/agent",
+    });
+    expectRecordFields(mockCallArg(createBundleLspToolRuntimeMock), {
+      workspaceDir: "/tmp/task-repo",
+    });
+    expectRecordFields(mockCallArg(buildEmbeddedSystemPromptMock), {
+      workspaceDir: "/tmp/workspace",
+      cwd: "/tmp/task-repo",
     });
   });
 

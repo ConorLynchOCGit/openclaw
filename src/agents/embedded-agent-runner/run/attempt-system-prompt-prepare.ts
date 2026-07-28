@@ -258,6 +258,7 @@ export async function prepareEmbeddedAttemptSystemPrompt(params: {
       config: attempt.config,
       agentId: params.sessionAgentId,
       workspaceDir: params.effectiveWorkspace,
+      cwd: params.effectiveCwd,
       defaultThinkLevel: attempt.thinkLevel,
       reasoningLevel: attempt.reasoningLevel ?? "off",
       extraSystemPrompt: attempt.extraSystemPrompt,

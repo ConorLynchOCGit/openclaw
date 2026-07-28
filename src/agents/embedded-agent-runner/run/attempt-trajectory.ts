@@ -10,6 +10,7 @@ export async function prepareEmbeddedAttemptTrajectory(input: {
   activeSession: Pick<AgentSession, "sessionId">;
   attempt: EmbeddedRunAttemptParams;
   clientToolCount: number;
+  effectiveCwd: string;
   effectiveToolCount: number;
   effectiveWorkspace: string;
   localModelLeanEnabled: boolean;
@@ -38,11 +39,13 @@ export async function prepareEmbeddedAttemptTrajectory(input: {
         modelId: attempt.modelId,
         modelApi: attempt.model.api,
         workspaceDir: attempt.workspaceDir,
+        cwd: input.effectiveCwd,
       });
   recorder?.recordEvent("session.started", {
     trigger: attempt.trigger,
     sessionFile: attempt.sessionFile,
     workspaceDir: input.effectiveWorkspace,
+    cwd: input.effectiveCwd,
     agentId: input.sessionAgentId,
     messageProvider: attempt.messageProvider,
     messageChannel: attempt.messageChannel,
@@ -57,6 +60,7 @@ export async function prepareEmbeddedAttemptTrajectory(input: {
       env: process.env,
       config: attempt.config,
       workspaceDir: input.effectiveWorkspace,
+      cwd: input.effectiveCwd,
       sessionFile: attempt.sessionFile,
       sessionKey: attempt.sessionKey,
       agentId: input.sessionAgentId,

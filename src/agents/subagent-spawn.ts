@@ -20,6 +20,7 @@ import {
 } from "../channels/thread-bindings-policy.js";
 import { buildSessionCreationStamp } from "../config/sessions/session-entry-provenance.js";
 import type { SessionEntry } from "../config/sessions/types.js";
+import type { AgentExecutionWorkspaceConfig } from "../config/types.agents.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { SubagentSpawnPreparation } from "../context-engine/types.js";
 import { isFastTestRuntimeEnv } from "../infra/env.js";
@@ -63,6 +64,7 @@ import {
 } from "./model-selection.js";
 import { resolveThinkingDefault } from "./model-thinking-default.js";
 import { supportsModelTools } from "./model-tool-support.js";
+import { sanitizeForPromptLiteral } from "./sanitize-for-prompt.js";
 import {
   runSpawnPipeline,
   type SpawnBackendAdapter,
@@ -191,6 +193,8 @@ type SpawnSubagentParams = {
   /** Canonical request hash checked before reusing a host-reserved collector. */
   swarmLaunchRequestFingerprint?: string;
   cwd?: string;
+  /** Trusted semantic checkout request authorized by the target agent profile. */
+  executionWorkspace?: AgentExecutionWorkspaceConfig;
   runTimeoutSeconds?: number;
   thread?: boolean;
   mode?: SpawnSubagentMode;
@@ -1332,26 +1336,36 @@ export async function spawnSubagentDirect(
     const targetAgentDir = resolveAgentDir(cfg, targetAgentId);
     const requesterAgentConfig = resolveAgentConfig(cfg, requesterAgentId);
     const targetAgentConfig = resolveAgentConfig(cfg, targetAgentId);
+    const executionWorkspaceRequest = params.executionWorkspace;
     const executionWorkspaceConfig = targetAgentConfig?.executionWorkspace;
-    if (executionWorkspaceConfig) {
+    if (executionWorkspaceRequest) {
+      if (
+        executionWorkspaceConfig?.type !== executionWorkspaceRequest.type ||
+        executionWorkspaceConfig.access !== executionWorkspaceRequest.access
+      ) {
+        return {
+          status: "forbidden",
+          error: `${targetAgentId} is not authorized for ${executionWorkspaceRequest.access} loaded-source work`,
+        };
+      }
       if (requestedCwd) {
         return {
           status: "forbidden",
           error:
-            "cwd is selected by the target agent executionWorkspace policy; omit the model-authored cwd",
+            "cwd is selected by the requested loaded-source checkout; omit the model-authored cwd",
         };
       }
       if (contextMode !== "isolated") {
         return {
           status: "forbidden",
-          error: "configured loaded-source execution workspaces require isolated context",
+          error: "requested loaded-source checkouts require isolated context",
         };
       }
       if (childRuntime.sandboxed) {
         return {
           status: "forbidden",
           error:
-            "configured loaded-source execution workspaces require a target runtime with native workspace confinement",
+            "requested loaded-source checkouts require a target runtime with native workspace confinement",
         };
       }
     }
@@ -1409,11 +1423,12 @@ export async function spawnSubagentDirect(
     }
     const resolvedModelMetadata = buildResolvedSubagentModelMetadata(resolvedModel);
     let executionWorkspace: MaterializedAgentExecutionWorkspace | undefined;
-    if (executionWorkspaceConfig) {
+    if (executionWorkspaceRequest) {
       try {
         executionWorkspace = await materializeAgentExecutionWorkspace({
           cfg,
           agentId: targetAgentId,
+          request: executionWorkspaceRequest,
           ownerSessionKey: childSessionKey,
           signal: ctx.abortSignal,
         });
@@ -1624,6 +1639,14 @@ export async function spawnSubagentDirect(
       childDepth,
       maxSpawnDepth,
     });
+    if (executionWorkspace) {
+      childSystemPrompt = `${childSystemPrompt}
+
+## Managed Task Checkout
+Working directory: ${sanitizeForPromptLiteral(executionWorkspace.worktree.path)}
+Exact source commit: ${sanitizeForPromptLiteral(executionWorkspace.worktree.baseRef)}
+The runtime created and attested this checkout for the task. The target role profile and configured agent workspace remain the authority for bootstrap and capabilities; this checkout supplies task files only.`;
+    }
     if (params.outputSchema) {
       childSystemPrompt = `${childSystemPrompt}\n\nCall structured_output with {"result": <your final result>} until one payload is accepted, with at most one retry after a rejected attempt. The result value must match the requested JSON Schema. Do not call structured_output again after acceptance.`;
     }

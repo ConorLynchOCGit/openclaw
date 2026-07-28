@@ -21,6 +21,7 @@ type BuildTrajectoryRunMetadataParams = {
   env?: NodeJS.ProcessEnv;
   config?: OpenClawConfig;
   workspaceDir: string;
+  cwd?: string;
   sessionFile?: string;
   sessionKey?: string;
   agentId?: string;
@@ -254,6 +255,7 @@ export function buildTrajectoryRunMetadata(
       invocation: sanitizeSupportSnapshotValue([...process.argv], redaction, "programArguments"),
       entrypoint: process.argv[1] ? redactPathForSupport(process.argv[1], redaction) : undefined,
       workspaceDir: redactPathForSupport(params.workspaceDir, redaction),
+      cwd: params.cwd ? redactPathForSupport(params.cwd, redaction) : undefined,
       sessionFile: params.sessionFile
         ? redactPathForSupport(params.sessionFile, redaction)
         : undefined,

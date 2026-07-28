@@ -66,7 +66,6 @@ export async function preparePluginHarnessPromptImages(params: {
 
   const workspace = await resolveAttemptWorkspaceSandbox({
     ...runParams,
-    cwd: undefined,
     sessionId: runtime.sessionId,
     sessionKey: runtime.sessionKey,
     workspaceDir: runtime.workspaceDir,
@@ -77,14 +76,14 @@ export async function preparePluginHarnessPromptImages(params: {
     mediaImageLayout: persistedMessage
       ? readPersistedMediaImageLayout(persistedMessage)
       : undefined,
-    workspaceDir: workspace.effectiveWorkspace,
+    workspaceDir: workspace.effectiveCwd,
     model: runtime.model,
     existingImages: runParams.images,
     imageOrder: runParams.imageOrder,
     maxBytes: MAX_IMAGE_BYTES,
     maxDimensionPx: resolveImageSanitizationLimits(runParams.config).maxDimensionPx,
     localRoots: workspace.effectiveFsWorkspaceOnly
-      ? [workspace.effectiveWorkspace, workspace.resolvedWorkspace]
+      ? [workspace.effectiveCwd, workspace.effectiveWorkspace, workspace.resolvedWorkspace]
       : undefined,
     workspaceOnly: workspace.effectiveFsWorkspaceOnly,
     sandbox:

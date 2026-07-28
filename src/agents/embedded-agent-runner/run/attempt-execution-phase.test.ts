@@ -93,6 +93,7 @@ function createFixture() {
       withOwnedSessionWriteLock: vi.fn(),
     },
     setup: {
+      effectiveCwd: "/task-repo",
       effectiveFsWorkspaceOnly: false,
       effectiveWorkspace: "/workspace",
       emitPrepStageSummary,

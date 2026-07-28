@@ -1031,7 +1031,7 @@ async function compactEmbeddedAgentSessionDirectOnce(
       : undefined;
     const bundleLspRuntime = toolsEnabled
       ? await createBundleLspToolRuntime({
-          workspaceDir: effectiveWorkspace,
+          workspaceDir: effectiveCwd,
           cfg: params.config,
           reservedToolNames: [
             ...tools.map((tool) => tool.name),
@@ -1210,6 +1210,7 @@ async function compactEmbeddedAgentSessionDirectOnce(
         config: params.config,
         agentId: sessionAgentId,
         workspaceDir: effectiveWorkspace,
+        cwd: effectiveCwd,
         defaultThinkLevel,
         reasoningLevel: params.reasoningLevel ?? "off",
         extraSystemPrompt: params.extraSystemPrompt,

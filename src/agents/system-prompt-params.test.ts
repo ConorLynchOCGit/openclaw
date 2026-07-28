@@ -79,6 +79,34 @@ describe("buildSystemPromptParams", () => {
     expect(runtimeInfo.repoRoot).toBe(repoRoot);
   });
 
+  it("prefers the task cwd when both cwd and the agent workspace are repositories", async () => {
+    const temp = await makeTempDir("split-repos");
+    const workspaceRepo = path.join(temp, "identity-repo");
+    const taskRepo = path.join(temp, "task-repo");
+    await makeRepoRoot(workspaceRepo);
+    await makeRepoRoot(taskRepo);
+
+    const { runtimeInfo } = buildParams({ workspaceDir: workspaceRepo, cwd: taskRepo });
+
+    expect(runtimeInfo.repoRoot).toBe(taskRepo);
+  });
+
+  it("prefers the task cwd over a configured identity repo root", async () => {
+    const temp = await makeTempDir("task-over-config");
+    const configuredRepo = path.join(temp, "configured-repo");
+    const taskRepo = path.join(temp, "task-repo");
+    await makeRepoRoot(configuredRepo);
+    await makeRepoRoot(taskRepo);
+
+    const { runtimeInfo } = buildParams({
+      config: { agents: { defaults: { repoRoot: configuredRepo } } },
+      workspaceDir: configuredRepo,
+      cwd: taskRepo,
+    });
+
+    expect(runtimeInfo.repoRoot).toBe(taskRepo);
+  });
+
   it("uses configured repoRoot when valid", async () => {
     const temp = await makeTempDir("config");
     const repoRoot = path.join(temp, "config-root");

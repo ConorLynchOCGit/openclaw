@@ -83,7 +83,7 @@ export const AGENT_FIELD_HELP: Record<string, string> = {
   "agents.entries.*.models.*.agentRuntime.id":
     'Per-agent model runtime id: "openclaw", "auto", a registered plugin harness id such as "codex", or a supported CLI backend alias such as "claude-cli".',
   "agents.entries.*.executionWorkspace":
-    "Optional trusted task-workspace policy for delegated native sub-agent runs. The runtime selects the workspace; models cannot provide its host path or source ref.",
+    "Optional trusted authorization ceiling for task-requested loaded-source workspaces. Ordinary runs remain in the configured agent workspace.",
   "agents.entries.*.executionWorkspace.type":
     'Execution workspace source. "loaded-source" materializes the exact source commit embedded in the executing OpenClaw package through native managed worktrees.',
   "agents.entries.*.executionWorkspace.access":

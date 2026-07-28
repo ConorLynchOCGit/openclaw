@@ -52,6 +52,7 @@ describe("trajectory runtime", () => {
       modelId: "gpt-5.4",
       modelApi: "responses",
       workspaceDir: "/tmp/workspace",
+      cwd: "/tmp/task-repo",
       writer: {
         filePath: "/tmp/session.trajectory.jsonl",
         write: (line) => {
@@ -80,6 +81,8 @@ describe("trajectory runtime", () => {
     expect(parsed.type).toBe("context.compiled");
     expect(parsed.source).toBe("runtime");
     expect(parsed.sessionId).toBe("session-1");
+    expect(parsed.workspaceDir).toBe("/tmp/workspace");
+    expect(parsed.cwd).toBe("/tmp/task-repo");
     expect(parsed.data.tools).toEqual([
       { name: "a-tool", description: "alpha", parameters: { a: 1 } },
       { name: "z-tool", parameters: { z: 1 } },

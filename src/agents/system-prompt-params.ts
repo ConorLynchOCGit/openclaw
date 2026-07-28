@@ -82,6 +82,10 @@ export function resolveSystemPromptRepoRoot(params: {
   workspaceDir?: string;
   cwd?: string;
 }): string | undefined {
+  const taskRoot = params.cwd?.trim() ? findGitRoot(path.resolve(params.cwd)) : undefined;
+  if (taskRoot) {
+    return taskRoot;
+  }
   const configured = params.config?.agents?.defaults?.repoRoot?.trim();
   if (configured) {
     try {
@@ -94,7 +98,9 @@ export function resolveSystemPromptRepoRoot(params: {
       // ignore invalid config path
     }
   }
-  const candidates = normalizeStringEntries([params.workspaceDir ?? "", params.cwd ?? ""]);
+  // Runtime cwd owns repository execution. The agent workspace can be a
+  // separate identity/bootstrap repository and must not shadow the task repo.
+  const candidates = normalizeStringEntries([params.workspaceDir ?? ""]);
   const seen = new Set<string>();
   for (const candidate of candidates) {
     const resolved = path.resolve(candidate);

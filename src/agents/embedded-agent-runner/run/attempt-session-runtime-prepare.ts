@@ -208,6 +208,7 @@ export async function prepareEmbeddedAttemptSessionRuntime(input: {
     activeSession,
     attempt,
     clientToolCount: preparedAgentSession.clientToolDefs.length,
+    effectiveCwd: input.effectiveCwd,
     effectiveToolCount: input.trajectory.effectiveToolCount,
     effectiveWorkspace: input.effectiveWorkspace,
     localModelLeanEnabled: input.trajectory.localModelLeanEnabled,

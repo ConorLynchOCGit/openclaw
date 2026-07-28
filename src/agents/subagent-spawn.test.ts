@@ -267,7 +267,7 @@ describe("spawnSubagentDirect seam flow", () => {
     expect(result.childSessionKey).toMatch(/^agent:task-manager:subagent:/);
   });
 
-  it("binds configured loaded-source work to the native child session", async () => {
+  it("binds explicitly requested loaded-source work to the native child session", async () => {
     const store: Record<string, Record<string, unknown>> = {};
     hoisted.updateSessionStoreMock.mockImplementation(
       async (
@@ -316,7 +316,11 @@ describe("spawnSubagentDirect seam flow", () => {
     const signal = new AbortController().signal;
 
     const result = await spawnSubagentDirect(
-      { task: "inspect exact source", agentId: "codebase-researcher" },
+      {
+        task: "inspect exact source",
+        agentId: "codebase-researcher",
+        executionWorkspace: { type: "loaded-source", access: "inspect" },
+      },
       { agentSessionKey: "agent:planning:main", abortSignal: signal },
     );
 
@@ -324,6 +328,7 @@ describe("spawnSubagentDirect seam flow", () => {
     expect(hoisted.materializeAgentExecutionWorkspaceMock).toHaveBeenCalledWith({
       cfg: hoisted.configOverride,
       agentId: "codebase-researcher",
+      request: { type: "loaded-source", access: "inspect" },
       ownerSessionKey: result.childSessionKey,
       signal,
     });
@@ -340,6 +345,33 @@ describe("spawnSubagentDirect seam flow", () => {
       childSessionKey: result.childSessionKey,
       workspaceDir: "/srv/instance/workspace",
     });
+    const launchParams = requireRecord(gatewayRequest("agent").params);
+    expect(launchParams.extraSystemPrompt).toContain(`Working directory: ${worktree.path}`);
+    expect(launchParams.extraSystemPrompt).toContain(`Exact source commit: ${worktree.baseRef}`);
+  });
+
+  it("does not materialize an authorized checkout unless the task requests it", async () => {
+    hoisted.configOverride = createConfigOverride({
+      agents: {
+        defaults: { workspace: "/srv/instance/workspace" },
+        list: [
+          { id: "planning", subagents: { allowAgents: ["reviewer"] } },
+          {
+            id: "reviewer",
+            workspace: "/srv/instance/workspace",
+            executionWorkspace: { type: "loaded-source", access: "inspect" },
+          },
+        ],
+      },
+    });
+
+    const result = await spawnSubagentDirect(
+      { task: "review an ordinary workspace artifact", agentId: "reviewer" },
+      { agentSessionKey: "agent:planning:main" },
+    );
+
+    expect(result.status).toBe("accepted");
+    expect(hoisted.materializeAgentExecutionWorkspaceMock).not.toHaveBeenCalled();
   });
 
   it("rejects failed managed-worktree setup before session persistence or inference", async () => {
@@ -359,7 +391,11 @@ describe("spawnSubagentDirect seam flow", () => {
     );
 
     const result = await spawnSubagentDirect(
-      { task: "change exact source", agentId: "coding" },
+      {
+        task: "change exact source",
+        agentId: "coding",
+        executionWorkspace: { type: "loaded-source", access: "modify" },
+      },
       { agentSessionKey: "agent:main:main" },
     );
 
@@ -395,7 +431,12 @@ describe("spawnSubagentDirect seam flow", () => {
       });
 
       const result = await spawnSubagentDirect(
-        { task: "change exact source", agentId: "coding", ...conflict },
+        {
+          task: "change exact source",
+          agentId: "coding",
+          executionWorkspace: { type: "loaded-source", access: "modify" },
+          ...conflict,
+        },
         { agentSessionKey: "agent:main:main" },
       );
 
@@ -437,7 +478,11 @@ describe("spawnSubagentDirect seam flow", () => {
     hoisted.updateSessionStoreMock.mockRejectedValueOnce(new Error("store unavailable"));
 
     const result = await spawnSubagentDirect(
-      { task: "change exact source", agentId: "coding" },
+      {
+        task: "change exact source",
+        agentId: "coding",
+        executionWorkspace: { type: "loaded-source", access: "modify" },
+      },
       { agentSessionKey: "agent:main:main" },
     );
 
@@ -484,7 +529,11 @@ describe("spawnSubagentDirect seam flow", () => {
     });
 
     const result = await spawnSubagentDirect(
-      { task: "change exact source", agentId: "coding" },
+      {
+        task: "change exact source",
+        agentId: "coding",
+        executionWorkspace: { type: "loaded-source", access: "modify" },
+      },
       { agentSessionKey: "agent:main:main", abortSignal: controller.signal },
     );
 

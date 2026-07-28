@@ -63,6 +63,14 @@ describe("runEmbeddedAttempt cwd/workspace split", () => {
       | { cwd?: string }
       | undefined;
     expect(resourceLoaderInit?.cwd).toBe(taskRepo);
+
+    const promptInput = hoisted.embeddedSystemPromptInputs.at(-1) as
+      | { cwd?: string; workspaceDir?: string }
+      | undefined;
+    expect(promptInput).toMatchObject({
+      cwd: taskRepo,
+      workspaceDir: bootstrapCall?.workspaceDir,
+    });
   });
 
   it("forwards native and routable channel targets into runtime tools", async () => {

@@ -73,6 +73,7 @@ describe("agent execution workspace", () => {
       const result = await materializeAgentExecutionWorkspace({
         cfg: config(access),
         agentId: "worker",
+        request: { type: "loaded-source", access },
         ownerSessionKey: "agent:worker:subagent:1",
         signal,
         deps: {
@@ -100,6 +101,17 @@ describe("agent execution workspace", () => {
       });
     },
   );
+
+  it("rejects a request that exceeds the target role authorization", async () => {
+    await expect(
+      materializeAgentExecutionWorkspace({
+        cfg: config("inspect"),
+        agentId: "worker",
+        request: { type: "loaded-source", access: "modify" },
+        ownerSessionKey: "agent:worker:subagent:1",
+      }),
+    ).rejects.toThrow("worker is not authorized for modify loaded-source work");
+  });
 
   it("uses native forced removal for a worktree whose session admission failed", async () => {
     const removeWorktree = vi.fn(async () => ({ removed: true }));

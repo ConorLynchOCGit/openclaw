@@ -28,6 +28,7 @@ type TrajectoryRuntimeInit = {
   modelId?: string;
   modelApi?: string | null;
   workspaceDir?: string;
+  cwd?: string;
   writer?: TrajectoryRuntimeWriter;
 };
 
@@ -334,6 +335,7 @@ export function createTrajectoryRuntimeRecorder(
       sessionKey: params.sessionKey,
       runId: params.runId,
       workspaceDir: params.workspaceDir,
+      ...(params.cwd ? { cwd: params.cwd } : {}),
       provider: params.provider,
       modelId: params.modelId,
       modelApi: params.modelApi,

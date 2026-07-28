@@ -39,9 +39,9 @@ export type AgentRuntimeConfig =
 
 export type AgentExecutionWorkspaceConfig = {
   /**
-   * Run delegated work from the exact source commit embedded in the executing
-   * OpenClaw package while retaining this agent's configured workspace for
-   * identity, memory, and skills.
+   * Authorize a delegated task to run from the exact source commit embedded in
+   * the executing OpenClaw package. The task must request this checkout
+   * explicitly; configuring the capability does not change ordinary runs.
    */
   type: "loaded-source";
   /** Inspect skips repository setup; modify runs trusted isolated setup. */

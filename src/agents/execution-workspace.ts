@@ -36,13 +36,19 @@ export function resolveAgentExecutionWorkspaceConfig(
 export async function materializeAgentExecutionWorkspace(params: {
   cfg: OpenClawConfig;
   agentId: string;
+  request?: AgentExecutionWorkspaceConfig;
   ownerSessionKey: string;
   signal?: AbortSignal;
   deps?: Partial<ExecutionWorkspaceDeps>;
 }): Promise<MaterializedAgentExecutionWorkspace | undefined> {
-  const config = resolveAgentExecutionWorkspaceConfig(params.cfg, params.agentId);
-  if (!config) {
+  if (!params.request) {
     return undefined;
+  }
+  const config = resolveAgentExecutionWorkspaceConfig(params.cfg, params.agentId);
+  if (config?.type !== params.request.type || config.access !== params.request.access) {
+    throw new Error(
+      `${params.agentId} is not authorized for ${params.request.access} loaded-source work`,
+    );
   }
   const deps = { ...defaultDeps, ...params.deps };
   const source = await deps.resolveLoadedSystemSource();
@@ -55,7 +61,7 @@ export async function materializeAgentExecutionWorkspace(params: {
     runSetupScript: config.access === "modify",
     signal: params.signal,
   });
-  return { config, worktree };
+  return { config: params.request, worktree };
 }
 
 export async function removeAgentExecutionWorkspaceAfterFailedAdmission(

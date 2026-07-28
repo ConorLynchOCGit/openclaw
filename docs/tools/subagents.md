@@ -388,9 +388,12 @@ Use `agents_list` to see which agent ids are currently allowed for
 model and embedded runtime metadata so callers can distinguish OpenClaw, Codex
 app-server, and other configured native runtimes. When a target declares
 `agents.entries.*.executionWorkspace`, the response also reports that trusted
-policy. `sessions_spawn` then keeps the target's normal agent workspace for
-identity and bootstrap context while OpenClaw supplies the exact loaded-generation
-managed worktree as the task working directory.
+authorization ceiling. A hidden native `sessions_spawn` call may request
+`checkout: "loaded_system"` only for an inspect-authorized target. Ordinary
+calls keep the target's configured agent workspace as both bootstrap source and
+working directory. Requested loaded-source calls keep that bootstrap source
+while OpenClaw supplies the exact loaded-generation managed worktree as task
+`cwd`.
 
 `allowAgents` entries must point at configured agent ids in `agents.entries.*`.
 `["*"]` means any configured target agent plus the requester. If an agent config

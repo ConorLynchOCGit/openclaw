@@ -63,6 +63,7 @@ describe("trajectory metadata", () => {
           OPENCLAW_STATE_DIR: "/Users/tester/.openclaw",
         },
         workspaceDir: "/Users/tester/project",
+        cwd: "/Users/tester/task-repo",
         sessionFile: "/Users/tester/project/session.jsonl",
         timeoutMs: 30_000,
       });
@@ -71,6 +72,7 @@ describe("trajectory metadata", () => {
         invocation?: unknown[];
         entrypoint?: string;
         workspaceDir?: string;
+        cwd?: string;
         sessionFile?: string;
       };
       expect(harness.invocation).toEqual([
@@ -82,6 +84,7 @@ describe("trajectory metadata", () => {
       ]);
       expect(harness.entrypoint).toBe("~/project/openclaw.js");
       expect(harness.workspaceDir).toBe("~/project");
+      expect(harness.cwd).toBe("~/task-repo");
       expect(harness.sessionFile).toBe("~/project/session.jsonl");
     } finally {
       process.argv = originalArgv;

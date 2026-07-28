@@ -26,6 +26,7 @@ type PreparedToolBase = ReturnType<typeof prepareEmbeddedAttemptToolBase>;
 export async function prepareEmbeddedAttemptBundleTools(params: {
   agentDir: string;
   attempt: EmbeddedRunAttemptParams;
+  effectiveCwd: string;
   effectiveWorkspace: string;
   getCurrentAttemptPluginMetadataSnapshot: AttemptSetup["getCurrentAttemptPluginMetadataSnapshot"];
   getProviderRuntimeHandle: AttemptSetup["getProviderRuntimeHandle"];
@@ -115,7 +116,7 @@ export async function prepareEmbeddedAttemptBundleTools(params: {
       });
     bundleLspRuntime = bundleLspEnabled
       ? await createBundleLspToolRuntime({
-          workspaceDir: params.effectiveWorkspace,
+          workspaceDir: params.effectiveCwd,
           cfg: params.attempt.config,
           manifestRegistry: bundleManifestRegistry,
           reservedToolNames: [

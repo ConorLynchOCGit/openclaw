@@ -64,6 +64,7 @@ describe("prepareEmbeddedAttemptBundleTools", () => {
         runtimePlan: {},
         sessionId: "session",
       },
+      effectiveCwd: "/tmp/task-repo",
       effectiveWorkspace: "/tmp/workspace",
       getCurrentAttemptPluginMetadataSnapshot: () => undefined,
       getProviderRuntimeHandle: () => undefined,
@@ -82,6 +83,9 @@ describe("prepareEmbeddedAttemptBundleTools", () => {
     await expect(prepareEmbeddedAttemptBundleTools(input)).rejects.toThrow("bundle policy failed");
     expect(mocks.applyFinalEffectiveToolPolicy).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceDir: "/tmp/workspace" }),
+    );
+    expect(mocks.createBundleLspToolRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceDir: "/tmp/task-repo" }),
     );
     expect(disposeMcp).toHaveBeenCalledOnce();
     expect(disposeLsp).toHaveBeenCalledOnce();

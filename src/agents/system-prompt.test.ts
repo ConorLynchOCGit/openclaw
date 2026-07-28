@@ -1445,6 +1445,18 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt.match(/## Conversation Context/g)).toHaveLength(1);
   });
 
+  it("distinguishes the task working directory from the agent workspace", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/srv/openclaw/agent-workspace",
+      cwd: "/srv/openclaw/worktrees/task-1",
+    });
+
+    expect(prompt).toContain("Working directory: /srv/openclaw/worktrees/task-1");
+    expect(prompt).toContain("Agent workspace (bootstrap/context): /srv/openclaw/agent-workspace");
+    expect(prompt).toContain("File tools resolve relative paths from the task working directory.");
+    expect(prompt).not.toContain("memory and skills come from the agent workspace");
+  });
+
   it("describes sandboxed runtime and elevated when allowed", () => {
     const prompt = buildAgentSystemPrompt({
       workspaceDir: "/tmp/openclaw",

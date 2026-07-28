@@ -23,6 +23,7 @@ export type TrajectoryEvent = {
   sessionKey?: string;
   runId?: string;
   workspaceDir?: string;
+  cwd?: string;
   provider?: string;
   modelId?: string;
   modelApi?: string | null;

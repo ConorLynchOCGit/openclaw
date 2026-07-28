@@ -45,6 +45,7 @@ function createInput(overrides: Partial<PromptExecutionInput> = {}): PromptExecu
       sessionFile: "/tmp/session.jsonl",
       sessionKey: "agent:main:session-1",
     },
+    effectiveCwd: "/tmp/workspace",
     effectiveFsWorkspaceOnly: true,
     effectiveWorkspace: "/tmp/workspace",
     prompt: "inspect image.png",
@@ -159,6 +160,20 @@ describe("prepareEmbeddedAttemptPromptExecution", () => {
     expect(hoisted.installPromptSubmissionLockRelease).toHaveBeenCalledOnce();
     expect(hoisted.detectAndLoadPromptImages).toHaveBeenCalledWith(
       expect.objectContaining({ sandbox: undefined }),
+    );
+  });
+
+  it("resolves prompt-relative images from the task cwd", async () => {
+    const input = createInput({
+      effectiveCwd: "/tmp/task-repo",
+      effectiveWorkspace: "/tmp/agent-workspace",
+      sandbox: null,
+    });
+
+    await prepareEmbeddedAttemptPromptExecution(input);
+
+    expect(hoisted.detectAndLoadPromptImages).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceDir: "/tmp/task-repo" }),
     );
   });
 

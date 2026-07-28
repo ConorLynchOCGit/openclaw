@@ -170,6 +170,10 @@ function createSessionsSpawnToolSchema(params: {
       Type.String({ description: "Thinking override; unavailable with visible=true." }),
     ),
     cwd: Type.Optional(Type.String()),
+    checkout: optionalStringEnum(["loaded_system"] as const, {
+      description:
+        "Use the target role's configured inspect-only checkout of the exact loaded OpenClaw source. Native hidden subagent runs only.",
+    }),
     ...(params.threadAvailable
       ? {
           thread: Type.Optional(
@@ -427,10 +431,34 @@ export function createSessionsSpawnTool(
       const executionWorkspaceConfig = cfg
         ? resolveAgentExecutionWorkspaceConfig(cfg, targetAgentId)
         : undefined;
+      const checkout = readStringParam(params, "checkout");
+      const requestsLoadedSource = checkout === "loaded_system";
+      if (checkout && !requestsLoadedSource) {
+        return jsonResult({
+          status: "error",
+          error: `unsupported sessions_spawn checkout: ${checkout}`,
+        });
+      }
+      if (
+        requestsLoadedSource &&
+        (executionWorkspaceConfig?.type !== "loaded-source" ||
+          executionWorkspaceConfig.access !== "inspect")
+      ) {
+        return jsonResult({
+          status: "forbidden",
+          error: `${targetAgentId} is not configured for loaded-source inspection`,
+        });
+      }
       const resumeSessionId = readStringParam(params, "resumeSessionId");
       const modelOverride = normalizeToolModelOverride(readStringParam(params, "model"));
       const thinkingOverrideRaw = readStringParam(params, "thinking");
       const cwd = readStringParam(params, "cwd");
+      if (requestsLoadedSource && cwd) {
+        return jsonResult({
+          status: "forbidden",
+          error: "cwd is selected by the requested loaded-source checkout",
+        });
+      }
       const mode = params.mode === "run" || params.mode === "session" ? params.mode : undefined;
       const cleanup =
         params.cleanup === "keep" || params.cleanup === "delete" ? params.cleanup : "keep";
@@ -441,19 +469,18 @@ export function createSessionsSpawnTool(
       const streamTo = runtime === "acp" && params.streamTo === "parent" ? "parent" : undefined;
       const lightContext = params.lightContext === true;
       const roleContext = requestedAgentId ? { role: requestedAgentId } : {};
-      if (executionWorkspaceConfig && runtime === "acp") {
+      if (requestsLoadedSource && runtime === "acp") {
         return jsonResult({
           status: "forbidden",
           error:
-            'configured loaded-source execution workspaces require runtime="subagent"; ACP cwd remains backend-owned',
+            'requested loaded-source checkouts require runtime="subagent"; ACP cwd remains backend-owned',
           ...roleContext,
         });
       }
-      if (executionWorkspaceConfig && params.visible === true) {
+      if (requestsLoadedSource && params.visible === true) {
         return jsonResult({
           status: "forbidden",
-          error:
-            "configured loaded-source execution workspaces require a hidden native subagent run",
+          error: "requested loaded-source checkouts require a hidden native subagent run",
           ...roleContext,
         });
       }
@@ -598,6 +625,9 @@ export function createSessionsSpawnTool(
               ? params[SWARM_CODE_MODE_REQUEST_FINGERPRINT]
               : undefined,
           cwd,
+          ...(requestsLoadedSource
+            ? { executionWorkspace: { type: "loaded-source", access: "inspect" } as const }
+            : {}),
           thread,
           mode,
           cleanup,

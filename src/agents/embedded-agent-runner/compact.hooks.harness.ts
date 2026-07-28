@@ -189,6 +189,11 @@ function createMockToolDefinitions(tools: unknown[] = []) {
   });
 }
 export const createOpenClawCodingToolsMock = vi.fn(() => []);
+export const createBundleLspToolRuntimeMock = vi.fn(async () => ({
+  tools: [],
+  sessions: [],
+  dispose: vi.fn(async () => {}),
+}));
 const buildEmbeddedExtensionFactoriesMock = vi.fn(() => []);
 export const guardSessionManagerMock = vi.fn(() => ({
   flushPendingToolResults: vi.fn(),
@@ -585,6 +590,7 @@ export function resetCompactHooksHarnessMocks(): void {
   resetCompactSessionStateMocks();
   createOpenClawCodingToolsMock.mockReset();
   createOpenClawCodingToolsMock.mockReturnValue([]);
+  createBundleLspToolRuntimeMock.mockClear();
   guardSessionManagerMock.mockReset();
   guardSessionManagerMock.mockReturnValue({
     flushPendingToolResults: vi.fn(),
@@ -851,12 +857,8 @@ export async function loadCompactHooksHarness(): Promise<{
     })),
   }));
 
-  vi.doMock("../bundle-lsp-runtime.js", () => ({
-    createBundleLspToolRuntime: vi.fn(async () => ({
-      tools: [],
-      sessions: [],
-      dispose: vi.fn(async () => {}),
-    })),
+  vi.doMock("../agent-bundle-lsp-runtime.js", () => ({
+    createBundleLspToolRuntime: createBundleLspToolRuntimeMock,
   }));
 
   vi.doMock("../docs-path.js", () => ({

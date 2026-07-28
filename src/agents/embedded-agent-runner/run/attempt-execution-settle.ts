@@ -200,6 +200,7 @@ export async function runEmbeddedAttemptSettledPhase(
         toolResultPromptProjectionState,
       },
       execution: {
+        effectiveCwd: input.setup.effectiveCwd,
         effectiveFsWorkspaceOnly: input.setup.effectiveFsWorkspaceOnly,
         effectiveWorkspace: input.setup.effectiveWorkspace,
         sandbox: input.setup.sandbox,

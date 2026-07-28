@@ -57,6 +57,7 @@ export type EmbeddedAttemptExecutionPhaseInput = {
   >;
   setup: Pick<
     PreparedSetup,
+    | "effectiveCwd"
     | "effectiveFsWorkspaceOnly"
     | "effectiveWorkspace"
     | "emitPrepStageSummary"

@@ -652,10 +652,10 @@ describe("sessions_spawn tool", () => {
       config: {
         agents: {
           list: [
-            { id: "main", subagents: { allowAgents: ["coding"] } },
+            { id: "main", subagents: { allowAgents: ["codebase-researcher"] } },
             {
-              id: "coding",
-              executionWorkspace: { type: "loaded-source", access: "modify" },
+              id: "codebase-researcher",
+              executionWorkspace: { type: "loaded-source", access: "inspect" },
             },
           ],
         },
@@ -665,8 +665,9 @@ describe("sessions_spawn tool", () => {
     });
 
     const result = await tool.execute("loaded-source-unsupported", {
-      task: "change source",
-      agentId: "coding",
+      task: "inspect source",
+      agentId: "codebase-researcher",
+      checkout: "loaded_system",
       ...extra,
     });
 

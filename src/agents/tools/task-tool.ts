@@ -30,8 +30,6 @@ const TASK_WAIT_POLL_MS = 60_000;
 const TASK_RESULT_INLINE_MAX_CHARS = 1_800;
 const PLANNING_REVIEW_RESULT_INLINE_MAX_CHARS = 12_000;
 const CODING_AGENT_IDS = new Set(["coding", "execution-coding"]);
-const SOURCE_RESEARCH_AGENT_IDS = new Set(["codebase-researcher", "review-specialist"]);
-const FIXED_TASK_CWD_REQUESTER_AGENT_IDS = new Set(["planning", "reviewer"]);
 const DEFAULT_LIGHT_CONTEXT_AGENT_IDS = new Set([
   "codebase-researcher",
   "docs-standards-researcher",
@@ -91,10 +89,7 @@ function resolveAllowedAgentIds(params: {
   }).allowedIds;
 }
 
-function createTaskSchema(params: {
-  allowedAgentIds: readonly string[];
-  allowArbitraryCwd: boolean;
-}) {
+function createTaskSchema(params: { allowedAgentIds: readonly string[] }) {
   const allowedDescription =
     params.allowedAgentIds.length > 0
       ? ` Allowed for this caller: ${params.allowedAgentIds.join(", ")}.`
@@ -121,20 +116,10 @@ function createTaskSchema(params: {
           'Cross-agent work is always isolated. "fork" is valid only for same-agent continuation.',
       }),
     ),
-    ...(params.allowArbitraryCwd
-      ? {
-          cwd: Type.Optional(
-            Type.String({
-              description:
-                "Optional native task cwd. Omit for roles whose configured execution workspace owns cwd.",
-            }),
-          ),
-        }
-      : {}),
     checkout: Type.Optional(
       Type.Literal("loaded_system", {
         description:
-          "Require the target source-inspection role's configured read-only loaded-source workspace.",
+          "Run this task in the exact loaded-source checkout when the target role authorizes inspect access.",
       }),
     ),
     lightContext: Type.Optional(
@@ -464,12 +449,7 @@ export function createTaskTool(
     description:
       "Run one OpenClaw role as a foreground child and return its final result or exact native transcript pointers. Give the child one bounded decision-changing question, exact refs, exclusions, and an output contract. Independent task calls may run in parallel in the same turn. Use checkout=loaded_system only for configured source-inspection roles and systemChange=true only for Main-to-Coding work. Do not call sessions_yield after task.",
     executionMode: "parallel",
-    parameters: createTaskSchema({
-      allowedAgentIds,
-      allowArbitraryCwd: !FIXED_TASK_CWD_REQUESTER_AGENT_IDS.has(
-        requesterAgentId?.trim().toLowerCase() ?? "",
-      ),
-    }),
+    parameters: createTaskSchema({ allowedAgentIds }),
     execute: async (_toolCallId, args, signal) => {
       const params = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
       const agentId = readStringParam(params, "agentId", { required: true });
@@ -489,18 +469,11 @@ export function createTaskTool(
         return jsonResult({ status: "error", error: contextError });
       }
 
-      const cwd = readStringParam(params, "cwd");
       const checkout = readStringParam(params, "checkout");
       const requestsInspection = checkout === "loaded_system";
       const requestsSystemChange = params.systemChange === true;
       if (checkout && !requestsInspection) {
         return jsonResult({ status: "error", error: `unsupported task checkout: ${checkout}` });
-      }
-      if (requestsInspection && !SOURCE_RESEARCH_AGENT_IDS.has(agentId)) {
-        return jsonResult({
-          status: "error",
-          error: "loaded-system inspection may only target a source-inspection role",
-        });
       }
       if (requestsSystemChange && (!isCodingAgent(agentId) || requesterAgentId !== "main")) {
         return jsonResult({
@@ -535,12 +508,11 @@ export function createTaskTool(
           error: `${agentId} is not configured for loaded-source modification`,
         });
       }
-      if (executionWorkspace && cwd) {
-        return jsonResult({
-          status: "error",
-          error: "cwd is owned by the target role's configured execution workspace",
-        });
-      }
+      const requestedExecutionWorkspace = requestsInspection
+        ? ({ type: "loaded-source", access: "inspect" } as const)
+        : requestsSystemChange
+          ? ({ type: "loaded-source", access: "modify" } as const)
+          : undefined;
       const targetThinking =
         (opts?.config ? resolveAgentConfig(opts.config, agentId)?.thinkingDefault : undefined) ??
         opts?.config?.agents?.defaults?.thinkingDefault;
@@ -561,7 +533,9 @@ export function createTaskTool(
           label,
           agentId,
           thinking: targetThinking,
-          cwd,
+          ...(requestedExecutionWorkspace
+            ? { executionWorkspace: requestedExecutionWorkspace }
+            : {}),
           mode: "run",
           cleanup: "keep",
           sandbox: "inherit",

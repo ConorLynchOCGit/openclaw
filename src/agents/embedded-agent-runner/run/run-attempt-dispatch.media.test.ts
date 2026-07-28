@@ -112,6 +112,43 @@ describe("plugin harness prompt media", () => {
     }
   });
 
+  it("accepts structured image paths from the task cwd", async () => {
+    const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-harness-task-cwd-"));
+    const identityWorkspace = path.join(stateDir, "identity-workspace");
+    const taskCwd = path.join(stateDir, "task-repo");
+    await fs.mkdir(identityWorkspace, { recursive: true });
+    await fs.mkdir(taskCwd, { recursive: true });
+    await fs.writeFile(path.join(taskCwd, "task.png"), Buffer.from(TINY_PNG_BASE64, "base64"));
+
+    try {
+      const result = await preparePluginHarnessPromptImages({
+        runParams: {
+          agentId: "main",
+          config: {
+            agents: { defaults: { sandbox: { mode: "off" } } },
+            tools: { fs: { workspaceOnly: true } },
+          },
+          cwd: taskCwd,
+          imageOrder: ["offloaded"],
+          media: [{ path: path.join(taskCwd, "task.png"), contentType: "image/png" }],
+          sessionId: "session-task-cwd",
+        },
+        runtime: {
+          model: { input: ["text", "image"] },
+          sessionId: "session-task-cwd",
+          workspaceDir: identityWorkspace,
+        },
+        pluginHarnessOwnsTransport: true,
+      } as unknown as Parameters<typeof preparePluginHarnessPromptImages>[0]);
+
+      expect(result.images).toEqual([
+        { type: "image", data: TINY_PNG_BASE64, mimeType: "image/png" },
+      ]);
+    } finally {
+      await fs.rm(stateDir, { recursive: true, force: true });
+    }
+  });
+
   it("surfaces a failed image hydration before plugin dispatch", async () => {
     const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-harness-failed-media-"));
     try {

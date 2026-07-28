@@ -36,6 +36,7 @@ function createInput(disableTrajectory = false) {
       workspaceDir: "/tmp/workspace",
     },
     clientToolCount: 2,
+    effectiveCwd: "/tmp/task-repo",
     effectiveToolCount: 7,
     effectiveWorkspace: "/tmp/workspace",
     localModelLeanEnabled: false,
@@ -72,13 +73,23 @@ describe("prepareEmbeddedAttemptTrajectory", () => {
     expect(recorder.recordEvent).toHaveBeenNthCalledWith(
       1,
       "session.started",
-      expect.objectContaining({ toolCount: 7, clientToolCount: 2 }),
+      expect.objectContaining({
+        clientToolCount: 2,
+        cwd: "/tmp/task-repo",
+        toolCount: 7,
+        workspaceDir: "/tmp/workspace",
+      }),
     );
     expect(recorder.recordEvent).toHaveBeenNthCalledWith(2, "trace.metadata", {
       trace: "metadata",
     });
     expect(hoisted.buildTrajectoryRunMetadata).toHaveBeenCalledWith(
-      expect.objectContaining({ fastMode: true, provider: "provider-1" }),
+      expect.objectContaining({
+        cwd: "/tmp/task-repo",
+        fastMode: true,
+        provider: "provider-1",
+        workspaceDir: "/tmp/workspace",
+      }),
     );
   });
 

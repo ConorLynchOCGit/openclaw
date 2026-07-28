@@ -24,6 +24,7 @@ export function buildEmbeddedSystemPrompt(params: {
   config?: OpenClawConfig;
   agentId?: string;
   workspaceDir: string;
+  cwd?: string;
   defaultThinkLevel?: ThinkLevel;
   reasoningLevel?: ReasoningLevel;
   extraSystemPrompt?: string;
@@ -98,6 +99,7 @@ export function buildEmbeddedSystemPrompt(params: {
     config: params.config,
     agentId: params.agentId ?? params.runtimeInfo.agentId,
     workspaceDir: params.workspaceDir,
+    ...(params.cwd ? { cwd: params.cwd } : {}),
     defaultThinkLevel: params.defaultThinkLevel,
     reasoningLevel: params.reasoningLevel,
     extraSystemPrompt: params.extraSystemPrompt,
